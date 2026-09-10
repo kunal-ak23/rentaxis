@@ -1,5 +1,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+
+import en from "../../../../../messages/en.json";
 
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { name: "Admin User" } } }),
@@ -35,7 +38,11 @@ afterEach(() => {
 
 describe("DashboardPage overdue card", () => {
     it("links the Overdue card to the payments page filtered by overdue", async () => {
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
 
         const link = await screen.findByRole("link", { name: /view overdue payments/i });
         expect(link).toHaveAttribute("href", "/dashboard/finance/payments?status=OVERDUE");

@@ -1,5 +1,8 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+
+import en from "../../../../../messages/en.json";
 
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { name: "Admin" } } }),
@@ -50,20 +53,32 @@ afterEach(() => {
 
 describe("DashboardPage charts use real data", () => {
     it("fetches the monthly series and renders the chart (not the empty state)", async () => {
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
         expect(monthlyFetched).toBe(true);
         expect(screen.queryByText(/no collection data yet/i)).toBeNull();
     });
 
     it("shows 'Pending this month' (scoped) instead of all-time pending", async () => {
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
         await waitFor(() => expect(screen.getByText("Pending this month")).toBeTruthy());
         expect(screen.getByText("Due this month, unpaid")).toBeTruthy();
     });
 
     it("renders the occupancy donut with real occupied/vacant counts", async () => {
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
         expect(screen.getByText("Occupied")).toBeTruthy();
         expect(screen.getByText("Vacant")).toBeTruthy(); // legend label (distinct from "Vacant units" totals row)
@@ -86,14 +101,22 @@ describe("DashboardPage charts use real data", () => {
             } as Response;
         }) as unknown as typeof fetch;
 
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
         // Delta derives from receipts (12500 vs 10000), not the due-month series.
         expect(screen.getByText("+25.0%")).toBeTruthy();
     });
 
     it("does not render the old hardcoded mock deltas", async () => {
-        render(<DashboardPage />);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
         // Previously hardcoded fake deltas on the stat cards — must be gone.
         expect(screen.queryByText("+12.4%")).toBeNull();

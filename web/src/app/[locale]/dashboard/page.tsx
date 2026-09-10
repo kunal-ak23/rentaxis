@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,13 @@ type MonthlyPoint = {
   collected: number;
 };
 
-function formatTimeAgo(timestamp: string): string {
+// Takes the translator and locale rather than reaching for a hook: this is a
+// module-level helper, not a component.
+function formatTimeAgo(
+  timestamp: string,
+  t: (key: string, values?: Record<string, string | number | Date>) => string,
+  locale: string,
+): string {
   const now = new Date();
   const date = new Date(timestamp);
   const diffMs = now.getTime() - date.getTime();
@@ -48,11 +55,11 @@ function formatTimeAgo(timestamp: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  if (diffMins < 1) return t("justNow");
+  if (diffMins < 60) return t("minutesAgo", { n: diffMins });
+  if (diffHours < 24) return t("hoursAgo", { n: diffHours });
+  if (diffDays < 7) return t("daysAgo", { n: diffDays });
+  return date.toLocaleDateString(locale);
 }
 
 function Sparkline({ data, color }: { data: number[]; color: string }) {
@@ -117,12 +124,13 @@ function StatCard({
 }
 
 function CollectionChart({ data }: { data: MonthlyPoint[] }) {
+  const t = useTranslations("Dashboard");
   if (data.length === 0) {
     return (
       <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
-        <div className="text-[13px] text-[var(--ink-500)] mb-0.5">Collection vs expected</div>
-        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">12-month performance</div>
-        <p className="text-sm text-[var(--ink-500)] py-16 text-center">No collection data yet</p>
+        <div className="text-[13px] text-[var(--ink-500)] mb-0.5">{t("collectionVsExpected")}</div>
+        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("twelveMonthPerformance")}</div>
+        <p className="text-sm text-[var(--ink-500)] py-16 text-center">{t("noCollectionData")}</p>
       </div>
     );
   }
@@ -147,8 +155,8 @@ function CollectionChart({ data }: { data: MonthlyPoint[] }) {
     <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
       <div className="flex justify-between items-start mb-3.5">
         <div>
-          <div className="text-[13px] text-[var(--ink-500)] mb-0.5">Collection vs expected</div>
-          <div className="font-serif text-[20px] font-semibold text-foreground">12-month performance</div>
+          <div className="text-[13px] text-[var(--ink-500)] mb-0.5">{t("collectionVsExpected")}</div>
+          <div className="font-serif text-[20px] font-semibold text-foreground">{t("twelveMonthPerformance")}</div>
         </div>
       </div>
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[200px] block">
@@ -161,6 +169,7 @@ function CollectionChart({ data }: { data: MonthlyPoint[] }) {
 }
 
 function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: number; rate: number }) {
+  const t = useTranslations("Dashboard");
   const total = occupied + vacant;
   const size = 128;
   const stroke = 16;
@@ -190,18 +199,18 @@ function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: 
           {rate.toFixed(0)}%
         </text>
         <text x={cx} y={cy + 16} textAnchor="middle" className="fill-[var(--ink-500)]" style={{ fontSize: 10 }}>
-          occupied
+          {t("occupiedShort")}
         </text>
       </svg>
       <div className="space-y-2 text-[13px] min-w-[120px]">
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--teal-600)" }} />
-          <span className="text-[var(--ink-500)]">Occupied</span>
+          <span className="text-[var(--ink-500)]">{t("occupied")}</span>
           <span className="font-semibold ml-auto">{occupied}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--ink-500)", opacity: 0.45 }} />
-          <span className="text-[var(--ink-500)]">Vacant</span>
+          <span className="text-[var(--ink-500)]">{t("vacantLabel")}</span>
           <span className="font-semibold ml-auto">{vacant}</span>
         </div>
       </div>
@@ -210,6 +219,8 @@ function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: 
 }
 
 export default function DashboardPage() {
+  const t = useTranslations("Dashboard");
+  const locale = useLocale();
   const { data: session } = useSession();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
@@ -248,7 +259,7 @@ export default function DashboardPage() {
           <div className="w-16 h-16 bg-[var(--sand-100)] rounded-2xl flex items-center justify-center text-muted mb-6">
             <Activity size={32} />
           </div>
-          <p className="text-sm font-semibold text-muted tracking-wide">Unable to load dashboard data</p>
+          <p className="text-sm font-semibold text-muted tracking-wide">{t("unableToLoad")}</p>
         </div>
       </div>
     );
@@ -256,7 +267,12 @@ export default function DashboardPage() {
 
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
   const now = new Date();
-  const dayLabel = now.toLocaleDateString(undefined, {
+  // The greeting was hardcoded "Good morning" at every hour of the day.
+  const hour = now.getHours();
+  const greetingKey = hour < 12 ? "greetingMorning" : hour < 18 ? "greetingAfternoon" : "greetingEvening";
+  // `undefined` here meant the browser's locale, not the app's, so an Arabic
+  // page still rendered its dates in whatever the browser was set to (#177).
+  const dayLabel = now.toLocaleDateString(locale, {
     weekday: "long",
     day: "2-digit",
     month: "short",
@@ -285,56 +301,56 @@ export default function DashboardPage() {
       <div className="flex items-end justify-between">
         <div>
           <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
-          <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">Good morning, {firstName}</h1>
+          <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
           <p className="text-[13.5px] text-[var(--ink-600)] mt-1">
-            <span className="text-[var(--gold-700)] font-semibold">{summary.expiringLeases} expiring lease{summary.expiringLeases === 1 ? '' : 's'}</span>
-            {summary.overdueAmount > 0 ? <span className="text-[var(--red-600)] font-semibold ml-1.5">· {formatCurrencyCompact(summary.overdueAmount)} overdue</span> : null}
+            <span className="text-[var(--gold-700)] font-semibold">{t("expiringLeasesCount", { count: summary.expiringLeases })}</span>
+            {summary.overdueAmount > 0 ? <span className="text-[var(--red-600)] font-semibold ml-1.5">· {t("overdueSuffix", { amount: formatCurrencyCompact(summary.overdueAmount) })}</span> : null}
           </p>
         </div>
         <div className="flex gap-2">
           <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
             <Calendar size={13} />
-            {now.toLocaleDateString(undefined, { month: "short", year: "numeric" })}
+            {now.toLocaleDateString(locale, { month: "short", year: "numeric" })}
           </button>
           <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
-            <Download size={13} /> Export
+            <Download size={13} /> {t("export")}
           </button>
           <Link href="/dashboard/leases/new" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
-            <Plus size={13} /> New lease
+            <Plus size={13} /> {t("newLease")}
           </Link>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <StatCard
-          label="Collected this month"
+          label={t("collectedThisMonth")}
           value={formatCurrencyCompact(collectedThisMonth)}
           delta={collectedDelta}
           deltaPos={collectedDeltaPos}
-          sub={`of ${formatCurrencyCompact(expectedThisMonth)} expected`}
+          sub={t("ofExpected", { amount: formatCurrencyCompact(expectedThisMonth) })}
           sparkData={collectedSpark.length ? collectedSpark : undefined}
           sparkColor="var(--green-600)"
         />
         <StatCard
-          label="Pending this month"
+          label={t("pendingThisMonth")}
           value={formatCurrencyCompact(summary.pendingThisMonthAmount)}
-          sub="Due this month, unpaid"
+          sub={t("dueThisMonthUnpaid")}
         />
         <StatCard
-          label="Occupancy"
+          label={t("occupancy")}
           value={summary.occupancyRate.toFixed(1)}
           unit="%"
-          sub={`${summary.occupiedUnits} of ${summary.totalUnits} units leased`}
+          sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
         />
         <Link
           href="/dashboard/finance/payments?status=OVERDUE"
-          aria-label="View overdue payments"
+          aria-label={t("viewOverduePayments")}
           className="block rounded-[var(--radius-lg)] transition-all hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
         >
           <StatCard
-            label="Overdue"
+            label={t("overdue")}
             value={formatCurrencyCompact(summary.overdueAmount)}
-            sub="Requires follow-up"
+            sub={t("requiresFollowUp")}
           />
         </Link>
       </div>
@@ -342,16 +358,16 @@ export default function DashboardPage() {
       <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
         <CollectionChart data={monthly} />
         <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
-          <div className="text-[13px] text-[var(--ink-500)]">Portfolio snapshot</div>
-          <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Current totals</div>
+          <div className="text-[13px] text-[var(--ink-500)]">{t("portfolioSnapshot")}</div>
+          <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("currentTotals")}</div>
           <div className="mb-4 pb-4 border-b border-border">
             <OccupancyDonut occupied={summary.occupiedUnits} vacant={summary.vacantUnits} rate={summary.occupancyRate} />
           </div>
           <div className="space-y-2.5 text-[13px]">
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Properties</span><span className="font-semibold">{summary.totalProperties}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Active leases</span><span className="font-semibold">{summary.activeLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Draft leases</span><span className="font-semibold">{summary.draftLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Vacant units</span><span className="font-semibold">{summary.vacantUnits}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("properties")}</span><span className="font-semibold">{summary.totalProperties}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("activeLeasesLabel")}</span><span className="font-semibold">{summary.activeLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("draftLeases")}</span><span className="font-semibold">{summary.draftLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("vacantUnits")}</span><span className="font-semibold">{summary.vacantUnits}</span></div>
           </div>
         </div>
       </div>
@@ -364,9 +380,9 @@ export default function DashboardPage() {
       <FollowUpsWidget />
 
       <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
-        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Recent activity</div>
+        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("recentActivity")}</div>
         {summary.recentActivity.length === 0 ? (
-          <p className="text-[13px] text-[var(--ink-500)]">No activity yet.</p>
+          <p className="text-[13px] text-[var(--ink-500)]">{t("noActivityYet")}</p>
         ) : (
           <div className="space-y-2">
             {summary.recentActivity.slice(0, 8).map((item, index) => (
@@ -377,7 +393,7 @@ export default function DashboardPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] text-foreground truncate">{item.description}</p>
                 </div>
-                <div className="text-[11px] text-[var(--ink-500)] whitespace-nowrap">{formatTimeAgo(item.timestamp)}</div>
+                <div className="text-[11px] text-[var(--ink-500)] whitespace-nowrap">{formatTimeAgo(item.timestamp, t, locale)}</div>
               </div>
             ))}
           </div>
