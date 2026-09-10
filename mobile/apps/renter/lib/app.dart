@@ -5,11 +5,35 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import 'router.dart';
 import 'push_registration.dart';
 
-class RenterApp extends ConsumerWidget {
+class RenterApp extends ConsumerStatefulWidget {
   const RenterApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RenterApp> createState() => _RenterAppState();
+}
+
+class _RenterAppState extends ConsumerState<RenterApp> {
+  @override
+  void initState() {
+    super.initState();
+    // A 401 on a session the app believed was valid means the token expired or
+    // was revoked server-side; there is no refresh call to fall back on.
+    // Logging out is enough — the router redirects to /login the moment auth
+    // state flips, so this deliberately does no navigation of its own.
+    AuthInterceptor.onUnauthorized = () {
+      if (!mounted) return;
+      ref.read(authProvider.notifier).logout();
+    };
+  }
+
+  @override
+  void dispose() {
+    AuthInterceptor.onUnauthorized = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
     final language = ref.watch(appLanguageProvider);
