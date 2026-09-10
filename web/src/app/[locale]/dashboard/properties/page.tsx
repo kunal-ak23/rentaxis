@@ -443,8 +443,7 @@ export default function PropertiesPage() {
                         className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold bg-error/10 hover:bg-error/20 px-3 py-1.5 rounded-lg transition-colors"
                     >
                         <RefreshCw size={12} />
-                        {/* TODO: t("retry") */}
-                        Retry
+                        {t("retry")}
                     </button>
                 </div>
             )}
@@ -455,8 +454,7 @@ export default function PropertiesPage() {
                         {t("projects")}
                     </h1>
                     <p className="text-xs text-muted font-medium">
-                        {/* TODO: t("projectsDescription") */}
-                        Manage your real estate projects and their individual properties.
+                        {t("projectsDescription")}
                     </p>
                 </div>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -464,7 +462,7 @@ export default function PropertiesPage() {
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder={/* TODO: t("search") */ "Search..."}
+                            placeholder={t("search")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
@@ -479,8 +477,7 @@ export default function PropertiesPage() {
                                 viewMode === "table" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
-                            {/* TODO: t("table") */}
-                            <List size={13} /> Table
+                            <List size={13} /> {t("table")}
                         </button>
                         <button
                             onClick={() => setViewMode("cards")}
@@ -489,8 +486,7 @@ export default function PropertiesPage() {
                                 viewMode === "cards" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
-                            {/* TODO: t("cards") */}
-                            <LayoutGrid size={13} /> Cards
+                            <LayoutGrid size={13} /> {t("cards")}
                         </button>
                     </div>
                     {canCreate && (
@@ -506,9 +502,9 @@ export default function PropertiesPage() {
                                 onClick={() => {
                                     if (stats.length === 0) {
                                         setConfirmDialog({
-                                            title: /* TODO: t("noProjects") */ "No Projects",
-                                            description: /* TODO: t("addProjectFirst") */ "Please add a project first before adding a property.",
-                                            confirmText: /* TODO: t("ok") */ "OK",
+                                            title: t("noProjects"),
+                                            description: t("addProjectFirst"),
+                                            confirmText: t("ok"),
                                             isDestructive: false,
                                             onConfirm: () => { setConfirmDialog(null); },
                                         });
@@ -551,8 +547,7 @@ export default function PropertiesPage() {
                         <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProject")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">
-                            {/* TODO: t("addProjectDescription") */}
-                            Create a new Project (Portfolio Group).
+                            {t("addProjectDescription")}
                         </p>
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
@@ -573,8 +568,7 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("type") */}
-                                    Type
+                                    {t("type")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.type} onChange={ev => setProjectFormData({ ...projectFormData, type: ev.target.value })}>
                                     {["RESIDENTIAL", "COMMERCIAL", "MIXED"].map(opt => (
@@ -584,15 +578,13 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("address") */}
-                                    Address
+                                    {t("address")}
                                 </label>
                                 <input placeholder="Building name, street, area" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.address} onChange={ev => setProjectFormData({ ...projectFormData, address: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("makaniNumber") */}
-                                    Makani Number
+                                    {t("makaniNumber")}
                                 </label>
                                 <input placeholder="e.g. 12345-67890" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.makaniNumber} onChange={ev => setProjectFormData({ ...projectFormData, makaniNumber: ev.target.value })} />
                             </div>
@@ -624,14 +616,12 @@ export default function PropertiesPage() {
                         <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProperty")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">
-                            {/* TODO: t("addPropertyDescription") */}
-                            Add a new Property (Unit) to a Project.
+                            {t("addPropertyDescription")}
                         </p>
                         <form onSubmit={handlePropertySubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-2">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("selectProject") */}
-                                    Select Project
+                                    {t("selectProject")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
                                     {stats.map(s => (
@@ -645,8 +635,7 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("type") */}
-                                    Type
+                                    {t("type")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.type} onChange={ev => setPropertyFormData({ ...propertyFormData, type: ev.target.value })}>
                                     {["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"].map(opt => (
@@ -656,15 +645,13 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("sizeSqft") */}
-                                    Size (sqft)
+                                    {t("sizeSqft")}
                                 </label>
                                 <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.sizeSqft || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, sizeSqft: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("status") */}
-                                    Status
+                                    {t("status")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.status} onChange={ev => setPropertyFormData({ ...propertyFormData, status: ev.target.value })}>
                                     <option value="VACANT">Vacant</option>
@@ -677,8 +664,7 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    {/* TODO: t("actualRent") */}
-                                    Actual Rent
+                                    {t("actualRent")}
                                 </label>
                                 <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, actualRent: Number(ev.target.value) })} />
                             </div>
@@ -1128,34 +1114,27 @@ export default function PropertiesPage() {
                                     <thead>
                                         <tr className="bg-input/50">
                                             <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("name") */}
-                                                Name
+                                                {t("name")}
                                             </th>
                                             <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("location") */}
-                                                Location
+                                                {t("location")}
                                             </th>
                                             <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("type") */}
-                                                Type
+                                                {t("type")}
                                             </th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("units") */}
-                                                Units
+                                                {t("unitsCount")}
                                             </th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("vacant") */}
-                                                Vacant
+                                                {t("vacant")}
                                             </th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("occupancy") */}
-                                                Occupancy
+                                                {t("occupancy")}
                                             </th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Revenue at Capacity</th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actual Revenue</th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                                {/* TODO: t("actions") */}
-                                                Actions
+                                                {t("actions")}
                                             </th>
                                         </tr>
                                     </thead>
@@ -1196,8 +1175,7 @@ export default function PropertiesPage() {
                                                             href={`/dashboard/properties/${s.property.id}`}
                                                             className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
                                                         >
-                                                            {/* TODO: t("manage") */}
-                                                            Manage
+                                                            {t("manage")}
                                                         </Link>
                                                     </td>
                                                 </tr>
@@ -1240,22 +1218,19 @@ export default function PropertiesPage() {
                                         <div className="grid grid-cols-3 border-t border-border">
                                             <div className="px-5 py-3 border-r border-border">
                                                 <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
-                                                    {/* TODO: t("units") */}
-                                                    Units
+                                                    {t("unitsCount")}
                                                 </p>
                                                 <p className="text-sm font-bold text-foreground tabular-nums">{s.propertyCount}</p>
                                             </div>
                                             <div className="px-5 py-3 border-r border-border">
                                                 <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
-                                                    {/* TODO: t("vacant") */}
-                                                    Vacant
+                                                    {t("vacant")}
                                                 </p>
                                                 <p className={cn("text-sm font-bold tabular-nums", s.vacancies > 0 ? "text-warning" : "text-success")}>{s.vacancies}</p>
                                             </div>
                                             <div className="px-5 py-3">
                                                 <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
-                                                    {/* TODO: t("revenue") */}
-                                                    Revenue
+                                                    {t("revenue")}
                                                 </p>
                                                 <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</p>
                                             </div>
@@ -1265,8 +1240,7 @@ export default function PropertiesPage() {
                                         <div className="px-5 py-3 border-t border-border">
                                             <div className="flex justify-between items-center mb-1.5">
                                                 <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                                                    {/* TODO: t("occupancy") */}
-                                                    Occupancy
+                                                    {t("occupancy")}
                                                 </span>
                                                 <span className={cn("text-xs font-bold tabular-nums", getOccupancyTextColor(occupancyPct))}>
                                                     {occupancyPct}%
@@ -1303,8 +1277,7 @@ export default function PropertiesPage() {
                                         {/* Footer CTA */}
                                         <div className="px-5 py-3 border-t border-border flex items-center justify-between">
                                             <span className="text-xs font-semibold text-primary">
-                                                {/* TODO: t("manageProperty") */}
-                                                Manage Property
+                                                {t("manageProperty")}
                                             </span>
                                             <ArrowRight size={14} className="text-primary group-hover:translate-x-1 transition-transform" />
                                         </div>
@@ -1330,8 +1303,7 @@ export default function PropertiesPage() {
                         <Building2 size={32} />
                     </div>
                     <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6">
-                        {/* TODO: t("noProjectsFound") / t("noPropertiesAssigned") */}
-                        {canCreate ? 'No Projects Found' : 'No Properties Assigned'}
+                        {canCreate ? t("noProjectsFound") : t("noPropertiesAssigned")}
                     </p>
                     {canCreate && (
                         <button onClick={() => setShowProjectForm(true)} className="cursor-pointer text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">

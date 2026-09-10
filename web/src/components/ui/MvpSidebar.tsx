@@ -52,6 +52,10 @@ export default function MvpSidebar() {
     const tGatePass = useTranslations("GatePass");
     const tBookings = useTranslations("Bookings");
     const tPromotions = useTranslations("Promotions");
+    // Nav labels that were previously plain English literals. They render on
+    // every dashboard page for every role, so in Arabic the whole primary
+    // navigation stayed English inside an RTL layout.
+    const tNav = useTranslations("Navigation");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -74,9 +78,9 @@ export default function MvpSidebar() {
                 { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
                 { name: t("renters"), href: "/dashboard/renters", icon: Contact, tourId: 'sidebar-renters' },
                 { name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' },
-                ...(isEnabled('LISTINGS') ? [{ name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
-                { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
-                ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
+                ...(isEnabled('LISTINGS') ? [{ name: tNav("listings"), href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
+                { name: tNav("tickets"), href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
+                ...(isEnabled('MEETINGS') ? [{ name: tNav("meetings"), href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
                 // Still not wrapped in isEnabled('GATEPASS'), and the reason has changed
                 // again: a toggle now exists — the superadmin tenants page has a features
                 // drawer wired to PUT /api/admin/tenants/{id}/features/{feature}, so the
@@ -98,10 +102,10 @@ export default function MvpSidebar() {
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
-            ? [{ name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck, tourId: 'sidebar-tenants' }]
+            ? [{ name: tNav("tenants"), href: "/superadmin/tenants", icon: ShieldCheck, tourId: 'sidebar-tenants' }]
             : []),
         ...(hasPermission(userRole, 'canManageUsers')
-            ? [{ name: "Users", href: "/superadmin/users", icon: Users, tourId: 'sidebar-users' }]
+            ? [{ name: tNav("users"), href: "/superadmin/users", icon: Users, tourId: 'sidebar-users' }]
             : []),
     ];
 
@@ -119,24 +123,24 @@ export default function MvpSidebar() {
     ] : [];
 
     const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
-        { name: "Account Mappings", href: "/dashboard/settings/account-mappings", icon: GitBranch },
+        { name: tNav("accountMappings"), href: "/dashboard/settings/account-mappings", icon: GitBranch },
         { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
         { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
-        ...(canConfigureFines(userRole) ? [{ name: "Cheque-failure Fines", href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
+        ...(canConfigureFines(userRole) ? [{ name: tNav("chequeFailureFines"), href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
     ] : [];
 
     // Tenant user minimal items
     const tenantUserItems = userRole === 'TENANT_USER' ? [
-        { name: "My Unit", href: "/dashboard/my-unit", icon: Home },
+        { name: tNav("myUnit"), href: "/dashboard/my-unit", icon: Home },
     ] : [];
 
     // Renter portal items
     const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
-        { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
+        { name: tNav("myLeases"), href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
-        { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
-        ...(isEnabled('LISTINGS') && tenantSlug ? [{ name: "Listings", href: `/marketplace/${tenantSlug}`, icon: Building2, tourId: 'sidebar-listings' }] : []),
-        ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
+        { name: tNav("myTickets"), href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
+        ...(isEnabled('LISTINGS') && tenantSlug ? [{ name: tNav("listings"), href: `/marketplace/${tenantSlug}`, icon: Building2, tourId: 'sidebar-listings' }] : []),
+        ...(isEnabled('MEETINGS') ? [{ name: tNav("meetings"), href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;

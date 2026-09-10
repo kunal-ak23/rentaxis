@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 import { useRouter, usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -11,6 +12,10 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 type Tenant = { id: string; name: string };
 
 export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
+    // The switcher had no useTranslations at all, so its entire UI — including
+    // the organization name row shown on every dashboard page — stayed English
+    // in the Arabic locale.
+    const t = useTranslations("TenantSwitcher");
     const { data: session } = useSession();
     const router = useRouter();
     const pathname = usePathname();
@@ -118,7 +123,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     }
 
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
-    const orgName = isSuperAdmin && !activeTenant ? "Global View" : activeTenant?.name || "—";
+    const orgName = isSuperAdmin && !activeTenant ? t("globalView") : activeTenant?.name || "—";
     const orgInitials = (orgName || "")
         .split(/\s+/)
         .slice(0, 2)
@@ -130,7 +135,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
             <button
                 ref={buttonRef}
                 onClick={openDropdown}
-                aria-label={canSwitch ? "Switch organization" : "Current organization"}
+                aria-label={canSwitch ? t("switchOrganization") : t("currentOrganization")}
                 className={cn(
                     "w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius)] border border-border bg-[var(--sand-100)] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                     isCollapsed ? "justify-center" : "",
@@ -157,7 +162,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                 {orgName}
                             </span>
                             <span className="text-[10px] text-[var(--ink-500)] truncate w-full">
-                                {isSuperAdmin ? "Administering" : "Organization"}
+                                {isSuperAdmin ? t("administering") : t("organization")}
                             </span>
                         </div>
                     </div>
@@ -184,8 +189,8 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                         {isSuperAdmin && (
                             <div className="p-2 border-b border-border">
                                 <input
-                                    aria-label="Search organizations"
-                                    placeholder="Search organizations..."
+                                    aria-label={t("searchOrganizations")}
+                                    placeholder={t("searchOrganizationsPlaceholder")}
                                     value={tenantQuery}
                                     onChange={(event) => setTenantQuery(event.target.value)}
                                     onClick={(event) => event.stopPropagation()}
@@ -225,7 +230,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                             ))}
                             {filteredTenants.length === 0 && (
                                 <div className="p-3 text-center text-xs text-muted font-medium">
-                                    {tenants.length === 0 ? "No tenants available" : "No matching organizations"}
+                                    {tenants.length === 0 ? t("noTenantsAvailable") : t("noMatchingOrganizations")}
                                 </div>
                             )}
                         </div>
