@@ -1,6 +1,7 @@
 'use client';
 
-import { getRoleLabel, type UserRole } from '@/lib/rbac';
+import { getRoleLabel, getRoleLabelKey, type UserRole } from '@/lib/rbac';
+import { useTranslations } from "next-intl";
 import { cn } from '@/lib/utils';
 
 interface RoleFilterProps {
@@ -10,6 +11,11 @@ interface RoleFilterProps {
 }
 
 export default function RoleFilter({ roles, compact = false, className }: RoleFilterProps) {
+    const tRoles = useTranslations("Roles");
+    // t.has guards a role the catalogue does not know; getRoleLabel is the
+    // English fallback rather than letting next-intl throw.
+    const roleLabel = (role: string) =>
+        tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
   return (
     <div className={cn('flex flex-wrap gap-1.5', className)}>
       {roles.map((role) => (
@@ -20,7 +26,7 @@ export default function RoleFilter({ roles, compact = false, className }: RoleFi
             compact ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
           )}
         >
-          {getRoleLabel(role)}
+          {roleLabel(role)}
         </span>
       ))}
     </div>

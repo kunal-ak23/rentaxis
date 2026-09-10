@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { useSession, signOut } from "next-auth/react";
 import { Link } from "@/i18n/routing";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 import { LogOut, User, ChevronDown, Bell } from "lucide-react";
-import { getRoleLabel, type UserRole } from "@/lib/rbac";
+import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import GlobalSearch from "./GlobalSearch";
 
 type Notification = {
@@ -36,6 +37,11 @@ function timeAgo(dateStr: string): string {
 }
 
 export function TopHeader() {
+    const tRoles = useTranslations("Roles");
+    // t.has guards a role the catalogue does not know; getRoleLabel is the
+    // English fallback rather than letting next-intl throw.
+    const roleLabel = (role: string) =>
+        tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
     const { data: session } = useSession();
     const pathname = usePathname();
     const locale = useLocale();
@@ -217,7 +223,7 @@ export function TopHeader() {
                                 <div className="flex flex-col items-end">
                                     <span className="text-sm font-semibold text-foreground">{session.user.name || 'User'}</span>
                                     <span className="text-[10px] font-medium text-muted tracking-wider">
-                                        {userRole ? getRoleLabel(userRole) : ''}
+                                        {userRole ? roleLabel(userRole) : ''}
                                     </span>
                                 </div>
                                 <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border border-[var(--gold-400)]" style={{ background: 'var(--gold-500)', color: 'var(--ink-900)' }}>
