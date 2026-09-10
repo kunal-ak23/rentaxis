@@ -259,10 +259,10 @@ export default function MvpSidebar() {
                     </Link>
                 </SidebarTooltip>
 
-                {allItems.length > 0 && renderSection(allItems, "Workspace", "overview")}
-                {financeItems.length > 0 && renderSection(financeItems, "Operations", "finance", "sidebar-finance")}
-                {hrItems.length > 0 && renderSection(hrItems, "Operations", "hr")}
-                {settingsItems.length > 0 && renderSection(settingsItems, "Operations", "settings")}
+                {allItems.length > 0 && renderSection(allItems, tNav("sectionWorkspace"), "overview")}
+                {financeItems.length > 0 && renderSection(financeItems, tNav("sectionOperations"), "finance", "sidebar-finance")}
+                {hrItems.length > 0 && renderSection(hrItems, tNav("sectionOperations"), "hr")}
+                {settingsItems.length > 0 && renderSection(settingsItems, tNav("sectionOperations"), "settings")}
 
                 {/* Support Section */}
                 <div className={cn(
@@ -270,9 +270,9 @@ export default function MvpSidebar() {
                     "text-sidebar-muted",
                     isCollapsed && "hidden"
                 )}>
-                    Support
+                    {tNav("sectionSupport")}
                 </div>
-                <SidebarTooltip label="Help & Guides" enabled={isCollapsed}>
+                <SidebarTooltip label={tNav("helpAndGuides")} enabled={isCollapsed}>
                     <Link
                         href="/dashboard/help"
                         data-tour="sidebar-help"
@@ -289,7 +289,7 @@ export default function MvpSidebar() {
                             "shrink-0 transition-colors",
                             pathname.includes("/dashboard/help") ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"
                         )} />
-                        {!isCollapsed && <span className="flex-1">Help &amp; Guides</span>}
+                        {!isCollapsed && <span className="flex-1">{tNav("helpAndGuides")}</span>}
                         {pathname.includes("/dashboard/help") && !isCollapsed && (
                             <motion.div
                                 layoutId="sidebar-help-indicator"

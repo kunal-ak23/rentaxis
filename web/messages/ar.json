@@ -1390,11 +1390,15 @@
   "Navigation": {
     "accountMappings": "ربط الحسابات",
     "chequeFailureFines": "غرامات إخفاق الشيكات",
+    "helpAndGuides": "المساعدة والأدلة",
     "listings": "القوائم",
     "meetings": "الاجتماعات",
     "myLeases": "عقودي",
     "myTickets": "تذاكري",
     "myUnit": "وحدتي",
+    "sectionOperations": "العمليات",
+    "sectionSupport": "الدعم",
+    "sectionWorkspace": "مساحة العمل",
     "tenants": "المؤسسات",
     "tickets": "التذاكر",
     "users": "المستخدمون"

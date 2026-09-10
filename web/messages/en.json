@@ -1390,11 +1390,15 @@
   "Navigation": {
     "accountMappings": "Account Mappings",
     "chequeFailureFines": "Cheque-failure Fines",
+    "helpAndGuides": "Help & Guides",
     "listings": "Listings",
     "meetings": "Meetings",
     "myLeases": "My Leases",
     "myTickets": "My Tickets",
     "myUnit": "My Unit",
+    "sectionOperations": "Operations",
+    "sectionSupport": "Support",
+    "sectionWorkspace": "Workspace",
     "tenants": "Tenants",
     "tickets": "Tickets",
     "users": "Users"
