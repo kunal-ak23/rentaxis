@@ -339,7 +339,7 @@ export default function RentSettingsPage() {
                                 <CalendarDays size={12} />
                                 {t("dueDayOfMonth")}
                             </label>
-                            <NumberInput
+                            <NumberInput showZero
                                 min={1}
                                 max={28}
                                 value={settings.dueDayOfMonth}
@@ -355,7 +355,7 @@ export default function RentSettingsPage() {
                                 <Clock size={12} />
                                 {t("gracePeriodDays")}
                             </label>
-                            <NumberInput
+                            <NumberInput showZero
                                 min={0}
                                 max={30}
                                 value={settings.gracePeriodDays}
@@ -409,7 +409,7 @@ export default function RentSettingsPage() {
                                         ? " — Amount per day (AED)"
                                         : " — Percentage per day (%)"}
                                 </label>
-                                <NumberInput
+                                <NumberInput showZero
                                     min={0}
                                     step={settings.penaltyType === "PERCENTAGE" ? 0.1 : 1}
                                     value={settings.penaltyAmount}

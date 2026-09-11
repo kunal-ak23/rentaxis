@@ -5,6 +5,13 @@ import { useEffect, useRef, useState } from "react";
 type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
     value: number;
     onChange: (value: number) => void;
+    /**
+     * Render a zero as "0" rather than as an empty field. For a stored setting
+     * — a grace period, a fine amount — zero is a configured value, and a blank
+     * box reads as "not set up yet". Leave it off for the amount fields the
+     * user is filling in, which is where the empty start is the point.
+     */
+    showZero?: boolean;
 };
 
 /**
@@ -22,8 +29,9 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChan
  * number upward. An empty box reports 0, which is what the old inputs did for
  * an empty box anyway.
  */
-export function NumberInput({ value, onChange, ...rest }: Props) {
-    const [text, setText] = useState(() => (value === 0 ? "" : String(value)));
+export function NumberInput({ value, onChange, showZero = false, ...rest }: Props) {
+    const asText = (n: number) => (n === 0 && !showZero ? "" : String(n));
+    const [text, setText] = useState(() => asText(value));
     const lastReported = useRef(value);
 
     // Re-sync only when the value changes somewhere other than this input —
@@ -32,7 +40,8 @@ export function NumberInput({ value, onChange, ...rest }: Props) {
     useEffect(() => {
         if (value === lastReported.current) return;
         lastReported.current = value;
-        setText(value === 0 ? "" : String(value));
+        setText(asText(value));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- asText is derived from showZero, which does not change for a mounted field
     }, [value]);
 
     return (

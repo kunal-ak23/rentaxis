@@ -125,3 +125,24 @@ describe("the number-input sweep", () => {
         expect(raw, `raw numeric inputs left in ${file}`).toEqual([]);
     });
 });
+
+/**
+ * Stored settings are the exception to "start empty": zero is a configured
+ * value there — no grace period, no bounce fine — and an empty box reads as
+ * "not set up yet".
+ */
+describe("settings pages keep showing a stored zero", () => {
+    const SETTINGS = [
+        "app/[locale]/dashboard/settings/rent-settings/page.tsx",
+        "app/[locale]/dashboard/settings/fines/page.tsx",
+    ];
+    const SRC = path.join(__dirname, "..", "..", "..", "..", "..");
+
+    it.each(SETTINGS)("%s opts every field into showZero", file => {
+        const text = fs.readFileSync(path.join(SRC, file), "utf8");
+        const without = text.split("<NumberInput").slice(1)
+            .map(chunk => chunk.slice(0, chunk.indexOf("/>")))
+            .filter(attrs => !/\bshowZero\b/.test(attrs));
+        expect(without, `fields that would blank a stored zero in ${file}`).toEqual([]);
+    });
+});

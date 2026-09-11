@@ -189,7 +189,7 @@ export default function FinesSettingsPage() {
                             {t("bounceAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <NumberInput
+                            <NumberInput showZero
                                 min={0}
                                 step={1}
                                 value={config.bounceAmount}
@@ -206,7 +206,7 @@ export default function FinesSettingsPage() {
                             {t("signatureMismatchAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <NumberInput
+                            <NumberInput showZero
                                 min={0}
                                 step={1}
                                 value={config.signatureMismatchAmount}
@@ -223,7 +223,7 @@ export default function FinesSettingsPage() {
                             {t("accountClosedAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <NumberInput
+                            <NumberInput showZero
                                 min={0}
                                 step={1}
                                 value={config.accountClosedAmount}
@@ -249,7 +249,7 @@ export default function FinesSettingsPage() {
                         <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                             {t("graceDays")}
                         </label>
-                        <NumberInput
+                        <NumberInput showZero
                             min={0}
                             max={90}
                             step={1}
@@ -266,7 +266,7 @@ export default function FinesSettingsPage() {
                             {t("perDayRate")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <NumberInput
+                            <NumberInput showZero
                                 min={0}
                                 step={0.5}
                                 value={config.perDayRate}

@@ -114,6 +114,20 @@ describe("NumberInput", () => {
         expect(el.type).toBe("number");
     });
 
+    it("shows a stored zero when asked to, so a setting does not read as unset", () => {
+        // A grace period or a fine of zero is configured, not blank. Without
+        // this the settings pages show an empty box for a real value.
+        render(<NumberInput aria-label="amount" value={0} onChange={() => {}} showZero />);
+        expect(input().value).toBe("0");
+    });
+
+    it("still starts empty by default", () => {
+        // The opposite of the case above, asserted next to it so neither can be
+        // changed without noticing the other.
+        render(<NumberInput aria-label="amount" value={0} onChange={() => {}} />);
+        expect(input().value).toBe("");
+    });
+
     it("ignores input that is not a number instead of reporting NaN", () => {
         const onValue = vi.fn();
         render(<Harness initial={5000} onValue={onValue} />);
