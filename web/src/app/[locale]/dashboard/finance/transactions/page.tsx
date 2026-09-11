@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
 import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type Account = {
     id: string;
@@ -549,8 +550,8 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("debit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.debit || ""} onChange={ev => {
-                                    const debit = Number(ev.target.value);
+                                <NumberInput step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.debit} onChange={(v) => {
+                                    const debit = v;
                                     const amount = debit || formData.credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
                                     setFormData({ ...formData, debit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
@@ -558,8 +559,8 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("credit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.credit || ""} onChange={ev => {
-                                    const credit = Number(ev.target.value);
+                                <NumberInput step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.credit} onChange={(v) => {
+                                    const credit = v;
                                     const amount = formData.debit || credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
                                     setFormData({ ...formData, credit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
@@ -643,13 +644,12 @@ export default function TransactionsPage() {
                                                         </select>
                                                     </div>
                                                     <div className="w-32">
-                                                        <input
-                                                            type="number"
+                                                        <NumberInput
                                                             step="0.01"
                                                             placeholder="0.00"
                                                             className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs text-right focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
-                                                            value={split.amount || ""}
-                                                            onChange={ev => updateSplitAmount(index, Number(ev.target.value))}
+                                                            value={split.amount}
+                                                            onChange={(v) => updateSplitAmount(index, v)}
                                                         />
                                                     </div>
                                                     <button
@@ -695,8 +695,8 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">VAT Rate (%)</label>
-                                <input type="number" step="0.01" placeholder="5" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.vatRate} onChange={ev => {
-                                    const vatRate = Number(ev.target.value);
+                                <NumberInput step="0.01" placeholder="5" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.vatRate} onChange={(v) => {
+                                    const vatRate = v;
                                     const amount = formData.debit || formData.credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * vatRate) / 100 : 0;
                                     setFormData({ ...formData, vatRate, vatAmount: vatAmt, grossAmount: amount + vatAmt });

@@ -12,6 +12,7 @@ import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type PropertyContact = {
     id: string;
@@ -564,7 +565,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
-                        <input type="number" required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
+                        <NumberInput required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
                     </div>
                     {formError && (
                         <div className="col-span-3 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">

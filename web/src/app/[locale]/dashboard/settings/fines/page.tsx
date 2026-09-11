@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { canConfigureFines } from "@/lib/rbac";
 import type { UserRole } from "@/lib/rbac";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type FineConfig = {
     bounceAmount: number;
@@ -188,12 +189,11 @@ export default function FinesSettingsPage() {
                             {t("bounceAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <input
-                                type="number"
+                            <NumberInput
                                 min={0}
                                 step={1}
                                 value={config.bounceAmount}
-                                onChange={e => updateField("bounceAmount", Number(e.target.value))}
+                                onChange={(v) => updateField("bounceAmount", v)}
                                 className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <span className="text-xs font-semibold text-muted">AED</span>
@@ -206,12 +206,11 @@ export default function FinesSettingsPage() {
                             {t("signatureMismatchAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <input
-                                type="number"
+                            <NumberInput
                                 min={0}
                                 step={1}
                                 value={config.signatureMismatchAmount}
-                                onChange={e => updateField("signatureMismatchAmount", Number(e.target.value))}
+                                onChange={(v) => updateField("signatureMismatchAmount", v)}
                                 className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <span className="text-xs font-semibold text-muted">AED</span>
@@ -224,12 +223,11 @@ export default function FinesSettingsPage() {
                             {t("accountClosedAmount")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <input
-                                type="number"
+                            <NumberInput
                                 min={0}
                                 step={1}
                                 value={config.accountClosedAmount}
-                                onChange={e => updateField("accountClosedAmount", Number(e.target.value))}
+                                onChange={(v) => updateField("accountClosedAmount", v)}
                                 className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <span className="text-xs font-semibold text-muted">AED</span>
@@ -251,13 +249,12 @@ export default function FinesSettingsPage() {
                         <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                             {t("graceDays")}
                         </label>
-                        <input
-                            type="number"
+                        <NumberInput
                             min={0}
                             max={90}
                             step={1}
                             value={config.graceDays}
-                            onChange={e => updateField("graceDays", Math.min(90, Math.max(0, Number(e.target.value))))}
+                            onChange={(v) => updateField("graceDays", Math.min(90, Math.max(0, v)))}
                             className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                         />
                         <p className="text-[10px] text-muted mt-1">{t("graceDaysHint")}</p>
@@ -269,12 +266,11 @@ export default function FinesSettingsPage() {
                             {t("perDayRate")}
                         </label>
                         <div className="flex items-center gap-2">
-                            <input
-                                type="number"
+                            <NumberInput
                                 min={0}
                                 step={0.5}
                                 value={config.perDayRate}
-                                onChange={e => updateField("perDayRate", Number(e.target.value))}
+                                onChange={(v) => updateField("perDayRate", v)}
                                 className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <span className="text-xs font-semibold text-muted">AED/day</span>

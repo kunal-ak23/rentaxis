@@ -9,6 +9,7 @@ import { Link } from "@/i18n/routing";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type Unit = {
     id: string;
@@ -146,11 +147,11 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
-                                    <input type="number" placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent || ""} onChange={ev => setFormData({ ...formData, expectedRent: Number(ev.target.value) })} />
+                                    <NumberInput placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent} onChange={(v) => setFormData({ ...formData, expectedRent: v })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("sizeSqft")}</label>
-                                    <input type="number" placeholder="Sq. Ft." className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.sizeSqft || ""} onChange={ev => setFormData({ ...formData, sizeSqft: Number(ev.target.value) })} />
+                                    <NumberInput placeholder="Sq. Ft." className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.sizeSqft} onChange={(v) => setFormData({ ...formData, sizeSqft: v })} />
                                 </div>
                             </div>
                             {formError && (

@@ -7,6 +7,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type Property = {
     id: string;
@@ -555,14 +556,13 @@ export default function StaffPage() {
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("monthlySalary")}
                                 </label>
-                                <input
-                                    type="number"
+                                <NumberInput
                                     step="0.01"
                                     min="0"
                                     className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.monthlySalary}
-                                    onChange={(ev) =>
-                                        setFormData({ ...formData, monthlySalary: parseFloat(ev.target.value) || 0 })
+                                    onChange={(v) =>
+                                        setFormData({ ...formData, monthlySalary: v })
                                     }
                                 />
                             </div>
