@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, XCircle } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, XCircle, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
@@ -17,8 +17,20 @@ type FeatureToggle = {
   enabled: boolean;
 };
 
+/**
+ * Both sides are trimmed. Trimming only what was typed means an organization
+ * whose stored name carries stray whitespace — quite possible through import —
+ * can never be confirmed at all: the button stays disabled and there is no way
+ * round it. The request still sends the stored name verbatim, so the API's own
+ * check is unaffected.
+ */
+function nameMatches(typed: string, actual: string): boolean {
+    return typed.trim() === actual.trim();
+}
+
 export default function SuperAdminTenantsPage() {
     const t = useTranslations("Index");
+    const tSa = useTranslations("SuperAdmin");
     const searchParams = useSearchParams();
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [loading, setLoading] = useState(true);
@@ -27,6 +39,13 @@ export default function SuperAdminTenantsPage() {
     const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
     const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
     const [formError, setFormError] = useState("");
+    // Deleting an organization is irreversible and takes everything inside it,
+    // so the dialog asks for the name rather than a yes/no — the same
+    // confirmation the API itself requires via ?confirmName=.
+    const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
+    const [deleteConfirmName, setDeleteConfirmName] = useState("");
+    const [deleteError, setDeleteError] = useState("");
+    const [deleting, setDeleting] = useState(false);
     const [loadError, setLoadError] = useState("");
     const [searchQuery, setSearchQuery] = useState(searchParams.get("search") ?? "");
     const [currentPage, setCurrentPage] = useState(1);
@@ -40,6 +59,47 @@ export default function SuperAdminTenantsPage() {
     useEffect(() => {
         fetchTenants();
     }, []);
+
+    const openDelete = (tenant: Tenant) => {
+        setDeleteTarget(tenant);
+        setDeleteConfirmName("");
+        setDeleteError("");
+    };
+
+    const closeDelete = () => {
+        setDeleteTarget(null);
+        setDeleteConfirmName("");
+        setDeleteError("");
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        // Checked here for a useful message, and enforced again by the API,
+        // which compares confirmName against the stored name server-side.
+        if (!nameMatches(deleteConfirmName, deleteTarget.name)) {
+            setDeleteError(tSa("deleteTenantMismatch"));
+            return;
+        }
+        setDeleting(true);
+        setDeleteError("");
+        try {
+            const res = await fetch(
+                `/api/proxy/admin/tenants/${deleteTarget.id}?confirmName=${encodeURIComponent(deleteTarget.name)}`,
+                { method: "DELETE" },
+            );
+            if (res.ok || res.status === 404) {
+                // 404 means it is already gone — the desired end state either way.
+                closeDelete();
+                await fetchTenants();
+                return;
+            }
+            setDeleteError(res.status === 409 ? tSa("deleteTenantConflict") : tSa("deleteTenantFailed"));
+        } catch {
+            setDeleteError(tSa("deleteTenantFailed"));
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     const fetchTenants = async () => {
         setLoading(true);
@@ -396,6 +456,14 @@ export default function SuperAdminTenantsPage() {
                                             <Pencil size={12} />
                                             Edit
                                         </button>
+                                        <button
+                                            onClick={() => openDelete(tenant)}
+                                            title={tSa("deleteTenant")}
+                                            aria-label={tSa("deleteTenant")}
+                                            className="p-1.5 rounded hover:bg-error/10 text-neutral-500 hover:text-error transition-colors cursor-pointer"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -487,6 +555,73 @@ export default function SuperAdminTenantsPage() {
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Delete confirmation.
+                Asks for the organization name rather than a yes/no: this is a
+                hard delete of every record in the org, and the API demands the
+                same string via ?confirmName= so a mistyped id cannot land. */}
+            {deleteTarget && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                onClick={deleting ? undefined : closeDelete}
+              >
+                <div
+                  className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="shrink-0 w-9 h-9 rounded-lg bg-error/10 text-error flex items-center justify-center">
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-bold text-neutral-900">
+                        {tSa("deleteTenantTitle", { name: deleteTarget.name })}
+                      </h2>
+                      <p className="text-xs text-neutral-600 mt-1.5 leading-relaxed">
+                        {tSa("deleteTenantWarning")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                    {tSa("deleteTenantConfirmPrompt")}
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={deleteConfirmName}
+                    onChange={e => { setDeleteConfirmName(e.target.value); setDeleteError(""); }}
+                    placeholder={deleteTarget.name}
+                    disabled={deleting}
+                    className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-error/30 focus:border-error focus:outline-none disabled:bg-neutral-100"
+                  />
+                  {deleteError && (
+                    <p className="text-xs text-error mt-2 font-medium">{deleteError}</p>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2 mt-5">
+                    <button
+                      onClick={closeDelete}
+                      disabled={deleting}
+                      className="px-4 py-2 rounded-lg text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {tSa("cancel")}
+                    </button>
+                    <button
+                      data-testid="confirm-delete-tenant"
+                      onClick={confirmDelete}
+                      // Stays disabled until the typed name matches exactly, so
+                      // the destructive action cannot be reached by reflex.
+                      disabled={deleting || !nameMatches(deleteConfirmName, deleteTarget.name)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-error text-white hover:bg-error/90 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      {deleting ? tSa("deleting") : tSa("deleteTenant")}
+                    </button>
                   </div>
                 </div>
               </div>

@@ -1626,5 +1626,16 @@
     "loadFailedUnits": "Couldn't load units. Please try again.",
     "loadFailedVendors": "Couldn't load vendors. Please try again.",
     "retry": "Retry"
+  },
+  "SuperAdmin": {
+    "cancel": "Cancel",
+    "deleteTenant": "Delete organization",
+    "deleteTenantConfirmPrompt": "Type the organization name to confirm:",
+    "deleteTenantConflict": "This organization could not be deleted because records still reference it.",
+    "deleteTenantFailed": "Could not delete the organization. Please try again.",
+    "deleteTenantMismatch": "The name does not match.",
+    "deleteTenantTitle": "Delete {name}?",
+    "deleteTenantWarning": "This permanently deletes the organization and every record inside it — properties, units, leases, payments, tickets, documents and uploaded files. It cannot be undone.",
+    "deleting": "Deleting…"
   }
 }
