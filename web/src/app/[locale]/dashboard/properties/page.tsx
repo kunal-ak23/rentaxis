@@ -11,6 +11,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type Property = {
     id: string;
@@ -592,7 +593,7 @@ export default function PropertiesPage() {
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("fixedExpenses")}
                                 </label>
-                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses || ""} onChange={ev => setProjectFormData({ ...projectFormData, fixedExpenses: Number(ev.target.value) })} />
+                                <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses} onChange={(v) => setProjectFormData({ ...projectFormData, fixedExpenses: v })} />
                             </div>
                             {projectFormError && (
                                 <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">
@@ -647,7 +648,7 @@ export default function PropertiesPage() {
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("sizeSqft")}
                                 </label>
-                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.sizeSqft || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, sizeSqft: Number(ev.target.value) })} />
+                                <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.sizeSqft} onChange={(v) => setPropertyFormData({ ...propertyFormData, sizeSqft: v })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
@@ -660,13 +661,13 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
-                                <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
+                                <NumberInput placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, expectedRent: v })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("actualRent")}
                                 </label>
-                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, actualRent: Number(ev.target.value) })} />
+                                <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, actualRent: v })} />
                             </div>
                             {propertyFormError && (
                                 <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">

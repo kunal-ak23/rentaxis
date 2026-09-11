@@ -6,6 +6,7 @@ import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-re
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import ChequeScanner, { type ChequeScannerResult } from "@/components/cheques/ChequeScanner";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 /**
  * Editable payment-schedule table for a DRAFT or PENDING_SIGNATURE lease.
@@ -393,12 +394,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                         )}
                                     </td>
                                     <td className="px-3 py-2 text-right">
-                                        <input
-                                            type="number"
+                                        <NumberInput
                                             step="0.01"
                                             min="0"
                                             value={Number.isFinite(r.amount) ? r.amount : 0}
-                                            onChange={(e) => updateRow(r.id, { amount: Number(e.target.value) })}
+                                            onChange={(v) => updateRow(r.id, { amount: v })}
                                             disabled={rowDisabled}
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-28 text-right tabular-nums disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />

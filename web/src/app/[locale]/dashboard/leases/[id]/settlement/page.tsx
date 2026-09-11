@@ -9,6 +9,7 @@ import {
     ArrowLeft, Paperclip, Upload, Trash2, Image, Video, FileText, Plus,
     Loader2, CheckCircle2, Eye, Download, X,
 } from "lucide-react";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type AttachmentItem = {
     id: string;
@@ -533,14 +534,13 @@ export default function SettlementPage() {
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
                                             <span className="text-[10px] text-muted">AED</span>
-                                            <input
-                                                type="number"
+                                            <NumberInput
                                                 value={d.amount}
                                                 min={0}
                                                 step={0.01}
                                                 disabled={isFinalized}
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value) || 0;
+                                                onChange={(v) => {
+                                                    const val = v;
                                                     setAutoDeductions(prev => prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd));
                                                 }}
                                                 className="w-28 border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground text-end tabular-nums focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
@@ -642,15 +642,14 @@ export default function SettlementPage() {
                                             </select>
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[10px] text-muted">AED</span>
-                                                <input
-                                                    type="number"
+                                                <NumberInput
                                                     value={d.amount}
                                                     min={0}
                                                     step={0.01}
                                                     placeholder="0"
                                                     disabled={isFinalized}
-                                                    onChange={(e) => {
-                                                        const val = parseFloat(e.target.value) || 0;
+                                                    onChange={(v) => {
+                                                        const val = v;
                                                         setManualDeductions(prev =>
                                                             prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd)
                                                         );
@@ -779,15 +778,14 @@ export default function SettlementPage() {
                                             </select>
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[10px] text-success font-semibold">+ AED</span>
-                                                <input
-                                                    type="number"
+                                                <NumberInput
                                                     value={d.amount}
                                                     min={0}
                                                     step={0.01}
                                                     placeholder="0"
                                                     disabled={isFinalized}
-                                                    onChange={(e) => {
-                                                        const val = parseFloat(e.target.value) || 0;
+                                                    onChange={(v) => {
+                                                        const val = v;
                                                         setAdditions(prev =>
                                                             prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd)
                                                         );

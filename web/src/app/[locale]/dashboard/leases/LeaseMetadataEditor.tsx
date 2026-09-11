@@ -5,6 +5,7 @@ import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, ChevronRight } f
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 /**
  * Inline metadata editor for a DRAFT lease — replaces the modal "Edit Lease"
@@ -326,12 +327,12 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                         </Field>
                         <Field label="Monthly rent (AED) *">
                             <div className="flex items-center gap-2">
-                                <input required type="number" min={0} step={0.01} value={form.rentAmount} onChange={(e) => setForm({ ...form, rentAmount: Number(e.target.value) })} className="flex-1 bg-input border border-border p-3 rounded-xl text-xs" />
+                                <NumberInput required min={0} step={0.01} value={form.rentAmount} onChange={(v) => setForm({ ...form, rentAmount: v })} className="flex-1 bg-input border border-border p-3 rounded-xl text-xs" />
                                 <VatToggle value={form.rentVatApplicable} onChange={(v) => setForm({ ...form, rentVatApplicable: v })} />
                             </div>
                         </Field>
                         <Field label="Security deposit (AED)">
-                            <input type="number" min={0} step={0.01} value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: Number(e.target.value) })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
+                            <NumberInput min={0} step={0.01} value={form.depositAmount} onChange={(v) => setForm({ ...form, depositAmount: v })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                         </Field>
                         <Field label="Ejari #">
                             <input value={form.ejariNumber} onChange={(e) => setForm({ ...form, ejariNumber: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" placeholder="EJAR-12345" />
@@ -345,7 +346,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                             </select>
                         </Field>
                         <Field label="Number of installments *" hint="Splits the total rent equally across this many payments">
-                            <input type="number" min={1} max={36} value={form.paymentTerms || 1} onChange={(e) => setForm({ ...form, paymentTerms: Math.max(1, Number(e.target.value) || 1) })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
+                            <NumberInput min={1} max={36} value={form.paymentTerms || 1} onChange={(v) => setForm({ ...form, paymentTerms: Math.max(1, v || 1) })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                         </Field>
                         <Field label="Deposit payment method">
                             <select value={form.depositPaymentMethod} onChange={(e) => setForm({ ...form, depositPaymentMethod: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs">
@@ -370,8 +371,8 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                                 <Field label="Name"><input type="text" value={c.name}
                                     onChange={(e) => updateCharge(i, { name: e.target.value })}
                                     className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
-                                <Field label="Amount (AED)"><input type="number" min={0} step={0.01} value={c.amount}
-                                    onChange={(e) => updateCharge(i, { amount: Number(e.target.value) })}
+                                <Field label="Amount (AED)"><NumberInput min={0} step={0.01} value={c.amount}
+                                    onChange={(v) => updateCharge(i, { amount: v })}
                                     className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
                                 <Field label="Frequency">
                                     <select value={c.frequency} onChange={(e) => updateCharge(i, { frequency: e.target.value as ChargeFrequency })}
@@ -407,7 +408,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                             {bookingOpen && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                                     <Field label="Amount (AED)">
-                                        <input type="number" min={0} step={0.01} value={bookingDeposit.amount || ""} onChange={(e) => setBookingDeposit((b) => ({ ...b, amount: Number(e.target.value) }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
+                                        <NumberInput min={0} step={0.01} value={bookingDeposit.amount} onChange={(v) => setBookingDeposit((b) => ({ ...b, amount: v }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
                                     </Field>
                                     <Field label="Cheque number">
                                         <input value={bookingDeposit.chequeNumber} onChange={(e) => setBookingDeposit((b) => ({ ...b, chequeNumber: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />

@@ -11,6 +11,7 @@ import ChequeScanner from "@/components/cheques/ChequeScanner";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 /**
  * Five-step wizard for creating a new draft lease.
@@ -463,8 +464,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
                             <Field label={t("monthlyRentRequired")}>
-                                <input type="number" min={0} step={0.01} value={data.rentAmount}
-                                    onChange={(e) => update({ rentAmount: Number(e.target.value) })}
+                                <NumberInput min={0} step={0.01} value={data.rentAmount}
+                                    onChange={(v) => update({ rentAmount: v })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                                 {rentShortfall && (
                                     <p data-testid="below-expected-rent"
@@ -481,8 +482,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 )}
                             </Field>
                             <Field label={t("securityDepositAed")}>
-                                <input type="number" min={0} step={0.01} value={data.depositAmount}
-                                    onChange={(e) => update({ depositAmount: Number(e.target.value) })}
+                                <NumberInput min={0} step={0.01} value={data.depositAmount}
+                                    onChange={(v) => update({ depositAmount: v })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
                             <Field label={t("ejariNumber")}>
@@ -510,8 +511,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     <Field label={t("chargeName")}><input type="text" value={c.name}
                                         onChange={(e) => updateCharge(i, { name: e.target.value })}
                                         className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
-                                    <Field label={t("amountAed")}><input type="number" min={0} step={0.01} value={c.amount}
-                                        onChange={(e) => updateCharge(i, { amount: Number(e.target.value) })}
+                                    <Field label={t("amountAed")}><NumberInput min={0} step={0.01} value={c.amount}
+                                        onChange={(v) => updateCharge(i, { amount: v })}
                                         className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
                                     <Field label={t("frequency")}>
                                         <select value={c.frequency} onChange={(e) => updateCharge(i, { frequency: e.target.value as ChargeFrequency })}
@@ -533,8 +534,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                         <div className="space-y-5">
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                                 <Field label={t("installmentsRequired")} hint={t("installmentsHint")}>
-                                    <input type="number" min={1} max={36} value={data.paymentTerms}
-                                        onChange={(e) => update({ paymentTerms: Number(e.target.value) })}
+                                    <NumberInput min={1} max={36} value={data.paymentTerms}
+                                        onChange={(v) => update({ paymentTerms: v })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                                 </Field>
                                 <Field label={t("remainderDistribution")} hint={t("remainderHint")}>
@@ -594,8 +595,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                             />
                                         </div>
                                         <Field label={t("amountAedRequired")}>
-                                            <input type="number" min={0} step={0.01} value={data.bookingDeposit.amount}
-                                                onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, amount: Number(e.target.value) } })}
+                                            <NumberInput min={0} step={0.01} value={data.bookingDeposit.amount}
+                                                onChange={(v) => update({ bookingDeposit: { ...data.bookingDeposit, amount: v } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
                                             {data.bookingDeposit.scannedAmount != null && data.bookingDeposit.scannedAmount !== data.bookingDeposit.amount && (
                                                 <button type="button"

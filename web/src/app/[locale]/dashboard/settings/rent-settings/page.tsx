@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { canConfigureRentSettings } from "@/lib/rbac";
 import type { UserRole } from "@/lib/rbac";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 type Property = {
     id: string;
@@ -338,12 +339,11 @@ export default function RentSettingsPage() {
                                 <CalendarDays size={12} />
                                 {t("dueDayOfMonth")}
                             </label>
-                            <input
-                                type="number"
+                            <NumberInput showZero
                                 min={1}
                                 max={28}
                                 value={settings.dueDayOfMonth}
-                                onChange={e => updateField("dueDayOfMonth", Math.min(28, Math.max(1, Number(e.target.value))))}
+                                onChange={(v) => updateField("dueDayOfMonth", Math.min(28, Math.max(1, v)))}
                                 className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <p className="text-[10px] text-muted mt-1">Day of month when rent is due (1-28)</p>
@@ -355,12 +355,11 @@ export default function RentSettingsPage() {
                                 <Clock size={12} />
                                 {t("gracePeriodDays")}
                             </label>
-                            <input
-                                type="number"
+                            <NumberInput showZero
                                 min={0}
                                 max={30}
                                 value={settings.gracePeriodDays}
-                                onChange={e => updateField("gracePeriodDays", Math.min(30, Math.max(0, Number(e.target.value))))}
+                                onChange={(v) => updateField("gracePeriodDays", Math.min(30, Math.max(0, v)))}
                                 className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <p className="text-[10px] text-muted mt-1">Days after due date before penalty applies (0-30)</p>
@@ -410,12 +409,11 @@ export default function RentSettingsPage() {
                                         ? " — Amount per day (AED)"
                                         : " — Percentage per day (%)"}
                                 </label>
-                                <input
-                                    type="number"
+                                <NumberInput showZero
                                     min={0}
                                     step={settings.penaltyType === "PERCENTAGE" ? 0.1 : 1}
                                     value={settings.penaltyAmount}
-                                    onChange={e => updateField("penaltyAmount", Number(e.target.value))}
+                                    onChange={(v) => updateField("penaltyAmount", v)}
                                     className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                                 />
                             </div>
