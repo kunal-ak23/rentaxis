@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ArrowLeft, ArrowRight, X, Check, Loader2, Sparkles, AlertTriangle, Building2, User, Calendar, DollarSign, CreditCard, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { monthsInclusive } from "@/lib/leaseTerm";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
 import ChequeScanner from "@/components/cheques/ChequeScanner";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
@@ -319,14 +320,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
             // not monthly × paymentTerms. paymentTerms is the cheque count and is
             // independent of the rent total — the backend splits the total rent
             // evenly across paymentTerms installments distributed over the tenure.
-            const monthsBetween = (() => {
-                const s = new Date(data.startDate);
-                const e = new Date(data.endDate);
-                // End date is the inclusive last day of tenancy, so +1: Jun→Dec = 7,
-                // Jan→Dec = 12. Matches backend DateMath.monthsInclusive.
-                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
-                return Math.max(months, 1);
-            })();
+            const monthsBetween = monthsInclusive(data.startDate, data.endDate);
             const body: Record<string, unknown> = {
                 unitId: data.unitId,
                 renterId: data.renterId,
