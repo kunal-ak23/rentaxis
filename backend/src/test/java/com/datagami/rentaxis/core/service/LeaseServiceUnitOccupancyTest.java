@@ -55,6 +55,12 @@ class LeaseServiceUnitOccupancyTest {
         LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
         LeaseChargeRepository leaseChargeRepository = mock(LeaseChargeRepository.class);
 
+        // Pass-through by default: these tests are about lease behaviour, not
+        // authorization. LeaseAccessPolicyTest covers the scoping itself.
+        com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy =
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class);
+        when(leaseAccessPolicy.filterReadable(any())).thenAnswer(inv -> inv.getArgument(0));
+
         service = new LeaseService(
                 leaseRepository,
                 unitRepository,
@@ -68,7 +74,8 @@ class LeaseServiceUnitOccupancyTest {
                 leaseInteractionRepository,
                 mock(SettlementService.class),
                 mock(UnitListingService.class),
-                mock(ApplicationEventPublisher.class));
+                mock(ApplicationEventPublisher.class),
+                leaseAccessPolicy);
 
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(leaseDocumentRepository.findByLeaseId(any())).thenReturn(List.of());
