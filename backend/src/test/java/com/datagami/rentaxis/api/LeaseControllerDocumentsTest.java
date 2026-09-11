@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -49,6 +50,9 @@ class LeaseControllerDocumentsTest {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired LeaseDocumentRepository leaseDocumentRepo;
+    @Autowired UserPropertyAssignmentRepository assignmentRepo;
+
+    private UUID otherManagerUserId;
 
     private UUID tenantId;
     private UUID managerUserId;
@@ -79,6 +83,45 @@ class LeaseControllerDocumentsTest {
                 LocalDate.of(2025, 6, 1),
                 LocalDate.of(2026, 5, 31));
 
+        // Assign the lease's property to the manager.
+        //
+        // This fixture predates object-level authorization, when a manager's
+        // assignments did not affect what they could read — so it never modelled
+        // one. Now they do: an unassigned manager is refused, which is the whole
+        // point of #167. Assigning here keeps this test on its actual subject
+        // (the role gate does not 403 a manager) and the negative case below
+        // covers the new boundary.
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment assignment =
+                new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        assignment.setUserId(managerUserId);
+        assignment.setPropertyId(lease.getUnit().getProperty().getId());
+        assignmentRepo.save(assignment);
+
+        // A second manager, assigned to a DIFFERENT property. Modelling the
+        // real scenario — assigned to one building, reaching for another's
+        // lease — rather than deleting the first manager's assignment, which
+        // needs a transaction the test does not have.
+        User otherManager = new User();
+        otherManager.setEmail("pm-other-" + UUID.randomUUID() + "@test.local");
+        otherManager.setName("Other Manager");
+        otherManager.setRole(UserRole.PROPERTY_MANAGER);
+        otherManager.setStatus(UserStatus.ACTIVE);
+        otherManager.setPasswordHash("ph");
+        otherManager.setTenantId(tenantId);
+        otherManagerUserId = userRepo.save(otherManager).getId();
+
+        Property elsewhere = new Property();
+        elsewhere.setNameEn("Unassigned-Building-" + UUID.randomUUID());
+        elsewhere.setEmirate(Emirate.DUBAI);
+        elsewhere.setTenantId(tenantId);
+        elsewhere = propertyRepo.save(elsewhere);
+
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment elsewhereAssignment =
+                new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        elsewhereAssignment.setUserId(otherManagerUserId);
+        elsewhereAssignment.setPropertyId(elsewhere.getId());
+        assignmentRepo.save(elsewhereAssignment);
+
         Path pdfFile = Files.createTempFile("lease-doc-test-", ".pdf");
         Files.write(pdfFile, PDF_BYTES);
         pdfFile.toFile().deleteOnExit();
@@ -100,13 +143,31 @@ class LeaseControllerDocumentsTest {
     }
 
     private RestClient pmClient() {
+        return clientFor(managerUserId);
+    }
+
+    private RestClient clientFor(UUID userId) {
         return RestClient.builder()
                 .baseUrl("http://localhost:" + port)
-                .defaultHeader("X-User-Id", managerUserId.toString())
+                .defaultHeader("X-User-Id", userId.toString())
                 .defaultHeader("X-User-Role", "PROPERTY_MANAGER")
                 .defaultHeader("X-Tenant-Id", tenantId.toString())
                 .defaultHeader("X-User-Tenant-Id", tenantId.toString())
                 .build();
+    }
+
+    /**
+     * The boundary the assignment above exists to prove. A manager with no
+     * assignment covering this lease's property must not be able to read its
+     * contract — that was readable tenant-wide before #167.
+     */
+    @Test
+    void unassigned_pm_cannot_list_lease_documents() {
+        assertThatThrownBy(() -> clientFor(otherManagerUserId).get()
+                .uri("/api/v1/leases/" + lease.getId() + "/documents")
+                .retrieve()
+                .body(List.class))
+                .isInstanceOf(org.springframework.web.client.HttpClientErrorException.NotFound.class);
     }
 
     @Test

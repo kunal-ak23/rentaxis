@@ -45,6 +45,7 @@ public class SettlementService {
     private final LeaseSettlementRepository leaseSettlementRepository;
     private final LeaseSettlementDeductionRepository leaseSettlementDeductionRepository;
     private final LeaseRepository leaseRepository;
+    private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final PenaltyService penaltyService;
     private final DeductionAttachmentService deductionAttachmentService;
@@ -54,6 +55,10 @@ public class SettlementService {
 
     @Transactional(readOnly = true)
     public SettlementPreviewDTO getSettlementPreview(UUID leaseId) {
+        // Settlement carries deposit, deductions and final balances. The role
+        // gate allows PROPERTY_MANAGER, so without this a manager could read
+        // and write settlements for properties they were never assigned.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         Lease lease = findLeaseWithTenantCheck(leaseId);
 
         BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
@@ -130,6 +135,10 @@ public class SettlementService {
 
     @Transactional
     public LeaseSettlement saveDraft(UUID leaseId, SaveSettlementDTO dto, UUID userId) {
+        // Settlement carries deposit, deductions and final balances. The role
+        // gate allows PROPERTY_MANAGER, so without this a manager could read
+        // and write settlements for properties they were never assigned.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         Lease lease = findLeaseWithTenantCheck(leaseId);
         BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
 
@@ -237,6 +246,10 @@ public class SettlementService {
 
     @Transactional
     public LeaseSettlement finalizeSettlement(UUID leaseId, UUID settledBy) {
+        // Settlement carries deposit, deductions and final balances. The role
+        // gate allows PROPERTY_MANAGER, so without this a manager could read
+        // and write settlements for properties they were never assigned.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         findLeaseWithTenantCheck(leaseId);
         LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
                 .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
@@ -358,6 +371,10 @@ public class SettlementService {
 
     @Transactional(readOnly = true)
     public SettlementResponseDTO buildSettlementResponse(UUID leaseId) {
+        // Settlement carries deposit, deductions and final balances. The role
+        // gate allows PROPERTY_MANAGER, so without this a manager could read
+        // and write settlements for properties they were never assigned.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
                 .orElseThrow(() -> new NotFoundException("Settlement not found"));
 

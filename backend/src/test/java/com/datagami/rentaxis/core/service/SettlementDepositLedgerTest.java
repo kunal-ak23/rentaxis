@@ -88,6 +88,9 @@ class SettlementDepositLedgerTest {
                 settlementRepository,
                 mock(LeaseSettlementDeductionRepository.class),
                 leaseRepository,
+                // Pass-through: this test is about deposit ledger postings, not
+                // authorization. LeaseAccessPolicyTest covers the scoping.
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
                 mock(PaymentScheduleRepository.class),
                 mock(PenaltyService.class),
                 mock(DeductionAttachmentService.class),
