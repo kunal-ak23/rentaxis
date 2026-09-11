@@ -137,8 +137,12 @@ public final class ChequeRoundingCalculator {
             return new Result(amounts, step);
         }
 
-        // Unreachable: the 0.01 step yields a positive base for any totalRent > 0.
-        throw new IllegalStateException("no rounding step produced a positive cheque for " + totalRent);
+        // Reached when the rent is smaller than one fils per cheque (0.01 across
+        // 2, say): every step floors the base to zero. Not an internal fault —
+        // it is a bad pair of arguments, and raising it as one keeps the
+        // response a 400 rather than a 500.
+        throw new IllegalArgumentException(
+                "Rent " + totalRent + " is too small to split across " + n + " cheques");
     }
 
     private static BigDecimal floorToStep(BigDecimal value, BigDecimal step) {

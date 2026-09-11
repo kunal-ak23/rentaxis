@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ChequeRoundingCalculatorTest {
 
@@ -85,6 +86,24 @@ class ChequeRoundingCalculatorTest {
                 .as("and the clean 1,000 denomination is kept rather than dropping to 100 to satisfy a cap")
                 .isEqualByComparingTo(bd("1000"));
         assertThat(sum(result.amounts())).isEqualByComparingTo(bd("31500"));
+    }
+
+    /**
+     * Removing the deposit cap left the final throw reachable after all: a rent
+     * below one fils per cheque floors every step to zero and falls out of the
+     * loop. It had been left as an IllegalStateException on the belief that
+     * nothing could reach it, which would surface as a 500.
+     */
+    @Test
+    void rejectsARentTooSmallToSplitRatherThanFailingInternally() {
+        assertThatThrownBy(() -> ChequeRoundingCalculator.distribute(bd("0.01"), 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .isNotInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("too small");
+
+        // The boundary either side: one fils each is fine.
+        assertThat(ChequeRoundingCalculator.distribute(bd("0.02"), 2).amounts())
+                .containsExactly(bd("0.01"), bd("0.01"));
     }
 
     @Test
