@@ -161,13 +161,21 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
     // Letting a unit below its asking rent is allowed — landlords discount for
     // long tenancies, quick occupancy or a difficult unit — so this only warns.
-    // Both figures are per month: the wizard's rent field is monthly, and so is
-    // Unit.expectedRent.
+    //
+    // Unit.expectedRent is the asking rent for a YEAR, while this form collects
+    // a month. Checked against production: across 84 occupied units, every
+    // expectedRent equals the unit's actualRent, which LeaseService sets from
+    // lease.rentAmount — the whole contract total. Comparing the two figures
+    // directly warned on every lease, since any monthly rent is below any
+    // annual one. So compare annual rates, which also keeps the comparison
+    // independent of the lease's length.
     const rentShortfall = useMemo(() => {
         const expected = selectedUnit?.expectedRent;
         if (typeof expected !== "number" || !(expected > 0)) return null;
-        if (!(data.rentAmount > 0) || data.rentAmount >= expected) return null;
-        return { expected, entered: data.rentAmount, gap: expected - data.rentAmount };
+        if (!(data.rentAmount > 0)) return null;
+        const enteredAnnual = data.rentAmount * 12;
+        if (enteredAnnual >= expected) return null;
+        return { expected, enteredAnnual, monthly: data.rentAmount, gap: expected - enteredAnnual };
     }, [selectedUnit, data.rentAmount]);
 
     const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, data.unitId);
@@ -474,7 +482,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         <span>
                                             {t("belowExpectedRent", {
                                                 expected: formatCurrency(rentShortfall.expected),
-                                                entered: formatCurrency(rentShortfall.entered),
+                                                entered: formatCurrency(rentShortfall.enteredAnnual),
+                                                monthly: formatCurrency(rentShortfall.monthly),
                                                 gap: formatCurrency(rentShortfall.gap),
                                             })}
                                         </span>

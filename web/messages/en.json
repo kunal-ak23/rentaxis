@@ -1522,7 +1522,7 @@
     "amountAedRequired": "Amount (AED) *",
     "back": "Back",
     "bank": "Bank",
-    "belowExpectedRent": "Expected rent for this unit is {expected}/month. You are entering {entered} — {gap} below.",
+    "belowExpectedRent": "This unit asks {expected} a year. You are entering {monthly} a month — {entered} a year, {gap} below.",
     "bookingDeposit": "Booking deposit",
     "bothLarger": "Both larger",
     "bulkUploadCheques": "Bulk upload cheques",
