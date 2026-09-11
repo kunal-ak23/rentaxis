@@ -1522,6 +1522,7 @@
     "amountAedRequired": "المبلغ (درهم) *",
     "back": "رجوع",
     "bank": "البنك",
+    "belowExpectedRent": "الإيجار المتوقع لهذه الوحدة هو {expected} شهرياً. أنت تُدخل {entered} — أقل بمقدار {gap}.",
     "bookingDeposit": "دفعة الحجز",
     "bothLarger": "الأول والأخير أكبر",
     "bulkUploadCheques": "رفع الشيكات دفعة واحدة",
