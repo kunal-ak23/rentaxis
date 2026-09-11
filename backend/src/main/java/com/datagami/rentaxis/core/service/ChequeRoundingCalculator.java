@@ -1,6 +1,5 @@
 package com.datagami.rentaxis.core.service;
 
-import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 
 import java.math.BigDecimal;
@@ -10,21 +9,30 @@ import java.util.List;
 
 /**
  * Splits a total rent amount across N cheques producing clean, uniform
- * per-cheque amounts with the rounding residual placed on the last cheque.
+ * per-cheque amounts with the rounding residual placed per the chosen
+ * {@link InstallmentDistribution} strategy.
  *
- * Cheque-heavy markets (UAE) prefer round numbers like AED 5,000 over
- * AED 5,166.67 — easier to write, fewer disputes. To preserve the deposit
- * as a safety net the last cheque (which carries the residual) is capped
- * at the lease's deposit amount; if the natural average per-cheque already
- * exceeds the deposit, distribution is rejected.
+ * <p>Cheque-heavy markets (UAE) prefer round numbers like AED 5,000 over
+ * AED 5,166.67 — easier to write, fewer disputes.</p>
+ *
+ * <p><b>No deposit cap.</b> This class used to reject any split whose largest
+ * cheque exceeded the lease's security deposit, on the theory that the deposit
+ * should always cover a bounced final cheque. That is not how UAE leasing
+ * works: the deposit is a fixed percentage of annual rent (commonly 5%), while
+ * cheque size is annual rent divided by the cheque count. Under the old rule a
+ * 60,000/year lease with a 5,000 deposit could only be written as 12 cheques —
+ * 1, 2, 4 and 6-cheque leases, which are the market norm, were all refused.
+ * How much risk to carry on the final cheque is a commercial term the landlord
+ * negotiates, not something the software can decide; the deposit is collected
+ * as its own schedule row regardless.</p>
  */
 public final class ChequeRoundingCalculator {
 
     /**
      * Candidate rounding steps tried in order (largest → finest). The first
-     * step that produces a last-cheque amount within the deposit cap wins.
-     * The final step of 0.01 corresponds to even-cents division, matching
-     * the legacy behavior when no clean step satisfies the cap.
+     * step that yields a positive per-cheque base wins. The final step of 0.01
+     * corresponds to even-cents division, used when the rent is too small for
+     * any clean denomination.
      */
     private static final List<BigDecimal> STEPS = List.of(
             new BigDecimal("1000"),
@@ -41,15 +49,14 @@ public final class ChequeRoundingCalculator {
     private ChequeRoundingCalculator() {}
 
     /**
-     * Legacy 3-arg overload. Delegates to the strategy overload with the
-     * default LAST_LARGER distribution so existing callers/tests are unchanged.
+     * Distributes {@code totalRent} across {@code n} cheques using the default
+     * LAST_LARGER strategy.
      *
      * @param totalRent total amount to distribute (must be > 0).
      * @param n number of cheques (>= 1).
-     * @param depositCap maximum allowed last-cheque amount. Null disables the cap.
      */
-    public static Result distribute(BigDecimal totalRent, int n, BigDecimal depositCap) {
-        return distribute(totalRent, n, depositCap, InstallmentDistribution.LAST_LARGER);
+    public static Result distribute(BigDecimal totalRent, int n) {
+        return distribute(totalRent, n, InstallmentDistribution.LAST_LARGER);
     }
 
     /**
@@ -68,26 +75,21 @@ public final class ChequeRoundingCalculator {
      * <p><b>Zero-value cheque guard:</b> for the stepped strategies
      * (LAST_LARGER, FIRST_LARGER, FIRST_AND_LAST_LARGER), any candidate step
      * whose floored per-cheque base evaluates to zero (i.e.
-     * {@code floor(totalRent/n, step) ≤ 0}) is skipped. This prevents the
+     * {@code floor(totalRent/n, step) <= 0}) is skipped. This prevents the
      * legacy {@code [0, 0, …, total]} output that occurred when the average
      * per-cheque rent was smaller than the candidate step (e.g. totalRent=1500,
      * n=4 with a 1000-step would floor to 0). The algorithm falls through to
      * finer steps until it finds one that yields a positive base amount,
-     * producing a clean split such as {@code [300, 300, 300, 600]} instead.
-     * Note: existing persisted schedules are not affected by this change; it
-     * applies only to newly generated schedules.
+     * producing a clean split such as {@code [300, 300, 300, 600]} instead.</p>
      *
-     * <p>The deposit cap (when active) applies to the largest cheque. When no
-     * clean step keeps the largest cheque within the cap, distribution is
-     * rejected with a {@link com.datagami.rentaxis.api.exception.BusinessRuleViolationException}.
+     * <p>Every positive rent and cheque count produces a schedule; this method
+     * does not reject a lease.</p>
      *
      * @param totalRent total amount to distribute (must be > 0).
      * @param n number of cheques (>= 1).
-     * @param depositCap maximum allowed largest-cheque amount. Null disables the cap.
      * @param strategy remainder-placement strategy; null defaults to LAST_LARGER.
      */
-    public static Result distribute(BigDecimal totalRent, int n, BigDecimal depositCap,
-                                    InstallmentDistribution strategy) {
+    public static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy) {
         if (totalRent == null || totalRent.signum() <= 0) {
             throw new IllegalArgumentException("totalRent must be > 0");
         }
@@ -95,15 +97,10 @@ public final class ChequeRoundingCalculator {
             throw new IllegalArgumentException("n must be >= 1");
         }
         if (strategy == null) strategy = InstallmentDistribution.LAST_LARGER;
-        boolean capActive = depositCap != null && depositCap.signum() > 0;
         BigDecimal nBd = BigDecimal.valueOf(n);
 
         if (n == 1) {
-            // Single cheque carries the full amount under every strategy. The cap
-            // still applies — preserving the prior single-cheque rejection.
-            if (capActive && totalRent.compareTo(depositCap) > 0) {
-                throw new BusinessRuleViolationException(capMsg(totalRent, n, depositCap));
-            }
+            // Single cheque carries the full amount under every strategy.
             return new Result(List.of(totalRent), null);
         }
 
@@ -112,10 +109,6 @@ public final class ChequeRoundingCalculator {
             int extraCents = totalRent.subtract(per.multiply(nBd)).movePointRight(2).intValueExact();
             List<BigDecimal> amounts = new ArrayList<>(n);
             for (int i = 0; i < n; i++) amounts.add(i < extraCents ? per.add(CENT) : per);
-            BigDecimal largest = amounts.stream().max(BigDecimal::compareTo).orElse(per);
-            if (capActive && largest.compareTo(depositCap) > 0) {
-                throw new BusinessRuleViolationException(capMsg(totalRent, n, depositCap));
-            }
             return new Result(amounts, CENT);
         }
 
@@ -123,39 +116,29 @@ public final class ChequeRoundingCalculator {
             BigDecimal per = floorToStep(totalRent.divide(nBd, 2, RoundingMode.FLOOR), step);
             if (per.signum() <= 0) continue;
             List<BigDecimal> amounts = new ArrayList<>(n);
-            BigDecimal big;
             switch (strategy) {
                 case FIRST_LARGER -> {
-                    big = totalRent.subtract(per.multiply(BigDecimal.valueOf(n - 1L)));
-                    amounts.add(big);
+                    amounts.add(totalRent.subtract(per.multiply(BigDecimal.valueOf(n - 1L))));
                     for (int i = 0; i < n - 1; i++) amounts.add(per);
                 }
                 case FIRST_AND_LAST_LARGER -> {
                     BigDecimal middle = per.multiply(BigDecimal.valueOf(Math.max(n - 2, 0)));
                     BigDecimal rem = totalRent.subtract(middle);
                     BigDecimal first = floorToStep(rem.divide(BigDecimal.valueOf(2), 2, RoundingMode.FLOOR), step);
-                    BigDecimal last = rem.subtract(first);
                     amounts.add(first);
                     for (int i = 0; i < n - 2; i++) amounts.add(per);
-                    amounts.add(last);
-                    big = first.max(last);
+                    amounts.add(rem.subtract(first));
                 }
                 default -> { // LAST_LARGER
-                    big = totalRent.subtract(per.multiply(BigDecimal.valueOf(n - 1L)));
                     for (int i = 0; i < n - 1; i++) amounts.add(per);
-                    amounts.add(big);
+                    amounts.add(totalRent.subtract(per.multiply(BigDecimal.valueOf(n - 1L))));
                 }
             }
-            if (!capActive || big.compareTo(depositCap) <= 0) return new Result(amounts, step);
+            return new Result(amounts, step);
         }
 
-        throw new BusinessRuleViolationException(capMsg(totalRent, n, depositCap));
-    }
-
-    private static String capMsg(BigDecimal totalRent, int n, BigDecimal cap) {
-        return "Cannot distribute rent " + totalRent + " across " + n
-                + " cheques without the last cheque exceeding the deposit ("
-                + cap + "). Increase the deposit or the cheque count.";
+        // Unreachable: the 0.01 step yields a positive base for any totalRent > 0.
+        throw new IllegalStateException("no rounding step produced a positive cheque for " + totalRent);
     }
 
     private static BigDecimal floorToStep(BigDecimal value, BigDecimal step) {
