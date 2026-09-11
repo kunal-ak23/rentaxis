@@ -20,16 +20,20 @@ import LeaseWizard from "../LeaseWizard";
  * so this warns and never blocks. It exists so the discount is deliberate
  * rather than a typo nobody notices until the first cheque.
  *
- * Unit.expectedRent and the wizard's rent field are both per month. If that
- * ever stops being true the comparison silently becomes nonsense, which is
- * what the "equal" and "above" cases below are really guarding.
+ * Unit.expectedRent is the asking rent for a YEAR; this form collects a month.
+ * The first version compared them directly and warned on every lease, because
+ * any monthly figure is below any annual one. Production settled it: across 84
+ * occupied units, expectedRent equals actualRent, which is the whole contract
+ * total. Hence the annualised comparison, and the boundary cases below that
+ * pin it.
  */
 
 const PROPERTY = { id: "p1", nameEn: "Marina Tower", type: "RESIDENTIAL" };
 
+// 60,000 a year — the shape real data takes: a Dubai flat at 5,000 a month.
 const UNIT_WITH_ASKING_RENT = {
     id: "u1", unitNumber: "101", status: "VACANT",
-    expectedRent: 5000, property: PROPERTY,
+    expectedRent: 60000, property: PROPERTY,
 };
 const UNIT_WITHOUT = {
     id: "u2", unitNumber: "202", status: "VACANT",
@@ -108,26 +112,37 @@ afterEach(() => {
 });
 
 describe("lease wizard: rent below the unit's expected rent", () => {
-    it("warns, naming the expected rent, what was entered, and the gap", async () => {
+    it("warns, naming both periods and the gap", async () => {
         await enterRent([UNIT_WITH_ASKING_RENT], "101", 4000);
 
         await waitFor(() => expect(warning()).toBeInTheDocument());
         const text = warning()!.textContent ?? "";
-        expect(text).toContain("5,000");           // expected
-        expect(text).toContain("4,000");           // entered
-        expect(text).toContain("1,000");           // the shortfall, so it needn't be worked out
+        expect(text).toContain("60,000");          // the unit's yearly asking rent
+        expect(text).toContain("4,000");           // what was typed, per month
+        expect(text).toContain("48,000");          // the same, per year
+        expect(text).toContain("12,000");          // the shortfall, so it needn't be worked out
     });
 
-    it("stays silent when the rent matches the expected rent exactly", async () => {
+    /**
+     * The regression that sent this back: 5,000 a month IS the asking rent on a
+     * 60,000-a-year unit. Comparing the raw figures made every ordinary lease
+     * warn, which is worse than no warning at all — operators stop reading it.
+     */
+    it("stays silent when the monthly rent annualises to exactly the asking rent", async () => {
         await enterRent([UNIT_WITH_ASKING_RENT], "101", 5000);
         expect(warning()).toBeNull();
     });
 
-    it("stays silent when the rent is above the expected rent", async () => {
-        // Guards the comparison direction, and would fail loudly if the two
-        // figures were ever put on different periods.
+    it("stays silent when the rent is above the asking rent", async () => {
         await enterRent([UNIT_WITH_ASKING_RENT], "101", 9000);
         expect(warning()).toBeNull();
+    });
+
+    it("warns only just below the asking rent, not a whole period out", async () => {
+        // One dirham a month under is 12 under for the year.
+        await enterRent([UNIT_WITH_ASKING_RENT], "101", 4999);
+        await waitFor(() => expect(warning()).toBeInTheDocument());
+        expect(warning()!.textContent).toContain("12");
     });
 
     it("stays silent while the rent field is still empty", async () => {
