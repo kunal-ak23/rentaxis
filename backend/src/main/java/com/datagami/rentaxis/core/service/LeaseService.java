@@ -34,6 +34,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import com.datagami.rentaxis.core.util.DateMath;
+
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -229,6 +231,32 @@ public class LeaseService {
         return lease;
     }
 
+    /**
+     * The contract total for the lease.
+     *
+     * <p>Derived here rather than taken from the caller whenever a monthly rent
+     * is given, because the schedule is generated from
+     * {@code monthlyRent × monthsInclusive} — so a total computed separately by
+     * the caller lets the lease state one figure while its cheques add up to
+     * another. The web wizard did exactly that: its month count ignored the day
+     * of the month, so a lease running 3 Oct 2026 to 3 Oct 2027 was submitted as
+     * 13 months. The cheques totalled 60,000 while the lease, the contract PDF
+     * and the unit's actual rent all said 65,000.</p>
+     *
+     * <p>Falls back to the supplied total only when there is no monthly rent to
+     * derive from — a lease quoted as a lump sum for the term.</p>
+     */
+    private java.math.BigDecimal totalRentFor(CreateLeaseDTO dto) {
+        if (dto.getMonthlyRent() != null
+                && dto.getMonthlyRent().compareTo(java.math.BigDecimal.ZERO) > 0
+                && dto.getStartDate() != null
+                && dto.getEndDate() != null) {
+            long months = DateMath.monthsInclusive(dto.getStartDate(), dto.getEndDate());
+            return dto.getMonthlyRent().multiply(java.math.BigDecimal.valueOf(months));
+        }
+        return dto.getRentAmount();
+    }
+
     @Transactional
     public LeaseDTO createDraftLease(CreateLeaseDTO dto) {
         Unit unit = unitRepository.findById(dto.getUnitId())
@@ -246,7 +274,7 @@ public class LeaseService {
         lease.setRenter(renter);
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
-        lease.setRentAmount(dto.getRentAmount());
+        lease.setRentAmount(totalRentFor(dto));
         lease.setMonthlyRent(dto.getMonthlyRent());
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
@@ -366,7 +394,7 @@ public class LeaseService {
 
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
-        lease.setRentAmount(dto.getRentAmount());
+        lease.setRentAmount(totalRentFor(dto));
         lease.setMonthlyRent(dto.getMonthlyRent());
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());

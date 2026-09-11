@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { monthsInclusive } from "@/lib/leaseTerm";
 
 /**
  * Inline metadata editor for a DRAFT lease — replaces the modal "Edit Lease"
@@ -209,14 +210,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
         try {
             // Compute total rent across the tenure for the rentAmount field
             // (backend keeps both monthlyRent and rentAmount in sync).
-            const monthsBetween = (() => {
-                const s = new Date(form.startDate);
-                const e = new Date(form.endDate);
-                // End date is the inclusive last day of tenancy, so +1: Jun→Dec = 7,
-                // Jan→Dec = 12. Matches backend DateMath.monthsInclusive.
-                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
-                return Math.max(months, 1);
-            })();
+            const monthsBetween = monthsInclusive(form.startDate, form.endDate);
 
             const body: Record<string, unknown> = {
                 unitId: form.unitId,
