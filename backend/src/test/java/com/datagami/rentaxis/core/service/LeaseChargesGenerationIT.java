@@ -279,8 +279,20 @@ class LeaseChargesGenerationIT {
         });
     }
 
+    /**
+     * A PER_INSTALLMENT charge is folded into every rent cheque after the rent
+     * is split, so each row is (rent share + charge) and the rows still sum to
+     * rent + total charge.
+     *
+     * <p>This pair of cases used to be about the deposit cap: the cap was
+     * checked against the rent-only split, so folding the charge could push a
+     * cheque past the deposit, and the caller shrank the cap by the charge to
+     * compensate — with a second case for when that shrink went negative. The
+     * cap is gone (see {@link ChequeRoundingCalculator}), so what is left worth
+     * pinning is the folding arithmetic itself.</p>
+     */
     @Test
-    void perInstallmentChargePlusRent_staysWithinDepositCap_noSpuriousViolation() {
+    void perInstallmentChargeIsFoldedIntoEveryRentCheque() {
         Property property = new Property();
         property.setNameEn("Cap IT Property");
         property.setEmirate(Emirate.DUBAI);
@@ -297,13 +309,10 @@ class LeaseChargesGenerationIT {
         renter.setEmail("cap-it@example.com");
         renter = renterRepository.save(renter);
 
-        // Rent 11000 over 2 cheques, deposit 6000. With the cap checked on rent
-        // only (old behavior), the 1000-step split [5000, 6000] passes (6000 <=
-        // 6000), but folding a 500 charge yields [5500, 6500] — the largest
-        // cheque (6500) then EXCEEDS the deposit. B3 shrinks the cap passed to
-        // distribute to 6000-500=5500, forcing the 500-step split [5500, 5500];
-        // folding the charge gives [6000, 6000], both within the 6000 deposit and
-        // with no spurious BusinessRuleViolationException.
+        // Rent 11000 over 2 cheques: the 1000-step split is [5000, 6000].
+        // Folding the 500 charge gives [5500, 6500]. The 6000 deposit no longer
+        // has any bearing on that — under the old rule this lease was rewritten
+        // to [5500, 5500] to keep the largest cheque inside the deposit.
         CreateLeaseDTO dto = new CreateLeaseDTO();
         dto.setUnitId(unit.getId());
         dto.setRenterId(renter.getId());
@@ -321,66 +330,15 @@ class LeaseChargesGenerationIT {
         maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
         dto.setCharges(List.of(maintenance));
 
-        // Must not throw a BusinessRuleViolationException.
         LeaseDTO created = leaseService.createDraftLease(dto);
         List<PaymentSchedule> rentRows = paymentScheduleRepository.findByLeaseId(created.getId()).stream()
                 .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
                 .toList();
-        assertThat(rentRows).hasSize(2);
-        // Every cheque (rent + folded 500 charge) must stay within the 6000 deposit.
-        assertThat(rentRows).allSatisfy(r ->
-                assertThat(r.getAmount()).isLessThanOrEqualTo(new BigDecimal("6000.00")));
+
+        assertThat(rentRows).extracting(PaymentSchedule::getAmount)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .containsExactly(new BigDecimal("5500.00"), new BigDecimal("6500.00"));
         // Sum integrity: total rent + total folded charge preserved.
-        BigDecimal total = rentRows.stream().map(PaymentSchedule::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(total).isEqualByComparingTo("12000.00"); // 11000 rent + 2*500 charge
-    }
-
-    @Test
-    void adjustedDepositCapNonPositive_disablesCapGracefully_noViolation() {
-        Property property = new Property();
-        property.setNameEn("Cap0 IT Property");
-        property.setEmirate(Emirate.DUBAI);
-        property.setType(PropertyType.RESIDENTIAL);
-        property = propertyRepository.save(property);
-
-        Unit unit = new Unit();
-        unit.setProperty(property);
-        unit.setUnitNumber("CAP0IT-1");
-        unit = unitRepository.save(unit);
-
-        Renter renter = new Renter();
-        renter.setNameEn("Cap0 IT Renter");
-        renter.setEmail("cap0-it@example.com");
-        renter = renterRepository.save(renter);
-
-        // Deposit (300) is smaller than the per-installment charge (500), so the
-        // adjusted cap 300-500 = -200 <= 0. B3 disables the cap (passes null)
-        // rather than throwing — the deposit is collected as its own row anyway,
-        // so the cap is only a soft safety net.
-        CreateLeaseDTO dto = new CreateLeaseDTO();
-        dto.setUnitId(unit.getId());
-        dto.setRenterId(renter.getId());
-        dto.setStartDate(LocalDate.of(2026, 1, 1));
-        dto.setEndDate(LocalDate.of(2026, 3, 1)); // 2 months
-        dto.setRentAmount(new BigDecimal("11000"));
-        dto.setMonthlyRent(new BigDecimal("5500"));
-        dto.setDepositAmount(new BigDecimal("300"));
-        dto.setPaymentTerms(2);
-
-        LeaseChargeDTO maintenance = new LeaseChargeDTO();
-        maintenance.setName("Maintenance");
-        maintenance.setAmount(new BigDecimal("500"));
-        maintenance.setVatApplicable(false);
-        maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
-        dto.setCharges(List.of(maintenance));
-
-        // Must not throw — cap disabled gracefully.
-        LeaseDTO created = leaseService.createDraftLease(dto);
-        List<PaymentSchedule> rentRows = paymentScheduleRepository.findByLeaseId(created.getId()).stream()
-                .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
-                .toList();
-        assertThat(rentRows).hasSize(2);
         BigDecimal total = rentRows.stream().map(PaymentSchedule::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(total).isEqualByComparingTo("12000.00"); // 11000 rent + 2*500 charge

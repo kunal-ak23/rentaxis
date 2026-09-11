@@ -248,24 +248,10 @@ public class PaymentScheduleService {
         if (hasRent) {
             // Clean-denomination split: non-last cheques are floored to AED 1,000
             // (or 500/100/cents on fallback), last cheque absorbs the residual.
-            // The deposit acts as a safety cap on the largest cheque so we always
-            // retain funds to cover damages if the tenant defaults on the final
-            // payment.
-            //
-            // The per-installment charge is folded into every cheque AFTER
-            // distribution, so the actual largest cheque is (rent + charge). To
-            // keep that within the deposit, shrink the cap passed to distribute by
-            // the folded charge. If the adjusted cap would go <= 0, pass null
-            // (cap disabled) rather than throwing — the deposit is now collected
-            // as its own schedule row, so this cap is only a soft safety net and
-            // a spurious BusinessRuleViolationException here would be wrong.
-            BigDecimal depositCap = lease.getDepositAmount();
-            if (depositCap != null && perInstallmentCharge.signum() > 0) {
-                BigDecimal adjusted = depositCap.subtract(perInstallmentCharge);
-                depositCap = adjusted.signum() > 0 ? adjusted : null;
-            }
+            // The lease's deposit does not constrain this split — see
+            // ChequeRoundingCalculator for why that cap was removed.
             chequeAmounts = ChequeRoundingCalculator
-                    .distribute(totalRent, n, depositCap, lease.getInstallmentDistribution())
+                    .distribute(totalRent, n, lease.getInstallmentDistribution())
                     .amounts();
         } else {
             chequeAmounts = java.util.Collections.nCopies(n, BigDecimal.ZERO);
@@ -1333,6 +1319,13 @@ public class PaymentScheduleService {
         return previewSchedule(propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount, InstallmentDistribution.LAST_LARGER);
     }
 
+    /**
+     * @param depositAmount retained so the existing {@code /payments/preview}
+     *     query contract and its callers keep working. It no longer affects the
+     *     split: the deposit used to cap the largest cheque and reject the
+     *     lease, which blocked most real cheque counts. See
+     *     {@link ChequeRoundingCalculator}.
+     */
     @Transactional(readOnly = true)
     public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms, BigDecimal depositAmount, InstallmentDistribution strategy) {
         if (strategy == null) strategy = InstallmentDistribution.LAST_LARGER;
@@ -1354,7 +1347,7 @@ public class PaymentScheduleService {
         Integer dueDay = (settingsDueDay != null && settingsDueDay >= 1 && settingsDueDay <= 31) ? settingsDueDay : null;
 
         BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
-        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator.distribute(totalRent, n, depositAmount, strategy).amounts();
+        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator.distribute(totalRent, n, strategy).amounts();
 
         List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
         for (int i = 0; i < n; i++) {

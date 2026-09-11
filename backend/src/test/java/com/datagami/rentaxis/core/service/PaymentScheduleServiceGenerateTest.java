@@ -104,11 +104,16 @@ class PaymentScheduleServiceGenerateTest {
                 .containsExactly(1, 2, 3, 4, 5, 6);
     }
 
+    /**
+     * Reported from the field: a 5,000/month lease with a 5,000 deposit could
+     * not be saved on 6 cheques. The natural per-cheque amount is 10,000, and
+     * generation used to refuse any split whose largest cheque exceeded the
+     * deposit — which rules out every cheque count a UAE landlord normally
+     * writes. The deposit is collected as its own row and no longer constrains
+     * the rent split.
+     */
     @Test
-    void rejectsDraftWhenLastChequeWouldExceedDeposit() {
-        // Rent 60000 over 12 months, 6 cheques, deposit 5000. Natural per-cheque
-        // is 10000, already exceeding the deposit — no rounding strategy can
-        // satisfy the cap, so generation must fail loudly at draft time.
+    void generatesTheScheduleWhenEachChequeExceedsTheDeposit() {
         Lease lease = buildLease(
                 new BigDecimal("60000"),
                 new BigDecimal("5000"),
@@ -116,9 +121,13 @@ class PaymentScheduleServiceGenerateTest {
                 LocalDate.of(2026, 1, 1),
                 LocalDate.of(2027, 1, 1));
 
-        assertThatThrownBy(() -> service.generateScheduleForLease(lease))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("deposit");
+        List<PaymentSchedule> result = service.generateScheduleForLease(lease);
+
+        assertThat(result).hasSize(6);
+        assertThat(result).extracting(PaymentSchedule::getAmount)
+                .allSatisfy(a -> assertThat(a).isEqualByComparingTo(new BigDecimal("10000")));
+        assertThat(result.stream().map(PaymentSchedule::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo(new BigDecimal("60000"));
     }
 
     @Test
