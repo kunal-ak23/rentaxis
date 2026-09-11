@@ -1,37 +1,31 @@
 name: Verify
 
-# Runs the tests that already exist, on every pull request and on main.
+# Manual only. Run it from the Actions tab, or with:
 #
-# Until this existed, deploy.yml was the only workflow: it triggers on push to
-# main and goes straight to building images and shipping them to the production
-# VM. No step ran gradlew test, npm test, tsc or flutter test, so nothing stood
-# between a commit and production.
+#   gh workflow run Verify --ref <branch>
 #
-# That is not theoretical. Four defects found in the September review had been
-# sitting in a green suite because the tests themselves encoded the bug:
-# renewal reminders asserted as SENT while the dispatcher dropped them, a
-# terminated lease asserted as MOVED_OUT, three integration tests hand-seeding an
-# account code the seeder never creates (production 500'd on every cheque clear),
-# and account deletion mocked so it never met a foreign key. A gate does not fix
-# tests that assert the wrong thing — but it does mean the ones that assert the
-# right thing have to pass before a merge, which is the floor this repo did not
-# have.
+# It used to run on every pull request and on every push to main, which meant
+# the same commits were tested twice — once on the PR, then again on the
+# squash-merge — for 10 to 18 minutes each time. The suite runs locally, so
+# that was paid for twice and read once. Deploying to the VM is now the only
+# thing a push to main starts.
 #
-# NOTE: adding this file does not make the checks required. Someone with admin
-# rights has to turn on branch protection for main and mark these jobs required,
-# otherwise a PR can still be merged red.
+# What this gives up, stated plainly so nobody rediscovers it the hard way:
+# nothing automatic stands between a commit and production. That was the
+# original reason for this file — four defects in the September review had been
+# sitting in a green suite because the tests themselves encoded the bug, and
+# deploy.yml ships images without running a single test. Running the suite
+# before merging is now a person's job, not the pipeline's.
+#
+# Keeping it dispatchable costs nothing until someone asks for it, and is worth
+# having for a change too large to be confident about locally.
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
+  workflow_dispatch:
 
-# A newer push supersedes an in-flight run for the same ref. Not applied to main
-# pushes, where every commit's result is worth keeping.
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   backend:
@@ -98,16 +92,11 @@ jobs:
           path: backend/build/reports/tests/test
           retention-days: 7
 
-  # The web job is deliberately NOT here yet — see issue #233.
+  # There is no web job here. The reason recorded above this line used to be
+  # issue #233 — the committed lockfile described a macOS tree, so `npm ci`
+  # could not install on a Linux runner. That was repaired in #235 and #233 is
+  # closed, so the obstacle is gone; the job was simply never added back.
   #
-  # It cannot install on a Linux runner. The committed lockfile is generated on
-  # macOS and does not describe the tree npm resolves on Linux, so `npm ci`
-  # refuses it; installing without it then trips an npm resolution bug
-  # ("Cannot read properties of null (reading 'edgesOut')"), and installing WITH
-  # it leaves vitest's bundler without its native binding (npm/cli#4828).
-  #
-  # Six runs went into establishing that, and none of it is a defect in the
-  # application code — `tsc --noEmit` and the 243 vitest tests both pass locally.
-  # A job that is permanently red is worse than no job: it teaches people to
-  # ignore the check. So the gate ships with the half that genuinely works, and
-  # #233 carries the diagnosis plus the one command needed to finish it.
+  # Adding it would cost about two minutes and cover the web suite and
+  # `tsc --noEmit`. Worth doing if this workflow ever gates merges again. While
+  # it is dispatch-only, it would only run when someone asked for it.
