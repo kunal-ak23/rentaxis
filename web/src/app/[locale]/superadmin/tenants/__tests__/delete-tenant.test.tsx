@@ -109,6 +109,38 @@ describe("superadmin: delete organization", () => {
         expect(confirmButton()).toBeEnabled();
     });
 
+    it("can confirm an organization whose stored name carries stray whitespace", async () => {
+        // Trimming only the typed side left such an organization undeletable —
+        // the button never enabled and there was no way round it.
+        const PADDED = { ...TENANT, id: "tenant-3", name: "  Padded Estates  " };
+        requests = [];
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            requests.push({ url: String(url), method: init?.method });
+            if (init?.method === "DELETE") return { ok: true, status: 204 } as Response;
+            return { ok: true, json: async () => [PADDED] } as Response;
+        }) as unknown as typeof fetch;
+
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <TenantsPage />
+            </NextIntlClientProvider>,
+        );
+        // Testing Library collapses whitespace, so look the row up by the
+        // normalized name rather than the stored one.
+        const shown = PADDED.name.trim();
+        await waitFor(() => expect(screen.getByText(shown)).toBeInTheDocument());
+        openDeleteFor(shown);
+
+        fireEvent.change(screen.getByPlaceholderText(shown), { target: { value: "Padded Estates" } });
+        expect(confirmButton()).toBeEnabled();
+        fireEvent.click(confirmButton());
+
+        await waitFor(() => expect(requests.some(r => r.method === "DELETE")).toBe(true));
+        // The stored name still travels verbatim — the API compares that, not what was typed.
+        expect(requests.find(r => r.method === "DELETE")!.url)
+            .toContain(`confirmName=${encodeURIComponent(PADDED.name)}`);
+    });
+
     it("never issues a DELETE while the name does not match", async () => {
         await renderPage();
         openDeleteFor(TENANT.name);

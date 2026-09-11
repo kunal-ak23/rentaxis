@@ -17,6 +17,17 @@ type FeatureToggle = {
   enabled: boolean;
 };
 
+/**
+ * Both sides are trimmed. Trimming only what was typed means an organization
+ * whose stored name carries stray whitespace — quite possible through import —
+ * can never be confirmed at all: the button stays disabled and there is no way
+ * round it. The request still sends the stored name verbatim, so the API's own
+ * check is unaffected.
+ */
+function nameMatches(typed: string, actual: string): boolean {
+    return typed.trim() === actual.trim();
+}
+
 export default function SuperAdminTenantsPage() {
     const t = useTranslations("Index");
     const tSa = useTranslations("SuperAdmin");
@@ -65,7 +76,7 @@ export default function SuperAdminTenantsPage() {
         if (!deleteTarget) return;
         // Checked here for a useful message, and enforced again by the API,
         // which compares confirmName against the stored name server-side.
-        if (deleteConfirmName.trim() !== deleteTarget.name) {
+        if (!nameMatches(deleteConfirmName, deleteTarget.name)) {
             setDeleteError(tSa("deleteTenantMismatch"));
             return;
         }
@@ -605,7 +616,7 @@ export default function SuperAdminTenantsPage() {
                       onClick={confirmDelete}
                       // Stays disabled until the typed name matches exactly, so
                       // the destructive action cannot be reached by reflex.
-                      disabled={deleting || deleteConfirmName.trim() !== deleteTarget.name}
+                      disabled={deleting || !nameMatches(deleteConfirmName, deleteTarget.name)}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-error text-white hover:bg-error/90 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
