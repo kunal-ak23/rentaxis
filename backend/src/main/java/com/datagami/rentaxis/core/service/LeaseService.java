@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
@@ -34,8 +35,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import com.datagami.rentaxis.core.util.DateMath;
-
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -246,13 +245,13 @@ public class LeaseService {
      * <p>Falls back to the supplied total only when there is no monthly rent to
      * derive from — a lease quoted as a lump sum for the term.</p>
      */
-    private java.math.BigDecimal totalRentFor(CreateLeaseDTO dto) {
+    private BigDecimal totalRentFor(CreateLeaseDTO dto) {
         if (dto.getMonthlyRent() != null
-                && dto.getMonthlyRent().compareTo(java.math.BigDecimal.ZERO) > 0
+                && dto.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0
                 && dto.getStartDate() != null
                 && dto.getEndDate() != null) {
             long months = DateMath.monthsInclusive(dto.getStartDate(), dto.getEndDate());
-            return dto.getMonthlyRent().multiply(java.math.BigDecimal.valueOf(months));
+            return dto.getMonthlyRent().multiply(BigDecimal.valueOf(months));
         }
         return dto.getRentAmount();
     }
