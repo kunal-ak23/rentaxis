@@ -10,6 +10,7 @@ import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
 import com.datagami.rentaxis.api.dto.LeaseChargeDTO;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
@@ -54,6 +55,7 @@ public class LeaseService {
     private final SettlementService settlementService;
     private final UnitListingService unitListingService;
     private final ApplicationEventPublisher events;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
     public LeaseService(LeaseRepository leaseRepository,
                         UnitRepository unitRepository,
@@ -67,7 +69,8 @@ public class LeaseService {
                         LeaseInteractionRepository leaseInteractionRepository,
                         SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
-                        ApplicationEventPublisher events) {
+                        ApplicationEventPublisher events,
+                        LeaseAccessPolicy leaseAccessPolicy) {
         this.leaseRepository = leaseRepository;
         this.unitRepository = unitRepository;
         this.renterRepository = renterRepository;
@@ -81,12 +84,16 @@ public class LeaseService {
         this.settlementService = settlementService;
         this.unitListingService = unitListingService;
         this.events = events;
+        this.leaseAccessPolicy = leaseAccessPolicy;
     }
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
         UUID tenantId = TenantContextHolder.getTenantId();
-        return leaseRepository.findByTenantId(tenantId).stream()
+        // Tenant scoping alone let a PROPERTY_MANAGER assigned to one building
+        // read every lease in the organisation. PropertyService already enforces
+        // the assignment model on properties; this applies the same model here.
+        return leaseAccessPolicy.filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -97,11 +104,22 @@ public class LeaseService {
         String normalizedSearch = search == null ? null : search.trim();
 
         if (normalizedSearch == null || normalizedSearch.isEmpty()) {
-            return leaseRepository.findByTenantId(tenantId, pageable).map(this::mapToDTO);
+            // Unrestricted callers keep database-side pagination. A scoped one
+            // cannot: filtering a page after the database produced it yields
+            // short pages and a wrong total, so the filter has to happen first.
+            if (!leaseAccessPolicy.isRestricted()) {
+                return leaseRepository.findByTenantId(tenantId, pageable).map(this::mapToDTO);
+            }
+            List<LeaseDTO> readable = leaseAccessPolicy
+                    .filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
+                    .map(this::mapToDTO)
+                    .collect(Collectors.toList());
+            return pageOf(readable, pageable);
         }
 
         String token = normalizedSearch.toLowerCase(Locale.ROOT);
-        List<LeaseDTO> filtered = leaseRepository.findByTenantId(tenantId).stream()
+        List<LeaseDTO> filtered = leaseAccessPolicy
+                .filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
                 .map(this::mapToDTO)
                 .filter(l -> containsIgnoreCase(l.getUnitIdentifier(), token)
                         || containsIgnoreCase(l.getRenterName(), token)
@@ -110,15 +128,20 @@ public class LeaseService {
                         || (l.getStatus() != null && l.getStatus().name().toLowerCase(Locale.ROOT).contains(token)))
                 .collect(Collectors.toList());
 
+        return pageOf(filtered, pageable);
+    }
+
+    private Page<LeaseDTO> pageOf(List<LeaseDTO> rows, Pageable pageable) {
         int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<LeaseDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
-        return new PageImpl<>(pageContent, pageable, filtered.size());
+        int end = Math.min(start + pageable.getPageSize(), rows.size());
+        List<LeaseDTO> pageContent = start >= rows.size() ? List.of() : rows.subList(start, end);
+        return new PageImpl<>(pageContent, pageable, rows.size());
     }
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesByPropertyId(UUID propertyId) {
-        return leaseRepository.findByUnitPropertyId(propertyId).stream()
+        return leaseAccessPolicy
+                .filterReadable(leaseRepository.findByUnitPropertyId(propertyId)).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -126,6 +149,9 @@ public class LeaseService {
     @Transactional(readOnly = true)
     public LeaseDTO getLeaseById(UUID id) {
         Lease lease = findLeaseWithTenantCheck(id);
+        // Guarding the list without guarding the detail would be pointless: the
+        // detail takes a lease id directly.
+        leaseAccessPolicy.requireReadable(lease);
         return mapToDTO(lease);
     }
 

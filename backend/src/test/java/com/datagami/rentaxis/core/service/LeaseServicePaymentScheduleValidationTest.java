@@ -60,6 +60,12 @@ class LeaseServicePaymentScheduleValidationTest {
         leaseRepository = mock(LeaseRepository.class);
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
 
+        // Pass-through by default: these tests are about lease behaviour, not
+        // authorization. LeaseAccessPolicyTest covers the scoping itself.
+        com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy =
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class);
+        when(leaseAccessPolicy.filterReadable(any())).thenAnswer(inv -> inv.getArgument(0));
+
         service = new LeaseService(
                 leaseRepository,
                 mock(UnitRepository.class),
@@ -73,7 +79,8 @@ class LeaseServicePaymentScheduleValidationTest {
                 mock(LeaseInteractionRepository.class),
                 mock(SettlementService.class),
                 mock(UnitListingService.class),
-                mock(ApplicationEventPublisher.class));
+                mock(ApplicationEventPublisher.class),
+                leaseAccessPolicy);
 
         when(paymentScheduleRepository.saveAll(any()))
                 .thenAnswer(inv -> new java.util.ArrayList<>((java.util.Collection<?>) inv.getArgument(0)));

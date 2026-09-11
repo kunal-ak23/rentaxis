@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.LeaseAttachmentDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseAttachment;
@@ -35,6 +36,7 @@ public class LeaseAttachmentService {
 
     private final LeaseAttachmentRepository attachmentRepository;
     private final LeaseRepository leaseRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -74,6 +76,11 @@ public class LeaseAttachmentService {
 
     @Transactional(readOnly = true)
     public List<LeaseAttachmentDTO> getAttachments(UUID leaseId) {
+        // The role gate on this endpoint includes RENTER, and nothing below it
+        // asked whose lease this is — so any renter holding any lease id could
+        // list that lease's contracts, ID scans and cheque images.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
+
         return attachmentRepository.findByLeaseId(leaseId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -83,6 +90,10 @@ public class LeaseAttachmentService {
     public byte[] downloadAttachment(UUID attachmentId) {
         LeaseAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+
+        // Guarding the list alone would be pointless: the download takes an
+        // attachment id directly, so it is reachable without ever listing.
+        leaseAccessPolicy.requireReadable(attachment.getLease());
 
         String url = attachment.getFileUrl();
 
