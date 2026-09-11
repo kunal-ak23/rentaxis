@@ -38,6 +38,8 @@ type Unit = {
     id: string;
     unitNumber: string;
     status: string;
+    /** Asking rent per month, set on the unit. May be absent, null or 0. */
+    expectedRent?: number | null;
     property?: { id: string; nameEn?: string; nameAr?: string; type?: string };
 };
 
@@ -155,6 +157,17 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     }, [open, reset]);
 
     const selectedUnit = useMemo(() => units.find((u) => u.id === data.unitId), [units, data.unitId]);
+
+    // Letting a unit below its asking rent is allowed — landlords discount for
+    // long tenancies, quick occupancy or a difficult unit — so this only warns.
+    // Both figures are per month: the wizard's rent field is monthly, and so is
+    // Unit.expectedRent.
+    const rentShortfall = useMemo(() => {
+        const expected = selectedUnit?.expectedRent;
+        if (typeof expected !== "number" || !(expected > 0)) return null;
+        if (!(data.rentAmount > 0) || data.rentAmount >= expected) return null;
+        return { expected, entered: data.rentAmount, gap: expected - data.rentAmount };
+    }, [selectedUnit, data.rentAmount]);
 
     const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, data.unitId);
 
@@ -453,6 +466,19 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 <input type="number" min={0} step={0.01} value={data.rentAmount}
                                     onChange={(e) => update({ rentAmount: Number(e.target.value) })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
+                                {rentShortfall && (
+                                    <p data-testid="below-expected-rent"
+                                        className="mt-1.5 flex items-start gap-1.5 text-[11px] text-warning">
+                                        <AlertTriangle size={12} className="mt-px shrink-0" />
+                                        <span>
+                                            {t("belowExpectedRent", {
+                                                expected: formatCurrency(rentShortfall.expected),
+                                                entered: formatCurrency(rentShortfall.entered),
+                                                gap: formatCurrency(rentShortfall.gap),
+                                            })}
+                                        </span>
+                                    </p>
+                                )}
                             </Field>
                             <Field label={t("securityDepositAed")}>
                                 <input type="number" min={0} step={0.01} value={data.depositAmount}
