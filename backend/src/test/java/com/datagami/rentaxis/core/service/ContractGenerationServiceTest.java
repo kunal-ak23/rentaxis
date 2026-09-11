@@ -55,6 +55,9 @@ class ContractGenerationServiceTest {
         when(leaseChargeRepository.findByLeaseId(any())).thenReturn(Collections.emptyList());
         service = new ContractGenerationService(
                 mock(LeaseRepository.class),
+                // Pass-through: these tests are about contract rendering, not
+                // authorization. LeaseAccessPolicyTest covers the scoping.
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class),
@@ -184,7 +187,9 @@ class ContractGenerationServiceTest {
         LeaseRepository leaseRepo = mock(LeaseRepository.class);
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(1750L);
         ContractGenerationService svc = new ContractGenerationService(
-                leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
+                leaseRepo,
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
+                mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class),
                 mock(LeaseChargeRepository.class), mock(ApplicationEventPublisher.class));
 
@@ -310,7 +315,9 @@ class ContractGenerationServiceTest {
         });
 
         ContractGenerationService realSvc = new ContractGenerationService(
-                leaseRepo, docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class),
+                leaseRepo,
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
+                docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class),
                 chargeRepo, mock(ApplicationEventPublisher.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");

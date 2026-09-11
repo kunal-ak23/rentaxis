@@ -105,6 +105,40 @@ class LeaseAttachmentAccessTest {
     }
 
     /**
+     * Documents are generated contracts, and their endpoints grant RENTER
+     * exactly like attachments — the same exposure, a different table.
+     * Covered here rather than in a separate file because the shape is
+     * identical: list guarded by lease, download guarded by the owning lease.
+     */
+    @Test
+    void documentPathsAreGuardedTheSameWay() throws Exception {
+        var docRepo = mock(com.datagami.rentaxis.domain.repository.LeaseDocumentRepository.class);
+        var contracts = new ContractGenerationService(
+                leaseRepository,
+                policy,
+                docRepo,
+                mock(com.datagami.rentaxis.domain.repository.LandlordOrgRepository.class),
+                mock(com.datagami.rentaxis.domain.repository.PaymentScheduleRepository.class),
+                mock(PaymentScheduleService.class),
+                mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
+
+        doThrow(new NotFoundException("Lease not found")).when(policy).requireReadable(any());
+
+        assertThatThrownBy(() -> contracts.getDocuments(leaseId))
+                .isInstanceOf(NotFoundException.class);
+        verify(docRepo, never()).findByLeaseId(any());
+
+        var doc = new com.datagami.rentaxis.domain.entity.LeaseDocument();
+        doc.setId(UUID.randomUUID());
+        doc.setLease(lease);
+        when(docRepo.findById(doc.getId())).thenReturn(Optional.of(doc));
+
+        assertThatThrownBy(() -> contracts.getDocumentContent(doc.getId()))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    /**
      * A missing lease must reach the policy as null rather than short-circuit
      * past it, so the refusal is uniform: "not found" either way, revealing
      * nothing about which case it was.

@@ -63,6 +63,7 @@ public class ContractGenerationService {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
 
     private final LeaseRepository leaseRepository;
+    private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
@@ -80,6 +81,7 @@ public class ContractGenerationService {
     private String containerPrefix;
 
     public ContractGenerationService(LeaseRepository leaseRepository,
+            com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy,
                                      LeaseDocumentRepository leaseDocumentRepository,
                                      LandlordOrgRepository landlordOrgRepository,
                                      PaymentScheduleRepository paymentScheduleRepository,
@@ -87,6 +89,7 @@ public class ContractGenerationService {
                                      LeaseChargeRepository leaseChargeRepository,
                                      ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
+        this.leaseAccessPolicy = leaseAccessPolicy;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
         this.paymentScheduleRepository = paymentScheduleRepository;
@@ -737,6 +740,10 @@ public class ContractGenerationService {
 
     @Transactional(readOnly = true)
     public List<LeaseDocumentDTO> getDocuments(UUID leaseId) {
+        // Granted to RENTER, and nothing below asked whose lease it is — the
+        // same exposure as lease attachments, for generated contracts.
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
+
         return leaseDocumentRepository.findByLeaseId(leaseId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -746,6 +753,10 @@ public class ContractGenerationService {
     public byte[] getDocumentContent(UUID docId) {
         LeaseDocument doc = leaseDocumentRepository.findById(docId)
                 .orElseThrow(() -> new NotFoundException("Document not found"));
+
+        // The download takes a document id directly, so guarding the list alone
+        // would leave it reachable.
+        leaseAccessPolicy.requireReadable(doc.getLease());
 
         String url = doc.getDocumentUrl();
         // documentUrl can contain a bearer-style SAS signature. Never write it
