@@ -59,3 +59,6 @@ tutorials/audio-generated/*
 web/walkthrough/raw/
 web/walkthrough/run-manifest*.json
 web/walkthrough/takes/
+
+# Screenshot proof runs — regenerate with proof-shots.spec.ts, don't commit binaries
+web/walkthrough/proof/
