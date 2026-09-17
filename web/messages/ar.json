@@ -541,7 +541,9 @@
     "descriptionRequired": "يرجى إضافة وصف مختصر",
     "defaultDescription": "دفعة إلى {name}",
     "saveFailed": "فشل حفظ المورد.",
-    "deleteFailed": "فشل حذف المورد."
+    "deleteFailed": "فشل حذف المورد.",
+    "viewLedger": "دفتر الأستاذ",
+    "payableAccountManaged": "يُنشأ ويُدار تلقائيًا"
   },
   "BankAccounts": {
     "title": "الحسابات البنكية",
@@ -1698,7 +1700,25 @@
     "save": "حفظ",
     "saved": "تم الحفظ",
     "accessDenied": "ليس لديك صلاحية لإدارة إعداد الحسابات.",
-    "accessDeniedTitle": "تم رفض الوصول"
+    "accessDeniedTitle": "تم رفض الوصول",
+    "apply": "تطبيق",
+    "generalLedgerDesc": "كل القيود المرحّلة مجمّعة حسب الحساب.",
+    "tenantLedgerDesc": "قيود مستأجر واحد عبر كل الحسابات التي يظهر فيها.",
+    "trialBalanceDesc": "أرصدة الحسابات حتى تاريخ معيّن. يجب أن يتساوى المدين والدائن.",
+    "accessDeniedLedger": "ليس لديك صلاحية لعرض دفتر الأستاذ.",
+    "selectRenterFirst": "اختر مستأجرًا لعرض دفتر أستاذه",
+    "code": "الرمز",
+    "name": "الاسم",
+    "type": "النوع",
+    "grandTotal": "المجموع الكلي",
+    "outOfBalance": "ميزان المراجعة غير متوازن — الفرق بين المدين والدائن {diff}",
+    "accountTypes": {
+      "ASSET": "الأصول",
+      "LIABILITY": "الخصوم",
+      "INCOME": "الإيرادات",
+      "EXPENSE": "المصروفات",
+      "EQUITY": "حقوق الملكية"
+    }
   },
   "Common": {
     "loadFailed": "تعذّر التحميل. يرجى المحاولة مرة أخرى.",

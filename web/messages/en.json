@@ -541,7 +541,9 @@
     "descriptionRequired": "Please add a short description",
     "defaultDescription": "Payment to {name}",
     "saveFailed": "Failed to save vendor.",
-    "deleteFailed": "Failed to delete vendor."
+    "deleteFailed": "Failed to delete vendor.",
+    "viewLedger": "Ledger",
+    "payableAccountManaged": "Created and maintained automatically"
   },
   "BankAccounts": {
     "title": "Bank Accounts",
@@ -1698,7 +1700,25 @@
     "save": "Save",
     "saved": "Saved",
     "accessDenied": "You do not have permission to manage the account setup.",
-    "accessDeniedTitle": "Access Denied"
+    "accessDeniedTitle": "Access Denied",
+    "apply": "Apply",
+    "generalLedgerDesc": "Every posted entry, grouped by account.",
+    "tenantLedgerDesc": "One tenant's postings across every account they touch.",
+    "trialBalanceDesc": "Account balances as of a date. Debits must equal credits.",
+    "accessDeniedLedger": "You do not have permission to view the ledger.",
+    "selectRenterFirst": "Pick a tenant to see their ledger",
+    "code": "Code",
+    "name": "Name",
+    "type": "Type",
+    "grandTotal": "Grand Total",
+    "outOfBalance": "Trial balance does not balance — debits and credits differ by {diff}",
+    "accountTypes": {
+      "ASSET": "Assets",
+      "LIABILITY": "Liabilities",
+      "INCOME": "Income",
+      "EXPENSE": "Expenses",
+      "EQUITY": "Equity"
+    }
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",
