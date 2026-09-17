@@ -2,21 +2,27 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Vendor;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.VendorRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VendorService {
 
     private final VendorRepository repository;
     private final FinancialTransactionRepository transactionRepository;
+    private final AccountService accountService;
+    private final AccountRepository accountRepository;
 
     @Transactional(readOnly = true)
     public List<Vendor> getAllVendors() {
@@ -31,6 +37,14 @@ public class VendorService {
 
     @Transactional
     public Vendor createVendor(Vendor vendor) {
+        if (vendor.getPayableAccount() == null) {
+            try {
+                Account vendorsGroup = accountService.getAccountByCode("B-01-04");
+                vendor.setPayableAccount(accountService.createLeaf(vendor.getNameEn(), vendorsGroup, null));
+            } catch (NotFoundException e) {
+                log.warn("No Vendors account group (B-01-04) for tenant; creating vendor without a ledger account");
+            }
+        }
         return repository.save(vendor);
     }
 
@@ -50,7 +64,21 @@ public class VendorService {
         existing.setIban(updates.getIban());
         existing.setActive(updates.isActive());
         existing.setNotes(updates.getNotes());
-        existing.setPayableAccount(updates.getPayableAccount());
+        // An explicitly supplied payableAccount on the update wins; otherwise the
+        // vendor keeps its existing leaf (renamed/deactivated below) rather than
+        // having it wiped out by a request body that simply didn't send one.
+        if (updates.getPayableAccount() != null) {
+            existing.setPayableAccount(updates.getPayableAccount());
+        }
+
+        Account leaf = existing.getPayableAccount();
+        if (leaf != null && !leaf.isSystem()) {
+            leaf.setName(existing.getNameEn());
+            leaf.setNameEn(existing.getNameEn());
+            leaf.setNameAr(existing.getNameAr());
+            leaf.setActive(existing.isActive());
+            accountRepository.save(leaf);
+        }
         return repository.save(existing);
     }
 

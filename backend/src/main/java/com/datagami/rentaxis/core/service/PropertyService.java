@@ -219,6 +219,10 @@ public class PropertyService {
         property.setMakaniNumber(makaniNumber);
         property = repository.save(property);
         result.setPropertyId(property.getId());
+        // Same as createProperty: give the imported property its ledger accounts
+        // immediately, rather than leaving it invisible to the CoA until someone
+        // opens it once. No-ops with a warning if the tenant has no template yet.
+        propertyAccountService.generateMissing(property.getId());
 
         // Create buildings
         Map<String, Building> buildingMap = new HashMap<>();
