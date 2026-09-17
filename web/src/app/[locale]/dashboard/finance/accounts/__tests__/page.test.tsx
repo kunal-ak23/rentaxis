@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next-intl", () => ({
@@ -16,16 +16,18 @@ const sampleAccounts = [
         name: "Landscaping",
         nameEn: "Landscaping",
         nameAr: "تنسيق الحدائق",
+        alias: null,
         accountType: "EXPENSE",
         accountSubType: "DIRECT_EXPENSE",
-        parentCode: null,
+        // v2 files the tree on parentId; parentCode no longer exists on the entity.
+        parentId: null,
+        propertyId: null,
         description: null,
         system: false,
         group: false,
         // Deliberately non-default values: the PUT body must carry them through
         // or AccountService.updateAccount resets them to true/0.
         active: false,
-        hierarchyLevel: 1,
         displayOrder: 7,
     },
 ];
@@ -41,16 +43,22 @@ function stubFetch() {
         const method = init?.method ?? "GET";
         if (method !== "GET" && failNextWrite) {
             const { status, message } = failNextWrite;
+            // ledgerApi reads the error body with text(), not json().
             return {
                 ok: false,
                 status,
                 json: async () => ({ error: true, message, status }),
+                text: async () => JSON.stringify({ error: true, message, status }),
             } as unknown as Response;
         }
         if (url.includes("/v1/finance/accounts")) {
-            return { ok: true, json: async () => sampleAccounts } as unknown as Response;
+            return {
+                ok: true,
+                json: async () => sampleAccounts,
+                text: async () => JSON.stringify(sampleAccounts),
+            } as unknown as Response;
         }
-        return { ok: true, json: async () => [] } as unknown as Response;
+        return { ok: true, json: async () => [], text: async () => "[]" } as unknown as Response;
     }) as unknown as typeof fetch;
 }
 
@@ -84,6 +92,32 @@ describe("AccountsPage", () => {
         expect(document.querySelector("form")).not.toBeNull();
     });
 
+    it("posts the v2 create body: parentId, no parentCode, blank code omitted", async () => {
+        render(<AccountsPage />);
+        await screen.findByText("Landscaping");
+
+        fireEvent.click(screen.getByRole("button", { name: "addAccount" }));
+        const form = document.querySelector("form");
+        fireEvent.submit(form as HTMLFormElement);
+
+        await waitFor(() => expect(calls.some((c) => c.init?.method === "POST")).toBe(true));
+        const post = calls.find((c) => c.init?.method === "POST");
+        const body = JSON.parse(String(post?.init?.body));
+        // CreateAccountRequest 400s on any field it doesn't declare.
+        expect(Object.keys(body)).not.toContain("parentCode");
+        expect(Object.keys(body)).not.toContain("hierarchyLevel");
+        // A blank code is left out so the backend assigns the next numeric code.
+        expect(Object.keys(body)).not.toContain("code");
+        expect(body).toMatchObject({
+            accountType: "ASSET",
+            accountSubType: null,
+            parentId: null,
+            propertyId: null,
+            alias: null,
+            group: false,
+        });
+    });
+
     it("shows a page-level alert when a delete is rejected", async () => {
         render(<AccountsPage />);
         await screen.findByText("Landscaping");
@@ -111,8 +145,8 @@ describe("AccountsPage", () => {
         const form = document.querySelector("form");
         expect(form).not.toBeNull();
 
-        // The backend ignores code/accountType/parentCode/group on update, so
-        // the edit form must not offer them as editable.
+        // UpdateAccountRequest carries none of code/accountType/parentId/group
+        // (and 400s on an unknown field), so the edit form must not offer them.
         const codeInput = screen.getByDisplayValue("D-99") as HTMLInputElement;
         expect(codeInput.disabled).toBe(true);
 
@@ -124,7 +158,11 @@ describe("AccountsPage", () => {
         expect(Object.keys(body)).not.toContain("code");
         expect(Object.keys(body)).not.toContain("accountType");
         expect(Object.keys(body)).not.toContain("parentCode");
+        expect(Object.keys(body)).not.toContain("parentId");
         expect(Object.keys(body)).not.toContain("group");
+        // propertyId is always applied by the backend, so the current value
+        // must be sent or the account silently loses its property tag.
+        expect(Object.keys(body)).toContain("propertyId");
         // Passthrough so updateAccount doesn't reset them to defaults.
         expect(body.active).toBe(false);
         expect(body.displayOrder).toBe(7);

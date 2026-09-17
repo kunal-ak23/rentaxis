@@ -9,32 +9,18 @@ import {
     Loader2, FileSpreadsheet, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+    ledgerApi,
+    type Account,
+    type AccountType,
+    type AccountSubType,
+    type CreateAccountBody,
+} from "@/lib/api/ledger";
+import { ApiError } from "@/lib/api/facilities";
+import AccountPicker, { invalidateAccounts } from "@/components/finance/AccountPicker";
 
-type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
-
-type AccountSubType =
-    | "FIXED_ASSET" | "BANK" | "CASH" | "RECEIVABLE" | "PDC_RECEIVABLE" | "OTHER_ASSET"
-    | "PAYABLE" | "ADVANCE" | "DEPOSIT_HELD" | "PDC_PAYABLE" | "OTHER_LIABILITY"
-    | "RENTAL_INCOME" | "OTHER_INCOME"
-    | "DIRECT_EXPENSE" | "INDIRECT_EXPENSE" | "SALARY_EXPENSE"
-    | "CAPITAL" | "RETAINED_EARNINGS";
-
-type Account = {
-    id: string;
-    code: string;
-    name: string;
-    nameEn: string | null;
-    nameAr: string | null;
-    accountType: AccountType;
-    accountSubType: AccountSubType | null;
-    parentCode: string | null;
-    description: string | null;
-    system: boolean;
-    group: boolean;
-    active: boolean;
-    hierarchyLevel: number;
-    displayOrder: number;
-};
+/** GET /v1/properties wraps each property in a portfolio-summary row. */
+type PropertySummary = { property: { id: string; nameEn: string; nameAr?: string | null } };
 
 const TYPE_ORDER: AccountType[] = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"];
 
@@ -50,7 +36,7 @@ const SUB_TYPES_BY_TYPE: Record<AccountType, AccountSubType[]> = {
     ASSET: ["FIXED_ASSET", "BANK", "CASH", "RECEIVABLE", "PDC_RECEIVABLE", "OTHER_ASSET"],
     LIABILITY: ["PAYABLE", "ADVANCE", "DEPOSIT_HELD", "PDC_PAYABLE", "OTHER_LIABILITY"],
     INCOME: ["RENTAL_INCOME", "OTHER_INCOME"],
-    EXPENSE: ["DIRECT_EXPENSE", "INDIRECT_EXPENSE", "SALARY_EXPENSE"],
+    EXPENSE: ["DIRECT_EXPENSE", "INDIRECT_EXPENSE", "SALARY_EXPENSE", "OTHER_EXPENSE"],
     EQUITY: ["CAPITAL", "RETAINED_EARNINGS"],
 };
 
@@ -58,19 +44,26 @@ const EMPTY_FORM = {
     code: "",
     nameEn: "",
     nameAr: "",
+    alias: "",
     accountType: "ASSET" as AccountType,
     accountSubType: "" as string,
-    parentCode: "",
+    parentId: "",
+    propertyId: "",
     description: "",
     group: false,
 };
 
+/** "" (the form's empty value) is not a valid enum name or UUID — send null. */
+const orNull = (v: string) => (v.trim() ? v.trim() : null);
+
 export default function AccountsPage() {
     const t = useTranslations("Finance");
+    const tl = useTranslations("Ledger");
     const locale = useLocale();
     const isAr = locale === "ar";
 
     const [accounts, setAccounts] = useState<Account[]>([]);
+    const [properties, setProperties] = useState<PropertySummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [seeding, setSeeding] = useState(false);
@@ -78,6 +71,8 @@ export default function AccountsPage() {
     // View & filters
     const [viewMode, setViewMode] = useState<"tree" | "flat">("tree");
     const [filterType, setFilterType] = useState<AccountType | "">("");
+    // "" = every account, "none" = tenant-wide accounts only, otherwise a property id.
+    const [filterProperty, setFilterProperty] = useState<string>("");
     const [activeOnly, setActiveOnly] = useState(false);
 
     // Modals
@@ -94,8 +89,8 @@ export default function AccountsPage() {
     // …and at page level for modal-less actions (delete, seed).
     const [pageError, setPageError] = useState<string | null>(null);
 
-    // Tree expand state
-    const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+    // Tree expand state — keyed by account id, the same key the tree is built on.
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     // Flat view expand state
     const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(TYPE_ORDER));
 
@@ -107,21 +102,36 @@ export default function AccountsPage() {
 
     const fetchAccounts = useCallback(async () => {
         try {
-            const res = await fetch("/api/proxy/v1/finance/accounts");
-            if (res.ok) {
-                const data = await res.json();
-                setAccounts(data);
-            }
+            setAccounts(await ledgerApi.accounts.list());
         } catch (err) {
-            console.error(err);
+            setPageError(err instanceof ApiError ? err.message : "Failed to load accounts");
         } finally {
             setLoading(false);
         }
     }, []);
 
+    const fetchProperties = useCallback(async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/properties");
+            if (res.ok) setProperties(await res.json());
+        } catch (err) {
+            console.error(err);
+        }
+    }, []);
+
     useEffect(() => {
         fetchAccounts();
-    }, [fetchAccounts]);
+        fetchProperties();
+    }, [fetchAccounts, fetchProperties]);
+
+    const propertyName = useCallback(
+        (id: string) => {
+            const row = properties.find(p => p.property?.id === id);
+            if (!row) return null;
+            return (isAr ? row.property.nameAr : null) || row.property.nameEn;
+        },
+        [properties, isAr],
+    );
 
     const displayName = (a: Account) => {
         if (isAr) return a.nameAr || a.name;
@@ -131,6 +141,8 @@ export default function AccountsPage() {
     // ── Filtering ──
     const filtered = accounts.filter(a => {
         if (filterType && a.accountType !== filterType) return false;
+        if (filterProperty === "none" && a.propertyId !== null) return false;
+        if (filterProperty && filterProperty !== "none" && a.propertyId !== filterProperty) return false;
         if (activeOnly && !a.active) return false;
         return true;
     });
@@ -144,13 +156,17 @@ export default function AccountsPage() {
             return a.code.localeCompare(b.code);
         });
 
+        // The tree is keyed by parentId: a filtered-out parent would otherwise
+        // hide its children entirely, so a child whose parent isn't in the
+        // current selection is promoted to a root rather than dropped.
+        const present = new Set(sorted.map(a => a.id));
         const childrenMap: Record<string, Account[]> = {};
         const roots: Account[] = [];
 
         for (const acc of sorted) {
-            if (acc.parentCode) {
-                if (!childrenMap[acc.parentCode]) childrenMap[acc.parentCode] = [];
-                childrenMap[acc.parentCode].push(acc);
+            if (acc.parentId && present.has(acc.parentId)) {
+                if (!childrenMap[acc.parentId]) childrenMap[acc.parentId] = [];
+                childrenMap[acc.parentId].push(acc);
             } else {
                 roots.push(acc);
             }
@@ -159,11 +175,11 @@ export default function AccountsPage() {
         return { roots, childrenMap };
     };
 
-    const toggleExpand = (code: string) => {
-        setExpandedCodes(prev => {
+    const toggleExpand = (id: string) => {
+        setExpandedIds(prev => {
             const next = new Set(prev);
-            if (next.has(code)) next.delete(code);
-            else next.add(code);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
             return next;
         });
     };
@@ -177,9 +193,8 @@ export default function AccountsPage() {
         });
     };
 
-    const expandAll = () => {
-        const codes = new Set(accounts.filter(a => a.group).map(a => a.code));
-        setExpandedCodes(codes);
+    const expandAll = (list: Account[]) => {
+        setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
     };
 
     // ── Flat grouping ──
@@ -194,17 +209,12 @@ export default function AccountsPage() {
         setSeeding(true);
         setPageError(null);
         try {
-            const res = await fetch("/api/proxy/v1/finance/accounts/seed", { method: "POST" });
-            if (res.ok) {
-                await fetchAccounts();
-                expandAll();
-            } else {
-                const errData = await res.json().catch(() => null);
-                setPageError(errData?.message || "Failed to seed default accounts");
-            }
+            const seeded = await ledgerApi.accounts.seed();
+            invalidateAccounts();
+            await fetchAccounts();
+            expandAll(seeded);
         } catch (err) {
-            console.error(err);
-            setPageError("Failed to seed default accounts");
+            setPageError(err instanceof ApiError ? err.message : "Failed to seed default accounts");
         } finally {
             setSeeding(false);
         }
@@ -215,34 +225,31 @@ export default function AccountsPage() {
         setSubmitting(true);
         setFormError(null);
         try {
-            const body: Record<string, unknown> = {
-                code: formData.code,
-                nameEn: formData.nameEn,
-                nameAr: formData.nameAr,
+            // Only the fields CreateAccountRequest declares: anything else is
+            // refused outright (400 "Unrecognised field(s): …"), which is why
+            // v1's parentCode/hierarchyLevel are gone from this body. `code` is
+            // optional — omitted, the backend assigns the next numeric code.
+            const body: CreateAccountBody = {
                 name: formData.nameEn,
+                nameEn: formData.nameEn,
+                nameAr: orNull(formData.nameAr),
+                alias: orNull(formData.alias),
                 accountType: formData.accountType,
-                description: formData.description || null,
-                parentCode: formData.parentCode || null,
+                accountSubType: (orNull(formData.accountSubType) as AccountSubType | null),
+                description: orNull(formData.description),
+                parentId: orNull(formData.parentId),
+                propertyId: orNull(formData.propertyId),
                 group: formData.group,
             };
-            if (formData.accountSubType) body.accountSubType = formData.accountSubType;
+            if (formData.code.trim()) body.code = formData.code.trim();
 
-            const res = await fetch("/api/proxy/v1/finance/accounts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) {
-                setShowAddModal(false);
-                setFormData(EMPTY_FORM);
-                fetchAccounts();
-            } else {
-                const errData = await res.json().catch(() => null);
-                setFormError(errData?.message || "Failed to create account");
-            }
+            await ledgerApi.accounts.create(body);
+            invalidateAccounts();
+            setShowAddModal(false);
+            setFormData(EMPTY_FORM);
+            fetchAccounts();
         } catch (err) {
-            console.error(err);
-            setFormError("Failed to create account");
+            setFormError(err instanceof ApiError ? err.message : "Failed to create account");
         } finally {
             setSubmitting(false);
         }
@@ -254,39 +261,32 @@ export default function AccountsPage() {
         setSubmitting(true);
         setFormError(null);
         try {
-            // Only the fields AccountService.updateAccount actually applies.
-            // code/accountType/parentCode/group are immutable after creation
-            // (the backend ignores them) and are disabled in the edit form.
-            // active/displayOrder are passed through unchanged — omitting them
-            // would reset the stored values to the deserialized defaults.
+            // Only the fields UpdateAccountRequest declares. code/accountType/
+            // parentId/group are immutable after creation and are disabled in
+            // the edit form. active/displayOrder are passed through unchanged —
+            // omitting them would leave the stored values alone anyway, but
+            // sending them keeps the body explicit. propertyId is different:
+            // the backend always applies it, so omitting it would silently
+            // clear the account's property tag.
             const current = accounts.find(a => a.id === editId);
-            const body: Record<string, unknown> = {
-                nameEn: formData.nameEn,
-                nameAr: formData.nameAr,
+            await ledgerApi.accounts.update(editId, {
                 name: formData.nameEn,
-                description: formData.description || null,
-                accountSubType: formData.accountSubType || null,
+                nameEn: formData.nameEn,
+                nameAr: orNull(formData.nameAr),
+                alias: orNull(formData.alias),
+                description: orNull(formData.description),
+                accountSubType: (orNull(formData.accountSubType) as AccountSubType | null),
                 active: current?.active ?? true,
                 displayOrder: current?.displayOrder ?? 0,
-            };
-
-            const res = await fetch(`/api/proxy/v1/finance/accounts/${editId}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
+                propertyId: orNull(formData.propertyId),
             });
-            if (res.ok) {
-                setShowEditModal(false);
-                setEditId(null);
-                setFormData(EMPTY_FORM);
-                fetchAccounts();
-            } else {
-                const errData = await res.json().catch(() => null);
-                setFormError(errData?.message || "Failed to update account");
-            }
+            invalidateAccounts();
+            setShowEditModal(false);
+            setEditId(null);
+            setFormData(EMPTY_FORM);
+            fetchAccounts();
         } catch (err) {
-            console.error(err);
-            setFormError("Failed to update account");
+            setFormError(err instanceof ApiError ? err.message : "Failed to update account");
         } finally {
             setSubmitting(false);
         }
@@ -295,19 +295,13 @@ export default function AccountsPage() {
     const handleDelete = async (id: string) => {
         setPageError(null);
         try {
-            const res = await fetch(`/api/proxy/v1/finance/accounts/${id}`, { method: "DELETE" });
-            if (res.ok) {
-                setShowDeleteConfirm(null);
-                fetchAccounts();
-            } else {
-                const errData = await res.json().catch(() => null);
-                setShowDeleteConfirm(null);
-                setPageError(errData?.message || "Failed to delete account");
-            }
-        } catch (err) {
-            console.error(err);
+            await ledgerApi.accounts.remove(id);
+            invalidateAccounts();
             setShowDeleteConfirm(null);
-            setPageError("Failed to delete account");
+            fetchAccounts();
+        } catch (err) {
+            setShowDeleteConfirm(null);
+            setPageError(err instanceof ApiError ? err.message : "Failed to delete account");
         }
     };
 
@@ -316,9 +310,11 @@ export default function AccountsPage() {
             code: account.code,
             nameEn: account.nameEn || account.name,
             nameAr: account.nameAr || "",
+            alias: account.alias || "",
             accountType: account.accountType,
             accountSubType: account.accountSubType || "",
-            parentCode: account.parentCode || "",
+            parentId: account.parentId || "",
+            propertyId: account.propertyId || "",
             description: account.description || "",
             group: account.group,
         });
@@ -332,23 +328,13 @@ export default function AccountsPage() {
         setImporting(true);
         setFormError(null);
         try {
-            const fd = new FormData();
-            fd.append("file", importFile);
-            const res = await fetch("/api/proxy/v1/finance/accounts/import", {
-                method: "POST",
-                body: fd,
-            });
-            if (res.ok) {
-                setShowImportModal(false);
-                setImportFile(null);
-                fetchAccounts();
-            } else {
-                const errData = await res.json().catch(() => null);
-                setFormError(errData?.message || "Failed to import accounts");
-            }
+            await ledgerApi.accounts.import(importFile);
+            invalidateAccounts();
+            setShowImportModal(false);
+            setImportFile(null);
+            fetchAccounts();
         } catch (err) {
-            console.error(err);
-            setFormError("Failed to import accounts");
+            setFormError(err instanceof ApiError ? err.message : "Failed to import accounts");
         } finally {
             setImporting(false);
         }
@@ -362,17 +348,16 @@ export default function AccountsPage() {
     };
 
     // ── Account form (shared between add/edit) ──
-    // In edit mode code/accountType/parentCode/group are disabled: the backend's
-    // updateAccount deliberately ignores them, so offering editable inputs would
-    // silently drop the changes.
+    // In edit mode code/accountType/parentId/group are disabled: UpdateAccountRequest
+    // does not carry them (and would 400 on them), so offering editable inputs
+    // would silently drop the changes.
     const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string, isEdit = false) => (
         <form onSubmit={onSubmit} className="grid grid-cols-2 gap-5">
             <div className="col-span-1">
                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("code")}</label>
                 <input
-                    required
                     disabled={isEdit}
-                    placeholder="e.g. A-01"
+                    placeholder="Auto (e.g. A-01)"
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.code}
                     onChange={ev => setFormData({ ...formData, code: ev.target.value })}
@@ -423,19 +408,50 @@ export default function AccountsPage() {
                 </select>
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("parent")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("parentAccount")}</label>
+                {isEdit ? (
+                    // parentId is immutable after create — the backend has no
+                    // way to re-file an account, so this is shown, not offered.
+                    <input
+                        disabled
+                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                        value={(() => {
+                            const parent = accounts.find(a => a.id === formData.parentId);
+                            return parent ? `${parent.code} — ${displayName(parent)}` : "—";
+                        })()}
+                        readOnly
+                    />
+                ) : (
+                    <AccountPicker
+                        leafOnly={false}
+                        groupOnly
+                        accountType={formData.accountType}
+                        placeholder={tl("parentAccount")}
+                        value={formData.parentId || null}
+                        onChange={id => setFormData(prev => ({ ...prev, parentId: id }))}
+                    />
+                )}
+            </div>
+            <div className="col-span-1">
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("alias")}</label>
+                <input
+                    placeholder="Short name used in reports"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    value={formData.alias}
+                    onChange={ev => setFormData({ ...formData, alias: ev.target.value })}
+                />
+            </div>
+            <div className="col-span-1">
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("propertyTag")}</label>
                 <select
-                    disabled={isEdit}
-                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                    value={formData.parentCode}
-                    onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })}
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    value={formData.propertyId}
+                    onChange={ev => setFormData({ ...formData, propertyId: ev.target.value })}
                 >
-                    <option value="">-- None --</option>
-                    {accounts
-                        .filter(a => a.accountType === formData.accountType && a.code !== formData.code)
-                        .map(a => (
-                            <option key={a.id} value={a.code}>{a.code} - {displayName(a)}</option>
-                        ))}
+                    <option value="">{tl("tenantWide")}</option>
+                    {properties.map(p => (
+                        <option key={p.property.id} value={p.property.id}>{propertyName(p.property.id)}</option>
+                    ))}
                 </select>
             </div>
             <div className="col-span-2">
@@ -494,9 +510,9 @@ export default function AccountsPage() {
 
     // ── Tree row renderer (recursive) ──
     const renderTreeRow = (account: Account, childrenMap: Record<string, Account[]>, depth: number) => {
-        const children = childrenMap[account.code] || [];
+        const children = childrenMap[account.id] || [];
         const hasChildren = children.length > 0;
-        const isExpanded = expandedCodes.has(account.code);
+        const isExpanded = expandedIds.has(account.id);
 
         return (
             <div key={account.id}>
@@ -511,7 +527,7 @@ export default function AccountsPage() {
                         {/* Expand/collapse or spacer */}
                         {hasChildren || account.group ? (
                             <button
-                                onClick={() => toggleExpand(account.code)}
+                                onClick={() => toggleExpand(account.id)}
                                 className="p-0.5 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:outline-none flex-shrink-0"
                             >
                                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -538,6 +554,11 @@ export default function AccountsPage() {
                         {account.accountSubType && (
                             <span className="text-[9px] font-bold text-muted uppercase hidden md:inline">
                                 {account.accountSubType.replace(/_/g, " ")}
+                            </span>
+                        )}
+                        {account.propertyId && (
+                            <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                {propertyName(account.propertyId) || tl("propertyTag")}
                             </span>
                         )}
                         {account.group && (
@@ -663,6 +684,22 @@ export default function AccountsPage() {
                     >
                         <option value="">{t("allTypes")}</option>
                         {TYPE_ORDER.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                </div>
+
+                {/* Property filter — "tenant-wide" is the accounts with no property tag */}
+                <div>
+                    <select
+                        aria-label={tl("propertyFilter")}
+                        className="border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                        value={filterProperty}
+                        onChange={ev => setFilterProperty(ev.target.value)}
+                    >
+                        <option value="">{tl("selectProperty")}</option>
+                        <option value="none">{tl("tenantWide")}</option>
+                        {properties.map(p => (
+                            <option key={p.property.id} value={p.property.id}>{propertyName(p.property.id)}</option>
+                        ))}
                     </select>
                 </div>
 
@@ -891,6 +928,7 @@ export default function AccountsPage() {
                                                     <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</th>
                                                     <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
                                                     <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{tl("propertyTag")}</th>
                                                     <th className="text-right px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
                                                 </tr>
                                             </thead>
@@ -918,13 +956,20 @@ export default function AccountsPage() {
                                                                 </span>
                                                             </td>
                                                             <td className="px-5 py-3 hidden md:table-cell">
-                                                                {account.parentCode ? (
+                                                                {account.parentId ? (
                                                                     <span className="text-[10px] font-bold text-muted">
-                                                                        {account.parentCode}
+                                                                        {accounts.find(a => a.id === account.parentId)?.code || "—"}
                                                                     </span>
                                                                 ) : (
                                                                     <span className="text-[10px] text-muted">—</span>
                                                                 )}
+                                                            </td>
+                                                            <td className="px-5 py-3 hidden md:table-cell">
+                                                                <span className="text-[10px] text-muted">
+                                                                    {account.propertyId
+                                                                        ? propertyName(account.propertyId) || tl("propertyTag")
+                                                                        : tl("tenantWide")}
+                                                                </span>
                                                             </td>
                                                             <td className="px-5 py-3 text-right">
                                                                 <div className="flex items-center justify-end gap-1">

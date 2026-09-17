@@ -227,29 +227,32 @@ export type LedgerQuery = {
   renterId?: string;
 };
 
+// Blank optional fields go over the wire as null rather than "": the backend
+// binds accountSubType to an enum, and an empty string is not one of its names.
 export type CreateAccountBody = {
   code?: string;
   name: string;
   nameEn: string;
-  nameAr: string;
-  alias: string;
+  nameAr: string | null;
+  alias: string | null;
   accountType: AccountType;
-  accountSubType: AccountSubType;
-  description: string;
-  parentId?: string;
-  propertyId?: string;
+  accountSubType: AccountSubType | null;
+  description: string | null;
+  parentId?: string | null;
+  propertyId?: string | null;
   group?: boolean;
 };
 
 export type UpdateAccountBody = {
   name: string;
   nameEn: string;
-  nameAr: string;
-  alias: string;
-  description: string;
-  accountSubType: AccountSubType;
+  nameAr: string | null;
+  alias: string | null;
+  description: string | null;
+  accountSubType: AccountSubType | null;
   active?: boolean;
   displayOrder?: number;
+  /** Always applied — omitting it clears the account's property tag, so callers send the current value. */
   propertyId: string | null;
 };
 
@@ -274,6 +277,8 @@ export const ledgerApi = {
     tree: () => get<Account[]>("/finance/accounts/tree"),
     children: (id: string) => get<Account[]>(`/finance/accounts/${id}/children`),
     create: (body: CreateAccountBody) => send<Account>("POST", "/finance/accounts", body),
+    /** Seeds the default chart plus the property-account template and role defaults. */
+    seed: () => send<Account[]>("POST", "/finance/accounts/seed"),
     update: (id: string, body: UpdateAccountBody) => send<Account>("PUT", `/finance/accounts/${id}`, body),
     remove: (id: string) => send<void>("DELETE", `/finance/accounts/${id}`),
     import: async (file: File) => {

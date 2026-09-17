@@ -1668,6 +1668,7 @@
     "propertyAccountsDesc": "Which ledger account each role posts to for this property.",
     "generateMissing": "Generate missing accounts",
     "inherited": "Default",
+    "useDefault": "Use default",
     "unmapped": "Not mapped",
     "role": "Role",
     "changeAccount": "Change",
@@ -1692,7 +1693,11 @@
     "propertyFilter": "Property",
     "alias": "Alias",
     "parentAccount": "Parent account",
-    "propertyTag": "Property"
+    "propertyTag": "Property",
+    "tenantWide": "Tenant-wide",
+    "save": "Save",
+    "saved": "Saved",
+    "accessDenied": "You do not have permission to manage the account setup."
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",

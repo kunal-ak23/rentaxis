@@ -1668,6 +1668,7 @@
     "propertyAccountsDesc": "الحساب الذي يُرحَّل إليه كل دور لهذا العقار.",
     "generateMissing": "إنشاء الحسابات الناقصة",
     "inherited": "افتراضي",
+    "useDefault": "استخدام الافتراضي",
     "unmapped": "غير مربوط",
     "role": "الدور",
     "changeAccount": "تغيير",
@@ -1692,7 +1693,11 @@
     "propertyFilter": "العقار",
     "alias": "الاسم المختصر",
     "parentAccount": "الحساب الأصل",
-    "propertyTag": "العقار"
+    "propertyTag": "العقار",
+    "tenantWide": "على مستوى المؤسسة",
+    "save": "حفظ",
+    "saved": "تم الحفظ",
+    "accessDenied": "ليس لديك صلاحية لإدارة إعداد الحسابات."
   },
   "Common": {
     "loadFailed": "تعذّر التحميل. يرجى المحاولة مرة أخرى.",

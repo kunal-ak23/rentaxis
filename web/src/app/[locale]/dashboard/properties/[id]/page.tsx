@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen } from "lucide-react";
 import { AmenitiesTab } from "./_components/AmenitiesTab";
 import { ParkingTab } from "./_components/ParkingTab";
+import PropertyAccountsTab from "@/components/finance/PropertyAccountsTab";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
@@ -68,6 +69,7 @@ export default function PropertyDetailPage() {
     const e = useTranslations("Emirates");
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
+    const tLedger = useTranslations("Ledger");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -76,8 +78,9 @@ export default function PropertyDetailPage() {
     const canCreate = hasPermission(userRole, 'canCreateProperties');
     const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
     const canManageFacilities = hasPermission(userRole, 'canManageFacilities');
+    const canManageAccountSetup = hasPermission(userRole, 'canManageAccountSetup');
 
-    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
     const [property, setProperty] = useState<any>(null);
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
@@ -255,6 +258,12 @@ export default function PropertyDetailPage() {
                     ...(canManageFacilities ? [
                         { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell },
                         { id: "parking", label: tFacilities("parkingTab"), icon: Car },
+                    ] : []),
+                    // Same flag the AccountController/PropertyAccountController
+                    // enforce — a role that can't read the mappings shouldn't be
+                    // offered a tab that only 403s.
+                    ...(canManageAccountSetup ? [
+                        { id: "accounts", label: tLedger("propertyAccounts"), icon: BookOpen },
                     ] : []),
                 ].map(tab => {
                     const Icon = tab.icon;
@@ -505,6 +514,10 @@ export default function PropertyDetailPage() {
 
             {activeTab === "parking" && (
                 <ParkingTab propertyId={propertyId} buildings={buildings} canManage={canManageFacilities} />
+            )}
+
+            {activeTab === "accounts" && canManageAccountSetup && (
+                <PropertyAccountsTab propertyId={propertyId} />
             )}
         </div>
     );
