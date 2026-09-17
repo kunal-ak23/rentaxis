@@ -2940,7 +2940,7 @@ databaseChangeLog:
               - column: { name: lease_id, type: uuid, constraints: { nullable: false } }
         - addPrimaryKey:
             tableName: import_batch_leases
-            columnNames: batch_id, lease_id
+            columnNames: "batch_id, lease_id"
             constraintName: import_batch_leases_pkey
         - addForeignKeyConstraint:
             baseTableName: import_batch_leases

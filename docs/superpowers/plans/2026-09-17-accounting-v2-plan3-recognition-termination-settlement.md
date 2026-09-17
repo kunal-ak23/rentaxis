@@ -90,7 +90,7 @@ databaseChangeLog:
               - column: { name: status, type: varchar(12), constraints: { nullable: false }, defaultValue: PLANNED }
               - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_re_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
               - column: { name: posted_at, type: timestamptz }
-        - addUniqueConstraint: { tableName: recognition_entries, columnNames: segment_id, period_start, constraintName: uq_re_segment_period }
+        - addUniqueConstraint: { tableName: recognition_entries, columnNames: "segment_id, period_start", constraintName: uq_re_segment_period }
         - createIndex: { tableName: recognition_entries, indexName: idx_re_tenant_status_end, columns: [ { column: { name: tenant_id } }, { column: { name: status } }, { column: { name: period_end } } ] }
         - createIndex: { tableName: recognition_entries, indexName: idx_re_lease, columns: [ { column: { name: lease_id } } ] }
         - sql:
