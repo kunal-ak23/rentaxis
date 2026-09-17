@@ -141,9 +141,14 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 // through with no TenantContext at all — which silently disables the
                 // tenantFilter on BaseTenantEntity. Guards get exactly the RENTER
                 // treatment: the requested tenant must equal their home tenant.
+                //
+                // ACCOUNTANT is here for the same reason: the finance controllers
+                // grant it via @PreAuthorize, but a role missing from this list never
+                // reaches them — it is refused here, before routing.
                 if ("SUPER_ADMIN".equals(userRole)) {
                     authorized = true;
                 } else if ("TENANT_ADMIN".equals(userRole) || "PROPERTY_MANAGER".equals(userRole)
+                        || "ACCOUNTANT".equals(userRole)
                         || "TENANT_USER".equals(userRole) || "RENTER".equals(userRole)
                         || "SECURITY_GUARD".equals(userRole)) {
                     if (requestedTenantId == null) {

@@ -104,6 +104,47 @@ class ApiSecurityFilterTest {
         assertThat(TenantContextHolder.getTenantId()).isNull();
     }
 
+    /**
+     * ACCOUNTANT is a tenant-scoped role like any other. It was left out of the
+     * filter's same-tenant branch when the role was added, which made every
+     * finance endpoint a 403 for the one role they exist for — the @PreAuthorize
+     * on those controllers never even ran.
+     */
+    @Test
+    void legacyAccountantInOwnTenantPasses() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        MockHttpServletRequest req = request("/api/v1/finance/journals");
+        req.addHeader("X-User-Id", userId.toString());
+        req.addHeader("X-User-Role", "ACCOUNTANT");
+        req.addHeader("X-Tenant-Id", tenant.toString());
+        req.addHeader("X-User-Tenant-Id", tenant.toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_ACCOUNTANT");
+        assertThat(chain.tenantInContext).isEqualTo(tenant);
+    }
+
+    @Test
+    void legacyAccountantRequestingAForeignTenantIs403() throws Exception {
+        MockHttpServletRequest req = request("/api/v1/finance/journals");
+        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Role", "ACCOUNTANT");
+        req.addHeader("X-Tenant-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Tenant-Id", UUID.randomUUID().toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
     @Test
     void legacySuperAdminPassesWithoutInternalAuthWhenNoProxySecretConfigured() throws Exception {
         MockHttpServletRequest req = request("/api/v1/landlord-orgs");
