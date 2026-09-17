@@ -11,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.stereotype.Service;
@@ -31,17 +32,20 @@ public class AccountService {
     private final PropertyRepository propertyRepository;
     private final JournalLineRepository journalLineRepository;
     private final PropertyAccountMappingRepository propertyAccountMappingRepository;
+    private final TenantDefaultAccountMappingRepository tenantDefaultAccountMappingRepository;
 
     public AccountService(AccountRepository repository,
                           TenantFiscalSettingsRepository fiscalRepo,
                           PropertyRepository propertyRepository,
                           JournalLineRepository journalLineRepository,
-                          PropertyAccountMappingRepository propertyAccountMappingRepository) {
+                          PropertyAccountMappingRepository propertyAccountMappingRepository,
+                          TenantDefaultAccountMappingRepository tenantDefaultAccountMappingRepository) {
         this.repository = repository;
         this.fiscalRepo = fiscalRepo;
         this.propertyRepository = propertyRepository;
         this.journalLineRepository = journalLineRepository;
         this.propertyAccountMappingRepository = propertyAccountMappingRepository;
+        this.tenantDefaultAccountMappingRepository = tenantDefaultAccountMappingRepository;
     }
 
     /**
@@ -212,10 +216,17 @@ public class AccountService {
             throw new BusinessRuleViolationException("Cannot delete account with child accounts");
         }
         // v1 checked financial_transactions; the ledger of record is now
-        // journal_lines, and an account a property/tenant mapping points at is
-        // still in use even before anything has been posted to it.
+        // journal_lines, and an account a property or tenant-default mapping
+        // points at is still in use even before anything has been posted to it.
+        //
+        // Both mapping tables are checked, not just the property one: account_id
+        // on tenant_default_account_mappings is NOT NULL with fk_tdam_account
+        // (changeset 81), so skipping it does not let the delete through — it
+        // just turns a 400 with this message into a constraint violation the
+        // caller has to decode.
         if (journalLineRepository.existsByAccount_Id(account.getId())
-                || propertyAccountMappingRepository.existsByAccount_Id(account.getId())) {
+                || propertyAccountMappingRepository.existsByAccount_Id(account.getId())
+                || tenantDefaultAccountMappingRepository.existsByAccount_Id(account.getId())) {
             throw new BusinessRuleViolationException("Account has posted journal lines or mappings");
         }
         repository.delete(account);

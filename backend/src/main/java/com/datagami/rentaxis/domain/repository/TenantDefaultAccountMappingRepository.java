@@ -15,4 +15,5 @@ public interface TenantDefaultAccountMappingRepository extends JpaRepository<Ten
     Optional<TenantDefaultAccountMapping> findByRole(AccountRole role);
     List<TenantDefaultAccountMapping> findByRoleIn(Collection<AccountRole> roles);
     List<TenantDefaultAccountMapping> findAllByOrderByRoleAsc();
+    boolean existsByAccount_Id(UUID accountId);
 }

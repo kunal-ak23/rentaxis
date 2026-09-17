@@ -7,7 +7,6 @@ import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
-import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
@@ -59,7 +58,6 @@ class PaymentScheduleServiceGenerateTest {
                 paymentScheduleRepository,
                 leaseChargeRepository,
                 mock(LeaseRepository.class),
-                mock(AccountRepository.class),
                 rentCollectionSettingsRepository,
                 mock(NotificationService.class),
                 mock(FineConfigResolver.class),

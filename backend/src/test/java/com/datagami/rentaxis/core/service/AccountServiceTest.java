@@ -7,6 +7,7 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class AccountServiceTest {
     private AccountRepository repository;
     private JournalLineRepository journalLineRepository;
     private PropertyAccountMappingRepository propertyAccountMappingRepository;
+    private TenantDefaultAccountMappingRepository tenantDefaultAccountMappingRepository;
     private AccountService service;
 
     @BeforeEach
@@ -40,8 +42,10 @@ class AccountServiceTest {
         repository = mock(AccountRepository.class);
         journalLineRepository = mock(JournalLineRepository.class);
         propertyAccountMappingRepository = mock(PropertyAccountMappingRepository.class);
+        tenantDefaultAccountMappingRepository = mock(TenantDefaultAccountMappingRepository.class);
         service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class),
-                mock(PropertyRepository.class), journalLineRepository, propertyAccountMappingRepository);
+                mock(PropertyRepository.class), journalLineRepository, propertyAccountMappingRepository,
+                tenantDefaultAccountMappingRepository);
     }
 
     private Account account(boolean system) {
@@ -142,6 +146,81 @@ class AccountServiceTest {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Cannot delete account with child accounts");
         verify(repository, never()).delete(any());
+    }
+
+    /**
+     * The in-use guard. v1 asked financial_transactions "any row for this
+     * account?"; the ledger of record is now journal_lines, and an account a
+     * mapping points at is in use even with nothing posted to it yet.
+     *
+     * <p>Each case also asserts {@code repository.delete} was never reached:
+     * the guard has to fire BEFORE any delete or detach work, or a half-applied
+     * delete is what the caller gets back with their 400.
+     */
+    @Test
+    void deleteAccount_withPostedJournalLines_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void deleteAccount_referencedByAPropertyMapping_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * tenant_default_account_mappings.account_id is NOT NULL under
+     * fk_tdam_account (changeset 81). Leaving this table out of the guard did
+     * not let the delete through — it turned a 400 carrying this message into a
+     * raw constraint violation the caller had to decode.
+     */
+    @Test
+    void deleteAccount_referencedByATenantDefaultMapping_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(tenantDefaultAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    /** The other side of the guard: an unused, non-system leaf still deletes. */
+    @Test
+    void deleteAccount_unusedLeaf_deletes() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(repository.existsByParent_Id(leaf.getId())).thenReturn(false);
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(tenantDefaultAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+
+        service.deleteAccount(leaf.getId());
+
+        verify(repository).delete(leaf);
     }
 
     @Test

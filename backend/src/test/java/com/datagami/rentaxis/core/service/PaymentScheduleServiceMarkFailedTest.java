@@ -16,7 +16,6 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
-import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +44,6 @@ import static org.mockito.Mockito.when;
 class PaymentScheduleServiceMarkFailedTest {
 
     private PaymentScheduleRepository paymentScheduleRepository;
-    private AccountRepository accountRepository;
     private RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private NotificationService notificationService;
     private FineConfigResolver fineConfigResolver;
@@ -61,7 +59,6 @@ class PaymentScheduleServiceMarkFailedTest {
     @BeforeEach
     void setUp() {
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
-        accountRepository = mock(AccountRepository.class);
         rentCollectionSettingsRepository = mock(RentCollectionSettingsRepository.class);
         notificationService = mock(NotificationService.class);
         fineConfigResolver = mock(FineConfigResolver.class);
@@ -72,7 +69,6 @@ class PaymentScheduleServiceMarkFailedTest {
                 paymentScheduleRepository,
                 mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class),
                 mock(com.datagami.rentaxis.domain.repository.LeaseRepository.class),
-                accountRepository,
                 rentCollectionSettingsRepository,
                 notificationService,
                 fineConfigResolver,

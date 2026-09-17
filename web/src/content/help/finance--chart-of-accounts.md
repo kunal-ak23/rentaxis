@@ -32,7 +32,7 @@ RentAxis uses standard double-entry accounting with five account types:
 
 ### Account Mappings
 
-Account mappings tell RentAxis which accounts to use for automatic transactions. Configure these in **Settings > Account Mappings**:
-- **Rent Income Account** — Where rental income is recorded
-- **Rent Receivable Account** — For tracking unpaid rent
-- **Security Deposit Account** — For deposit liabilities
+Mappings tell RentAxis which account plays which role when an entry is posted — rental income, rent receivable, bank, security deposits, and so on.
+
+- **Settings > Account Template** sets the organisation-wide default for each role.
+- A property's **Accounts** tab overrides those defaults for that building, so each property can post to its own bank and receivable leaves.

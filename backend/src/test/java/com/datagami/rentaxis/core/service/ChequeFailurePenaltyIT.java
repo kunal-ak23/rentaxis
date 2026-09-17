@@ -4,7 +4,6 @@ import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
@@ -14,12 +13,10 @@ import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
-import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
-import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -83,7 +80,6 @@ class ChequeFailurePenaltyIT {
     @Autowired RenterRepository renterRepository;
     @Autowired LeaseRepository leaseRepository;
     @Autowired RentCollectionSettingsRepository rentCollectionSettingsRepository;
-    @Autowired AccountRepository accountRepository;
     @Autowired TransactionTemplate transactionTemplate;
 
     private UUID tenantId;
@@ -103,12 +99,6 @@ class ChequeFailurePenaltyIT {
         org = landlordOrgRepository.save(org);
         this.tenantId = org.getId();
         TenantContextHolder.setTenantId(tenantId);
-
-        // Seed accounts required by recordChequeBounce: C-01-01 (income) +
-        // A-02-02 (bank). Account mappings are not seeded so the service
-        // falls through to the hardcoded chart-of-accounts codes.
-        seedAccount("C-01-01", "Rental Income", AccountType.INCOME);
-        seedAccount("A-02-02", "Bank Accounts", AccountType.ASSET);
 
         // Seed fixtures: property → unit → renter → lease → DEPOSITED schedule.
         property = new Property();
@@ -177,29 +167,23 @@ class ChequeFailurePenaltyIT {
     }
 
     /**
-     * Regression test for the "rent received even though the cheque bounced"
-     * bug: {@link PaymentScheduleService#clearPayment} and {@link
+     * Regression test for the "cheque both cleared and bounced" bug: {@link
+     * PaymentScheduleService#clearPayment} and {@link
      * PaymentScheduleService#markFailed} both read-check-write the same
-     * {@code DEPOSITED} guard with no row lock. Two requests racing on the
-     * same schedule (e.g. a double-click, or a staff member clicking "Mark
-     * Failed" right as another tab's "Clear" is in flight) could both
-     * observe {@code DEPOSITED}, both pass their precondition, and both post
-     * financial transactions — a "Rental income" credit AND a "Cheque
-     * bounced" reversal for the same cheque.
+     * {@code DEPOSITED} guard. Two requests racing on the same schedule (a
+     * double-click, or a staff member clicking "Mark Failed" right as another
+     * tab's "Clear" is in flight) could both observe {@code DEPOSITED}, both
+     * pass their precondition, and both apply their transition.
      *
-     * <p>With {@code findByIdForUpdate}'s pessimistic write lock, the second
-     * caller blocks until the first commits, re-reads the now-updated
-     * status, and is correctly rejected by the guard. Exactly one side's
-     * transaction pair must exist afterward — never both.</p>
+     * <p>With {@code findByIdForUpdate}'s pessimistic write lock the second
+     * caller blocks until the first commits, re-reads the now-updated status
+     * and is correctly rejected. Afterwards the row carries exactly the
+     * winner's status — CLEARED or BOUNCED, never a mix, and never the loser's.
+     * The loser must come back with a {@link BusinessRuleViolationException}
+     * rather than silently no-op.</p>
      */
     @Test
-    void clearAndMarkFailed_concurrentRace_onlyOneTransitionPersistsTransactions() throws Exception {
-        // clearPayment's fallback resolves the bank leg to A-02-02, already
-        // seeded in setUp() alongside C-01-01 for the bounce reversal. It used
-        // to look up A-01-01, a code the real seeder never creates, so this
-        // test had to hand-seed it — which is precisely what hid the production
-        // failure this assertion now covers.
-
+    void clearAndMarkFailed_concurrentRace_onlyOneTransitionWins() throws Exception {
         UUID scheduleId = depositedSchedule.getId();
 
         CountDownLatch ready = new CountDownLatch(2);
@@ -488,14 +472,6 @@ class ChequeFailurePenaltyIT {
         PaymentPenalty after = paymentPenaltyRepository.findById(before.getId()).orElseThrow();
         assertThat(after.getPenaltyAmount()).isEqualByComparingTo(originalAmount);
         assertThat(after.getClearedAt()).isNull();
-    }
-
-    private void seedAccount(String code, String name, AccountType type) {
-        Account a = new Account();
-        a.setCode(code);
-        a.setName(name);
-        a.setAccountType(type);
-        accountRepository.save(a);
     }
 
     private PaymentSchedule newSchedule(PaymentStatus status, int installmentNumber) {

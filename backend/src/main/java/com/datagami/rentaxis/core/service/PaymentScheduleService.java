@@ -21,7 +21,6 @@ import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
-import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -67,7 +66,6 @@ public class PaymentScheduleService {
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseRepository leaseRepository;
-    private final AccountRepository accountRepository;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final NotificationService notificationService;
     private final FineConfigResolver fineConfigResolver;
@@ -622,11 +620,6 @@ public class PaymentScheduleService {
         return effectiveDate != null
                 ? effectiveDate.atStartOfDay(UAE_ZONE).toInstant()
                 : Instant.now();
-    }
-
-    /** Ledger posting date: the supplied value date, otherwise today. */
-    private LocalDate effectiveDateOrToday(LocalDate effectiveDate) {
-        return effectiveDate != null ? effectiveDate : LocalDate.now();
     }
 
     /**

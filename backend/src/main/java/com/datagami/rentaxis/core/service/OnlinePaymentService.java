@@ -10,7 +10,6 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.OnlinePaymentPayload;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
-import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
@@ -43,7 +42,6 @@ public class OnlinePaymentService {
     private final PaymentGatewayFactory paymentGatewayFactory;
     private final EncryptionService encryptionService;
     private final PenaltyCalculationService penaltyCalculationService;
-    private final AccountRepository accountRepository;
     private final LeaseRepository leaseRepository;
     private final RenterRepository renterRepository;
     private final NotificationService notificationService;

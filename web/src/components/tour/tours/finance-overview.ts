@@ -3,7 +3,7 @@ import type { TourDef } from './types';
 export const financeOverviewTour: TourDef = {
   id: 'finance-overview',
   name: 'Finance Module Tour',
-  description: 'Understanding accounts, transactions, and reports',
+  description: 'Understanding accounts, journals, and the ledger',
   roles: ['TENANT_ADMIN'],
   steps: [
     {
@@ -15,17 +15,17 @@ export const financeOverviewTour: TourDef = {
       nextRoute: '/dashboard/finance/accounts',
     },
     {
-      id: 'transactions-link',
-      target: '[data-tour="sidebar-transactions"]',
-      title: 'Transactions',
-      text: 'View and record financial transactions. Some are created automatically when payment statuses change.',
+      id: 'journals-link',
+      target: '[data-tour="sidebar-journals"]',
+      title: 'Journal Vouchers',
+      text: 'Every entry in the books lives here as a balanced voucher. Most are posted automatically as payments move; you can also post a manual one, and reverse anything that was wrong.',
       position: 'right',
     },
     {
-      id: 'reports-link',
-      target: '[data-tour="sidebar-reports"]',
-      title: 'Financial Reports',
-      text: 'Generate reports at the organization, property, or unit level to track your financial performance.',
+      id: 'general-ledger-link',
+      target: '[data-tour="sidebar-general-ledger"]',
+      title: 'General Ledger',
+      text: 'Read any account back as a running ledger — opening balance, every line that hit it, and the closing balance — filtered by property, unit, lease or renter.',
       position: 'right',
     },
     {

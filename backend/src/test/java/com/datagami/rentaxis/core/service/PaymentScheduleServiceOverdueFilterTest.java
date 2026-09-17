@@ -3,7 +3,6 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
-import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -55,7 +54,6 @@ class PaymentScheduleServiceOverdueFilterTest {
                 paymentScheduleRepository,
                 mock(LeaseChargeRepository.class),
                 mock(LeaseRepository.class),
-                mock(AccountRepository.class),
                 mock(RentCollectionSettingsRepository.class),
                 mock(NotificationService.class),
                 mock(FineConfigResolver.class),
