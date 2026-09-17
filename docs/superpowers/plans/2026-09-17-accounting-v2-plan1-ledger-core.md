@@ -4592,3 +4592,30 @@ EOF
 **Placeholders:** none of "TBD/TODO/similar to Task N". Two places tell the engineer to *confirm* a real name before using it (`Emirate` constant, `Renter`/`User` required fields, `VendorService`/`BankAccountService` method names, property detail page path, list endpoints for the name lookup) — those are lookups against the repo, with the fallback stated, not gaps.
 
 **Type consistency:** `PostingRequest.Dimensions/Line/dr/cr` used identically in Tasks 5, 8, 9; `LedgerFilter` is the nested record in `LedgerQueryService` in both Task 8's test and controller; `RoleMappingDTO(role, accountId, accountCode, accountName, inherited)` matches Task 6 service, Task 11 type and Task 12 component; `AccountLedgerDTO` field names match `AccountLedger` in `ledger.ts` and `LedgerTable`; `JournalEntryDTO.total` is used by the Task 9 test and the Task 14 list page; `TenantFiscalSettingsService.get/fiscalYearOf/assertOpen/lockThrough/setBooksStartDate/setFiscalYearStartMonth` match Tasks 3, 5, 10.
+
+---
+
+## Addendum A (added after Plan 5 review): per-line contra account for the "Particular" column
+
+PACT's ledgers print one counter-account per **row**, not per entry. A `TCO` with `Dr Rent Receivable 61,000 / Cr Advance Rent 61,000`, `Dr Rent Receivable 3,000 / Cr Security Deposit 3,000`, `Dr Rent Receivable 500 / Cr Admin Fee 500` shows three Rent Receivable rows whose Particulars are `Advance Rent`, `Security Deposit`, `Admin Fee`. Task 8's `counterAccounts` query would print "Advance Rent / Security Deposit / Admin Fee" on all three. Apply these amendments **before** executing Task 8:
+
+**Task 1 (changeset 81):** add to `journal_lines`:
+```yaml
+              - column: { name: contra_account_id, type: uuid, constraints: { foreignKeyName: fk_jl_contra_account, referencedTableName: accounts, referencedColumnNames: id } }
+```
+
+**Task 3 (`JournalLine`):** add `@ManyToOne(fetch = LAZY) @JoinColumn(name = "contra_account_id") @JsonIgnore private Account contraAccount;` + `getContraAccountId()` READ_ONLY getter.
+
+**Task 5 (`PostingRequest` / `PostingService`):** add to `PostingRequest`:
+```java
+    /** A debit line and the credit line it is paired with; both get each other's account as contra. */
+    public record Pair(Line debit, Line credit) {}
+    public static Pair pair(Line debit, Line credit) { return new Pair(debit, credit); }
+```
+and a second constructor path: `PostingRequest.ofPairs(docType, entryDate, narration, dims, sourceType, sourceId, importBatchId, List<Pair> pairs)` that flattens pairs into `lines` **and** records the pairing. Implement by giving `Line` an optional `int pairKey` (default −1) set by `ofPairs`; in `PostingService.post`, after resolving accounts, for each `pairKey ≥ 0` set `contraAccount` of the debit line to the credit line's account and vice-versa. Lines without a pair key get `contraAccount = null`. `reverse()` copies `contraAccount` from the original line.
+
+Callers in Plans 2–4 post pairs: `TCO` = one pair per lease line; `PDR/CRT/CBR/PEN/CIL/STL` = one pair each; `PISR`/`BPV`/`JV` (n-to-1) leave pairs unset.
+
+**Task 8 (`LedgerQueryService.accountLedger`):** `particular` = `line.contraAccount.name` when set; else the joined counter-account names (existing `counterAccounts` query). Add `contraAccountName` to `LineRow` via `left join accounts ca on ca.id = l.contra_account_id` and select `ca.name as contraAccountName`. Ordering is already `(e.entry_date, e.created_at, l.line_no)` — keep it.
+
+**Task 8 test:** change `accountLedgerHasRunningBalanceAndCounterAccountParticular` to post the TCO with `ofPairs` and assert three RR rows with particulars `Advance Rent - L'Olivier`, `Security Deposit L'Olivier`, `Admin Fee - L'Olivier` and balances 61,000 / 64,000 / 64,500.
