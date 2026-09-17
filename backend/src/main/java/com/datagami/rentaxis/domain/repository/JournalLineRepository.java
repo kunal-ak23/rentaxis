@@ -17,6 +17,10 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     List<JournalLine> findByEntry_IdOrderByLineNoAsc(UUID entryId);
     boolean existsByAccount_Id(UUID accountId);
 
+    /** An entry's amount — its debit side — without loading its lines, for list rows. */
+    @Query("select coalesce(sum(l.debit), 0) from JournalLine l where l.entry.id = :entryId")
+    BigDecimal totalDebit(@Param("entryId") UUID entryId);
+
     // ---- ledger reporting ----
     //
     // These are native because they aggregate across the entry/line join and need
