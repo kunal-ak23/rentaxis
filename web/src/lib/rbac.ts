@@ -3,7 +3,7 @@
  * Central source of truth for role-based access control in the frontend
  */
 
-export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'SECURITY_GUARD' | 'TENANT_USER' | 'RENTER';
+export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'SECURITY_GUARD' | 'TENANT_USER' | 'RENTER' | 'ACCOUNTANT';
 
 export const PERMISSIONS = {
     canManageTenants: ['SUPER_ADMIN'] as UserRole[],
@@ -13,7 +13,7 @@ export const PERMISSIONS = {
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageLeases: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
-    canAccessFinance: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    canAccessFinance: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     canResolveIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'] as UserRole[],
     canViewOwnPayments: ['TENANT_USER'] as UserRole[],
@@ -38,6 +38,13 @@ export const PERMISSIONS = {
     // Promotions are tenant-wide (not scoped to a single property), so
     // PROPERTY_MANAGER is deliberately excluded, unlike canManageFacilities.
     canManagePromotions: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // Posting/reversing journal vouchers. Mirrors JournalController's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    canPostJournals: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Chart of accounts, property account mappings, template and defaults.
+    // Mirrors AccountController/PropertyAccountController's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    canManageAccountSetup: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -49,10 +56,19 @@ export type Permission = keyof typeof PERMISSIONS;
 const ROLE_RANK: Record<UserRole, number> = {
     SUPER_ADMIN: 0,
     TENANT_ADMIN: 1,
-    PROPERTY_MANAGER: 2,
-    TENANT_USER: 3,
-    RENTER: 4,
-    SECURITY_GUARD: 5,
+    // ACCOUNTANT ranks ABOVE PROPERTY_MANAGER deliberately, mirroring
+    // UserController#privilegeRank exactly. An accountant posts journal
+    // entries, so a property manager must not be able to create one — with
+    // assignableRoles' `>=` comparison, an equal rank here would have let a
+    // PROPERTY_MANAGER assign ACCOUNTANT exactly as it may already assign
+    // another PROPERTY_MANAGER. Strictly between TENANT_ADMIN and
+    // PROPERTY_MANAGER is the only placement that leaves the role assignable
+    // by TENANT_ADMIN and SUPER_ADMIN alone.
+    ACCOUNTANT: 2,
+    PROPERTY_MANAGER: 3,
+    TENANT_USER: 4,
+    RENTER: 5,
+    SECURITY_GUARD: 6,
 };
 
 /**
@@ -106,6 +122,7 @@ export function getRoleLabel(role: UserRole | string): string {
         SECURITY_GUARD: 'Security Guard',
         TENANT_USER: 'Tenant',
         RENTER: 'Renter',
+        ACCOUNTANT: 'Accountant',
     };
     return labels[role] || role.replace(/_/g, ' ');
 }
