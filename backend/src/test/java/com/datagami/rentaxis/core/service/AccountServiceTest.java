@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,8 @@ class AccountServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
-        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class));
+        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class),
+                mock(PropertyRepository.class));
     }
 
     private Account account(boolean system) {
@@ -50,7 +52,7 @@ class AccountServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.updateAccount(id, new Account()))
+        assertThatThrownBy(() -> service.updateAccount(id, update(null, null)))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -59,10 +61,16 @@ class AccountServiceTest {
         Account system = account(true);
         when(repository.findById(system.getId())).thenReturn(Optional.of(system));
 
-        assertThatThrownBy(() -> service.updateAccount(system.getId(), new Account()))
+        assertThatThrownBy(() -> service.updateAccount(system.getId(), update(null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("System accounts cannot be modified");
         verify(repository, never()).save(any());
+    }
+
+    /** An update carrying only the two fields under test; everything else is null. */
+    private AccountService.AccountUpdate update(Boolean active, Integer displayOrder) {
+        return new AccountService.AccountUpdate("Renamed", null, null, "LAND", null, null,
+                active, displayOrder, null);
     }
 
     @Test
@@ -75,18 +83,7 @@ class AccountServiceTest {
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Account otherParent = account(false);
-        otherParent.setCode("Z-00");
-        Account updates = new Account();
-        updates.setCode("Z-01");
-        updates.setParent(otherParent);
-        updates.setGroup(true);
-        updates.setName("Renamed");
-        updates.setAlias("LAND");
-        updates.setActive(false);
-        updates.setDisplayOrder(9);
-
-        Account saved = service.updateAccount(existing.getId(), updates);
+        Account saved = service.updateAccount(existing.getId(), update(false, 9));
 
         assertThat(saved.getCode()).isEqualTo("D-99");
         assertThat(saved.getParentId()).isEqualTo(currentParent.getId());
@@ -95,6 +92,27 @@ class AccountServiceTest {
         assertThat(saved.getAlias()).isEqualTo("LAND");
         assertThat(saved.isActive()).isFalse();
         assertThat(saved.getDisplayOrder()).isEqualTo(9);
+    }
+
+    /**
+     * A body that names neither field must leave both alone. With primitives on
+     * the request record this call deactivated the account and reset its
+     * ordering to 0, because that is what {@code boolean}/{@code int} deserialise
+     * to when the JSON omits them.
+     */
+    @Test
+    void updateAccount_nullActiveAndDisplayOrder_leaveThemUnchanged() {
+        Account existing = account(false);
+        existing.setActive(true);
+        existing.setDisplayOrder(7);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.updateAccount(existing.getId(), update(null, null));
+
+        assertThat(saved.isActive()).isTrue();
+        assertThat(saved.getDisplayOrder()).isEqualTo(7);
+        assertThat(saved.getName()).isEqualTo("Renamed");
     }
 
     @Test

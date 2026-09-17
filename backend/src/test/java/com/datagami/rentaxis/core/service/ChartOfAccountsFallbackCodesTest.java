@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,8 @@ class ChartOfAccountsFallbackCodesTest {
         // The seeder saves the tree as a map's values (parents before children), not a List.
         when(repository.saveAll(anyIterable()))
                 .thenAnswer(inv -> new java.util.ArrayList<Account>(inv.getArgument(0)));
-        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class));
+        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class),
+                mock(PropertyRepository.class));
     }
 
     private Set<String> seededCodes() {

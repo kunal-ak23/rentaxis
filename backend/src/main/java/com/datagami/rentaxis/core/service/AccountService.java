@@ -9,6 +9,7 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,10 +26,46 @@ public class AccountService {
 
     private final AccountRepository repository;
     private final TenantFiscalSettingsRepository fiscalRepo;
+    private final PropertyRepository propertyRepository;
 
-    public AccountService(AccountRepository repository, TenantFiscalSettingsRepository fiscalRepo) {
+    public AccountService(AccountRepository repository,
+                          TenantFiscalSettingsRepository fiscalRepo,
+                          PropertyRepository propertyRepository) {
         this.repository = repository;
         this.fiscalRepo = fiscalRepo;
+        this.propertyRepository = propertyRepository;
+    }
+
+    /**
+     * Fields a PUT may change.
+     *
+     * <p>{@code active} and {@code displayOrder} are boxed on purpose: null means
+     * "leave as it is". A partial body that omits them must not deactivate the
+     * account or reset its position, which is what primitives would have done —
+     * a body of {@code {"name":"x"}} deserialises to {@code false} and {@code 0}.
+     *
+     * <p>{@code propertyId} is always applied, so null clears the property tag.
+     * That is the intended way to un-tag an account, and it means a caller
+     * sending a partial body drops the tag — the field is meaningful only to the
+     * accounts screen, which always sends it.
+     */
+    public record AccountUpdate(String name, String nameEn, String nameAr, String alias, String description,
+                                AccountSubType accountSubType, Boolean active, Integer displayOrder,
+                                UUID propertyId) {}
+
+    /**
+     * Loads a property the caller named by id. Goes through the tenant-filtered
+     * repository rather than constructing a stub: a bare {@code new Property()}
+     * carrying a client UUID writes that id into {@code accounts.property_id}
+     * unchecked, which tags an account with another tenant's building and only
+     * fails if the foreign key happens to notice.
+     */
+    private Property resolveProperty(UUID propertyId) {
+        if (propertyId == null) {
+            return null;
+        }
+        return propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new NotFoundException("Property not found"));
     }
 
     @Transactional(readOnly = true)
@@ -65,7 +102,8 @@ public class AccountService {
     }
 
     @Transactional
-    public Account createAccount(Account account) {
+    public Account createAccount(Account account, UUID propertyId) {
+        account.setProperty(resolveProperty(propertyId));
         if (account.getParent() != null) {
             Account parent = getAccountById(account.getParent().getId());
             if (!parent.isGroup()) {
@@ -100,11 +138,7 @@ public class AccountService {
         a.setParent(parent);
         a.setGroup(false);
         a.setSystem(false);
-        if (propertyId != null) {
-            Property p = new Property();
-            p.setId(propertyId);
-            a.setProperty(p);
-        }
+        a.setProperty(resolveProperty(propertyId));
         return repository.save(a);
     }
 
@@ -137,20 +171,24 @@ public class AccountService {
     }
 
     @Transactional
-    public Account updateAccount(UUID id, Account updates) {
+    public Account updateAccount(UUID id, AccountUpdate updates) {
         Account existing = getAccountById(id);
         if (existing.isSystem()) {
             throw new BusinessRuleViolationException("System accounts cannot be modified");
         }
-        existing.setName(updates.getName());
-        existing.setNameEn(updates.getNameEn());
-        existing.setNameAr(updates.getNameAr());
-        existing.setAlias(updates.getAlias());
-        existing.setDescription(updates.getDescription());
-        existing.setAccountSubType(updates.getAccountSubType());
-        existing.setActive(updates.isActive());
-        existing.setDisplayOrder(updates.getDisplayOrder());
-        existing.setProperty(updates.getProperty());
+        existing.setName(updates.name());
+        existing.setNameEn(updates.nameEn());
+        existing.setNameAr(updates.nameAr());
+        existing.setAlias(updates.alias());
+        existing.setDescription(updates.description());
+        existing.setAccountSubType(updates.accountSubType());
+        if (updates.active() != null) {
+            existing.setActive(updates.active());
+        }
+        if (updates.displayOrder() != null) {
+            existing.setDisplayOrder(updates.displayOrder());
+        }
+        existing.setProperty(resolveProperty(updates.propertyId()));
         return repository.save(existing);
     }
 

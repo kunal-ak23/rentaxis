@@ -1,10 +1,14 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +40,7 @@ class AccountServiceTreeIT {
 
     @Autowired AccountService service;
     @Autowired LandlordOrgRepository orgRepo;
+    @Autowired PropertyRepository propertyRepo;
 
     UUID tenantId;
 
@@ -83,7 +88,7 @@ class AccountServiceTreeIT {
         imported.setName("Rent Receivable - L'Olivier");
         imported.setAccountType(AccountType.ASSET);
         imported.setParent(parent);
-        service.createAccount(imported);
+        service.createAccount(imported, null);
         assertThat(service.nextLeafCode()).isEqualTo("166270");
     }
 
@@ -108,7 +113,7 @@ class AccountServiceTreeIT {
         group.setName("Custom group");
         group.setAccountType(AccountType.EXPENSE);
         group.setGroup(true);
-        group = service.createAccount(group);
+        group = service.createAccount(group, null);
         service.createLeaf("Custom leaf", group, null);
         UUID groupId = group.getId();
         assertThatThrownBy(() -> service.deleteAccount(groupId)).hasMessageContaining("child accounts");
@@ -123,7 +128,94 @@ class AccountServiceTreeIT {
         child.setCode("Z-02");
         child.setName("Under a leaf");
         child.setParent(leafParent);
-        assertThatThrownBy(() -> service.createAccount(child))
+        assertThatThrownBy(() -> service.createAccount(child, null))
                 .hasMessageContaining("Parent account must be a group account");
+    }
+
+    private Property property(String name) {
+        Property p = new Property();
+        p.setNameEn(name);
+        p.setEmirate(Emirate.DUBAI);
+        return propertyRepo.save(p);
+    }
+
+    @Test
+    void createLeafTagsTheLeafWithARealProperty() {
+        service.seedDefaultAccounts();
+        Account parent = service.getAccountByCode("A-02-01");
+        Property building = property("Tulip 7");
+
+        Account leaf = service.createLeaf("Rent Receivable - Tulip 7", parent, building.getId());
+
+        assertThat(leaf.getPropertyId()).isEqualTo(building.getId());
+    }
+
+    /**
+     * The property id arrives from a request body. Resolving it through the
+     * tenant-filtered repository is what makes an id the caller invented — or
+     * borrowed from another tenant — a 404 instead of a row tagged with a
+     * building this tenant cannot see.
+     */
+    @Test
+    void createLeafWithAnUnknownPropertyIsNotFound() {
+        service.seedDefaultAccounts();
+        Account parent = service.getAccountByCode("A-02-01");
+        UUID stranger = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.createLeaf("Rent Receivable - nowhere", parent, stranger))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Property not found");
+    }
+
+    @Test
+    void createAccountWithAnUnknownPropertyIsNotFound() {
+        service.seedDefaultAccounts();
+        Account a = new Account();
+        a.setCode("Z-03");
+        a.setName("Tagged with nothing");
+        a.setAccountType(AccountType.EXPENSE);
+
+        UUID stranger = UUID.randomUUID();
+        assertThatThrownBy(() -> service.createAccount(a, stranger))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Property not found");
+    }
+
+    @Test
+    void updateAppliesPropertyIdAndLeavesOmittedFlagsAlone() {
+        service.seedDefaultAccounts();
+        Account a = new Account();
+        a.setCode("Z-04");
+        a.setName("Editable");
+        a.setAccountType(AccountType.EXPENSE);
+        a = service.createAccount(a, null);
+        a.setDisplayOrder(5);
+        Property building = property("Olivier");
+
+        Account tagged = service.updateAccount(a.getId(), new AccountService.AccountUpdate(
+                "Editable", null, null, null, null, null, null, null, building.getId()));
+        assertThat(tagged.getPropertyId()).isEqualTo(building.getId());
+        assertThat(tagged.isActive()).isTrue();
+
+        // propertyId is always applied, so a null clears the tag.
+        Account untagged = service.updateAccount(a.getId(), new AccountService.AccountUpdate(
+                "Editable", null, null, null, null, null, null, null, null));
+        assertThat(untagged.getPropertyId()).isNull();
+    }
+
+    @Test
+    void updateWithAnUnknownPropertyIsNotFound() {
+        service.seedDefaultAccounts();
+        Account a = new Account();
+        a.setCode("Z-05");
+        a.setName("Editable");
+        a.setAccountType(AccountType.EXPENSE);
+        Account created = service.createAccount(a, null);
+        UUID stranger = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.updateAccount(created.getId(), new AccountService.AccountUpdate(
+                "Editable", null, null, null, null, null, null, null, stranger)))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Property not found");
     }
 }
