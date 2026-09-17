@@ -5,6 +5,7 @@ import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +66,14 @@ public record PostingRequest(
             if (debit == null || credit == null) throw new IllegalArgumentException("A pair needs both a debit and a credit line");
             if (debit.side() != Side.DR) throw new IllegalArgumentException("The first line of a pair must be a debit");
             if (credit.side() != Side.CR) throw new IllegalArgumentException("The second line of a pair must be a credit");
+            if (debit.amount() == null || credit.amount() == null) throw new IllegalArgumentException("A pair needs an amount on both lines");
+            // Compared at the scale the ledger stores, so a caller handing over an unrounded
+            // computed amount is not punished for the digits post() would drop anyway. A pair
+            // whose halves genuinely differ is a caller bug: the entry could still balance
+            // against some other pair, and the two would then face the wrong contra accounts.
+            BigDecimal dr = debit.amount().setScale(2, RoundingMode.HALF_UP);
+            BigDecimal cr = credit.amount().setScale(2, RoundingMode.HALF_UP);
+            if (dr.compareTo(cr) != 0) throw new IllegalArgumentException("Pair amounts must match: " + dr + " vs " + cr);
         }
     }
 

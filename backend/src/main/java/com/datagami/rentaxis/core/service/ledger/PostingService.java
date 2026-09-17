@@ -128,6 +128,8 @@ public class PostingService {
         rev.setPropertyId(original.getPropertyId()); rev.setUnitId(original.getUnitId());
         rev.setLeaseId(original.getLeaseId()); rev.setRenterId(original.getRenterId());
         rev.setSourceType(JournalSourceType.REVERSAL); rev.setSourceId(original.getId());
+        // The reversal deliberately stays in the original's import batch; plan 4 skips
+        // reversal entries when it reverses a batch, so this cannot loop back on itself.
         rev.setImportBatchId(original.getImportBatchId());
         rev.setReversalOfId(original.getId());
         rev.setPostedBy(currentUserId()); rev.setPostedAt(Instant.now());

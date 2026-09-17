@@ -41,6 +41,7 @@ class PostingServiceIT {
     @Autowired PropertyAccountMappingRepository propertyMappings;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired PropertyRepository propertyRepo;
+    @Autowired AccountRepository accountRepo;
     @Autowired JdbcTemplate jdbc;
 
     UUID tenantId; UUID propertyId;
@@ -121,6 +122,16 @@ class PostingServiceIT {
         PostingRequest r = new PostingRequest(JournalDocType.JV, LocalDate.now(), "grp", Dimensions.none(), JournalSourceType.MANUAL, null, null,
                 List.of(dr(group.getId(), new BigDecimal("10")), cr(bankLeaf.getId(), new BigDecimal("10"))));
         assertThatThrownBy(() -> posting.post(r)).hasMessageContaining("group account");
+
+        // Only reachable by id: AccountResolver.usable() already refuses to hand a role
+        // an inactive leaf, so a ByRole line never gets this far.
+        bankLeaf.setActive(false);
+        accountRepo.save(bankLeaf);
+        PostingRequest closed = new PostingRequest(JournalDocType.JV, LocalDate.now(), "closed", Dimensions.none(), JournalSourceType.MANUAL, null, null,
+                List.of(dr(bankLeaf.getId(), new BigDecimal("10")), cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
+        assertThatThrownBy(() -> posting.post(closed))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("inactive account");
     }
 
     @Test
