@@ -688,7 +688,8 @@ databaseChangeLog:
               ALTER TABLE leases DROP COLUMN IF EXISTS monthly_rent;
       rollback:
         - sql:
-            sql: SELECT 1  -- no rollback: v1 schedules are retired
+            # no rollback: v1 schedules are retired (a bare "SELECT 1 -- ..." scalar with ": " does not parse in SnakeYAML)
+            sql: "SELECT 1"
 ```
 
 - [ ] **Step 2: Delete the Java + tests, fix compile until `./gradlew compileJava compileTestJava` is clean.** `V1SchedulesRemovedIT` asserts the four tables are gone and `online_payments.cheque_id` is NOT NULL.
