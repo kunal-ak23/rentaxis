@@ -35,6 +35,7 @@ class PostingServiceIT {
 
     @Autowired PostingService posting;
     @Autowired AccountService accounts;
+    @Autowired PropertyAccountService propertyAccounts;
     @Autowired TenantFiscalSettingsService fiscal;
     @Autowired JournalEntryRepository entries;
     @Autowired JournalLineRepository lines;
@@ -53,6 +54,7 @@ class PostingServiceIT {
         tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
+        propertyAccounts.seedDefaultTemplateAndDefaults();
         Property p = new Property(); p.setNameEn("L'Olivier"); p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
         rentRecvLeaf = accounts.createLeaf("Rent Receivable - L'Olivier", accounts.getAccountByCode("A-02-01"), propertyId);

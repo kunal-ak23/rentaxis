@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.AccountImportService;
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
@@ -24,10 +25,13 @@ public class AccountController {
 
     private final AccountService service;
     private final AccountImportService importService;
+    private final PropertyAccountService propertyAccountService;
 
-    public AccountController(AccountService service, AccountImportService importService) {
+    public AccountController(AccountService service, AccountImportService importService,
+                             PropertyAccountService propertyAccountService) {
         this.service = service;
         this.importService = importService;
+        this.propertyAccountService = propertyAccountService;
     }
 
     /**
@@ -126,9 +130,22 @@ public class AccountController {
         return ResponseEntity.ok(service.createAccount(a, r.propertyId()));
     }
 
+    /**
+     * Seeds the chart of accounts and, on top of it, the property-account
+     * template and the tenant-level role defaults.
+     *
+     * <p>The second call lives here rather than inside
+     * {@code AccountService.seedDefaultAccounts()} on purpose:
+     * {@code PropertyAccountService} already depends on {@code AccountService}
+     * (it resolves template parents by code), so wiring the reverse edge would
+     * make the two beans a constructor cycle. The seed entry point is the one
+     * place that legitimately knows about both.
+     */
     @PostMapping("/seed")
     public ResponseEntity<List<Account>> seedDefaultAccounts() {
-        return ResponseEntity.ok(service.seedDefaultAccounts());
+        List<Account> seeded = service.seedDefaultAccounts();
+        propertyAccountService.seedDefaultTemplateAndDefaults();
+        return ResponseEntity.ok(seeded);
     }
 
     @PutMapping("/{id}")

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PropertyStatsDTO;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
@@ -49,7 +50,8 @@ class PropertyServiceStatsTest {
         userService = mock(UserService.class);
 
         service = new PropertyService(
-                propertyRepository, unitRepository, buildingRepository, propertyAssignmentRepository, userService);
+                propertyRepository, unitRepository, buildingRepository, propertyAssignmentRepository, userService,
+                mock(PropertyAccountService.class));
 
         // filterByRole reads SecurityContextHolder; no authentication set
         // means "no role-based filtering", matching the SUPER_ADMIN/no-filter
