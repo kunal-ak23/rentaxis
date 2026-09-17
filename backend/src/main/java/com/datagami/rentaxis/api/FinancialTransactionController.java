@@ -98,14 +98,10 @@ public class FinancialTransactionController {
         return ResponseEntity.ok(service.getVatReturn(startDate, endDate));
     }
 
-    @GetMapping("/ledger/vendor/{vendorId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<List<FinancialTransaction>> getVendorLedger(
-            @PathVariable UUID vendorId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return ResponseEntity.ok(service.getVendorLedger(vendorId, startDate, endDate));
-    }
+    // GET /ledger/vendor/{vendorId} now lives on LedgerController, which serves it from
+    // the double-entry ledger. Two @GetMappings on one path is an ambiguous mapping and
+    // fails the boot, so the old FinancialTransaction-backed one is gone; the rest of
+    // this controller goes with it later in the plan.
 
     @GetMapping("/reports/organisation")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
