@@ -94,7 +94,7 @@ databaseChangeLog:
               - column: { name: vat_applicable_default, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
               - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
               - column: { name: display_order, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
-        - addUniqueConstraint: { tableName: charge_types, columnNames: tenant_id, code, constraintName: uq_charge_types_tenant_code }
+        - addUniqueConstraint: { tableName: charge_types, columnNames: "tenant_id, code", constraintName: uq_charge_types_tenant_code }
 
         - addColumn:
             tableName: properties
