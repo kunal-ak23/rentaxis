@@ -800,7 +800,12 @@ test('11 a locked period refuses back-dated postings and reversals', async ({ br
         // ── close the books through yesterday ──
         await page.goto('/en/dashboard/settings/fiscal');
         await page.locator('#fiscal-lock-through').fill(daysAgo(1));
-        await page.getByRole('button', { name: 'Lock period', exact: true }).first().click();
+        // The trigger says "Lock through" now, matching the dialog's confirm button —
+        // it used to say "Lock period", which is the SECTION HEADING, not an action.
+        // ConfirmDialog renders nothing while closed, so before this click there is
+        // exactly one button with that name: the trigger. The confirm on the next
+        // line stays scoped to the dialog, which is what disambiguates the two.
+        await page.getByRole('button', { name: 'Lock through', exact: true }).first().click();
         await page.locator('div.fixed.inset-0').getByRole('button', { name: 'Lock through', exact: true }).click();
         await expect(page.getByText(daysAgo(1)).first()).toBeVisible();
 
