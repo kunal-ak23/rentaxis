@@ -669,13 +669,28 @@ test('12 the tenant ledger is empty until lease posting arrives', async ({ brows
         await expect(page.getByText('Pick a tenant to see their ledger')).toBeVisible();
 
         await page.locator('#ledger-renter').selectOption({ label: fx.renterName });
-        await page.getByRole('button', { name: 'Apply' }).click();
+        // The page renders the very same "No entries" card when the fetch FAILED
+        // — the catch sets `ledgers = []` and adds a LoadErrorBanner above it —
+        // so asserting that text alone would pass on a 403 or a 500 and hand
+        // back a take of a broken page. Pin the read itself.
+        const [ledgerRead] = await Promise.all([
+            page.waitForResponse(
+                r => /\/api\/proxy\/v1\/finance\/ledger\/renter\//.test(r.url()) && r.request().method() === 'GET',
+                { timeout: 60_000 },
+            ),
+            page.getByRole('button', { name: 'Apply' }).click(),
+        ]);
+        expect(ledgerRead.status(), 'the tenant ledger must actually load').toBe(200);
+        expect(await ledgerRead.json(), 'plan 1 posts nothing against a tenant').toEqual([]);
 
         // Plan 1 posts nothing against a tenant — lease charges, cheques and
         // receipts are plans 2 and 3 — so the honest state is the empty one.
         // The PACT "Tenant Name" band lives inside an account block, so with no
         // postings there is no block to carry it; the empty state is what shows.
         await expect(page.getByText('No entries for this selection')).toBeVisible();
+        // LoadErrorBanner is a role="alert". Scoped to <main> because Next's dev
+        // overlay owns an always-present empty role="alert" region of its own.
+        await expect(page.locator('main [role="alert"]')).toHaveCount(0);
         await hold(page);
     } finally {
         await close();
