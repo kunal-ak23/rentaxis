@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,8 +33,7 @@ class AccountServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
-        AccountMappingService mappingService = mock(AccountMappingService.class);
-        service = new AccountService(repository, mappingService);
+        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class));
     }
 
     private Account account(boolean system) {
@@ -68,25 +68,31 @@ class AccountServiceTest {
     @Test
     void updateAccount_ignoresCodeTypeParentAndGroupChanges() {
         Account existing = account(false);
-        existing.setParentCode("D-01");
+        Account currentParent = account(false);
+        currentParent.setCode("D-01");
+        existing.setParent(currentParent);
         existing.setGroup(false);
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
+        Account otherParent = account(false);
+        otherParent.setCode("Z-00");
         Account updates = new Account();
         updates.setCode("Z-01");
-        updates.setParentCode("Z-00");
+        updates.setParent(otherParent);
         updates.setGroup(true);
         updates.setName("Renamed");
+        updates.setAlias("LAND");
         updates.setActive(false);
         updates.setDisplayOrder(9);
 
         Account saved = service.updateAccount(existing.getId(), updates);
 
         assertThat(saved.getCode()).isEqualTo("D-99");
-        assertThat(saved.getParentCode()).isEqualTo("D-01");
+        assertThat(saved.getParentId()).isEqualTo(currentParent.getId());
         assertThat(saved.isGroup()).isFalse();
         assertThat(saved.getName()).isEqualTo("Renamed");
+        assertThat(saved.getAlias()).isEqualTo("LAND");
         assertThat(saved.isActive()).isFalse();
         assertThat(saved.getDisplayOrder()).isEqualTo(9);
     }
@@ -106,7 +112,7 @@ class AccountServiceTest {
     void deleteAccount_withChildren_throwsBusinessRuleViolation() {
         Account parent = account(false);
         when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
-        when(repository.existsByParentCode(parent.getCode())).thenReturn(true);
+        when(repository.existsByParent_Id(parent.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> service.deleteAccount(parent.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)

@@ -216,9 +216,10 @@ public class UserController {
             case SUPER_ADMIN -> 0;
             case TENANT_ADMIN -> 1;
             case PROPERTY_MANAGER -> 2;
-            case TENANT_USER -> 3;
-            case RENTER -> 4;
-            case SECURITY_GUARD -> 5;
+            case ACCOUNTANT -> 3;
+            case TENANT_USER -> 4;
+            case RENTER -> 5;
+            case SECURITY_GUARD -> 6;
         };
     }
 }

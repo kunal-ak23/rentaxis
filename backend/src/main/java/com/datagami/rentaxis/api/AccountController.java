@@ -3,6 +3,8 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.service.AccountImportService;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,7 +16,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/finance/accounts")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+@PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
 public class AccountController {
 
     private final AccountService service;
@@ -25,9 +27,33 @@ public class AccountController {
         this.importService = importService;
     }
 
+    /**
+     * The tree is bound through request records rather than the entity itself:
+     * {@code parent} and {@code property} are {@code @JsonIgnore} associations,
+     * so a request body cannot name them, and binding the entity would once
+     * again let a caller set server-owned fields.
+     */
+    public record CreateAccountRequest(String code, String name, String nameEn, String nameAr, String alias,
+                                       AccountType accountType, AccountSubType accountSubType, String description,
+                                       UUID parentId, UUID propertyId, boolean group) {}
+
+    public record UpdateAccountRequest(String name, String nameEn, String nameAr, String alias, String description,
+                                       AccountSubType accountSubType, boolean active, int displayOrder,
+                                       UUID propertyId) {}
+
     @GetMapping
     public ResponseEntity<List<Account>> getAllAccounts() {
         return ResponseEntity.ok(service.getAllAccounts());
+    }
+
+    @GetMapping("/tree")
+    public ResponseEntity<List<Account>> getTree() {
+        return ResponseEntity.ok(service.getTree());
+    }
+
+    @GetMapping("/{id}/children")
+    public ResponseEntity<List<Account>> getChildren(@PathVariable UUID id) {
+        return ResponseEntity.ok(service.getChildren(id));
     }
 
     @GetMapping("/type/{type}")
@@ -41,8 +67,28 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<Account> createAccount(@RequestBody Account account) {
-        return ResponseEntity.ok(service.createAccount(account));
+    public ResponseEntity<Account> createAccount(@RequestBody CreateAccountRequest r) {
+        Account a = new Account();
+        a.setCode(r.code());
+        a.setName(r.name() != null ? r.name() : r.nameEn());
+        a.setNameEn(r.nameEn());
+        a.setNameAr(r.nameAr());
+        a.setAlias(r.alias());
+        a.setAccountType(r.accountType());
+        a.setAccountSubType(r.accountSubType());
+        a.setDescription(r.description());
+        a.setGroup(r.group());
+        if (r.parentId() != null) {
+            Account p = new Account();
+            p.setId(r.parentId());
+            a.setParent(p);
+        }
+        if (r.propertyId() != null) {
+            Property p = new Property();
+            p.setId(r.propertyId());
+            a.setProperty(p);
+        }
+        return ResponseEntity.ok(service.createAccount(a));
     }
 
     @PostMapping("/seed")
@@ -51,8 +97,22 @@ public class AccountController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Account> updateAccount(@PathVariable UUID id, @RequestBody Account account) {
-        return ResponseEntity.ok(service.updateAccount(id, account));
+    public ResponseEntity<Account> updateAccount(@PathVariable UUID id, @RequestBody UpdateAccountRequest r) {
+        Account a = new Account();
+        a.setName(r.name());
+        a.setNameEn(r.nameEn());
+        a.setNameAr(r.nameAr());
+        a.setAlias(r.alias());
+        a.setDescription(r.description());
+        a.setAccountSubType(r.accountSubType());
+        a.setActive(r.active());
+        a.setDisplayOrder(r.displayOrder());
+        if (r.propertyId() != null) {
+            Property p = new Property();
+            p.setId(r.propertyId());
+            a.setProperty(p);
+        }
+        return ResponseEntity.ok(service.updateAccount(id, a));
     }
 
     @PostMapping("/import")

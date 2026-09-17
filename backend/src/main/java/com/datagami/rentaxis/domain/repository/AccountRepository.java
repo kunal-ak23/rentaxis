@@ -3,6 +3,8 @@ package com.datagami.rentaxis.domain.repository;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -18,7 +20,18 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     List<Account> findByAccountType(AccountType accountType);
 
-    List<Account> findByParentCode(String parentCode);
+    List<Account> findByParentIsNullOrderByDisplayOrderAscCodeAsc();
 
-    boolean existsByParentCode(String parentCode);
+    List<Account> findByParent_IdOrderByDisplayOrderAscCodeAsc(UUID parentId);
+
+    boolean existsByParent_Id(UUID parentId);
+
+    Optional<Account> findByNameAndParent_Id(String name, UUID parentId);
+
+    List<Account> findByProperty_Id(UUID propertyId);
+
+    /** Highest numeric code in this tenant (codes like "A-02-01" are ignored). Tenant filter applies. */
+    @Query(value = "select max(code::bigint) from accounts where tenant_id = :tenantId and code ~ '^[0-9]+$'",
+            nativeQuery = true)
+    Long findMaxNumericCode(@Param("tenantId") UUID tenantId);
 }

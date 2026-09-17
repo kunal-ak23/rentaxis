@@ -92,7 +92,7 @@ public class UserService {
      */
     private static boolean getsTenantMembership(UserRole role) {
         return switch (role) {
-            case TENANT_ADMIN, PROPERTY_MANAGER, TENANT_USER, RENTER, SECURITY_GUARD -> true;
+            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER, SECURITY_GUARD -> true;
             case SUPER_ADMIN -> false;
         };
     }

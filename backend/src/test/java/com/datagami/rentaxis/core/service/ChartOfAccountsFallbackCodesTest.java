@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -46,8 +47,10 @@ class ChartOfAccountsFallbackCodesTest {
     void setUp() {
         AccountRepository repository = mock(AccountRepository.class);
         when(repository.findAll()).thenReturn(List.of());
-        when(repository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
-        service = new AccountService(repository, mock(AccountMappingService.class));
+        // The seeder saves the tree as a map's values (parents before children), not a List.
+        when(repository.saveAll(anyIterable()))
+                .thenAnswer(inv -> new java.util.ArrayList<Account>(inv.getArgument(0)));
+        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class));
     }
 
     private Set<String> seededCodes() {
