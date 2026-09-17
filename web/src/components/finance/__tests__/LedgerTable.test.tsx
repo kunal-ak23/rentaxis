@@ -69,6 +69,21 @@ describe("LedgerTable", () => {
     expect(screen.getAllByRole("columnheader")).toHaveLength(7);
   });
 
+  it("names the tenant in the sub-band with PACT's literal 'Tenant Name : ' label", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <LedgerTable ledgers={ledgers} subBand="Prabhjot Singh" />
+      </NextIntlClientProvider>,
+    );
+    // "Tenant : …" would read as the column header; PACT prints the full label.
+    expect(screen.getByText("Tenant Name : Prabhjot Singh")).toBeInTheDocument();
+  });
+
+  it("omits the sub-band when no name is passed", () => {
+    render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
+    expect(screen.queryByText(/Tenant Name :/)).not.toBeInTheDocument();
+  });
+
   it("warns when the backend truncated the rows", () => {
     const truncated = [{ ...ledgers[0], truncated: true }];
     render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={truncated} /></NextIntlClientProvider>);

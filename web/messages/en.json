@@ -1718,7 +1718,8 @@
       "INCOME": "Income",
       "EXPENSE": "Expenses",
       "EQUITY": "Equity"
-    }
+    },
+    "tenantName": "Tenant Name"
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",

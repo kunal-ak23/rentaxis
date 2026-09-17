@@ -97,7 +97,7 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                 {subBand && (
                     <tr>
                         <td colSpan={cols} className="px-3 py-1 text-[11px] font-semibold text-foreground bg-warning/25">
-                            {t("tenant")} : {subBand}
+                            {t("tenantName")} : {subBand}
                         </td>
                     </tr>
                 )}
