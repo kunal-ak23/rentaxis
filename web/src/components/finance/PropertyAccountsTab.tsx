@@ -118,7 +118,7 @@ export default function PropertyAccountsTab({ propertyId }: { propertyId: string
                         </thead>
                         <tbody className="divide-y divide-border">
                             {rows.map(r => (
-                                <tr key={r.role} className="hover:bg-input/30">
+                                <tr key={r.role} data-testid="property-account-row" data-role={r.role} className="hover:bg-input/30">
                                     <td className="px-5 py-3 text-xs font-medium">{r.role.replaceAll("_", " ")}</td>
                                     <td className="px-5 py-3 text-xs">
                                         {editing === r.role ? (

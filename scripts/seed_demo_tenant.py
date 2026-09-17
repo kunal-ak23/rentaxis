@@ -24,6 +24,12 @@ Usage:
   PROD_BASE_URL=http://localhost:8080 \
   PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
   python3 scripts/seed_demo_tenant.py
+
+  # Split local stack (no Caddy in front): the API and the web app are two
+  # different origins, and the marketplace-listing step needs the web one.
+  PROD_BASE_URL=http://localhost:8081 DEMO_WEB_BASE_URL=http://localhost:3001 \
+  PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
+  python3 scripts/seed_demo_tenant.py
 """
 import json
 import os
@@ -66,10 +72,19 @@ class Api:
     """Thin client mirroring the mobile apps' auth model: login once, then
     send X-User-* headers on every call."""
 
-    def __init__(self, base_url):
+    def __init__(self, base_url, web_base_url=None):
         self.base = base_url.rstrip("/")
+        # On a deployed stack Caddy fronts the API and the web app on one
+        # origin, so these are the same. A local split stack (backend on 8081,
+        # `next dev` on 3001) has no such front door: /api/v1 and /api/admin
+        # only exist on the backend, and /api/auth/* and /api/proxy/* only on
+        # the web app. DEMO_WEB_BASE_URL is what tells the two apart.
+        self.web_base = (web_base_url or base_url).rstrip("/")
         self.s = requests.Session()
         self.headers = {}
+
+    def origin_for(self, path):
+        return self.web_base if path.startswith("/api/proxy") else self.base
 
     def login(self, email, password, tenant_id=None):
         body = {"email": email, "password": password}
@@ -90,16 +105,16 @@ class Api:
     def login_nextauth(self, email, password):
         """NextAuth credentials login — needed for /api/proxy/* paths
         (Caddy only routes /api/v1 + /api/admin directly to the backend)."""
-        csrf = self.s.get(f"{self.base}/api/auth/csrf", timeout=30).json()[
+        csrf = self.s.get(f"{self.web_base}/api/auth/csrf", timeout=30).json()[
             "csrfToken"
         ]
         r = self.s.post(
-            f"{self.base}/api/auth/callback/credentials",
+            f"{self.web_base}/api/auth/callback/credentials",
             data={
                 "csrfToken": csrf,
                 "email": email,
                 "password": password,
-                "callbackUrl": f"{self.base}/",
+                "callbackUrl": f"{self.web_base}/",
                 "json": "true",
             },
             timeout=30,
@@ -107,14 +122,14 @@ class Api:
         )
         if r.status_code >= 400:
             raise RuntimeError(f"NextAuth login failed ({r.status_code})")
-        sess = self.s.get(f"{self.base}/api/auth/session", timeout=30).json()
+        sess = self.s.get(f"{self.web_base}/api/auth/session", timeout=30).json()
         if not (sess or {}).get("user"):
             raise RuntimeError("NextAuth session has no user after login")
 
     def call(self, method, path, expect=(200, 201, 204), **kw):
         headers = kw.pop("headers", self.headers)
         r = self.s.request(
-            method, f"{self.base}{path}", headers=headers, timeout=60, **kw
+            method, f"{self.origin_for(path)}{path}", headers=headers, timeout=60, **kw
         )
         if r.status_code not in expect:
             raise RuntimeError(
@@ -281,6 +296,8 @@ def main():
     base = os.environ.get(
         "PROD_BASE_URL", "https://rentaxis.uaenorth.cloudapp.azure.com"
     )
+    # Same origin unless a split local stack says otherwise (see Api.__init__).
+    web_base = os.environ.get("DEMO_WEB_BASE_URL", base)
     sa_email = os.environ.get("PROD_SUPERADMIN_EMAIL")
     sa_password = os.environ.get("PROD_SUPERADMIN_PASSWORD")
     if not sa_email or not sa_password:
@@ -294,7 +311,7 @@ def main():
     print(f"Seeding '{TENANT_NAME}' on {base}")
 
     # ── 1. Superadmin: tenant + admin user + features ───────────────────────
-    sa = Api(base)
+    sa = Api(base, web_base)
     sa.login(sa_email, sa_password)
     log(f"logged in as superadmin {sa_email}")
 
@@ -377,7 +394,7 @@ def main():
     out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────
-    api = Api(base)
+    api = Api(base, web_base)
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
 
@@ -793,7 +810,7 @@ def main():
             for i, (path, caption) in enumerate(photos):
                 with open(path, "rb") as fh:
                     r = api.s.post(
-                        f"{api.base}{LISTINGS}/{lid}/media",
+                        f"{api.web_base}{LISTINGS}/{lid}/media",
                         files={"file": (os.path.basename(path), fh, "image/jpeg")},
                         data={"isCover": "true" if i == 0 else "false",
                               "caption": caption},
@@ -809,7 +826,7 @@ def main():
             for i, path in enumerate(_listing_images(title, lid)):
                 with open(path, "rb") as fh:
                     api.s.post(
-                        f"{api.base}{LISTINGS}/{lid}/media",
+                        f"{api.web_base}{LISTINGS}/{lid}/media",
                         files={"file": (os.path.basename(path), fh, "image/jpeg")},
                         data={"isCover": "true" if i == 0 else "false",
                               "caption": "Exterior view" if i == 0 else "Living area"},
@@ -817,9 +834,10 @@ def main():
                     )
             log(f"media uploaded (fallback placeholders): {title}")
 
-    # ── 6b. Vendors + split expenses ─────────────────────────────────────────
-    # Demonstrates the split-transaction capability: one vendor invoice
-    # allocated across multiple properties / units.
+    # ── 6b. Vendors ──────────────────────────────────────────────────────────
+    # Creating a vendor also creates its payable leaf under B-01-04 Vendors
+    # (accounting v2 plan 1), so the demo tenant gets a usable payables side of
+    # the chart with no extra step.
     existing_vendors = {
         v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
         if isinstance(v, dict)
@@ -833,51 +851,18 @@ def main():
             "contactPerson": contact, "phone": phone,
         })
 
-    fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
-                            "Imran Shaikh", "+97143330001")
-    cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
-                                  "Maria Santos", "+97143330002")
+    for v in (
+        make_vendor("Emirates Facility Management", "إدارة المرافق",
+                    "Imran Shaikh", "+97143330001"),
+        make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
+                    "Maria Santos", "+97143330002"),
+    ):
+        log(f"vendor ready: {v.get('nameEn')}")
 
-    def account_id(code):
-        return api.get(f"/api/v1/finance/accounts/code/{code}")["id"]
-
-    existing_txn_descriptions = {
-        t.get("description")
-        for t in (api.get("/api/v1/finance/transactions") or [])
-        if isinstance(t, dict)
-    }
-
-    def split_expense(description, code, date, vendor, splits):
-        if description in existing_txn_descriptions:
-            return
-        api.post("/api/v1/finance/transactions/split", json={
-            "date": iso(date),
-            "description": description,
-            "accountId": account_id(code),
-            "debit": float(sum(s["amount"] for s in splits)),
-            "vendorId": vendor["id"],
-            "splits": splits,
-        })
-        log(f"split expense: {description}")
-
-    split_expense(
-        "Fire safety AMC 2026 — both towers", "D-01-08",
-        dt.date(TODAY.year, 2, 10), fm_vendor,
-        [{"propertyId": tower["id"], "amount": 5000.0},
-         {"propertyId": marina["id"], "amount": 4000.0}],
-    )
-    split_expense(
-        "Q1 common-area deep cleaning", "D-01-04",
-        dt.date(TODAY.year, 4, 5), cleaning_vendor,
-        [{"propertyId": tower["id"], "amount": 3500.0},
-         {"propertyId": marina["id"], "amount": 2500.0}],
-    )
-    split_expense(
-        "AC compressor repairs — units A-101 / A-103", "D-01-03",
-        dt.date(TODAY.year, 5, 18), fm_vendor,
-        [{"propertyId": tower["id"], "unitId": a101["id"], "amount": 1200.0},
-         {"propertyId": tower["id"], "unitId": a103["id"], "amount": 1600.0}],
-    )
+    # The split-expense demo used the v1 `/finance/transactions` endpoints, which
+    # accounting v2 plan 1 removed along with `financial_transactions`. Vendor
+    # bills post as journal entries from plan 2 onwards; this seed re-gains them
+    # then.
 
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):

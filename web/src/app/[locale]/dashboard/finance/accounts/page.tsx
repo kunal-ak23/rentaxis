@@ -517,6 +517,13 @@ export default function AccountsPage() {
         return (
             <div key={account.id}>
                 <div
+                    // The tree is divs, not a table, so there is no row role to
+                    // select on. These attributes are the stable hook the e2e and
+                    // walkthrough suites use to count leaves and find one account.
+                    data-testid="coa-row"
+                    data-code={account.code}
+                    data-group={String(account.group)}
+                    data-property={account.propertyId ?? ""}
                     className={cn(
                         "flex items-center justify-between px-5 py-3 hover:bg-input/30 transition-all duration-200 border-b border-border",
                         !account.active && "opacity-50"

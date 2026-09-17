@@ -11,7 +11,10 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: 'http://localhost:3000',
+    // Default unchanged. PLAYWRIGHT_BASE_URL lets a run point at a web server on
+    // another port (e.g. a second dev server on 3001 wired to a scratch backend)
+    // without editing this file.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

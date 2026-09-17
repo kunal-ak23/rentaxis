@@ -4524,7 +4524,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `web/e2e/finance/ledger.spec.ts`
 - Modify: `docs/superpowers/plans/…` (tick boxes), `CLAUDE.md` line "next: `37-*.yaml`" → "next: `83-*.yaml`"
 
-- [ ] **Step 1: Playwright smoke** (`web/e2e/finance/ledger.spec.ts`, dev suite, logged in as TENANT_ADMIN via the existing helpers used by `accounts.spec.ts`):
+- [x] **Step 1: Playwright smoke** (`web/e2e/finance/ledger.spec.ts`, dev suite, logged in as TENANT_ADMIN via the existing helpers used by `accounts.spec.ts`):
   1. Seed CoA from the Chart of Accounts page if empty.
   2. Create a property "E2E Tower"; open it → Accounts tab → expect a row `RENT_RECEIVABLE` with account `Rent Receivable - E2E Tower`.
   3. Journals → New: date today, narration "E2E capital", line 1 account `Emirates Islamic - E2E Tower` debit 1000, line 2 `F-01 Capital Account` credit 1000 → Post → detail shows `JV-` number and 2 lines.
@@ -4532,7 +4532,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   5. Trial Balance: as of today → totals equal, no red banner.
   6. Detail → Reverse (reason "e2e") → original shows Reversed; ledger closing balance `0.00`.
 
-- [ ] **Step 2: Run everything**
+- [x] **Step 2: Run everything**
 
 ```bash
 cd backend && ./gradlew test
@@ -4540,9 +4540,11 @@ cd ../web && npx tsc --noEmit && npm run lint && npx vitest run && npx playwrigh
 ```
 Expected: all green. Record the counts from the runners in the PR body (counts from the runner, not grep).
 
-- [ ] **Step 3: Demo seed** — run `python3 scripts/seed_demo_tenant.py` against a local stack (`docker compose up -d`) and confirm it completes; fix any call to a removed endpoint.
+- [x] **Step 3: Demo seed** — run `python3 scripts/seed_demo_tenant.py` against a local stack (`docker compose up -d`) and confirm it completes; fix any call to a removed endpoint.
 
-- [ ] **Step 4: Commit, push, open PR**
+- [~] **Step 4: Commit, push, open PR** — committed locally only; push and PR are the controller's, after a final review.
+
+- [x] **Step 5 (added): scenario walkthrough with a Playwright video per flow** — `web/walkthrough/accounting-v2-plan1.{config,spec}.ts`, 14 scenarios, one recording each, every take backed by the assertions in the same run. Takes land in `web/walkthrough/takes/accounting-v2-plan1/` (gitignored). Report: `.superpowers/sdd/2026-09-17-accounting-v2-plan1-ledger-core/task-16-report.md`.
 
 ```bash
 git add -A
