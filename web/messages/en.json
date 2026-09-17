@@ -1697,7 +1697,8 @@
     "tenantWide": "Tenant-wide",
     "save": "Save",
     "saved": "Saved",
-    "accessDenied": "You do not have permission to manage the account setup."
+    "accessDenied": "You do not have permission to manage the account setup.",
+    "accessDeniedTitle": "Access Denied"
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",

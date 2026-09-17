@@ -101,7 +101,7 @@ export default function AccountTemplatePage() {
             <div className="max-w-4xl">
                 <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
                     <ShieldCheck size={48} className="mx-auto text-muted mb-4" />
-                    <h2 className="text-lg font-bold text-foreground mb-2">Access Denied</h2>
+                    <h2 className="text-lg font-bold text-foreground mb-2">{t("accessDeniedTitle")}</h2>
                     <p className="text-sm text-muted">{t("accessDenied")}</p>
                 </div>
             </div>
