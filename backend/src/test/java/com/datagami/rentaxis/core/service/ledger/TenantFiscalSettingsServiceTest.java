@@ -70,6 +70,29 @@ class TenantFiscalSettingsServiceTest {
     }
 
     @Test
+    void setBooksStartDateClosesEverythingBeforeItButLeavesAnExistingLockAlone() {
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        TenantFiscalSettings opened = service.setBooksStartDate(LocalDate.of(2026, 4, 1));
+        assertThat(opened.getBooksStartDate()).isEqualTo(LocalDate.of(2026, 4, 1));
+        assertThat(opened.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 3, 31));
+
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 8, 31))));
+        TenantFiscalSettings alreadyLocked = service.setBooksStartDate(LocalDate.of(2026, 4, 1));
+        assertThat(alreadyLocked.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 8, 31));
+    }
+
+    @Test
+    void fiscalYearStartMonthMustBeACalendarMonth() {
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        assertThatThrownBy(() -> service.setFiscalYearStartMonth(0))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> service.setFiscalYearStartMonth(13))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThat(service.setFiscalYearStartMonth(1).getFiscalYearStartMonth()).isEqualTo(1);
+        assertThat(service.setFiscalYearStartMonth(12).getFiscalYearStartMonth()).isEqualTo(12);
+    }
+
+    @Test
     void lockThroughCannotMoveBackwards() {
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 8, 31))));
         assertThatThrownBy(() -> service.lockThrough(LocalDate.of(2026, 7, 31)))

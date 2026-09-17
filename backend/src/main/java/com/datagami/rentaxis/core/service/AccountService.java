@@ -152,9 +152,11 @@ public class AccountService {
     public String nextLeafCode() {
         UUID tenantId = TenantContextHolder.getTenantId();
         TenantFiscalSettings s = fiscalRepo.findForUpdate(tenantId).orElseGet(() -> {
-            TenantFiscalSettings n = new TenantFiscalSettings();
-            n.setTenantId(tenantId);
-            fiscalRepo.saveAndFlush(n);
+            // Conflict-safe seed committed in its own transaction, then re-lock. A
+            // save() here is a merge on an assigned primary key: the loser of the
+            // race overwrites the winner's row (blanking next_account_code) or dies
+            // on the duplicate key, taking the caller's transaction with it.
+            fiscalRepo.insertDefaultIfAbsent(tenantId);
             return fiscalRepo.findForUpdate(tenantId).orElseThrow();
         });
         Long max = repository.findMaxNumericCode(tenantId);
