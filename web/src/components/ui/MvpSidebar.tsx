@@ -9,13 +9,11 @@ import {
     ShieldCheck,
     BookOpen,
     Receipt,
-    BarChart3,
     Home,
     FileText,
     Contact,
     CreditCard,
     Sliders,
-    GitBranch,
     AlertTriangle,
     Landmark,
     UserCog,
@@ -26,6 +24,11 @@ import {
     ScanLine,
     CalendarCheck,
     Megaphone,
+    BookUser,
+    Scale,
+    NotebookText,
+    LayoutTemplate,
+    CalendarClock,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -52,6 +55,7 @@ export default function MvpSidebar() {
     const tGatePass = useTranslations("GatePass");
     const tBookings = useTranslations("Bookings");
     const tPromotions = useTranslations("Promotions");
+    const tLedger = useTranslations("Ledger");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -109,10 +113,15 @@ export default function MvpSidebar() {
             : []),
     ];
 
+    // The accounting-v2 ledger replaced the old transactions and reports pages:
+    // journal vouchers are where entries are read and posted, and the three
+    // ledger reports are what the old reports page only gestured at.
     const financeItems = hasPermission(userRole, 'canAccessFinance') ? [
         { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
-        { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt, tourId: 'sidebar-transactions' },
-        { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3, tourId: 'sidebar-reports' },
+        { name: tLedger("journals"), href: "/dashboard/finance/journals", icon: Receipt, tourId: 'sidebar-journals' },
+        { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
+        { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
+        { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
         { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
         { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
         { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
@@ -122,12 +131,23 @@ export default function MvpSidebar() {
         { name: tStaff("title"), href: "/dashboard/staff", icon: UserCog },
     ] : [];
 
-    const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
-        { name: tNav("accountMappings"), href: "/dashboard/settings/account-mappings", icon: GitBranch },
-        { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
-        { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
-        ...(canConfigureFines(userRole) ? [{ name: tNav("chequeFailureFines"), href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
-    ] : [];
+    // The accounting setup pages are gated by canManageAccountSetup, which admits
+    // ACCOUNTANT — a role canConfigureGateway deliberately excludes. Keeping the
+    // whole section behind the gateway check would have hidden the two pages from
+    // exactly the role that owns them, so each group now carries its own gate.
+    // Account mappings moved into the property's own Accounts tab and the
+    // tenant-wide template, so the standalone page is gone.
+    const settingsItems = [
+        ...(hasPermission(userRole, 'canManageAccountSetup') ? [
+            { name: tLedger("accountTemplate"), href: "/dashboard/settings/account-template", icon: LayoutTemplate },
+            { name: tLedger("fiscal"), href: "/dashboard/settings/fiscal", icon: CalendarClock },
+        ] : []),
+        ...(userRole && canConfigureGateway(userRole) ? [
+            { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
+            { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
+        ] : []),
+        ...(userRole && canConfigureFines(userRole) ? [{ name: tNav("chequeFailureFines"), href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
+    ];
 
     // Tenant user minimal items
     const tenantUserItems = userRole === 'TENANT_USER' ? [

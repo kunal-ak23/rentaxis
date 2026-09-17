@@ -1719,7 +1719,14 @@
       "EXPENSE": "Expenses",
       "EQUITY": "Equity"
     },
-    "tenantName": "Tenant Name"
+    "tenantName": "Tenant Name",
+    "total": "Total",
+    "line": "Line",
+    "journalsDesc": "Every entry posted to the books, manual and automatic.",
+    "allDocTypes": "All types",
+    "fiscalDesc": "When the books start, and how far back they are locked.",
+    "sourceLease": "Source lease",
+    "cancel": "Cancel"
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",

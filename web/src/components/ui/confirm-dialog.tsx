@@ -13,6 +13,8 @@ interface ConfirmDialogProps {
     cancelText?: string;
     isDestructive?: boolean;
     isLoading?: boolean;
+    /** Extra fields the confirmation needs — rendered under the description. */
+    children?: React.ReactNode;
 }
 
 export function ConfirmDialog({
@@ -25,6 +27,7 @@ export function ConfirmDialog({
     cancelText = "Cancel",
     isDestructive = false,
     isLoading = false,
+    children,
 }: ConfirmDialogProps) {
     return (
         <AnimatePresence>
@@ -50,6 +53,7 @@ export function ConfirmDialog({
                             {description && (
                                 <p className="text-sm text-muted font-medium leading-relaxed">{description}</p>
                             )}
+                            {children && <div className="mt-4 space-y-3">{children}</div>}
                         </div>
                         <div className="px-6 py-4 bg-input/80 border-t border-border flex justify-end gap-3">
                             <button
