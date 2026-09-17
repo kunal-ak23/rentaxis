@@ -10,11 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-17-accounting-v2-design.md` — §10 (expense vouchers, opening balances, cut-over), §11 (Purchase/Service Invoice, Bank/Cash Payment Voucher, Opening Balances, Reconciliation, Import Batches screens), §12 (testing), §13 item 4. Read it first.
 
-**Depends on:** `docs/superpowers/plans/2026-09-17-accounting-v2-plan1-ledger-core.md` (ledger core — merged before this plan starts). Tasks 10–11 additionally depend on Plans 2 and 3, which do not exist yet; see **Ordering** below.
+**Depends on:** `docs/superpowers/plans/2026-09-17-accounting-v2-plan1-ledger-core.md` (ledger core — merged before this plan starts). Tasks 10–11 additionally depend on `…-plan2-lease-posting-pdc.md` and `…-plan3-recognition-termination-settlement.md`, which are written but not yet merged; see **Ordering** below.
 
 ## Global Constraints
 
-- **Ordering.** Tasks 1–9 and 12–16 depend only on Plan 1 and may be built as soon as Plan 1 is merged. **Tasks 10 and 11 (contract import, bulk post) must be executed after Plans 2 and 3 are merged** — they consume `Lease`/`LeaseLine`/`Cheque`/`ChargeType`, `LeasePostingService`, `ChequeService`, `LeaseService.revertToDraft` and `RecognitionService`. Do not start Task 10 before `git log --oneline main | grep -i "accounting v2 plan 3"` shows Plan 3 merged.
+- **Ordering.** Tasks 1–9 and 12–16 depend only on Plan 1 and may be built as soon as Plan 1 is merged. **Tasks 10 and 11 (contract import, bulk post) must be executed after Plans 2 and 3 are merged** — they consume `Lease`/`LeaseLine`/`Cheque`/`ChargeType`, `LeasePostingService`, `ChequeService`, `LeaseService` and `RecognitionService`. Do not start Task 10 before `git log --oneline main | grep -i "accounting v2 plan 3"` shows Plan 3 merged, and re-read both plans' Interfaces blocks first — the signatures quoted here are from their plan documents, not from merged code.
 - **Cash Receipt Voucher – Rent (`RCP`) is not in this plan.** Spec §9.3 puts it on the receipt path, which Plan 2 owns. The `vouchers` table created here carries `RCP` in its `doc_type` enum so Plan 2 has somewhere to put it; nothing in this plan writes or reads an `RCP` row.
 - Liquibase changesets are **append-only**; Plan 1 used `81-`/`82-`, Plans 2–3 use `83-` … `86-`. **This plan uses `87-vouchers.yaml` and `88-cutover.yaml` only.** `changeSet.id` = filename stem; `author: claude`; a `#` comment block above the changeset explains why, in the style of `80-one-active-lease-per-unit.yaml`.
 - Java paths in this plan are relative to `backend/src/main/java/com/datagami/rentaxis/` (tests: `backend/src/test/java/com/datagami/rentaxis/`). Web paths are relative to the repo root.
@@ -5084,7 +5084,8 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
     - `Renters`: `Name, NameAr, Email, Phone` (positional 0–3)
     - `Leases`: by header — `PropertyName, BuildingName, UnitNumber, RenterEmail, StartDate, EndDate, RentAmount, DepositAmount, PaymentTerms, PaymentMethod, EjariNumber, MonthlyRent, AdminFee, ParkingRemoteFee, RentVatApplicable, …`
     - `Cheques` (v1): by header — `PropertyName, UnitNumber, RenterEmail, InstallmentNo, DueDate, ChequeOrPaymentDate, UniqueId, Bank, Amount, Method`
-- Consumes (from Plans 2/3): `Lease`, `LeaseLine`, `ChargeType`, `ChargeTypeRepository.findByCodeIgnoreCase`, `Cheque` — see the Plans 2/3 interface block at the top.
+- Consumes (from Plans 2/3): `Lease`, `LeaseLine`, `ChargeType` + its repository's by-code finder, `Cheque`, `LeaseService.syncDerivedTotals` — see the Plans 2/3 interface block at the top.
+- **Plan 2 already touches this file.** Its Task list includes `PortfolioImportPersistService.java (minimal: lines + cheque rows, no schedules)` — the v1 path is rewired onto `lease_lines` and `cheques` there. Read that change before starting: this task adds the v2 sheets *beside* it, and must not undo it.
 - Consumes (from this plan): `ImportBatchService.create/linkLease`, `AccountRepository`, `PropertyAccountMappingRepository`.
 - Produces:
   ```java
@@ -5628,6 +5629,8 @@ Also change three members of `PortfolioImportService` from `private` to package-
 ```
 
 `HeaderIndex` is already `static final class` with package-private members — make the class `public static final` and its `col`/`has` methods `public`, since `ContractImportValidator` lives in a different package.
+
+> **`findByCodeIgnoreCase`:** Plan 2 creates `ChargeTypeRepository` but its plan does not pin the finder's name. Before writing this task, open `domain/repository/ChargeTypeRepository.java` and use whatever by-code finder is there; add `Optional<ChargeType> findByCodeIgnoreCase(String code)` to it only if none exists. Three call sites in this task depend on it.
 
 - [ ] **Step 4: Run the validator test to verify it passes**
 
@@ -8364,6 +8367,7 @@ No "TBD", "implement later", "add validation", or "similar to Task N" anywhere. 
 - `ReconciliationRow` is `(accountId, code, name, derived, derivedBalance, pactBalance, difference)` in Tasks 9, 12 and 15.
 - `ImportBatchStatus` is `DRAFT | POSTED | REVERSED` in the enum (Task 7), the CHECK constraint (Task 6), the DTO (Task 7) and the web type (Task 12).
 - `ImportBatchService.reverse(UUID, LocalDate, String)` is called with the same arity from `ImportBatchController` (Task 7) and `ContractImportPostIT` (Task 11).
-- `LeaseReverter.revertToDraft(UUID)` is declared in Task 7 and implemented by `LeaseService` in Task 11 Step 3 under the same name.
+- `LeaseReverter.revertToDraft(UUID)` is declared in Task 7 and implemented by `LeaseService` in Task 11 Step 3 under the same name. It is a **new** method — Plan 2 has `terminateLease`, which posts journals and is not an undo.
+- The Plans 2/3 signatures used in Tasks 10–11 are the ones those plan documents publish: `LeasePostingService.post(UUID) : PostLeaseResponse`, `ChequeService.{deposit,clear,bounce}(UUID, ChequeActionRequest) : ChequeDTO` in `core/service/cheque/`, `RecognitionService.runTo(LocalDate, boolean) : RecognitionRunResult` in `core/service/recognition/`. Each is extended with a trailing `UUID importBatchId` in Task 11 Step 3 and called with that arity in `ContractImportPostService`.
 - `vatOf(amount, rate)` in `vouchers.ts` (Task 12) mirrors `VoucherMath.vat(amount, rate)` (Task 2); both are asserted against `1234.57 → 61.73` and `100.10 → 5.01`.
 - `cutoverApi.batches.reverse(id, {date, reason})` matches `ReverseBatchDTO(date, reason)` (Task 7).
