@@ -46,8 +46,6 @@ class PaymentScheduleServiceMarkFailedTest {
 
     private PaymentScheduleRepository paymentScheduleRepository;
     private AccountRepository accountRepository;
-    private FinancialTransactionService financialTransactionService;
-    private AccountMappingService accountMappingService;
     private RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private NotificationService notificationService;
     private FineConfigResolver fineConfigResolver;
@@ -64,8 +62,6 @@ class PaymentScheduleServiceMarkFailedTest {
     void setUp() {
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
         accountRepository = mock(AccountRepository.class);
-        financialTransactionService = mock(FinancialTransactionService.class);
-        accountMappingService = mock(AccountMappingService.class);
         rentCollectionSettingsRepository = mock(RentCollectionSettingsRepository.class);
         notificationService = mock(NotificationService.class);
         fineConfigResolver = mock(FineConfigResolver.class);
@@ -77,8 +73,6 @@ class PaymentScheduleServiceMarkFailedTest {
                 mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class),
                 mock(com.datagami.rentaxis.domain.repository.LeaseRepository.class),
                 accountRepository,
-                financialTransactionService,
-                accountMappingService,
                 rentCollectionSettingsRepository,
                 notificationService,
                 fineConfigResolver,
@@ -219,8 +213,6 @@ class PaymentScheduleServiceMarkFailedTest {
                 .hasMessageContaining("Can only mark payments in DEPOSITED status as failed");
 
         verify(paymentPenaltyRepository, never()).save(any());
-        verify(financialTransactionService, never())
-                .recordChequeBounce(any(), any(java.time.LocalDate.class));
     }
 
     @Test
@@ -318,19 +310,7 @@ class PaymentScheduleServiceMarkFailedTest {
         assertThat(ev.getNotes()).contains(marker);
     }
 
-    @Test
-    void markFailed_postsChequeBouncedFinancialTransaction() {
-        PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
-        stubFindAndSave(payment);
-        stubFineConfig(bounceCfg());
-
-        service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
-
-        verify(financialTransactionService, times(1))
-                .recordChequeBounce(any(PaymentSchedule.class), any(java.time.LocalDate.class));
-    }
-
-    // ---------- Robustness: null lease.status + FT-failure propagation ----------
+    // ---------- Robustness: null lease.status ----------
 
     @Test
     void markFailed_leaseStatusNull_doesNotThrow() {
@@ -350,29 +330,6 @@ class PaymentScheduleServiceMarkFailedTest {
         LeaseEvent ev = captor.getValue();
         assertThat(ev.getNewState()).isEqualTo(LeaseStatus.ACTIVE);
         assertThat(ev.getPreviousState()).isEqualTo(LeaseStatus.ACTIVE);
-    }
-
-    @Test
-    void markFailed_financialTransactionFails_rollsBack() {
-        PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
-        stubFindAndSave(payment);
-        stubFineConfig(bounceCfg());
-        // recordChequeBounce shares the outer JPA transaction — when it
-        // throws, the exception MUST propagate so @Transactional triggers a
-        // full rollback of the schedule update + penalty + audit. Swallowing
-        // it would leave the books inconsistent with the schedule state.
-        org.mockito.Mockito.doThrow(new RuntimeException("ledger down"))
-                .when(financialTransactionService)
-                .recordChequeBounce(any(PaymentSchedule.class), any(java.time.LocalDate.class));
-
-        assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("ledger down");
-
-        // LeaseEvent should NOT have been written — the FT call happens before
-        // the audit save, and even if it didn't, @Transactional would roll the
-        // whole unit back. Verify the audit save was not invoked.
-        verify(leaseEventRepository, never()).save(any());
     }
 
     // ---------- Helpers ----------

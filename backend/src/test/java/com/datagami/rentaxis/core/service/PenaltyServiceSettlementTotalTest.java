@@ -52,7 +52,6 @@ class PenaltyServiceSettlementTotalTest {
         PenaltyPaymentService penaltyPaymentService = new PenaltyPaymentService(
                 paymentPenaltyRepository,
                 penaltyPaymentRepository,
-                mock(FinancialTransactionService.class),
                 mock(NotificationService.class),
                 mock(LeaseEventRepository.class),
                 mock(LeaseRepository.class),

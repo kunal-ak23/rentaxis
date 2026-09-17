@@ -5,7 +5,6 @@ import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
-import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
@@ -21,7 +20,6 @@ import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
-import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -63,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * and drives {@link PaymentScheduleService#markFailed} through the full
  * orchestrator → @Transactional → JSONB → tenant-filter chain. Asserts
  * persisted state across {@link PaymentSchedule}, {@link PaymentPenalty},
- * {@link FinancialTransaction}, and {@link LeaseEvent}.</p>
+ * and {@link LeaseEvent}.</p>
  *
  * <p>Requires Docker on the host.</p>
  */
@@ -79,7 +77,6 @@ class ChequeFailurePenaltyIT {
     @Autowired PaymentPenaltyRepository paymentPenaltyRepository;
     @Autowired PaymentScheduleRepository paymentScheduleRepository;
     @Autowired LeaseEventRepository leaseEventRepository;
-    @Autowired FinancialTransactionRepository financialTransactionRepository;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired PropertyRepository propertyRepository;
     @Autowired UnitRepository unitRepository;
@@ -170,17 +167,8 @@ class ChequeFailurePenaltyIT {
         assertThat(p.getFinePerDayRate()).isEqualByComparingTo("25");
         assertThat(p.getClearedAt()).isNull();
 
-        // FinancialTransaction is tenant-filtered, but this test asserts the
-        // count for THIS schedule specifically (not "all bounce txns ever in
-        // the DB") — the same Spring context is shared across tests so we
-        // scope explicitly via the fixture's tenantId rather than relying on
-        // the Hibernate filter.
-        List<FinancialTransaction> txns = financialTransactionRepository.findAll();
-        long bouncedTxnCount = txns.stream()
-                .filter(t -> tenantId.equals(t.getTenantId()))
-                .filter(t -> t.getDescription() != null && t.getDescription().contains("Cheque bounced"))
-                .count();
-        assertThat(bouncedTxnCount).isEqualTo(2); // debit + credit pair
+        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9);
+        // what markFailed still owns is the status transition and the penalty row above.
 
         List<LeaseEvent> events = leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(lease.getId());
         boolean hasFailedEvent = events.stream()
@@ -242,31 +230,14 @@ class ChequeFailurePenaltyIT {
                 assertThat(markFailedOutcome).isInstanceOf(BusinessRuleViolationException.class);
             }
 
-            // Match on the accounting fact (which account was debited/credited),
-            // not the English description text — clearPayment's two legs don't
-            // even share a description ("Cheque cleared..." debit vs "Rental
-            // income..." credit), so a substring match on one phrase silently
-            // undercounts the pair it's meant to verify.
-            List<FinancialTransaction> txns = financialTransactionRepository.findAll();
-            long clearedLegCount = txns.stream()
-                    .filter(t -> tenantId.equals(t.getTenantId()))
-                    .filter(t -> ("A-02-02".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
-                            || ("C-01-01".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
-                    .count();
-            long bouncedLegCount = txns.stream()
-                    .filter(t -> tenantId.equals(t.getTenantId()))
-                    .filter(t -> ("C-01-01".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
-                            || ("A-02-02".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
-                    .count();
-
-            if (clearWon) {
-                assertThat(clearedLegCount).as("cleared side should post its debit+credit pair").isEqualTo(2);
-                assertThat(bouncedLegCount).as("losing markFailed must NOT post a bounce transaction").isEqualTo(0);
-            } else {
-                assertThat(bouncedLegCount).as("bounced side should post its debit+credit pair").isEqualTo(2);
-                assertThat(clearedLegCount).as("losing clearPayment must NOT post a rent-received transaction")
-                        .isEqualTo(0);
-            }
+            // v1 asserted which financial_transactions each side posted. Posting
+            // moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9),
+            // so the race invariant is now read off the schedule's own status:
+            // exactly one transition is persisted, never both.
+            PaymentSchedule afterRace = paymentScheduleRepository.findById(scheduleId).orElseThrow();
+            assertThat(afterRace.getStatus())
+                    .as("the winning transition is the one persisted")
+                    .isEqualTo(clearWon ? PaymentStatus.CLEARED : PaymentStatus.BOUNCED);
         } finally {
             pool.shutdown();
         }

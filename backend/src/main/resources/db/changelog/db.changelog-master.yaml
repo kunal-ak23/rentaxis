@@ -169,3 +169,5 @@ databaseChangeLog:
       file: db/changelog/changesets/80-one-active-lease-per-unit.yaml
   - include:
       file: db/changelog/changesets/81-ledger-core.yaml
+  - include:
+      file: db/changelog/changesets/82-drop-v1-finance.yaml

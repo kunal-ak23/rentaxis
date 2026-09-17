@@ -1,14 +1,11 @@
 /**
  * 02 — Cheque state transitions on payment-schedule rows.
  *
- * Covers: collect → deposit. Both `clear` AND `bounce` emit
- * FinancialTransaction rows against bank/cash/rental-income accounts that
- * require tenant-specific account mappings (chart of accounts) to be
- * configured. A freshly-provisioned tenant doesn't have them, so both
- * actions return 500 with "Bank/Cash account (A-01-01) not found" or
- * "Rental Income account (C-01-01) not found." Configuring the
- * chart-of-accounts via API is out of scope for a single-spec smoke —
- * covered by separate ops procedures.
+ * Covers: collect → deposit. `clear` and `bounce` are left out: they are
+ * the transitions accounting v2 rewires onto PostingService (plans 2-3), and
+ * the ledger side of them needs a configured chart of accounts, which a
+ * freshly-provisioned tenant does not have. Covered by separate ops
+ * procedures.
  *
  * The four lifecycle endpoints are PUT /v1/payments/{id}/{collect|deposit|bounce|clear}
  * and all accept an UpdatePaymentStatusDTO body.

@@ -1,7 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Staff;
-import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.StaffRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,7 +13,6 @@ import java.util.UUID;
 public class StaffService {
 
     private final StaffRepository repository;
-    private final FinancialTransactionRepository transactionRepository;
 
     @Transactional(readOnly = true)
     public List<Staff> getAllStaff() {
@@ -58,9 +56,6 @@ public class StaffService {
 
     @Transactional
     public void deleteStaff(UUID id) {
-        if (!transactionRepository.findByStaffId(id).isEmpty()) {
-            throw new IllegalStateException("Cannot delete staff member with existing transactions");
-        }
         repository.deleteById(id);
     }
 }

@@ -41,14 +41,6 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   const accounts = seededAccounts.length >= 2 ? seededAccounts : await api.getAccounts(taCtx);
   expect(accounts.length).toBeGreaterThanOrEqual(2);
 
-  const mapping = await api.saveAccountMapping(taCtx, {
-    transactionNature: 'SALARY_PAYMENT',
-    debitAccountId: accounts[0].id,
-    creditAccountId: accounts[1].id,
-  });
-  expect(mapping.transactionNature).toBe('SALARY_PAYMENT');
-  expect((await api.getAccountMappings(taCtx)).some((item) => item.id === mapping.id)).toBeTruthy();
-
   const staff = await api.createStaff(taCtx, {
     propertyId: ctx.property.id,
     nameEn: `TEST-Facilities Coordinator ${ctx.runSuffix}`,
@@ -78,23 +70,6 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   expect(updatedBank.isDefault).toBeTruthy();
   expect((await api.getBankAccountsByProperty(taCtx, ctx.property.id)).some((item) => item.id === bank.id)).toBeTruthy();
 
-  const transaction = await api.createFinancialTransaction(taCtx, {
-    accountId: accounts[0].id,
-    propertyId: ctx.property.id,
-    description: `TEST-Manual expense ${ctx.runSuffix}`,
-    debit: 125,
-    credit: 0,
-  });
-  expect(transaction.id).toBeTruthy();
-  expect(transaction.accountCode).toBeTruthy();
-
-  const transactionList = await taCtx.request.get(
-    `/api/proxy/v1/finance/transactions?propertyId=${ctx.property.id}`,
-  );
-  expect(transactionList.ok()).toBeTruthy();
-  const transactions: Array<{ id: string }> = await transactionList.json();
-  expect(transactions.some((item) => item.id === transaction.id)).toBeTruthy();
-
   const browserCtx = await browser.newContext({ baseURL: ctx.baseURL });
   const page = await browserCtx.newPage();
   await page.goto('/en/auth/login');
@@ -106,9 +81,6 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   await page.goto('/en/dashboard/finance/accounts');
   await expect(page.getByText(accounts[0].code, { exact: true }).first()).toBeVisible();
 
-  await page.goto('/en/dashboard/settings/account-mappings');
-  await expect(page.getByRole('heading', { level: 3, name: 'SALARY_PAYMENT' })).toBeVisible();
-
   await page.goto('/en/dashboard/staff');
   await expect(page.getByText(`TEST-Senior Coordinator ${ctx.runSuffix}`, { exact: true })).toBeVisible();
 
@@ -117,13 +89,6 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
 
   await page.goto('/en/dashboard/finance/vendors');
   await expect(page.getByText(`TEST-Vendor ${ctx.runSuffix}`, { exact: true })).toBeVisible();
-
-  await page.goto('/en/dashboard/finance/transactions');
-  // The default Simple view intentionally keeps only INCOME/EXPENSE rows;
-  // this fixture uses the first seeded account and must be checked in the
-  // complete Accounting ledger instead.
-  await page.getByRole('button', { name: 'Accounting', exact: true }).click();
-  await expect(page.getByText(`TEST-Manual expense ${ctx.runSuffix}`, { exact: true })).toBeVisible();
 
   await browserCtx.close();
 

@@ -20,7 +20,6 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
-import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
@@ -69,8 +68,6 @@ public class PaymentScheduleService {
     private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseRepository leaseRepository;
     private final AccountRepository accountRepository;
-    private final FinancialTransactionService financialTransactionService;
-    private final AccountMappingService accountMappingService;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final NotificationService notificationService;
     private final FineConfigResolver fineConfigResolver;
@@ -877,104 +874,7 @@ public class PaymentScheduleService {
         payment.setStatusChangedAt(effectiveInstant(dto.getEffectiveDate()));
         paymentScheduleRepository.save(payment);
 
-        // Auto-create financial transactions.
-        //
-        // A refundable security deposit is a LIABILITY, not income: the landlord
-        // holds the renter's money and owes it back at settlement. This used to
-        // resolve RENT_PAYMENT_CLEARED unconditionally, so every deposit cheque
-        // was credited to Rental Income the moment it cleared — overstating
-        // income by the whole deposit book (typically one month's rent per
-        // active lease) and leaving B-01-02 "Security Deposits" permanently at
-        // zero. The SECURITY_DEPOSIT_RECEIVED mapping was seeded and editable in
-        // the admin UI all along; nothing ever read it.
-        //
-        // The refund side is posted by SettlementService.finalizeSettlement via
-        // SECURITY_DEPOSIT_REFUNDED, so the liability is released when the money
-        // actually goes back.
-        boolean isDeposit = payment.isSecurityDeposit();
-        TransactionNature nature = isDeposit
-                ? TransactionNature.SECURITY_DEPOSIT_RECEIVED
-                : TransactionNature.RENT_PAYMENT_CLEARED;
-        AccountMapping mapping = accountMappingService.resolveMapping(nature);
-
-        Account bankAccount;
-        Account rentalIncomeAccount;
-
-        if (mapping != null) {
-            bankAccount = mapping.getDebitAccount();
-            rentalIncomeAccount = mapping.getCreditAccount();
-        } else if (isDeposit) {
-            UUID tenantId = TenantContextHolder.getTenantId();
-            bankAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please seed the chart of accounts or configure account mappings."));
-            rentalIncomeAccount = accountRepository.findByCodeAndTenantId("B-01-02", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Security Deposits account (B-01-02) not found. Please seed the chart of accounts or configure account mappings."));
-        } else {
-            // Fallback when the tenant has accounts but no RENT_PAYMENT_CLEARED
-            // mapping — reachable for any tenant onboarded via
-            // POST /finance/accounts/import or by creating accounts one at a
-            // time, because AccountMappingService.seedDefaults() runs only
-            // inside seedDefaultAccounts(), which early-returns once accounts
-            // exist.
-            //
-            // This used to look up "A-01-01", which seedDefaultAccounts has
-            // never created (it seeds A-01, A-02 and A-02-01..A-02-05), so the
-            // fallback always threw and the whole @Transactional rolled back —
-            // the schedule stayed DEPOSITED and rent could never be recorded as
-            // collected. A-02-02 "Bank Accounts" is the seeded bank account and
-            // is already what recordChequeBounce uses for the same role.
-            UUID tenantId = TenantContextHolder.getTenantId();
-            bankAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please seed the chart of accounts or configure account mappings."));
-            rentalIncomeAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
-        }
-
-        String legLabel = isDeposit
-                ? "Security deposit received - Lease " + payment.getInstallmentNumber()
-                : "Lease installment #" + payment.getInstallmentNumber();
-
-        FinancialTransaction debitTxn = new FinancialTransaction();
-        debitTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
-        debitTxn.setDescription("Cheque cleared - " + legLabel);
-        debitTxn.setAccount(bankAccount);
-        debitTxn.setDebit(payment.getAmount());
-        debitTxn.setCredit(BigDecimal.ZERO);
-        debitTxn.setProperty(payment.getProperty());
-        debitTxn.setUnit(payment.getUnit());
-        financialTransactionService.createTransaction(debitTxn);
-
-        FinancialTransaction creditTxn = new FinancialTransaction();
-        creditTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
-        creditTxn.setDescription((isDeposit ? "Security deposit held - " : "Rental income - ") + legLabel);
-        creditTxn.setAccount(rentalIncomeAccount);
-        creditTxn.setDebit(BigDecimal.ZERO);
-        creditTxn.setCredit(payment.getAmount());
-        creditTxn.setProperty(payment.getProperty());
-        creditTxn.setUnit(payment.getUnit());
-
-        // Stamp VAT fields from the AUTHORITATIVE per-row vatAmount recorded at
-        // generation (B1). The row's amount is gross (face value); vatAmount was
-        // computed per-component when the schedule was built — inclusive rent VAT
-        // (gross*5/105) PLUS additive per-installment charge VAT, or the charge's
-        // own additive VAT for one-time-charge rows. This makes recorded VAT match
-        // exactly what was billed even when a charge's VAT status differs from
-        // rent's. Only the credit (rental-income) leg is stamped — VAT is tracked
-        // on income lines, not on the bank/cash debit leg.
-        BigDecimal rowVat = payment.getVatAmount();
-        if (rowVat != null && rowVat.signum() > 0) {
-            BigDecimal gross = payment.getAmount();
-            creditTxn.setVatApplicable(true);
-            creditTxn.setVatRate(new BigDecimal("5.00"));
-            creditTxn.setVatAmount(rowVat);
-            creditTxn.setGrossAmount(gross);
-            creditTxn.setNetAmount(gross.subtract(rowVat));
-        }
-        // else: no VAT on this row → leave defaults (vatApplicable=false,
-        // vatRate=0, vatAmount=0, grossAmount=0, netAmount=0), matching pre-M9
-        // behavior for VAT-exempt residential leases.
-
-        financialTransactionService.createTransaction(creditTxn);
+        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
 
         // Notify renter that payment has been cleared
         try {
@@ -1048,14 +948,7 @@ public class PaymentScheduleService {
         penalty.setLastCalculatedAt(LocalDateTime.now());
         PaymentPenalty savedPenalty = paymentPenaltyRepository.save(penalty);
 
-        // Post CHEQUE_BOUNCED financial transaction (existing nature, existing
-        // AccountMapping). NOT wrapped in try/catch — recordChequeBounce
-        // participates in this same outer JPA transaction, so swallowing its
-        // exception poisons the connection and the eventual commit fails with a
-        // confusing TransactionSystemException. Letting it propagate triggers
-        // proper rollback of the status change + penalty + audit so the books
-        // stay consistent with the schedule state.
-        financialTransactionService.recordChequeBounce(saved, effectiveDateOrToday(effectiveDate));
+        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
 
         // Renter notifications — both PAYMENT_BOUNCED (existing template) and
         // PENALTY_INCURRED (extracted to NotificationService.sendPenaltyIncurred

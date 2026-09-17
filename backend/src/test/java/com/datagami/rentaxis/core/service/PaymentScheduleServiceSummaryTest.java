@@ -47,8 +47,6 @@ class PaymentScheduleServiceSummaryTest {
                 mock(LeaseChargeRepository.class),
                 mock(LeaseRepository.class),
                 mock(AccountRepository.class),
-                mock(FinancialTransactionService.class),
-                mock(AccountMappingService.class),
                 mock(RentCollectionSettingsRepository.class),
                 mock(NotificationService.class),
                 mock(FineConfigResolver.class),

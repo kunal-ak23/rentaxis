@@ -14,7 +14,6 @@ vi.mock("@/i18n/routing", () => ({
         </a>
     ),
 }));
-vi.mock("@/components/vendors/VendorPaymentDialog", () => ({ default: () => null }));
 vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => null }));
 // Render a plain confirm button so tests can trigger onConfirm without framer-motion.
 vi.mock("@/components/ui/confirm-dialog", () => ({

@@ -39,9 +39,6 @@ public class PenaltyPayment extends BaseTenantEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
-    @Column(name = "financial_transaction_id")
-    private UUID financialTransactionId;
-
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 }

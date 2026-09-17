@@ -3,7 +3,6 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
-import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
@@ -18,7 +17,6 @@ import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
-import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
@@ -75,7 +73,6 @@ class PenaltyClearanceIT {
     @Autowired PaymentPenaltyRepository paymentPenaltyRepository;
     @Autowired PenaltyPaymentRepository penaltyPaymentRepository;
     @Autowired PaymentScheduleRepository paymentScheduleRepository;
-    @Autowired FinancialTransactionRepository financialTransactionRepository;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired PropertyRepository propertyRepository;
     @Autowired UnitRepository unitRepository;
@@ -160,21 +157,14 @@ class PenaltyClearanceIT {
         assertThat(receipt.getAmount()).isEqualByComparingTo("200");
         assertThat(receipt.getPaymentMethod()).isEqualTo("BANK_TRANSFER");
         assertThat(receipt.getPaymentReference()).isEqualTo("UTR-1");
-        assertThat(receipt.getFinancialTransactionId()).isNotNull();
 
         PaymentPenalty reloaded = paymentPenaltyRepository.findById(penaltyId).orElseThrow();
         assertThat(reloaded.getClearedAt()).isNull();
         assertThat(penaltyPaymentService.outstanding(reloaded)).isEqualByComparingTo("300");
-
-        List<FinancialTransaction> penaltyTxns = financialTransactionRepository.findAll().stream()
-                .filter(t -> tenantId.equals(t.getTenantId()))
-                .filter(t -> t.getDescription() != null && t.getDescription().startsWith("Penalty payment"))
-                .toList();
-        assertThat(penaltyTxns).hasSize(2); // debit + credit pair
     }
 
     @Test
-    void finalPay_clearsAndPostsSecondFinancialTransaction() {
+    void finalPay_clearsThePenalty() {
         UUID penaltyId = openPenalty.getId();
 
         penaltyPaymentService.recordReceipt(penaltyId, new PenaltyPaymentService.RecordReceiptInput(
@@ -197,13 +187,6 @@ class PenaltyClearanceIT {
 
         PaymentPenalty cleared = paymentPenaltyRepository.findById(penaltyId).orElseThrow();
         assertThat(cleared.getClearedAt()).isNotNull();
-
-        // 4 PENALTY_INCOME journal entries (2 pairs).
-        long penaltyTxnCount = financialTransactionRepository.findAll().stream()
-                .filter(t -> tenantId.equals(t.getTenantId()))
-                .filter(t -> t.getDescription() != null && t.getDescription().startsWith("Penalty payment"))
-                .count();
-        assertThat(penaltyTxnCount).isEqualTo(4);
     }
 
     @Test
@@ -240,8 +223,6 @@ class PenaltyClearanceIT {
     void overpayRejected() {
         UUID penaltyId = openPenalty.getId();
 
-        long penaltyTxnsBefore = countPenaltyTransactions();
-
         // Outstanding is 500 — try to pay 600.
         assertThatThrownBy(() ->
                 penaltyPaymentService.recordReceipt(
@@ -255,10 +236,6 @@ class PenaltyClearanceIT {
         List<PenaltyPayment> rows = penaltyPaymentRepository
                 .findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId);
         assertThat(rows).isEmpty();
-
-        // No additional FT rows should have been posted.
-        long penaltyTxnsAfter = countPenaltyTransactions();
-        assertThat(penaltyTxnsAfter).isEqualTo(penaltyTxnsBefore);
 
         PaymentPenalty stillOpen = paymentPenaltyRepository.findById(penaltyId).orElseThrow();
         assertThat(stillOpen.getClearedAt()).isNull();
@@ -282,13 +259,6 @@ class PenaltyClearanceIT {
                                 new BigDecimal("100"), "CASH", null, LocalDate.now(), null),
                         adminUserId))
                 .isInstanceOf(BusinessRuleViolationException.class);
-    }
-
-    private long countPenaltyTransactions() {
-        return financialTransactionRepository.findAll().stream()
-                .filter(t -> tenantId.equals(t.getTenantId()))
-                .filter(t -> t.getDescription() != null && t.getDescription().startsWith("Penalty payment"))
-                .count();
     }
 
     private void seedAccount(String code, String name, AccountType type) {

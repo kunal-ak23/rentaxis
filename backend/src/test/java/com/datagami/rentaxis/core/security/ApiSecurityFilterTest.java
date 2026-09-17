@@ -129,6 +129,49 @@ class ApiSecurityFilterTest {
         assertThat(chain.tenantInContext).isEqualTo(tenant);
     }
 
+    /**
+     * The active-tenant selector is optional: dropping {@code X-Tenant-Id} makes
+     * the filter fall back to the caller's home tenant, so an ACCOUNTANT is
+     * admitted and still scoped. Same rule the other tenant-scoped roles get.
+     */
+    @Test
+    void legacyAccountantWithoutActiveTenantHeaderFallsBackToHomeTenant() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        MockHttpServletRequest req = request("/api/v1/finance/journals");
+        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Role", "ACCOUNTANT");
+        req.addHeader("X-User-Tenant-Id", tenant.toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_ACCOUNTANT");
+        assertThat(chain.tenantInContext).isEqualTo(tenant);
+    }
+
+    /**
+     * With NEITHER tenant header there is nothing to scope to. The filter still
+     * builds the authentication — the same pass-through
+     * {@link #legacyNoHeadersPassesThroughUnauthenticated} documents — but leaves
+     * TenantContext unset, so no tenant-scoped query can be served: the
+     * @PreAuthorize passes and the repository has no tenant to filter on. This
+     * pins the behaviour so a change to it is deliberate.
+     */
+    @Test
+    void legacyAccountantWithNoTenantHeadersIsNotGivenATenantContext() throws Exception {
+        MockHttpServletRequest req = request("/api/v1/finance/journals");
+        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Role", "ACCOUNTANT");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(chain.tenantInContext).isNull();
+    }
+
     @Test
     void legacyAccountantRequestingAForeignTenantIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/finance/journals");

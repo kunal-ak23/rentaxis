@@ -5,7 +5,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Vendor;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
-import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
+import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.VendorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +20,7 @@ import java.util.UUID;
 public class VendorService {
 
     private final VendorRepository repository;
-    private final FinancialTransactionRepository transactionRepository;
+    private final JournalLineRepository journalLineRepository;
     private final AccountService accountService;
     private final AccountRepository accountRepository;
 
@@ -87,7 +87,12 @@ public class VendorService {
         if (!repository.existsById(id)) {
             throw new NotFoundException("Vendor not found");
         }
-        if (transactionRepository.existsByVendorId(id)) {
+        // v1 asked financial_transactions "any row for this vendor?". The vendor
+        // ledger is now journal_lines against the vendor's payable leaf
+        // (LedgerQueryService), so that is what "has transactions" means.
+        Vendor vendor = getVendorById(id);
+        Account payable = vendor.getPayableAccount();
+        if (payable != null && journalLineRepository.existsByAccount_Id(payable.getId())) {
             throw new BusinessRuleViolationException("Cannot delete vendor with existing transactions");
         }
         repository.deleteById(id);

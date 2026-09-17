@@ -14,7 +14,6 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
-import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,8 +44,6 @@ public class OnlinePaymentService {
     private final EncryptionService encryptionService;
     private final PenaltyCalculationService penaltyCalculationService;
     private final AccountRepository accountRepository;
-    private final FinancialTransactionService financialTransactionService;
-    private final AccountMappingService accountMappingService;
     private final LeaseRepository leaseRepository;
     private final RenterRepository renterRepository;
     private final NotificationService notificationService;
@@ -385,55 +382,6 @@ public class OnlinePaymentService {
         payment.setStatusChangedAt(Instant.now());
         paymentScheduleRepository.save(payment);
 
-        // Auto-create financial transactions (same pattern as PaymentScheduleService.clearPayment())
-        // Try to resolve from account mappings first, fall back to hardcoded defaults
-        AccountMapping mapping = accountMappingService.resolveMapping(TransactionNature.RENT_PAYMENT_CLEARED);
-
-        Account bankAccount;
-        Account rentalIncomeAccount;
-
-        if (mapping != null) {
-            bankAccount = mapping.getDebitAccount();
-            rentalIncomeAccount = mapping.getCreditAccount();
-        } else {
-            // Fallback when the tenant has accounts but no RENT_PAYMENT_CLEARED
-            // mapping — reachable for any tenant onboarded via
-            // POST /finance/accounts/import or by creating accounts one at a
-            // time, because AccountMappingService.seedDefaults() runs only
-            // inside seedDefaultAccounts(), which early-returns once accounts
-            // exist.
-            //
-            // This used to look up "A-01-01", which seedDefaultAccounts has
-            // never created (it seeds A-01, A-02 and A-02-01..A-02-05), so the
-            // fallback always threw and the whole @Transactional rolled back —
-            // the schedule stayed DEPOSITED and rent could never be recorded as
-            // collected. A-02-02 "Bank Accounts" is the seeded bank account and
-            // is already what recordChequeBounce uses for the same role.
-            UUID tenantId = TenantContextHolder.getTenantId();
-            bankAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please seed the chart of accounts or configure account mappings."));
-            rentalIncomeAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
-        }
-
-        FinancialTransaction debitTxn = new FinancialTransaction();
-        debitTxn.setDate(LocalDate.now());
-        debitTxn.setDescription("Online payment cleared - Lease installment #" + payment.getInstallmentNumber());
-        debitTxn.setAccount(bankAccount);
-        debitTxn.setDebit(payment.getAmount());
-        debitTxn.setCredit(BigDecimal.ZERO);
-        debitTxn.setProperty(payment.getProperty());
-        debitTxn.setUnit(payment.getUnit());
-        financialTransactionService.createTransaction(debitTxn);
-
-        FinancialTransaction creditTxn = new FinancialTransaction();
-        creditTxn.setDate(LocalDate.now());
-        creditTxn.setDescription("Online rental income - Lease installment #" + payment.getInstallmentNumber());
-        creditTxn.setAccount(rentalIncomeAccount);
-        creditTxn.setDebit(BigDecimal.ZERO);
-        creditTxn.setCredit(payment.getAmount());
-        creditTxn.setProperty(payment.getProperty());
-        creditTxn.setUnit(payment.getUnit());
-        financialTransactionService.createTransaction(creditTxn);
+        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
     }
 }

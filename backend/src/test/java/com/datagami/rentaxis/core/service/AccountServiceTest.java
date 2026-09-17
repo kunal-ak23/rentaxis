@@ -4,6 +4,8 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.JournalLineRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,13 +31,17 @@ import static org.mockito.Mockito.when;
 class AccountServiceTest {
 
     private AccountRepository repository;
+    private JournalLineRepository journalLineRepository;
+    private PropertyAccountMappingRepository propertyAccountMappingRepository;
     private AccountService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
+        journalLineRepository = mock(JournalLineRepository.class);
+        propertyAccountMappingRepository = mock(PropertyAccountMappingRepository.class);
         service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class),
-                mock(PropertyRepository.class));
+                mock(PropertyRepository.class), journalLineRepository, propertyAccountMappingRepository);
     }
 
     private Account account(boolean system) {

@@ -9,6 +9,8 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.JournalLineRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.stereotype.Service;
@@ -27,13 +29,19 @@ public class AccountService {
     private final AccountRepository repository;
     private final TenantFiscalSettingsRepository fiscalRepo;
     private final PropertyRepository propertyRepository;
+    private final JournalLineRepository journalLineRepository;
+    private final PropertyAccountMappingRepository propertyAccountMappingRepository;
 
     public AccountService(AccountRepository repository,
                           TenantFiscalSettingsRepository fiscalRepo,
-                          PropertyRepository propertyRepository) {
+                          PropertyRepository propertyRepository,
+                          JournalLineRepository journalLineRepository,
+                          PropertyAccountMappingRepository propertyAccountMappingRepository) {
         this.repository = repository;
         this.fiscalRepo = fiscalRepo;
         this.propertyRepository = propertyRepository;
+        this.journalLineRepository = journalLineRepository;
+        this.propertyAccountMappingRepository = propertyAccountMappingRepository;
     }
 
     /**
@@ -202,6 +210,13 @@ public class AccountService {
         }
         if (repository.existsByParent_Id(account.getId())) {
             throw new BusinessRuleViolationException("Cannot delete account with child accounts");
+        }
+        // v1 checked financial_transactions; the ledger of record is now
+        // journal_lines, and an account a property/tenant mapping points at is
+        // still in use even before anything has been posted to it.
+        if (journalLineRepository.existsByAccount_Id(account.getId())
+                || propertyAccountMappingRepository.existsByAccount_Id(account.getId())) {
+            throw new BusinessRuleViolationException("Account has posted journal lines or mappings");
         }
         repository.delete(account);
     }

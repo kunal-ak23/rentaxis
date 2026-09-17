@@ -570,43 +570,6 @@ export const api = {
       pctx,
       '/v1/finance/accounts',
     ),
-  saveAccountMapping: (
-    pctx: ProdContext,
-    m: { transactionNature: string; debitAccountId: string; creditAccountId: string },
-  ) =>
-    postJson<{
-      id: string;
-      transactionNature: string;
-      debitAccountId: string;
-      creditAccountId: string;
-    }>(pctx, '/v1/finance/account-mappings', m),
-  getAccountMappings: (pctx: ProdContext) =>
-    getJson<Array<{ id: string; transactionNature: string }>>(
-      pctx,
-      '/v1/finance/account-mappings',
-    ),
-  createFinancialTransaction: (
-    pctx: ProdContext,
-    t: { accountId: string; propertyId: string; description: string; debit: number; credit: number },
-  ) =>
-    postJson<{ id: string; description: string; accountCode: string; debit: number; credit: number }>(
-      pctx,
-      '/v1/finance/transactions',
-      {
-        date: new Date().toISOString().slice(0, 10),
-        description: t.description,
-        account: { id: t.accountId },
-        property: { id: t.propertyId },
-        debit: t.debit,
-        credit: t.credit,
-        vatApplicable: false,
-        vatAmount: 0,
-        vatRate: 0,
-        grossAmount: Math.max(t.debit, t.credit),
-        netAmount: Math.max(t.debit, t.credit),
-        notes: 'Production E2E fixture',
-      },
-    ),
 
   createListing: (
     pctx: ProdContext,
@@ -1598,15 +1561,6 @@ export const api = {
       pctx,
       `/v1/leases/${leaseId}/interactions`,
     ),
-
-  // Reports / financial — backend mounts these at /api/v1/finance/*.
-  getFinancialTransactions: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; type: string; amount: number; description: string }>>(
-      pctx,
-      `/v1/finance/transactions?leaseId=${leaseId}`,
-    ),
-  getTrialBalance: (pctx: ProdContext) =>
-    getJson<unknown>(pctx, '/v1/finance/reports/trial-balance'),
 
   // Ops renewal — PR #99's tenant-scoped operation avoids processing unrelated
   // opted-in organizations while the disposable production fixture is tested.

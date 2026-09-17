@@ -59,7 +59,7 @@ type PaymentSummary = {
 
 // GET /api/v1/properties returns each property wrapped in a portfolio-summary
 // row (property + assignedManagers + occupancy stats), not a flat property
-// object — mirrors PropertyStats in finance/transactions/page.tsx.
+// object — the shape the properties endpoint returns for the filter.
 type PropertySummary = {
     property: {
         id: string;

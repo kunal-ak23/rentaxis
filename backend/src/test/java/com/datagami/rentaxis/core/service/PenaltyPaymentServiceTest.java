@@ -42,7 +42,6 @@ class PenaltyPaymentServiceTest {
 
     @Mock PaymentPenaltyRepository paymentPenaltyRepository;
     @Mock PenaltyPaymentRepository penaltyPaymentRepository;
-    @Mock FinancialTransactionService financialTransactionService;
     @Mock NotificationService notificationService;
     @Mock LeaseEventRepository leaseEventRepository;
     @Mock LeaseRepository leaseRepository;
@@ -60,7 +59,6 @@ class PenaltyPaymentServiceTest {
         service = new PenaltyPaymentService(
                 paymentPenaltyRepository,
                 penaltyPaymentRepository,
-                financialTransactionService,
                 notificationService,
                 leaseEventRepository,
                 leaseRepository,
@@ -78,9 +76,6 @@ class PenaltyPaymentServiceTest {
         when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        UUID ftId = UUID.randomUUID();
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(ftId);
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> {
             PenaltyPayment row = inv.getArgument(0);
             if (row.getId() == null) row.setId(UUID.randomUUID());
@@ -95,15 +90,12 @@ class PenaltyPaymentServiceTest {
         assertThat(saved.getAmount()).isEqualByComparingTo("200");
         assertThat(saved.getPaymentMethod()).isEqualTo("BANK_TRANSFER");
         assertThat(saved.getPaymentReference()).isEqualTo("UTR-1");
-        assertThat(saved.getFinancialTransactionId()).isEqualTo(ftId);
 
         // Penalty NOT cleared.
         assertThat(p.getClearedAt()).isNull();
         verify(paymentPenaltyRepository, never()).save(any(PaymentPenalty.class));
         // No PENALTY_CLEARED notification.
         verify(notificationService, never()).sendPenaltyCleared(any(), any());
-        // FT was posted exactly once.
-        verify(financialTransactionService, times(1)).recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class));
     }
 
     // ---------- full pay ----------
@@ -114,9 +106,6 @@ class PenaltyPaymentServiceTest {
         when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        UUID ftId = UUID.randomUUID();
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(ftId);
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> {
             PenaltyPayment row = inv.getArgument(0);
             if (row.getId() == null) row.setId(UUID.randomUUID());
@@ -132,7 +121,6 @@ class PenaltyPaymentServiceTest {
         assertThat(p.getClearedAt()).isEqualTo(LocalDateTime.now(fixedClock));
         verify(paymentPenaltyRepository, times(1)).save(p);
         verify(notificationService, times(1)).sendPenaltyCleared(eq(p), any(PenaltyPayment.class));
-        verify(financialTransactionService, times(1)).recordPenaltyIncome(eq(p), any(PenaltyPayment.class));
     }
 
     // ---------- partial then final ----------
@@ -145,8 +133,6 @@ class PenaltyPaymentServiceTest {
         // First call: no prior payments.
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(UUID.randomUUID());
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> {
             PenaltyPayment row = inv.getArgument(0);
             if (row.getId() == null) row.setId(UUID.randomUUID());
@@ -182,8 +168,6 @@ class PenaltyPaymentServiceTest {
         when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(UUID.randomUUID());
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PenaltyPaymentService.RecordReceiptInput input = new PenaltyPaymentService.RecordReceiptInput(
@@ -212,7 +196,6 @@ class PenaltyPaymentServiceTest {
                 .hasMessageContaining("exceeds outstanding");
 
         verify(penaltyPaymentRepository, never()).save(any(PenaltyPayment.class));
-        verify(financialTransactionService, never()).recordPenaltyIncome(any(), any());
         verify(notificationService, never()).sendPenaltyCleared(any(), any());
     }
 
@@ -232,7 +215,6 @@ class PenaltyPaymentServiceTest {
                 .hasMessageContaining("already cleared");
 
         verify(penaltyPaymentRepository, never()).save(any(PenaltyPayment.class));
-        verify(financialTransactionService, never()).recordPenaltyIncome(any(), any());
     }
 
     @Test
@@ -269,30 +251,6 @@ class PenaltyPaymentServiceTest {
                 .hasMessageContaining("amount must be positive");
     }
 
-    // ---------- FT helper signature ----------
-
-    @Test
-    void recordReceipt_postsFinancialTransactionWithPenaltyIncomeNature() {
-        PaymentPenalty p = openPenalty(new BigDecimal("500"), 0, BigDecimal.ZERO);
-        when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
-        when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
-                .thenReturn(List.of());
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(UUID.randomUUID());
-        when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        PenaltyPaymentService.RecordReceiptInput input = new PenaltyPaymentService.RecordReceiptInput(
-                new BigDecimal("100"), "CASH", null, TODAY, null);
-
-        service.recordReceipt(penaltyId, input, receivedBy);
-
-        ArgumentCaptor<PaymentPenalty> penaltyCaptor = ArgumentCaptor.forClass(PaymentPenalty.class);
-        ArgumentCaptor<PenaltyPayment> rowCaptor = ArgumentCaptor.forClass(PenaltyPayment.class);
-        verify(financialTransactionService).recordPenaltyIncome(penaltyCaptor.capture(), rowCaptor.capture());
-        assertThat(penaltyCaptor.getValue()).isSameAs(p);
-        assertThat(rowCaptor.getValue().getAmount()).isEqualByComparingTo("100");
-    }
-
     // ---------- LeaseEvent audit ----------
 
     @Test
@@ -301,8 +259,6 @@ class PenaltyPaymentServiceTest {
         when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(UUID.randomUUID());
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PenaltyPaymentService.RecordReceiptInput input = new PenaltyPaymentService.RecordReceiptInput(
@@ -341,8 +297,6 @@ class PenaltyPaymentServiceTest {
         when(paymentPenaltyRepository.findById(penaltyId)).thenReturn(Optional.of(p));
         when(penaltyPaymentRepository.findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(penaltyId))
                 .thenReturn(List.of());
-        when(financialTransactionService.recordPenaltyIncome(any(PaymentPenalty.class), any(PenaltyPayment.class)))
-                .thenReturn(UUID.randomUUID());
         when(penaltyPaymentRepository.save(any(PenaltyPayment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         PenaltyPaymentService.RecordReceiptInput input = new PenaltyPaymentService.RecordReceiptInput(

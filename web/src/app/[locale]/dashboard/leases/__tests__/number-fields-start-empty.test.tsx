@@ -108,7 +108,6 @@ describe("the number-input sweep", () => {
         "app/[locale]/dashboard/settings/rent-settings/page.tsx",
         "app/[locale]/dashboard/settings/fines/page.tsx",
         "app/[locale]/dashboard/properties/page.tsx",
-        "app/[locale]/dashboard/finance/transactions/page.tsx",
         "app/[locale]/dashboard/staff/page.tsx",
     ];
     const SRC = path.join(__dirname, "..", "..", "..", "..", "..");

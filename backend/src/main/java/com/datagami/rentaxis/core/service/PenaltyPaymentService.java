@@ -39,10 +39,9 @@ import java.util.UUID;
  *   <li>penalty must not already be cleared or waived</li>
  * </ul>
  *
- * <p>Notification + LeaseEvent writes are best-effort relative to the financial
- * core: the FT post happens first (so a ledger outage rolls back via
- * {@code @Transactional}), then the receipt save, then the notification, then
- * the audit row.
+ * <p>Notification + LeaseEvent writes are best-effort relative to the receipt
+ * itself: the receipt row is saved first, then the notification, then the audit
+ * row.
  */
 @Slf4j
 @Service
@@ -50,7 +49,6 @@ public class PenaltyPaymentService {
 
     private final PaymentPenaltyRepository paymentPenaltyRepository;
     private final PenaltyPaymentRepository penaltyPaymentRepository;
-    private final FinancialTransactionService financialTransactionService;
     private final NotificationService notificationService;
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseRepository leaseRepository;
@@ -59,7 +57,6 @@ public class PenaltyPaymentService {
 
     public PenaltyPaymentService(PaymentPenaltyRepository paymentPenaltyRepository,
                                  PenaltyPaymentRepository penaltyPaymentRepository,
-                                 FinancialTransactionService financialTransactionService,
                                  NotificationService notificationService,
                                  LeaseEventRepository leaseEventRepository,
                                  LeaseRepository leaseRepository,
@@ -67,7 +64,6 @@ public class PenaltyPaymentService {
                                  com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.paymentPenaltyRepository = paymentPenaltyRepository;
         this.penaltyPaymentRepository = penaltyPaymentRepository;
-        this.financialTransactionService = financialTransactionService;
         this.notificationService = notificationService;
         this.leaseEventRepository = leaseEventRepository;
         this.leaseRepository = leaseRepository;
@@ -141,10 +137,7 @@ public class PenaltyPaymentService {
         row.setReceivedBy(receivedBy);
         row.setNotes(input.notes());
 
-        // Post the journal entry first — if the ledger is down @Transactional
-        // rolls the whole receipt back so books stay consistent with the row.
-        UUID financialTxId = financialTransactionService.recordPenaltyIncome(p, row);
-        row.setFinancialTransactionId(financialTxId);
+        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
         PenaltyPayment saved = penaltyPaymentRepository.save(row);
 
         BigDecimal nowPaid = alreadyPaid.add(input.amount());
