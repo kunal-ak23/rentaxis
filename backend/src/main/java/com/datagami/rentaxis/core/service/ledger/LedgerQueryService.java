@@ -43,6 +43,13 @@ public class LedgerQueryService {
     /** A ledger page is printed, not streamed; beyond this the caller has to narrow the range. */
     public static final int MAX_ROWS = 5000;
 
+    /**
+     * Ceiling across a whole multi-account response. One account is capped at MAX_ROWS,
+     * but a general ledger over every active leaf would otherwise multiply that by the
+     * size of the chart of accounts and build the lot in memory.
+     */
+    public static final int MAX_TOTAL_ROWS = 20_000;
+
     public record LedgerFilter(LocalDate from, LocalDate to, UUID propertyId, UUID unitId, UUID leaseId, UUID renterId) {
         LedgerFilter normalised() {
             LocalDate f = from == null ? LocalDate.of(2000, 1, 1) : from;
@@ -69,7 +76,7 @@ public class LedgerQueryService {
         boolean truncated = raw.size() > MAX_ROWS;
         if (truncated) raw = raw.subList(0, MAX_ROWS);
 
-        Map<UUID, String> fallbackParticulars = fallbackParticulars(raw, accountId);
+        Map<UUID, String> fallbackParticulars = fallbackParticulars(tenantId, raw, accountId);
         BigDecimal running = opening, totalDr = BigDecimal.ZERO, totalCr = BigDecimal.ZERO;
         List<LedgerRowDTO> rows = new ArrayList<>(raw.size());
         for (LineRow r : raw) {
@@ -85,20 +92,51 @@ public class LedgerQueryService {
                 opening, rows, totalDr, totalCr, running, truncated);
     }
 
+    /**
+     * The general ledger spans accounts, so an open-ended range is a different
+     * proposition here than on one account: {@code GET /ledger} with no parameters
+     * would otherwise mean "every account, this century". An omitted range therefore
+     * means the current month to date, and the caller asks for more explicitly.
+     */
     public List<AccountLedgerDTO> generalLedger(List<UUID> accountIds, LedgerFilter filter) {
-        LedgerFilter f = filter.normalised();
+        LocalDate from = filter.from() == null ? LocalDate.now().withDayOfMonth(1) : filter.from();
+        LocalDate to = filter.to() == null ? LocalDate.now() : filter.to();
+        LedgerFilter f = new LedgerFilter(from, to, filter.propertyId(), filter.unitId(), filter.leaseId(), filter.renterId()).normalised();
         List<UUID> ids = (accountIds == null || accountIds.isEmpty())
                 ? lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId())
                 : accountIds;
-        return ids.stream().map(id -> accountLedger(id, f))
-                .sorted(Comparator.comparing(AccountLedgerDTO::accountCode)).toList();
+        return ledgers(ids, f);
     }
 
     public List<AccountLedgerDTO> renterLedger(UUID renterId, LocalDate from, LocalDate to) {
         LedgerFilter f = new LedgerFilter(from, to, null, null, null, renterId).normalised();
         List<UUID> ids = lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), null, null, null, renterId);
-        return ids.stream().map(id -> accountLedger(id, f))
-                .sorted(Comparator.comparing(AccountLedgerDTO::accountCode)).toList();
+        return ledgers(ids, f);
+    }
+
+    /**
+     * One ledger per account, stopping at {@link #MAX_TOTAL_ROWS} rows in total. The last
+     * account admitted is flagged truncated, so a response that ran into the ceiling never
+     * reads as a complete set of books.
+     */
+    private List<AccountLedgerDTO> ledgers(List<UUID> accountIds, LedgerFilter f) {
+        List<AccountLedgerDTO> out = new ArrayList<>(accountIds.size());
+        int total = 0;
+        for (UUID id : accountIds) {
+            AccountLedgerDTO ledger = accountLedger(id, f);
+            out.add(ledger);
+            total += ledger.rows().size();
+            if (total >= MAX_TOTAL_ROWS) {
+                out.set(out.size() - 1, truncate(ledger));
+                break;
+            }
+        }
+        return out.stream().sorted(Comparator.comparing(AccountLedgerDTO::accountCode)).toList();
+    }
+
+    private static AccountLedgerDTO truncate(AccountLedgerDTO l) {
+        return new AccountLedgerDTO(l.accountId(), l.accountCode(), l.accountName(), l.accountType(),
+                l.openingBalance(), l.rows(), l.totalDebit(), l.totalCredit(), l.closingBalance(), true);
     }
 
     public AccountLedgerDTO vendorLedger(UUID vendorId, LocalDate from, LocalDate to) {
@@ -130,11 +168,11 @@ public class LedgerQueryService {
      * Older or n-to-1 entries have no pairing, so those rows fall back to naming every
      * other account on the entry.
      */
-    private Map<UUID, String> fallbackParticulars(List<LineRow> raw, UUID accountId) {
+    private Map<UUID, String> fallbackParticulars(UUID tenantId, List<LineRow> raw, UUID accountId) {
         Set<UUID> unpaired = raw.stream().filter(r -> r.getContraAccountName() == null)
                 .map(LineRow::getEntryId).collect(Collectors.toCollection(LinkedHashSet::new));
         if (unpaired.isEmpty()) return Map.of();
-        return lines.counterAccounts(unpaired, accountId).stream()
+        return lines.counterAccounts(tenantId, unpaired, accountId).stream()
                 .collect(Collectors.toMap(CounterRow::getEntryId, CounterRow::getNames));
     }
 

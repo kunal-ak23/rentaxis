@@ -49,7 +49,7 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
           and (cast(:unitId as uuid) is null or l.unit_id = :unitId)
           and (cast(:leaseId as uuid) is null or l.lease_id = :leaseId)
           and (cast(:renterId as uuid) is null or l.renter_id = :renterId)
-        order by e.entry_date, e.created_at, l.line_no
+        order by e.entry_date, e.created_at, e.entry_number, l.line_no
         limit :limit
         """, nativeQuery = true)
     List<LineRow> ledgerRows(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId,
@@ -71,14 +71,19 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
                              @Param("before") LocalDate before, @Param("propertyId") UUID propertyId,
                              @Param("unitId") UUID unitId, @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId);
 
-    /** Names of the OTHER accounts on each entry — the "Particular" column for lines the posting left unpaired. */
+    /**
+     * Names of the OTHER accounts on each entry — the "Particular" column for lines the
+     * posting left unpaired. The entry ids handed in are already tenant-scoped by
+     * {@link #ledgerRows}, but a query does not get to rely on its caller for that.
+     */
     @Query(value = """
         select l.journal_entry_id as entryId, string_agg(distinct a.name, ' / ' order by a.name) as names
         from journal_lines l join accounts a on a.id = l.account_id
-        where l.journal_entry_id in (:entryIds) and l.account_id <> :accountId
+        where l.tenant_id = :tenantId and l.journal_entry_id in (:entryIds) and l.account_id <> :accountId
         group by l.journal_entry_id
         """, nativeQuery = true)
-    List<CounterRow> counterAccounts(@Param("entryIds") Collection<UUID> entryIds, @Param("accountId") UUID accountId);
+    List<CounterRow> counterAccounts(@Param("tenantId") UUID tenantId, @Param("entryIds") Collection<UUID> entryIds,
+                                     @Param("accountId") UUID accountId);
 
     @Query(value = """
         select distinct l.account_id as accountId

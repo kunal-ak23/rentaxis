@@ -163,6 +163,30 @@ class LedgerQueryServiceIT {
         assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - L'Olivier", "PDC Receivable L'Olivier");
     }
 
+    /**
+     * A general ledger with no range asked for is not "every account since 2000": it is
+     * the current month to date. An account whose only movement was last month has to
+     * stay out of that answer.
+     */
+    @Test
+    void generalLedgerWithNoRangeDefaultsToTheCurrentMonth() {
+        Dimensions dims = new Dimensions(propertyId, null, leaseId, renterId, null);
+        LocalDate today = LocalDate.now();
+        posting.post(new PostingRequest(JournalDocType.JV, today.minusMonths(1), "last month", dims, JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.MAINTENANCE_CHARGES, new BigDecimal("200")), cr(AccountRole.CASH, new BigDecimal("200")))));
+        posting.post(new PostingRequest(JournalDocType.JV, today, "this month", dims, JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.RENT_PENALTY, new BigDecimal("300")), cr(AccountRole.CASH, new BigDecimal("300")))));
+
+        List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(null, null, null, null, null, null));
+
+        assertThat(gl).extracting(AccountLedgerDTO::accountName)
+                .contains("Rent Penalty - L'Olivier")
+                .doesNotContain("Maintenance Charges - L'Olivier");
+        AccountLedgerDTO penalty = gl.stream().filter(a -> a.accountName().equals("Rent Penalty - L'Olivier")).findFirst().orElseThrow();
+        assertThat(penalty.rows()).hasSize(1);
+        assertThat(penalty.closingBalance()).isEqualByComparingTo("300");
+    }
+
     @Test
     void trialBalanceBalancesAndFiltersByProperty() {
         List<TrialBalanceRowDTO> tb = ledger.trialBalance(LocalDate.of(2026, 9, 30), null);
