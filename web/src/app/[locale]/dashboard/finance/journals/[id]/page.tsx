@@ -271,7 +271,8 @@ function JournalDetail() {
                                 </tbody>
                                 <tfoot className="bg-input/60 border-t border-border">
                                     <tr>
-                                        <td className={`${td} font-bold`} colSpan={2}>{t("subTotal")}</td>
+                                        {/* The entry total, not a sub-total: this tfoot sums every line. */}
+                                        <td className={`${td} font-bold`} colSpan={2}>{t("total")}</td>
                                         <td className={`${td} text-end tabular-nums font-bold`}>{fmtAmount(totalDebit)}</td>
                                         <td className={`${td} text-end tabular-nums font-bold`}>{fmtAmount(totalCredit)}</td>
                                         <td colSpan={3} />

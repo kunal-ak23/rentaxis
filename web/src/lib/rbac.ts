@@ -13,7 +13,22 @@ export const PERMISSIONS = {
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageLeases: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
+    // tenant ledger, trial balance. ACCOUNTANT is admitted because every controller
+    // behind those pages grants it.
     canAccessFinance: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // The operational pages that merely LIVE under /dashboard/finance plus Staff.
+    // Their controllers do NOT grant ACCOUNTANT — VendorController,
+    // BankAccountController and StaffController are all
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')") — so gating them on
+    // canAccessFinance offered an accountant four links that 403 on arrival.
+    //
+    // PROPERTY_MANAGER is deliberately absent even though PaymentScheduleController
+    // does grant it: the same key gates Vendors, Bank Accounts and Staff, which
+    // refuse PM, and a property manager has never been shown a finance link
+    // (walkthrough 13 pins `a[href*="/dashboard/finance/"]` at zero for PM).
+    // Widening PM's sidebar is its own change, not this one.
+    canAccessFinanceOps: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canResolveIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'] as UserRole[],
     canViewOwnPayments: ['TENANT_USER'] as UserRole[],

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { AlertTriangle, Download, Filter, Scale, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Download, Filter, Info, Scale, ShieldCheck } from "lucide-react";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -181,6 +181,20 @@ export default function TrialBalancePage() {
                     </button>
                 </div>
             </div>
+
+            {/*
+              * A property-filtered trial balance is not required to balance: the
+              * tenant-level accounts (cash, VAT, rounding, discount, forfeited income,
+              * opening-balance difference) carry no property dimension, so one half of
+              * an entry is filtered out while the property-tagged half stays. Say so,
+              * or the out-of-balance banner below reads as corrupted books.
+              */}
+            {!loading && rows.length > 0 && applied.propertyId && (
+                <div className="mb-6 flex items-start gap-2 bg-input/60 border border-border text-muted rounded-xl px-5 py-3">
+                    <Info size={16} className="shrink-0 mt-0.5" />
+                    <span className="text-xs">{t("propertyFilterNote")}</span>
+                </div>
+            )}
 
             {!loading && rows.length > 0 && !balanced && (
                 <div role="alert" className="mb-6 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3">

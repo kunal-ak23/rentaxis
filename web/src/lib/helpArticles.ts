@@ -66,7 +66,7 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 **Tenant Admin** has access to:
 - Create and manage properties, buildings, and units
 - Create and manage leases and renters
-- Full financial module (accounts, transactions, reports)
+- Full accounting module: chart of accounts, journal vouchers, general ledger, tenant ledger and trial balance
 - Staff management and settings configuration
 - Payment gateway and rent settings
 
@@ -390,12 +390,26 @@ RentAxis uses standard double-entry accounting with five account types:
 3. Click **Add Account** to create a new account
 4. Each account has a code, name, type, and optional description
 
-### Account Mappings
+### How the Tree is Organised
 
-Mappings tell RentAxis which account plays which role when an entry is posted — rental income, rent receivable, bank, security deposits, and so on.
+Accounts form a tree: each account names its parent, group accounts hold children, and only the leaves are posted to. A leaf inherits its parent group's type, and it cannot be given a different one.
 
-- **Settings > Account Template** sets the organisation-wide default for each role.
-- A property's **Accounts** tab overrides those defaults for that building, so each property can post to its own bank and receivable leaves.
+- **Group accounts** (for example *Current Assets*, *Bank*, *Security Deposits*) are headings. You cannot post to them.
+- **Leaf accounts** are where entries land. Most of them are created per property, so *Bank* holds one leaf per building rather than one shared account.
+- An **alias** is an optional short name you can search and pick an account by, without changing its code or name.
+- An account cannot be deleted once it carries journal lines or is mapped to a role.
+
+### Account Roles and Mappings
+
+Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
+
+- **Settings > Account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
+- A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.
+- A role with no property-level mapping falls back to the organisation-wide default account for that role.
+
+### Journals, Not Edits
+
+Posted entries are immutable. A mistake is corrected by reversing the entry from **Finance > Journal Vouchers**, which posts a mirror entry — the original stays on the books and is marked reversed.
 `);
 
 // ─── Renter Portal ──────────────────────────────────────────────────────────

@@ -108,7 +108,7 @@ export default function AccountTemplatePage() {
         );
     }
 
-    const th = "text-left px-5 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider";
+    const th = "text-start px-5 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider";
 
     return (
         <div className="max-w-5xl">
@@ -246,7 +246,7 @@ export default function AccountTemplatePage() {
                                                 <p className="text-[10px] text-warning mt-1">{t("unmapped")}</p>
                                             )}
                                         </td>
-                                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                                        <td className="px-5 py-3 text-end whitespace-nowrap">
                                             {savedRole === row.role ? (
                                                 <span className="flex items-center justify-end gap-1 text-[11px] font-semibold text-success">
                                                     <CheckCircle size={13} />

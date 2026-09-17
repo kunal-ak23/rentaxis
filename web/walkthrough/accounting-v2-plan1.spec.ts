@@ -712,6 +712,13 @@ test('13 the accountant owns the ledger and the property manager does not', asyn
         await expect(nav.getByRole('link', { name: 'Fiscal year & period lock', exact: true })).toBeVisible();
         // Gateway configuration is a tenant-admin concern, not an accountant's.
         await expect(nav.locator('a[href*="/settings/gateway"]')).toHaveCount(0);
+        // Neither are the operational pages that merely live under /finance:
+        // VendorController, BankAccountController, PaymentScheduleController and
+        // StaffController all stop at TENANT_ADMIN, so offering these links would
+        // only hand the accountant four 403s. They are gated on canAccessFinanceOps.
+        for (const href of ['/finance/payments', '/finance/vendors', '/finance/bank-accounts', '/dashboard/staff']) {
+            await expect(nav.locator(`a[href*="${href}"]`)).toHaveCount(0);
+        }
 
         await page.goto('/en/dashboard/finance/journals');
         await expect(page.getByRole('link', { name: 'New Journal Voucher' })).toBeVisible();

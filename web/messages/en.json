@@ -1375,7 +1375,6 @@
     "goHome": "Go to the dashboard"
   },
   "Navigation": {
-    "accountMappings": "Account Mappings",
     "chequeFailureFines": "Cheque-failure Fines",
     "helpAndGuides": "Help & Guides",
     "listings": "Listings",
@@ -1616,6 +1615,7 @@
     "export": "Export",
     "print": "Print",
     "propertyFilter": "Property",
+    "propertyFilterNote": "Filtered to one property: tenant-level accounts (cash, VAT, rounding) carry no property, so this view is not expected to balance.",
     "alias": "Alias",
     "parentAccount": "Parent account",
     "propertyTag": "Property",

@@ -116,18 +116,27 @@ export default function MvpSidebar() {
     // The accounting-v2 ledger replaced the old transactions and reports pages:
     // journal vouchers are where entries are read and posted, and the three
     // ledger reports are what the old reports page only gestured at.
-    const financeItems = hasPermission(userRole, 'canAccessFinance') ? [
-        { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
-        { name: tLedger("journals"), href: "/dashboard/finance/journals", icon: Receipt, tourId: 'sidebar-journals' },
-        { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
-        { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
-        { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
-        { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
-        { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
-        { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
-    ] : [];
+    //
+    // Two gates, not one: the ledger pages admit ACCOUNTANT, the operational ones
+    // (payments, vendors, bank accounts) do not — their controllers stop at
+    // TENANT_ADMIN, so listing them for an accountant only produced 403s.
+    const financeItems = [
+        ...(hasPermission(userRole, 'canAccessFinance') ? [
+            { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
+            { name: tLedger("journals"), href: "/dashboard/finance/journals", icon: Receipt, tourId: 'sidebar-journals' },
+            { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
+            { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
+            { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
+        ] : []),
+        ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
+            { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
+            { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
+            { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
+        ] : []),
+    ];
 
-    const hrItems = hasPermission(userRole, 'canAccessFinance') ? [
+    // StaffController is hasAnyRole('SUPER_ADMIN','TENANT_ADMIN') — same gate.
+    const hrItems = hasPermission(userRole, 'canAccessFinanceOps') ? [
         { name: tStaff("title"), href: "/dashboard/staff", icon: UserCog },
     ] : [];
 

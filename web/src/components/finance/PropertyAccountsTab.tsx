@@ -109,7 +109,7 @@ export default function PropertyAccountsTab({ propertyId }: { propertyId: string
                                 {[t("role"), t("account"), t("status"), ""].map((h, i) => (
                                     <th
                                         key={i}
-                                        className="text-left px-5 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider"
+                                        className="text-start px-5 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider"
                                     >
                                         {h}
                                     </th>
@@ -134,7 +134,7 @@ export default function PropertyAccountsTab({ propertyId }: { propertyId: string
                                             </div>
                                         ) : r.accountId ? (
                                             <>
-                                                <span className="font-mono text-muted mr-2">{r.accountCode}</span>
+                                                <span className="font-mono text-muted me-2">{r.accountCode}</span>
                                                 {r.accountName}
                                             </>
                                         ) : (
@@ -148,10 +148,10 @@ export default function PropertyAccountsTab({ propertyId }: { propertyId: string
                                             </span>
                                         ) : null}
                                     </td>
-                                    <td className="px-5 py-3 text-xs text-right whitespace-nowrap">
+                                    <td className="px-5 py-3 text-xs text-end whitespace-nowrap">
                                         <button
                                             type="button"
-                                            className="text-primary hover:underline cursor-pointer mr-3"
+                                            className="text-primary hover:underline cursor-pointer me-3"
                                             onClick={() => setEditing(editing === r.role ? null : r.role)}
                                         >
                                             {t("changeAccount")}

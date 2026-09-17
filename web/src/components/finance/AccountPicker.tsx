@@ -92,13 +92,13 @@ export default function AccountPicker({
                         <li key={a.id}>
                             <button
                                 type="button"
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-input cursor-pointer"
+                                className="w-full text-start px-3 py-2 text-xs hover:bg-input cursor-pointer"
                                 onClick={() => {
                                     onChange(a.id);
                                     setQ("");
                                 }}
                             >
-                                <span className="font-mono text-muted mr-2">{a.code}</span>
+                                <span className="font-mono text-muted me-2">{a.code}</span>
                                 {a.name}
                             </button>
                         </li>

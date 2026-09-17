@@ -216,7 +216,7 @@ export default function FiscalSettingsPage() {
                                         className="flex items-center gap-1.5 shrink-0 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                     >
                                         <Lock size={13} />
-                                        {t("lockPeriod")}
+                                        {t("lockThrough")}
                                     </button>
                                 </div>
                             </div>
