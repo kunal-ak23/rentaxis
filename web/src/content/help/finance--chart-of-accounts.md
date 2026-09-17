@@ -2,7 +2,7 @@
 title: Chart of Accounts
 description: Understanding and managing your accounting structure
 category: finance
-roles: [TENANT_ADMIN]
+roles: [TENANT_ADMIN, ACCOUNTANT]
 order: 1
 relatedTour: finance-overview
 ---
