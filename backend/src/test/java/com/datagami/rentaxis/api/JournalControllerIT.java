@@ -4,10 +4,13 @@ import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,6 +57,7 @@ class JournalControllerIT {
     @Autowired UserRepository userRepo;
     @Autowired AccountService accounts;
     @Autowired PropertyAccountService propertyAccounts;
+    @Autowired PropertyRepository propertyRepo;
 
     UUID tenantId;
     User accountant;
@@ -206,6 +213,89 @@ class JournalControllerIT {
         assertThatThrownBy(() -> getAs(outsider, "/api/v1/finance/journals/" + id))
                 .isInstanceOf(HttpClientErrorException.NotFound.class);
         assertThat((List<?>) getAs(outsider, "/api/v1/finance/journals").get("content")).isEmpty();
+    }
+
+    // ---- dimension ids on a manual voucher are unchecked raw columns ----
+
+    private UUID propertyIn(UUID tenant) {
+        TenantContextHolder.setTenantId(tenant);
+        try {
+            Property p = new Property();
+            p.setNameEn("Tower " + UUID.randomUUID());
+            p.setEmirate(Emirate.DUBAI);
+            return propertyRepo.save(p).getId();
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private Map<String, Object> jvWith(String key, Object value) {
+        Map<String, Object> body = new LinkedHashMap<>(jv("100"));
+        body.put(key, value);
+        return body;
+    }
+
+    /**
+     * propertyId / unitId / leaseId / renterId are nullable analytics columns on the
+     * entry with no foreign key behind them, so an id belonging to another landlord
+     * used to be stored verbatim and read back on this tenant's ledger. Inside the
+     * @Transactional post the tenant filter is active, so a foreign id is simply
+     * unknown — a 400, not a silent cross-tenant dimension.
+     */
+    @Test
+    void anotherTenantsPropertyIdIs400() {
+        LandlordOrg other = new LandlordOrg();
+        other.setName("JC-dim-" + UUID.randomUUID());
+        UUID foreignProperty = propertyIn(orgRepo.save(other).getId());
+
+        assertThatThrownBy(() -> postAs(accountant, "/api/v1/finance/journals")
+                .body(jvWith("propertyId", foreignProperty.toString())).retrieve().body(Map.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("Unknown property id");
+    }
+
+    @Test
+    void ownTenantsPropertyIdIsAccepted() {
+        UUID ownProperty = propertyIn(tenantId);
+
+        Map<?, ?> posted = postAs(accountant, "/api/v1/finance/journals")
+                .body(jvWith("propertyId", ownProperty.toString())).retrieve().body(Map.class);
+
+        assertThat(posted.get("propertyId")).isEqualTo(ownProperty.toString());
+    }
+
+    @Test
+    void anUnknownLineDimensionIdIs400() {
+        Map<String, Object> line = new LinkedHashMap<>();
+        line.put("accountId", bankId);
+        line.put("debit", 10);
+        line.put("credit", 0);
+        line.put("leaseId", UUID.randomUUID().toString());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("entryDate", "2026-09-17");
+        body.put("narration", "x");
+        body.put("lines", List.of(line, Map.of("accountId", capitalId, "debit", 0, "credit", 10)));
+
+        assertThatThrownBy(() -> postAs(accountant, "/api/v1/finance/journals").body(body).retrieve().body(Map.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("Unknown lease id");
+    }
+
+    /** A literal null inside the lines array dereferenced straight into a 500. */
+    @Test
+    void aNullLineIs400NotA500() {
+        List<Object> lines = new ArrayList<>(Arrays.asList(
+                Map.of("accountId", bankId, "debit", 10, "credit", 0),
+                null,
+                Map.of("accountId", capitalId, "debit", 0, "credit", 10)));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("entryDate", "2026-09-17");
+        body.put("narration", "x");
+        body.put("lines", lines);
+
+        assertThatThrownBy(() -> postAs(accountant, "/api/v1/finance/journals").body(body).retrieve().body(Map.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("A journal line is missing");
     }
 
     @Test

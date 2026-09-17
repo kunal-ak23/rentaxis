@@ -231,4 +231,70 @@ class AccountServiceTest {
         assertThatThrownBy(() -> service.getAccountById(id))
                 .isInstanceOf(NotFoundException.class);
     }
+
+    // ---- createAccount: a leaf's type must agree with the group it hangs under ----
+
+    private Account group(com.datagami.rentaxis.domain.entity.enums.AccountType type) {
+        Account g = new Account();
+        g.setId(UUID.randomUUID());
+        g.setCode("A-02");
+        g.setName("Current Assets");
+        g.setGroup(true);
+        g.setAccountType(type);
+        return g;
+    }
+
+    private Account childOf(Account parent, com.datagami.rentaxis.domain.entity.enums.AccountType type) {
+        Account child = new Account();
+        child.setName("New leaf");
+        child.setCode("100500");
+        child.setAccountType(type);
+        Account ref = new Account();
+        ref.setId(parent.getId());
+        child.setParent(ref);
+        return child;
+    }
+
+    /**
+     * A leaf typed differently from its group used to be saved as submitted: the
+     * inherit-when-null branch simply did not fire. The trial balance groups and
+     * sub-totals off each leaf's own accountType, so an EXPENSE leaf under Current
+     * Assets silently moved money between two sections of the report.
+     */
+    @Test
+    void createAccount_typeContradictingTheParentGroup_throwsBusinessRuleViolation() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        assertThatThrownBy(() -> service.createAccount(
+                childOf(parent, com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account type must match parent group: ASSET");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createAccount_omittedTypeIsInheritedFromTheParentGroup() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.LIABILITY);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.createAccount(childOf(parent, null), null);
+
+        assertThat(saved.getAccountType())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.LIABILITY);
+    }
+
+    @Test
+    void createAccount_typeMatchingTheParentGroupIsAccepted() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.createAccount(
+                childOf(parent, com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET), null);
+
+        assertThat(saved.getAccountType())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+    }
 }

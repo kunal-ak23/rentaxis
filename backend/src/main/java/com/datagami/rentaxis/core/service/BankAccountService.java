@@ -51,11 +51,15 @@ public class BankAccountService {
                     }
                 }
                 if (bankAccount.getCoaAccount() == null) {
+                    // accountNumber is optional on the entity, so this fallback has to
+                    // tolerate a null one rather than NPE the whole create.
                     String accountNumber = bankAccount.getAccountNumber();
-                    String last4 = accountNumber.length() > 4
-                            ? accountNumber.substring(accountNumber.length() - 4) : accountNumber;
+                    String last4 = accountNumber == null || accountNumber.isBlank() ? null
+                            : accountNumber.length() > 4
+                                    ? accountNumber.substring(accountNumber.length() - 4) : accountNumber;
                     Account bankGroup = accountService.getAccountByCode("A-02-02");
-                    bankAccount.setCoaAccount(accountService.createLeaf(bankAccount.getBankName() + " - " + last4, bankGroup, null));
+                    String leafName = last4 == null ? bankAccount.getBankName() : bankAccount.getBankName() + " - " + last4;
+                    bankAccount.setCoaAccount(accountService.createLeaf(leafName, bankGroup, null));
                 }
             } catch (NotFoundException e) {
                 log.warn("No Bank account group (A-02-02) for tenant; creating bank account without a ledger account");

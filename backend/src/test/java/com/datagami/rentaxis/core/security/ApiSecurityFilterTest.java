@@ -152,15 +152,19 @@ class ApiSecurityFilterTest {
     }
 
     /**
-     * With NEITHER tenant header there is nothing to scope to. The filter still
-     * builds the authentication — the same pass-through
-     * {@link #legacyNoHeadersPassesThroughUnauthenticated} documents — but leaves
-     * TenantContext unset, so no tenant-scoped query can be served: the
-     * @PreAuthorize passes and the repository has no tenant to filter on. This
-     * pins the behaviour so a change to it is deliberate.
+     * With NEITHER tenant header there is nothing to scope to, and the request is
+     * now refused instead of admitted.
+     *
+     * <p>It used to fall through the 403 (which only fired when an X-Tenant-Id was
+     * actually presented) and reach the controllers authenticated but with no
+     * TenantContext — which leaves the {@code tenantFilter} on BaseTenantEntity
+     * DISABLED. That is not a harmlessly unscoped request: @PreAuthorize passes and
+     * every repository read then spans all tenants. The replaced test
+     * ({@code legacyAccountantWithNoTenantHeadersIsNotGivenATenantContext}) pinned
+     * exactly that fall-through.
      */
     @Test
-    void legacyAccountantWithNoTenantHeadersIsNotGivenATenantContext() throws Exception {
+    void legacyAccountantWithNoTenantHeadersIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/finance/journals");
         req.addHeader("X-User-Id", UUID.randomUUID().toString());
         req.addHeader("X-User-Role", "ACCOUNTANT");
@@ -169,6 +173,91 @@ class ApiSecurityFilterTest {
 
         legacyOnlyFilter().doFilter(req, res, chain);
 
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+        assertThat(chain.tenantInContext).isNull();
+    }
+
+    /** Same rule for a second tenant-scoped role, so this is not an ACCOUNTANT special case. */
+    @Test
+    void legacyPropertyManagerWithNoTenantHeadersIs403() throws Exception {
+        MockHttpServletRequest req = request("/api/v1/properties");
+        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Role", "PROPERTY_MANAGER");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
+    /**
+     * An X-User-Role the filter does not know (a typo, a retired role, a probe) is
+     * refused rather than admitted unscoped — it never matched a branch, so it never
+     * set {@code authorized}.
+     */
+    @Test
+    void legacyUnknownRoleWithNoTenantHeadersIs403() throws Exception {
+        MockHttpServletRequest req = request("/api/v1/properties");
+        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Role", "AUDITOR");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
+    /** SUPER_ADMIN sets authorized unconditionally, so tightening the 403 leaves it alone. */
+    @Test
+    void legacySuperAdminWithNoTenantHeadersStillPasses() throws Exception {
+        UUID userId = UUID.randomUUID();
+        MockHttpServletRequest req = request("/api/v1/landlord-orgs");
+        req.addHeader("X-User-Id", userId.toString());
+        req.addHeader("X-User-Role", "SUPER_ADMIN");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_SUPER_ADMIN");
+        assertThat(chain.tenantInContext).isNull();
+    }
+
+    /** The bearer half of the same change: a verified non-admin with no tenant at all. */
+    @Test
+    void bearerTenantRoleWithNoHomeTenantAndNoTenantHeaderIs403() throws Exception {
+        String token = enabledTokens.issue(UUID.randomUUID(), UserRole.ACCOUNTANT, null, List.of());
+
+        MockHttpServletRequest req = request("/api/v1/finance/journals");
+        req.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        activatedFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
+    /** A verified SUPER_ADMIN has no home tenant by design and must still pass. */
+    @Test
+    void bearerSuperAdminWithoutAnyTenantStillPasses() throws Exception {
+        String token = enabledTokens.issue(UUID.randomUUID(), UserRole.SUPER_ADMIN, null, List.of());
+
+        MockHttpServletRequest req = request("/api/v1/landlord-orgs");
+        req.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        activatedFilter().doFilter(req, res, chain);
+
+        assertThat(chain.invoked).isTrue();
         assertThat(chain.tenantInContext).isNull();
     }
 

@@ -116,7 +116,7 @@ public class PostingService {
     /** Mirror entry. Reverse doc type: TCO->TCR, everything else keeps its own type. */
     @Transactional
     public JournalEntry reverse(UUID entryId, LocalDate date, String reason) {
-        JournalEntry original = entries.findById(entryId).orElseThrow(() -> new NotFoundException("Journal entry not found"));
+        JournalEntry original = entries.lockById(entryId).orElseThrow(() -> new NotFoundException("Journal entry not found"));
         if (original.getReversalOfId() != null) throw new BusinessRuleViolationException("Cannot reverse a reversal entry");
         if (original.getStatus() == JournalStatus.REVERSED) throw new BusinessRuleViolationException("Entry " + original.getEntryNumber() + " is already reversed");
         if (original.getImportBatchId() == null) fiscal.assertOpen(date);

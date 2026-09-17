@@ -145,6 +145,16 @@ public class LedgerQueryService {
         return accountLedger(v.getPayableAccount().getId(), new LedgerFilter(from, to, null, null, null, null));
     }
 
+    /**
+     * Trial balance as of a date, optionally filtered to one property.
+     *
+     * <p>Only the unfiltered (tenant-wide) trial balance is guaranteed to balance.
+     * A property-filtered one need not: tenant-level accounts — cash, VAT, rounding,
+     * discount, forfeited income, opening-balance difference — carry no property
+     * dimension, so their half of an entry is excluded while the property-tagged half
+     * is kept. The difference the UI reports in that mode is expected, not a
+     * corruption of the books.
+     */
     public List<TrialBalanceRowDTO> trialBalance(LocalDate asOf, UUID propertyId) {
         LocalDate d = asOf == null ? LocalDate.now() : asOf;
         List<BalanceRow> balances = lines.balancesAsOf(TenantContextHolder.getTenantId(), d, propertyId);

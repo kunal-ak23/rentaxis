@@ -5,19 +5,34 @@ import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID> {
 
     List<JournalEntry> findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(JournalSourceType sourceType, UUID sourceId);
+
+    /**
+     * Row lock on the entry about to be reversed. {@code findById} let two concurrent
+     * reversals both read status = POSTED and both write a mirror entry: the
+     * reversalOfId / REVERSED guards in PostingService#reverse are read-then-act.
+     * This serialises them so the loser re-reads the committed REVERSED status.
+     * The partial unique index uq_je_reversal_of (changeset 81) is the second half
+     * of the fix — it holds even if a caller ever bypasses this lock.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from JournalEntry e where e.id = :id")
+    Optional<JournalEntry> lockById(@Param("id") UUID id);
 
     /**
      * Every filter is optional. The casts are not cosmetic: without them Postgres

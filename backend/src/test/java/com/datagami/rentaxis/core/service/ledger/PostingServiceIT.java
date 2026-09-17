@@ -19,8 +19,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.datagami.rentaxis.core.service.ledger.PostingRequest.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -170,6 +177,70 @@ class PostingServiceIT {
         JournalEntry original = entries.findById(e.getId()).orElseThrow();
         assertThat(original.getStatus()).isEqualTo(JournalStatus.REVERSED);
         assertThat(original.getReversedById()).isEqualTo(rev.getId());
+    }
+
+    /**
+     * Two threads reversing the same entry at once.
+     *
+     * <p>{@code reverse()} read the entry with {@code findById} and then acted on
+     * {@code status}/{@code reversalOfId}: both threads saw POSTED, both wrote a
+     * mirror, and the original ended up pointing at whichever one committed last —
+     * with the other reversal still on the books, double-counting the correction.
+     * Both halves of the fix are exercised here: the PESSIMISTIC_WRITE lock in
+     * {@code lockById}, and the partial unique index uq_je_reversal_of behind it.
+     */
+    @Test
+    void concurrentReversesOfTheSameEntryProduceExactlyOneMirror() throws Exception {
+        JournalEntry e = posting.post(contract(new BigDecimal("2500.00")));
+        UUID entryId = e.getId();
+        UUID tenant = tenantId;
+
+        CyclicBarrier bothReady = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Callable<Object>> racers = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            racers.add(() -> {
+                TenantContextHolder.setTenantId(tenant);
+                try {
+                    bothReady.await(10, TimeUnit.SECONDS);
+                    return posting.reverse(entryId, LocalDate.of(2026, 9, 12), "race");
+                } catch (RuntimeException ex) {
+                    return ex;
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+        }
+        List<Future<Object>> results;
+        try {
+            results = pool.invokeAll(racers, 30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        List<Object> outcomes = new ArrayList<>();
+        for (Future<Object> f : results) outcomes.add(f.get());
+        List<JournalEntry> winners = outcomes.stream().filter(JournalEntry.class::isInstance)
+                .map(JournalEntry.class::cast).toList();
+        List<Object> losers = outcomes.stream().filter(o -> !(o instanceof JournalEntry)).toList();
+
+        assertThat(winners).hasSize(1);
+        assertThat(losers).hasSize(1);
+        // The row lock is what makes the loser a clean BusinessRuleViolationException
+        // (400 "already reversed") rather than a raw uq_je_reversal_of violation: it
+        // blocks until the winner commits and then re-reads the committed status.
+        // Drop the lock and this assertion flips to DataIntegrityViolationException —
+        // still not a duplicate, because the index is the second half of the fix.
+        assertThat(losers.get(0)).isInstanceOf(BusinessRuleViolationException.class);
+        assertThat(((RuntimeException) losers.get(0)).getMessage()).contains("already reversed");
+
+        Long mirrors = jdbc.queryForObject(
+                "select count(*) from journal_entries where reversal_of_id = ?", Long.class, entryId);
+        assertThat(mirrors).isEqualTo(1L);
+
+        JournalEntry original = entries.findById(entryId).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(JournalStatus.REVERSED);
+        assertThat(original.getReversedById()).isEqualTo(winners.get(0).getId());
     }
 
     @Test

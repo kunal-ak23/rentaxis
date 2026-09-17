@@ -122,8 +122,14 @@ public class AccountService {
                 throw new BusinessRuleViolationException("Parent account must be a group account");
             }
             account.setParent(parent);
+            // Inherit when the body omits the type; refuse when it contradicts the
+            // parent. A leaf whose type differs from its group breaks the trial
+            // balance, which groups and sub-totals by type off the leaf's own value.
             if (account.getAccountType() == null) {
                 account.setAccountType(parent.getAccountType());
+            } else if (account.getAccountType() != parent.getAccountType()) {
+                throw new BusinessRuleViolationException(
+                        "Account type must match parent group: " + parent.getAccountType());
             }
         }
         if (account.getCode() == null || account.getCode().isBlank()) {

@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -36,7 +37,7 @@ public class EntryNumberService {
         long value = seq.getNextValue();
         seq.setNextValue(value + 1);
         repo.save(seq);
-        return docType.name() + "-" + String.format("%02d", fy % 100) + "/" + value;
+        return docType.name() + "-" + String.format(Locale.ROOT, "%02d", fy % 100) + "/" + value;
     }
 
     /**

@@ -110,6 +110,14 @@ databaseChangeLog:
         - createIndex: { tableName: journal_entries, indexName: idx_je_renter, columns: [ { column: { name: renter_id } } ] }
         - createIndex: { tableName: journal_entries, indexName: idx_je_source, columns: [ { column: { name: source_type } }, { column: { name: source_id } } ] }
         - createIndex: { tableName: journal_entries, indexName: idx_je_import_batch, columns: [ { column: { name: import_batch_id } } ] }
+        # One mirror entry per original, enforced in the database. Two concurrent
+        # reversals both read status = POSTED before either commits, so the
+        # read-then-act guards in PostingService#reverse cannot be the only defence.
+        # Partial (reversal_of_id IS NOT NULL) because every non-reversal entry
+        # leaves the column null, and a plain unique index would allow only one.
+        - sql:
+            comment: One reversal per original entry
+            sql: "CREATE UNIQUE INDEX uq_je_reversal_of ON journal_entries (reversal_of_id) WHERE reversal_of_id IS NOT NULL;"
 
         - createTable:
             tableName: journal_lines
@@ -244,5 +252,6 @@ databaseChangeLog:
       rollback:
         - sql:
             sql: |
+              DROP INDEX IF EXISTS uq_je_reversal_of;
               DROP TABLE IF EXISTS property_account_template_rows, tenant_default_account_mappings, property_account_mappings, journal_lines, journal_entries, journal_entry_sequences, tenant_fiscal_settings;
               DROP FUNCTION IF EXISTS journal_lines_check_balanced(), journal_lines_immutable(), journal_entries_immutable();

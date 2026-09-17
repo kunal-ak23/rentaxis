@@ -30,7 +30,12 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     List<Account> findByProperty_Id(UUID propertyId);
 
-    /** Highest numeric code in this tenant (codes like "A-02-01" are ignored). Tenant filter applies. */
+    /**
+     * Highest numeric code in this tenant (codes like "A-02-01" are ignored).
+     * Native query: the Hibernate tenant filter does not apply to it, so the
+     * scoping is the explicit {@code tenant_id = :tenantId} in the SQL below —
+     * do not drop that predicate.
+     */
     @Query(value = "select max(code::bigint) from accounts where tenant_id = :tenantId and code ~ '^[0-9]+$'",
             nativeQuery = true)
     Long findMaxNumericCode(@Param("tenantId") UUID tenantId);

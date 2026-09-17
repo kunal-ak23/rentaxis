@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Spec §5.3-5.4: template → per-property leaves + mappings; manual override; tenant defaults. */
@@ -99,24 +100,44 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.INPUT_VAT, "A-02-04-001");
         defaultIfMissing(AccountRole.ROUNDING_OFF, "D-02-001");
         defaultIfMissing(AccountRole.DISCOUNT_ALLOWED, "D-02-002");
+        // FORFEITED_INCOME is property-scoped in AccountRole, but it is seeded as a
+        // tenant default on purpose: it is the fallback a property with no forfeiture
+        // leaf of its own resolves to, and no template row creates one per property.
         defaultIfMissing(AccountRole.FORFEITED_INCOME, "C-01-02-001");
         defaultIfMissing(AccountRole.OPENING_BALANCE_DIFFERENCE, "F-02");
     }
 
+    /**
+     * Resolve-if-present, per row. A tenant whose chart is not the PACT seed has
+     * none of these codes, and {@code getAccountByCode} would throw NotFoundException
+     * out of the seed endpoint — turning a partial seed into a 404 for the whole
+     * request. A missing parent skips its own row only.
+     */
     private void template(AccountRole role, String pattern, String parentCode) {
+        Optional<Account> parent = accountRepo.findByCode(parentCode);
+        if (parent.isEmpty()) {
+            log.warn("no account {} for role {} \u2014 skipping seed", parentCode, role);
+            return;
+        }
         PropertyAccountTemplateRow r = new PropertyAccountTemplateRow();
         r.setRole(role);
         r.setNamePattern(pattern);
-        r.setParentAccount(accountService.getAccountByCode(parentCode));
+        r.setParentAccount(parent.get());
         r.setEnabled(true);
         templateRepo.save(r);
     }
 
+    /** Same per-row skip as {@link #template}: an absent code is warned about, not fatal. */
     private void defaultIfMissing(AccountRole role, String code) {
         if (defaultRepo.findByRole(role).isPresent()) return;
+        Optional<Account> account = accountRepo.findByCode(code);
+        if (account.isEmpty()) {
+            log.warn("no account {} for role {} \u2014 skipping seed", code, role);
+            return;
+        }
         TenantDefaultAccountMapping m = new TenantDefaultAccountMapping();
         m.setRole(role);
-        m.setAccount(accountService.getAccountByCode(code));
+        m.setAccount(account.get());
         defaultRepo.save(m);
     }
 
