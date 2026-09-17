@@ -99,7 +99,11 @@ databaseChangeLog:
               - column: { name: posted_by, type: uuid }
               - column: { name: posted_at, type: timestamptz }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
-        - addUniqueConstraint: { tableName: journal_entries, columnNames: tenant_id, entry_number, constraintName: uq_journal_entries_number }
+        # Composite columnNames must be quoted: inside a YAML flow mapping an unquoted
+        # comma ends the entry, so "tenant_id, entry_number" parsed as columnNames:
+        # tenant_id plus a stray key — which built all four of this changeset's unique
+        # constraints on their first column only (one journal entry per tenant, ever).
+        - addUniqueConstraint: { tableName: journal_entries, columnNames: "tenant_id, entry_number", constraintName: uq_journal_entries_number }
         - createIndex: { tableName: journal_entries, indexName: idx_je_tenant_date, columns: [ { column: { name: tenant_id } }, { column: { name: entry_date } } ] }
         - createIndex: { tableName: journal_entries, indexName: idx_je_property, columns: [ { column: { name: property_id } } ] }
         - createIndex: { tableName: journal_entries, indexName: idx_je_lease, columns: [ { column: { name: lease_id } } ] }
@@ -215,7 +219,7 @@ databaseChangeLog:
               - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pam_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
               - column: { name: role, type: varchar(40), constraints: { nullable: false } }
               - column: { name: account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pam_account, referencedTableName: accounts, referencedColumnNames: id } }
-        - addUniqueConstraint: { tableName: property_account_mappings, columnNames: property_id, role, constraintName: uq_pam_property_role }
+        - addUniqueConstraint: { tableName: property_account_mappings, columnNames: "property_id, role", constraintName: uq_pam_property_role }
         - createIndex: { tableName: property_account_mappings, indexName: idx_pam_tenant, columns: [ { column: { name: tenant_id } } ] }
 
         - createTable:
@@ -225,7 +229,7 @@ databaseChangeLog:
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
               - column: { name: role, type: varchar(40), constraints: { nullable: false } }
               - column: { name: account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_tdam_account, referencedTableName: accounts, referencedColumnNames: id } }
-        - addUniqueConstraint: { tableName: tenant_default_account_mappings, columnNames: tenant_id, role, constraintName: uq_tdam_tenant_role }
+        - addUniqueConstraint: { tableName: tenant_default_account_mappings, columnNames: "tenant_id, role", constraintName: uq_tdam_tenant_role }
 
         - createTable:
             tableName: property_account_template_rows
@@ -236,7 +240,7 @@ databaseChangeLog:
               - column: { name: name_pattern, type: varchar(255), constraints: { nullable: false } }
               - column: { name: parent_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_patr_parent, referencedTableName: accounts, referencedColumnNames: id } }
               - column: { name: enabled, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
-        - addUniqueConstraint: { tableName: property_account_template_rows, columnNames: tenant_id, role, constraintName: uq_patr_tenant_role }
+        - addUniqueConstraint: { tableName: property_account_template_rows, columnNames: "tenant_id, role", constraintName: uq_patr_tenant_role }
       rollback:
         - sql:
             sql: |
