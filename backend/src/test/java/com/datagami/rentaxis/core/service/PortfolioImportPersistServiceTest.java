@@ -201,6 +201,10 @@ class PortfolioImportPersistServiceTest {
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
         assertThat(job.getSchedulesCreated()).isZero();
+        // Counted but not stored, so the job has to say so.
+        assertThat(details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .anySatisfy(m -> assertThat(m).contains("booking deposit instrument was not imported"));
     }
 
     @Test
@@ -295,6 +299,10 @@ class PortfolioImportPersistServiceTest {
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
         assertThat(details.getChequesFromSheet()).isEqualTo(3);
         assertThat(job.getSchedulesCreated()).isZero();
+        assertThat(details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .anySatisfy(m -> assertThat(m)
+                        .contains("3 cheque row(s) from the Cheques sheet were not imported"));
     }
 
     @Test

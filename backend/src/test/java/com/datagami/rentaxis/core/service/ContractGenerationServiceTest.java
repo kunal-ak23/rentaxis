@@ -3,19 +3,20 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.LeaseCharge;
+import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.LeaseDocument;
+import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
-import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
-import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
@@ -47,12 +48,12 @@ import static org.mockito.Mockito.when;
 class ContractGenerationServiceTest {
 
     private ContractGenerationService service;
-    private LeaseChargeRepository leaseChargeRepository;
+    private LeaseLineRepository leaseLineRepository;
 
     @BeforeEach
     void setUp() {
-        leaseChargeRepository = mock(LeaseChargeRepository.class);
-        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(Collections.emptyList());
+        leaseLineRepository = mock(LeaseLineRepository.class);
+        when(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(Collections.emptyList());
         service = new ContractGenerationService(
                 mock(LeaseRepository.class),
                 // Pass-through: these tests are about contract rendering, not
@@ -61,25 +62,38 @@ class ContractGenerationServiceTest {
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class),
-                mock(PaymentScheduleService.class),
-                leaseChargeRepository,
+                leaseLineRepository,
                 mock(ApplicationEventPublisher.class));
     }
 
-    private static LeaseCharge charge(String name, BigDecimal amount, boolean vat, ChargeFrequency freq) {
-        LeaseCharge c = new LeaseCharge();
-        c.setName(name);
-        c.setAmount(amount);
-        c.setVatApplicable(vat);
-        c.setFrequency(freq);
-        return c;
+    /**
+     * Section 3 is built from the lease's charge lines now. Nothing writes
+     * LeaseCharge any more, so a contract that still read that table rendered no
+     * fee rows at all and a total that was short by every fee on the lease.
+     */
+    private static LeaseLine leaseLine(int seqNo, String particular, ChargeBehaviour behaviour,
+                                       BigDecimal net, boolean vat) {
+        ChargeType type = new ChargeType();
+        type.setCode(particular.toUpperCase(java.util.Locale.ROOT).replace(' ', '_'));
+        type.setNameEn(particular);
+        type.setBehaviour(behaviour);
+
+        LeaseLine l = new LeaseLine();
+        l.setSeqNo(seqNo);
+        l.setChargeType(type);
+        l.setGrossAmount(net);
+        l.setDiscountAmount(BigDecimal.ZERO);
+        l.setNetAmount(net);
+        l.setVatApplicable(vat);
+        return l;
     }
 
-    /** Stub the charge repo to return the given charges for any lease id. */
-    private void stubCharges(LeaseCharge... charges) {
-        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of(charges));
+    /** Stub the line repo to return the given lines for any lease id. */
+    private void stubLines(LeaseLine... lines) {
+        when(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(List.of(lines));
     }
 
+    /** Rent + (optional) deposit lines, the shape every lease has at minimum. */
     private Lease leaseWith(BigDecimal rent, BigDecimal deposit, boolean rentVat) {
         Lease l = new Lease();
         l.setId(UUID.randomUUID());
@@ -89,11 +103,30 @@ class ContractGenerationServiceTest {
         return l;
     }
 
+    /** The lines a {@link #leaseWith} lease would carry, plus any extra fee lines. */
+    private void stubRentDepositAnd(BigDecimal rent, boolean rentVat, BigDecimal deposit, LeaseLine... extra) {
+        List<LeaseLine> lines = new ArrayList<>();
+        lines.add(leaseLine(1, "Rent", ChargeBehaviour.RENT, rent, rentVat));
+        if (deposit != null && deposit.signum() > 0) {
+            lines.add(leaseLine(2, "Security Deposit", ChargeBehaviour.DEPOSIT, deposit, false));
+        }
+        for (LeaseLine e : extra) {
+            e.setSeqNo(lines.size() + 1);
+            lines.add(e);
+        }
+        when(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(lines);
+    }
+
+    private static LeaseLine fee(String name, BigDecimal amount, boolean vat) {
+        return leaseLine(0, name, ChargeBehaviour.FEE, amount, vat);
+    }
+
     @Test
     void section3HidesZeroAmountRows() {
         // Rent 55000 (no VAT), deposit 3000, plus an Admin Fee 2000 charge.
-        stubCharges(charge("Admin Fee", new BigDecimal("2000"), false, ChargeFrequency.ONE_TIME));
         Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), false);
+        stubRentDepositAnd(new BigDecimal("55000"), false, new BigDecimal("3000"),
+                fee("Admin Fee", new BigDecimal("2000"), false));
         String html = service.buildSection3Rows(lease);
         assertThat(html).contains("Rent").contains("55,000.00").contains("Exempt");
         assertThat(html).contains("Admin Fee").contains("2,000.00");
@@ -104,17 +137,57 @@ class ContractGenerationServiceTest {
     @Test
     void section3RendersVatAt5PercentWhenApplicable() {
         Lease lease = leaseWith(new BigDecimal("55000"), BigDecimal.ZERO, true);
+        stubRentDepositAnd(new BigDecimal("55000"), true, BigDecimal.ZERO);
         String html = service.buildSection3Rows(lease);
         assertThat(html).contains("5%").contains("2,750.00").contains("57,750.00");
+    }
+
+    /**
+     * The regression this whole change exists for. Fee lines used to be read from
+     * {@code lease_charges}, which nothing writes any more, so every fee silently
+     * vanished from Section 3 and the grand total came up short by exactly the
+     * fees. Rent 51,000 + admin 2,000 + deposit 3,000 must render three rows and
+     * total 56,000.
+     */
+    @Test
+    void section3AndItsTotalComeFromTheLeaseLines() {
+        Lease lease = leaseWith(new BigDecimal("51000"), new BigDecimal("3000"), false);
+        stubLines(
+                leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("51000"), false),
+                leaseLine(2, "Admin Fee", ChargeBehaviour.FEE, new BigDecimal("2000"), false),
+                leaseLine(3, "Security Deposit", ChargeBehaviour.DEPOSIT, new BigDecimal("3000"), false));
+
+        String rows = service.buildSection3Rows(lease);
+        assertThat(rows).contains("Rent").contains("51,000.00");
+        assertThat(rows).contains("Admin Fee").contains("2,000.00");
+        assertThat(rows).contains("Security Deposit").contains("3,000.00");
+        // Lines are numbered in the order they were entered.
+        assertThat(rows.indexOf("Rent")).isLessThan(rows.indexOf("Admin Fee"));
+        assertThat(rows.indexOf("Admin Fee")).isLessThan(rows.indexOf("Security Deposit"));
+
+        assertThat(service.buildSection3Total(lease)).contains("TOTAL").contains("56,000.00");
+    }
+
+    /** A discounted line contributes its net, which is what the renter owes. */
+    @Test
+    void section3UsesTheNetAmountNotTheGross() {
+        Lease lease = leaseWith(new BigDecimal("50000"), BigDecimal.ZERO, false);
+        LeaseLine discounted = leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("51000"), false);
+        discounted.setDiscountAmount(new BigDecimal("1000"));
+        discounted.setNetAmount(new BigDecimal("50000"));
+        stubLines(discounted);
+
+        assertThat(service.buildSection3Rows(lease)).contains("50,000.00").doesNotContain("51,000.00");
+        assertThat(service.buildSection3Total(lease)).contains("50,000.00");
     }
 
     @Test
     void section3AllRowsExemptByDefault() {
         // Rent + deposit + 2 charges, all VAT off → 4 "Exempt" rows.
-        stubCharges(
-                charge("Admin Fee", new BigDecimal("2000"), false, ChargeFrequency.ONE_TIME),
-                charge("Parking / Remote", new BigDecimal("300"), false, ChargeFrequency.ONE_TIME));
         Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), false);
+        stubRentDepositAnd(new BigDecimal("55000"), false, new BigDecimal("3000"),
+                fee("Admin Fee", new BigDecimal("2000"), false),
+                fee("Parking / Remote", new BigDecimal("300"), false));
         String html = service.buildSection3Rows(lease);
         int count = html.split("Exempt", -1).length - 1;
         assertThat(count).isEqualTo(4);
@@ -123,10 +196,13 @@ class ContractGenerationServiceTest {
     @Test
     void section3DepositNeverVatEvenWhenChargesAreVat() {
         // Rent VAT on, charges VAT on, but the Security Deposit row is always Exempt.
-        stubCharges(
-                charge("Admin Fee", new BigDecimal("2000"), true, ChargeFrequency.ONE_TIME),
-                charge("Parking / Remote", new BigDecimal("300"), true, ChargeFrequency.ONE_TIME));
         Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), true);
+        // The deposit line is stubbed with vatApplicable = true on purpose: the
+        // service must refuse VAT on a DEPOSIT line whatever the row says.
+        stubRentDepositAnd(new BigDecimal("55000"), true, null,
+                leaseLine(0, "Security Deposit", ChargeBehaviour.DEPOSIT, new BigDecimal("3000"), true),
+                fee("Admin Fee", new BigDecimal("2000"), true),
+                fee("Parking / Remote", new BigDecimal("300"), true));
         String html = service.buildSection3Rows(lease);
         // Rent + 2 charges = 3 rows at 5%; deposit row Exempt.
         int vatCount = html.split("5%", -1).length - 1;
@@ -190,8 +266,8 @@ class ContractGenerationServiceTest {
                 leaseRepo,
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
                 mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
-                mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class),
-                mock(LeaseChargeRepository.class), mock(ApplicationEventPublisher.class));
+                mock(PaymentScheduleRepository.class),
+                mock(LeaseLineRepository.class), mock(ApplicationEventPublisher.class));
 
         svc.assignContractNumberIfNull(lease);
         assertThat(lease.getContractNumber()).isEqualTo(1751L);
@@ -263,12 +339,14 @@ class ContractGenerationServiceTest {
         return lease;
     }
 
-    /** Charges that, with rent + deposit, mirror the legacy admin/parking fixtures. */
-    private List<LeaseCharge> buildCharges(boolean vat) {
-        List<LeaseCharge> charges = new ArrayList<>();
-        charges.add(charge("Admin Fee", new BigDecimal("2000"), vat, ChargeFrequency.ONE_TIME));
-        charges.add(charge("Parking / Remote", new BigDecimal("300"), vat, ChargeFrequency.ONE_TIME));
-        return charges;
+    /** Rent 55,000 + deposit 3,000 + admin 2,000 + parking 300 as charge lines. */
+    private List<LeaseLine> buildLines(boolean vat) {
+        List<LeaseLine> lines = new ArrayList<>();
+        lines.add(leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("55000"), vat));
+        lines.add(leaseLine(2, "Security Deposit", ChargeBehaviour.DEPOSIT, new BigDecimal("3000"), false));
+        lines.add(leaseLine(3, "Admin Fee", ChargeBehaviour.FEE, new BigDecimal("2000"), vat));
+        lines.add(leaseLine(4, "Parking / Remote", ChargeBehaviour.FEE, new BigDecimal("300"), vat));
+        return lines;
     }
 
     private List<PaymentSchedule> buildSchedules() {
@@ -288,14 +366,14 @@ class ContractGenerationServiceTest {
      */
     private ContractGenerationService buildSpyForFullFlow(Lease lease, LandlordOrg org,
                                                          List<PaymentSchedule> schedules,
-                                                         List<LeaseCharge> charges,
+                                                         List<LeaseLine> lines,
                                                          Long maxContractNumber,
                                                          Path tmpStorage) throws Exception {
         LeaseRepository leaseRepo = mock(LeaseRepository.class);
         LeaseDocumentRepository docRepo = mock(LeaseDocumentRepository.class);
         LandlordOrgRepository orgRepo = mock(LandlordOrgRepository.class);
         PaymentScheduleRepository scheduleRepo = mock(PaymentScheduleRepository.class);
-        LeaseChargeRepository chargeRepo = mock(LeaseChargeRepository.class);
+        LeaseLineRepository lineRepo = mock(LeaseLineRepository.class);
 
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(maxContractNumber);
@@ -304,7 +382,7 @@ class ContractGenerationServiceTest {
         when(orgRepo.findById(lease.getTenantId())).thenReturn(Optional.of(org));
 
         when(scheduleRepo.findByLeaseId(lease.getId())).thenReturn(schedules);
-        when(chargeRepo.findByLeaseId(lease.getId())).thenReturn(charges);
+        when(lineRepo.findByLease_IdOrderBySeqNoAsc(lease.getId())).thenReturn(lines);
 
         when(docRepo.findByLeaseId(lease.getId())).thenReturn(Collections.emptyList());
         when(docRepo.save(any(LeaseDocument.class))).thenAnswer(inv -> {
@@ -317,8 +395,8 @@ class ContractGenerationServiceTest {
         ContractGenerationService realSvc = new ContractGenerationService(
                 leaseRepo,
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
-                docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class),
-                chargeRepo, mock(ApplicationEventPublisher.class));
+                docRepo, orgRepo, scheduleRepo,
+                lineRepo, mock(ApplicationEventPublisher.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
         storagePathField.setAccessible(true);
@@ -347,7 +425,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
+                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
 
         // Capture the HTML passed to renderPdf so we can assert on it.
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
@@ -441,7 +519,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(true), 1750L, tmpStorage);
+                lease, org, buildSchedules(), buildLines(true), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.generateContract(lease.getId());
@@ -486,7 +564,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
+                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         byte[] bytes = svc.previewContract(lease.getId());
@@ -532,7 +610,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
+                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
@@ -590,7 +668,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
+                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
@@ -667,7 +745,7 @@ class ContractGenerationServiceTest {
         rejectedDocument.setDocumentUrl(rejectedPdf.toString());
 
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildCharges(false), 1750L, contractRoot);
+                lease, org, buildSchedules(), buildLines(false), 1750L, contractRoot);
         LeaseDocumentRepository docRepo = extractDocRepo(svc);
         when(docRepo.findByLeaseId(lease.getId())).thenReturn(List.of(rejectedDocument));
 

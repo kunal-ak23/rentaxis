@@ -10,11 +10,17 @@ import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
@@ -63,6 +69,9 @@ class LeaseLinesIT {
     @Autowired AccountService accountService;
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
+    @Autowired AccountRepository accountRepository;
+    @Autowired PropertyAccountMappingRepository propertyMappingRepo;
+    @Autowired TenantDefaultAccountMappingRepository defaultMappingRepo;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -257,19 +266,117 @@ class LeaseLinesIT {
      * unmapped rather than refusing the draft. The gap is the accountant's to
      * close and the posting guard is where it is reported; blocking a draft on it
      * stops work on a problem the person drafting usually cannot fix.
+     *
+     * <p>Both mappings are removed first — the property's and the tenant default
+     * the resolver falls back to. Without that the role resolves and the test
+     * asserts nothing: it would pass whether or not the null-account path exists.</p>
      */
     @Test
     void aLineWhoseRoleHasNoMappedAccountIsSavedUnmapped() {
-        // COOLING's template row parents on "C-01", which the seeded chart has as a
-        // group; if the tenant has no leaf for it the resolver finds nothing.
+        UUID propertyId = fixtures.property().getId();
+        tx.executeWithoutResult(status -> {
+            propertyMappingRepo.findByPropertyIdAndRole(propertyId, AccountRole.COOLING_CHARGES)
+                    .ifPresent(propertyMappingRepo::delete);
+            defaultMappingRepo.findByRole(AccountRole.COOLING_CHARGES)
+                    .ifPresent(defaultMappingRepo::delete);
+        });
+
         UUID leaseId = draft(line("RENT", "51000"), line("COOLING", "1200")).getId();
 
         List<LeaseLineDTO> lines = leaseService.getLines(leaseId);
         assertThat(lines).hasSize(2);
+        // Rent still resolves: only the cooling role was unmapped.
         assertThat(lines.get(0).creditAccountId()).isNotNull();
-        // Whether COOLING resolves depends on the tenant's chart; either way the
-        // draft was accepted and the line persisted with its amount intact.
         assertThat(lines.get(1).chargeTypeCode()).isEqualTo("COOLING");
+        assertThat(lines.get(1).creditAccountId()).isNull();
+        assertThat(lines.get(1).creditAccountName()).isNull();
+        // The draft was accepted anyway, with the amount intact.
         assertThat(lines.get(1).netAmount()).isEqualByComparingTo("1200");
+    }
+
+    // ---- explicit credit-account overrides ----------------------------------
+
+    /** A leaf the property owns for a given role — the accounts the template generated. */
+    private Account propertyLeaf(AccountRole role) {
+        return tx.execute(status -> propertyMappingRepo
+                .findByPropertyIdAndRole(fixtures.property().getId(), role)
+                .orElseThrow(() -> new AssertionError("no " + role + " mapping for the fixture property"))
+                .getAccount());
+    }
+
+    private void expectRejectedOverride(UUID accountId, String messageFragment) {
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(
+                line("RENT", "51000"),
+                new LeaseLineInput(null, "ADMIN_FEE", new BigDecimal("2000"), BigDecimal.ZERO,
+                        null, null, accountId, null, null)));
+        assertThatThrownBy(() -> leaseService.createDraftLease(dto))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Line 2 (ADMIN_FEE): credit account")
+                .hasMessageContaining(messageFragment);
+    }
+
+    /**
+     * A group account has no balance of its own to post to — the template parents
+     * every generated leaf on one, so it is the easiest wrong answer to pick.
+     */
+    @Test
+    void anOverrideOntoAGroupAccountIsRefused() {
+        Account group = tx.execute(status -> {
+            Account leaf = propertyLeaf(AccountRole.ADMIN_FEE);
+            return accountRepository.findById(leaf.getParent().getId()).orElseThrow();
+        });
+        assertThat(group.isGroup()).isTrue();
+        expectRejectedOverride(group.getId(), "is a group account");
+    }
+
+    /** An inactive leaf is one the accountant has retired; nothing should post to it. */
+    @Test
+    void anOverrideOntoAnInactiveAccountIsRefused() {
+        Account leaf = propertyLeaf(AccountRole.ADMIN_FEE);
+        tx.executeWithoutResult(status -> {
+            Account a = accountRepository.findById(leaf.getId()).orElseThrow();
+            a.setActive(false);
+            accountRepository.save(a);
+        });
+        expectRejectedOverride(leaf.getId(), "is inactive");
+    }
+
+    /**
+     * The one that would otherwise go unnoticed. Crediting a fee line to the
+     * property's bank leaf produces an entry that still balances — it credits the
+     * asset the line is supposed to debit, so the receivable nets to nothing and
+     * the lease looks paid the moment it posts.
+     */
+    @Test
+    void anOverrideOntoTheWrongAccountTypeIsRefused() {
+        Account bank = propertyLeaf(AccountRole.BANK);
+        assertThat(bank.getAccountType()).isEqualTo(AccountType.ASSET);
+        expectRejectedOverride(bank.getId(), "must be an INCOME account");
+    }
+
+    /** A non-existent id came from the request body, so it is a 400, not a 404. */
+    @Test
+    void anOverrideOntoAnUnknownAccountIsRefused() {
+        expectRejectedOverride(UUID.randomUUID(), "does not exist");
+    }
+
+    /** A different INCOME leaf is a legitimate override and is what the line keeps. */
+    @Test
+    void aValidOverrideReplacesTheResolvedAccount() {
+        Account parking = propertyLeaf(AccountRole.PARKING_INCOME);
+        assertThat(parking.getAccountType()).isEqualTo(AccountType.INCOME);
+
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(
+                line("RENT", "51000"),
+                new LeaseLineInput(null, "ADMIN_FEE", new BigDecimal("2000"), BigDecimal.ZERO,
+                        null, null, parking.getId(), null, null)));
+        LeaseDTO lease = leaseService.createDraftLease(dto);
+
+        LeaseLineDTO admin = lease.getLines().get(1);
+        assertThat(admin.creditAccountId()).isEqualTo(parking.getId());
+        assertThat(admin.creditAccountName()).isEqualTo(parking.getName());
+        // And it survives a re-read, so it was persisted rather than echoed back.
+        assertThat(leaseService.getLines(lease.getId()).get(1).creditAccountId())
+                .isEqualTo(parking.getId());
     }
 }

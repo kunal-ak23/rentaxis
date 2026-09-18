@@ -54,6 +54,14 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     void deleteByLease_IdAndStatus(UUID leaseId, ChequeStatus status);
 
     /**
+     * How many of the lease's cheques have moved past {@code DRAFT}. Deleting a
+     * draft lease refuses on a non-zero count: those rows are paper in hand or
+     * money in transit, and the FK on {@code cheques.lease_id} would otherwise
+     * fail as an opaque 500.
+     */
+    long countByLease_IdAndStatusNot(UUID leaseId, ChequeStatus status);
+
+    /**
      * Pessimistic write lock on a single cheque so concurrent lifecycle transitions
      * (one caller clearing it while another marks it bounced) serialize their
      * check-then-update on {@code status}. Without it, two callers under

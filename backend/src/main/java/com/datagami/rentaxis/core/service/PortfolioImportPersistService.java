@@ -167,6 +167,10 @@ public class PortfolioImportPersistService {
         int leasesCreated = 0;
         int chequesFromSheet = 0;
         int bookingDepositsCreated = 0;
+        // The caller's warnings are the validation phase's; this phase adds its
+        // own. The two-argument overload passes List.of(), so copy rather than
+        // mutate what was handed in.
+        List<ImportErrorDTO> allWarnings = new ArrayList<>(warnings == null ? List.of() : warnings);
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
             Row row = leasesSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
@@ -312,6 +316,11 @@ public class PortfolioImportPersistService {
                             " — this indicates a validation bug, please report it");
                 }
                 bookingDepositsCreated++;
+                // Read, validated, counted — and not stored. Silence here would
+                // mean an admin believes the booking cheque is in the system.
+                allWarnings.add(new ImportErrorDTO("Leases", i + 1, "BookingDeposit_Amount",
+                        "The booking deposit instrument was not imported; its cheque details must be "
+                                + "entered on the lease (cheque import returns with the cheque register)"));
             }
 
             // Apply lease-status-driven side effects.
@@ -333,6 +342,13 @@ public class PortfolioImportPersistService {
                 savedLease.setPaymentTerms(chequeRows.size());
                 leaseRepository.save(savedLease);
                 chequesFromSheet += chequeRows.size();
+                // Only the row count survives. Numbers, banks, dates and amounts
+                // are dropped, and an import that said nothing about it would look
+                // exactly like one that had loaded them.
+                allWarnings.add(new ImportErrorDTO("Cheques", i + 1, "UniqueID",
+                        chequeRows.size() + " cheque row(s) from the Cheques sheet were not imported; "
+                                + "cheque details must be entered on the lease "
+                                + "(cheque import returns with the cheque register)"));
             }
         }
 
@@ -347,13 +363,13 @@ public class PortfolioImportPersistService {
         // the controller reads either the legacy array form (validation-failed jobs)
         // or this wrapper. Wrapper is written when there's anything to surface
         // beyond the legacy fields.
-        boolean hasWarnings = warnings != null && !warnings.isEmpty();
+        boolean hasWarnings = !allWarnings.isEmpty();
         if (chequesFromSheet > 0 || bookingDepositsCreated > 0 || hasWarnings) {
             try {
                 PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();
                 if (chequesFromSheet > 0) details.setChequesFromSheet(chequesFromSheet);
                 if (bookingDepositsCreated > 0) details.setBookingDepositsCreated(bookingDepositsCreated);
-                if (hasWarnings) details.setWarnings(warnings);
+                if (hasWarnings) details.setWarnings(allWarnings);
                 job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
             } catch (JsonProcessingException e) {
                 log.warn("Failed to serialize bulk-import counters into job.errors", e);

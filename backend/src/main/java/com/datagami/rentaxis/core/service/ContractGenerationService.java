@@ -9,10 +9,11 @@ import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
-import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
@@ -67,8 +68,7 @@ public class ContractGenerationService {
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
-    private final PaymentScheduleService paymentScheduleService;
-    private final LeaseChargeRepository leaseChargeRepository;
+    private final LeaseLineRepository leaseLineRepository;
     private final ApplicationEventPublisher events;
 
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
@@ -85,32 +85,15 @@ public class ContractGenerationService {
                                      LeaseDocumentRepository leaseDocumentRepository,
                                      LandlordOrgRepository landlordOrgRepository,
                                      PaymentScheduleRepository paymentScheduleRepository,
-                                     PaymentScheduleService paymentScheduleService,
-                                     LeaseChargeRepository leaseChargeRepository,
+                                     LeaseLineRepository leaseLineRepository,
                                      ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
         this.paymentScheduleRepository = paymentScheduleRepository;
-        this.paymentScheduleService = paymentScheduleService;
-        this.leaseChargeRepository = leaseChargeRepository;
+        this.leaseLineRepository = leaseLineRepository;
         this.events = events;
-    }
-
-    /**
-     * Make sure the lease has its rent installment schedule before the contract
-     * is rendered. New drafts created via LeaseService.createDraftLease already
-     * have a schedule, but pre-existing drafts (or drafts created before draft-time
-     * generation was added) won't — fix that on the fly so Section 4 of the
-     * contract is never empty.
-     */
-    private void ensureScheduleExists(Lease lease) {
-        boolean hasInstallments = paymentScheduleRepository.findByLeaseId(lease.getId())
-                .stream().anyMatch(p -> !p.isBookingDeposit());
-        if (!hasInstallments) {
-            paymentScheduleService.generateScheduleForLease(lease);
-        }
     }
 
     private boolean useAzureStorage() {
@@ -130,9 +113,9 @@ public class ContractGenerationService {
             throw new BusinessRuleViolationException("Contract can only be generated for DRAFT or PENDING_SIGNATURE leases");
         }
 
-        // Backfill the installment schedule for legacy drafts that predate
-        // draft-time generation, so Section 4 is never empty on the contract.
-        ensureScheduleExists(lease);
+        // Generating a contract does not create a payment plan. Section 4 renders
+        // whatever schedule rows already exist — none, for a lease drafted under
+        // the line model — until Task 11 points it at the cheque grid.
 
         // A rejected contract returns the lease to DRAFT but its document row
         // still exists. Replace documents based on what is actually persisted,
@@ -250,11 +233,8 @@ public class ContractGenerationService {
             throw new NotFoundException("Lease not found");
         }
 
-        // Backfill the installment schedule on the fly for legacy drafts that
-        // predate draft-time generation. Persisting these rows is intentional —
-        // they're needed regardless of whether the user later confirms-and-saves
-        // the contract.
-        ensureScheduleExists(lease);
+        // As in generateContract: previewing writes nothing. Section 4 renders
+        // whatever schedule rows exist until Task 11 moves it to cheques.
 
         // Use placeholder for contract number when none assigned yet; do not
         // assign / mutate the lease's contract number on the preview path.
@@ -288,11 +268,13 @@ public class ContractGenerationService {
         String section3Total = buildSection3Total(lease);
         String section4Rows = buildSection4Rows(schedules);
 
-        // Grand total = rent + deposit + sum of all flexible charges (face amounts).
-        BigDecimal grandTotal = nz(lease.getRentAmount())
-                .add(nz(lease.getDepositAmount()));
-        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
-            grandTotal = grandTotal.add(nz(c.getAmount()));
+        // Grand total = every line's net, face amounts. Reading the lines rather
+        // than rentAmount + depositAmount + lease_charges is not a refactor: fees
+        // are lines now, nothing writes lease_charges any more, and the contract
+        // was silently omitting every fee while its total came up short.
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        for (LeaseLine l : chargeLines(lease)) {
+            grandTotal = grandTotal.add(nz(l.getNetAmount()));
         }
 
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
@@ -419,17 +401,16 @@ public class ContractGenerationService {
      * Build the totals row for Section 3. Sums non-zero rows of amount, VAT amount,
      * and amount-with-VAT. Renders blank VAT % cell.
      */
-    private String buildSection3Total(Lease lease) {
+    // Package-private so the rendering tests can assert on the total without
+    // driving a full PDF generation.
+    String buildSection3Total(Lease lease) {
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal totalVat = BigDecimal.ZERO;
         BigDecimal totalWithVat = BigDecimal.ZERO;
 
         List<Object[]> rows = new ArrayList<>();
-        rows.add(new Object[]{nz(lease.getRentAmount()), lease.isRentVatApplicable()});
-        // Security deposit is refundable, never VAT.
-        rows.add(new Object[]{nz(lease.getDepositAmount()), false});
-        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
-            rows.add(new Object[]{nz(c.getAmount()), c.isVatApplicable()});
+        for (LeaseLine l : chargeLines(lease)) {
+            rows.add(new Object[]{nz(l.getNetAmount()), vatOn(l)});
         }
         for (Object[] r : rows) {
             BigDecimal amt = (BigDecimal) r[0];
@@ -468,15 +449,37 @@ public class ContractGenerationService {
     public String buildSection3Rows(Lease lease) {
         StringBuilder sb = new StringBuilder();
         int sNo = 1;
-
-        sNo = appendSection3Row(sb, sNo, "Rent", lease.getRentAmount(), lease.isRentVatApplicable());
-        // Security deposit is refundable and never carries VAT.
-        sNo = appendSection3Row(sb, sNo, "Security Deposit", lease.getDepositAmount(), false);
-        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
-            sNo = appendSection3Row(sb, sNo, c.getName(), c.getAmount(), c.isVatApplicable());
+        for (LeaseLine l : chargeLines(lease)) {
+            sNo = appendSection3Row(sb, sNo, labelOf(l), l.getNetAmount(), vatOn(l));
         }
-
         return sb.toString();
+    }
+
+    /**
+     * The lease's charged particulars, in the order they were entered — which is
+     * the order the contract lists them in. Rent first is a property of how the
+     * lease was built, not something imposed here.
+     */
+    private List<LeaseLine> chargeLines(Lease lease) {
+        return leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+    }
+
+    /** The particular's name as the catalogue spells it. */
+    private static String labelOf(LeaseLine line) {
+        return line.getChargeType() != null ? line.getChargeType().getNameEn() : null;
+    }
+
+    /**
+     * A deposit is refundable money held, never a supply, so it never carries VAT
+     * whatever the line says. Every other line is taken at its word — the line's
+     * own flag, not the lease's {@code rentVatApplicable}, because the flag was
+     * copied onto the line when it was created and may have been overridden since.
+     */
+    private static boolean vatOn(LeaseLine line) {
+        if (line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT) {
+            return false;
+        }
+        return line.isVatApplicable();
     }
 
     private int appendSection3Row(StringBuilder sb, int sNo, String label, BigDecimal amount, boolean vatApplicable) {

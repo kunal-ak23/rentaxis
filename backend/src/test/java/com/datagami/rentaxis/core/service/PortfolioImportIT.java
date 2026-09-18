@@ -119,6 +119,20 @@ class PortfolioImportIT {
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
 
+        // Instrument-level data on the Cheques sheet and the booking-deposit
+        // columns is read, counted and then dropped. Counting it without saying so
+        // reads as "imported" on the summary screen, so both get a warning the
+        // admin can act on.
+        assertThat(details.getWarnings()).isNotNull();
+        assertThat(details.getWarnings()).extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .anySatisfy(m -> assertThat(m)
+                        .contains("cheque row(s) from the Cheques sheet were not imported")
+                        .contains("cheque register"))
+                .anySatisfy(m -> assertThat(m)
+                        .contains("booking deposit instrument was not imported"));
+        assertThat(details.getWarnings()).extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getSheet)
+                .contains("Cheques", "Leases");
+
         // Persisted leases — read back via tenant-filtered repository.
         // Lease.unit and Lease.renter are LAZY @ManyToOne; the persistence context
         // closed when the async @Transactional ended, so we resolve associations

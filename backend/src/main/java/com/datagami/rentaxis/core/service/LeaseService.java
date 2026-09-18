@@ -14,10 +14,12 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
@@ -430,7 +432,7 @@ public class LeaseService {
             line.setNarration(in.narration());
             line.setVatApplicable(in.vatApplicable() != null
                     ? in.vatApplicable() : type.isVatApplicableDefault());
-            line.setCreditAccount(resolveCreditAccount(in, type, propertyId));
+            line.setCreditAccount(resolveCreditAccount(in, type, propertyId, seqNo));
 
             // Rent covers the term unless the caller says otherwise — a stub
             // period on a rent line is what breaks per-day recognition later.
@@ -463,10 +465,42 @@ public class LeaseService {
                         "Line " + seqNo + ": unknown charge type " + code));
     }
 
-    private Account resolveCreditAccount(LeaseLineInput in, ChargeType type, UUID propertyId) {
+    /**
+     * The leaf this line credits: the caller's override if given, else the
+     * charge type's role resolved against the property.
+     *
+     * <p>An override is validated against the same rule the charge type itself
+     * had to satisfy. Without that, "credit account" is a free-text pointer into
+     * the chart: an ADMIN_FEE line aimed at the property's bank leaf produces an
+     * entry that still balances — it credits the asset the line was supposed to
+     * debit, nets the receivable to nothing, and looks paid the moment it posts.
+     * A group account has no balance of its own to post to, and an inactive one
+     * is a leaf the accountant has retired. All three are refused here rather
+     * than discovered at posting time, because here the request body is still in
+     * hand and the message can name the line.</p>
+     */
+    private Account resolveCreditAccount(LeaseLineInput in, ChargeType type, UUID propertyId, int seqNo) {
         if (in.creditAccountId() != null) {
-            return accountRepository.findById(in.creditAccountId())
-                    .orElseThrow(() -> new NotFoundException("Credit account not found: " + in.creditAccountId()));
+            String where = "Line " + seqNo + " (" + type.getCode() + "): credit account ";
+            // A 400, not a 404: the id came from the request body, and the
+            // resource being created is the lease, not the account.
+            Account account = accountRepository.findById(in.creditAccountId())
+                    .orElseThrow(() -> new BusinessRuleViolationException(
+                            where + in.creditAccountId() + " does not exist"));
+            if (account.isGroup()) {
+                throw new BusinessRuleViolationException(
+                        where + account.getCode() + " is a group account");
+            }
+            if (!account.isActive()) {
+                throw new BusinessRuleViolationException(
+                        where + account.getCode() + " is inactive");
+            }
+            AccountType expected = ChargeTypeService.expectedTypeFor(type.getRole());
+            if (expected != null && account.getAccountType() != expected) {
+                throw new BusinessRuleViolationException(
+                        where + account.getCode() + " must be an " + expected + " account");
+            }
+            return account;
         }
         // resolveOrNull, not resolve-in-a-try/catch: AccountResolver is proxied, so
         // an UnmappedAccountRoleException thrown out of resolve() marks this
@@ -604,6 +638,18 @@ public class LeaseService {
         // lease_lines cascades on delete, but cheques.lease_id does not — a draft
         // with generated cheques would be undeletable behind an opaque 500, which
         // is exactly the failure lease_interactions produced below.
+        //
+        // Only DRAFT cheques are removed, and anything beyond DRAFT is refused
+        // outright rather than deleted: a REGISTERED cheque is paper the landlord
+        // is physically holding and a DEPOSITED or CLEARED one has money behind
+        // it. Without this check the FK simply fails and the user gets a 500 that
+        // says nothing about which cheque is in the way.
+        long liveCheques = chequeRepository.countByLease_IdAndStatusNot(leaseId, ChequeStatus.DRAFT);
+        if (liveCheques > 0) {
+            throw new BusinessRuleViolationException(
+                    "This lease has " + liveCheques + " cheque(s) that are no longer drafts. "
+                            + "Cancel or remove them in the cheque register before deleting the lease.");
+        }
         leaseLineRepository.deleteByLease_Id(leaseId);
         deleteDraftCheques(leaseId);
         leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));

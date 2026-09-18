@@ -15,10 +15,13 @@ public interface LeaseLineRepository extends JpaRepository<LeaseLine, UUID> {
     List<LeaseLine> findByLease_IdOrderBySeqNoAsc(UUID leaseId);
 
     /**
-     * Delete-then-insert is how a draft's lines are replaced, so this runs on
-     * every edit. {@code @Modifying} rather than a {@code deleteAll(findAll…)}
-     * round trip: the rows are about to be superseded, there is nothing to read
-     * off them first.
+     * Drop the lease's lines. Delete-then-insert is how a draft's lines are
+     * replaced, so this runs on every edit.
+     *
+     * <p>A derived delete, so Spring Data loads the rows and removes them one by
+     * one rather than issuing a bulk statement — which is what keeps the tenant
+     * filter and the entity lifecycle applying to them, exactly as they would to
+     * a read.</p>
      */
     @Modifying
     void deleteByLease_Id(UUID leaseId);

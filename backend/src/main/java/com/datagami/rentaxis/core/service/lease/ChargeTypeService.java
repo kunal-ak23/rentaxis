@@ -99,6 +99,21 @@ public class ChargeTypeService {
     }
 
     /**
+     * The account type a line crediting {@code role} must land on, or {@code null}
+     * when the role cannot be credited by a charge type at all.
+     *
+     * <p>Exposed because the rule outlives charge-type creation: a lease line may
+     * override its credit account with any leaf the user picks, and that override
+     * has to satisfy the same constraint the charge type did. Without it, a line
+     * on an ADMIN_FEE charge type could be pointed at the property's bank leaf and
+     * the entry would still balance — it would simply credit the asset it was
+     * meant to debit.</p>
+     */
+    public static AccountType expectedTypeFor(AccountRole role) {
+        return role == null ? null : CREDITABLE_ROLES.get(role);
+    }
+
+    /**
      * Behaviour and credit role have to agree, or the line posts to the wrong side
      * of the books and nothing downstream notices: a deposit credited to income is
      * revenue that was never earned and cannot be refunded off the balance sheet.
