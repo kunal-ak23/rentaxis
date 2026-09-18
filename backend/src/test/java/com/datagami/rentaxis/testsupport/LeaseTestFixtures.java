@@ -112,6 +112,18 @@ public class LeaseTestFixtures {
      * lease back through the service has to authenticate as somebody.</p>
      */
     public void asTenantAdmin() {
+        authenticateAsTenantAdmin();
+    }
+
+    /**
+     * The same authentication, callable without the fixture instance.
+     *
+     * <p>The security context is a thread-local, so a test that drives the service
+     * from a worker thread — a concurrency race, say — has to set one up on each
+     * thread or every call there resolves to "sees nothing" and answers "Lease not
+     * found" for a lease the main thread created.</p>
+     */
+    public static void authenticateAsTenantAdmin() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         UUID.randomUUID().toString(), null,
@@ -211,6 +223,22 @@ public class LeaseTestFixtures {
     public static LeaseLineInput line(String chargeTypeCode, String gross, String discount) {
         return new LeaseLineInput(null, chargeTypeCode, new BigDecimal(gross), new BigDecimal(discount),
                 null, null, null, null, null);
+    }
+
+    /**
+     * A VAT-applicable line. The flag is set explicitly rather than left to the
+     * charge type's default, because no seeded type defaults to VAT and a test
+     * about VAT should not depend on that staying true.
+     */
+    public static LeaseLineInput vatLine(String chargeTypeCode, String gross) {
+        return new LeaseLineInput(null, chargeTypeCode, new BigDecimal(gross), BigDecimal.ZERO,
+                null, true, null, null, null);
+    }
+
+    /** A line whose credit account is named outright rather than resolved from the role. */
+    public static LeaseLineInput lineCreditedTo(String chargeTypeCode, String gross, UUID creditAccountId) {
+        return new LeaseLineInput(null, chargeTypeCode, new BigDecimal(gross), BigDecimal.ZERO,
+                null, null, creditAccountId, null, null);
     }
 
     public UUID tenantId() { return tenantId; }

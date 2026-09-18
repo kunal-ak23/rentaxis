@@ -117,6 +117,18 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "first_due_date")
     private LocalDate firstDueDate;
 
+    /**
+     * When the renter accepted the contract in the portal.
+     *
+     * <p>Acceptance is a fact about the renter, not a posting: it records that the
+     * paper is agreed and leaves the lease in {@code PENDING_SIGNATURE}. Only
+     * {@code LeasePostingService.post} moves a lease to ACTIVE (spec §6.3), because
+     * ACTIVE means "the contract is on the books" and a renter tapping Accept
+     * cannot write journals.</p>
+     */
+    @Column(name = "renter_accepted_at")
+    private Instant renterAcceptedAt;
+
     // ---- renewal chain ------------------------------------------------------
 
     @Column(name = "renewed_from_lease_id")

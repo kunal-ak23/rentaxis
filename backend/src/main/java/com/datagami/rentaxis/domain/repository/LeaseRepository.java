@@ -2,10 +2,14 @@ package com.datagami.rentaxis.domain.repository;
 
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -55,6 +59,27 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      */
     @Query("SELECT l FROM Lease l WHERE l.id = :id")
     Optional<Lease> findByIdScopedToTenant(@Param("id") UUID id);
+
+    /**
+     * Pessimistic write lock on the lease row, taken before posting reads its
+     * status. Two accountants hitting <em>Post</em> on the same contract at the
+     * same moment both read {@code DRAFT}, both write a TCO and a full set of
+     * PDRs, and the renter is billed twice for one tenancy — the lease's
+     * {@code @Version} would fail the second commit, but only after it had burnt
+     * a TCO number and written journals it then has to roll back. Locking first
+     * turns the loser into a clean 400 that never touches the ledger.
+     *
+     * <p>NOWAIT: a posting that is waiting on a network call must not park every
+     * other caller on the shared connection pool. Callers catch
+     * {@link org.springframework.dao.PessimisticLockingFailureException} — the type
+     * Spring Data's exception translation actually throws for SQLSTATE 55P03 — and
+     * surface a "try again" rather than a 500. The same shape as
+     * {@code ChequeRepository.findByIdForUpdate}.</p>
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("SELECT l FROM Lease l WHERE l.id = :id")
+    Optional<Lease> findByIdForUpdate(@Param("id") UUID id);
 
     @Query("""
         SELECT l FROM Lease l

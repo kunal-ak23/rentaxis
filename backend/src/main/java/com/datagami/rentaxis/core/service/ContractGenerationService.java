@@ -10,7 +10,6 @@ import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
-import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -481,12 +480,15 @@ public class ContractGenerationService {
      * whatever the line says. Every other line is taken at its word — the line's
      * own flag, not the lease's {@code rentVatApplicable}, because the flag was
      * copied onto the line when it was created and may have been overridden since.
+     *
+     * <p>Delegated to {@link LeaseVat} rather than restated: the contract the
+     * renter signs, the cheque grid that collects it and the posting journal that
+     * books it have to agree, and they only do so if there is one definition of
+     * which lines are taxable. Zero-amount rows are skipped by the callers, so
+     * "no VAT because the net is zero" never reaches the page.</p>
      */
     private static boolean vatOn(LeaseLine line) {
-        if (line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT) {
-            return false;
-        }
-        return line.isVatApplicable();
+        return LeaseVat.vatOf(line).signum() > 0;
     }
 
     private int appendSection3Row(StringBuilder sb, int sNo, String label, BigDecimal amount, boolean vatApplicable) {

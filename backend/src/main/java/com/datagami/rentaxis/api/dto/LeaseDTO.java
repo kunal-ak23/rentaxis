@@ -48,6 +48,13 @@ public class LeaseDTO {
     private Integer gracePeriodDays;
     private LocalDate firstDueDate;
 
+    /**
+     * When the renter accepted in the portal. Acceptance no longer activates the
+     * lease, so this is how the portal knows not to offer Accept twice while the
+     * accountant is still to post it.
+     */
+    private Instant renterAcceptedAt;
+
     // ---- renewal chain ----
     private UUID renewedFromLeaseId;
     private UUID chainId;

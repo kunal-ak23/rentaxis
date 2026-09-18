@@ -671,23 +671,33 @@ public class LeaseService {
         leaseRepository.delete(lease);
     }
 
+    /**
+     * Everything that happens to the <em>lease</em> when it posts: the status
+     * flip, the unit claim, the event row and the activation e-mail.
+     *
+     * <p>{@code activateLease} is gone and so is {@code PUT /{id}/activate}. A
+     * lease became ACTIVE by a status change alone, with no journal behind it, so
+     * "active" and "on the books" were two different facts about the same
+     * contract and nothing kept them together. Post is the only path to ACTIVE
+     * now (spec §6.3), and {@code LeasePostingService} calls this once the TCO and
+     * the PDRs are written — in the same transaction, so a lease is never ACTIVE
+     * without its journals or vice versa.</p>
+     *
+     * <p>The occupancy rules, the trail and the renter e-mail stay here rather
+     * than moving into the posting service: they are the lease's business and
+     * {@link #claimUnitForLease} is the only correct way to take a unit.</p>
+     *
+     * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/1629"}
+     */
     @Transactional
-    public LeaseDTO activateLease(UUID leaseId) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
-
-        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            throw new BusinessRuleViolationException("Can only activate DRAFT or PENDING_SIGNATURE leases");
-        }
-
+    public Lease markActiveOnPosting(Lease lease, String notes) {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.ACTIVE);
 
         claimUnitForLease(lease);
 
         Lease savedLease = leaseRepository.save(lease);
-        recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease activated");
-
-        // replaced by LeasePostingService.post in Task 6
+        recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, notes);
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_ACTIVATED,
@@ -695,7 +705,20 @@ public class LeaseService {
                 buildLeasePayload(savedLease),
                 "LEASE_ACTIVATED:" + savedLease.getId()));
 
-        return mapToDTO(savedLease);
+        return savedLease;
+    }
+
+    /**
+     * Append a row to the lease's trail from outside this service.
+     *
+     * <p>{@code recordEvent} stays private — the transitions it records are this
+     * service's to make — but posting and amendment are transitions made by
+     * {@code LeasePostingService}, and a ledger amendment that reverses a journal
+     * with no trace on the lease is worse than a slightly wider API.</p>
+     */
+    @Transactional
+    public void recordLeaseEvent(Lease lease, LeaseStatus previous, LeaseStatus next, String notes) {
+        recordEvent(lease, previous, next, notes);
     }
 
     @Transactional
@@ -796,6 +819,16 @@ public class LeaseService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * The renter agrees to the contract in the portal.
+     *
+     * <p>It records the acceptance and stops there: status stays
+     * {@code PENDING_SIGNATURE} and the unit is <em>not</em> claimed. Acceptance
+     * used to activate the lease outright, which meant a renter tapping a button
+     * moved a contract onto the landlord's books — with no journals behind it,
+     * because nothing here can post. The accountant now closes the loop with
+     * <em>Post</em> (spec §6.3), which is the only path to ACTIVE.</p>
+     */
     @Transactional
     public LeaseDTO acceptLease(UUID leaseId, UUID userId) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
@@ -811,27 +844,16 @@ public class LeaseService {
             throw new com.datagami.rentaxis.api.exception.AccessDeniedException("You are not authorized to accept this lease");
         }
 
-        LeaseStatus previousStatus = lease.getStatus();
-        lease.setStatus(LeaseStatus.ACTIVE);
-
-        claimUnitForLease(lease);
-
+        lease.setRenterAcceptedAt(Instant.now());
         Lease savedLease = leaseRepository.save(lease);
-        recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");
-
-        // replaced by LeasePostingService.post in Task 6
+        recordEvent(savedLease, LeaseStatus.PENDING_SIGNATURE, LeaseStatus.PENDING_SIGNATURE,
+                "Lease accepted by renter");
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_SIGNED,
                 savedLease.getTenantId(),
                 buildLeasePayload(savedLease),
                 "LEASE_SIGNED:" + savedLease.getId()));
-
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.LEASE_ACTIVATED,
-                savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
-                "LEASE_ACTIVATED:" + savedLease.getId()));
 
         return mapToDTO(savedLease);
     }
@@ -907,6 +929,7 @@ public class LeaseService {
         dto.setTotalDays(lease.getTotalDays());
         dto.setGracePeriodDays(lease.getGracePeriodDays());
         dto.setFirstDueDate(lease.getFirstDueDate());
+        dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
         dto.setChainId(lease.getChainId());
         dto.setReceivableAccountId(lease.getReceivableAccountId());

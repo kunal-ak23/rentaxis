@@ -6,12 +6,15 @@ import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.AmendLeaseLinesRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequeNumbersRequest;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
+import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
+import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
@@ -51,6 +54,7 @@ public class LeaseController {
     private final RenewalOpportunityService renewalOpportunityService;
     private final LeaseInteractionService leaseInteractionService;
     private final ChequeGenerationService chequeGenerationService;
+    private final LeasePostingService leasePostingService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -105,10 +109,41 @@ public class LeaseController {
         return ResponseEntity.noContent().build();
     }
 
-    @PutMapping("/{id}/activate")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<LeaseDTO> activateLease(@PathVariable UUID id) {
-        return ResponseEntity.ok(leaseService.activateLease(id));
+    // --- Posting -----------------------------------------------------------
+    //
+    // PUT /{id}/activate is gone. A lease used to become ACTIVE by a status change
+    // with no journal behind it, so "active" and "on the books" were two separate
+    // truths about the same contract. Post is the only path to ACTIVE now
+    // (spec §6.3): it writes the TCO and the PDRs, claims the unit and flips the
+    // status in one transaction.
+
+    /**
+     * Post the lease: one TCO dated the contract date, one PDR per cheque, unit
+     * claimed, status ACTIVE.
+     *
+     * <p>{@code dryRun=true} runs every validation and returns 200 with the list of
+     * problems, having written nothing — no journals, no status change, not even an
+     * entry number. It is what the review step before the button calls, and it is
+     * the same validation the real post runs, so the two cannot disagree.</p>
+     */
+    @PostMapping("/{id}/post")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<Object> postLease(@PathVariable UUID id,
+                                            @RequestParam(name = "dryRun", defaultValue = "false") boolean dryRun) {
+        return ResponseEntity.ok(dryRun
+                ? leasePostingService.dryRun(id)
+                : leasePostingService.post(id));
+    }
+
+    /**
+     * Replace a posted lease's lines: the current TCO is reversed by a TCR and a
+     * fresh TCO is posted in its place. Only while every cheque is still REGISTERED.
+     */
+    @PostMapping("/{id}/amend-lines")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<PostLeaseResponse> amendLeaseLines(@PathVariable UUID id,
+                                                             @Valid @RequestBody AmendLeaseLinesRequest request) {
+        return ResponseEntity.ok(leasePostingService.amendLines(id, request));
     }
 
     /**

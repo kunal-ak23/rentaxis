@@ -114,21 +114,36 @@ class LeaseServiceUnitOccupancyTest {
                 .thenReturn(Optional.of(lease.getUnit()));
     }
 
+    /**
+     * {@code activateLease} is gone; the lease side of a post is
+     * {@code markActiveOnPosting}, called by {@code LeasePostingService} once the
+     * journals are written. The occupancy behaviour it carries is unchanged, which
+     * is what these tests are here for.
+     */
     @Test
-    void activateLease_updatesUnitRevenueAndTenantName() {
+    void markActiveOnPosting_updatesUnitRevenueAndTenantName() {
         Lease lease = lease(LeaseStatus.DRAFT);
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
 
-        service.activateLease(lease.getId());
+        service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
 
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.ACTIVE);
         assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
         assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
         assertThat(lease.getUnit().getCurrentTenantName()).isEqualTo("Test Renter");
     }
 
+    /**
+     * Renter acceptance records a fact and stops there.
+     *
+     * <p>It used to activate the lease and take the unit, which meant a renter
+     * tapping Accept in the portal moved a contract onto the landlord's books with
+     * no journal behind it — nothing in the renter's own flow can post one. The
+     * accountant closes the loop with Post, which is now the only path to ACTIVE
+     * (spec §6.3).</p>
+     */
     @Test
-    void renterAcceptance_updatesUnitRevenueAndTenantName() {
+    void renterAcceptance_recordsTheAcceptanceWithoutActivatingOrTakingTheUnit() {
         Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
         UUID userId = UUID.randomUUID();
         lease.getRenter().setUserId(userId);
@@ -138,9 +153,12 @@ class LeaseServiceUnitOccupancyTest {
 
         service.acceptLease(lease.getId(), userId);
 
-        assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
-        assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
-        assertThat(lease.getUnit().getCurrentTenantName()).isEqualTo("Test Renter");
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.PENDING_SIGNATURE);
+        assertThat(lease.getRenterAcceptedAt()).isNotNull();
+        // The unit is untouched: it is still lettable until the contract posts.
+        assertThat(lease.getUnit().getStatus()).isNotEqualTo(UnitStatus.OCCUPIED);
+        assertThat(lease.getUnit().getCurrentTenantName()).isNull();
+        verify(unitRepository, org.mockito.Mockito.never()).save(any(Unit.class));
     }
 
     @Test
@@ -197,46 +215,28 @@ class LeaseServiceUnitOccupancyTest {
     }
 
     @Test
-    void activateLease_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
+    void markActiveOnPosting_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
         Lease lease = lease(LeaseStatus.DRAFT);
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
         when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
                 .thenReturn(List.of(otherActiveLeaseOn(lease)));
 
         // Before the fix both leases activated and both renters were invoiced
         // for the same unit.
-        assertThatThrownBy(() -> service.activateLease(lease.getId()))
+        assertThatThrownBy(() -> service.markActiveOnPosting(lease, "Lease posted TCO-26/1"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("already has an active lease");
     }
 
     @Test
-    void renterAcceptance_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
-        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
-        UUID userId = UUID.randomUUID();
-        lease.getRenter().setUserId(userId);
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
-        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
-        lockableUnit(lease);
-        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
-                .thenReturn(List.of(otherActiveLeaseOn(lease)));
-
-        // The renter self-service path repeated the same unguarded activation.
-        assertThatThrownBy(() -> service.acceptLease(lease.getId(), userId))
-                .isInstanceOf(BusinessRuleViolationException.class);
-    }
-
-    @Test
-    void activateLease_isNotBlockedByItsOwnAlreadyActiveRow() {
+    void markActiveOnPosting_isNotBlockedByItsOwnAlreadyActiveRow() {
         Lease lease = lease(LeaseStatus.DRAFT);
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
-        // The lease being activated must not count as "another" holder.
+        // The lease being posted must not count as "another" holder.
         when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
                 .thenReturn(List.of(lease));
 
-        service.activateLease(lease.getId());
+        service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
 
         assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
     }
@@ -306,18 +306,17 @@ class LeaseServiceUnitOccupancyTest {
     }
 
     /**
-     * Activation no longer generates a payment plan. Cheques are cut explicitly
-     * against the lease's lines, and posting is Task 6's job — a schedule
-     * appearing as a side effect of a status change is what let a lease bill a
-     * renter for instalments nobody had agreed.
+     * Going ACTIVE no longer generates a payment plan. Cheques are cut explicitly
+     * against the lease's lines and registered by the post — a schedule appearing
+     * as a side effect of a status change is what let a lease bill a renter for
+     * instalments nobody had agreed.
      */
     @Test
-    void activateLease_doesNotGenerateAPaymentSchedule() {
+    void markActiveOnPosting_doesNotGenerateAPaymentSchedule() {
         Lease lease = lease(LeaseStatus.DRAFT);
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
 
-        service.activateLease(lease.getId());
+        service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
 
         verify(paymentScheduleService, org.mockito.Mockito.never()).generateScheduleForLease(any(Lease.class));
     }
