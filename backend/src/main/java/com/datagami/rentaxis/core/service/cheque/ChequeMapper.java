@@ -29,6 +29,12 @@ public final class ChequeMapper {
     }
 
     public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays) {
+        // daysOverdue is a property of the date alone, so on its own it happily
+        // reports 365 for a cheque that cleared a year ago. The wire shape is read
+        // by a UI that renders the number next to an "overdue" badge, so it is
+        // gated on overdue here rather than in the rule, which other callers use
+        // for its unconditional meaning.
+        boolean overdue = ChequeDueRules.overdue(c, graceDays, today);
         return new ChequeDTO(
                 c.getId(),
                 nullSafe(c.getLease(), lease -> lease.getId()),
@@ -63,8 +69,8 @@ public final class ChequeMapper {
                 c.getCbrJournalId(),
                 c.getPenaltyAssessmentId(),
                 ChequeDueRules.due(c, today),
-                ChequeDueRules.overdue(c, graceDays, today),
-                ChequeDueRules.daysOverdue(c, graceDays, today));
+                overdue,
+                overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0);
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

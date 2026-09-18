@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -125,7 +126,12 @@ class ChequeRepositoryIT {
 
     private List<Cheque> search(UUID property, ChequeStatus status, ChequeMode mode,
                                 LocalDate from, LocalDate to, String term) {
-        return inTx(() -> cheques.search(property, status, mode, from, to, term, PAGE).getContent());
+        return searchPage(property, status, mode, from, to, term).getContent();
+    }
+
+    private Page<Cheque> searchPage(UUID property, ChequeStatus status, ChequeMode mode,
+                                    LocalDate from, LocalDate to, String term) {
+        return inTx(() -> cheques.search(property, status, mode, from, to, term, PAGE));
     }
 
     private Cheque cheque(int seqNo, String number, LocalDate chequeDate, ChequeStatus status, ChequeMode mode) {
@@ -223,6 +229,94 @@ class ChequeRepositoryIT {
         assertThat(search(propertyId, null, null, null, null, "%000002%"))
                 .extracting(Cheque::getChequeNumber).containsExactly("000002");
         assertThat(search(propertyId, null, null, null, null, "%nobody%")).isEmpty();
+    }
+
+    /**
+     * {@code unit_id} is nullable, so dereferencing {@code c.unit.unitNumber} inside
+     * the where clause makes Hibernate emit an INNER join and quietly delete every
+     * unit-less cheque from the register — and from the count the pager shows —
+     * even when the caller passed no search term at all. The LEFT JOIN is what keeps
+     * them visible.
+     */
+    @Test
+    void search_keepsChequesThatHaveNoUnit() {
+        seedRegister();
+        Cheque unitLess = cheque(4, "000004", TODAY.minusDays(2), ChequeStatus.REGISTERED, ChequeMode.CASH);
+        unitLess.setUnit(null);
+        cheques.save(unitLess);
+
+        Page<Cheque> all = searchPage(null, null, null, null, null, null);
+        assertThat(all.getContent()).extracting(Cheque::getChequeNumber)
+                .containsExactlyInAnyOrder("000001", "000002", "000003", "000004");
+        assertThat(all.getTotalElements())
+                .as("the unit-less cheque must be counted, not just listed")
+                .isEqualTo(4);
+
+        // It is still reachable by the other two search axes, and a unit-number term
+        // simply does not match it.
+        assertThat(search(null, null, null, null, null, "%000004%"))
+                .extracting(Cheque::getChequeNumber).containsExactly("000004");
+        assertThat(search(null, null, null, null, null, "%prabhjot%")).hasSize(4);
+        assertThat(search(null, null, null, null, null, "%304%")).hasSize(3);
+    }
+
+    /**
+     * Both worklists take a property filter that no caller exercises yet. A landlord
+     * opening one building's deposit run must not be handed another building's
+     * cheques.
+     */
+    @Test
+    void dueAndDepositWorklistsScopeToTheRequestedProperty() {
+        cheque(1, "000001", TODAY.minusDays(1), ChequeStatus.REGISTERED, ChequeMode.PDC);
+        UUID otherPropertyId = seedSecondPropertyWithDueCheque();
+
+        assertThat(due(propertyId)).extracting(Cheque::getChequeNumber).containsExactly("000001");
+        assertThat(toDeposit(propertyId)).extracting(Cheque::getChequeNumber).containsExactly("000001");
+
+        assertThat(due(otherPropertyId)).extracting(Cheque::getChequeNumber).containsExactly("000002");
+        assertThat(toDeposit(otherPropertyId)).extracting(Cheque::getChequeNumber).containsExactly("000002");
+
+        // Unscoped still sees the whole tenant — the filter narrows, it does not hide.
+        assertThat(due(null)).hasSize(2);
+        assertThat(toDeposit(null)).hasSize(2);
+    }
+
+    /** A second property in the same tenant, with its own unit, lease and due cheque. */
+    private UUID seedSecondPropertyWithDueCheque() {
+        Property p = new Property();
+        p.setNameEn("Marina Heights");
+        p.setEmirate(Emirate.DUBAI);
+        Property saved = propertyRepo.save(p);
+
+        Unit u = new Unit();
+        u.setProperty(saved);
+        u.setUnitNumber("1201");
+        Unit savedUnit = unitRepo.save(u);
+
+        Lease lease = new Lease();
+        lease.setUnit(savedUnit);
+        lease.setRenter(renterRepo.findById(renterId).orElseThrow());
+        lease.setStartDate(LocalDate.of(2026, 9, 1));
+        lease.setEndDate(LocalDate.of(2027, 8, 31));
+        lease.setRentAmount(new BigDecimal("90000"));
+        lease.setDepositAmount(new BigDecimal("5000"));
+        lease.setStatus(LeaseStatus.ACTIVE);
+        Lease savedLease = leaseRepo.save(lease);
+
+        Cheque c = new Cheque();
+        c.setLease(savedLease);
+        c.setProperty(saved);
+        c.setUnit(savedUnit);
+        c.setRenter(renterRepo.findById(renterId).orElseThrow());
+        c.setSeqNo(1);
+        c.setPostingDate(LocalDate.of(2026, 9, 1));
+        c.setChequeNumber("000002");
+        c.setChequeDate(TODAY.minusDays(1));
+        c.setAmount(new BigDecimal("22500"));
+        c.setStatus(ChequeStatus.REGISTERED);
+        c.setMode(ChequeMode.PDC);
+        cheques.save(c);
+        return saved.getId();
     }
 
     @Test

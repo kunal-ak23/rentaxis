@@ -81,9 +81,17 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * <p>{@code search} is matched with {@code like} against lowercased columns, so
      * the <em>caller</em> passes an already-lowercased, already-wildcarded term —
      * {@code "%" + term.toLowerCase() + "%"} — not a bare word.</p>
+     *
+     * <p>{@code unit} is joined explicitly with a LEFT JOIN because the column is
+     * nullable: dereferencing {@code c.unit.unitNumber} inline would make Hibernate
+     * emit an INNER join and silently drop every cheque that has no unit from the
+     * register <em>and</em> from its total count, even when no search term was
+     * given. {@code c.lease} and {@code c.lease.renter} are non-null, so their
+     * implicit joins are safe.</p>
      */
     @Query("""
         select c from Cheque c
+        left join c.unit u
         where (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
           and (cast(:status as string) is null or c.status = :status)
           and (cast(:mode as string) is null or c.mode = :mode)
@@ -94,7 +102,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and (cast(:search as string) is null
                or lower(c.lease.renter.nameEn) like :search
                or lower(c.chequeNumber) like :search
-               or lower(c.unit.unitNumber) like :search)
+               or lower(u.unitNumber) like :search)
         """)
     Page<Cheque> search(@Param("propertyId") UUID propertyId,
                         @Param("status") ChequeStatus status,

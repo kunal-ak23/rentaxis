@@ -100,7 +100,7 @@ public class Cheque extends BaseTenantEntity {
     @JoinColumn(name = "debit_account_id")
     private Account debitAccount;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal amount;
 
     @Column(length = 255)
