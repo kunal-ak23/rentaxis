@@ -8,9 +8,27 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+/**
+ * The lease contract — from accounting v2 onwards, a posting document.
+ *
+ * <p>What the lease charges for lives in {@link LeaseLine} rows. {@code rentAmount}
+ * and {@code depositAmount} stay on the row as <em>derived mirrors</em> of the
+ * RENT and DEPOSIT lines (spec §6.3): they are recomputed by
+ * {@code LeaseService.syncDerivedTotals} on every line change and must never be
+ * set from a request body. Reports, the unit's {@code actualRent} and the renter
+ * portal all read them, which is why they were kept rather than removed.</p>
+ *
+ * <p>{@code monthlyRent} is gone. It was a second source of truth for the same
+ * money — the schedule generator multiplied it by a month count while the
+ * contract PDF printed {@code rentAmount}, and the two disagreed whenever the
+ * term was not a whole number of months. A monthly figure is now derived where it
+ * is displayed ({@code LeaseService.monthlyRentOf}). The column survives until
+ * changeset 84; JPA simply ignores it.</p>
+ */
 @Entity
 @Table(name = "leases")
 @Getter
@@ -39,12 +57,11 @@ public class Lease extends BaseTenantEntity {
     @Column(nullable = false, length = 30)
     private LeaseStatus status = LeaseStatus.DRAFT;
 
+    /** Derived: Σ net of the RENT lines. Read-only to callers — see the class note. */
     @Column(name = "rent_amount", nullable = false)
     private BigDecimal rentAmount = BigDecimal.ZERO;
 
-    @Column(name = "monthly_rent")
-    private BigDecimal monthlyRent;
-
+    /** Derived: Σ net of the DEPOSIT-behaviour lines. Read-only to callers. */
     @Column(name = "deposit_amount", nullable = false)
     private BigDecimal depositAmount = BigDecimal.ZERO;
 
@@ -77,6 +94,58 @@ public class Lease extends BaseTenantEntity {
 
     @Column(name = "rent_vat_applicable", nullable = false)
     private boolean rentVatApplicable = false;
+
+    // ---- contract header (spec §6.3) ----------------------------------------
+
+    /**
+     * The date the contract is dated, and the date the posting journal carries.
+     * Distinct from {@code startDate} (tenancy begins) and from
+     * {@code agreementDate} (when it was signed): a contract dated in March for a
+     * tenancy starting in June posts in March.
+     */
+    @Column(name = "contract_date")
+    private LocalDate contractDate;
+
+    /** Derived: inclusive day count of the term. The denominator of per-day rent recognition. */
+    @Column(name = "total_days")
+    private Integer totalDays;
+
+    @Column(name = "grace_period_days", nullable = false)
+    private int gracePeriodDays = 0;
+
+    /** When the first instalment falls due; defaults to the tenancy start. */
+    @Column(name = "first_due_date")
+    private LocalDate firstDueDate;
+
+    // ---- renewal chain ------------------------------------------------------
+
+    @Column(name = "renewed_from_lease_id")
+    private UUID renewedFromLeaseId;
+
+    /**
+     * Every lease in a renewal chain shares this id; the first lease's chain id is
+     * its own id. Reports that ask "how long has this renter been here" walk the
+     * chain rather than the {@code renewedFromLeaseId} links one at a time.
+     */
+    @Column(name = "chain_id")
+    private UUID chainId;
+
+    // ---- posting (filled by Task 6) -----------------------------------------
+
+    @Column(name = "receivable_account_id")
+    private UUID receivableAccountId;
+
+    @Column(name = "income_account_id")
+    private UUID incomeAccountId;
+
+    @Column(name = "posting_journal_id")
+    private UUID postingJournalId;
+
+    @Column(name = "posted_at")
+    private Instant postedAt;
+
+    @Column(name = "posted_by")
+    private UUID postedBy;
 
     @Version
     private Long version;

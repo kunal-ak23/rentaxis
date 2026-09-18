@@ -2,6 +2,8 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -30,10 +32,9 @@ public class PortfolioImportPersistService {
     private final UnitRepository unitRepository;
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
-    private final PaymentScheduleService paymentScheduleService;
-    private final PaymentScheduleRepository paymentScheduleRepository;
-    private final LeaseChargeRepository leaseChargeRepository;
     private final ImportJobRepository importJobRepository;
+    private final LeaseService leaseService;
+    private final ChargeTypeService chargeTypeService;
 
     private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
     private static final Set<String> VALID_BOOLS_FALSE = Set.of("false", "no", "0");
@@ -153,10 +154,17 @@ public class PortfolioImportPersistService {
         // 5. Pre-read the optional Cheques sheet, keyed by lease.
         Map<String, List<ChequeRow>> chequesByLeaseKey = readChequesSheet(workbook);
 
-        // 6. Create Leases + Payment Schedules
+        // 6. Create Leases + their charge lines.
+        //
+        // The lines are built by code ("RENT", "SECURITY_DEPOSIT", ...), so the
+        // tenant's catalogue has to exist before the loop. Seeding is idempotent
+        // and leaves any row the tenant has already edited alone — importing into
+        // a brand-new tenant that has not opened the accounting screens yet would
+        // otherwise fail on the first lease with "unknown charge type RENT".
+        chargeTypeService.seedDefaults();
+
         HeaderIndex leaseHi = new HeaderIndex(leasesSheet);
         int leasesCreated = 0;
-        int schedulesCreated = 0;
         int chequesFromSheet = 0;
         int bookingDepositsCreated = 0;
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
@@ -202,27 +210,22 @@ public class PortfolioImportPersistService {
             // check (PortfolioImportService.computeTotalRentOrNull) uses the same
             // helper so cheque totals validate against the same number.
             long monthsBetween = monthsInclusive(startDate, endDate);
-            BigDecimal monthlyRent;
-            BigDecimal totalRent;
-            if (!monthlyRentStr.isEmpty()) {
-                monthlyRent = new BigDecimal(monthlyRentStr);
-                totalRent = monthlyRent.multiply(BigDecimal.valueOf(monthsBetween));
-            } else {
-                totalRent = new BigDecimal(rentAmountStr);
-                monthlyRent = totalRent.divide(BigDecimal.valueOf(monthsBetween), 2, RoundingMode.HALF_UP);
-            }
+            BigDecimal totalRent = monthlyRentStr.isEmpty()
+                    ? new BigDecimal(rentAmountStr)
+                    : new BigDecimal(monthlyRentStr).multiply(BigDecimal.valueOf(monthsBetween));
 
             Lease lease = new Lease();
             lease.setUnit(unit);
             lease.setRenter(renter);
             lease.setStartDate(startDate);
             lease.setEndDate(endDate);
+            // rentAmount / depositAmount are derived from the lines below; they are
+            // set here only so the not-null columns have a value before the first
+            // insert. syncDerivedTotals overwrites both.
             lease.setRentAmount(totalRent);
-            lease.setMonthlyRent(monthlyRent);
 
-            if (!depositStr.isEmpty()) {
-                lease.setDepositAmount(new BigDecimal(depositStr));
-            }
+            BigDecimal deposit = depositStr.isEmpty() ? BigDecimal.ZERO : new BigDecimal(depositStr);
+            lease.setDepositAmount(deposit);
             if (!paymentTermsStr.isEmpty()) {
                 lease.setPaymentTerms(Integer.parseInt(paymentTermsStr));
             }
@@ -261,41 +264,43 @@ public class PortfolioImportPersistService {
             LeaseStatus leaseStatus = "DRAFT".equals(statusStr) ? LeaseStatus.DRAFT : LeaseStatus.ACTIVE;
             lease.setStatus(leaseStatus);
 
+            // Contract header. contract_date is what the posting journal will be
+            // filed under, so an imported lease needs one even though the sheet
+            // has no column for it.
+            lease.setContractDate(lease.getAgreementDate() != null ? lease.getAgreementDate() : startDate);
+            lease.setFirstDueDate(startDate);
+
             Lease savedLease = leaseRepository.save(lease);
+            if (savedLease.getChainId() == null) {
+                savedLease.setChainId(savedLease.getId());
+                savedLease = leaseRepository.save(savedLease);
+            }
             leasesCreated++;
 
-            // Map the fixed fee columns to flexible one-time charges.
+            // The sheet's money columns become charge lines. This is the same
+            // entry point the draft wizard uses, so an imported lease posts
+            // through exactly the same rules — the previous pair of
+            // LeaseCharge rows plus hand-built PaymentSchedule rows was a second
+            // representation of the same amounts that only the import wrote.
+            List<LeaseLineInput> lines = new ArrayList<>();
+            lines.add(line("RENT", totalRent, lease.isRentVatApplicable(), startDate, endDate));
+            if (deposit.signum() > 0) {
+                lines.add(line("SECURITY_DEPOSIT", deposit, false, null, null));
+            }
             if (adminFee.signum() > 0) {
-                saveImportCharge(savedLease, "Admin Fee", adminFee, adminFeeVat);
+                lines.add(line("ADMIN_FEE", adminFee, adminFeeVat, null, null));
             }
             if (parkingRemoteFee.signum() > 0) {
-                saveImportCharge(savedLease, "Parking / Remote", parkingRemoteFee, parkingRemoteVat);
+                lines.add(line("PARKING_FEE", parkingRemoteFee, parkingRemoteVat, null, null));
             }
+            leaseService.applyLines(savedLease, lines);
+            leaseService.syncDerivedTotals(savedLease);
+            savedLease = leaseRepository.save(savedLease);
 
-            // One-time charge schedule rows (additive VAT) + the security
-            // deposit row (refundable, never VAT) — mirrors LeaseService.
-            if (adminFee.signum() > 0) {
-                saveChargeScheduleRow(savedLease, "Admin Fee",
-                        PaymentScheduleService.withVat(adminFee, adminFeeVat),
-                        PaymentScheduleService.vatOf(adminFee, adminFeeVat));
-                schedulesCreated++;
-            }
-            if (parkingRemoteFee.signum() > 0) {
-                saveChargeScheduleRow(savedLease, "Parking / Remote",
-                        PaymentScheduleService.withVat(parkingRemoteFee, parkingRemoteVat),
-                        PaymentScheduleService.vatOf(parkingRemoteFee, parkingRemoteVat));
-                schedulesCreated++;
-            }
-            if (savedLease.getDepositAmount() != null && savedLease.getDepositAmount().signum() > 0) {
-                paymentScheduleRepository.save(PaymentScheduleService
-                        .newSecurityDepositRow(savedLease, savedLease.getDepositAmount()));
-                schedulesCreated++;
-            }
-
-            // Booking deposit: persist a PaymentSchedule row mirroring LeaseService.createDraftLease.
-            // The Leases-sheet validator enforces all-or-nothing across the four BookingDeposit_*
-            // columns, so reaching this branch means Date / Number / Bank are also non-empty and
-            // parseable. We re-assert here to fail fast if a caller skipped validation.
+            // The Leases-sheet validator enforces all-or-nothing across the four
+            // BookingDeposit_* columns, so reaching this branch means Date /
+            // Number / Bank are also non-empty and parseable. We re-assert here to
+            // fail fast if a caller skipped validation.
             String bdAmt = cell(row, leaseHi, "BookingDeposit_Amount");
             if (!bdAmt.isEmpty()) {
                 String bdNum = cell(row, leaseHi, "BookingDeposit_Number");
@@ -306,24 +311,6 @@ public class PortfolioImportPersistService {
                             "BookingDeposit_Amount set without all of Date/Number/Bank on row " + (i + 1) +
                             " — this indicates a validation bug, please report it");
                 }
-                LocalDate bdDate = LocalDate.parse(bdDateStr);
-
-                PaymentSchedule booking = new PaymentSchedule();
-                booking.setLease(savedLease);
-                booking.setUnit(unit);
-                booking.setProperty(unit.getProperty());
-                booking.setInstallmentNumber(0);
-                booking.setAmount(new BigDecimal(bdAmt));
-                booking.setChequeNumber(bdNum);
-                booking.setBankName(bdBank);
-                booking.setChequeDate(bdDate);
-                booking.setDueDate(bdDate);
-                booking.setStatus(PaymentStatus.PENDING);
-                booking.setPaymentMethod(savedLease.getPaymentMethod() != null
-                        ? savedLease.getPaymentMethod().name() : "CHEQUE");
-                booking.setPurposeLabel("BOOKING RECEIVED");
-                booking.setBookingDeposit(true);
-                paymentScheduleRepository.save(booking);
                 bookingDepositsCreated++;
             }
 
@@ -331,49 +318,29 @@ public class PortfolioImportPersistService {
             if (leaseStatus == LeaseStatus.ACTIVE) {
                 unit.setStatus(UnitStatus.OCCUPIED);
                 unit.setCurrentTenantName(renter.getNameEn());
-                unit.setActualRent(totalRent);
+                unit.setActualRent(savedLease.getRentAmount());
                 unitRepository.save(unit);
             }
             // DRAFT → unit stays VACANT, no further change.
 
-            // Schedule generation: Cheques-sheet rows win if present; otherwise
-            // delegate to PaymentScheduleService for auto-distribution.
+            // The import no longer builds a payment plan. Instalments are cheques
+            // now, generated against the lease's lines (Task 5); a Cheques sheet
+            // still fixes how many instalments the lease has, which is the one
+            // piece of that sheet the generator needs.
             String chequesKey = leaseKey(propertyName, unitNumber, renterEmail);
             List<ChequeRow> chequeRows = chequesByLeaseKey.getOrDefault(chequesKey, List.of());
-            if (chequeRows.isEmpty()) {
-                var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
-                schedulesCreated += schedules.size();
-            } else {
-                chequeRows.sort(Comparator.comparingInt(ChequeRow::installmentNo));
+            if (!chequeRows.isEmpty()) {
                 savedLease.setPaymentTerms(chequeRows.size());
-                savedLease = leaseRepository.save(savedLease);
-
-                for (ChequeRow ch : chequeRows) {
-                    PaymentSchedule ps = new PaymentSchedule();
-                    ps.setLease(savedLease);
-                    ps.setUnit(unit);
-                    ps.setProperty(unit.getProperty());
-                    ps.setInstallmentNumber(ch.installmentNo());
-                    ps.setDueDate(ch.dueDate());
-                    if (ch.chequeOrPaymentDate() != null) ps.setChequeDate(ch.chequeOrPaymentDate());
-                    ps.setChequeNumber(ch.uniqueId());
-                    ps.setBankName(ch.bank());
-                    ps.setAmount(ch.amount());
-                    ps.setStatus(PaymentStatus.PENDING);
-                    String chMethod = ch.method() != null ? ch.method()
-                            : (savedLease.getPaymentMethod() != null
-                                    ? savedLease.getPaymentMethod().name() : "CHEQUE");
-                    ps.setPaymentMethod(chMethod);
-                    ps.setPurposeLabel("RENT - " + ordinalOf(ch.installmentNo()) + " INSTALLMENT");
-                    paymentScheduleRepository.save(ps);
-                }
-                schedulesCreated += chequeRows.size();
+                leaseRepository.save(savedLease);
                 chequesFromSheet += chequeRows.size();
             }
         }
 
         job.setLeasesCreated(leasesCreated);
-        job.setSchedulesCreated(schedulesCreated);
+        // The import creates no payment schedules any more (cheques are generated
+        // from the lease's lines in Task 5). The counter stays on the job so the
+        // column and the UI that reads it do not have to change mid-plan.
+        job.setSchedulesCreated(0);
 
         // Persist the new counters and any warnings via the existing JSONB `errors`
         // column using the PortfolioImportJobDetailsDTO wrapper. Avoids a DB migration;
@@ -458,22 +425,10 @@ public class PortfolioImportPersistService {
     private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
                              String uniqueId, String bank, BigDecimal amount, String method) {}
 
-    /** Persist a one-time {@link LeaseCharge} row for an imported fee column. */
-    private void saveImportCharge(Lease lease, String name, BigDecimal amount, boolean vat) {
-        LeaseCharge charge = new LeaseCharge();
-        charge.setLease(lease);
-        charge.setTenantId(lease.getTenantId());
-        charge.setName(name);
-        charge.setAmount(amount);
-        charge.setVatApplicable(vat);
-        charge.setFrequency(ChargeFrequency.ONE_TIME);
-        leaseChargeRepository.save(charge);
-    }
-
-    /** Emit a one-time-charge schedule row (amount already VAT-adjusted; vat = additive VAT slice). */
-    private void saveChargeScheduleRow(Lease lease, String label, BigDecimal amount, BigDecimal vat) {
-        paymentScheduleRepository.save(
-                PaymentScheduleService.newOneTimeChargeRow(lease, label, amount, vat));
+    /** A lease line for an imported money column, named by catalogue code. */
+    private static LeaseLineInput line(String code, BigDecimal gross, boolean vat,
+                                       LocalDate periodStart, LocalDate periodEnd) {
+        return new LeaseLineInput(null, code, gross, BigDecimal.ZERO, null, vat, null, periodStart, periodEnd);
     }
 
     /**
@@ -482,17 +437,6 @@ public class PortfolioImportPersistService {
      */
     static long monthsInclusive(LocalDate startDate, LocalDate endDate) {
         return DateMath.monthsInclusive(startDate, endDate);
-    }
-
-    /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */
-    private static String ordinalOf(int n) {
-        if (n % 100 >= 11 && n % 100 <= 13) return n + "TH";
-        return switch (n % 10) {
-            case 1 -> n + "ST";
-            case 2 -> n + "ND";
-            case 3 -> n + "RD";
-            default -> n + "TH";
-        };
     }
 
     private static BigDecimal parseDecimalOrZero(String s) {

@@ -127,7 +127,6 @@ class WebhookAuditDurabilityIT {
         lease.setEndDate(LocalDate.now().plusMonths(11));
         lease.setStatus(LeaseStatus.ACTIVE);
         lease.setRentAmount(new BigDecimal("60000"));
-        lease.setMonthlyRent(new BigDecimal("5000"));
         lease = leaseRepository.save(lease);
 
         // Schedule in an UNEXPECTED status: not ONLINE_PENDING (so the clear

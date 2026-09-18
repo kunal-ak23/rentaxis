@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -104,15 +105,19 @@ public class LeaseController {
         return ResponseEntity.ok(leaseService.activateLease(id));
     }
 
-    @PutMapping("/{id}/payment-schedule")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<java.util.List<com.datagami.rentaxis.api.dto.PaymentScheduleDTO>> updatePaymentSchedule(
-            @PathVariable UUID id,
-            @Valid @RequestBody com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO dto) {
-        var saved = leaseService.updatePaymentSchedule(id, dto);
-        var response = saved.stream().map(paymentScheduleService::toDTO).toList();
-        return ResponseEntity.ok(response);
+    /**
+     * The lease's charged particulars. Also carried inline on the lease itself;
+     * this exists for the screens that render the lines on their own.
+     */
+    @GetMapping("/{id}/lines")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<LeaseLineDTO>> getLeaseLines(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseService.getLines(id));
     }
+
+    // PUT /{id}/payment-schedule is gone. The payment plan is no longer a side
+    // effect of the lease: cheques are generated explicitly against the lease's
+    // lines (POST /{id}/cheques, Task 5) and edited through the cheque register.
 
     @PostMapping("/{id}/terminate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")

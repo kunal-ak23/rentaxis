@@ -95,7 +95,7 @@ class PaymentScheduleServiceBulkAttachTest {
         lease.setTenantId(tenantId);
         lease.setStartDate(LocalDate.of(2026, 6, 1));
         lease.setEndDate(LocalDate.of(2027, 5, 31));
-        lease.setMonthlyRent(BigDecimal.valueOf(5000));
+        lease.setRentAmount(BigDecimal.valueOf(60000)); // 5,000 x 12 months
         lease = leaseRepo.save(lease);
 
         for (int i = 1; i <= 3; i++) {
@@ -203,7 +203,7 @@ class PaymentScheduleServiceBulkAttachTest {
         other.setTenantId(tenantId);
         other.setStartDate(LocalDate.now());
         other.setEndDate(LocalDate.now().plusYears(1));
-        other.setMonthlyRent(BigDecimal.valueOf(1000));
+        other.setRentAmount(BigDecimal.valueOf(12000));
         other = leaseRepo.save(other);
 
         PaymentSchedule otherPs = new PaymentSchedule();
@@ -277,7 +277,7 @@ class PaymentScheduleServiceBulkAttachTest {
         otherLease.setTenantId(otherTenant);
         otherLease.setStartDate(LocalDate.of(2026, 6, 1));
         otherLease.setEndDate(LocalDate.of(2027, 5, 31));
-        otherLease.setMonthlyRent(BigDecimal.valueOf(5000));
+        otherLease.setRentAmount(BigDecimal.valueOf(60000)); // 5,000 x 12 months
         otherLease = leaseRepo.save(otherLease);
 
         // Simulate a fresh request: evict the just-persisted other-tenant

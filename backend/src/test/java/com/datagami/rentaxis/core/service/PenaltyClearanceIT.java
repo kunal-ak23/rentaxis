@@ -127,7 +127,6 @@ class PenaltyClearanceIT {
         lease.setEndDate(LocalDate.now().plusMonths(11));
         lease.setStatus(LeaseStatus.ACTIVE);
         lease.setRentAmount(new BigDecimal("60000"));
-        lease.setMonthlyRent(new BigDecimal("5000"));
         lease = leaseRepository.save(lease);
 
         depositedSchedule = newDepositedSchedule();

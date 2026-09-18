@@ -100,7 +100,7 @@ class LeaseChequeBulkAttachControllerTest {
         lease.setTenantId(tenantId);
         lease.setStartDate(LocalDate.of(2026, 6, 1));
         lease.setEndDate(LocalDate.of(2027, 5, 31));
-        lease.setMonthlyRent(BigDecimal.valueOf(5000));
+        lease.setRentAmount(BigDecimal.valueOf(60000)); // 5,000 x 12 months
         lease = leaseRepo.save(lease);
 
         for (int i = 1; i <= 2; i++) {

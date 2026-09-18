@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
@@ -41,6 +42,16 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
 
     /** The lease's instalment schedule in schedule order. */
     List<Cheque> findByLease_IdOrderBySeqNoAsc(UUID leaseId);
+
+    /**
+     * Drop a lease's cheques in one status. Used with {@code DRAFT} when a draft
+     * lease's lines change: the proposed instalments were cut from amounts that
+     * no longer exist, and there is nothing on a DRAFT cheque worth preserving.
+     * Scoped by status rather than by lease alone so this can never reach a
+     * cheque that has been registered, banked or cleared.
+     */
+    @Modifying
+    void deleteByLease_IdAndStatus(UUID leaseId, ChequeStatus status);
 
     /**
      * Pessimistic write lock on a single cheque so concurrent lifecycle transitions

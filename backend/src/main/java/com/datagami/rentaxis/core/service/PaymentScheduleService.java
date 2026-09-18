@@ -173,19 +173,18 @@ public class PaymentScheduleService {
         // the +1 day and floors at 1 (covers the old totalMonths < 1 clamp).
         long totalMonths = DateMath.monthsInclusive(lease.getStartDate(), lease.getEndDate());
 
-        // Prefer monthlyRent × months when set so the wizard's "monthly × N months"
-        // total is exactly reproduced. Fall back to rentAmount as the total
-        // directly — using it avoids a divide-then-multiply roundtrip that lost
-        // up to N×0.005 AED on totals that don't divide evenly by month count
-        // (e.g. 31000 / 12 → 2583.33 × 12 = 30999.96).
-        BigDecimal totalRent;
-        if (lease.getMonthlyRent() != null && lease.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0) {
-            totalRent = lease.getMonthlyRent().multiply(BigDecimal.valueOf(totalMonths));
-        } else if (lease.getRentAmount() != null && lease.getRentAmount().compareTo(BigDecimal.ZERO) > 0) {
-            totalRent = lease.getRentAmount();
-        } else {
-            totalRent = BigDecimal.ZERO;
-        }
+        // rentAmount is the contract total, derived from the lease's RENT lines.
+        // It used to be second-guessed by monthlyRent × months when a monthly
+        // figure was stored; that field is gone precisely because the two
+        // disagreed whenever the term was not a whole number of months. Using
+        // the total directly also avoids a divide-then-multiply roundtrip that
+        // lost up to N×0.005 AED (31000 / 12 → 2583.33 × 12 = 30999.96).
+        //
+        // This whole service is removed in Task 12 once cheques replace payment
+        // schedules; it is kept compiling, not improved.
+        BigDecimal totalRent = lease.getRentAmount() != null && lease.getRentAmount().signum() > 0
+                ? lease.getRentAmount()
+                : BigDecimal.ZERO;
 
         // Honor lease.paymentTerms — N installments distributed across the lease
         // tenure, not one cheque per month. paymentTerms == months falls back to

@@ -5,18 +5,21 @@ import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
-import com.datagami.rentaxis.api.dto.LeaseChargeDTO;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
+import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
-import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
@@ -32,9 +35,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -53,6 +57,11 @@ public class LeaseService {
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseInteractionRepository leaseInteractionRepository;
+    private final LeaseLineRepository leaseLineRepository;
+    private final ChargeTypeRepository chargeTypeRepository;
+    private final AccountRepository accountRepository;
+    private final ChequeRepository chequeRepository;
+    private final AccountResolver accountResolver;
     private final SettlementService settlementService;
     private final UnitListingService unitListingService;
     private final ApplicationEventPublisher events;
@@ -68,6 +77,11 @@ public class LeaseService {
                         PaymentScheduleRepository paymentScheduleRepository,
                         LeaseChargeRepository leaseChargeRepository,
                         LeaseInteractionRepository leaseInteractionRepository,
+                        LeaseLineRepository leaseLineRepository,
+                        ChargeTypeRepository chargeTypeRepository,
+                        AccountRepository accountRepository,
+                        ChequeRepository chequeRepository,
+                        AccountResolver accountResolver,
                         SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
                         ApplicationEventPublisher events,
@@ -82,6 +96,11 @@ public class LeaseService {
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.leaseChargeRepository = leaseChargeRepository;
         this.leaseInteractionRepository = leaseInteractionRepository;
+        this.leaseLineRepository = leaseLineRepository;
+        this.chargeTypeRepository = chargeTypeRepository;
+        this.accountRepository = accountRepository;
+        this.chequeRepository = chequeRepository;
+        this.accountResolver = accountResolver;
         this.settlementService = settlementService;
         this.unitListingService = unitListingService;
         this.events = events;
@@ -231,29 +250,24 @@ public class LeaseService {
     }
 
     /**
-     * The contract total for the lease.
+     * A monthly figure for display, derived rather than stored.
      *
-     * <p>Derived here rather than taken from the caller whenever a monthly rent
-     * is given, because the schedule is generated from
-     * {@code monthlyRent × monthsInclusive} — so a total computed separately by
-     * the caller lets the lease state one figure while its cheques add up to
-     * another. The web wizard did exactly that: its month count ignored the day
-     * of the month, so a lease running 3 Oct 2026 to 3 Oct 2027 was submitted as
-     * 13 months. The cheques totalled 60,000 while the lease, the contract PDF
-     * and the unit's actual rent all said 65,000.</p>
+     * <p>{@code Lease.monthlyRent} is gone; anywhere a monthly number is printed
+     * (the contract PDF, the lease e-mails) it is the contract total spread over
+     * the inclusive month count of the term. Callers must not re-derive it for
+     * themselves: two call sites doing their own division is exactly how the
+     * contract PDF and the cheque schedule came to disagree.</p>
      *
-     * <p>Falls back to the supplied total only when there is no monthly rent to
-     * derive from — a lease quoted as a lump sum for the term.</p>
+     * <p>Returns null when there is nothing to divide, so callers can fall back
+     * to the total rather than print a zero.</p>
      */
-    private BigDecimal totalRentFor(CreateLeaseDTO dto) {
-        if (dto.getMonthlyRent() != null
-                && dto.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0
-                && dto.getStartDate() != null
-                && dto.getEndDate() != null) {
-            long months = DateMath.monthsInclusive(dto.getStartDate(), dto.getEndDate());
-            return dto.getMonthlyRent().multiply(BigDecimal.valueOf(months));
+    public static BigDecimal monthlyRentOf(Lease lease) {
+        if (lease == null || lease.getRentAmount() == null
+                || lease.getStartDate() == null || lease.getEndDate() == null) {
+            return null;
         }
-        return dto.getRentAmount();
+        long months = DateMath.monthsInclusive(lease.getStartDate(), lease.getEndDate());
+        return lease.getRentAmount().divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
     }
 
     @Transactional
@@ -271,68 +285,28 @@ public class LeaseService {
         Lease lease = new Lease();
         lease.setUnit(unit);
         lease.setRenter(renter);
-        lease.setStartDate(dto.getStartDate());
-        lease.setEndDate(dto.getEndDate());
-        lease.setRentAmount(totalRentFor(dto));
-        lease.setMonthlyRent(dto.getMonthlyRent());
-        lease.setDepositAmount(dto.getDepositAmount());
-        lease.setEjariNumber(dto.getEjariNumber());
-        lease.setPaymentTerms(dto.getPaymentTerms());
-        lease.setInstallmentDistribution(dto.getInstallmentDistribution() != null
-                ? dto.getInstallmentDistribution() : InstallmentDistribution.LAST_LARGER);
-        if (dto.getPaymentMethod() != null) {
-            lease.setPaymentMethod(PaymentMethod.valueOf(dto.getPaymentMethod()));
-        }
-        if (dto.getDepositPaymentMethod() != null) {
-            lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
-        }
-        lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
-
-        // Lease agreement: agreement date + rent VAT toggle. Other charges are
-        // now flexible LeaseCharge rows persisted separately below.
-        lease.setAgreementDate(dto.getAgreementDate()); // null is OK; ContractGenerationService defaults to today on contract generation
-
-        boolean commercialDefault = isCommercialProperty(unit);
-        lease.setRentVatApplicable(dto.getRentVatApplicable() != null ? dto.getRentVatApplicable() : commercialDefault);
-
+        applyHeader(lease, dto, unit);
         lease.setStatus(LeaseStatus.DRAFT);
 
         Lease savedLease = leaseRepository.save(lease);
 
-        // Persist the flexible charges, then emit one-time-charge and
-        // security-deposit schedule rows (real collected money, additive VAT).
-        syncCharges(savedLease, dto.getCharges());
-        createOneTimeChargeAndDepositRows(savedLease, dto.getCharges());
-
-        if (dto.getBookingDeposit() != null && dto.getBookingDeposit().getAmount() != null
-                && dto.getBookingDeposit().getAmount().signum() > 0) {
-            CreateLeaseDTO.BookingDepositDTO bd = dto.getBookingDeposit();
-            // We can't call the public addBookingDeposit (which calls findLeaseWithTenantCheck) here because
-            // we already have the saved lease in scope. Inline the booking-row creation:
-            PaymentSchedule booking = new PaymentSchedule();
-            booking.setLease(savedLease);
-            booking.setUnit(savedLease.getUnit());
-            booking.setProperty(savedLease.getUnit().getProperty());
-            booking.setInstallmentNumber(0);
-            booking.setDueDate(bd.getChequeDate() != null ? bd.getChequeDate() : LocalDate.now());
-            booking.setChequeDate(bd.getChequeDate());
-            booking.setChequeNumber(bd.getChequeNumber());
-            booking.setBankName(bd.getBankName());
-            booking.setAmount(bd.getAmount());
-            booking.setStatus(PaymentStatus.PENDING);
-            booking.setPaymentMethod(savedLease.getPaymentMethod() != null ? savedLease.getPaymentMethod().name() : "CHEQUE");
-            booking.setPurposeLabel("BOOKING RECEIVED");
-            booking.setBookingDeposit(true);
-            paymentScheduleRepository.save(booking);
+        // chain_id cannot be set in @PrePersist: the id it mirrors does not exist
+        // until the insert has happened. A lease that is not a renewal is the head
+        // of its own chain, so the first save is followed by this one.
+        if (savedLease.getChainId() == null) {
+            savedLease.setChainId(savedLease.getId());
+            savedLease = leaseRepository.save(savedLease);
         }
 
-        // Generate the rent installment schedule eagerly so the contract PDF's
-        // Section 4 (Payment Details) is populated before the lease is
-        // activated. Per-installment charges are folded into each rent row;
-        // one-time charges and the security deposit are their own rows (created
-        // above). Booking-deposit / SD / charge rows are preserved by the
-        // generation guard inside generateScheduleForLease.
-        paymentScheduleService.generateScheduleForLease(savedLease);
+        applyLines(savedLease, dto.getLines());
+        syncDerivedTotals(savedLease);
+        savedLease = leaseRepository.save(savedLease);
+
+        // No cheques and no schedule here. What the renter will pay and when is a
+        // separate decision from what the contract charges for, and is made
+        // explicitly through POST /{id}/cheques (Task 5). Generating a plan as a
+        // side effect of drafting is what produced schedules nobody had agreed to
+        // and that an edit then silently replaced.
 
         recordEvent(savedLease, null, LeaseStatus.DRAFT, "Lease drafted");
 
@@ -343,27 +317,6 @@ public class LeaseService {
                 "LEASE_CREATED:" + savedLease.getId()));
 
         return mapToDTO(savedLease);
-    }
-
-    @Transactional
-    public PaymentSchedule addBookingDeposit(UUID leaseId, BigDecimal amount,
-                                              String chequeNumber, LocalDate chequeDate, String bankName) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
-        PaymentSchedule ps = new PaymentSchedule();
-        ps.setLease(lease);
-        ps.setUnit(lease.getUnit());
-        ps.setProperty(lease.getUnit().getProperty());
-        ps.setInstallmentNumber(0);
-        ps.setDueDate(chequeDate != null ? chequeDate : LocalDate.now());
-        ps.setChequeDate(chequeDate);
-        ps.setChequeNumber(chequeNumber);
-        ps.setBankName(bankName);
-        ps.setAmount(amount);
-        ps.setStatus(PaymentStatus.PENDING);
-        ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
-        ps.setPurposeLabel("BOOKING RECEIVED");
-        ps.setBookingDeposit(true);
-        return paymentScheduleRepository.save(ps);
     }
 
     @Transactional
@@ -391,11 +344,203 @@ public class LeaseService {
             lease.setRenter(renter);
         }
 
+        applyHeader(lease, dto, lease.getUnit());
+        Lease savedLease = leaseRepository.save(lease);
+
+        applyLines(savedLease, dto.getLines());
+        syncDerivedTotals(savedLease);
+        savedLease = leaseRepository.save(savedLease);
+
+        // The lines are what the cheques were cut from, so a DRAFT cheque
+        // schedule built against the previous amounts is now wrong in a way
+        // nothing downstream would notice — the register would happily bank
+        // instalments that no longer sum to the contract. Drop them and let the
+        // user regenerate. Only DRAFT ones: a cheque that has been registered
+        // belongs to a lease that is no longer editable anyway.
+        deleteDraftCheques(savedLease.getId());
+
+        recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
+
+        return mapToDTO(savedLease);
+    }
+
+    // ---- lines ---------------------------------------------------------------
+
+    /**
+     * Replace the lease's lines with {@code inputs} (delete-then-insert).
+     *
+     * <p>Public because the portfolio import builds a lease outside the draft
+     * wizard and still has to go through the same validation and the same default
+     * credit-account resolution — a second implementation of this is how two
+     * import paths end up charging to different accounts.</p>
+     *
+     * <p>A line whose charge type has no account mapped for its role is left with
+     * a null {@code creditAccount} rather than refused. The gap is real but it is
+     * the accountant's to close, and reporting it when someone drafts a lease
+     * blocks work on a problem they usually cannot fix; the posting guard (Task 6)
+     * names every unmapped role at the point it actually matters.</p>
+     */
+    @Transactional
+    public void applyLines(Lease lease, List<LeaseLineInput> inputs) {
+        if (inputs == null || inputs.isEmpty()) {
+            throw new BusinessRuleViolationException("At least one line is required");
+        }
+
+        leaseLineRepository.deleteByLease_Id(lease.getId());
+        leaseLineRepository.flush();
+
+        UUID propertyId = lease.getUnit() != null && lease.getUnit().getProperty() != null
+                ? lease.getUnit().getProperty().getId() : null;
+
+        int seqNo = 0;
+        for (LeaseLineInput in : inputs) {
+            seqNo++;
+            ChargeType type = resolveChargeType(in, seqNo);
+            if (!type.isActive()) {
+                throw new BusinessRuleViolationException(
+                        "Charge type " + type.getCode() + " is no longer active and cannot be charged");
+            }
+
+            BigDecimal gross = nonNull(in.grossAmount());
+            BigDecimal discount = nonNull(in.discountAmount());
+            if (gross.signum() < 0) {
+                throw new BusinessRuleViolationException("Line " + seqNo + " (" + type.getCode()
+                        + "): amount cannot be negative");
+            }
+            if (discount.signum() < 0) {
+                throw new BusinessRuleViolationException("Line " + seqNo + " (" + type.getCode()
+                        + "): discount cannot be negative");
+            }
+            // A discount larger than the gross would make net negative — a line
+            // that pays the renter. ck_lease_lines_net refuses it at the database
+            // too; this is the version with a sentence attached.
+            if (discount.compareTo(gross) > 0) {
+                throw new BusinessRuleViolationException("Line " + seqNo + " (" + type.getCode()
+                        + "): discount cannot exceed the gross amount");
+            }
+
+            LeaseLine line = new LeaseLine();
+            line.setLease(lease);
+            line.setTenantId(lease.getTenantId());
+            line.setSeqNo(seqNo);
+            line.setChargeType(type);
+            line.setGrossAmount(gross);
+            line.setDiscountAmount(discount);
+            line.setNetAmount(gross.subtract(discount));
+            line.setNarration(in.narration());
+            line.setVatApplicable(in.vatApplicable() != null
+                    ? in.vatApplicable() : type.isVatApplicableDefault());
+            line.setCreditAccount(resolveCreditAccount(in, type, propertyId));
+
+            // Rent covers the term unless the caller says otherwise — a stub
+            // period on a rent line is what breaks per-day recognition later.
+            if (type.getBehaviour() == ChargeBehaviour.RENT) {
+                line.setPeriodStart(in.periodStart() != null ? in.periodStart() : lease.getStartDate());
+                line.setPeriodEnd(in.periodEnd() != null ? in.periodEnd() : lease.getEndDate());
+            } else {
+                line.setPeriodStart(in.periodStart());
+                line.setPeriodEnd(in.periodEnd());
+            }
+
+            leaseLineRepository.save(line);
+        }
+        leaseLineRepository.flush();
+    }
+
+    private ChargeType resolveChargeType(LeaseLineInput in, int seqNo) {
+        if (in.chargeTypeId() != null) {
+            return chargeTypeRepository.findById(in.chargeTypeId())
+                    .orElseThrow(() -> new BusinessRuleViolationException(
+                            "Line " + seqNo + ": unknown charge type " + in.chargeTypeId()));
+        }
+        String code = in.chargeTypeCode();
+        if (code == null || code.isBlank()) {
+            throw new BusinessRuleViolationException(
+                    "Line " + seqNo + ": a charge type id or code is required");
+        }
+        return chargeTypeRepository.findByCode(code.trim())
+                .orElseThrow(() -> new BusinessRuleViolationException(
+                        "Line " + seqNo + ": unknown charge type " + code));
+    }
+
+    private Account resolveCreditAccount(LeaseLineInput in, ChargeType type, UUID propertyId) {
+        if (in.creditAccountId() != null) {
+            return accountRepository.findById(in.creditAccountId())
+                    .orElseThrow(() -> new NotFoundException("Credit account not found: " + in.creditAccountId()));
+        }
+        // resolveOrNull, not resolve-in-a-try/catch: AccountResolver is proxied, so
+        // an UnmappedAccountRoleException thrown out of resolve() marks this
+        // transaction rollback-only on its way through the interceptor, and the
+        // catch block here would not undo that. The draft would then "succeed" and
+        // the commit would fail with "Transaction silently rolled back".
+        //
+        // A null account is deliberate: see applyLines' note. The line stays
+        // unmapped and the posting guard reports it.
+        return accountResolver.resolveOrNull(type.getRole(), propertyId);
+    }
+
+    /**
+     * Recompute the figures that mirror the lines. Called after every
+     * {@link #applyLines}; the caller saves the lease.
+     *
+     * <p>{@code depositAmount} sums by <em>behaviour</em>, not by charge type
+     * code, so a tenant's own "Key Deposit" counts towards the refundable total
+     * exactly like the seeded security deposit does.</p>
+     */
+    @Transactional
+    public void syncDerivedTotals(Lease lease) {
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        lease.setRentAmount(sumNet(lines, ChargeBehaviour.RENT));
+        lease.setDepositAmount(sumNet(lines, ChargeBehaviour.DEPOSIT));
+        if (lease.getStartDate() != null && lease.getEndDate() != null) {
+            lease.setTotalDays((int) ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1);
+        }
+    }
+
+    private static BigDecimal sumNet(List<LeaseLine> lines, ChargeBehaviour behaviour) {
+        return lines.stream()
+                .filter(l -> l.getChargeType() != null && l.getChargeType().getBehaviour() == behaviour)
+                .map(LeaseLine::getNetAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Σ of every line's net — rent, deposits and fees together. */
+    @Transactional(readOnly = true)
+    public BigDecimal contractValue(UUID leaseId) {
+        return contractValueOf(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
+    }
+
+    private static BigDecimal contractValueOf(List<LeaseLine> lines) {
+        return lines.stream().map(LeaseLine::getNetAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * The lease's lines. {@code @Transactional} is not decoration: {@code TenantAspect}
+     * only enables the Hibernate tenant filter inside a transaction, so a read
+     * outside one would cross tenants.
+     */
+    @Transactional(readOnly = true)
+    public List<LeaseLineDTO> getLines(UUID leaseId) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        leaseAccessPolicy.requireReadable(lease);
+        return leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+                .map(LeaseService::toLineDTO)
+                .toList();
+    }
+
+    /** Amounts may legitimately be omitted (a zero-value line); null is not an error. */
+    private static BigDecimal nonNull(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
+    /**
+     * Header fields shared by create and update. VAT and the agreement date keep
+     * their "null means leave it alone" behaviour on update by being defaulted
+     * from the existing value.
+     */
+    private void applyHeader(Lease lease, CreateLeaseDTO dto, Unit unit) {
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
-        lease.setRentAmount(totalRentFor(dto));
-        lease.setMonthlyRent(dto.getMonthlyRent());
-        lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());
         lease.setInstallmentDistribution(dto.getInstallmentDistribution() != null
@@ -407,150 +552,33 @@ public class LeaseService {
             lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
         }
         lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
-
-        // Lease agreement fields (allow update; null on Boolean toggles means "no change")
-        if (dto.getAgreementDate() != null) lease.setAgreementDate(dto.getAgreementDate());
-        if (dto.getRentVatApplicable() != null) lease.setRentVatApplicable(dto.getRentVatApplicable());
-
-        Lease savedLease = leaseRepository.save(lease);
-
-        // The lease parameters (rent / dates / terms / charges / VAT) feed into
-        // the installment schedule that Section 4 of the contract renders. After
-        // an edit, drop the previously-generated installments AND the
-        // charge / security-deposit rows (only the PENDING ones — never touch
-        // booking deposits or anything already collected) and regenerate so the
-        // next contract preview reflects the new numbers.
-        List<PaymentSchedule> regenTargets = paymentScheduleRepository.findByLeaseId(savedLease.getId()).stream()
-                .filter(p -> !p.isBookingDeposit())
-                .filter(p -> p.getStatus() == PaymentStatus.PENDING)
-                .toList();
-        if (!regenTargets.isEmpty()) {
-            paymentScheduleRepository.deleteAll(regenTargets);
-            paymentScheduleRepository.flush();
+        if (dto.getAgreementDate() != null) {
+            lease.setAgreementDate(dto.getAgreementDate());
         }
-        // Re-sync the flexible charges when the client sends them (null = no
-        // change to charges, e.g. a lighter edit that only touches dates/rent).
-        if (dto.getCharges() != null) {
-            syncCharges(savedLease, dto.getCharges());
+        if (dto.getRentVatApplicable() != null) {
+            lease.setRentVatApplicable(dto.getRentVatApplicable());
+        } else if (lease.getId() == null) {
+            lease.setRentVatApplicable(isCommercialProperty(unit));
         }
-        createOneTimeChargeAndDepositRows(savedLease, leaseChargeRepository.findByLeaseId(savedLease.getId()).stream()
-                .map(LeaseService::toChargeDTO)
-                .toList());
-        paymentScheduleService.generateScheduleForLease(savedLease);
 
-        recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
-
-        return mapToDTO(savedLease);
+        // The contract's own date, which the posting journal will carry. Falls
+        // back to the signing date, then today — never left null, because a
+        // journal without a date cannot be filed in a period.
+        LocalDate contractDate = dto.getContractDate() != null ? dto.getContractDate()
+                : (lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now());
+        lease.setContractDate(contractDate);
+        lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
+        lease.setGracePeriodDays(dto.getGracePeriodDays() != null ? dto.getGracePeriodDays() : 0);
     }
 
     /**
-     * Bulk-update the editable fields on a lease's payment schedule. Allowed
-     * only on DRAFT or PENDING_SIGNATURE leases; once the lease is activated,
-     * the schedule is locked.
-     * <p>
-     * Per-row payment method drives which fields are required:
-     * <ul>
-     *     <li>CHEQUE: chequeNumber, chequeDate, bankName all required</li>
-     *     <li>BANK_TRANSFER / ONLINE: bankName + chequeDate (= transfer date) required</li>
-     *     <li>CASH: just amount + dueDate; chequeDate optional (= receipt date)</li>
-     * </ul>
+     * Drop the lease's DRAFT cheques. {@code deleteByLease_IdAndStatus} is a
+     * derived delete, so the rows are loaded first and the tenant filter applies
+     * to them exactly as it would to a read.
      */
-    @Transactional
-    public List<PaymentSchedule> updatePaymentSchedule(UUID leaseId, com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO dto) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
-        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            throw new BusinessRuleViolationException(
-                    "Payment schedule can only be edited while the lease is DRAFT or PENDING_SIGNATURE");
-        }
-        if (dto.getRows() == null || dto.getRows().isEmpty()) {
-            return paymentScheduleRepository.findByLeaseId(leaseId);
-        }
-        java.util.Map<UUID, PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(leaseId).stream()
-                .collect(java.util.stream.Collectors.toMap(PaymentSchedule::getId, p -> p));
-
-        for (com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO.Row row : dto.getRows()) {
-            PaymentSchedule ps = existing.get(row.getScheduleId());
-            if (ps == null) {
-                throw new NotFoundException("Payment schedule row " + row.getScheduleId() + " does not belong to lease " + leaseId);
-            }
-            // Don't allow editing rows that have already been collected.
-            if (ps.getStatus() != PaymentStatus.PENDING) {
-                throw new BusinessRuleViolationException(
-                        "Cannot edit payment schedule row " + ps.getInstallmentNumber()
-                                + " — it is already in status " + ps.getStatus());
-            }
-            String methodRaw = row.getPaymentMethod() == null ? "" : row.getPaymentMethod().trim().toUpperCase();
-            switch (methodRaw) {
-                case "CHEQUE" -> {
-                    // Cheque details are optional on a schedule row.
-                    //
-                    // The payment plan is agreed when the lease is signed, but
-                    // the renter hands cheques over on their own schedule —
-                    // commonly the first one or two up front and the rest
-                    // later. Requiring chequeNumber, chequeDate and bankName
-                    // here meant the plan could not be saved at all until every
-                    // cheque was physically in hand. Since CHEQUE is also the
-                    // default method, the only way to save a partially-collected
-                    // plan was to relabel the outstanding rows as CASH, which
-                    // recorded a payment method that was simply untrue.
-                    //
-                    // A CHEQUE row with blank details now means "cheque
-                    // expected, not yet received" — a state the business
-                    // genuinely has. Details are filled in as cheques arrive.
-                    //
-                    // Note that nothing downstream enforces completeness
-                    // either: the PENDING -> COLLECTED -> DEPOSITED -> CLEARED
-                    // transitions in PaymentScheduleService all gate on the
-                    // current status alone. So a cheque can be carried all the
-                    // way to CLEARED without a cheque number ever being
-                    // recorded. If that needs to be prevented, the check
-                    // belongs at collection time, not here — blocking the plan
-                    // from being saved was never the right place for it.
-                }
-                case "BANK_TRANSFER", "ONLINE" -> {
-                    if (isBlank(row.getBankName()) || row.getChequeDate() == null) {
-                        throw new BusinessRuleViolationException(
-                                row.getPaymentMethod() + " rows require bankName and a transfer date");
-                    }
-                }
-                case "CASH" -> {
-                    // Only amount + dueDate required; nothing else mandatory.
-                }
-                default -> throw new BusinessRuleViolationException(
-                        "Unsupported payment method: " + row.getPaymentMethod());
-            }
-
-            ps.setDueDate(row.getDueDate());
-            ps.setAmount(row.getAmount());
-            ps.setPaymentMethod(methodRaw);
-            ps.setChequeNumber(emptyToNull(row.getChequeNumber()));
-            ps.setChequeDate(row.getChequeDate());
-            ps.setBankName(emptyToNull(row.getBankName()));
-            ps.setChequeImageUrl(emptyToNull(row.getChequeImageUrl()));
-            ps.setChequeImageBlobPath(emptyToNull(row.getChequeImageBlobPath()));
-            ps.setChequeImageUploadedAt(resolveChequeImageUploadedAt(row.getChequeImageBlobPath(), row.getChequeImageUploadedAt()));
-        }
-        return paymentScheduleRepository.saveAll(existing.values().stream()
-                // Return rows in installment order so the UI can render them deterministically.
-                .sorted(java.util.Comparator
-                        .comparing(PaymentSchedule::isBookingDeposit)
-                        .thenComparingInt(PaymentSchedule::getInstallmentNumber))
-                .toList());
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.trim().isEmpty();
-    }
-
-    private static String emptyToNull(String s) {
-        return isBlank(s) ? null : s.trim();
-    }
-
-    private static OffsetDateTime resolveChequeImageUploadedAt(String blobPath, OffsetDateTime uploadedAt) {
-        if (isBlank(blobPath)) {
-            return null;
-        }
-        return uploadedAt != null ? uploadedAt : OffsetDateTime.now();
+    private void deleteDraftCheques(UUID leaseId) {
+        chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
+        chequeRepository.flush();
     }
 
     /**
@@ -573,6 +601,11 @@ public class LeaseService {
         // lease_charges FK is NO ACTION (like payment_schedules); remove the
         // lease's charges before deleting the lease or the FK constraint blocks it.
         leaseChargeRepository.deleteAll(leaseChargeRepository.findByLeaseId(leaseId));
+        // lease_lines cascades on delete, but cheques.lease_id does not — a draft
+        // with generated cheques would be undeletable behind an opaque 500, which
+        // is exactly the failure lease_interactions produced below.
+        leaseLineRepository.deleteByLease_Id(leaseId);
+        deleteDraftCheques(leaseId);
         leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));
         // lease_interactions.lease_id is NOT NULL with no ON DELETE clause, and
         // LeaseInteractionService.softDelete only stamps deletedAt — the row
@@ -599,7 +632,7 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease activated");
 
-        paymentScheduleService.generateScheduleForLease(savedLease);
+        // replaced by LeasePostingService.post in Task 6
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_ACTIVATED,
@@ -731,7 +764,7 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");
 
-        paymentScheduleService.generateScheduleForLease(savedLease);
+        // replaced by LeasePostingService.post in Task 6
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_SIGNED,
@@ -805,99 +838,67 @@ public class LeaseService {
         dto.setPaymentMethod(lease.getPaymentMethod());
         dto.setDepositPaymentMethod(lease.getDepositPaymentMethod());
         dto.setPaymentReferenceNumber(lease.getPaymentReferenceNumber());
-        dto.setMonthlyRent(lease.getMonthlyRent());
-        dto.setPropertyId(lease.getUnit().getProperty().getId());
-        dto.setPropertyName(lease.getUnit().getProperty().getNameEn());
+        Property property = lease.getUnit().getProperty();
+        dto.setPropertyId(property.getId());
+        dto.setPropertyName(property.getNameEn());
+        dto.setPropertyCode(property.getCode());
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
         dto.setContractNumber(lease.getContractNumber());
+        dto.setDisplayContractNumber(displayContractNumber(property.getCode(), lease.getContractNumber()));
         dto.setAgreementDate(lease.getAgreementDate());
         dto.setRentVatApplicable(lease.isRentVatApplicable());
-        dto.setCharges(leaseChargeRepository.findByLeaseId(lease.getId()).stream()
-                .map(LeaseService::toChargeDTO)
-                .collect(Collectors.toList()));
-        return dto;
-    }
 
-    private static LeaseChargeDTO toChargeDTO(LeaseCharge c) {
-        LeaseChargeDTO dto = new LeaseChargeDTO();
-        dto.setName(c.getName());
-        dto.setAmount(c.getAmount());
-        dto.setVatApplicable(c.isVatApplicable());
-        dto.setFrequency(c.getFrequency());
+        dto.setContractDate(lease.getContractDate());
+        dto.setTotalDays(lease.getTotalDays());
+        dto.setGracePeriodDays(lease.getGracePeriodDays());
+        dto.setFirstDueDate(lease.getFirstDueDate());
+        dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
+        dto.setChainId(lease.getChainId());
+        dto.setReceivableAccountId(lease.getReceivableAccountId());
+        dto.setIncomeAccountId(lease.getIncomeAccountId());
+        dto.setPostingJournalId(lease.getPostingJournalId());
+        dto.setPostedAt(lease.getPostedAt());
+
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
+        dto.setContractValue(contractValueOf(lines));
         return dto;
     }
 
     /**
-     * Replace the lease's persisted {@link LeaseCharge} rows with the supplied
-     * DTOs (delete-then-insert). Called on create and on draft edits so charges
-     * stay in sync with the wizard. {@code tenant_id} is set explicitly from the
-     * lease; {@link BaseTenantEntity#onPrePersist} would also default it, but
-     * setting it here is harmless and keeps the row self-consistent.
+     * "GLA_B1/681" when the property carries a code, else the bare number. The
+     * code is nullable and the number is null until a contract is generated, so
+     * both absences have to survive this.
      */
-    private void syncCharges(Lease lease, List<LeaseChargeDTO> charges) {
-        List<LeaseCharge> existing = leaseChargeRepository.findByLeaseId(lease.getId());
-        if (!existing.isEmpty()) {
-            leaseChargeRepository.deleteAll(existing);
-            leaseChargeRepository.flush();
+    static String displayContractNumber(String propertyCode, Long contractNumber) {
+        if (contractNumber == null) {
+            return null;
         }
-        if (charges == null) {
-            return;
-        }
-        for (LeaseChargeDTO c : charges) {
-            LeaseCharge charge = new LeaseCharge();
-            charge.setLease(lease);
-            charge.setTenantId(lease.getTenantId());
-            charge.setName(c.getName());
-            charge.setAmount(c.getAmount() != null ? c.getAmount() : BigDecimal.ZERO);
-            charge.setVatApplicable(c.isVatApplicable());
-            charge.setFrequency(c.getFrequency() != null ? c.getFrequency() : ChargeFrequency.ONE_TIME);
-            leaseChargeRepository.save(charge);
-        }
+        return propertyCode == null || propertyCode.isBlank()
+                ? String.valueOf(contractNumber)
+                : propertyCode + "/" + contractNumber;
     }
 
-    /**
-     * Emit a schedule row per ONE_TIME charge (additive VAT baked in) and one
-     * row for the refundable security deposit (never VAT). Per-installment
-     * charges are folded into the rent rows by PaymentScheduleService instead.
-     * <p>
-     * Idempotent: this runs both on create and on every draft edit (where only
-     * PENDING non-booking rows are dropped beforehand). A SECURITY DEPOSIT row
-     * or a one-time charge row that already exists in a non-PENDING state (e.g.
-     * already collected) is NOT recreated, so editing a lease never duplicates a
-     * deposit / charge that's already been paid. Matching is by row kind
-     * (is_security_deposit / is_charge + purposeLabel), across all statuses.
-     */
-    private void createOneTimeChargeAndDepositRows(Lease lease, List<LeaseChargeDTO> charges) {
-        List<PaymentSchedule> existingRows = paymentScheduleRepository.findByLeaseId(lease.getId());
-        java.util.Set<String> existingChargeLabels = existingRows.stream()
-                .filter(PaymentSchedule::isCharge)
-                .map(PaymentSchedule::getPurposeLabel)
-                .collect(Collectors.toSet());
-        boolean depositRowExists = existingRows.stream().anyMatch(PaymentSchedule::isSecurityDeposit);
-
-        if (charges != null) {
-            for (LeaseChargeDTO c : charges) {
-                if (c.getFrequency() != ChargeFrequency.ONE_TIME) continue;
-                // Skip a one-time charge that already has a row for this lease
-                // (any status) — avoids duplicating a charge already collected.
-                if (existingChargeLabels.contains(c.getName())) continue;
-                PaymentSchedule row = PaymentScheduleService.newOneTimeChargeRow(
-                        lease, c.getName(),
-                        PaymentScheduleService.withVat(c.getAmount(), c.isVatApplicable()),
-                        PaymentScheduleService.vatOf(c.getAmount(), c.isVatApplicable()));
-                paymentScheduleRepository.save(row);
-                // Guard against duplicate names within the same charges payload.
-                existingChargeLabels.add(c.getName());
-            }
-        }
-
-        // Only create the SD row when there's a deposit AND no SD row already
-        // exists for this lease (any status) — never duplicate a collected SD.
-        if (!depositRowExists
-                && lease.getDepositAmount() != null && lease.getDepositAmount().signum() > 0) {
-            paymentScheduleRepository.save(
-                    PaymentScheduleService.newSecurityDepositRow(lease, lease.getDepositAmount()));
-        }
+    private static LeaseLineDTO toLineDTO(LeaseLine l) {
+        ChargeType type = l.getChargeType();
+        Account credit = l.getCreditAccount();
+        return new LeaseLineDTO(
+                l.getId(),
+                l.getSeqNo(),
+                type != null ? type.getId() : null,
+                type != null ? type.getCode() : null,
+                type != null ? type.getNameEn() : null,
+                type != null && type.getBehaviour() != null ? type.getBehaviour().name() : null,
+                credit != null ? credit.getId() : null,
+                credit != null ? credit.getCode() : null,
+                credit != null ? credit.getName() : null,
+                l.getGrossAmount(),
+                l.getDiscountAmount(),
+                l.getNetAmount(),
+                l.getNarration(),
+                l.isVatApplicable(),
+                l.getPeriodStart(),
+                l.getPeriodEnd());
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {
@@ -922,7 +923,7 @@ public class LeaseService {
     }
 
     private LeasePayload buildLeasePayload(Lease lease) {
-        BigDecimal monthly = lease.getMonthlyRent() != null ? lease.getMonthlyRent() : lease.getRentAmount();
+        BigDecimal monthly = monthlyRentOf(lease);
         return new LeasePayload(
                 lease.getId(),
                 lease.getRenter().getUserId(),

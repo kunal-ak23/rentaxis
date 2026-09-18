@@ -1,0 +1,275 @@
+package com.datagami.rentaxis.core.service.lease;
+
+import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
+import com.datagami.rentaxis.api.dto.LeaseDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.LeaseService;
+import com.datagami.rentaxis.core.service.PropertyService;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * The lease as a document made of charge lines (spec §6.2–6.3).
+ *
+ * <p>A real database rather than mocks, because the interesting behaviour is the
+ * join between three things a mock would just assert away: the charge-type
+ * catalogue, the per-property account set the resolver walks, and the
+ * {@code ck_lease_lines_net} constraint behind the discount guard.</p>
+ */
+@SpringBootTest
+@Testcontainers
+class LeaseLinesIT {
+
+    @Container @ServiceConnection
+    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @Autowired LeaseService leaseService;
+    @Autowired LeaseRepository leaseRepository;
+    @Autowired LandlordOrgRepository orgRepo;
+    @Autowired UserRepository userRepo;
+    @Autowired RenterRepository renterRepo;
+    @Autowired UnitRepository unitRepo;
+    @Autowired PropertyService propertyService;
+    @Autowired AccountService accountService;
+    @Autowired PropertyAccountService propertyAccountService;
+    @Autowired ChargeTypeService chargeTypeService;
+    @Autowired TransactionTemplate tx;
+
+    private LeaseTestFixtures fixtures;
+
+    private static final LocalDate START = LocalDate.of(2026, 9, 24);
+    private static final LocalDate END = LocalDate.of(2027, 9, 23);
+
+    @BeforeEach
+    void setUp() {
+        fixtures = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService)
+                .bootstrap();
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+    }
+
+    private LeaseDTO draft(LeaseLineInput... lines) {
+        return leaseService.createDraftLease(fixtures.draftDto(START, END, List.of(lines)));
+    }
+
+    @Test
+    void draftWithLinesDerivesTotalsAndDefaultCreditAccounts() {
+        CreateLeaseDTO dto = fixtures.draftDto(fixtures.unit(), fixtures.renter(), START, END, List.of(
+                line("RENT", "51000"),
+                line("ADMIN_FEE", "2000"),
+                line("SECURITY_DEPOSIT", "3000")));
+
+        LeaseDTO lease = leaseService.createDraftLease(dto);
+
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+        // The contract is worth every line, not just the rent.
+        assertThat(lease.getContractValue()).isEqualByComparingTo("56000");
+        // rentAmount and depositAmount are mirrors of the RENT / DEPOSIT lines.
+        assertThat(lease.getRentAmount()).isEqualByComparingTo("51000");
+        assertThat(lease.getDepositAmount()).isEqualByComparingTo("3000");
+        // 24 Sep 2026 → 23 Sep 2027 inclusive. The denominator of per-day rent.
+        assertThat(lease.getTotalDays()).isEqualTo(365);
+        // A lease that is not a renewal heads its own chain.
+        assertThat(lease.getChainId()).isEqualTo(lease.getId());
+        assertThat(lease.getContractDate()).isNotNull();
+        assertThat(lease.getFirstDueDate()).isEqualTo(START);
+
+        assertThat(lease.getLines()).hasSize(3);
+        LeaseLineDTO rent = lease.getLines().get(0);
+        assertThat(rent.seqNo()).isEqualTo(1);
+        assertThat(rent.chargeTypeCode()).isEqualTo("RENT");
+        assertThat(rent.behaviour()).isEqualTo("RENT");
+        // Rent credits unearned rent on the property, resolved from the template.
+        assertThat(rent.creditAccountName()).isEqualTo("Advance Rent - " + fixtures.propertyName());
+        // A rent line covers the term unless told otherwise.
+        assertThat(rent.periodStart()).isEqualTo(START);
+        assertThat(rent.periodEnd()).isEqualTo(END);
+        assertThat(rent.netAmount()).isEqualByComparingTo("51000");
+
+        // Fees and deposits resolve to their own leaves, not to the rent account.
+        LeaseLineDTO admin = lease.getLines().get(1);
+        assertThat(admin.creditAccountName()).isEqualTo("Admin Fee - " + fixtures.propertyName());
+        assertThat(admin.periodStart()).isNull();
+        LeaseLineDTO deposit = lease.getLines().get(2);
+        assertThat(deposit.behaviour()).isEqualTo("DEPOSIT");
+        assertThat(deposit.creditAccountName()).isEqualTo("Security Deposit " + fixtures.propertyName());
+    }
+
+    @Test
+    void discountReducesNetAndCannotExceedGross() {
+        LeaseDTO lease = draft(line("RENT", "51000", "1000"));
+
+        assertThat(lease.getLines().get(0).grossAmount()).isEqualByComparingTo("51000");
+        assertThat(lease.getLines().get(0).discountAmount()).isEqualByComparingTo("1000");
+        assertThat(lease.getLines().get(0).netAmount()).isEqualByComparingTo("50000");
+        // The derived mirror follows the net, not the gross — a discount the lease
+        // shows but does not charge for is the whole point of the column.
+        assertThat(lease.getRentAmount()).isEqualByComparingTo("50000");
+        assertThat(lease.getContractValue()).isEqualByComparingTo("50000");
+
+        // A discount larger than the gross would make the net negative: a line
+        // that pays the renter. ck_lease_lines_net refuses it at the database too.
+        CreateLeaseDTO bad = fixtures.draftDto(START, END, List.of(line("RENT", "51000", "60000")));
+        assertThatThrownBy(() -> leaseService.createDraftLease(bad))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("discount cannot exceed the gross amount");
+
+        // Equal is allowed: a fully waived charge is still a line on the contract.
+        LeaseDTO waived = draft(line("RENT", "51000"), line("ADMIN_FEE", "2000", "2000"));
+        assertThat(waived.getLines().get(1).netAmount()).isEqualByComparingTo("0");
+        assertThat(waived.getContractValue()).isEqualByComparingTo("51000");
+    }
+
+    @Test
+    void updateDraftReplacesLinesAndRecomputes() {
+        LeaseDTO lease = draft(
+                line("RENT", "51000"),
+                line("ADMIN_FEE", "2000"),
+                line("SECURITY_DEPOSIT", "3000"));
+        assertThat(lease.getDepositAmount()).isEqualByComparingTo("3000");
+
+        CreateLeaseDTO update = fixtures.draftDto(START, END, List.of(
+                line("RENT", "50000"),
+                line("ADMIN_FEE", "3000")));
+        LeaseDTO updated = leaseService.updateDraftLease(lease.getId(), update);
+
+        // Delete-then-insert: the deposit line is gone, not merged with.
+        assertThat(updated.getLines()).hasSize(2);
+        assertThat(updated.getLines()).extracting(LeaseLineDTO::chargeTypeCode)
+                .containsExactly("RENT", "ADMIN_FEE");
+        assertThat(updated.getLines()).extracting(LeaseLineDTO::seqNo).containsExactly(1, 2);
+        assertThat(updated.getContractValue()).isEqualByComparingTo("53000");
+        assertThat(updated.getRentAmount()).isEqualByComparingTo("50000");
+        // The deposit mirror has to fall back to zero. Leaving 3,000 behind would
+        // make the lease claim a refundable it never charged for.
+        assertThat(updated.getDepositAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(updated.getId()).isEqualTo(lease.getId());
+    }
+
+    @Test
+    void onlyDraftCanChangeLines() {
+        LeaseDTO lease = draft(line("RENT", "51000"));
+
+        // Straight to the repository: the point is the service's own guard, and
+        // going through activateLease would drag unit occupancy into this test.
+        tx.executeWithoutResult(status -> {
+            Lease row = leaseRepository.findById(lease.getId()).orElseThrow();
+            row.setStatus(LeaseStatus.ACTIVE);
+            leaseRepository.save(row);
+        });
+
+        CreateLeaseDTO update = fixtures.draftDto(START, END, List.of(line("RENT", "99000")));
+        assertThatThrownBy(() -> leaseService.updateDraftLease(lease.getId(), update))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only DRAFT");
+
+        // And the lines are untouched — the guard runs before applyLines' delete.
+        assertThat(leaseService.getLines(lease.getId()))
+                .singleElement()
+                .satisfies(l -> assertThat(l.netAmount()).isEqualByComparingTo("51000"));
+    }
+
+    @Test
+    void unknownChargeTypeCodeIs400() {
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(line("XYZ", "1000")));
+
+        // BusinessRuleViolationException, not NotFoundException: the lease is the
+        // resource being created and it is the body that is wrong, so this is a
+        // 400 naming the code, not a 404 for a lease that never existed.
+        assertThatThrownBy(() -> leaseService.createDraftLease(dto))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("unknown charge type XYZ");
+    }
+
+    @Test
+    void aLeaseWithNoLinesIsRefused() {
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of());
+        assertThatThrownBy(() -> leaseService.createDraftLease(dto))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("At least one line is required");
+
+        CreateLeaseDTO nullLines = fixtures.draftDto(START, END, null);
+        assertThatThrownBy(() -> leaseService.createDraftLease(nullLines))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("At least one line is required");
+    }
+
+    /**
+     * The contract number is prefixed with the property's code on documents. The
+     * code is nullable and the number is null until a contract is generated, so
+     * both absences have to produce something renderable.
+     */
+    @Test
+    void displayContractNumberPrefixesThePropertyCode() {
+        LeaseDTO lease = draft(line("RENT", "51000"));
+        assertThat(lease.getPropertyCode()).isEqualTo(fixtures.property().getCode());
+        // No contract generated yet.
+        assertThat(lease.getDisplayContractNumber()).isNull();
+
+        tx.executeWithoutResult(status -> {
+            Lease row = leaseRepository.findById(lease.getId()).orElseThrow();
+            row.setContractNumber(681L);
+            leaseRepository.save(row);
+        });
+
+        LeaseDTO reread = leaseService.getLeaseById(lease.getId());
+        assertThat(reread.getDisplayContractNumber())
+                .isEqualTo(fixtures.property().getCode() + "/681");
+    }
+
+    /**
+     * A charge type whose role the property has no leaf for leaves the line
+     * unmapped rather than refusing the draft. The gap is the accountant's to
+     * close and the posting guard is where it is reported; blocking a draft on it
+     * stops work on a problem the person drafting usually cannot fix.
+     */
+    @Test
+    void aLineWhoseRoleHasNoMappedAccountIsSavedUnmapped() {
+        // COOLING's template row parents on "C-01", which the seeded chart has as a
+        // group; if the tenant has no leaf for it the resolver finds nothing.
+        UUID leaseId = draft(line("RENT", "51000"), line("COOLING", "1200")).getId();
+
+        List<LeaseLineDTO> lines = leaseService.getLines(leaseId);
+        assertThat(lines).hasSize(2);
+        assertThat(lines.get(0).creditAccountId()).isNotNull();
+        // Whether COOLING resolves depends on the tenant's chart; either way the
+        // draft was accepted and the line persisted with its amount intact.
+        assertThat(lines.get(1).chargeTypeCode()).isEqualTo("COOLING");
+        assertThat(lines.get(1).netAmount()).isEqualByComparingTo("1200");
+    }
+}

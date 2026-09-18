@@ -210,7 +210,8 @@ Seeded: Rent (RENT→ADVANCE_RENT), Security Deposit (DEPOSIT→SECURITY_DEPOSIT
 ### 6.3 Lease header changes
 
 Added: `contract_date` (document date; may differ from `start_date`), `total_days` (derived), `grace_period_days` (payment grace for overdue calculation), `contract_number` (per-property prefix + sequence, e.g. `GLA_B1/681`), `renewed_from_lease_id`, `chain_id` (root lease of the renewal chain — PACT's tracking number), `receivable_account_id` and `income_account_id` overrides (default from property mapping), `posting_journal_id`, `posted_at`, `posted_by`.
-Removed: `rent_amount`, `monthly_rent`, `deposit_amount`, `payment_terms`-driven schedule fields that live on the cheque grid now; `installment_distribution` moves to the generator input.
+Kept, but derived: `rent_amount` and `deposit_amount` stay on the lease as read-only mirrors of the RENT and DEPOSIT-behaviour lines, recomputed by `LeaseService.syncDerivedTotals` whenever the lines change and never accepted from a request body. Too much already reads them — reports, the unit's `actual_rent`, the renter portal — for removing them to be worth it, and as a mirror they cannot drift from the lines.
+Removed: `monthly_rent` (a second source of truth for the same money; a monthly figure is derived where it is displayed), and the `payment_terms`-driven schedule fields that live on the cheque grid now; `installment_distribution` moves to the generator input.
 
 Statuses: `DRAFT, PENDING_SIGNATURE, ACTIVE, RENEWED, NOTICE_GIVEN, TERMINATED, EXPIRED, CLOSED`.
 `DRAFT → ACTIVE` only via **Post**. `PENDING_SIGNATURE` and renter accept/reject stay a pre-post step. `ACTIVE → RENEWED` when the successor lease posts. `LeaseExpirationJob` continues to flip `ACTIVE/NOTICE_GIVEN → EXPIRED`.

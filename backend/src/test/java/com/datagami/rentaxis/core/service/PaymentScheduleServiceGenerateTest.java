@@ -270,13 +270,19 @@ class PaymentScheduleServiceGenerateTest {
                 .isNotEqualByComparingTo(lastLarger.get(5).getAmount());
     }
 
-    /** Builds a lease driven by monthlyRent so the inclusive month count sets the total. */
+    /**
+     * A lease quoted per month. {@code Lease.monthlyRent} no longer exists — the
+     * lease carries the contract total derived from its RENT lines — so the
+     * monthly figure is multiplied out here by the same inclusive month count the
+     * caller is asserting about. The scenario these tests pin (a Jun 1 → Dec 31
+     * term is seven months, not six) is unchanged; only where the multiplication
+     * happens moved.
+     */
     private Lease buildMonthlyLease(BigDecimal monthlyRent, BigDecimal deposit, int paymentTerms,
                                     LocalDate start, LocalDate end) {
-        Lease lease = buildLease(BigDecimal.ZERO, deposit, paymentTerms, start, end);
-        lease.setRentAmount(null);
-        lease.setMonthlyRent(monthlyRent);
-        return lease;
+        BigDecimal total = monthlyRent.multiply(
+                BigDecimal.valueOf(com.datagami.rentaxis.core.util.DateMath.monthsInclusive(start, end)));
+        return buildLease(total, deposit, paymentTerms, start, end);
     }
 
     private Lease buildLease(BigDecimal totalRent, BigDecimal deposit, int paymentTerms,

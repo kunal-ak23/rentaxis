@@ -102,7 +102,6 @@ class OnlinePaymentServiceClearIdempotencyIT {
         lease.setEndDate(LocalDate.now().plusMonths(11));
         lease.setStatus(LeaseStatus.ACTIVE);
         lease.setRentAmount(new BigDecimal("60000"));
-        lease.setMonthlyRent(new BigDecimal("5000"));
         lease = leaseRepository.save(lease);
 
         PaymentSchedule schedule = new PaymentSchedule();

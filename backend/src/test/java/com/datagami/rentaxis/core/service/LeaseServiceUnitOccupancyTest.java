@@ -6,7 +6,12 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseAttachmentRepository;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
@@ -42,6 +47,8 @@ class LeaseServiceUnitOccupancyTest {
     private PaymentScheduleRepository paymentScheduleRepository;
     private PaymentScheduleService paymentScheduleService;
     private LeaseInteractionRepository leaseInteractionRepository;
+    private LeaseLineRepository leaseLineRepository;
+    private ChequeRepository chequeRepository;
     private LeaseService service;
 
     @BeforeEach
@@ -61,6 +68,9 @@ class LeaseServiceUnitOccupancyTest {
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class);
         when(leaseAccessPolicy.filterReadable(any())).thenAnswer(inv -> inv.getArgument(0));
 
+        leaseLineRepository = mock(LeaseLineRepository.class);
+        chequeRepository = mock(ChequeRepository.class);
+
         service = new LeaseService(
                 leaseRepository,
                 unitRepository,
@@ -72,6 +82,11 @@ class LeaseServiceUnitOccupancyTest {
                 paymentScheduleRepository,
                 leaseChargeRepository,
                 leaseInteractionRepository,
+                leaseLineRepository,
+                mock(ChargeTypeRepository.class),
+                mock(AccountRepository.class),
+                chequeRepository,
+                mock(com.datagami.rentaxis.core.service.ledger.AccountResolver.class),
                 mock(SettlementService.class),
                 mock(UnitListingService.class),
                 mock(ApplicationEventPublisher.class),
@@ -81,6 +96,7 @@ class LeaseServiceUnitOccupancyTest {
         when(leaseDocumentRepository.findByLeaseId(any())).thenReturn(List.of());
         when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of());
         when(paymentScheduleRepository.findByLeaseId(any())).thenReturn(List.of());
+        when(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(List.of());
         // Activation and termination now take the unit row FOR UPDATE so the
         // occupancy check and the status flip cannot interleave with a
         // concurrent activation; hand the same instance back.
@@ -282,6 +298,27 @@ class LeaseServiceUnitOccupancyTest {
         // single note therefore made the draft permanently undeletable behind an
         // opaque 500, so this delete has to happen before the lease goes.
         verify(leaseInteractionRepository).deleteByLeaseId(lease.getId());
+        // cheques.lease_id has no ON DELETE clause either, so a draft that had
+        // cheques generated against it would fail the same way.
+        verify(leaseLineRepository).deleteByLease_Id(lease.getId());
+        verify(chequeRepository).deleteByLease_IdAndStatus(lease.getId(), ChequeStatus.DRAFT);
         verify(leaseRepository).delete(lease);
+    }
+
+    /**
+     * Activation no longer generates a payment plan. Cheques are cut explicitly
+     * against the lease's lines, and posting is Task 6's job — a schedule
+     * appearing as a side effect of a status change is what let a lease bill a
+     * renter for instalments nobody had agreed.
+     */
+    @Test
+    void activateLease_doesNotGenerateAPaymentSchedule() {
+        Lease lease = lease(LeaseStatus.DRAFT);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
+
+        service.activateLease(lease.getId());
+
+        verify(paymentScheduleService, org.mockito.Mockito.never()).generateScheduleForLease(any(Lease.class));
     }
 }

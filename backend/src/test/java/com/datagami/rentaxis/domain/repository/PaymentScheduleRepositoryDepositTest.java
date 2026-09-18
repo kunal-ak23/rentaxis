@@ -137,7 +137,6 @@ class PaymentScheduleRepositoryDepositTest {
         l.setEndDate(today.plusMonths(11));
         l.setStatus(LeaseStatus.ACTIVE);
         l.setRentAmount(new BigDecimal("60000"));
-        l.setMonthlyRent(new BigDecimal("5000"));
         return leaseRepository.save(l);
     }
 

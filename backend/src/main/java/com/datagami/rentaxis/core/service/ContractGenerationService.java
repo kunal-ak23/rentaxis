@@ -875,7 +875,7 @@ public class ContractGenerationService {
     }
 
     private LeasePayload buildLeasePayload(Lease lease, String contractUrl) {
-        BigDecimal monthly = lease.getMonthlyRent() != null ? lease.getMonthlyRent() : lease.getRentAmount();
+        BigDecimal monthly = LeaseService.monthlyRentOf(lease);
         return new LeasePayload(
                 lease.getId(),
                 lease.getRenter().getUserId(),
