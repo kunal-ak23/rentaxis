@@ -123,8 +123,16 @@ public class LeaseAccessPolicy {
                 .map(GrantedAuthority::getAuthority)
                 .toList();
 
-        if (roles.contains("ROLE_SUPER_ADMIN") || roles.contains("ROLE_TENANT_ADMIN")) {
+        if (roles.contains("ROLE_SUPER_ADMIN") || roles.contains("ROLE_TENANT_ADMIN")
+                || roles.contains("ROLE_ACCOUNTANT")) {
             // Tenant-wide by design; the Hibernate tenant filter is the boundary.
+            //
+            // ACCOUNTANT is here because the role is tenant-wide finance access,
+            // not a property assignment: it already reads every property, unit and
+            // renter (plan 1), and a lease is the source document behind the
+            // journals it reconciles. Without this it fell through to "nobody" and
+            // the cheque-grid endpoints it is explicitly granted answered "Lease
+            // not found" for every lease in the organisation.
             return Caller.seesAll();
         }
 

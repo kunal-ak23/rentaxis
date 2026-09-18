@@ -136,8 +136,8 @@ public class ChequeGenerationService {
      * its own row dated {@code postingDate} — the contract date — because a deposit
      * is due when the contract is signed, not when the first rent instalment falls.</p>
      *
-     * @param rent Σ net of the RENT lines; may be zero for a lease that charges none.
-     * @param extras non-rent charges, in the order they should appear.
+     * @param rent Σ of the RENT lines' gross (net + VAT); may be zero for a lease that charges none.
+     * @param extras non-rent charges at their gross, in the order they should appear.
      * @param n number of rent instalments (>= 1).
      * @param postingDate the lease's contract date; every row posts on it.
      * @param firstDueDate date of the first instalment.
@@ -293,15 +293,20 @@ public class ChequeGenerationService {
         if (lines.isEmpty()) {
             throw new BusinessRuleViolationException("The lease has no lines to generate cheques from");
         }
+        // Gross, not net: the renter writes cheques for what they owe, which
+        // includes the VAT the contract charges. Per line and then summed, so the
+        // grid's total is the contract's total to the fils — Task 6 posts TCO with
+        // the same helper, which is what makes Σ cheques = contract value + VAT
+        // true by construction rather than by a reconciliation.
         BigDecimal rent = BigDecimal.ZERO;
         List<Extra> extras = new ArrayList<>();
         for (LeaseLine line : lines) {
             ChargeType type = line.getChargeType();
-            BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+            BigDecimal gross = LeaseVat.grossOf(line);
             if (type != null && type.getBehaviour() == ChargeBehaviour.RENT) {
-                rent = rent.add(net);
-            } else if (net.signum() > 0) {
-                extras.add(new Extra(foldLabel(type), net));
+                rent = rent.add(gross);
+            } else if (gross.signum() > 0) {
+                extras.add(new Extra(foldLabel(type), gross));
             }
         }
 

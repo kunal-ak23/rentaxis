@@ -496,7 +496,16 @@ public class LeaseService {
                         where + account.getCode() + " is inactive");
             }
             AccountType expected = ChargeTypeService.expectedTypeFor(type.getRole());
-            if (expected != null && account.getAccountType() != expected) {
+            if (expected == null) {
+                // The role is outside ChargeTypeService's allow-list, so there is
+                // no account type it could legitimately credit. Treating that as
+                // "no constraint" let an explicit creditAccountId post a line to a
+                // receivable, a bank or output VAT — the very roles the allow-list
+                // exists to keep off the credit side.
+                throw new BusinessRuleViolationException(
+                        "Role " + type.getRole() + " cannot be credited by a charge type");
+            }
+            if (account.getAccountType() != expected) {
                 throw new BusinessRuleViolationException(
                         where + account.getCode() + " must be an " + expected + " account");
             }

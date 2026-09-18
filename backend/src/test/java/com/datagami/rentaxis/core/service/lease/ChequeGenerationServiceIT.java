@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -12,6 +13,7 @@ import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -148,6 +150,71 @@ class ChequeGenerationServiceIT {
         tx.executeWithoutResult(s -> assertThat(chequeRepository.findDue(
                 null, LocalDate.of(2030, 1, 1), org.springframework.data.domain.Pageable.unpaged())
                 .getContent()).isEmpty());
+    }
+
+    /**
+     * The grid collects VAT, because the renter's cheques have to add up to what
+     * the contract charges — and the contract charges VAT on the lines that carry
+     * it. 51,000 of VAT-free rent over four cheques, plus a 2,000 admin fee whose
+     * gross is 2,100: row 1 is 14,850 and the grid is 53,100.
+     */
+    @Test
+    void theGridCollectsVatOnTheLinesThatCarryIt() {
+        UUID leaseId = leaseService.createDraftLease(fixtures.draftDto(START, END, List.of(
+                line("RENT", "51000"),
+                vatLine("ADMIN_FEE", "2000")))).getId();
+
+        List<ChequeDTO> rows = service.generate(leaseId, fourCheques());
+
+        assertThat(rows).hasSize(4);
+        assertThat(rows.get(0).amount()).isEqualByComparingTo("14850");
+        assertThat(rows.get(0).narration()).isEqualTo("Rent - 1st Installment | Admin");
+        assertThat(rows.get(1).amount()).isEqualByComparingTo("12750");
+        assertThat(sum(rows)).isEqualByComparingTo("53100");
+    }
+
+    /** VAT-bearing rent is spread across the instalments, tens rounding intact. */
+    @Test
+    void vatOnRentIsSpreadAcrossTheInstallments() {
+        UUID leaseId = leaseService.createDraftLease(fixtures.draftDto(START, END, List.of(
+                vatLine("RENT", "60000")))).getId();
+
+        List<ChequeDTO> rows = service.generate(leaseId, fourCheques());
+
+        assertThat(rows).extracting(ChequeDTO::amount)
+                .allSatisfy(a -> assertThat(a).isEqualByComparingTo("15750"));
+        assertThat(sum(rows)).isEqualByComparingTo("63000");
+    }
+
+    /** A line naming its charge type by code, VAT-applicable. */
+    private static LeaseLineInput vatLine(String code, String gross) {
+        return new LeaseLineInput(null, code, new BigDecimal(gross), BigDecimal.ZERO,
+                null, true, null, null, null);
+    }
+
+    /**
+     * A row id from another lease is a 400, not a silent adoption. Same tenant, so
+     * the tenant filter does not catch it: the only thing standing between the two
+     * grids is the "is this a DRAFT row of *this* lease" check.
+     */
+    @Test
+    void aRowIdFromAnotherLeaseIsRefused() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+
+        Unit otherUnit = fixtures.createUnit(fixtures.property(), "102");
+        UUID otherLeaseId = leaseService.createDraftLease(fixtures.draftDto(
+                otherUnit, fixtures.renter(), START, END, List.of(line("RENT", "24000")))).getId();
+        ChequeDTO stranger = service.generate(otherLeaseId, fourCheques()).get(0);
+
+        List<ChequeRowInput> poached = List.of(asInput(stranger, null));
+        assertThatThrownBy(() -> service.saveRows(leaseId, poached))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not a draft row of this lease");
+
+        // Neither grid moved.
+        assertThat(service.list(leaseId)).hasSize(4);
+        assertThat(service.list(otherLeaseId)).hasSize(4);
     }
 
     /** Unfolded, the fee and the deposit are instruments of their own. */

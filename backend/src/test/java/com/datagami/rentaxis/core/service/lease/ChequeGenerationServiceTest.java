@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.ChequeRoundingCalculator;
+import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import org.junit.jupiter.api.Test;
 
@@ -180,6 +181,71 @@ class ChequeGenerationServiceTest {
         assertThat(ChequeGenerationService.ordinal(13)).isEqualTo("13th");
         assertThat(ChequeGenerationService.ordinal(21)).isEqualTo("21st");
         assertThat(ChequeGenerationService.ordinal(22)).isEqualTo("22nd");
+    }
+
+    /**
+     * VAT is rounded per line and then summed, never summed and then rounded: the
+     * invoice the renter holds is the per-line one, and the two differ by a fils on
+     * some line counts.
+     */
+    @Test
+    void vatIsFivePercentToTheFils() {
+        assertThat(LeaseVat.RATE).isEqualByComparingTo("0.05");
+        assertThat(LeaseVat.vatOf(bd("2000"))).isEqualByComparingTo("100.00");
+        assertThat(LeaseVat.vatOf(bd("60000"))).isEqualByComparingTo("3000.00");
+        // 61.7285 → 61.73, HALF_UP at two decimals.
+        assertThat(LeaseVat.vatOf(bd("1234.57"))).isEqualByComparingTo("61.73");
+        // 0.05 × 0.1 = 0.005 → 0.01, not 0.00.
+        assertThat(LeaseVat.vatOf(bd("0.10"))).isEqualByComparingTo("0.01");
+        assertThat(LeaseVat.vatOf((BigDecimal) null)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void aLineCarriesVatOnlyWhenItSaysSo() {
+        LeaseLine taxed = new LeaseLine();
+        taxed.setNetAmount(bd("2000"));
+        taxed.setVatApplicable(true);
+        assertThat(LeaseVat.vatOf(taxed)).isEqualByComparingTo("100.00");
+        assertThat(LeaseVat.grossOf(taxed)).isEqualByComparingTo("2100.00");
+
+        LeaseLine exempt = new LeaseLine();
+        exempt.setNetAmount(bd("2000"));
+        exempt.setVatApplicable(false);
+        assertThat(LeaseVat.vatOf(exempt)).isEqualByComparingTo("0");
+        // A VAT-free line is collected at its net, with no stray .00 scale change
+        // that would make an assertion on the cheque amount read oddly.
+        assertThat(LeaseVat.grossOf(exempt)).isEqualByComparingTo("2000");
+    }
+
+    /**
+     * The grid the VAT ruling produces: 51,000 of VAT-free rent over four cheques
+     * plus a 2,000 admin fee that does carry VAT. Row 1 collects 12,750 + 2,100.
+     */
+    @Test
+    void aVatBearingExtraIsFoldedInAtItsGross() {
+        List<ChequeGenerationService.Row> rows = ChequeGenerationService.buildRows(
+                bd("51000"),
+                List.of(new ChequeGenerationService.Extra("Admin", bd("2100.00"))),
+                4,
+                LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 24), LocalDate.of(2027, 9, 23),
+                InstallmentDistribution.FIRST_LARGER, true);
+
+        assertThat(rows.get(0).amount()).isEqualByComparingTo("14850");
+        assertThat(rows.get(1).amount()).isEqualByComparingTo("12750");
+        assertThat(rows.stream().map(ChequeGenerationService.Row::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("53100");
+    }
+
+    /** VAT-bearing rent is split with the tens rounding intact: 63,000 over 4. */
+    @Test
+    void vatOnRentIsSplitAcrossTheInstallments() {
+        List<ChequeGenerationService.Row> rows = ChequeGenerationService.buildRows(
+                bd("63000"), List.of(), 4,
+                LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 24), LocalDate.of(2027, 9, 23),
+                InstallmentDistribution.FIRST_LARGER, true);
+
+        assertThat(rows).extracting(ChequeGenerationService.Row::amount)
+                .allSatisfy(a -> assertThat(a).isEqualByComparingTo("15750"));
     }
 
     @Test

@@ -11,11 +11,14 @@ import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
@@ -70,6 +73,7 @@ class LeaseLinesIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired AccountRepository accountRepository;
+    @Autowired ChargeTypeRepository chargeTypeRepository;
     @Autowired PropertyAccountMappingRepository propertyMappingRepo;
     @Autowired TenantDefaultAccountMappingRepository defaultMappingRepo;
     @Autowired TransactionTemplate tx;
@@ -259,6 +263,46 @@ class LeaseLinesIT {
         LeaseDTO reread = leaseService.getLeaseById(lease.getId());
         assertThat(reread.getDisplayContractNumber())
                 .isEqualTo(fixtures.property().getCode() + "/681");
+    }
+
+    /**
+     * A charge type whose role is outside the credit allow-list is refused
+     * outright when the caller names an explicit account.
+     *
+     * <p>The role check used to be "if we know the expected account type, enforce
+     * it" — so a role with <em>no</em> expected type, which is precisely the roles
+     * the allow-list keeps off the credit side, passed unchallenged. An explicit
+     * {@code creditAccountId} could then credit a bank or a receivable: the entry
+     * balances, nothing downstream objects, and the lease looks paid the moment it
+     * posts.</p>
+     *
+     * <p>The rogue charge type is saved through the repository because
+     * {@code ChargeTypeService} would never create it. A row like this comes from a
+     * legacy import or a hand-edited catalogue, which is exactly the case the guard
+     * is for.</p>
+     */
+    @Test
+    void aChargeTypeWhoseRoleCannotBeCreditedIsRefused() {
+        // A real, active, non-group leaf to point at, so the account's own
+        // validations pass and the role check is what fires.
+        UUID leaf = draft(line("RENT", "51000")).getLines().get(0).creditAccountId();
+        assertThat(leaf).isNotNull();
+
+        ChargeType rogue = new ChargeType();
+        rogue.setCode("ROGUE_" + UUID.randomUUID().toString().substring(0, 8));
+        rogue.setNameEn("Rogue charge");
+        rogue.setRole(AccountRole.BANK);
+        rogue.setBehaviour(ChargeBehaviour.FEE);
+        rogue.setTenantId(fixtures.tenantId());
+        tx.executeWithoutResult(status -> chargeTypeRepository.save(rogue));
+
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(
+                new LeaseLineInput(null, rogue.getCode(), new BigDecimal("100"), BigDecimal.ZERO,
+                        null, null, leaf, null, null)));
+
+        assertThatThrownBy(() -> leaseService.createDraftLease(dto))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Role BANK cannot be credited by a charge type");
     }
 
     /**

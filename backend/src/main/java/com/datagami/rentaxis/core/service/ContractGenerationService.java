@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
@@ -60,7 +61,13 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ContractGenerationService {
 
-    private static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+    /**
+     * One rate, shared with the cheque grid and the posting journal. The literal
+     * used to live here as well as in {@code LeaseVat}, and a contract printing a
+     * different VAT figure from the cheques collecting it is the kind of
+     * disagreement nobody notices until a renter adds the cheques up.
+     */
+    private static final BigDecimal VAT_RATE = LeaseVat.RATE;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
 
     private final LeaseRepository leaseRepository;
