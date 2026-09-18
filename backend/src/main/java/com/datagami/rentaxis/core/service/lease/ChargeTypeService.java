@@ -12,7 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -54,18 +57,45 @@ public class ChargeTypeService {
     // ---------- validation ----------
 
     /**
-     * The account type a role's leaf carries, for the roles a charge type can
-     * legitimately credit. The three deposit-shaped roles sit on the liability
-     * side; everything else a charge type may name is income. This mirrors the
-     * chart seeded by {@code AccountService.seedDefaultAccounts} — it is not read
-     * from the accounts table on purpose, so a charge type can be validated
-     * before the tenant has mapped that role to a leaf.
+     * The roles a charge type is allowed to credit, and the account type each one's
+     * leaf carries. It is an allow-list, not a default: a role absent from this map
+     * cannot be named by a charge type at all, whatever the behaviour.
+     *
+     * <p>That distinction is the whole point. Charging a line to {@code BANK} or
+     * {@code RENT_RECEIVABLE} would credit the asset the line is supposed to
+     * <em>debit</em>, netting the receivable to zero and leaving a lease that looks
+     * paid the moment it posts; crediting {@code OUTPUT_VAT} would book tax the
+     * tenant never charged. Under the previous "everything else is INCOME" default
+     * both were accepted — the arithmetic balanced, so nothing downstream would
+     * have objected. The nine roles left out are the asset, tax and
+     * contra/adjustment ones: RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH,
+     * OUTPUT_VAT, INPUT_VAT, DISCOUNT_ALLOWED, ROUNDING_OFF and
+     * OPENING_BALANCE_DIFFERENCE. Posting reaches all of them, but only ever as the
+     * other side of an entry the posting rules own, never as a line a user picked.</p>
+     *
+     * <p>The types mirror the chart seeded by
+     * {@code AccountService.seedDefaultAccounts}; they are not read from the
+     * accounts table on purpose, so a charge type can be validated before the
+     * tenant has mapped that role to a leaf.</p>
      */
-    static AccountType expectedType(AccountRole role) {
-        return switch (role) {
-            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT -> AccountType.LIABILITY;
-            default -> AccountType.INCOME;
-        };
+    static final Map<AccountRole, AccountType> CREDITABLE_ROLES;
+    static {
+        EnumMap<AccountRole, AccountType> m = new EnumMap<>(AccountRole.class);
+        // deposits and unearned rent: money held, not yet earned
+        m.put(AccountRole.ADVANCE_RENT, AccountType.LIABILITY);
+        m.put(AccountRole.SECURITY_DEPOSIT, AccountType.LIABILITY);
+        m.put(AccountRole.PARKING_DEPOSIT, AccountType.LIABILITY);
+        // earned on the line
+        m.put(AccountRole.RENTAL_INCOME, AccountType.INCOME);
+        m.put(AccountRole.ADMIN_FEE, AccountType.INCOME);
+        m.put(AccountRole.PARKING_INCOME, AccountType.INCOME);
+        m.put(AccountRole.COOLING_CHARGES, AccountType.INCOME);
+        m.put(AccountRole.MAINTENANCE_CHARGES, AccountType.INCOME);
+        m.put(AccountRole.RENT_PENALTY, AccountType.INCOME);
+        m.put(AccountRole.CHEQUE_RETURN_PENALTY, AccountType.INCOME);
+        m.put(AccountRole.OTHER_INCOME, AccountType.INCOME);
+        m.put(AccountRole.FORFEITED_INCOME, AccountType.INCOME);
+        CREDITABLE_ROLES = Collections.unmodifiableMap(m);
     }
 
     /**
@@ -76,6 +106,10 @@ public class ChargeTypeService {
      * <p>{@code RENT} + {@code ADVANCE_RENT} is the one liability-credit that is not
      * a deposit — rent lines credit unearned rent (spec §6.1) — so it is named
      * explicitly rather than by relaxing the rule for the whole behaviour.</p>
+     *
+     * <p>The role has to clear {@link #CREDITABLE_ROLES} first, whatever the
+     * behaviour: a role outside that allow-list is refused before the
+     * behaviour rules are consulted at all.</p>
      */
     private static void validate(String code, String nameEn, AccountRole role, ChargeBehaviour behaviour) {
         if (code == null || code.isBlank()) throw new BusinessRuleViolationException("Charge type code is required");
@@ -83,7 +117,10 @@ public class ChargeTypeService {
         if (role == null) throw new BusinessRuleViolationException("Charge type " + code + " is missing its credit role");
         if (behaviour == null) throw new BusinessRuleViolationException("Charge type " + code + " is missing its behaviour");
 
-        AccountType expected = expectedType(role);
+        AccountType expected = CREDITABLE_ROLES.get(role);
+        if (expected == null) {
+            throw new BusinessRuleViolationException("Role " + role + " cannot be credited by a charge type");
+        }
         boolean rentException = behaviour == ChargeBehaviour.RENT && role == AccountRole.ADVANCE_RENT;
         if (behaviour == ChargeBehaviour.DEPOSIT) {
             if (expected != AccountType.LIABILITY) {
