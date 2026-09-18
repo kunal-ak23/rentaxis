@@ -1,0 +1,191 @@
+databaseChangeLog:
+  # Accounting v2 plan 2 (spec §6-§7). The lease becomes a posting document:
+  # charge-type lines with an editable credit account, a contract date and a
+  # renewal chain. Cheques become their own entity (the PDC register) instead
+  # of columns on payment_schedules. Penalties become assessments that must be
+  # approved before they post. payment_schedules / lease_charges /
+  # payment_penalties / penalty_payments are dropped in 84 once the code has
+  # moved over — wipe-and-reseed was agreed (spec D4), so nothing is migrated.
+  #
+  # leases also gains renter_accepted_at (Task 6: renter acceptance is recorded
+  # but no longer activates the lease) and carry_deposit_forward (Task 8:
+  # renewal carries the old deposit instead of re-charging it). Both land here
+  # rather than in a later changeset because 83 is still unreleased.
+  - changeSet:
+      id: 83-lease-posting-and-cheques
+      author: claude
+      changes:
+        - createTable:
+            tableName: charge_types
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: code, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: name_en, type: varchar(120), constraints: { nullable: false } }
+              - column: { name: name_ar, type: varchar(120) }
+              - column: { name: role, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: behaviour, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: vat_applicable_default, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: display_order, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
+        - addUniqueConstraint: { tableName: charge_types, columnNames: "tenant_id, code", constraintName: uq_charge_types_tenant_code }
+
+        - addColumn:
+            tableName: properties
+            columns:
+              - column: { name: code, type: varchar(20) }
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_properties_tenant_code ON properties (tenant_id, code) WHERE code IS NOT NULL
+
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: contract_date, type: date }
+              - column: { name: total_days, type: int }
+              - column: { name: grace_period_days, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: first_due_date, type: date }
+              - column: { name: renewed_from_lease_id, type: uuid, constraints: { foreignKeyName: fk_leases_renewed_from, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: chain_id, type: uuid }
+              - column: { name: receivable_account_id, type: uuid, constraints: { foreignKeyName: fk_leases_receivable_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: income_account_id, type: uuid, constraints: { foreignKeyName: fk_leases_income_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: posting_journal_id, type: uuid, constraints: { foreignKeyName: fk_leases_posting_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: renter_accepted_at, type: timestamptz }
+              - column: { name: carry_deposit_forward, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+        - sql:
+            comment: Existing rows get a chain of their own and a contract date equal to agreement/start date
+            splitStatements: true
+            sql: >-
+              UPDATE leases SET chain_id = id WHERE chain_id IS NULL;
+              UPDATE leases SET contract_date = COALESCE(agreement_date, start_date) WHERE contract_date IS NULL;
+              UPDATE leases SET total_days = (end_date - start_date) + 1 WHERE total_days IS NULL
+        - createIndex: { tableName: leases, indexName: idx_leases_chain, columns: [ { column: { name: chain_id } } ] }
+
+        - createTable:
+            tableName: lease_lines
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_lines_lease, referencedTableName: leases, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: seq_no, type: int, constraints: { nullable: false } }
+              - column: { name: charge_type_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_lines_charge_type, referencedTableName: charge_types, referencedColumnNames: id } }
+              - column: { name: credit_account_id, type: uuid, constraints: { foreignKeyName: fk_lease_lines_credit_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: gross_amount, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: discount_amount, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: net_amount, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: narration, type: varchar(255) }
+              - column: { name: vat_applicable, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: period_start, type: date }
+              - column: { name: period_end, type: date }
+        - createIndex: { tableName: lease_lines, indexName: idx_lease_lines_lease, columns: [ { column: { name: lease_id } } ] }
+        - sql:
+            sql: ALTER TABLE lease_lines ADD CONSTRAINT ck_lease_lines_net CHECK (net_amount = gross_amount - discount_amount AND net_amount >= 0)
+
+        - createTable:
+            tableName: cheques
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_cheques_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_cheques_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: unit_id, type: uuid, constraints: { foreignKeyName: fk_cheques_unit, referencedTableName: units, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_cheques_renter, referencedTableName: renters, referencedColumnNames: id } }
+              - column: { name: seq_no, type: int, constraints: { nullable: false } }
+              - column: { name: posting_date, type: date, constraints: { nullable: false } }
+              - column: { name: cheque_number, type: varchar(255) }
+              - column: { name: cheque_date, type: date, constraints: { nullable: false } }
+              - column: { name: payee_bank, type: varchar(100) }
+              - column: { name: payer_name, type: varchar(200) }
+              - column: { name: debit_account_id, type: uuid, constraints: { foreignKeyName: fk_cheques_debit_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: narration, type: varchar(255) }
+              - column: { name: mode, type: varchar(10), constraints: { nullable: false }, defaultValue: PDC }
+              - column: { name: status, type: varchar(16), constraints: { nullable: false }, defaultValue: DRAFT }
+              - column: { name: failure_reason, type: varchar(30) }
+              - column: { name: replaces_id, type: uuid, constraints: { foreignKeyName: fk_cheques_replaces, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: replaced_by_id, type: uuid, constraints: { foreignKeyName: fk_cheques_replaced_by, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: image_url, type: varchar(500) }
+              - column: { name: image_blob_path, type: varchar(500) }
+              - column: { name: image_uploaded_at, type: timestamptz }
+              - column: { name: notes, type: text }
+              - column: { name: deposited_at, type: date }
+              - column: { name: cleared_at, type: date }
+              - column: { name: bounced_at, type: date }
+              - column: { name: returned_at, type: date }
+              - column: { name: status_changed_at, type: timestamptz }
+              - column: { name: pdr_journal_id, type: uuid, constraints: { foreignKeyName: fk_cheques_pdr_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: crt_journal_id, type: uuid, constraints: { foreignKeyName: fk_cheques_crt_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: cbr_journal_id, type: uuid, constraints: { foreignKeyName: fk_cheques_cbr_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: penalty_assessment_id, type: uuid }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - sql:
+            sql: |
+              ALTER TABLE cheques ADD CONSTRAINT ck_cheques_amount_positive CHECK (amount > 0);
+              CREATE UNIQUE INDEX ux_cheques_lease_number ON cheques (lease_id, cheque_number) WHERE cheque_number IS NOT NULL AND mode = 'PDC';
+              CREATE INDEX idx_cheques_tenant_status_date ON cheques (tenant_id, status, cheque_date);
+              CREATE INDEX idx_cheques_lease ON cheques (lease_id);
+              CREATE INDEX idx_cheques_renter ON cheques (renter_id);
+              CREATE INDEX idx_cheques_property ON cheques (property_id);
+              CREATE INDEX idx_cheques_image_purge ON cheques (cheque_date) WHERE image_blob_path IS NOT NULL;
+
+        - createTable:
+            tableName: penalty_assessments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pa_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: cheque_id, type: uuid, constraints: { foreignKeyName: fk_pa_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: reason, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: description, type: text }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false }, defaultValue: PROPOSED }
+              - column: { name: proposed_by, type: uuid }
+              - column: { name: proposed_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: approved_by, type: uuid }
+              - column: { name: approved_at, type: timestamptz }
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_pa_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: collection_cheque_id, type: uuid, constraints: { foreignKeyName: fk_pa_collection_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: resolution_note, type: text }
+        - sql:
+            sql: |
+              ALTER TABLE penalty_assessments ADD CONSTRAINT ck_pa_amount_positive CHECK (amount > 0);
+              CREATE INDEX idx_pa_tenant_status ON penalty_assessments (tenant_id, status);
+              CREATE INDEX idx_pa_lease ON penalty_assessments (lease_id);
+              ALTER TABLE cheques ADD CONSTRAINT fk_cheques_penalty_assessment FOREIGN KEY (penalty_assessment_id) REFERENCES penalty_assessments (id);
+
+        - addColumn:
+            tableName: landlord_org_fine_settings
+            columns:
+              - column: { name: bounces_before_penalty, type: int, constraints: { nullable: false }, defaultValueNumeric: 2 }
+              - column: { name: auto_propose_cheque_return, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: auto_propose_late_payment, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+        - addColumn:
+            tableName: rent_collection_settings
+            columns:
+              - column: { name: bounces_before_penalty, type: int }
+        - addColumn:
+            tableName: tenant_gateway_configs
+            columns:
+              - column: { name: settlement_account_id, type: uuid, constraints: { foreignKeyName: fk_tgc_settlement_account, referencedTableName: accounts, referencedColumnNames: id } }
+        - addColumn:
+            tableName: online_payments
+            columns:
+              - column: { name: cheque_id, type: uuid, constraints: { foreignKeyName: fk_online_payment_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+        - addColumn:
+            tableName: meeting_details
+            columns:
+              - column: { name: cheque_ids, type: "uuid[]" }
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE meeting_details DROP COLUMN IF EXISTS cheque_ids;
+              ALTER TABLE online_payments DROP COLUMN IF EXISTS cheque_id;
+              ALTER TABLE tenant_gateway_configs DROP COLUMN IF EXISTS settlement_account_id;
+              ALTER TABLE rent_collection_settings DROP COLUMN IF EXISTS bounces_before_penalty;
+              ALTER TABLE landlord_org_fine_settings DROP COLUMN IF EXISTS bounces_before_penalty, DROP COLUMN IF EXISTS auto_propose_cheque_return, DROP COLUMN IF EXISTS auto_propose_late_payment;
+              DROP TABLE IF EXISTS penalty_assessments, cheques, lease_lines, charge_types;
+              ALTER TABLE leases DROP COLUMN IF EXISTS contract_date, DROP COLUMN IF EXISTS total_days, DROP COLUMN IF EXISTS grace_period_days, DROP COLUMN IF EXISTS first_due_date, DROP COLUMN IF EXISTS renewed_from_lease_id, DROP COLUMN IF EXISTS chain_id, DROP COLUMN IF EXISTS receivable_account_id, DROP COLUMN IF EXISTS income_account_id, DROP COLUMN IF EXISTS posting_journal_id, DROP COLUMN IF EXISTS posted_at, DROP COLUMN IF EXISTS posted_by, DROP COLUMN IF EXISTS renter_accepted_at, DROP COLUMN IF EXISTS carry_deposit_forward;
+              DROP INDEX IF EXISTS ux_properties_tenant_code; ALTER TABLE properties DROP COLUMN IF EXISTS code;

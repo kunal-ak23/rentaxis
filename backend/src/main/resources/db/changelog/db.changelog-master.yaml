@@ -171,3 +171,5 @@ databaseChangeLog:
       file: db/changelog/changesets/81-ledger-core.yaml
   - include:
       file: db/changelog/changesets/82-drop-v1-finance.yaml
+  - include:
+      file: db/changelog/changesets/83-lease-posting-and-cheques.yaml
