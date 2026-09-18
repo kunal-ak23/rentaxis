@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.service.AccountImportService;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
@@ -26,12 +27,14 @@ public class AccountController {
     private final AccountService service;
     private final AccountImportService importService;
     private final PropertyAccountService propertyAccountService;
+    private final ChargeTypeService chargeTypeService;
 
     public AccountController(AccountService service, AccountImportService importService,
-                             PropertyAccountService propertyAccountService) {
+                             PropertyAccountService propertyAccountService, ChargeTypeService chargeTypeService) {
         this.service = service;
         this.importService = importService;
         this.propertyAccountService = propertyAccountService;
+        this.chargeTypeService = chargeTypeService;
     }
 
     /**
@@ -132,7 +135,12 @@ public class AccountController {
 
     /**
      * Seeds the chart of accounts and, on top of it, the property-account
-     * template and the tenant-level role defaults.
+     * template, the tenant-level role defaults and the charge-type catalogue.
+     *
+     * <p>The charge types come last because their credit roles are only
+     * meaningful once the chart and its role mappings exist; each of the three
+     * calls is idempotent, so re-seeding an established tenant adds whatever is
+     * missing and leaves everything else alone.</p>
      *
      * <p>The second call lives here rather than inside
      * {@code AccountService.seedDefaultAccounts()} on purpose:
@@ -145,6 +153,7 @@ public class AccountController {
     public ResponseEntity<List<Account>> seedDefaultAccounts() {
         List<Account> seeded = service.seedDefaultAccounts();
         propertyAccountService.seedDefaultTemplateAndDefaults();
+        chargeTypeService.seedDefaults();
         return ResponseEntity.ok(seeded);
     }
 

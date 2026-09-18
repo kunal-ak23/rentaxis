@@ -50,7 +50,8 @@ class AccountRequestBindingTest {
 
     private final MockMvc mvc = MockMvcBuilders
             .standaloneSetup(new AccountController(service, mock(AccountImportService.class),
-                    mock(PropertyAccountService.class)))
+                    mock(PropertyAccountService.class),
+                    mock(com.datagami.rentaxis.core.service.lease.ChargeTypeService.class)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
 
