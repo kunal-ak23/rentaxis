@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.ChequeRoundingCalculator;
 import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
+import com.datagami.rentaxis.core.service.cheque.ChequeRowRules;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.DateMath;
@@ -416,7 +417,11 @@ public class ChequeGenerationService {
             }
         }
 
-        validate(input, drafts, takenByOthers);
+        // The rules themselves live in ChequeRowRules: a replacement row typed on a
+        // posted lease has to clear exactly the same bar as a row typed on the grid,
+        // and two copies of "a PDC needs the date written on it" would eventually
+        // disagree.
+        ChequeRowRules.validateGrid(input, drafts, takenByOthers);
 
         // Drop the DRAFT rows the payload no longer mentions, and flush, so a row
         // that was deleted cannot hold a cheque number the payload reassigns.
@@ -466,67 +471,6 @@ public class ChequeGenerationService {
         chequeRepository.saveAll(out);
         chequeRepository.flush();
         return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
-    }
-
-    /**
-     * Row-level rules. They replace the per-payment-method validation the v1
-     * schedule carried, and they are all up-front: the unique cheque number in
-     * particular is checked here rather than left to {@code ux_cheques_lease_number}
-     * so the user gets "cheque number 100041 appears twice" and not a 409 quoting
-     * an index name.
-     */
-    private static void validate(List<ChequeRowInput> input, Map<UUID, Cheque> drafts, Set<String> takenByOthers) {
-        Set<String> seenNumbers = new HashSet<>();
-        Set<UUID> seenIds = new HashSet<>();
-        for (int i = 0; i < input.size(); i++) {
-            ChequeRowInput row = input.get(i);
-            String where = "Row " + (i + 1) + ": ";
-            if (row == null) throw new BusinessRuleViolationException(where + "is empty");
-
-            // The same row twice would resolve to one entity, and the second copy
-            // would overwrite the first — two rows the user typed silently
-            // becoming one, with the money of whichever came last.
-            if (row.id() != null && !seenIds.add(row.id())) {
-                throw new BusinessRuleViolationException(where + "cheque " + row.id() + " appears twice in the grid");
-            }
-
-            if (row.id() != null && !drafts.containsKey(row.id())) {
-                // Either it belongs to another lease or it has been registered.
-                // Both are "not a draft row of this lease", and neither is a 404:
-                // the lease exists, the body is wrong about one of its rows.
-                throw new BusinessRuleViolationException(
-                        where + "cheque " + row.id() + " is not a draft row of this lease");
-            }
-
-            ChequeMode mode = row.mode() == null ? ChequeMode.PDC : row.mode();
-            if (mode == ChequeMode.ONLINE) {
-                // An online receipt is created by the payment gateway callback with
-                // its own reference, never typed into the grid.
-                throw new BusinessRuleViolationException(
-                        where + "ONLINE receipts are recorded by the payment gateway, not entered on the grid");
-            }
-
-            if (row.amount() == null || row.amount().signum() <= 0) {
-                throw new BusinessRuleViolationException(where + "amount must be greater than zero");
-            }
-            if (row.chequeDate() == null) {
-                throw new BusinessRuleViolationException(mode == ChequeMode.PDC
-                        ? where + "a post-dated cheque needs the date written on it"
-                        : where + "a " + mode + " receipt needs the date it is expected on");
-            }
-
-            String number = blankToNull(row.chequeNumber());
-            if (number != null) {
-                if (mode != ChequeMode.PDC) {
-                    throw new BusinessRuleViolationException(
-                            where + "a " + mode + " receipt has no cheque number");
-                }
-                if (!seenNumbers.add(number) || takenByOthers.contains(number)) {
-                    throw new BusinessRuleViolationException(
-                            where + "cheque number " + number + " is already used on this lease");
-                }
-            }
-        }
     }
 
     // ------------------------------------------------------------------
@@ -619,7 +563,7 @@ public class ChequeGenerationService {
     }
 
     private static String blankToNull(String s) {
-        return s == null || s.isBlank() ? null : s.trim();
+        return ChequeRowRules.blankToNull(s);
     }
 
     @SafeVarargs

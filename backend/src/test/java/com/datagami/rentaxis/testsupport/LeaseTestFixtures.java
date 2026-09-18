@@ -1,11 +1,17 @@
 package com.datagami.rentaxis.testsupport;
 
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
+import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
+import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -64,6 +70,11 @@ public class LeaseTestFixtures {
     private final AccountService accountService;
     private final PropertyAccountService propertyAccountService;
     private final ChargeTypeService chargeTypeService;
+
+    /** Opted into by {@link #withLeaseServices}; null for tests that only need the ground. */
+    private LeaseService leaseService;
+    private ChequeGenerationService chequeGeneration;
+    private LeasePostingService leasePosting;
 
     private UUID tenantId;
     private Property property;
@@ -239,6 +250,79 @@ public class LeaseTestFixtures {
     public static LeaseLineInput lineCreditedTo(String chargeTypeCode, String gross, UUID creditAccountId) {
         return new LeaseLineInput(null, chargeTypeCode, new BigDecimal(gross), BigDecimal.ZERO,
                 null, null, creditAccountId, null, null);
+    }
+
+    // ------------------------------------------------------------------
+    // a lease that is actually on the books
+    // ------------------------------------------------------------------
+
+    /**
+     * Optional wiring for tests whose subject is a <em>posted</em> lease rather
+     * than the ground under a draft one — the cheque register, settlement,
+     * recognition.
+     *
+     * <p>A fluent opt-in rather than three more constructor arguments: most users
+     * of this fixture want the tenant, the chart and the unit and build their own
+     * lease, and making them autowire the lease services to get a property would
+     * be the wrong tax. Tests that do not call this never touch the three
+     * methods below.</p>
+     */
+    public LeaseTestFixtures withLeaseServices(LeaseService leaseService,
+                                               ChequeGenerationService chequeGeneration,
+                                               LeasePostingService leasePosting) {
+        this.leaseService = leaseService;
+        this.chequeGeneration = chequeGeneration;
+        this.leasePosting = leasePosting;
+        return this;
+    }
+
+    /** A draft lease on this fixture's unit, contract-dated before the tenancy starts. */
+    public UUID draftLease(LocalDate contractDate, LocalDate start, LocalDate end, List<LeaseLineInput> lines) {
+        CreateLeaseDTO dto = draftDto(start, end, lines);
+        dto.setContractDate(contractDate);
+        dto.setFirstDueDate(start);
+        return requireLeaseServices().createDraftLease(dto).getId();
+    }
+
+    /**
+     * The cheque grid: {@code installments} rent rows plus every other charge as a
+     * row of its own. Unfolded, so each charged thing is one instrument and a test
+     * can bounce the deposit without bouncing the first month's rent with it.
+     */
+    public List<ChequeDTO> generateGrid(UUID leaseId, int installments, LocalDate firstDueDate) {
+        requireLeaseServices();
+        return chequeGeneration.generate(leaseId, new GenerateChequesRequest(
+                installments, firstDueDate, null, "Emirates NBD", null, false, null));
+    }
+
+    /** Number the PDC rows from {@code startingNumber}, so refusals can name them. */
+    public List<ChequeDTO> numberGrid(UUID leaseId, String startingNumber) {
+        requireLeaseServices();
+        return chequeGeneration.generateNumbers(leaseId, startingNumber);
+    }
+
+    /**
+     * Draft, grid, numbers, post: a lease on the books whose register holds one
+     * REGISTERED cheque per row, each with its own PDR.
+     *
+     * @param startingNumber first cheque number, or null to leave the rows unnumbered.
+     */
+    public PostLeaseResponse postedLease(LocalDate contractDate, LocalDate start, LocalDate end,
+                                         List<LeaseLineInput> lines, int installments, String startingNumber) {
+        requireLeaseServices();
+        UUID leaseId = draftLease(contractDate, start, end, lines);
+        generateGrid(leaseId, installments, start);
+        if (startingNumber != null) {
+            numberGrid(leaseId, startingNumber);
+        }
+        return leasePosting.post(leaseId);
+    }
+
+    private LeaseService requireLeaseServices() {
+        if (leaseService == null || chequeGeneration == null || leasePosting == null) {
+            throw new IllegalStateException("Call withLeaseServices(...) before building a posted lease");
+        }
+        return leaseService;
     }
 
     public UUID tenantId() { return tenantId; }
