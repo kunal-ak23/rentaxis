@@ -5,8 +5,13 @@ import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
+import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.api.dto.lease.GenerateChequeNumbersRequest;
+import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
@@ -45,6 +50,7 @@ public class LeaseController {
     private final PaymentScheduleService paymentScheduleService;
     private final RenewalOpportunityService renewalOpportunityService;
     private final LeaseInteractionService leaseInteractionService;
+    private final ChequeGenerationService chequeGenerationService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -115,9 +121,49 @@ public class LeaseController {
         return ResponseEntity.ok(leaseService.getLines(id));
     }
 
+    // --- Cheque grid -------------------------------------------------------
+    //
     // PUT /{id}/payment-schedule is gone. The payment plan is no longer a side
     // effect of the lease: cheques are generated explicitly against the lease's
-    // lines (POST /{id}/cheques, Task 5) and edited through the cheque register.
+    // lines and edited row by row here.
+    //
+    // These sit on the lease rather than on the cheque register because they are
+    // operations on a draft contract, not on the register's worklist — the rows
+    // they write are DRAFT and the register cannot see them at all.
+
+    /** The lease's grid, every status, in schedule order. */
+    @GetMapping("/{id}/cheques")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<ChequeDTO>> getCheques(@PathVariable UUID id) {
+        return ResponseEntity.ok(chequeGenerationService.list(id));
+    }
+
+    /** Cut the lease's lines into a fresh draft grid, replacing the previous draft rows. */
+    @PostMapping("/{id}/cheques/generate")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<ChequeDTO>> generateCheques(
+            @PathVariable UUID id,
+            @RequestBody(required = false) GenerateChequesRequest request) {
+        return ResponseEntity.ok(chequeGenerationService.generate(id, request));
+    }
+
+    /** Number the draft PDC rows sequentially from the renter's first cheque. */
+    @PostMapping("/{id}/cheques/numbers")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<ChequeDTO>> generateChequeNumbers(
+            @PathVariable UUID id,
+            @Valid @RequestBody GenerateChequeNumbersRequest request) {
+        return ResponseEntity.ok(chequeGenerationService.generateNumbers(id, request.startingNumber()));
+    }
+
+    /** Replace the draft grid with the edited rows. */
+    @PutMapping("/{id}/cheques")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<ChequeDTO>> saveChequeRows(
+            @PathVariable UUID id,
+            @RequestBody List<ChequeRowInput> rows) {
+        return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows));
+    }
 
     @PostMapping("/{id}/terminate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")

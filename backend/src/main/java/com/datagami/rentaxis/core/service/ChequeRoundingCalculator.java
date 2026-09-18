@@ -38,11 +38,30 @@ public final class ChequeRoundingCalculator {
             new BigDecimal("1000"),
             new BigDecimal("500"),
             new BigDecimal("100"),
+            new BigDecimal("10"),
             new BigDecimal("0.01")
     );
 
     /** Smallest currency unit, used for UNIFORM cent distribution. */
     private static final BigDecimal CENT = new BigDecimal("0.01");
+
+    private static final BigDecimal TEN = new BigDecimal("10");
+
+    /**
+     * The ladder the two-and-three-argument overloads have always used.
+     *
+     * <p>The 10 step is a v2 denomination: PACT writes cheque grids in tens, and
+     * {@link #distribute(BigDecimal, int, InstallmentDistribution, BigDecimal)}
+     * reaches it by asking for it. It is deliberately withheld from the callers
+     * that do not, because those callers are v1 payment schedules whose rows are
+     * already in the database. Offering them 10 would silently re-shape every
+     * split whose per-cheque average falls between 10 and 100 — 250 over 4
+     * cheques is [62.50 × 4] today and would become [60, 60, 60, 70] — and a
+     * regenerated schedule would then disagree with the one the renter was sent.
+     * Nothing about the 10 step is wrong; it is just not this ladder's.</p>
+     */
+    private static final List<BigDecimal> LEGACY_STEPS =
+            STEPS.stream().filter(s -> s.compareTo(TEN) != 0).toList();
 
     public record Result(List<BigDecimal> amounts, BigDecimal step) {}
 
@@ -90,6 +109,40 @@ public final class ChequeRoundingCalculator {
      * @param strategy remainder-placement strategy; null defaults to LAST_LARGER.
      */
     public static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy) {
+        return distribute(totalRent, n, strategy, LEGACY_STEPS);
+    }
+
+    /**
+     * Same split, but the rounding ladder starts at {@code minStep} rather than at
+     * the coarsest denomination — the cheque grid's form of the rule (spec §7.1).
+     *
+     * <p>A PACT cheque grid is written in tens, not in thousands: 61,000 over six
+     * cheques is 10,160 five times with 10,200 absorbing the residual, where the
+     * default ladder would have floored to 10,000 and put 11,000 on the first
+     * cheque. Passing {@code minStep = 10} drops every coarser step and leaves
+     * {@code [10, 0.01]}, so the base is as close to the true average as a
+     * writable cheque gets and the residual is a rounding difference rather than a
+     * denomination's worth of rent.</p>
+     *
+     * <p>{@code minStep} names the <em>coarsest</em> step that may be used, and
+     * finer ones remain available beneath it: a rent too small to floor to a ten
+     * still falls through to cents rather than failing. A null {@code minStep}
+     * means the full ladder.</p>
+     *
+     * @param minStep coarsest rounding denomination to try; finer steps follow.
+     */
+    public static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy, BigDecimal minStep) {
+        List<BigDecimal> ladder = minStep == null
+                ? STEPS
+                : STEPS.stream().filter(s -> s.compareTo(minStep) <= 0).toList();
+        if (ladder.isEmpty()) {
+            throw new IllegalArgumentException("No rounding step at or below " + minStep);
+        }
+        return distribute(totalRent, n, strategy, ladder);
+    }
+
+    private static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy,
+                                     List<BigDecimal> ladder) {
         if (totalRent == null || totalRent.signum() <= 0) {
             throw new IllegalArgumentException("totalRent must be > 0");
         }
@@ -112,7 +165,7 @@ public final class ChequeRoundingCalculator {
             return new Result(amounts, CENT);
         }
 
-        for (BigDecimal step : STEPS) {
+        for (BigDecimal step : ladder) {
             BigDecimal per = floorToStep(totalRent.divide(nBd, 2, RoundingMode.FLOOR), step);
             if (per.signum() <= 0) continue;
             List<BigDecimal> amounts = new ArrayList<>(n);
