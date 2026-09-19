@@ -10,7 +10,6 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,10 +48,10 @@ public class PenaltyService {
     }
 
     /**
-     * Daily cron job at 2 AM to calculate penalties for overdue payments.
-     * Runs across all tenants.
+     * Was the daily 2 AM cron that calculated penalties for overdue payments
+     * across all tenants.
      */
-    @Scheduled(cron = "0 0 2 * * *")
+    // No longer scheduled: penalties are proposed by PenaltyRuleEngine and post only on approval (accounting v2).
     public void calculateDailyPenalties() {
         log.info("Starting daily penalty calculation");
         LocalDate today = LocalDate.now(clock);

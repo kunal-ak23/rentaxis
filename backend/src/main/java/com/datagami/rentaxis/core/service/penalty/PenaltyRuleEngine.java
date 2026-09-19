@@ -17,6 +17,8 @@ import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,6 +41,12 @@ import java.util.UUID;
  * should be, and half of it committing would leave a returned cheque that
  * silently never reached finance. The register and the worklist move together or
  * neither moves.</p>
+ *
+ * <p>{@code Propagation.MANDATORY} is how that stays true. These are not entry
+ * points: a caller that reached one outside a transaction would get the tenant
+ * filter disabled — {@code TenantAspect} only enables it inside one — and would
+ * write a proposal that commits whatever happens to the transition. Refusing
+ * outright is better than either.</p>
  */
 @Component
 public class PenaltyRuleEngine {
@@ -81,6 +89,7 @@ public class PenaltyRuleEngine {
      * each returned instrument is its own fine. What is guarded is proposing twice
      * over the <em>same</em> cheque.</p>
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void onBounce(Cheque cheque) {
         Lease lease = cheque == null ? null : cheque.getLease();
         UUID propertyId = propertyIdOf(cheque, lease);
@@ -89,10 +98,12 @@ public class PenaltyRuleEngine {
         FineConfig cfg = fineConfigResolver.resolve(propertyId, TenantContextHolder.getTenantId());
         if (!cfg.autoProposeChequeReturn()) return;
 
-        RentCollectionSettings settings = rentCollectionSettings.findByPropertyId(propertyId).orElse(null);
-        Integer threshold = settings != null && settings.getBouncesBeforePenalty() != null
-                ? settings.getBouncesBeforePenalty()
-                : cfg.bouncesBeforePenalty();
+        // The resolver already coalesced the property's override over the
+        // organisation's, exactly as it does for every fine amount. Reading
+        // rent_collection_settings a second time here was the same answer arrived at
+        // twice — and two places that have to agree about a threshold eventually
+        // will not.
+        Integer threshold = cfg.bouncesBeforePenalty();
         if (threshold == null) return;
 
         long bounces = chequeRepository.countByLease_IdAndBouncedAtIsNotNull(lease.getId());
@@ -137,6 +148,7 @@ public class PenaltyRuleEngine {
      * decided on; here the whole late fee is proposed the day the money actually
      * lands, as one number finance can look at.</p>
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void onLateClear(Cheque cheque, LocalDate clearedOn) {
         Lease lease = cheque == null ? null : cheque.getLease();
         UUID propertyId = propertyIdOf(cheque, lease);
@@ -151,10 +163,14 @@ public class PenaltyRuleEngine {
             return;
         }
 
-        // The property's collection grace, not the fine grace: this is "how late may
-        // rent be", which is the same field the register's overdue flag reads, and
-        // lateAmount() is the v1 arithmetic that took it from here too.
-        int grace = settings.getGracePeriodDays() != null ? settings.getGracePeriodDays() : 0;
+        // The LEASE's grace, which is the field the register itself is late by:
+        // ChequeMapper hands lease.getGracePeriodDays() to ChequeDueRules, so this is
+        // the window that decides whether the row is already showing as overdue to
+        // the clerk chasing it. RentCollectionSettings has a grace column too and it
+        // is a different, property-wide default — proposing a fine off one number
+        // while the screen flags lateness by another is how a renter gets charged for
+        // a day the register never called late.
+        int grace = lease.getGracePeriodDays();
         LocalDate effectiveDue = cheque.getChequeDate().plusDays(grace);
         if (!clearedOn.isAfter(effectiveDue)) return;
 

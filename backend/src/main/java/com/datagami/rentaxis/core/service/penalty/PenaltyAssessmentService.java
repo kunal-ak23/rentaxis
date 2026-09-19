@@ -24,6 +24,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
@@ -85,6 +86,20 @@ public class PenaltyAssessmentService {
     static final Set<PenaltyAssessmentStatus> OPEN =
             EnumSet.of(PenaltyAssessmentStatus.PROPOSED, PenaltyAssessmentStatus.APPROVED);
 
+    /**
+     * A lease a penalty may still be charged against — the same set the register
+     * calls posted.
+     *
+     * <p>Off this set the contract is closed: a TERMINATED lease has had its
+     * uncleared instruments handed back and its unearned rent reversed, and a
+     * DRAFT one has no receivable to debit at all. Approving against either would
+     * raise a charge the renter can never be sent an instrument for, and on a
+     * terminated lease it would reopen a receivable the settlement just closed.
+     * The money owed on a closed contract is settled, not invoiced.</p>
+     */
+    private static final Set<LeaseStatus> CHARGEABLE = EnumSet.of(
+            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
+
     private static final String BEING_UPDATED =
             "This penalty is being updated by another request. Please try again.";
 
@@ -125,6 +140,7 @@ public class PenaltyAssessmentService {
         Lease lease = leaseRepository.findById(r.leaseId())
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         leaseAccessPolicy.requireManageable(lease);
+        requireChargeable(lease);
 
         Cheque cheque = null;
         if (r.chequeId() != null) {
@@ -208,6 +224,11 @@ public class PenaltyAssessmentService {
         Lease lease = a.getLease();
         leaseAccessPolicy.requireManageable(lease);
         requireStatus(a, "approve", PenaltyAssessmentStatus.PROPOSED);
+        // Up front, before a single line is posted. A proposal can outlive the
+        // contract it was raised on — a cheque bounces in March, the lease
+        // terminates in April, finance gets to the worklist in May — and by then
+        // the answer is "settle it", not "charge it".
+        requireChargeable(lease);
 
         LocalDate on = date != null ? date : LocalDate.now();
         BigDecimal amount = a.getAmount();
@@ -384,6 +405,22 @@ public class PenaltyAssessmentService {
         }
         if (a.getLease() == null) throw new NotFoundException("Lease not found");
         return a;
+    }
+
+    /**
+     * The lease is still one a charge can be raised on.
+     *
+     * <p>Checked <em>before</em> anything posts, not left to
+     * {@code addRowToPostedLease} half way through the approval: by the time the
+     * register refuses the collection row the {@code PEN} has already been written
+     * and numbered, and the rollback that follows burns an entry number for a
+     * charge nobody made.</p>
+     */
+    private static void requireChargeable(Lease lease) {
+        if (!CHARGEABLE.contains(lease.getStatus())) {
+            throw new BusinessRuleViolationException(
+                    "Lease is " + lease.getStatus() + "; charge this penalty through settlement");
+        }
     }
 
     private static void requireStatus(PenaltyAssessment a, String verb, PenaltyAssessmentStatus allowed) {

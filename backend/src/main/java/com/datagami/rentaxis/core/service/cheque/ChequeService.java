@@ -274,6 +274,11 @@ public class ChequeService {
 
         applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
         chequeRepository.save(cheque);
+        // Cash over the counter reaches CLEARED by a different door, but it is the
+        // same fact: the money arrived, and it may have arrived late. Leaving the
+        // hook on clear() alone made the late fee depend on which door the renter
+        // happened to pay through.
+        penaltyRules.onLateClear(cheque, r.dateOrToday());
         publishCleared(cheque);
         return dto(cheque, lease);
     }
@@ -626,6 +631,11 @@ public class ChequeService {
      * returned as it stands — but only an ONLINE one: a cheque that cleared at the
      * bank arriving here means the webhook is pointing at the wrong row, and
      * answering "fine, already done" would hide that.</p>
+     *
+     * <p>The idempotent return sits <em>above</em> the late-payment hook on purpose:
+     * a retried webhook must not re-propose a penalty any more than it may post a
+     * second CRT, and a second proposal would be a second fine on finance's
+     * worklist for one payment.</p>
      */
     @Transactional
     public ChequeDTO clearOnline(UUID chequeId, LocalDate capturedOn, UUID settlementAccountId) {
@@ -639,8 +649,10 @@ public class ChequeService {
         }
         requireStatus(cheque, "capture", ChequeStatus.ONLINE_PENDING);
 
-        applyClearing(lease, cheque, capturedOn != null ? capturedOn : LocalDate.now(), settlementAccountId, null);
+        LocalDate on = capturedOn != null ? capturedOn : LocalDate.now();
+        applyClearing(lease, cheque, on, settlementAccountId, null);
         chequeRepository.save(cheque);
+        penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
         return dto(cheque, lease);
     }

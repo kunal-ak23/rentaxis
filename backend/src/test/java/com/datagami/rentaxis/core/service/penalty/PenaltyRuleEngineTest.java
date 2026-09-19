@@ -125,6 +125,11 @@ class PenaltyRuleEngineTest {
         when(chequeRepository.countByLease_IdAndBouncedAtIsNotNull(leaseId)).thenReturn(count);
     }
 
+    /**
+     * The property's late-payment rules. Its {@code gracePeriodDays} is set to a
+     * deliberately different number from the lease's in every test that has both:
+     * it is a property-wide default the engine must not be reading.
+     */
     private RentCollectionSettings settings(PenaltyType type, String amount, Integer grace) {
         RentCollectionSettings s = new RentCollectionSettings();
         s.setPenaltyType(type);
@@ -132,6 +137,11 @@ class PenaltyRuleEngineTest {
         s.setGracePeriodDays(grace);
         when(rentCollectionSettings.findByPropertyId(propertyId)).thenReturn(Optional.of(s));
         return s;
+    }
+
+    /** The grace that actually decides lateness — the same field the register is overdue by. */
+    private void leaseGrace(int days) {
+        lease.setGracePeriodDays(days);
     }
 
     private BigDecimal proposedAmount() {
@@ -223,17 +233,30 @@ class PenaltyRuleEngineTest {
         verifyNoInteractions(assessmentService);
     }
 
-    /** The property's own threshold wins over the organisation's. */
+    /**
+     * The threshold is whatever the resolved config says — including a property
+     * override, which {@code FineConfigResolver} has already coalesced over the
+     * organisation's by the time it gets here. The engine does not re-read
+     * rent_collection_settings for it: two places deciding one threshold is two
+     * places that can disagree.
+     */
     @Test
-    void aPropertyThresholdOverridesTheOrganisationOne() {
-        fineConfig(cfg(2, true, false));
-        RentCollectionSettings s = settings(PenaltyType.NONE, null, null);
-        s.setBouncesBeforePenalty(4);
-        bouncesOnThisLease(2);
+    void theThresholdIsTheResolvedOneAndIsNotLookedUpTwice() {
+        fineConfig(cfg(4, true, false));
+        // A settings row that still carries its own number: if the engine read it,
+        // three bounces would be enough and the first call below would propose.
+        RentCollectionSettings ignored = settings(PenaltyType.NONE, null, null);
+        ignored.setBouncesBeforePenalty(3);
 
+        bouncesOnThisLease(3);
         engine.onBounce(cheque("100041", "12750", LocalDate.of(2026, 11, 2), ChequeFailureReason.BOUNCE));
-
         verifyNoInteractions(assessmentService);
+
+        bouncesOnThisLease(4);
+        Cheque fourth = cheque("100042", "12750", LocalDate.of(2026, 12, 2), ChequeFailureReason.BOUNCE);
+        engine.onBounce(fourth);
+        verify(assessmentService).proposeBySystem(eq(lease), eq(fourth), eq(PenaltyReason.CHEQUE_RETURN),
+                eq(new BigDecimal("500")), any());
     }
 
     // ------------------------------------------------------------------
@@ -243,7 +266,8 @@ class PenaltyRuleEngineTest {
     @Test
     void latePaymentProposalIsOffUnlessTheLandlordTurnedItOn() {
         fineConfig(cfg(2, true, false));
-        settings(PenaltyType.FIXED_PER_DAY, "50", 5);
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(5);
 
         engine.onLateClear(cheque("100040", "12750", LocalDate.of(2026, 10, 2), null),
                 LocalDate.of(2026, 10, 30));
@@ -255,7 +279,8 @@ class PenaltyRuleEngineTest {
     @Test
     void aPropertyWithNoLatePenaltyTypeProposesNothing() {
         fineConfig(cfg(2, true, true));
-        settings(PenaltyType.NONE, "50", 5);
+        settings(PenaltyType.NONE, "50", 30);
+        leaseGrace(5);
 
         engine.onLateClear(cheque("100040", "12750", LocalDate.of(2026, 10, 2), null),
                 LocalDate.of(2026, 10, 30));
@@ -264,11 +289,12 @@ class PenaltyRuleEngineTest {
     }
 
     @Test
-    void clearingInsideTheGracePeriodIsNotLate() {
+    void clearingOnTheLastDayOfTheLeasesGraceIsNotLate() {
         fineConfig(cfg(2, true, true));
-        settings(PenaltyType.FIXED_PER_DAY, "50", 5);
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(5);
 
-        // Due 2 Oct + 5 days grace = 7 Oct; the money landed on the 7th.
+        // Due 2 Oct + the lease's 5 days = 7 Oct; the money landed on the 7th.
         engine.onLateClear(cheque("100040", "12750", LocalDate.of(2026, 10, 2), null),
                 LocalDate.of(2026, 10, 7));
 
@@ -276,9 +302,10 @@ class PenaltyRuleEngineTest {
     }
 
     @Test
-    void clearingPastTheGracePeriodProposesTheWholeLateFeeAtOnce() {
+    void clearingPastTheLeasesGraceProposesTheWholeLateFeeAtOnce() {
         fineConfig(cfg(2, true, true));
-        settings(PenaltyType.FIXED_PER_DAY, "50", 5);
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(5);
         Cheque c = cheque("100040", "12750", LocalDate.of(2026, 10, 2), null);
 
         // 7 Oct effective due, cleared 17 Oct: ten days late at 50/day.
@@ -286,6 +313,45 @@ class PenaltyRuleEngineTest {
 
         verify(assessmentService).proposeBySystem(eq(lease), eq(c), eq(PenaltyReason.LATE_PAYMENT),
                 eq(new BigDecimal("500")), any());
+    }
+
+    /**
+     * The lateness window is the lease's, not the property's.
+     *
+     * <p>{@code ChequeMapper} hands {@code lease.getGracePeriodDays()} to
+     * {@code ChequeDueRules}, so that is the window the register is already
+     * flagging the row overdue by. Proposing off {@code RentCollectionSettings}'
+     * separate grace column would fine a renter for days the screen chasing them
+     * never called late — here, the property's 30 days would have swallowed the
+     * whole delay and proposed nothing at all.
+     */
+    @Test
+    void thePropertysOwnGraceColumnIsIgnored() {
+        fineConfig(cfg(2, true, true));
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(2);
+        Cheque c = cheque("100040", "12750", LocalDate.of(2026, 10, 2), null);
+
+        // 4 Oct effective due by the lease, 3 days late on the 7th. By the property's
+        // 30 days it would not be late at all.
+        engine.onLateClear(c, LocalDate.of(2026, 10, 7));
+
+        assertThat(proposedAmount()).isEqualByComparingTo("150");
+    }
+
+    /** The lease's default of zero makes the cheque date itself the deadline. */
+    @Test
+    void aLeaseWithNoGraceIsLateTheDayAfterTheChequeDate() {
+        fineConfig(cfg(2, true, true));
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(0);
+        Cheque c = cheque("100040", "12750", LocalDate.of(2026, 10, 2), null);
+
+        engine.onLateClear(c, LocalDate.of(2026, 10, 2));
+        verifyNoInteractions(assessmentService);
+
+        engine.onLateClear(c, LocalDate.of(2026, 10, 3));
+        assertThat(proposedAmount()).isEqualByComparingTo("50");
     }
 
     // ------------------------------------------------------------------
