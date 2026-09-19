@@ -120,6 +120,10 @@ class ChequeRepositoryIT {
         return inTx(() -> cheques.findDue(property, TODAY, true, List.of(), PAGE).getContent());
     }
 
+    private List<Cheque> dueForLease(UUID lease) {
+        return inTx(() -> cheques.findDueForLease(lease, TODAY));
+    }
+
     private List<Cheque> toDeposit(UUID property) {
         return inTx(() -> cheques.findToDeposit(property, TODAY, true, List.of(), PAGE).getContent());
     }
@@ -216,6 +220,67 @@ class ChequeRepositoryIT {
 
         assertThat(due(null)).isEmpty();
         assertThat(search(null, null, null, null, null, null)).isEmpty();
+    }
+
+    /**
+     * {@link ChequeRepository#findDueForLease} is a hand copy of
+     * {@link ChequeRepository#findDue} with the property scope swapped for a lease
+     * scope, and nothing in the type system stops the two drifting. They must not:
+     * the settlement preview deducts the lease's due rows from the renter's
+     * deposit, and the register screen shows them the same rows under the word
+     * "due". A row one query calls owed and the other does not is a figure the
+     * accountant cannot reconcile against any screen they can open.
+     *
+     * <p>So this asserts set equality over a register built to differ in every
+     * dimension the predicate cares about: maturity (past vs future), status
+     * (REGISTERED, DEPOSITED, CLEARED, DRAFT) and the one case where the date does
+     * <em>not</em> decide — a BOUNCED cheque dated next month is due now, because
+     * it has already failed and the debt does not wait for a calendar date.</p>
+     */
+    @Test
+    void findDueForLeaseReturnsExactlyFindDuesRowsForThatLease() {
+        Cheque maturedRegistered = cheque(1, "000001", TODAY.minusDays(1), ChequeStatus.REGISTERED, ChequeMode.PDC);
+        cheque(2, "000002", TODAY.plusMonths(1), ChequeStatus.REGISTERED, ChequeMode.PDC);
+        Cheque maturedDeposited = cheque(3, "000003", TODAY.minusDays(3), ChequeStatus.DEPOSITED, ChequeMode.PDC);
+        Cheque bouncedInTheFuture = cheque(4, "000004", TODAY.plusMonths(2), ChequeStatus.BOUNCED, ChequeMode.PDC);
+        cheque(5, "000005", TODAY.minusMonths(1), ChequeStatus.CLEARED, ChequeMode.PDC);
+        cheque(6, null, TODAY.minusDays(2), ChequeStatus.DRAFT, ChequeMode.PDC);
+
+        List<UUID> expected = due(null).stream()
+                .filter(c -> c.getLease().getId().equals(leaseId))
+                .map(Cheque::getId)
+                .toList();
+
+        assertThat(expected).as("the register's own answer, so a drifting fixture cannot make this vacuous")
+                .containsExactlyInAnyOrder(maturedRegistered.getId(), maturedDeposited.getId(),
+                        bouncedInTheFuture.getId());
+        assertThat(dueForLease(leaseId)).extracting(Cheque::getId)
+                .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    /**
+     * And it inherits the register's lease-status exclusion too: a lease nobody has
+     * signed is a proposal, so nothing on it is owed. A settlement cannot reach this
+     * state, but the two queries agreeing matters more than the state being
+     * reachable — that is the whole point of pinning them together.
+     */
+    @Test
+    void findDueForLeaseIsEmptyForADraftOrUnsignedLease() {
+        cheque(1, "000001", TODAY.minusDays(1), ChequeStatus.REGISTERED, ChequeMode.PDC);
+        assertThat(dueForLease(leaseId)).hasSize(1);
+
+        Lease draft = leaseRepo.findById(leaseId).orElseThrow();
+        draft.setStatus(LeaseStatus.DRAFT);
+        leaseRepo.save(draft);
+        assertThat(dueForLease(leaseId)).isEmpty();
+        assertThat(due(null)).isEmpty();
+
+        // Re-read: Lease is @Version'd, so the instance saved above is already stale.
+        Lease pending = leaseRepo.findById(leaseId).orElseThrow();
+        pending.setStatus(LeaseStatus.PENDING_SIGNATURE);
+        leaseRepo.save(pending);
+        assertThat(dueForLease(leaseId)).isEmpty();
+        assertThat(due(null)).isEmpty();
     }
 
     @Test

@@ -37,6 +37,7 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -111,6 +112,7 @@ public class ChequeService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final NotificationService notificationService;
     private final PenaltyRuleEngine penaltyRules;
+    private final PenaltyAssessmentRepository penaltyAssessments;
     private final ApplicationEventPublisher events;
 
     /**
@@ -130,6 +132,7 @@ public class ChequeService {
                          LeaseAccessPolicy leaseAccessPolicy,
                          NotificationService notificationService,
                          @Lazy PenaltyRuleEngine penaltyRules,
+                         PenaltyAssessmentRepository penaltyAssessments,
                          ApplicationEventPublisher events) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
@@ -140,6 +143,7 @@ public class ChequeService {
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.notificationService = notificationService;
         this.penaltyRules = penaltyRules;
+        this.penaltyAssessments = penaltyAssessments;
         this.events = events;
     }
 
@@ -420,12 +424,14 @@ public class ChequeService {
             // guards this method already ran are not repeated.
             Cheque replacement = newRow(lease, row, seq++, date);
             replacement.setReplaces(bounced);
+            replacement.setPenaltyAssessmentId(bounced.getPenaltyAssessmentId());
             chequeRepository.save(replacement);
             registrar.register(lease, replacement);
             if (bounced.getReplacedBy() == null) {
                 // The chain points at the first replacement; the rest are reachable
                 // through their own replaces_id. A single column cannot hold three.
                 bounced.setReplacedBy(replacement);
+                repointPenaltyCollection(bounced, replacement);
             }
             publish(EmailEventType.CHEQUE_RECEIVED, replacement,
                     ChequePayload.ofCheque(replacement, null, null));
@@ -476,10 +482,12 @@ public class ChequeService {
 
         Cheque replacement = newRow(lease, gatewayRow, nextSeqNo(register), on);
         replacement.setReplaces(bounced);
+        replacement.setPenaltyAssessmentId(bounced.getPenaltyAssessmentId());
         chequeRepository.save(replacement);
         registrar.register(lease, replacement);
 
         bounced.setReplacedBy(replacement);
+        repointPenaltyCollection(bounced, replacement);
         moveTo(bounced, ChequeStatus.REPLACED, "Replaced by an online payment row");
         chequeRepository.save(bounced);
 
@@ -943,6 +951,56 @@ public class ChequeService {
         }
         throw new BusinessRuleViolationException(
                 "Can only " + verb + " cheques in " + names + " (current: " + cheque.getStatus() + ")");
+    }
+
+    /**
+     * A replaced penalty receipt is still the same fine.
+     *
+     * <p>Approving a penalty raises a {@code PEN} and puts a collection row on the
+     * register for it, and two things key off that link. The assessment is
+     * outstanding while its {@code collectionCheque} has not CLEARED, and the
+     * settlement preview leaves rows carrying a {@code penaltyAssessmentId} out of
+     * arrears precisely so the fine is not charged to the deposit twice.</p>
+     *
+     * <p>Replacing that row broke both at once. The replacement carried no link, so
+     * it landed in arrears as ordinary rent, while the assessment went on pointing
+     * at a BOUNCED row that would never clear and went on counting in penalties:
+     * one 500 fine, deducted twice from the renter's deposit, with no screen
+     * showing why.</p>
+     *
+     * <p><b>Every replacement inherits the id; only the first becomes the
+     * assessment's collection row.</b> The inheritance is what keeps them all out
+     * of arrears — one fine cannot become three rent debts because it was settled
+     * in instalments — and the assessment has a single column, so the first row is
+     * the one it can name. A fine split across several replacements therefore reads
+     * as collected once the first of them clears, which is a real limitation and an
+     * unlikely shape: a collection row is raised for one amount and replaced by one
+     * instrument for the same amount.</p>
+     *
+     * <p>{@code PenaltyAssessmentService.reverse} keeps working against whatever
+     * this points at: it reads {@code getCollectionCheque()} and refuses on CLEARED,
+     * cancels on REGISTERED. The re-pointed replacement is REGISTERED the moment it
+     * is created, which is exactly the state reverse wants to cancel.</p>
+     *
+     * <p>A no-op for the ordinary case: a rent cheque carries no assessment id and
+     * this does not touch the database.</p>
+     */
+    private void repointPenaltyCollection(Cheque bounced, Cheque replacement) {
+        UUID assessmentId = bounced.getPenaltyAssessmentId();
+        if (assessmentId == null) {
+            return;
+        }
+        penaltyAssessments.findById(assessmentId).ifPresent(assessment -> {
+            // Only if this row really is the one the assessment is collected
+            // through. A penalty raised *about* a bounced rent cheque also carries
+            // the link the other way round (assessment.cheque), and re-pointing on
+            // that would make the fine collectable through the rent replacement.
+            Cheque collection = assessment.getCollectionCheque();
+            if (collection != null && collection.getId().equals(bounced.getId())) {
+                assessment.setCollectionCheque(replacement);
+                penaltyAssessments.save(assessment);
+            }
+        });
     }
 
     private static void requireDepositable(Cheque cheque) {

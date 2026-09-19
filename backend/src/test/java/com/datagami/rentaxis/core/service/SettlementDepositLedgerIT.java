@@ -2,8 +2,15 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
+import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
+import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
@@ -53,6 +60,7 @@ import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * What the settlement preview says the landlord is holding and what the renter
@@ -252,6 +260,158 @@ class SettlementDepositLedgerIT {
         assertThat(preview(leaseId).getPenaltyTotal()).isEqualByComparingTo("0");
     }
 
+    /**
+     * Arrears are the DUE rows and only the DUE rows, including the one the date
+     * does not decide.
+     *
+     * <p>A matured instalment is owed; a bounced one is owed <em>whatever its
+     * date</em>, because it already failed; a cheque dated next quarter is not
+     * money the renter is withholding. This is the case that would catch
+     * {@code findDueForLease} drifting from the register's own {@code findDue} —
+     * {@code ChequeRepositoryIT} pins the two queries to each other, and this pins
+     * the settlement to the answer.</p>
+     */
+    @Test
+    void arrearsAreTheMaturedRowsPlusTheBouncedOneWhateverItsDate() {
+        UUID leaseId = postedRentOnly();
+        List<Cheque> register = registerOf(leaseId);
+        assertThat(register).hasSize(4);
+
+        Cheque matured = register.get(0);
+        assertThat(matured.getChequeDate()).isBeforeOrEqualTo(LocalDate.now());
+        Cheque future = register.get(1);
+        assertThat(future.getChequeDate()).isAfter(LocalDate.now());
+
+        // The second instalment is banked early and comes back. Its date is still
+        // in the future; the debt is live from the moment it failed.
+        chequeService.deposit(future.getId(), ChequeActionRequest.on(LocalDate.now()));
+        chequeService.bounce(future.getId(),
+                new ChequeActionRequest(LocalDate.now(), null, ChequeFailureReason.BOUNCE, null));
+
+        BigDecimal expected = matured.getAmount().add(future.getAmount());
+        assertThat(expected).as("51,000 over four instalments").isEqualByComparingTo("25500");
+        assertThat(preview(leaseId).getUnpaidRentTotal()).isEqualByComparingTo(expected);
+    }
+
+    // ------------------------------------------------------------------
+    // a replaced penalty receipt
+    // ------------------------------------------------------------------
+
+    /**
+     * Replacing the instrument a fine is being collected on does not turn one fine
+     * into two debts.
+     *
+     * <p>Approval raises the {@code PEN} and puts a collection row on the register
+     * for it. Two things key off that row: the assessment is outstanding while it
+     * has not CLEARED, and the preview leaves rows carrying a
+     * {@code penaltyAssessmentId} out of arrears so the fine is not charged to the
+     * deposit twice. Before the fix, a replacement carried no link — so it landed
+     * in arrears as ordinary rent while the assessment went on pointing at a
+     * BOUNCED row that would never clear and went on counting in penalties. One
+     * 500 fine, deducted twice, with no screen showing why.</p>
+     *
+     * <p><b>The collection row is forced to PDC here.</b> {@code approve} writes a
+     * CASH row today, and cash cannot be deposited or bounced — so the shape this
+     * guards against is not reachable end to end yet, and a test that went through
+     * {@code approve} unaltered would fail at the bounce rather than prove
+     * anything. The fine collected by cheque is the obvious next thing the client
+     * asks for, and the register is one transition away from allowing it; the guard
+     * belongs in before then, not after.</p>
+     */
+    @Test
+    void aReplacedPenaltyReceiptIsStillOneFine() {
+        UUID leaseId = postedRentOnly();
+        BigDecimal arrears = preview(leaseId).getUnpaidRentTotal();
+
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        PenaltyAssessmentDTO approved = penalties.approve(proposed.id(), LocalDate.now());
+        UUID collectionId = approved.collectionChequeId();
+        asIfCollectedByCheque(collectionId);
+
+        // The renter's cheque for the fine bounces, and they hand over another.
+        chequeService.deposit(collectionId, ChequeActionRequest.on(LocalDate.now()));
+        chequeService.bounce(collectionId,
+                new ChequeActionRequest(LocalDate.now(), null, ChequeFailureReason.BOUNCE, null));
+        List<ChequeDTO> replacements = chequeService.replace(collectionId, new ReplaceChequeRequest(
+                List.of(new ChequeRowInput(null, null, LocalDate.now(), "900100", LocalDate.now(),
+                        "Emirates NBD", null, null, new BigDecimal("500"), "Penalty replacement",
+                        ChequeMode.PDC)),
+                LocalDate.now(), "Renter re-issued"));
+        UUID replacementId = replacements.get(0).id();
+
+        // The link followed the paper.
+        assertThat(chequeById(replacementId).getPenaltyAssessmentId())
+                .as("the replacement carries the fine it is collecting")
+                .isEqualTo(proposed.id());
+
+        SettlementPreviewDTO after = preview(leaseId);
+        assertThat(after.getPenaltyTotal()).as("still owed, once").isEqualByComparingTo("500");
+        assertThat(after.getUnpaidRentTotal())
+                .as("and not a second time as rent")
+                .isEqualByComparingTo(arrears);
+
+        // Paid: the fine drops out, and so does the row that carried it.
+        chequeService.deposit(replacementId, ChequeActionRequest.on(LocalDate.now()));
+        chequeService.clear(replacementId, ChequeActionRequest.on(LocalDate.now()));
+
+        SettlementPreviewDTO collected = preview(leaseId);
+        assertThat(collected.getPenaltyTotal()).isEqualByComparingTo("0");
+        assertThat(collected.getUnpaidRentTotal()).isEqualByComparingTo(arrears);
+    }
+
+    /**
+     * Reversing an approval still finds its collection row after the row has been
+     * replaced — the assessment points at the replacement, which is REGISTERED,
+     * which is exactly the state {@code reverse} cancels.
+     */
+    @Test
+    void anApprovalCanStillBeReversedAfterItsCollectionRowWasReplaced() {
+        UUID leaseId = postedRentOnly();
+        BigDecimal arrears = preview(leaseId).getUnpaidRentTotal();
+
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        PenaltyAssessmentDTO approved = penalties.approve(proposed.id(), LocalDate.now());
+        UUID collectionId = approved.collectionChequeId();
+        asIfCollectedByCheque(collectionId);
+
+        chequeService.deposit(collectionId, ChequeActionRequest.on(LocalDate.now()));
+        chequeService.bounce(collectionId,
+                new ChequeActionRequest(LocalDate.now(), null, ChequeFailureReason.BOUNCE, null));
+        chequeService.replace(collectionId, new ReplaceChequeRequest(
+                List.of(new ChequeRowInput(null, null, LocalDate.now(), "900101", LocalDate.now(),
+                        "Emirates NBD", null, null, new BigDecimal("500"), "Penalty replacement",
+                        ChequeMode.PDC)),
+                LocalDate.now(), null));
+
+        PenaltyAssessmentDTO reversed = penalties.reverse(proposed.id(), LocalDate.now(), "Raised in error");
+
+        assertThat(reversed.status()).isEqualTo(PenaltyAssessmentStatus.REVERSED);
+        assertThat(chequeById(reversed.collectionChequeId()).getStatus()).isEqualTo(ChequeStatus.CANCELLED);
+
+        SettlementPreviewDTO after = preview(leaseId);
+        assertThat(after.getPenaltyTotal()).isEqualByComparingTo("0");
+        assertThat(after.getUnpaidRentTotal()).isEqualByComparingTo(arrears);
+    }
+
+    /**
+     * Without a tenant in context every figure a settlement is built from is
+     * unreliable: the deposit and the arrears are JPQL reads that depend on the
+     * Hibernate tenant filter, which {@code TenantAspect} only enables when one is
+     * set. Refused in the service's own terms rather than left to surface from
+     * inside {@code LeaseDepositLedger} as an error about a deposit balance.
+     */
+    @Test
+    void aSettlementWithoutATenantInContextIsRefused() {
+        UUID leaseId = postedWithDeposit();
+        TenantContextHolder.clear();
+
+        assertThatThrownBy(() -> settlement.getSettlementPreview(leaseId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No tenant in context");
+    }
+
     // ------------------------------------------------------------------
     // fixtures
     // ------------------------------------------------------------------
@@ -307,6 +467,24 @@ class SettlementDepositLedgerIT {
                     List.of(PostingRequest.pair(
                             PostingRequest.dr(deposit.getId(), value).withDims(dims),
                             PostingRequest.cr(bank.getId(), value).withDims(dims)))));
+        });
+    }
+
+    private Cheque chequeById(UUID id) {
+        return tx.execute(s -> chequeRepo.findById(id).orElseThrow());
+    }
+
+    /**
+     * Turns an approved penalty's CASH collection row into a PDC one, so the fine
+     * can be banked, bounce and be replaced. See
+     * {@link #aReplacedPenaltyReceiptIsStillOneFine} for why this is done by hand.
+     */
+    private void asIfCollectedByCheque(UUID collectionChequeId) {
+        tx.executeWithoutResult(s -> {
+            Cheque row = chequeRepo.findById(collectionChequeId).orElseThrow();
+            row.setMode(ChequeMode.PDC);
+            row.setChequeNumber("900000");
+            chequeRepo.save(row);
         });
     }
 

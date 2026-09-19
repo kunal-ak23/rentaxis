@@ -344,11 +344,29 @@ public class SettlementService {
         return response;
     }
 
+    /**
+     * The lease, scoped to the caller's tenant.
+     *
+     * <p><b>A missing tenant is refused, not tolerated.</b> This used to skip the
+     * comparison when the context was empty, which was survivable while every
+     * figure came off the lease row itself. It is not now: the deposit is read from
+     * {@code journal_lines} and the arrears from the register, both through JPQL
+     * that relies on the Hibernate tenant filter — and {@code TenantAspect} only
+     * enables that filter when a tenant is set. Without one, a preview would either
+     * cross tenants or (via {@code LeaseDepositLedger}) fail deep inside the
+     * arithmetic with an error about a deposit balance, which tells the caller
+     * nothing about what is actually wrong. Refused here, once, in the caller's own
+     * terms.</p>
+     */
     private Lease findLeaseWithTenantCheck(UUID leaseId) {
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId == null) {
+            throw new IllegalStateException(
+                    "No tenant in context; a settlement cannot be read or written without one");
+        }
         Lease lease = leaseRepository.findById(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
-        UUID currentTenantId = TenantContextHolder.getTenantId();
-        if (currentTenantId != null && !currentTenantId.equals(lease.getTenantId())) {
+        if (!currentTenantId.equals(lease.getTenantId())) {
             throw new NotFoundException("Lease not found");
         }
         return lease;
