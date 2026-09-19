@@ -132,8 +132,12 @@ describe("sidebar finance gating", () => {
 
     /** ChequeController's STAFF group admits PROPERTY_MANAGER, unlike the old
      *  Payments link — pinned by walkthrough 13 for the OTHER finance pages,
-     *  which still refuse a property manager outright. */
-    it("offers a property manager the cheque register but no other finance or staff link", () => {
+     *  which still refuse a property manager outright. The penalty queue is
+     *  the one deliberate exception: PenaltyAssessmentController#list/#propose
+     *  admits PROPERTY_MANAGER too (canProposePenalties) — spotting that a
+     *  renter should be fined is part of running a building, even though
+     *  deciding one is not. */
+    it("offers a property manager the cheque register and the penalty queue, but no other finance or staff link", () => {
         const { container } = renderAs("PROPERTY_MANAGER");
         const links = hrefs(container);
 
@@ -142,8 +146,15 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/cheques/collection",
             "/dashboard/finance/cheques/return-replace",
             "/dashboard/finance/cheques/post-dated",
+            "/dashboard/finance/penalties",
         ]));
-        expect(links.filter(h => h.startsWith("/dashboard/finance/") && !h.startsWith("/dashboard/finance/cheques"))).toEqual([]);
+        expect(
+            links.filter(h =>
+                h.startsWith("/dashboard/finance/") &&
+                !h.startsWith("/dashboard/finance/cheques") &&
+                h !== "/dashboard/finance/penalties",
+            ),
+        ).toEqual([]);
         expect(links).not.toContain("/dashboard/staff");
     });
 

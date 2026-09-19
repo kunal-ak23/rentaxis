@@ -147,6 +147,12 @@ export default function MvpSidebar() {
             { name: tCheques("returnReplace"), href: "/dashboard/finance/cheques/return-replace", icon: RefreshCcw, tourId: 'sidebar-cheques-return-replace' },
             { name: tCheques("postDated"), href: "/dashboard/finance/cheques/post-dated", icon: CalendarClock, tourId: 'sidebar-cheques-post-dated' },
         ] : []),
+        // PenaltyAssessmentController#list/#propose — same role set as canManageCheques
+        // minus nothing: SA/TA/ACCOUNTANT/PM all see the queue, deciding is gated
+        // inside it (canApprovePenalties).
+        ...(hasPermission(userRole, 'canProposePenalties') ? [
+            { name: tCheques("penalties"), href: "/dashboard/finance/penalties", icon: AlertTriangle, tourId: 'sidebar-penalties' },
+        ] : []),
         ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
             { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
             { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },

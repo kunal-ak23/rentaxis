@@ -81,11 +81,19 @@ describe("LeasePenaltiesTab role gating", () => {
         expect(screen.queryByTestId("penalty-approve-0")).not.toBeInTheDocument();
     });
 
-    it("surfaces the backend's own message when an action is refused", async () => {
+    it("opens a date-picker confirm before calling approve, and surfaces the backend's own message when it is refused", async () => {
         const { ApiError } = await import("@/lib/api/leasing");
         api.approve.mockRejectedValue(new ApiError(409, "This penalty has already been waived."));
         renderTab("ACCOUNTANT");
         (await screen.findByTestId("penalty-approve-0")).click();
+
+        // Approve is gated behind a confirm dialog carrying a date picker —
+        // the row action alone must not call the API.
+        expect(await screen.findByTestId("penalty-decision-date")).toBeInTheDocument();
+        expect(api.approve).not.toHaveBeenCalled();
+
+        screen.getByTestId("penalty-approve-confirm").click();
+        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", expect.any(String)));
         await waitFor(() =>
             expect(screen.getByTestId("penalty-error")).toHaveTextContent("This penalty has already been waived."),
         );
