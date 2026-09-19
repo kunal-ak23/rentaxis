@@ -228,6 +228,41 @@ class LeaseServiceUnitOccupancyTest {
                 .hasMessageContaining("already has an active lease");
     }
 
+    /**
+     * The precondition {@code activateLease} carried, kept on its successor.
+     *
+     * <p>The method is public, it claims a unit, it publishes an activation e-mail
+     * and it writes a transition row. Handed an already-ACTIVE lease it would do all
+     * three for a contract that is not becoming active — a second LEASE_ACTIVATED to
+     * the renter and a DRAFT→ACTIVE row that never happened.</p>
+     */
+    @Test
+    void markActiveOnPosting_refusesALeaseThatIsNotDraftOrPendingSignature() {
+        for (LeaseStatus status : List.of(LeaseStatus.ACTIVE, LeaseStatus.TERMINATED, LeaseStatus.RENEWED)) {
+            Lease lease = lease(status);
+            lockableUnit(lease);
+
+            assertThatThrownBy(() -> service.markActiveOnPosting(lease, "Lease posted TCO-26/1"))
+                    .as("from " + status)
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("Only a DRAFT or PENDING_SIGNATURE lease can become ACTIVE");
+            assertThat(lease.getStatus()).isEqualTo(status);
+        }
+        verify(unitRepository, org.mockito.Mockito.never()).save(any(Unit.class));
+    }
+
+    /** PENDING_SIGNATURE is the other legitimate starting point: the renter has accepted. */
+    @Test
+    void markActiveOnPosting_acceptsAPendingSignatureLease() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        lockableUnit(lease);
+
+        service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
+
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+    }
+
     @Test
     void markActiveOnPosting_isNotBlockedByItsOwnAlreadyActiveRow() {
         Lease lease = lease(LeaseStatus.DRAFT);

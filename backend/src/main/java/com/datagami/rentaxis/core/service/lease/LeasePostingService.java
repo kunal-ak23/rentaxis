@@ -12,8 +12,6 @@ import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
-import com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions;
-import com.datagami.rentaxis.core.service.ledger.PostingRequest.Line;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
@@ -28,10 +26,12 @@ import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -44,8 +44,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -89,27 +87,25 @@ import java.util.UUID;
 @Service
 public class LeasePostingService {
 
-    /** "53,000.00" — the shape an accountant reads amounts in, in the refusal messages. */
-    private static final DecimalFormat MONEY =
-            new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.ROOT));
-
     /**
-     * Roles every posted lease needs whatever it charges for: the receivable both
-     * journals pivot on, the PDC account the instruments sit in, and the bank the
-     * cheques will be deposited to. BANK posts nothing today — it is the cheque
-     * lifecycle that uses it — but a lease whose property has no bank mapped is a
-     * lease whose first deposit run will fail, and the accountant would rather hear
-     * that now (spec §5.4).
+     * "53,000.00" — the shape an accountant reads amounts in, in the refusal
+     * messages. Formatted per call rather than through a shared
+     * {@code DecimalFormat}: that class is mutable and not thread-safe, and a
+     * static one shared by every concurrent post is a data race that shows up as a
+     * garbled figure in an error message nobody can reproduce.
      */
-    private static final Set<AccountRole> ALWAYS_REQUIRED =
-            Set.of(AccountRole.RENT_RECEIVABLE, AccountRole.PDC_RECEIVABLE, AccountRole.BANK);
+    private static String money(BigDecimal amount) {
+        return String.format(Locale.ROOT, "%,.2f", amount);
+    }
 
     private final LeaseRepository leaseRepository;
     private final LeaseLineRepository leaseLineRepository;
     private final ChequeRepository chequeRepository;
+    private final AccountRepository accountRepository;
     private final TenantFiscalSettingsRepository fiscalSettingsRepository;
     private final AccountResolver accountResolver;
     private final PostingService postingService;
+    private final LeaseChequeRegistrar chequeRegistrar;
     private final LeaseService leaseService;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
@@ -117,18 +113,22 @@ public class LeasePostingService {
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
+                               AccountRepository accountRepository,
                                TenantFiscalSettingsRepository fiscalSettingsRepository,
                                AccountResolver accountResolver,
                                PostingService postingService,
+                               LeaseChequeRegistrar chequeRegistrar,
                                LeaseService leaseService,
                                LeaseAccessPolicy leaseAccessPolicy,
                                ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
+        this.accountRepository = accountRepository;
         this.fiscalSettingsRepository = fiscalSettingsRepository;
         this.accountResolver = accountResolver;
         this.postingService = postingService;
+        this.chequeRegistrar = chequeRegistrar;
         this.leaseService = leaseService;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.events = events;
@@ -202,28 +202,48 @@ public class LeasePostingService {
     }
 
     /**
-     * The roles this lease's posting needs to resolve against its property
-     * (spec §5.4): whatever its lines credit, plus {@link #ALWAYS_REQUIRED}, plus
-     * OUTPUT_VAT when some line actually carries VAT.
+     * The roles this posting actually needs resolved against the property
+     * (spec §5.4), and nothing more.
      *
-     * <p>OUTPUT_VAT is conditional because it is a tenant-level mapping most
-     * landlords of residential property will never make, and demanding it from a
-     * VAT-free contract would refuse a lease over an account it will never post
-     * to.</p>
+     * <p>Only what is genuinely reached for:</p>
+     * <ul>
+     *   <li>{@code RENT_RECEIVABLE} — both journals pivot on it, <em>unless</em> the
+     *       lease names its own receivable, in which case the role is never
+     *       consulted;</li>
+     *   <li>{@code PDC_RECEIVABLE} — every PDR debits it;</li>
+     *   <li>{@code OUTPUT_VAT} — only when some line actually carries VAT. It is a
+     *       tenant-level mapping most residential landlords will never make, and
+     *       demanding it from a VAT-free contract refuses a lease over an account it
+     *       would never post to;</li>
+     *   <li>a line's own role — only when the line has <em>no</em> credit account, so
+     *       the role is the thing that was supposed to supply one. A line that names
+     *       its account outright does not need its role mapped: the TCO credits the
+     *       account by id and the role is not read. Requiring it anyway refused
+     *       perfectly good contracts over a mapping the posting never touches;</li>
+     *   <li>{@code BANK} — only when some cheque row names no debit account of its
+     *       own. The PDR does not touch the bank; BANK matters at clear time, and a
+     *       row with nowhere for its cleared funds to land would strand. A row that
+     *       already carries an account is not the property mapping's business.</li>
+     * </ul>
      */
-    @Transactional(readOnly = true)
-    public Set<AccountRole> requiredRoles(Lease lease) {
-        return requiredRoles(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()));
-    }
-
-    private static Set<AccountRole> requiredRoles(List<LeaseLine> lines) {
-        Set<AccountRole> roles = EnumSet.copyOf(ALWAYS_REQUIRED);
+    private static Set<AccountRole> requiredRoles(Lease lease, List<LeaseLine> lines, List<Cheque> cheques) {
+        Set<AccountRole> roles = EnumSet.of(AccountRole.PDC_RECEIVABLE);
+        if (lease.getReceivableAccountId() == null) {
+            roles.add(AccountRole.RENT_RECEIVABLE);
+        }
         for (LeaseLine line : lines) {
-            if (line.getChargeType() != null && line.getChargeType().getRole() != null) {
+            if (line.getCreditAccount() == null
+                    && line.getChargeType() != null && line.getChargeType().getRole() != null) {
                 roles.add(line.getChargeType().getRole());
             }
             if (LeaseVat.vatOf(line).signum() > 0) {
                 roles.add(AccountRole.OUTPUT_VAT);
+            }
+        }
+        for (Cheque c : cheques) {
+            if (c.getDebitAccount() == null) {
+                roles.add(AccountRole.BANK);
+                break;
             }
         }
         return roles;
@@ -276,7 +296,7 @@ public class LeasePostingService {
 
         // ACTIVE is the right status for an amendment and the wrong one for a first
         // post, so the status rule is checked above and skipped here.
-        PostingPlan plan = validate(lease, lines, cheques, false);
+        PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
 
         postingService.reverse(reversedJournalId, LocalDate.now(), reason);
@@ -313,23 +333,42 @@ public class LeasePostingService {
      * "Transaction silently rolled back".</p>
      */
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques) {
-        return validate(lease, lines, cheques, true);
+        return validate(lease, lines, cheques, Preconditions.FOR_POST);
     }
 
-    private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, boolean checkStatus) {
-        List<String> lineErrors = new ArrayList<>();
+    /**
+     * Which "is this lease untouched?" checks apply.
+     *
+     * <p>They are two separate questions and an amendment answers them differently:
+     * an ACTIVE lease with REGISTERED cheques is exactly what amendment operates on,
+     * while for a first post either one would mean the contract is already on the
+     * books. One shared flag hid that, and reading {@code validate(…, false)} at the
+     * call site told you nothing about which rule was being waived.</p>
+     */
+    private record Preconditions(boolean leaseMustBeUnposted, boolean chequesMustBeDraft) {
+        static final Preconditions FOR_POST = new Preconditions(true, true);
+        static final Preconditions FOR_AMEND = new Preconditions(false, false);
+    }
+
+    private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks) {
+        // Errors about the accounts this posting would use — a line's credit account
+        // or the lease's receivable override. They rank above the role-level
+        // complaint, which is usually the same gap seen from further away.
+        List<String> accountErrors = new ArrayList<>();
         List<String> otherErrors = new ArrayList<>();
         Set<AccountRole> missingRoles = EnumSet.noneOf(AccountRole.class);
 
-        if (checkStatus && lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+        if (checks.leaseMustBeUnposted()
+                && lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
             otherErrors.add("Only a DRAFT or PENDING_SIGNATURE lease can be posted; this one is " + lease.getStatus() + ".");
         }
         if (lease.getContractDate() == null) {
             otherErrors.add("The lease has no contract date.");
         }
         if (lines.isEmpty()) {
-            lineErrors.add("The lease has no charged lines.");
+            accountErrors.add("The lease has no charged lines.");
         }
+        accountErrors.addAll(receivableOverrideErrors(lease));
 
         BigDecimal net = BigDecimal.ZERO;
         BigDecimal gross = BigDecimal.ZERO;
@@ -347,40 +386,40 @@ public class LeasePostingService {
             if (credit == null) {
                 // The draft was allowed to be saved unmapped (see LeaseLine); this is
                 // where that debt comes due.
-                lineErrors.add(where + " has no credit account.");
+                accountErrors.add(where + " has no credit account.");
                 continue;
             }
             // Re-checked rather than trusted: the account was an active leaf of the
             // right type when the line was entered, and a chart of accounts is edited
             // between drafting a lease and posting it.
             if (credit.isGroup()) {
-                lineErrors.add(where + ": credit account " + credit.getCode() + " is a group account.");
+                accountErrors.add(where + ": credit account " + credit.getCode() + " is a group account.");
                 continue;
             }
             if (!credit.isActive()) {
-                lineErrors.add(where + ": credit account " + credit.getCode() + " is inactive.");
+                accountErrors.add(where + ": credit account " + credit.getCode() + " is inactive.");
                 continue;
             }
 
             String narration = narrationOf(line, type);
             if (lineNet.signum() > 0) {
                 pairs.add(PostingRequest.pair(
-                        drReceivable(lease, lineNet).withNarration(narration),
+                        LeaseChequeRegistrar.drReceivable(lease, lineNet).withNarration(narration),
                         PostingRequest.cr(credit.getId(), lineNet).withNarration(narration)));
             }
             if (lineVat.signum() > 0) {
                 String vatNarration = "VAT on " + (type != null ? type.getNameEn() : code);
                 pairs.add(PostingRequest.pair(
-                        drReceivable(lease, lineVat).withNarration(vatNarration),
+                        LeaseChequeRegistrar.drReceivable(lease, lineVat).withNarration(vatNarration),
                         PostingRequest.cr(AccountRole.OUTPUT_VAT, lineVat).withNarration(vatNarration)));
             }
         }
         if (!lines.isEmpty() && gross.signum() <= 0) {
-            lineErrors.add("The lease charges nothing to post.");
+            accountErrors.add("The lease charges nothing to post.");
         }
 
         UUID propertyId = propertyIdOf(lease);
-        for (AccountRole role : requiredRoles(lines)) {
+        for (AccountRole role : requiredRoles(lease, lines, cheques)) {
             if (accountResolver.resolveOrNull(role, propertyId) == null) {
                 missingRoles.add(role);
             }
@@ -392,11 +431,18 @@ public class LeasePostingService {
         }
         for (Cheque c : cheques) {
             chequeTotal = chequeTotal.add(c.getAmount() == null ? BigDecimal.ZERO : c.getAmount());
-            if (checkStatus && c.getStatus() != ChequeStatus.DRAFT) {
+            if (checks.chequesMustBeDraft() && c.getStatus() != ChequeStatus.DRAFT) {
                 // A registered row already has a PDR against it; posting the lease
                 // would raise a second one for the same instrument.
                 otherErrors.add("Cheque " + label(c) + " is " + c.getStatus()
                         + "; a lease can only be posted while every cheque is still DRAFT.");
+            }
+            // Reported here rather than left to PostingService's "Line amounts must be
+            // positive": that one fires halfway through writing the grid's journals,
+            // so the dry run would have promised a clean post and the real one would
+            // die on the fourth PDR.
+            if (c.getAmount() == null || c.getAmount().signum() <= 0) {
+                otherErrors.add("Cheque " + label(c) + " must be for an amount greater than zero.");
             }
             if (c.getChequeDate() == null) {
                 otherErrors.add("Cheque " + label(c) + " has no cheque date.");
@@ -406,14 +452,45 @@ public class LeasePostingService {
             }
         }
         if (!cheques.isEmpty() && chequeTotal.compareTo(gross) != 0) {
-            otherErrors.add("Cheque grid totals " + MONEY.format(chequeTotal)
+            otherErrors.add("Cheque grid totals " + money(chequeTotal)
                     + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
-                    + MONEY.format(gross) + ".");
+                    + money(gross) + ".");
         }
 
         otherErrors.addAll(periodLockErrors(lease, cheques));
 
-        return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, lineErrors, otherErrors);
+        return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, accountErrors, otherErrors);
+    }
+
+    /**
+     * The lease's own receivable account, when it overrides the property's
+     * (spec §6.3). Both the TCO's debits and every PDR's credit go to it, so a bad
+     * one poisons the whole posting.
+     *
+     * <p>Loaded through {@code findByIdScopedToTenant} — JPQL, so the Hibernate
+     * tenant filter applies. Spring Data's {@code findById} bypasses filters in
+     * Hibernate 7, and this id reached the row from a request body: handing it
+     * straight to {@code PostingService}, which looks accounts up by id, would let a
+     * lease in one tenant raise its receivable against another tenant's leaf.</p>
+     */
+    private List<String> receivableOverrideErrors(Lease lease) {
+        UUID id = lease.getReceivableAccountId();
+        if (id == null) return List.of();
+        String where = "The lease's receivable account ";
+        Account account = accountRepository.findByIdScopedToTenant(id).orElse(null);
+        if (account == null) {
+            return List.of(where + id + " does not exist.");
+        }
+        if (account.isGroup()) {
+            return List.of(where + account.getCode() + " is a group account.");
+        }
+        if (!account.isActive()) {
+            return List.of(where + account.getCode() + " is inactive.");
+        }
+        if (account.getAccountType() != AccountType.ASSET) {
+            return List.of(where + account.getCode() + " must be an ASSET account.");
+        }
+        return List.of();
     }
 
     /**
@@ -460,11 +537,11 @@ public class LeasePostingService {
                                BigDecimal contractValueInclVat,
                                BigDecimal chequeTotal,
                                Set<AccountRole> missingRoles,
-                               List<String> lineErrors,
+                               List<String> accountErrors,
                                List<String> otherErrors) {
 
         List<String> errors(UUID propertyId) {
-            List<String> all = new ArrayList<>(lineErrors);
+            List<String> all = new ArrayList<>(accountErrors);
             if (!missingRoles.isEmpty()) {
                 all.add(new UnmappedAccountRoleException(missingRoles, propertyId).getMessage());
             }
@@ -473,7 +550,7 @@ public class LeasePostingService {
         }
 
         void throwIfRefused(UUID propertyId) {
-            if (lineErrors.isEmpty() && otherErrors.isEmpty() && !missingRoles.isEmpty()) {
+            if (accountErrors.isEmpty() && otherErrors.isEmpty() && !missingRoles.isEmpty()) {
                 throw new UnmappedAccountRoleException(missingRoles, propertyId);
             }
             List<String> all = errors(propertyId);
@@ -492,7 +569,7 @@ public class LeasePostingService {
                 JournalDocType.TCO,
                 lease.getContractDate(),
                 contractNarration(lease),
-                dimensions(lease, null),
+                LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.LEASE,
                 lease.getId(),
                 null,
@@ -504,26 +581,17 @@ public class LeasePostingService {
      * receivable in exactly the way a cheque dated March is, and giving cash rows
      * their own treatment is how the register and the ledger came to disagree about
      * what was outstanding.
+     *
+     * <p>Delegated row by row to {@link LeaseChequeRegistrar} rather than posted
+     * here. A lease posts its whole grid at once; {@code ChequeService} registers a
+     * replacement, a penalty row or a late receipt one at a time on a lease already
+     * on the books. Both have to raise the identical entry — same pair, same
+     * dimensions, same date rule, same receivable override — and two copies of that
+     * would eventually differ on exactly the detail nobody re-reads.</p>
      */
     private void registerCheques(Lease lease, List<Cheque> cheques) {
         for (Cheque c : cheques) {
-            String narration = c.getNarration() != null && !c.getNarration().isBlank()
-                    ? c.getNarration() : "Instalment " + c.getSeqNo();
-            JournalEntry pdr = postingService.post(PostingRequest.ofPairs(
-                    JournalDocType.PDR,
-                    c.getPostingDate(),
-                    narration,
-                    dimensions(lease, c.getId()),
-                    JournalSourceType.CHEQUE,
-                    c.getId(),
-                    null,
-                    List.of(PostingRequest.pair(
-                            PostingRequest.dr(AccountRole.PDC_RECEIVABLE, c.getAmount()).withNarration(narration),
-                            crReceivable(lease, c.getAmount()).withNarration(narration)))));
-            c.setPdrJournalId(pdr.getId());
-            c.setStatus(ChequeStatus.REGISTERED);
-            c.setStatusChangedAt(Instant.now());
-            chequeRepository.save(c);
+            chequeRegistrar.register(lease, c);
         }
     }
 
@@ -579,22 +647,6 @@ public class LeasePostingService {
     }
 
     /**
-     * The receivable side of both journals: the lease's own override if it carries
-     * one, else the property's RENT_RECEIVABLE mapping (spec §6.3).
-     */
-    private static Line drReceivable(Lease lease, BigDecimal amount) {
-        return lease.getReceivableAccountId() != null
-                ? PostingRequest.dr(lease.getReceivableAccountId(), amount)
-                : PostingRequest.dr(AccountRole.RENT_RECEIVABLE, amount);
-    }
-
-    private static Line crReceivable(Lease lease, BigDecimal amount) {
-        return lease.getReceivableAccountId() != null
-                ? PostingRequest.cr(lease.getReceivableAccountId(), amount)
-                : PostingRequest.cr(AccountRole.RENT_RECEIVABLE, amount);
-    }
-
-    /**
      * What the ledger row is called. The line's own narration when the user wrote
      * one — "Rent 01-Oct-26 to 30-Sep-27" is more use in a ledger than "Rent" —
      * and the charge type's name otherwise.
@@ -612,17 +664,6 @@ public class LeasePostingService {
         if (unit != null) sb.append(' ').append(unit.getUnitNumber());
         if (lease.getContractNumber() != null) sb.append(" - ").append(lease.getContractNumber());
         return sb.toString();
-    }
-
-    private static Dimensions dimensions(Lease lease, UUID chequeId) {
-        Unit unit = lease.getUnit();
-        Property property = unit != null ? unit.getProperty() : null;
-        return new Dimensions(
-                property != null ? property.getId() : null,
-                unit != null ? unit.getId() : null,
-                lease.getId(),
-                lease.getRenter() != null ? lease.getRenter().getId() : null,
-                chequeId);
     }
 
     private static UUID propertyIdOf(Lease lease) {

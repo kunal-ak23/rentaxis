@@ -687,11 +687,22 @@ public class LeaseService {
      * than moving into the posting service: they are the lease's business and
      * {@link #claimUnitForLease} is the only correct way to take a unit.</p>
      *
+     * <p>The precondition is {@code activateLease}'s, kept rather than inherited
+     * from the caller: DRAFT or PENDING_SIGNATURE only. {@code LeasePostingService}
+     * checks the same thing under the lease's row lock, but this method is public
+     * and it claims a unit, publishes an activation e-mail and writes a transition
+     * row — handing it an already-ACTIVE lease, or a TERMINATED one, would do all
+     * three for a contract that is not becoming active at all.</p>
+     *
      * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/1629"}
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {
         LeaseStatus previousStatus = lease.getStatus();
+        if (previousStatus != LeaseStatus.DRAFT && previousStatus != LeaseStatus.PENDING_SIGNATURE) {
+            throw new BusinessRuleViolationException(
+                    "Only a DRAFT or PENDING_SIGNATURE lease can become ACTIVE; this one is " + previousStatus);
+        }
         lease.setStatus(LeaseStatus.ACTIVE);
 
         claimUnitForLease(lease);

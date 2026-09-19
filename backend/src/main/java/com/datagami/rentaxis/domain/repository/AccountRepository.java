@@ -14,6 +14,17 @@ import java.util.UUID;
 @Repository
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 
+    /**
+     * Tenant-aware lookup by id. Unlike Spring Data's {@code findById}, this goes
+     * through JPQL — which applies Hibernate {@code @Filter} annotations. The
+     * default {@code findById} bypasses filters in Hibernate 7, so an account id
+     * that arrived on a request body (a lease line's credit account, a lease's
+     * receivable override) must be read through this one or a caller in tenant A
+     * can point their books at a leaf belonging to tenant B.
+     */
+    @Query("SELECT a FROM Account a WHERE a.id = :id")
+    Optional<Account> findByIdScopedToTenant(@Param("id") UUID id);
+
     Optional<Account> findByCode(String code);
 
     Optional<Account> findByCodeAndTenantId(String code, UUID tenantId);

@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseDryRunResponse;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -363,15 +365,62 @@ class LeasePostingServiceIT {
     @Test
     void postRejectsUnmappedRolesListingAllOfThem() {
         UUID leaseId = readyToPost();
-        unmap(AccountRole.PDC_RECEIVABLE, AccountRole.BANK);
+        unmap(AccountRole.PDC_RECEIVABLE, AccountRole.RENT_RECEIVABLE);
 
         assertThatThrownBy(() -> posting.post(leaseId))
                 .isInstanceOf(UnmappedAccountRoleException.class)
-                .hasMessageContaining("BANK")
-                .hasMessageContaining("PDC_RECEIVABLE");
+                .hasMessageContaining("PDC_RECEIVABLE")
+                .hasMessageContaining("RENT_RECEIVABLE");
 
         assertThat(journalEntryRows()).isZero();
         assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * BANK is not required by the posting — no PDR touches it. It is required only
+     * when a cheque row names no account of its own, because then there is nowhere
+     * for that row's funds to land when it clears and the row would strand.
+     */
+    @Test
+    void bankIsRequiredOnlyWhenAChequeRowNamesNoAccountOfItsOwn() {
+        // Grid cut while BANK was mapped: every row carries the leaf, so unmapping
+        // the role afterwards changes nothing about this posting.
+        UUID withAccounts = readyToPost();
+        unmap(AccountRole.BANK);
+        assertThat(posting.dryRun(withAccounts).ok()).isTrue();
+        assertThat(posting.post(withAccounts).tcoEntryNumber()).isEqualTo("TCO-26/1");
+
+        // A grid cut with no BANK mapping has no debit account on any row, and that
+        // is the case the guard exists for.
+        Unit otherUnit = fixtures.createUnit(fixtures.property(), "102");
+        UUID stranded = draft(otherUnit, List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")));
+        grid(stranded);
+        tx.executeWithoutResult(s -> assertThat(chequeRepo.findByLease_IdOrderBySeqNoAsc(stranded))
+                .allMatch(c -> c.getDebitAccount() == null));
+
+        assertThatThrownBy(() -> posting.post(stranded))
+                .isInstanceOf(UnmappedAccountRoleException.class)
+                .hasMessageContaining("BANK");
+    }
+
+    /**
+     * A line that names its credit account outright does not need its charge type's
+     * role mapped: the TCO credits the account by id and the role is never read.
+     * Requiring it anyway refused perfectly good contracts over a mapping the
+     * posting does not touch.
+     */
+    @Test
+    void anExplicitCreditAccountDoesNotRequireItsRoleToBeMapped() {
+        Account adminFee = leaf(AccountRole.ADMIN_FEE);
+        unmap(AccountRole.ADMIN_FEE);
+        UUID leaseId = draft(fixtures.unit(), List.of(
+                line("RENT", "51000"),
+                lineCreditedTo("ADMIN_FEE", "2000", adminFee.getId())));
+        grid(leaseId);
+
+        PostLeaseResponse r = posting.post(leaseId);
+
+        assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(adminFee.getId());
     }
 
     /**
@@ -437,6 +486,223 @@ class LeasePostingServiceIT {
         assertThatThrownBy(() -> posting.post(leaseId))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Only a DRAFT or PENDING_SIGNATURE lease can be posted");
+    }
+
+    /**
+     * Each PDR files on <em>its own</em> row's posting date, not on the contract's.
+     *
+     * <p>They coincide for a grid cut with the contract, which is why the happy path
+     * cannot tell the two rules apart. A row taken later — a deposit the renter
+     * brought in a week after signing — has to file in the period it was actually
+     * received, or the month's PDC receivable balance is money the landlord was not
+     * yet holding.</p>
+     */
+    @Test
+    void eachPdrFilesOnItsOwnRowsPostingDate() {
+        UUID leaseId = draft();
+        List<ChequeDTO> generated = grid(leaseId);
+        LocalDate late = LocalDate.of(2026, 9, 24);
+
+        // Re-save the grid with row 5 (the admin fee) posting a week later.
+        List<ChequeRowInput> rows = new ArrayList<>();
+        for (int i = 0; i < generated.size(); i++) {
+            ChequeDTO r = generated.get(i);
+            LocalDate postingDate = i == 4 ? late : r.postingDate();
+            rows.add(new ChequeRowInput(r.id(), null, postingDate, r.chequeNumber(), r.chequeDate(),
+                    r.payeeBank(), r.payerName(), r.debitAccountId(), r.amount(), r.narration(), r.mode()));
+        }
+        cheques.saveRows(leaseId, rows);
+
+        PostLeaseResponse r = posting.post(leaseId);
+
+        assertThat(r.cheques()).hasSize(5);
+        for (ChequeDTO c : r.cheques()) {
+            JournalEntry pdr = tx.execute(s -> entries.findById(c.pdrJournalId()).orElseThrow());
+            assertThat(pdr.getEntryDate()).as("PDR for row " + c.seqNo()).isEqualTo(c.postingDate());
+        }
+        // Four on the contract date, one on its own — which is the distinction a
+        // `lease.getContractDate()` shortcut would erase.
+        assertThat(r.cheques()).extracting(ChequeDTO::postingDate)
+                .containsExactly(CONTRACT_DATE, CONTRACT_DATE, CONTRACT_DATE, CONTRACT_DATE, late);
+        JournalEntry lastPdr = tx.execute(s -> entries.findById(r.cheques().get(4).pdrJournalId()).orElseThrow());
+        assertThat(lastPdr.getEntryDate()).isEqualTo(late);
+        assertThat(lastPdr.getEntryDate()).isNotEqualTo(CONTRACT_DATE);
+    }
+
+    /**
+     * A failure partway through writing the grid leaves nothing at all.
+     *
+     * <p>The lock is set so the contract date is open and only the last cheque's
+     * posting date falls inside it, which is the nastiest shape: the TCO is
+     * perfectly postable and four PDRs would have gone in before the fifth was
+     * refused. Everything rolls back together, so the guard's value is that the
+     * refusal arrives before any of it rather than after most of it.</p>
+     */
+    @Test
+    void aLockedPeriodOnOneLateChequeRollsTheWholePostBack() {
+        UUID leaseId = draft();
+        List<ChequeDTO> generated = grid(leaseId);
+        LocalDate late = LocalDate.of(2026, 8, 20);
+
+        List<ChequeRowInput> rows = new ArrayList<>();
+        for (int i = 0; i < generated.size(); i++) {
+            ChequeDTO r = generated.get(i);
+            LocalDate postingDate = i == 4 ? late : r.postingDate();
+            rows.add(new ChequeRowInput(r.id(), null, postingDate, r.chequeNumber(), r.chequeDate(),
+                    r.payeeBank(), r.payerName(), r.debitAccountId(), r.amount(), r.narration(), r.mode()));
+        }
+        cheques.saveRows(leaseId, rows);
+
+        // 2026-08-31 leaves the contract date (16 Sep) open and closes only the
+        // 20 Aug row.
+        fiscal.lockThrough(LocalDate.of(2026, 8, 31));
+
+        PostLeaseDryRunResponse dry = posting.dryRun(leaseId);
+        assertThat(dry.ok()).isFalse();
+        assertThat(dry.errors()).hasSize(1);
+        assertThat(dry.errors().get(0)).isEqualTo(
+                "Cheque row 5 cannot post on 2026-08-20: books are locked through 2026-08-31.");
+
+        assertThatThrownBy(() -> posting.post(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque row 5 cannot post on 2026-08-20")
+                .hasMessageContaining("books are locked through 2026-08-31");
+
+        // Nothing at all: no TCO, no four-fifths of a grid, no claimed unit.
+        assertThat(journalEntryRows()).isZero();
+        Lease lease = reread(leaseId);
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+        assertThat(lease.getPostingJournalId()).isNull();
+        assertThat(lease.getPostedAt()).isNull();
+        tx.executeWithoutResult(s -> assertThat(chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId))
+                .allMatch(c -> c.getStatus() == ChequeStatus.DRAFT && c.getPdrJournalId() == null));
+        Unit unit = tx.execute(s -> unitRepo.findById(fixtures.unit().getId()).orElseThrow());
+        assertThat(unit.getStatus()).isNotEqualTo(UnitStatus.OCCUPIED);
+        assertThat(unit.getCurrentTenantName()).isNull();
+    }
+
+    /**
+     * A zero-amount row cannot reach the posting guard at all, and this is what
+     * stops it: {@code ck_cheques_amount_positive} (changeset 83) refuses the row at
+     * the database. The service-level check in {@code validate} is therefore
+     * defence-in-depth rather than the barrier — it exists so that a future writer
+     * building cheques in memory gets a sentence in the dry run instead of
+     * {@code PostingService}'s "Line amounts must be positive" halfway through the
+     * grid, and this test records why it is not otherwise exercised.
+     */
+    @Test
+    void aZeroAmountChequeRowCannotExistInTheFirstPlace() {
+        UUID leaseId = readyToPost();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).get(4);
+            c.setAmount(BigDecimal.ZERO);
+            chequeRepo.saveAndFlush(c);
+        })).isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_cheques_amount_positive");
+
+        // The grid editor refuses it with a sentence long before that.
+        List<ChequeDTO> grid = cheques.list(leaseId);
+        ChequeDTO first = grid.get(0);
+        List<ChequeRowInput> zeroed = List.of(new ChequeRowInput(first.id(), null, first.postingDate(),
+                first.chequeNumber(), first.chequeDate(), first.payeeBank(), first.payerName(),
+                first.debitAccountId(), BigDecimal.ZERO, first.narration(), first.mode()));
+        assertThatThrownBy(() -> cheques.saveRows(leaseId, zeroed))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("greater than zero");
+    }
+
+    // ------------------------------------------------------------------
+    // the lease's own receivable account
+    // ------------------------------------------------------------------
+
+    /**
+     * A lease may name its own receivable (spec §6.3). Both halves of the contract
+     * have to land on it — the TCO's debits and every PDR's credit — or the two sit
+     * in different ledgers and neither nets to zero.
+     */
+    @Test
+    void theLeasesOwnReceivableAccountCarriesBothHalvesOfTheContract() {
+        UUID leaseId = readyToPost();
+        Account ownReceivable = tx.execute(s -> accountService.createLeaf(
+                "Rent Receivable - Galah 2", accountService.getAccountByCode("A-02-01"), fixtures.property().getId()));
+        setReceivableOverride(leaseId, ownReceivable.getId());
+        Account propertyReceivable = leaf(AccountRole.RENT_RECEIVABLE);
+
+        PostLeaseResponse r = posting.post(leaseId);
+
+        List<JournalLine> tcoLines = linesOf(r.tcoJournalId());
+        assertThat(tcoLines.get(0).getAccountId()).isEqualTo(ownReceivable.getId());
+        assertThat(tcoLines.get(2).getAccountId()).isEqualTo(ownReceivable.getId());
+        for (ChequeDTO c : r.cheques()) {
+            List<JournalLine> pdrLines = linesOf(c.pdrJournalId());
+            assertThat(pdrLines.get(1).getAccountId()).isEqualTo(ownReceivable.getId());
+        }
+
+        // It nets to zero, and the property's own leaf was never touched.
+        tx.executeWithoutResult(s -> {
+            assertThat(ledger.accountLedger(ownReceivable.getId(),
+                    new LedgerFilter(null, null, null, null, leaseId, null)).closingBalance())
+                    .isEqualByComparingTo("0");
+            assertThat(ledger.accountLedger(propertyReceivable.getId(),
+                    new LedgerFilter(null, null, null, null, leaseId, null)).rows()).isEmpty();
+        });
+    }
+
+    /** The override is re-checked at posting time, exactly as a line's credit account is. */
+    @Test
+    void anUnusableReceivableOverrideIsRefused() {
+        UUID groupLease = readyToPost();
+        Account group = tx.execute(s -> accountService.getAccountByCode("A-02-01"));
+        setReceivableOverride(groupLease, group.getId());
+
+        assertThatThrownBy(() -> posting.post(groupLease))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("The lease's receivable account A-02-01 is a group account");
+
+        // An income leaf balances just as happily and books the contract backwards,
+        // which is why the type is checked and not only the leaf-ness.
+        Account income = leaf(AccountRole.ADMIN_FEE);
+        setReceivableOverride(groupLease, income.getId());
+        assertThatThrownBy(() -> posting.post(groupLease))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("must be an ASSET account");
+
+        assertThat(journalEntryRows()).isZero();
+    }
+
+    /**
+     * An id belonging to another tenant is "does not exist", because the lookup goes
+     * through a tenant-filtered query. Handing it to {@code PostingService}, which
+     * resolves accounts by id, would have raised this lease's receivable against
+     * somebody else's books.
+     */
+    @Test
+    void aReceivableOverrideFromAnotherTenantIsRefused() {
+        UUID leaseId = readyToPost();
+        UUID ourTenant = fixtures.tenantId();
+
+        // A whole second tenant with its own chart, then back to ours.
+        LeaseTestFixtures other = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService).bootstrap();
+        UUID strangersLeaf = tx.execute(s -> resolver.resolve(AccountRole.RENT_RECEIVABLE, other.property().getId())).getId();
+        TenantContextHolder.setTenantId(ourTenant);
+        fixtures.asTenantAdmin();
+
+        setReceivableOverride(leaseId, strangersLeaf);
+
+        assertThatThrownBy(() -> posting.post(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("The lease's receivable account " + strangersLeaf + " does not exist");
+        assertThat(journalEntryRows()).isZero();
+    }
+
+    private void setReceivableOverride(UUID leaseId, UUID accountId) {
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(leaseId).orElseThrow();
+            lease.setReceivableAccountId(accountId);
+            leaseRepo.save(lease);
+        });
     }
 
     // ------------------------------------------------------------------
