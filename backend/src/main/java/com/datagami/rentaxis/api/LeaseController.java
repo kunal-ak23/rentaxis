@@ -24,6 +24,7 @@ import com.datagami.rentaxis.core.service.SettlementService;
 import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
 import com.datagami.rentaxis.domain.entity.enums.InteractionDirection;
 import com.datagami.rentaxis.domain.entity.enums.InteractionType;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -59,22 +60,41 @@ public class LeaseController {
     private final LeasePostingService leasePostingService;
     private final LeaseRenewalService leaseRenewalService;
 
+    /**
+     * ACCOUNTANT on every read below.
+     *
+     * <p>The role could already <em>post</em> a lease and could read its cheques
+     * and its journals, but not load the lease itself — so the one person whose job
+     * is to put a contract on the books could not open the contract. The write
+     * endpoints are untouched: drafting, amending and terminating stay with the
+     * admins and the manager. {@code LeaseAccessPolicy} already treats an accountant
+     * as tenant-wide, so these are role gates catching up with the policy, not a new
+     * scope.</p>
+     */
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseDTO>> getAllLeases() {
         return ResponseEntity.ok(leaseService.getAllLeases());
     }
 
+    /**
+     * {@code status} and {@code propertyId} are filters, not hints: they narrow the
+     * query, so the page and its total describe the same set of contracts. The list
+     * screen used to filter status over the page it had been given, which made the
+     * paginator announce a total it was not showing.
+     */
     @GetMapping("/paged")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<Page<LeaseDTO>> getLeasesPaged(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) LeaseStatus status,
+            @RequestParam(required = false) UUID propertyId,
             @PageableDefault(size = 25, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, pageable));
+        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, pageable));
     }
 
     @GetMapping("/property/{propertyId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseDTO>> getLeasesByPropertyId(@PathVariable UUID propertyId) {
         return ResponseEntity.ok(leaseService.getLeasesByPropertyId(propertyId));
     }
@@ -88,7 +108,7 @@ public class LeaseController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<LeaseDTO> getLeaseById(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLeaseById(id));
     }
@@ -154,7 +174,7 @@ public class LeaseController {
      * this exists for the screens that render the lines on their own.
      */
     @GetMapping("/{id}/lines")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseLineDTO>> getLeaseLines(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLines(id));
     }
@@ -289,7 +309,7 @@ public class LeaseController {
     }
 
     @GetMapping("/{id}/events")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseEventDTO>> getLeaseEvents(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLeaseEvents(id));
     }

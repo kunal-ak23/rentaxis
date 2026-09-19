@@ -60,6 +60,55 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     List<Lease> findByTenantId(UUID tenantId);
     Page<Lease> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /**
+     * The contracts list's filters, in the database rather than over a page.
+     *
+     * <p>The list screen used to take only a free-text term, so filtering by status
+     * meant the client dropping rows out of the page it had been handed — a
+     * paginator claiming 25 contracts while showing four, and page 2 showing rows
+     * that belonged on page 1. Both filters therefore narrow the query, and the
+     * count Spring Data derives is the count of what matched.</p>
+     *
+     * <p>The casts let Postgres infer a type for the bare {@code is null} tests,
+     * which it otherwise rejects outright once a caller passes a non-null filter —
+     * the same shape {@code ChequeRepository.search} uses.</p>
+     *
+     * <p>Property-manager scoping is deliberately <em>not</em> here. It is
+     * {@code LeaseAccessPolicy}'s, and it is more than a property-id list (a renter
+     * sees their own leases, an accountant sees the tenant); duplicating half of it
+     * in JPQL is how the two come to disagree. A restricted caller goes through
+     * {@link #searchList} and {@code filterReadable}, which is what it did before
+     * these filters existed.</p>
+     */
+    @Query("""
+        select l from Lease l
+        where l.tenantId = :tenantId
+          and (cast(:status as string) is null or l.status = :status)
+          and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+        """)
+    Page<Lease> search(@Param("tenantId") UUID tenantId,
+                       @Param("status") LeaseStatus status,
+                       @Param("propertyId") UUID propertyId,
+                       Pageable pageable);
+
+    /**
+     * {@link #search} unpaged, for the callers that still have to finish the job in
+     * memory: a property manager, whose scope is the access policy's, and a free-text
+     * term, which matches across the unit, renter and property a lease joins to.
+     * Both narrow this result rather than the whole tenant's contracts, and both
+     * page what is left <em>after</em> filtering, so the total is never a page's
+     * worth of guesswork.
+     */
+    @Query("""
+        select l from Lease l
+        where l.tenantId = :tenantId
+          and (cast(:status as string) is null or l.status = :status)
+          and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+        """)
+    List<Lease> searchList(@Param("tenantId") UUID tenantId,
+                           @Param("status") LeaseStatus status,
+                           @Param("propertyId") UUID propertyId);
+
     List<Lease> findByUnitId(UUID unitId);
 
     List<Lease> findByUnitIdAndStatus(UUID unitId, LeaseStatus status);

@@ -111,27 +111,55 @@ public class LeaseService {
 
     @Transactional(readOnly = true)
     public Page<LeaseDTO> getAllLeasesPaged(String search, Pageable pageable) {
+        return getAllLeasesPaged(search, null, null, pageable);
+    }
+
+    /**
+     * The contracts list.
+     *
+     * <p>{@code status} and {@code propertyId} go into the query, never over the
+     * page. The list screen used to filter status client-side on whatever page it
+     * had been handed, so the paginator announced a total for one set of rows while
+     * the table showed another; page 2 then repeated rows page 1 had hidden.</p>
+     *
+     * <p>Three paths, and the split is about where the <em>rest</em> of the work has
+     * to happen, not about the filters:</p>
+     * <ul>
+     *   <li>unrestricted caller, no text term — the database filters, counts and
+     *       pages, which is the common case and the only one that scales;</li>
+     *   <li>a property manager — scope is {@code LeaseAccessPolicy}'s and is more
+     *       than a property-id list, so the narrowed rows are filtered in memory and
+     *       paged after;</li>
+     *   <li>a free-text term — it matches the unit, renter and property a lease
+     *       joins to, so it is matched against the mapped DTO.</li>
+     * </ul>
+     *
+     * <p>In both in-memory paths the filtering happens over <em>everything</em> that
+     * matched the query and the page is cut afterwards, so the total is the total.
+     * What changed is that the query no longer hands back the whole tenant's
+     * contracts when the caller asked for one status.</p>
+     */
+    @Transactional(readOnly = true)
+    public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId,
+                                            Pageable pageable) {
         UUID tenantId = TenantContextHolder.getTenantId();
         String normalizedSearch = search == null ? null : search.trim();
 
+        if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()) {
+            return leaseRepository.search(tenantId, status, propertyId, pageable).map(this::mapToDTO);
+        }
+
+        List<LeaseDTO> readable = leaseAccessPolicy
+                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId)).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+
         if (normalizedSearch == null || normalizedSearch.isEmpty()) {
-            // Unrestricted callers keep database-side pagination. A scoped one
-            // cannot: filtering a page after the database produced it yields
-            // short pages and a wrong total, so the filter has to happen first.
-            if (!leaseAccessPolicy.isRestricted()) {
-                return leaseRepository.findByTenantId(tenantId, pageable).map(this::mapToDTO);
-            }
-            List<LeaseDTO> readable = leaseAccessPolicy
-                    .filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
-                    .map(this::mapToDTO)
-                    .collect(Collectors.toList());
             return pageOf(readable, pageable);
         }
 
         String token = normalizedSearch.toLowerCase(Locale.ROOT);
-        List<LeaseDTO> filtered = leaseAccessPolicy
-                .filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
-                .map(this::mapToDTO)
+        List<LeaseDTO> filtered = readable.stream()
                 .filter(l -> containsIgnoreCase(l.getUnitIdentifier(), token)
                         || containsIgnoreCase(l.getRenterName(), token)
                         || containsIgnoreCase(l.getPropertyName(), token)
