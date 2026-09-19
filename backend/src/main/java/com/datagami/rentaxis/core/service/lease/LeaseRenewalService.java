@@ -8,7 +8,6 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
-import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
@@ -123,8 +122,13 @@ public class LeaseRenewalService {
      */
     @Transactional
     public LeaseDTO renew(UUID leaseId, RenewLeaseRequest r) {
-        Lease predecessor = leaseRepository.findByIdScopedToTenant(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        // Locked, not merely loaded. The "already renewed" check below reads a row
+        // this call is about to create the competitor for: two accountants hitting
+        // Renew at the same moment would both find no successor and both write one,
+        // and nothing in the database forbids two drafts pointing at one
+        // predecessor. The loser of the lock gets the 400 that names the other
+        // draft, which is the answer they wanted.
+        Lease predecessor = postingService.lockLease(leaseId);
         // Manageable, not merely readable: a renewal is a contract, and a renter
         // who may read their own lease may not write next year's.
         leaseAccessPolicy.requireManageable(predecessor);

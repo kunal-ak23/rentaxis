@@ -279,7 +279,16 @@ public class LeaseTestFixtures {
 
     /** A draft lease on this fixture's unit, contract-dated before the tenancy starts. */
     public UUID draftLease(LocalDate contractDate, LocalDate start, LocalDate end, List<LeaseLineInput> lines) {
-        CreateLeaseDTO dto = draftDto(start, end, lines);
+        return draftLease(unit, renter, contractDate, start, end, lines);
+    }
+
+    /**
+     * The same, on a named unit and renter — for tests about <em>who else</em> holds
+     * a unit, which cannot be expressed with one unit and one renter.
+     */
+    public UUID draftLease(Unit unit, Renter renter, LocalDate contractDate,
+                           LocalDate start, LocalDate end, List<LeaseLineInput> lines) {
+        CreateLeaseDTO dto = draftDto(unit, renter, start, end, lines);
         dto.setContractDate(contractDate);
         dto.setFirstDueDate(start);
         return requireLeaseServices().createDraftLease(dto).getId();
@@ -310,8 +319,15 @@ public class LeaseTestFixtures {
      */
     public PostLeaseResponse postedLease(LocalDate contractDate, LocalDate start, LocalDate end,
                                          List<LeaseLineInput> lines, int installments, String startingNumber) {
+        return postedLease(unit, renter, contractDate, start, end, lines, installments, startingNumber);
+    }
+
+    /** The same, on a named unit and renter. */
+    public PostLeaseResponse postedLease(Unit unit, Renter renter, LocalDate contractDate,
+                                         LocalDate start, LocalDate end, List<LeaseLineInput> lines,
+                                         int installments, String startingNumber) {
         requireLeaseServices();
-        UUID leaseId = draftLease(contractDate, start, end, lines);
+        UUID leaseId = draftLease(unit, renter, contractDate, start, end, lines);
         generateGrid(leaseId, installments, start);
         if (startingNumber != null) {
             numberGrid(leaseId, startingNumber);

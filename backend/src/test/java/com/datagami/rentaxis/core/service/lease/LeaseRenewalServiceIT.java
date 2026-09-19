@@ -25,6 +25,9 @@ import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.JournalLine;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.LeaseEvent;
+import com.datagami.rentaxis.domain.entity.Renter;
+import com.datagami.rentaxis.domain.entity.RenewalOpportunity;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
@@ -32,13 +35,17 @@ import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.RenewalOutcome;
+import com.datagami.rentaxis.domain.entity.enums.RenewalStage;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.RenewalOpportunityRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
@@ -101,6 +108,9 @@ class LeaseRenewalServiceIT {
     @Autowired UnitRepository unitRepo;
     @Autowired JournalEntryRepository entries;
     @Autowired JournalLineRepository journalLines;
+    @Autowired LeaseEventRepository leaseEvents;
+    @Autowired RenewalOpportunityRepository opportunities;
+    @Autowired DepositCarryForward carryForward;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -186,6 +196,60 @@ class LeaseRenewalServiceIT {
     private long journalEntryRows() {
         return jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
                 Long.class, fixtures.tenantId());
+    }
+
+    /** Cut the grid for a draft successor and post it; returns its id. */
+    private UUID postAndReturn(UUID draftId, LocalDate firstDueDate) {
+        fixtures.generateGrid(draftId, 4, firstDueDate);
+        posting.post(draftId);
+        return draftId;
+    }
+
+    /** The carry-forward JVs written so far, oldest first. */
+    private List<JournalEntry> carryForwardJournals() {
+        return tx.execute(s -> entries.findAll().stream()
+                .filter(e -> e.getDocType() == JournalDocType.JV
+                        && e.getNarration() != null
+                        && e.getNarration().startsWith("Security deposit carried forward"))
+                .sorted(java.util.Comparator.comparing(JournalEntry::getEntryNumber))
+                .toList());
+    }
+
+    private void setStatus(UUID leaseId, LeaseStatus status) {
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(leaseId).orElseThrow();
+            lease.setStatus(status);
+            leaseRepo.save(lease);
+        });
+    }
+
+    /** Frees the unit the way an expiry sweep would, so another lease can be drafted on it. */
+    private void setUnitVacant() {
+        tx.executeWithoutResult(s -> {
+            Unit unit = unitRepo.findById(fixtures.unit().getId()).orElseThrow();
+            unit.setStatus(UnitStatus.VACANT);
+            unit.setCurrentTenantName(null);
+            unitRepo.save(unit);
+        });
+    }
+
+    private List<LeaseEvent> eventsOf(UUID leaseId) {
+        return tx.execute(s -> leaseEvents.findByLeaseIdOrderByCreatedAtDesc(leaseId));
+    }
+
+    private UUID openOpportunityFor(UUID leaseId) {
+        return tx.execute(s -> {
+            RenewalOpportunity o = new RenewalOpportunity();
+            o.setLease(leaseRepo.findById(leaseId).orElseThrow());
+            o.setTenantId(fixtures.tenantId());
+            o.setStage(RenewalStage.OPEN);
+            o.setOpenedAt(java.time.Instant.now());
+            return opportunities.save(o).getId();
+        });
+    }
+
+    private RenewalOpportunity opportunity(UUID id) {
+        return tx.execute(s -> opportunities.findById(id).orElseThrow());
     }
 
     /** Every TCO raised against this lease, oldest first. */
@@ -437,6 +501,260 @@ class LeaseRenewalServiceIT {
         assertThat(leaseLines(successor.getId())).extracting(LeaseLineDTO::chargeTypeCode)
                 .containsExactly("RENT", "SECURITY_DEPOSIT");
         assertThat(posting.dryRun(successor.getId()).depositCarriedForward()).isEqualByComparingTo("0");
+    }
+
+    /** Year three, for the chained-renewal tests. */
+    private static final LocalDate THIRD_CONTRACT_DATE = LocalDate.of(2028, 9, 16);
+    private static final LocalDate THIRD_START = LocalDate.of(2028, 10, 2);
+    private static final LocalDate THIRD_END = LocalDate.of(2029, 10, 1);
+
+    /**
+     * A → B → C, carrying at every hop. The deposit lands on C and is left on
+     * neither of the leases it passed through.
+     *
+     * <p>This is the case that reading only the predecessor's lines cannot serve.
+     * B was created <em>with</em> the carry flag, so B has no DEPOSIT line at all —
+     * asking B which accounts hold its deposit returns nothing, and the second hop
+     * would quietly move zero, report {@code ok}, and strand the renter's 3,000 on
+     * a lease that is about to be marked RENEWED. The accounts come from walking
+     * the chain back to the contract that actually charged the deposit; the amount
+     * comes from B, which is where the money currently sits.</p>
+     */
+    @Test
+    void carryingForwardTwiceMovesTheDepositAlongTheWholeChain() {
+        Account deposit = leaf(AccountRole.SECURITY_DEPOSIT);
+
+        UUID a = postedWithDeposit();
+        UUID b = postAndReturn(renewal.renew(a, renewRequest(true)).getId(), RENEWAL_START);
+        assertThat(balanceOf(deposit, a)).isEqualByComparingTo("0");
+        assertThat(balanceOf(deposit, b)).isEqualByComparingTo("-3000");
+
+        // Hop two. B has no DEPOSIT line of its own — it was told not to charge one.
+        assertThat(leaseLines(b)).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
+
+        LeaseDTO cDraft = renewal.renew(b, new RenewLeaseRequest(
+                THIRD_CONTRACT_DATE, THIRD_START, THIRD_END, null, true));
+        fixtures.generateGrid(cDraft.getId(), 4, THIRD_START);
+        assertThat(posting.dryRun(cDraft.getId()).depositCarriedForward()).isEqualByComparingTo("3000");
+
+        posting.post(cDraft.getId());
+
+        assertThat(balanceOf(deposit, a)).isEqualByComparingTo("0");
+        assertThat(balanceOf(deposit, b)).isEqualByComparingTo("0");
+        assertThat(balanceOf(deposit, cDraft.getId())).isEqualByComparingTo("-3000");
+
+        // Two hops, two JVs — the second one moved the money off B, not off A.
+        List<JournalEntry> carries = carryForwardJournals();
+        assertThat(carries).hasSize(2);
+        assertThat(linesOf(carries.get(1).getId()).get(0).getLeaseId()).isEqualTo(b);
+        assertThat(linesOf(carries.get(1).getId()).get(1).getLeaseId()).isEqualTo(cDraft.getId());
+
+        assertThat(reread(a).getStatus()).isEqualTo(LeaseStatus.RENEWED);
+        assertThat(reread(b).getStatus()).isEqualTo(LeaseStatus.RENEWED);
+        assertThat(reread(cDraft.getId()).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(reread(cDraft.getId()).getChainId()).isEqualTo(a);
+    }
+
+    /**
+     * The middle lease tops the deposit up by 500 while carrying the original 3,000
+     * across. The next renewal carries the whole 3,500, because the amount is the
+     * balance on the immediate predecessor and not a figure from any one contract.
+     */
+    @Test
+    void aTopUpDepositOnTheMiddleLeaseIsCarriedForwardToo() {
+        Account deposit = leaf(AccountRole.SECURITY_DEPOSIT);
+        UUID a = postedWithDeposit();
+
+        // B carries A's deposit forward AND charges 500 more of its own, so its
+        // lines are given explicitly rather than copied.
+        LeaseDTO bDraft = renewal.renew(a, new RenewLeaseRequest(
+                RENEWAL_CONTRACT_DATE, RENEWAL_START, RENEWAL_END,
+                List.of(linePeriod("RENT", "51000", RENEWAL_START, RENEWAL_END),
+                        line("SECURITY_DEPOSIT", "500")),
+                true));
+        UUID b = postAndReturn(bDraft.getId(), RENEWAL_START);
+        assertThat(balanceOf(deposit, b)).isEqualByComparingTo("-3500");
+
+        LeaseDTO cDraft = renewal.renew(b, new RenewLeaseRequest(
+                THIRD_CONTRACT_DATE, THIRD_START, THIRD_END, null, true));
+        fixtures.generateGrid(cDraft.getId(), 4, THIRD_START);
+        assertThat(posting.dryRun(cDraft.getId()).depositCarriedForward()).isEqualByComparingTo("3500");
+
+        posting.post(cDraft.getId());
+
+        assertThat(balanceOf(deposit, b)).isEqualByComparingTo("0");
+        assertThat(balanceOf(deposit, cDraft.getId())).isEqualByComparingTo("-3500");
+    }
+
+    /**
+     * Without a tenant in context the JPQL loads would cross tenants, and a
+     * carry-forward that answered "nothing to move" for a lease holding a deposit
+     * is the worst possible failure mode: it posts, it succeeds, and the money is
+     * gone. Refused outright instead.
+     */
+    @Test
+    void carryForwardWithoutATenantInContextIsRefusedRatherThanAnsweringZero() {
+        UUID a = postedWithDeposit();
+        LeaseDTO successor = renewal.renew(a, renewRequest(true));
+        Lease detached = reread(successor.getId());
+
+        TenantContextHolder.clear();
+
+        assertThatThrownBy(() -> carryForward.plan(detached))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No tenant in context");
+    }
+
+    // ------------------------------------------------------------------
+    // predecessors that are not ACTIVE
+    // ------------------------------------------------------------------
+
+    /**
+     * The holdover case: the contract ran out, the renter stayed, the paperwork
+     * followed. Posting the successor retires the EXPIRED predecessor exactly as it
+     * retires an ACTIVE one — RENEWED means "handed its unit to the next contract",
+     * which is what has happened.
+     */
+    @Test
+    void postingASuccessorFromAnExpiredPredecessorRetiresIt() {
+        assertPredecessorRetiredFrom(LeaseStatus.EXPIRED);
+    }
+
+    /** A renter who gave notice and changed their mind. */
+    @Test
+    void postingASuccessorFromANoticeGivenPredecessorRetiresIt() {
+        assertPredecessorRetiredFrom(LeaseStatus.NOTICE_GIVEN);
+    }
+
+    private void assertPredecessorRetiredFrom(LeaseStatus predecessorStatus) {
+        UUID firstId = postedWithFee();
+        setStatus(firstId, predecessorStatus);
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+        fixtures.generateGrid(successor.getId(), 4, RENEWAL_START);
+        posting.post(successor.getId());
+
+        assertThat(reread(firstId).getStatus()).isEqualTo(LeaseStatus.RENEWED);
+        assertThat(reread(successor.getId()).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+
+        // The trail records where it came FROM, not a guessed ACTIVE.
+        LeaseEvent retirement = eventsOf(firstId).stream()
+                .filter(e -> e.getNewState() == LeaseStatus.RENEWED)
+                .findFirst().orElseThrow();
+        assertThat(retirement.getPreviousState()).isEqualTo(predecessorStatus);
+        assertThat(retirement.getNotes()).startsWith("Renewed by TCO-");
+
+        // The renter never moved out, so the unit is never vacant in between.
+        Unit unit = tx.execute(s -> unitRepo.findById(fixtures.unit().getId()).orElseThrow());
+        assertThat(unit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        assertThat(unit.getCurrentTenantName()).isEqualTo(fixtures.renter().getNameEn());
+    }
+
+    // ------------------------------------------------------------------
+    // the vacancy exemption's edges
+    // ------------------------------------------------------------------
+
+    /**
+     * The exemption is narrow: it waives the vacancy check for the predecessor's
+     * own occupancy and for nothing else. An expired lease whose unit has since
+     * been re-let to somebody else cannot be renewed on top of the new tenant.
+     */
+    @Test
+    void aUnitHeldByAnUnrelatedActiveLeaseCannotBeRenewedOnto() {
+        UUID expired = postedWithFee();
+        setStatus(expired, LeaseStatus.EXPIRED);
+        // The unit is freed the way an expiry sweep would free it, so the incoming
+        // lease can be drafted at all.
+        setUnitVacant();
+
+        Renter incoming = fixtures.createRenter("Incoming Renter");
+        UUID other = fixtures.postedLease(fixtures.unit(), incoming,
+                LocalDate.of(2027, 9, 20), LocalDate.of(2027, 10, 2), LocalDate.of(2028, 10, 1),
+                List.of(line("RENT", "51000")), 4, null).lease().getId();
+        assertThat(reread(other).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+
+        assertThatThrownBy(() -> renewal.renew(expired, renewRequest(false)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cannot create lease. Unit is not vacant.");
+
+        List<Lease> successors = tx.execute(s -> leaseRepo.findByRenewedFromLeaseId(expired));
+        assertThat(successors).isEmpty();
+    }
+
+    /**
+     * There is no way to ask for a successor on a different unit: {@code renew}
+     * reads the unit and the renter off the predecessor and {@code RenewLeaseRequest}
+     * carries neither. A move to another unit is a new lease, not a renewal — it
+     * would have to vacate one unit and claim another, which is exactly what the
+     * vacancy check exists to police.
+     */
+    @Test
+    void theSuccessorIsAlwaysOnThePredecessorsUnitAndRenter() {
+        UUID firstId = postedWithFee();
+        Unit elsewhere = fixtures.createUnit(fixtures.property(), "909");
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+
+        assertThat(successor.getUnitId()).isEqualTo(fixtures.unit().getId());
+        assertThat(successor.getUnitId()).isNotEqualTo(elsewhere.getId());
+        assertThat(successor.getRenterId()).isEqualTo(fixtures.renter().getId());
+    }
+
+    // ------------------------------------------------------------------
+    // the renewal funnel
+    // ------------------------------------------------------------------
+
+    /**
+     * The funnel closes when the successor goes on the books, not when somebody
+     * remembers to tick it — and it closes once.
+     */
+    @Test
+    void postingTheSuccessorClosesTheOpenRenewalOpportunityExactlyOnce() {
+        UUID firstId = postedWithFee();
+        UUID opportunityId = openOpportunityFor(firstId);
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+        // Drafting is not winning: the opportunity stays open until the contract is
+        // actually on the books.
+        assertThat(opportunity(opportunityId).getStage()).isEqualTo(RenewalStage.OPEN);
+
+        fixtures.generateGrid(successor.getId(), 4, RENEWAL_START);
+        posting.post(successor.getId());
+
+        RenewalOpportunity closed = opportunity(opportunityId);
+        assertThat(closed.getStage()).isEqualTo(RenewalStage.CLOSED_WON);
+        assertThat(closed.getOutcome()).isEqualTo(RenewalOutcome.RENEWED);
+        assertThat(closed.getClosedAt()).isNotNull();
+
+        // Exactly one, not one per deposit line or one per cheque.
+        List<RenewalOpportunity> all = tx.execute(s -> opportunities.findAll().stream()
+                .filter(o -> o.getLease().getId().equals(firstId)).toList());
+        assertThat(all).hasSize(1);
+    }
+
+    /**
+     * Most renewals are drafted before the scheduler ever opens an opportunity, or
+     * after a PM has closed one by hand. The post must not care.
+     *
+     * <p>It is the {@code NotFoundException} from the throwing {@code markRenewed}
+     * that this guards against: raised inside a {@code @Transactional} proxy it
+     * would mark the whole posting rollback-only, and the post would fail at commit
+     * with "Transaction silently rolled back" — a contract refused over a CRM row.
+     */
+    @Test
+    void aSuccessorPostsCleanlyWhenTheresNoOpenOpportunity() {
+        UUID firstId = postedWithFee();
+        List<RenewalOpportunity> none = tx.execute(s -> opportunities.findAll());
+        assertThat(none).isEmpty();
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+        fixtures.generateGrid(successor.getId(), 4, RENEWAL_START);
+
+        PostLeaseResponse posted = posting.post(successor.getId());
+
+        assertThat(posted.tcoEntryNumber()).startsWith("TCO-27/");
+        assertThat(reread(successor.getId()).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(reread(firstId).getStatus()).isEqualTo(LeaseStatus.RENEWED);
     }
 
     // ------------------------------------------------------------------
