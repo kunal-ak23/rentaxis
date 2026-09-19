@@ -27,6 +27,10 @@ const EXPECTED: Record<string, UserRole[]> = {
     canProposePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
     // PenaltyAssessmentController#approve / #waive / #reverse
     canApprovePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // LeaseController's four settlement endpoints, which is what "Terminate"
+    // opens. PROPERTY_MANAGER is in and ACCOUNTANT is out — the mirror image of
+    // canPostLeases, and the reason this cannot share canManageLeases.
+    canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"],
     // ChargeTypeController's method-level @PreAuthorize on POST / PUT
     canManageChargeTypes: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
 };

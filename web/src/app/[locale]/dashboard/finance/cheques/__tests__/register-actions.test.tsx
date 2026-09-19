@@ -3,7 +3,7 @@ import { registerActionsFor } from "@/components/cheques/registerActions";
 
 /**
  * The register's row-action set, per spec §7.4 and Task 15's ruling #2 —
- * distinct from `ChequeGrid#actionsFor` (the lease page's own, narrower set).
+ * shared with the lease page's `ChequeGrid`, which imports this same table.
  *
  * Exercised as a pure function against every (status × mode × role) the
  * register can show, so this does not need a rendered page or a mocked

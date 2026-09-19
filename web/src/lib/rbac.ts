@@ -108,6 +108,19 @@ export const PERMISSIONS = {
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')") — turning
     // a proposal into a charge on the ledger is finance's decision, not a manager's.
     canApprovePenalties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Terminating a contract, which on this product means running its
+    // settlement: the "Terminate" action opens /leases/{id}/settlement.
+    // Mirrors LeaseController#getSettlementPreview, #getSettlement,
+    // #saveSettlementDraft and #finalizeSettlement, all
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')").
+    //
+    // Deliberately NOT canManageLeases. Gating Terminate on that key excluded
+    // PROPERTY_MANAGER, who had been able to terminate since before
+    // accounting-v2 and whom all four settlement endpoints still admit —
+    // move-outs are the manager's job, and drafting contracts is not.
+    // ACCOUNTANT is absent for the mirror-image reason: the settlement
+    // endpoints refuse them.
+    canTerminateLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     // Mirrors ChargeTypeController's write methods (POST, PUT /{id}):
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). The
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,

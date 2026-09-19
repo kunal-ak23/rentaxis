@@ -17,8 +17,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
-import ChequeGrid, { toChequeRows, type ChequeRowAction } from "@/components/leases/ChequeGrid";
-import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
+import ChequeGrid, { toChequeRows } from "@/components/leases/ChequeGrid";
+import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
+import { chequeApi } from "@/lib/api/leasing";
+import type { RegisterAction } from "@/components/cheques/registerActions";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
@@ -95,6 +97,11 @@ export default function LeaseDetailPage() {
     const canRenew = hasPermission(userRole, "canRenewLeases");
     const canExtend = hasPermission(userRole, "canExtendLeases");
     const canCheques = hasPermission(userRole, "canManageCheques");
+    const canCancelCheques = hasPermission(userRole, "canCancelCheques");
+    // Terminating opens the settlement flow, which admits PROPERTY_MANAGER.
+    // Gating it on canManageLeases (SA/TA) took the action away from the role
+    // that runs move-outs.
+    const canTerminate = hasPermission(userRole, "canTerminateLeases");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
@@ -114,7 +121,7 @@ export default function LeaseDetailPage() {
     const [renewOpen, setRenewOpen] = useState(false);
     const [extendOpen, setExtendOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
-    const [chequeAction, setChequeAction] = useState<{ action: ChequeRowAction; cheque: Cheque } | null>(null);
+    const [chequeAction, setChequeAction] = useState<{ action: ChequeAction; cheque: Cheque } | null>(null);
     const [chequeBusy, setChequeBusy] = useState(false);
     const [chequeError, setChequeError] = useState<string | null>(null);
     const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
@@ -198,6 +205,19 @@ export default function LeaseDetailPage() {
     const handleChequeAction = async () => {
         setChequeAction(null);
         await loadLease();
+    };
+
+    /**
+     * `receipt` streams a PDF rather than opening a form, so it goes straight
+     * to the endpoint; everything else is a dated action with notes and gets
+     * the shared dialog.
+     */
+    const openChequeAction = (cheque: Cheque, action: RegisterAction) => {
+        if (action === "receipt") {
+            window.open(chequeApi.receiptUrl(cheque.id), "_blank", "noopener,noreferrer");
+            return;
+        }
+        setChequeAction({ action, cheque });
     };
 
     const handleDelete = async () => {
@@ -424,7 +444,7 @@ export default function LeaseDetailPage() {
                                 <Download size={14} /> {tMaster("downloadContract")}
                             </button>
                         )}
-                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && canDraft && (
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && canTerminate && (
                             <Link
                                 href={`/dashboard/leases/${leaseId}/settlement`}
                                 data-testid="lease-terminate"
@@ -539,7 +559,8 @@ export default function LeaseDetailPage() {
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
                                         busy={chequeBusy}
                                         error={chequeError}
-                                        onRowAction={canCheques ? (cheque, action) => setChequeAction({ action, cheque }) : undefined}
+                                        onRowAction={canCheques ? openChequeAction : undefined}
+                                        canCancelCheques={canCancelCheques}
                                     />
                                     {drafting && canCheques && !readOnly && cheques.length > 0 && (
                                         <button

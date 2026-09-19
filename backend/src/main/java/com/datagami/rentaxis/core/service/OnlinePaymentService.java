@@ -2,6 +2,8 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterChequeDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentTotalsDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
@@ -36,6 +38,10 @@ import com.datagami.rentaxis.domain.repository.TenantGatewayConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -233,6 +239,75 @@ public class OnlinePaymentService {
         return rentCollectionSettingsRepository.findByPropertyId(propertyId)
                 .map(RentCollectionSettings::getOnlinePaymentEnabled)
                 .orElse(Boolean.TRUE) != Boolean.FALSE;
+    }
+
+    // ------------------------------------------------------------------
+    // finance's refund worklist
+    // ------------------------------------------------------------------
+
+    /**
+     * Captures the gateway took that the register could not accept, newest first.
+     *
+     * <p>Every one of these is money sitting with the payment provider against an
+     * instalment that was not settled, so the landlord owes the renter a refund.
+     * The state has been recorded since fix round 1 — a status, a reason and an
+     * {@code ERROR} line — but a status nobody can list is a status nobody acts on,
+     * which is why this is a screen and not a log grep.</p>
+     *
+     * <p><b>Newest first by default</b>, and only by default: an unapplied capture
+     * is discovered when the renter complains, which is usually hours after it
+     * happened, so the useful page is the recent one. A caller that sorts
+     * explicitly gets what it asked for.</p>
+     */
+    @Transactional(readOnly = true)
+    public Page<UnappliedOnlinePaymentDTO> unapplied(Pageable pageable) {
+        Pageable page = pageable.getSort().isSorted()
+                ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                        Sort.by(Sort.Direction.DESC, "updatedAt", "createdAt"));
+        // Mapped inside this transaction: the DTO reads the cheque's lease, unit,
+        // property and renter, and outside one those lazy relations do not resolve.
+        return onlinePaymentRepository.findUnapplied(page).map(OnlinePaymentService::toUnappliedDto);
+    }
+
+    /** The same worklist as two numbers, for a dashboard tile. */
+    @Transactional(readOnly = true)
+    public UnappliedOnlinePaymentTotalsDTO unappliedTotals() {
+        BigDecimal total = onlinePaymentRepository.sumUnapplied();
+        return new UnappliedOnlinePaymentTotalsDTO(
+                onlinePaymentRepository.countUnapplied(),
+                total != null ? total : BigDecimal.ZERO);
+    }
+
+    private static UnappliedOnlinePaymentDTO toUnappliedDto(OnlinePayment payment) {
+        Cheque cheque = payment.getCheque();
+        Lease lease = cheque.getLease();
+        Unit unit = cheque.getUnit();
+        Property property = cheque.getProperty();
+        Renter renter = cheque.getRenter();
+        return new UnappliedOnlinePaymentDTO(
+                payment.getId(),
+                payment.getCreatedAt(),
+                // The capture is the last thing that touched this row, so updatedAt
+                // is when it was recorded as unappliable. There is no column of its
+                // own for it and inventing one to hold a timestamp already present
+                // would be a migration for nothing.
+                payment.getUpdatedAt(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getGatewayOrderId(),
+                payment.getGatewayPaymentId(),
+                payment.getFailureReason(),
+                cheque.getId(),
+                cheque.getChequeNumber(),
+                cheque.getStatus(),
+                lease != null ? lease.getId() : null,
+                LeaseService.displayContractNumber(
+                        property != null ? property.getCode() : null,
+                        lease != null ? lease.getContractNumber() : null),
+                renter != null ? renter.getNameEn() : null,
+                property != null ? property.getNameEn() : null,
+                unit != null ? unit.getUnitNumber() : null);
     }
 
     // ------------------------------------------------------------------

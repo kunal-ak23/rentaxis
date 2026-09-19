@@ -3,12 +3,15 @@ package com.datagami.rentaxis.domain.repository;
 import com.datagami.rentaxis.domain.entity.OnlinePayment;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,4 +54,50 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, UU
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OnlinePayment o where o.gatewayOrderId = :orderId")
     Optional<OnlinePayment> findByGatewayOrderIdForUpdate(@Param("orderId") String orderId);
+
+    /**
+     * Money the gateway took that the register refused — finance's refund worklist.
+     *
+     * <p>Every relation the screen renders is fetch-joined. Without them this is
+     * five lazy loads per row (cheque → lease → unit → property, and renter), which
+     * on a page of twenty is a hundred queries for a list nobody paginates past.
+     * {@code countQuery} is given separately because a fetch join has no place in a
+     * count and Hibernate rejects one.</p>
+     *
+     * <p>Tenant scoping is the Hibernate filter's, as everywhere else: this runs
+     * inside a transaction, so {@code TenantAspect} has the filter on and one
+     * landlord's unapplied captures are invisible to another.</p>
+     */
+    @Query(value = """
+            select o from OnlinePayment o
+            join fetch o.cheque c
+            join fetch c.lease l
+            left join fetch l.unit u
+            left join fetch u.property p
+            left join fetch c.renter r
+            where o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """,
+            countQuery = """
+            select count(o) from OnlinePayment o
+            where o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    Page<OnlinePayment> findUnapplied(Pageable pageable);
+
+    /**
+     * The dashboard tile, as two scalars rather than one tuple: a multi-select JPQL
+     * aggregate comes back as {@code Object[]} and has to be unpacked by position,
+     * which is a cast nobody checks until it breaks at runtime.
+     */
+    @Query("""
+            select count(o) from OnlinePayment o
+            where o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    long countUnapplied();
+
+    /** How much is owed back, in the tenant's own currency. Zero, never null. */
+    @Query("""
+            select coalesce(sum(o.amount), 0) from OnlinePayment o
+            where o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    BigDecimal sumUnapplied();
 }

@@ -13,7 +13,7 @@ import {
     type Cheque,
     type ChequeFailureReason,
 } from "@/lib/api/leasing";
-import type { ChequeRowAction } from "@/components/leases/ChequeGrid";
+import type { RegisterAction } from "./registerActions";
 
 /**
  * Deposit, receive, correct or cancel one cheque — the register's own
@@ -23,14 +23,15 @@ import type { ChequeRowAction } from "@/components/leases/ChequeGrid";
  * Task 14 built this against the lease page's own cheque grid (deposit /
  * clear / receive / bounce / details / a single-row replace). The register
  * (Task 15) reuses it for the same shapes rather than forking a second
- * dialog, and adds one action the lease page's grid never offers: `cancel`,
- * which reverses the registering journal and is gated separately
- * (`canCancelCheques`, narrower than `canManageCheques`). Bounce and a
- * multi-row replace get their own dedicated dialogs on the register
- * (`BounceChequeDialog`, `ReplaceChequeDialog`) — a bounce needs a clearer
- * failure-reason + debit-account-override story than fits here, and a
- * replace can be more than one instrument — but this dialog keeps handling
- * both for the lease page's simpler single-row case, unchanged.
+ * dialog, and both screens now offer the same actions, from the same
+ * `registerActionsFor` table — including `cancel`, which reverses the
+ * registering journal and is gated separately (`canCancelCheques`, narrower
+ * than `canManageCheques`). Bounce and a multi-row replace get their own
+ * dedicated dialogs on the register (`BounceChequeDialog`,
+ * `ReplaceChequeDialog`) — a bounce needs a clearer failure-reason +
+ * debit-account-override story than fits here, and a replace can be more than
+ * one instrument — but this dialog keeps handling both for the lease page's
+ * simpler single-row case.
  */
 
 const field =
@@ -39,8 +40,12 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 
 const FAILURE_REASONS: ChequeFailureReason[] = ["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED"];
 
-/** The lease grid's own six actions, plus the register-only `cancel`. */
-export type ChequeAction = ChequeRowAction | "cancel";
+/**
+ * Every row action this dialog can carry out: the register's whole set bar
+ * `receipt`, which is a download rather than a form and is opened directly by
+ * whichever screen offered it.
+ */
+export type ChequeAction = Exclude<RegisterAction, "receipt">;
 
 type Props = {
     action: ChequeAction | null;

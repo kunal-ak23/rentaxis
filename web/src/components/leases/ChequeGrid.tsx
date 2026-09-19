@@ -15,6 +15,7 @@ import type {
     GenerateChequesRequest,
     InstallmentDistribution,
 } from "@/lib/api/leasing";
+import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { fmtIsoDate, round2 } from "./leaseMath";
 
 /**
@@ -50,29 +51,6 @@ const STATUS_COLORS: Record<ChequeStatus, string> = {
     RETURNED: "bg-warning/10 text-warning",
     ONLINE_PENDING: "bg-warning/10 text-warning",
 };
-
-export type ChequeRowAction = "deposit" | "clear" | "bounce" | "replace" | "details" | "receive";
-
-/**
- * What a row offers, by the state it is in. Mirrors ChequeController's own
- * transitions: a REGISTERED cheque can only be banked or corrected, a
- * DEPOSITED one either clears or comes back, and only a bounced one is
- * replaced.
- */
-export function actionsFor(status: ChequeStatus): ChequeRowAction[] {
-    switch (status) {
-        case "REGISTERED":
-            return ["deposit", "details"];
-        case "DEPOSITED":
-            return ["clear", "bounce"];
-        case "BOUNCED":
-            return ["replace"];
-        case "ONLINE_PENDING":
-            return ["receive"];
-        default:
-            return [];
-    }
-}
 
 export type GenerateForm = {
     installments: number;
@@ -114,7 +92,13 @@ type Props = {
     busy?: boolean;
     error?: string | null;
     /** Row actions — only rendered when a handler is supplied and the user may act. */
-    onRowAction?: (cheque: Cheque, action: ChequeRowAction) => void;
+    onRowAction?: (cheque: Cheque, action: RegisterAction) => void;
+    /**
+     * Cancelling reverses the registering journal, so it is gated by
+     * `canCancelCheques` (SA/TA/ACCOUNTANT) rather than by the
+     * `canManageCheques` that admits a property manager to the rest of the row.
+     */
+    canCancelCheques?: boolean;
     /** Shown above the grid when the backend dropped the draft rows. */
     notice?: string | null;
 };
@@ -134,6 +118,7 @@ export default function ChequeGrid({
     busy,
     error,
     onRowAction,
+    canCancelCheques = false,
     notice,
 }: Props) {
     const t = useTranslations("Leasing");
@@ -154,7 +139,8 @@ export default function ChequeGrid({
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
 
-    const showActions = !editable && !!onRowAction && cheques.some(c => actionsFor(c.status).length > 0);
+    const showActions =
+        !editable && !!onRowAction && cheques.some(c => registerActionsFor(c.status, c.mode, canCancelCheques).length > 0);
     const cols = 9 + (editable ? 0 : 1) + (showActions ? 1 : 0);
 
     return (
@@ -462,7 +448,7 @@ export default function ChequeGrid({
                                 {showActions && (
                                     <td className={td}>
                                         <div className="flex items-center gap-1.5">
-                                            {actionsFor(c.status).map(a => (
+                                            {registerActionsFor(c.status, c.mode, canCancelCheques).map(a => (
                                                 <button
                                                     key={a}
                                                     type="button"

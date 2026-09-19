@@ -126,6 +126,32 @@ export function totalsOf(rows: LineRow[], chargeTypes: ChargeType[]): LineTotals
 }
 
 /**
+ * Whether a set of lines may be submitted at all.
+ *
+ * One definition, used by the wizard and by all three dialogs that send lines
+ * (amend, renew with its own lines, extend). They had drifted: the wizard
+ * refused to advance past a line with no charge type or a discount over its
+ * amount, while the dialogs happily posted the same rows and collected the
+ * server's 400 — after the accountant had typed the whole grid.
+ *
+ * Non-positive amounts are refused here too. A zero line raises no posting
+ * pair at all (`LeasePostingService#planLines` only pairs `lineNet > 0`), so
+ * it reaches the ledger as nothing while still occupying a row on the printed
+ * contract; a negative one is a refund, which is a credit note, not a lease
+ * line.
+ */
+export function linesAreValid(rows: LineRow[]): boolean {
+    if (rows.length === 0) return false;
+    return rows.every(
+        r =>
+            !!r.chargeTypeId &&
+            (r.grossAmount || 0) > 0 &&
+            (r.discountAmount || 0) >= 0 &&
+            (r.discountAmount || 0) <= (r.grossAmount || 0),
+    );
+}
+
+/**
  * The credit account a charge type wants. Deposits and advance rent are money
  * the landlord owes back or has not yet earned, so they sit on the liability
  * side; a fee is earned on signature and is income. Used only to narrow the
