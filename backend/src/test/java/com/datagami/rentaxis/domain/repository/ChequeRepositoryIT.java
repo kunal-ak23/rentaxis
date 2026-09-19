@@ -117,11 +117,11 @@ class ChequeRepositoryIT {
     }
 
     private List<Cheque> due(UUID property) {
-        return inTx(() -> cheques.findDue(property, TODAY, PAGE).getContent());
+        return inTx(() -> cheques.findDue(property, TODAY, true, List.of(), PAGE).getContent());
     }
 
     private List<Cheque> toDeposit(UUID property) {
-        return inTx(() -> cheques.findToDeposit(property, TODAY, PAGE).getContent());
+        return inTx(() -> cheques.findToDeposit(property, TODAY, true, List.of(), PAGE).getContent());
     }
 
     private List<Cheque> search(UUID property, ChequeStatus status, ChequeMode mode,
@@ -131,7 +131,7 @@ class ChequeRepositoryIT {
 
     private Page<Cheque> searchPage(UUID property, ChequeStatus status, ChequeMode mode,
                                     LocalDate from, LocalDate to, String term) {
-        return inTx(() -> cheques.search(property, status, mode, from, to, term, PAGE));
+        return inTx(() -> cheques.search(property, status, mode, from, to, term, true, List.of(), PAGE));
     }
 
     private Cheque cheque(int seqNo, String number, LocalDate chequeDate, ChequeStatus status, ChequeMode mode) {
@@ -353,13 +353,13 @@ class ChequeRepositoryIT {
         assertThat(inTx(() -> cheques.findByRenter_IdAndStatusInOrderByChequeDateAsc(
                 renterId, List.of(ChequeStatus.REGISTERED, ChequeStatus.BOUNCED))))
                 .extracting(Cheque::getChequeNumber).containsExactly("000004", "000001", "000002");
-        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusMonths(2), TODAY)))
+        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusMonths(2), TODAY, null, true, List.of())))
                 .isEqualByComparingTo("13700");
         // The window's upper bound is exclusive, and an empty window coalesces to zero
         // rather than returning null into an arithmetic caller.
-        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY, TODAY.plusDays(1))))
+        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY, TODAY.plusDays(1), null, true, List.of())))
                 .isEqualByComparingTo("0");
-        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusMonths(2), TODAY.minusMonths(1))))
+        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusMonths(2), TODAY.minusMonths(1), null, true, List.of())))
                 .isEqualByComparingTo("0");
     }
 
@@ -470,7 +470,7 @@ class ChequeRepositoryIT {
         assertThat(due(null)).isEmpty();
         assertThat(search(null, null, null, null, null, null)).isEmpty();
         assertThat(inTx(() -> cheques.findByLease_IdOrderBySeqNoAsc(leaseId))).isEmpty();
-        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusYears(1), TODAY.plusYears(1))))
+        assertThat(inTx(() -> cheques.sumClearedBetween(TODAY.minusYears(1), TODAY.plusYears(1), null, true, List.of())))
                 .isEqualByComparingTo("0");
     }
 }

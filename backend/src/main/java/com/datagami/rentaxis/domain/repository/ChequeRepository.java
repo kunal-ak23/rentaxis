@@ -107,6 +107,13 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * register <em>and</em> from its total count, even when no search term was
      * given. {@code c.lease} and {@code c.lease.renter} are non-null, so their
      * implicit joins are safe.</p>
+     *
+     * <p>{@code unrestricted}/{@code propertyIds} are how a property manager is kept
+     * inside their own buildings, the same shape {@code PenaltyAssessmentRepository}
+     * uses: the caller passes {@code false} with the ids they were assigned, and a
+     * manager assigned to nothing is answered without a query at all. Filtering a
+     * page the database has already counted would report totals covering buildings
+     * the caller may not see and hand back short pages.</p>
      */
     @Query("""
         select c from Cheque c
@@ -118,6 +125,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and (cast(:to as LocalDate) is null or c.chequeDate <= :to)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (:unrestricted = true or c.property.id in :propertyIds)
           and (cast(:search as string) is null
                or lower(c.lease.renter.nameEn) like :search
                or lower(c.chequeNumber) like :search
@@ -129,24 +137,38 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                         @Param("from") LocalDate from,
                         @Param("to") LocalDate to,
                         @Param("search") String search,
+                        @Param("unrestricted") boolean unrestricted,
+                        @Param("propertyIds") Collection<UUID> propertyIds,
                         Pageable pageable);
 
     /**
-     * Matured and still unpaid: what the landlord should be chasing today. Includes
-     * cheques already at the bank ({@code DEPOSITED}) because the money has not
-     * landed yet.
+     * Matured and still unpaid: what the landlord should be chasing today.
+     *
+     * <p>This is {@link com.datagami.rentaxis.core.service.cheque.ChequeDueRules#due}
+     * expressed in SQL, and it has to stay that way — the register screen, the
+     * reminder job and the aging report all read this and then ask the rule for the
+     * per-row flag, so a row the query returns and the rule calls not-due (or the
+     * reverse) is a count that disagrees with the list under it.</p>
+     *
+     * <p>Hence {@code DEPOSITED} (at the bank, but the money has not landed) and
+     * {@code BOUNCED} <em>whatever its date</em>: a returned cheque already failed,
+     * so the debt is live from that moment and does not wait for a calendar date.</p>
      */
     @Query("""
         select c from Cheque c
-        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
-          and c.chequeDate <= :today
+        where ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                and c.chequeDate <= :today)
+               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
         """)
     Page<Cheque> findDue(@Param("propertyId") UUID propertyId,
                          @Param("today") LocalDate today,
+                         @Param("unrestricted") boolean unrestricted,
+                         @Param("propertyIds") Collection<UUID> propertyIds,
                          Pageable pageable);
 
     /**
@@ -159,11 +181,93 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         where c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED
           and c.mode = com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC
           and c.chequeDate <= :today
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
         """)
     Page<Cheque> findToDeposit(@Param("propertyId") UUID propertyId,
                                @Param("today") LocalDate today,
+                               @Param("unrestricted") boolean unrestricted,
+                               @Param("propertyIds") Collection<UUID> propertyIds,
                                Pageable pageable);
+
+    /**
+     * The post-dated book for a month: what matures between {@code from} and
+     * {@code to} and has not been settled yet, in maturity order (spec §7.4).
+     *
+     * <p>{@code REGISTERED} and {@code DEPOSITED} only. A cleared row is money
+     * already in, a bounced one belongs on the due list rather than the forward
+     * book, and a cancelled or returned one is paper nobody holds.</p>
+     */
+    @Query("""
+        select c from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        order by c.chequeDate asc, c.seqNo asc
+        """)
+    List<Cheque> findPostDated(@Param("propertyId") UUID propertyId,
+                               @Param("from") LocalDate from,
+                               @Param("to") LocalDate to,
+                               @Param("unrestricted") boolean unrestricted,
+                               @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * Count and value per status for the register's summary tiles, in one pass over
+     * the index rather than one query per tile.
+     *
+     * <p>Returns {@code [ChequeStatus, Long count, BigDecimal amount]}. Statuses
+     * with no rows are simply absent — the caller zero-fills, which is cheaper than
+     * making Postgres invent them.</p>
+     */
+    @Query("""
+        select c.status, count(c), coalesce(sum(c.amount), 0) from Cheque c
+        where c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        group by c.status
+        """)
+    List<Object[]> totalsByStatus(@Param("propertyId") UUID propertyId,
+                                  @Param("unrestricted") boolean unrestricted,
+                                  @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /** Every row of the named leases in schedule order — the input to per-lease stats. */
+    List<Cheque> findByLease_IdInOrderBySeqNoAsc(Collection<UUID> leaseIds);
+
+    /**
+     * Value of the rows in these statuses maturing in {@code [from, toExclusive)} —
+     * what the dashboard means by "expected this month".
+     */
+    @Query("""
+        select coalesce(sum(c.amount), 0) from Cheque c
+        where c.status in :statuses
+          and c.chequeDate >= :from and c.chequeDate < :toExclusive
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        """)
+    BigDecimal sumByStatusInAndChequeDateBetween(@Param("statuses") Collection<ChequeStatus> statuses,
+                                                 @Param("from") LocalDate from,
+                                                 @Param("toExclusive") LocalDate toExclusive);
+
+    /**
+     * The register's most recent movements, newest first — the dashboard's activity
+     * feed. Paged by the caller so the query stops at ten rather than sorting the
+     * whole table into memory.
+     */
+    @Query("""
+        select c from Cheque c
+        where c.statusChangedAt is not null
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        order by c.statusChangedAt desc
+        """)
+    List<Cheque> findRecentlyChanged(Pageable pageable);
 
     long countByLease_IdAndStatusIn(UUID leaseId, Collection<ChequeStatus> statuses);
 
@@ -175,6 +279,39 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findImagesOlderThan(@Param("cutoff") LocalDate cutoff);
 
     /**
+     * The retention purge's worklist: id, tenant and blob path only.
+     *
+     * <p>A projection rather than the entity because the job deletes a blob and
+     * blanks three columns — it has no use for the lease, the renter or the
+     * journals a managed {@code Cheque} would drag behind it, and the purge runs
+     * across every tenant in one pass.</p>
+     *
+     * <p>Paged so one night's backlog cannot load an unbounded result set into a
+     * scheduled job's heap; the job takes a bounded batch per run and the next run
+     * takes the next one, because the rows it purged no longer match.</p>
+     */
+    @Query("""
+        select new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(
+                   c.id, c.tenantId, c.imageBlobPath)
+        from Cheque c
+        where c.imageBlobPath is not null and c.chequeDate < :cutoff
+        order by c.chequeDate asc
+        """)
+    List<ChequeImagePurgeRow> findImagePurgeBatch(@Param("cutoff") LocalDate cutoff, Pageable pageable);
+
+    /**
+     * Forget one purged image. A modifying query rather than a load-mutate-save so
+     * the job never has a managed entity whose tenant filter it would have to
+     * arrange; the id came from {@link #findImagePurgeBatch}, which is the scope.
+     */
+    @Modifying
+    @Query("""
+        update Cheque c set c.imageUrl = null, c.imageBlobPath = null, c.imageUploadedAt = null
+        where c.id = :id
+        """)
+    void clearImage(@Param("id") UUID id);
+
+    /**
      * Collections actually banked in a window — {@code [from, to)}, upper bound
      * exclusive so consecutive periods neither double-count nor drop a day.
      */
@@ -184,6 +321,69 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and c.clearedAt >= :from and c.clearedAt < :to
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
         """)
-    BigDecimal sumClearedBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
+    BigDecimal sumClearedBetween(@Param("from") LocalDate from,
+                                 @Param("to") LocalDate to,
+                                 @Param("propertyId") UUID propertyId,
+                                 @Param("unrestricted") boolean unrestricted,
+                                 @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * The register grouped by the month a cheque matures in, expected against
+     * collected — the dashboard's twelve-month chart in one query.
+     *
+     * <p>Returns {@code [String yyyy-MM, BigDecimal expected, BigDecimal collected]}.
+     * "Expected" is every live instrument dated in the month; "collected" is the
+     * subset that cleared. Cancelled, returned and superseded rows are excluded
+     * from both: a replaced cheque and its replacement are the same money, and
+     * counting each would double the month.</p>
+     */
+    @Query("""
+        select function('to_char', c.chequeDate, 'YYYY-MM'),
+               coalesce(sum(c.amount), 0),
+               coalesce(sum(case when c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED
+                                 then c.amount else 0 end), 0)
+        from Cheque c
+        where c.chequeDate >= :from and c.chequeDate < :toExclusive
+          and c.status not in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.RETURNED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED)
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        group by function('to_char', c.chequeDate, 'YYYY-MM')
+        """)
+    List<Object[]> aggregateMonthly(@Param("from") LocalDate from,
+                                    @Param("toExclusive") LocalDate toExclusive);
+
+    /**
+     * The reminder job's list: live instruments maturing on one date. Bounded by
+     * date rather than scanned, because the job runs across every tenant.
+     */
+    @Query("""
+        select c from Cheque c
+        where c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED
+          and c.chequeDate = :on
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        """)
+    List<Cheque> findRegisteredMaturingOn(@Param("on") LocalDate on);
+
+    /**
+     * Every cheque due across every tenant — what the overdue reminder job walks.
+     * Unscoped by property on purpose: the job has no caller to be restricted to,
+     * and the tenant filter is off because a scheduled run has no tenant context.
+     */
+    @Query("""
+        select c from Cheque c
+        where ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                and c.chequeDate <= :today)
+               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        """)
+    List<Cheque> findAllDue(@Param("today") LocalDate today);
 }

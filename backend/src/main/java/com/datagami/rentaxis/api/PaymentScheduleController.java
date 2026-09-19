@@ -183,7 +183,7 @@ public class PaymentScheduleController {
         return paymentScheduleService.getPaymentStatsByLeaseIds(leaseIds);
     }
 
-    // GET /{id}/receipt moved to ChequeReceiptController: a receipt is a cleared
+    // GET /{id}/receipt moved to ChequeController: a receipt is a cleared
     // cheque-register row now, and a schedule id no longer names one (spec §9.3).
 
     /**

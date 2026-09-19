@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
+import com.datagami.rentaxis.core.service.NotificationService;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
@@ -109,19 +110,22 @@ public class PenaltyAssessmentService {
     private final PostingService postingService;
     private final ChequeService chequeService;
     private final LeaseAccessPolicy leaseAccessPolicy;
+    private final NotificationService notificationService;
 
     public PenaltyAssessmentService(PenaltyAssessmentRepository repository,
                                     LeaseRepository leaseRepository,
                                     ChequeRepository chequeRepository,
                                     PostingService postingService,
                                     ChequeService chequeService,
-                                    LeaseAccessPolicy leaseAccessPolicy) {
+                                    LeaseAccessPolicy leaseAccessPolicy,
+                                    NotificationService notificationService) {
         this.repository = repository;
         this.leaseRepository = leaseRepository;
         this.chequeRepository = chequeRepository;
         this.postingService = postingService;
         this.chequeService = chequeService;
         this.leaseAccessPolicy = leaseAccessPolicy;
+        this.notificationService = notificationService;
     }
 
     // ------------------------------------------------------------------
@@ -266,7 +270,13 @@ public class PenaltyAssessmentService {
         a.setStatus(PenaltyAssessmentStatus.APPROVED);
         a.setApprovedBy(currentUserId());
         a.setApprovedAt(Instant.now());
-        return dto(repository.save(a));
+        PenaltyAssessment approved = repository.save(a);
+
+        // The renter hears about a fine here and only here. A PROPOSED assessment
+        // is finance deciding whether to charge them — some are waived — and
+        // telling them about one would turn a deliberation into a demand.
+        notificationService.sendPenaltyIncurred(approved);
+        return dto(approved);
     }
 
     // ------------------------------------------------------------------

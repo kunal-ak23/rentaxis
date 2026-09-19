@@ -1,12 +1,14 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
+import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.PenaltyPayment;
 import com.datagami.rentaxis.domain.entity.Renter;
-import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
@@ -67,12 +69,10 @@ class NotificationServicePenaltyHelpersTest {
     // ───────────────────────────── sendPenaltyIncurred ─────────────────────────────
 
     @Test
-    void sendPenaltyIncurred_withSchedule_callsNotifyWithIncurredType() {
-        UUID penaltyId = UUID.randomUUID();
-        PaymentSchedule schedule = scheduleWithRenter(renterUserId);
-        BigDecimal fineAmount = new BigDecimal("500");
+    void sendPenaltyIncurred_withApprovedAssessment_callsNotifyWithIncurredType() {
+        PenaltyAssessment assessment = assessmentFor(renterUserId);
 
-        service.sendPenaltyIncurred(schedule, ChequeFailureReason.BOUNCE, fineAmount, penaltyId);
+        service.sendPenaltyIncurred(assessment);
 
         ArgumentCaptor<com.datagami.rentaxis.domain.entity.Notification> captor =
                 ArgumentCaptor.forClass(com.datagami.rentaxis.domain.entity.Notification.class);
@@ -82,18 +82,19 @@ class NotificationServicePenaltyHelpersTest {
         assertThat(saved.getType()).isEqualTo("PENALTY_INCURRED");
         assertThat(saved.getTitle()).isEqualTo("Penalty Incurred");
         assertThat(saved.getMessage()).contains("500");
-        assertThat(saved.getMessage()).contains("BOUNCE");
+        assertThat(saved.getMessage()).contains(PenaltyReason.CHEQUE_RETURN.label());
+        // The instalment the fine is about, off the cheque that failed.
+        assertThat(saved.getMessage()).contains("#3");
         assertThat(saved.getReferenceType()).isEqualTo("PENALTY");
-        assertThat(saved.getReferenceId()).isEqualTo(penaltyId);
+        assertThat(saved.getReferenceId()).isEqualTo(assessment.getId());
         assertThat(saved.getUserId()).isEqualTo(renterUserId);
     }
 
     @Test
     void sendPenaltyIncurred_renterUserIdNull_silentlySkips() {
-        UUID penaltyId = UUID.randomUUID();
-        PaymentSchedule schedule = scheduleWithNullRenterUserId();
+        PenaltyAssessment assessment = assessmentFor(null);
 
-        service.sendPenaltyIncurred(schedule, ChequeFailureReason.BOUNCE, new BigDecimal("500"), penaltyId);
+        service.sendPenaltyIncurred(assessment);
 
         verify(notificationRepository, never()).save(any());
     }
@@ -187,6 +188,27 @@ class NotificationServicePenaltyHelpersTest {
     }
 
     // ─────────────────────────────── helpers ───────────────────────────────────────
+
+    /** An approved assessment against a returned cheque, the shape approve() hands over. */
+    private PenaltyAssessment assessmentFor(UUID renterUserId) {
+        Renter renter = new Renter();
+        renter.setId(UUID.randomUUID());
+        renter.setUserId(renterUserId);
+        renter.setNameEn("Test Renter");
+
+        Cheque cheque = new Cheque();
+        cheque.setId(UUID.randomUUID());
+        cheque.setSeqNo(3);
+
+        PenaltyAssessment a = new PenaltyAssessment();
+        a.setId(UUID.randomUUID());
+        a.setTenantId(tenantId);
+        a.setRenter(renter);
+        a.setCheque(cheque);
+        a.setReason(PenaltyReason.CHEQUE_RETURN);
+        a.setAmount(new BigDecimal("500"));
+        return a;
+    }
 
     private PaymentSchedule scheduleWithRenter(UUID renterUserId) {
         Renter renter = new Renter();

@@ -148,7 +148,8 @@ class ChequeGenerationServiceIT {
         // A DRAFT lease's cheques are invisible to the register: they are a
         // proposal, not money owed.
         tx.executeWithoutResult(s -> assertThat(chequeRepository.findDue(
-                null, LocalDate.of(2030, 1, 1), org.springframework.data.domain.Pageable.unpaged())
+                null, LocalDate.of(2030, 1, 1), true, java.util.List.of(),
+                org.springframework.data.domain.Pageable.unpaged())
                 .getContent()).isEmpty());
     }
 

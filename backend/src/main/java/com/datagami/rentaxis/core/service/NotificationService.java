@@ -7,11 +7,13 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
 import com.datagami.rentaxis.core.notification.PushNotificationEvent;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.DeviceToken;
 import com.datagami.rentaxis.domain.entity.Notification;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
+import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.PenaltyPayment;
+import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -147,29 +149,44 @@ public class NotificationService {
     }
 
     /**
-     * Cheque-failure penalty was just incurred — fired alongside PAYMENT_BOUNCED
-     * by {@code PaymentScheduleService.markFailed}. Body restates the amount,
-     * reason, and installment so the renter knows exactly what they owe and
-     * why. Wrapped in a try/catch by the caller — best-effort.
+     * A penalty has actually been charged (spec §7.3).
+     *
+     * <p><b>Fired from {@code PenaltyAssessmentService.approve} and nowhere else.</b>
+     * A {@code PROPOSED} assessment is finance deliberating about whether to fine
+     * this renter, and some of those end up waived; telling the renter about one
+     * would turn "we are thinking about it" into "you owe this". Only the approval
+     * is a fact about their balance.</p>
+     *
+     * <p>Best-effort: a downed mailer must not roll back the charge, so the failure
+     * is logged rather than thrown. The in-app row is written in its own
+     * transaction by {@code notify}.</p>
      */
-    public void sendPenaltyIncurred(PaymentSchedule schedule, ChequeFailureReason reason,
-                                     BigDecimal fineAmount, UUID penaltyId) {
-        UUID renterUserId = schedule.getLease() != null && schedule.getLease().getRenter() != null
-                ? schedule.getLease().getRenter().getUserId()
-                : null;
-        if (renterUserId == null) {
-            log.warn("PENALTY_INCURRED notification skipped — no renter user id for penalty {}", penaltyId);
+    public void sendPenaltyIncurred(PenaltyAssessment assessment) {
+        if (assessment == null) {
             return;
         }
-        UUID tenantId = TenantContextHolder.getTenantId();
-        String body = "A " + fineAmount + " AED penalty has been added for installment #"
-                + schedule.getInstallmentNumber() + " (" + reason
+        Renter renter = assessment.getRenter();
+        UUID renterUserId = renter != null ? renter.getUserId() : null;
+        if (renterUserId == null) {
+            log.warn("PENALTY_INCURRED notification skipped — no renter user id for penalty {}",
+                    assessment.getId());
+            return;
+        }
+        UUID tenantId = assessment.getTenantId() != null
+                ? assessment.getTenantId() : TenantContextHolder.getTenantId();
+        Cheque cheque = assessment.getCheque();
+        String about = cheque != null
+                ? " for instalment #" + cheque.getSeqNo()
+                : "";
+        String body = "A " + assessment.getAmount() + " AED penalty has been added" + about
+                + " (" + assessment.getReason().label()
                 + "). Please clear it via bank transfer, cheque, or cash.";
         try {
             notify(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
-                    body, "PENALTY", penaltyId);
+                    body, "PENALTY", assessment.getId());
         } catch (Exception e) {
-            log.warn("Failed to send PENALTY_INCURRED notification for penalty {}: {}", penaltyId, e.getMessage());
+            log.warn("Failed to send PENALTY_INCURRED notification for penalty {}: {}",
+                    assessment.getId(), e.getMessage());
         }
     }
 

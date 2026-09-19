@@ -22,6 +22,7 @@ import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
@@ -34,6 +35,7 @@ import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,6 +104,7 @@ public class ChequeService {
 
     private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;
+    private final LeaseEventRepository leaseEventRepository;
     private final AccountRepository accountRepository;
     private final PostingService postingService;
     private final LeaseChequeRegistrar registrar;
@@ -120,6 +123,7 @@ public class ChequeService {
      */
     public ChequeService(ChequeRepository chequeRepository,
                          LeaseRepository leaseRepository,
+                         LeaseEventRepository leaseEventRepository,
                          AccountRepository accountRepository,
                          PostingService postingService,
                          LeaseChequeRegistrar registrar,
@@ -129,6 +133,7 @@ public class ChequeService {
                          ApplicationEventPublisher events) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
+        this.leaseEventRepository = leaseEventRepository;
         this.accountRepository = accountRepository;
         this.postingService = postingService;
         this.registrar = registrar;
@@ -341,6 +346,9 @@ public class ChequeService {
         cheque.setFailureReason(r.failureReason());
         moveTo(cheque, ChequeStatus.BOUNCED, r.notes());
         chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "returned by the bank"
+                + (r.failureReason() != null ? " (" + r.failureReason() + ")" : "")
+                + " — " + money(amount) + " AED back on the receivable");
 
         publish(EmailEventType.CHEQUE_BOUNCED, cheque,
                 ChequePayload.ofCheque(cheque, null,
@@ -426,6 +434,8 @@ public class ChequeService {
 
         moveTo(bounced, ChequeStatus.REPLACED, request.notes());
         chequeRepository.save(bounced);
+        recordLeaseEvent(lease, bounced, "replaced by " + rows.size()
+                + (rows.size() == 1 ? " instrument" : " instruments") + " totalling " + money(total) + " AED");
         return out;
     }
 
@@ -500,6 +510,8 @@ public class ChequeService {
         reversePdr(cheque, r.dateOrToday(), reasonOr(r.notes(), "Cheque cancelled"));
         moveTo(cheque, ChequeStatus.CANCELLED, r.notes());
         chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "cancelled and its registration reversed"
+                + (r.notes() != null && !r.notes().isBlank() ? " — " + r.notes().trim() : ""));
         return dto(cheque, lease);
     }
 
@@ -520,6 +532,8 @@ public class ChequeService {
         cheque.setReturnedAt(on);
         moveTo(cheque, ChequeStatus.RETURNED, reason);
         chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "handed back to the tenant"
+                + (reason != null && !reason.isBlank() ? " — " + reason.trim() : ""));
         return dto(cheque, lease);
     }
 
@@ -566,6 +580,35 @@ public class ChequeService {
         registrar.register(lease, cheque);
         publish(EmailEventType.CHEQUE_RECEIVED, cheque, ChequePayload.ofCheque(cheque, null, null));
         return dto(cheque, lease);
+    }
+
+    /**
+     * Cash or a transfer taken at the counter (spec §7.4, "Cash Receipt Voucher –
+     * Rent"): the row is added to the posted lease and received in the same breath.
+     *
+     * <p>One transaction, deliberately. The two halves are a {@code PDR} raising a
+     * receipt the landlord holds and a {@code CRT} settling it against the bank,
+     * and a register that committed the first without the second would show money
+     * the counter took as still outstanding. The self-call to
+     * {@link #addRowToPostedLease} runs inside this method's transaction — the
+     * guards it carries (manageable lease, posted lease, row rules, the lease row
+     * lock) all apply, and Spring's {@code REQUIRED} would have joined this
+     * transaction anyway.</p>
+     */
+    @Transactional
+    public ChequeDTO cashReceipt(UUID leaseId, ChequeRowInput row) {
+        if (row == null) throw new BusinessRuleViolationException("A receipt needs a row");
+        ChequeMode mode = row.mode();
+        if (mode != ChequeMode.CASH && mode != ChequeMode.TRANSFER) {
+            // A PDC is paper to be banked and cleared later; an ONLINE row belongs to
+            // the gateway. Neither arrives over the counter.
+            throw new BusinessRuleViolationException(
+                    "A counter receipt must be a CASH or TRANSFER row"
+                            + (mode == null ? "" : "; this one is " + mode) + ".");
+        }
+        ChequeDTO created = addRowToPostedLease(leaseId, row);
+        return receive(created.id(), new ChequeActionRequest(
+                row.chequeDate(), null, null, row.debitAccountId()));
     }
 
     // ------------------------------------------------------------------
@@ -1018,6 +1061,32 @@ public class ChequeService {
     // ------------------------------------------------------------------
     // side effects
     // ------------------------------------------------------------------
+
+    /**
+     * A line in the lease's own history for the transitions somebody will later ask
+     * about: a returned cheque, what replaced it, a cancellation, paper handed back.
+     *
+     * <p>Not written for deposit, clear or receive — those are the register doing
+     * what it is for, and a row per instalment per month would bury the four events
+     * that actually need explaining. The lease's status does not change, so previous
+     * and new state are both what it already is; {@code LeaseService} records
+     * ordinary edits the same way.</p>
+     *
+     * <p>Inside the transition's own transaction and deliberately not wrapped in a
+     * try/catch: an insert that fails has already marked the transaction
+     * rollback-only, so swallowing it would only turn a clear failure into an
+     * {@code UnexpectedRollbackException} at commit time.</p>
+     */
+    private void recordLeaseEvent(Lease lease, Cheque cheque, String what) {
+        LeaseEvent event = new LeaseEvent();
+        event.setLease(lease);
+        event.setTenantId(lease.getTenantId());
+        event.setPreviousState(lease.getStatus());
+        event.setNewState(lease.getStatus());
+        event.setNotes("Cheque " + label(cheque) + ": " + what);
+        event.setCreatedAt(Instant.now());
+        leaseEventRepository.save(event);
+    }
 
     private void publishDeposited(Cheque cheque) {
         publish(EmailEventType.CHEQUE_DEPOSITED, cheque,
