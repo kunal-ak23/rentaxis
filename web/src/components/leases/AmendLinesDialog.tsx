@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { splitLineErrors, toInputs, toRows, type LineRow } from "./leaseMath";
+import { linesAreValid, splitLineErrors, toInputs, toRows, type LineRow } from "./leaseMath";
 import {
     ApiError,
     leaseApi,
@@ -79,7 +79,7 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
             onConfirm={submit}
             confirmText={t("amendLines")}
             cancelText={t("cancel")}
-            confirmDisabled={!!blocker || !reason.trim() || rows.length === 0}
+            confirmDisabled={!!blocker || !reason.trim() || !linesAreValid(rows)}
             busy={busy}
             confirmTestId="amend-lines-confirm"
             width="xl"

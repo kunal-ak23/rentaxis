@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } f
 import { cn } from "@/lib/utils";
 import { NumberInput } from "@/components/ui/NumberInput";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
-import { splitLineErrors, toInputs, toRows, type LineRow } from "@/components/leases/leaseMath";
+import { linesAreValid, splitLineErrors, toInputs, toRows, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, leaseApi,
     type ChargeType, type DraftLeaseInput, type DraftPaymentMethod,
@@ -110,7 +110,11 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
             setErrors([t("errLineNeedsType")]);
             return;
         }
-        if (rows.some(r => (r.discountAmount || 0) > (r.grossAmount || 0))) {
+        // The two checks above name the mistake an accountant makes most
+        // often; `linesAreValid` — the same gate the wizard and the
+        // amend/renew/extend dialogs read — is the backstop that also
+        // catches a non-positive amount or a negative discount.
+        if (!linesAreValid(rows)) {
             setErrors([t("errDiscountOverAmount")]);
             return;
         }

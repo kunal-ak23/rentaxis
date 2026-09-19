@@ -16,7 +16,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { toChequeRows } from "@/components/leases/ChequeGrid";
-import { blankLine, splitLineErrors, toInputs, toRows, todayIso, totalsOf, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type DraftLeaseInput, type DraftPaymentMethod,
@@ -198,7 +198,12 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
             case "lines":
                 if (rows.length === 0) return t("errLinesRequired");
                 if (rows.some(r => !r.chargeTypeId)) return t("errLineNeedsType");
-                if (rows.some(r => (r.discountAmount || 0) > (r.grossAmount || 0))) return t("errDiscountOverAmount");
+                // The specific messages above catch the two mistakes an
+                // accountant is likeliest to make; `linesAreValid` — the same
+                // gate the amend/renew/extend dialogs use — is the backstop
+                // that also refuses a non-positive amount or a negative
+                // discount, which this step let through before.
+                if (!linesAreValid(rows)) return t("errDiscountOverAmount");
                 return null;
             default:
                 return null;

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { splitLineErrors, toInputs, toRows, todayIso, type LineRow } from "./leaseMath";
+import { linesAreValid, splitLineErrors, toInputs, toRows, todayIso, type LineRow } from "./leaseMath";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail } from "@/lib/api/leasing";
 
 /**
@@ -99,7 +99,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             onConfirm={submit}
             confirmText={t("renew")}
             cancelText={t("cancel")}
-            confirmDisabled={!startDate || !endDate || endDate <= startDate}
+            confirmDisabled={!startDate || !endDate || endDate <= startDate || (!copyLines && !linesAreValid(rows))}
             busy={busy}
             confirmTestId="renew-lease-confirm"
             width={copyLines ? "lg" : "xl"}

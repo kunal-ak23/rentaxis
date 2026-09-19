@@ -99,4 +99,21 @@ describe("AmendLinesDialog", () => {
             reason: "Parking removed at renewal",
         });
     });
+
+    it("keeps confirm disabled once a discount exceeds its own line's amount", () => {
+        // A reason alone used to be enough to enable Confirm — the dialog
+        // posted the same bad line the wizard would have refused to advance
+        // past, and let the server's 400 catch it instead.
+        renderDialog([cheque("REGISTERED")]);
+        const confirm = screen.getByTestId("amend-lines-confirm");
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Parking removed at renewal" } });
+        expect(confirm).toBeEnabled();
+
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "55000" } });
+        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "55000.01" } });
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "0" } });
+        expect(confirm).toBeEnabled();
+    });
 });

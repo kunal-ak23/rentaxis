@@ -8,7 +8,7 @@ import LeaseLinesGrid from "./LeaseLinesGrid";
 import { NumberInput } from "@/components/ui/NumberInput";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { fmtAmount } from "@/lib/api/ledger";
-import { blankLine, round2, splitLineErrors, toInputs, todayIso, totalsOf, type LineRow } from "./leaseMath";
+import { blankLine, linesAreValid, round2, splitLineErrors, toInputs, todayIso, totalsOf, type LineRow } from "./leaseMath";
 import {
     ApiError,
     leaseApi,
@@ -104,7 +104,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
             onConfirm={submit}
             confirmText={t("extend")}
             cancelText={t("cancel")}
-            confirmDisabled={!newEndDate || newEndDate <= lease.endDate || !matches || rows.length === 0}
+            confirmDisabled={!newEndDate || newEndDate <= lease.endDate || !matches || !linesAreValid(rows)}
             busy={busy}
             confirmTestId="extend-lease-confirm"
             width="xl"
