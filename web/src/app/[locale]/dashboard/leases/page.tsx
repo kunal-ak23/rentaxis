@@ -126,7 +126,7 @@ export default function LeasesPage() {
 
     useEffect(() => {
         fetchLeases();
-    }, [currentPage, itemsPerPage, debouncedSearchQuery]);
+    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter]);
 
     useEffect(() => {
         if (leases.length > 0) {
@@ -146,6 +146,7 @@ export default function LeasesPage() {
         try {
             const data = await leaseApi.paged({
                 search: debouncedSearchQuery || undefined,
+                status: statusFilter || undefined,
                 page: Math.max(currentPage - 1, 0),
                 size: itemsPerPage,
             });
@@ -649,10 +650,10 @@ export default function LeasesPage() {
         </div>
     );
 
-    // GET /leases/paged takes `search` and nothing else, so the status filter
-    // narrows the page already fetched rather than pretending to be a
-    // server-side one. Pagination still counts the server's total, which is
-    // why the filter resets to page 1.
+    // `status` is a server-side param on GET /leases/paged, so a filter change
+    // is a re-fetch, not a re-slice — which is why it resets to page 1: the
+    // page number it was chosen on no longer means anything against the new,
+    // narrower total.
     if (userRole && !canViewLeases) {
         return (
             <div className="text-center py-24" data-testid="leases-access-denied">
@@ -661,7 +662,9 @@ export default function LeasesPage() {
         );
     }
 
-    const filteredLeases = statusFilter ? leases.filter(l => l.status === statusFilter) : leases;
+    // `leases` is already the server's filtered page — `status` rode along on
+    // the request above, so there is nothing left to filter client-side.
+    const filteredLeases = leases;
     const selectableDrafts = filteredLeases.filter(l => l.status === "DRAFT");
 
     return (

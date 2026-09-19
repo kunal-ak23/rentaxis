@@ -504,13 +504,15 @@ export const chargeTypeApi = {
 export const leaseApi = {
   get: (id: string) => get<LeaseDetail>(`/leases/${id}`),
   /**
-   * The leases list. `search` is the only filter the controller takes — there
-   * is no `status` parameter on `GET /leases/paged`, so a status filter is
-   * applied to the page the client already holds rather than pretended to be
-   * a server-side one.
+   * The leases list. `status` and `propertyId` are filters, not hints: they
+   * narrow the page the server hands back (`LeaseController#getAllLeasesPaged`,
+   * single-valued `status` — not a CSV). A client-side filter over the page
+   * already fetched hid every match outside that one page.
    */
-  paged: (q: { search?: string; page?: number; size?: number } = {}) =>
-    get<Page<LeaseDetail>>(`/leases/paged${qs({ search: q.search, page: q.page ?? 0, size: q.size ?? 25 })}`),
+  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; page?: number; size?: number } = {}) =>
+    get<Page<LeaseDetail>>(
+      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, page: q.page ?? 0, size: q.size ?? 25 })}`,
+    ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),
   post: (id: string) => send<PostLeaseResponse>("POST", `/leases/${id}/post`),

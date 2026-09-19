@@ -74,9 +74,13 @@ function renderPage() {
 
 beforeEach(() => {
     role = "ACCOUNTANT";
-    api.paged.mockImplementation(async () => ({
-        content: ROWS, totalElements: ROWS.length, totalPages: 1, number: 0, size: 25,
-    }));
+    // A real server, filtering by `status` when the list sends it — so a test
+    // that flips the filter and finds one row proves the param made the round
+    // trip, not that a client-side `.filter()` ran on the page it already had.
+    api.paged.mockImplementation(async (q: { status?: string } = {}) => {
+        const content = q.status ? ROWS.filter(l => l.status === q.status) : ROWS;
+        return { content, totalElements: content.length, totalPages: 1, number: 0, size: 25 };
+    });
     api.statsByLeases.mockImplementation(async () => []);
     api.post.mockReset();
     push.mockClear();
@@ -126,16 +130,32 @@ describe("Leases list — bulk post", () => {
         expect(screen.queryByTestId("bulk-post")).not.toBeInTheDocument();
     });
 
-    it("filters by status, RENEWED among them, and shows the chain", async () => {
+    it("sends the status filter to the server, RENEWED among the choices, and shows the chain", async () => {
         renderPage();
         await screen.findByTestId("lease-row-l1");
         expect(screen.getAllByTestId(/^lease-row-/)).toHaveLength(4);
 
         fireEvent.change(screen.getByTestId("lease-status-filter"), { target: { value: "RENEWED" } });
-        const rows = screen.getAllByTestId(/^lease-row-/);
+
+        // The filter is a fetch, not a re-slice of the page already on screen —
+        // GET /leases/paged took the status itself (LeaseController, since b70f770b).
+        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ status: "RENEWED" })));
+        const rows = await screen.findAllByTestId(/^lease-row-/);
         expect(rows).toHaveLength(1);
         expect(rows[0]).toHaveAttribute("data-testid", "lease-row-l4");
         expect(rows[0]).toHaveTextContent("chain-aa");
         expect(rows[0]).toHaveTextContent("Renewed");
+    });
+
+    it("clears the filter back to an unfiltered fetch", async () => {
+        renderPage();
+        await screen.findByTestId("lease-row-l1");
+
+        fireEvent.change(screen.getByTestId("lease-status-filter"), { target: { value: "RENEWED" } });
+        await waitFor(() => expect(screen.getAllByTestId(/^lease-row-/)).toHaveLength(1));
+
+        fireEvent.change(screen.getByTestId("lease-status-filter"), { target: { value: "" } });
+        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ status: undefined })));
+        expect(await screen.findAllByTestId(/^lease-row-/)).toHaveLength(4);
     });
 });
