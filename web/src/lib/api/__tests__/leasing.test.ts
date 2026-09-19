@@ -312,6 +312,17 @@ describe("onlinePayApi", () => {
     expect(url).toBe("/api/proxy/v1/online-payments/cancel/c1");
     expect(init?.method).toBe("POST");
   });
+
+  it("unapplied() pages the unapplied-refund list", async () => {
+    await onlinePayApi.unapplied({ page: 2, size: 10 });
+    const { url } = lastCall();
+    expect(url).toBe("/api/proxy/v1/online-payments/unapplied?page=2&size=10");
+  });
+
+  it("unappliedCount() reads the tile's count + total", async () => {
+    await onlinePayApi.unappliedCount();
+    expect(fetch).toHaveBeenCalledWith("/api/proxy/v1/online-payments/unapplied/count", expect.anything());
+  });
 });
 
 // ---- error surfacing ----

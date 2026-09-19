@@ -142,8 +142,11 @@ export default function RenterPortalPage() {
                 );
                 setPaymentsByLease(grouped);
 
+                // RenterChequeDTO's own `due` flag (accounting-v2) replaces the v1
+                // PENDING/OVERDUE status strings, which this endpoint no longer
+                // returns — a cheque row is REGISTERED, DEPOSITED, CLEARED, etc.
                 const pending = payments
-                    .filter((p: any) => p.status === "PENDING" || p.status === "ONLINE_PENDING")
+                    .filter((p: any) => p.due)
                     .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
                 if (pending.length > 0) {
@@ -155,7 +158,7 @@ export default function RenterPortalPage() {
                     const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                     setNextPayment({
                         dueDate: next.dueDate,
-                        amount: next.totalPayable || next.amount,
+                        amount: next.payable ?? next.amount,
                         daysUntilDue: diffDays,
                         isOverdue: diffDays < 0,
                     });

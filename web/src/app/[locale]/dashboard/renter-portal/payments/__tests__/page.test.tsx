@@ -1,91 +1,116 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+import en from "../../../../../../../messages/en.json";
+import type { RenterCheque } from "@/lib/api/leasing";
 
-vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string, vars?: Record<string, string | number>) => {
-        if (!vars) return key;
-        let out = key;
-        for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{${k}}`, String(v));
-        return out;
-    },
-    useLocale: () => "en",
-}));
+/**
+ * The renter's payments screen, rebuilt on `onlinePayApi.myPayments`
+ * (`RenterChequeDTO[]`) rather than v1's payment-schedule shape. The one
+ * thing this screen must never get wrong: "Pay" only ever shows on a row
+ * that is both due and the property's own online-enabled — never on
+ * history, never on a due-but-cash-only row.
+ */
 
-vi.mock("next-auth/react", () => ({
-    useSession: () => ({ data: null }),
-}));
+const api = vi.hoisted(() => ({ myPayments: vi.fn() }));
+vi.mock("@/lib/api/leasing", async orig => {
+    const m = await orig<typeof import("@/lib/api/leasing")>();
+    return { ...m, onlinePayApi: { ...m.onlinePayApi, ...api } };
+});
 
 import RenterPaymentsPage from "../page";
 
-const samplePayments = [
-    {
-        id: "p1",
-        installmentNumber: 3,
-        dueDate: "2026-06-01",
-        amount: 12500,
-        status: "PENDING",
-        chequeNumber: "CHQ-3",
-        propertyName: "Belle Vue",
-        unitIdentifier: "A-204",
-        renterName: "Tenant",
-        leaseId: "l1",
-        penaltyAmount: 0,
-        totalPayable: 12500,
-        daysOverdue: 0,
-        gracePeriodDays: 5,
-        statusChangedAt: null,
-        failureReason: null,
-    },
-    {
-        id: "p2",
-        installmentNumber: 2,
-        dueDate: "2026-04-01",
-        amount: 12500,
-        status: "DEPOSITED",
-        chequeNumber: "CHQ-2",
-        propertyName: "Belle Vue",
-        unitIdentifier: "A-204",
-        renterName: "Tenant",
-        leaseId: "l1",
-        penaltyAmount: 0,
-        totalPayable: 12500,
-        daysOverdue: 0,
-        gracePeriodDays: 5,
-        statusChangedAt: "2026-04-03T10:00:00Z",
-        failureReason: null,
-    },
-];
+function row(over: Partial<RenterCheque> = {}): RenterCheque {
+    return {
+        id: "c1", leaseId: "l1", installmentNumber: 1, dueDate: "2026-06-01",
+        amount: 12500, status: "REGISTERED", mode: "PDC", chequeNumber: "CHQ-1",
+        bankName: "ENBD", narration: null, propertyName: "Belle Vue", unitIdentifier: "A-204",
+        renterName: "Tenant", due: true, overdue: false, daysOverdue: 0, gracePeriodDays: 5,
+        penaltyOutstanding: 0, payable: 12500, onlineEnabled: true, penaltyAssessmentId: null,
+        failureReason: null, clearedAt: null, statusChangedAt: null,
+        ...over,
+    };
+}
 
-beforeEach(() => {
-    global.fetch = vi.fn(async (url: any) => {
-        const u = String(url);
-        if (u.includes("my-payments")) {
-            return { ok: true, json: async () => samplePayments } as Response;
-        }
-        return { ok: true, json: async () => null } as Response;
-    }) as any;
-});
+function renderPage() {
+    return render(
+        <NextIntlClientProvider locale="en" messages={en}>
+            <RenterPaymentsPage />
+        </NextIntlClientProvider>,
+    );
+}
 
 afterEach(() => {
     cleanup();
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
 });
 
-describe("RenterPaymentsPage", () => {
-    it("renders the next-cheque hero with the earliest PENDING amount", async () => {
-        render(<RenterPaymentsPage />);
-        await waitFor(() => expect(screen.getAllByText(/AED 12,500/i).length).toBeGreaterThan(0));
-        expect(screen.getByText(/nextChequeDue/i)).toBeTruthy();
+describe("RenterPaymentsPage — due rows", () => {
+    it("shows Pay only on a due, online-enabled row — never on a due-but-offline row, never on history", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ id: "due-online", due: true, onlineEnabled: true, status: "REGISTERED" }),
+            row({ id: "due-offline", due: true, onlineEnabled: false, status: "REGISTERED", dueDate: "2026-06-05" }),
+            row({ id: "cleared", due: false, onlineEnabled: true, status: "CLEARED", dueDate: "2026-04-01" }),
+        ]);
+        renderPage();
+
+        await waitFor(() => expect(screen.getByTestId("due-row-due-online")).toBeInTheDocument());
+        expect(screen.getByTestId("pay-online-due-online")).toBeInTheDocument();
+
+        expect(screen.getByTestId("due-row-due-offline")).toBeInTheDocument();
+        expect(screen.queryByTestId("pay-online-due-offline")).not.toBeInTheDocument();
+
+        expect(screen.getByTestId("history-row-cleared")).toBeInTheDocument();
+        expect(screen.queryByTestId("pay-online-cleared")).not.toBeInTheDocument();
     });
 
-    it("shows the Deposited on subtitle for DEPOSITED rows", async () => {
-        render(<RenterPaymentsPage />);
-        await waitFor(() => expect(screen.getAllByText(/depositedOn/).length).toBeGreaterThan(0));
+    it("never shows Pay on a fully-paid (payable = 0) row even if flagged due", async () => {
+        api.myPayments.mockResolvedValue([row({ id: "zero", due: true, onlineEnabled: true, payable: 0 })]);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("due-row-zero")).toBeInTheDocument());
+        expect(screen.queryByTestId("pay-online-zero")).not.toBeInTheDocument();
     });
 
-    it("never renders a Pay Now button", async () => {
-        render(<RenterPaymentsPage />);
-        await waitFor(() => expect(screen.getByText(/nextChequeDue/i)).toBeTruthy());
-        expect(screen.queryByText(/payNow/i)).toBeNull();
+    it("totals the due rows' payable amounts into the Amount due tile", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ id: "d1", due: true, payable: 12500, dueDate: "2026-06-01" }),
+            row({ id: "d2", due: true, payable: 500, dueDate: "2026-06-10" }),
+        ]);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("amount-due-total")).toHaveTextContent("13,000.00"));
+    });
+});
+
+describe("RenterPaymentsPage — history", () => {
+    it("offers a receipt link on a CLEARED row", async () => {
+        api.myPayments.mockResolvedValue([row({ id: "c2", due: false, status: "CLEARED" })]);
+        renderPage();
+        const link = await screen.findByTestId("receipt-link-c2");
+        expect(link).toHaveAttribute("href", "/api/proxy/v1/cheques/c2/receipt");
+    });
+
+    it("flags a BOUNCED row instead of offering a receipt", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ id: "b1", due: false, status: "BOUNCED", failureReason: "BOUNCE", statusChangedAt: "2026-05-01" }),
+        ]);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("history-row-b1")).toBeInTheDocument());
+        expect(screen.queryByTestId("receipt-link-b1")).not.toBeInTheDocument();
+        expect(screen.getByTestId("history-row-b1")).toHaveTextContent("Bounced");
+    });
+});
+
+describe("RenterPaymentsPage — empty and error states", () => {
+    it("shows the all-caught-up state when nothing is due", async () => {
+        api.myPayments.mockResolvedValue([row({ id: "c3", due: false, status: "CLEARED" })]);
+        renderPage();
+        expect(await screen.findByText(/All caught up/i)).toBeInTheDocument();
+    });
+
+    it("surfaces a load failure instead of rendering an empty screen", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        api.myPayments.mockRejectedValue(new ApiError(500, "boom"));
+        renderPage();
+        expect(await screen.findByText("boom")).toBeInTheDocument();
     });
 });

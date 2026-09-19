@@ -460,6 +460,38 @@ export type VerifyPaymentResult = {
   paymentId: string | null;
 };
 
+/**
+ * UnappliedOnlinePaymentDTO — a captured online payment whose cheque row never
+ * settled (gateway captured the money, the register row it was meant to clear
+ * is not CLEARED), so finance owes the renter a refund.
+ *
+ * Not on the branch yet as a backend type when this client was written — Task
+ * 16 was handed the exact contract ahead of the parallel backend work
+ * (`GET /online-payments/unapplied`, `GET /online-payments/unapplied/count`).
+ * Both endpoints are SA/TA/ACCOUNTANT, same as {@link chequeApi.cancel}'s
+ * `canCancelCheques`.
+ */
+export type UnappliedOnlinePayment = {
+  id: string;
+  createdAt: string;
+  capturedAt: string | null;
+  amount: number;
+  currency: string;
+  gatewayOrderId: string | null;
+  gatewayPaymentId: string | null;
+  failureReason: string | null;
+  chequeId: string | null;
+  chequeNumber: string | null;
+  chequeStatus: ChequeStatus | null;
+  leaseId: string | null;
+  displayContractNumber: string | null;
+  renterName: string | null;
+  propertyName: string | null;
+  unitIdentifier: string | null;
+};
+
+export type UnappliedOnlinePaymentCount = { count: number; totalAmount: number };
+
 // ---- query shapes ----
 
 export type ChequeListQuery = {
@@ -570,4 +602,8 @@ export const onlinePayApi = {
   createOrder: (chequeId: string) => send<CreateOrderResponse>("POST", "/online-payments/create-order", { chequeId }),
   verify: (body: VerifyPaymentInput) => send<VerifyPaymentResult>("POST", "/online-payments/verify", body),
   cancel: (chequeId: string) => send<void>("POST", `/online-payments/cancel/${chequeId}`),
+  /** See {@link UnappliedOnlinePayment} — contract-only until the backend endpoint lands. */
+  unapplied: (q: { page?: number; size?: number } = {}) =>
+    get<Page<UnappliedOnlinePayment>>(`/online-payments/unapplied${qs({ page: q.page ?? 0, size: q.size ?? 25 })}`),
+  unappliedCount: () => get<UnappliedOnlinePaymentCount>("/online-payments/unapplied/count"),
 };
