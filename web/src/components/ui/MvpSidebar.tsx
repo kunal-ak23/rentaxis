@@ -77,6 +77,13 @@ export default function MvpSidebar() {
 
     // Build menu items based on role permissions
     const menuItems = [
+        // Leases sits on its own gate rather than inside canViewProperties.
+        // An ACCOUNTANT is the role that posts, amends and extends a contract,
+        // and the properties gate does not admit them — so the one role that
+        // owns posting had no link to the screen it posts from.
+        ...(hasPermission(userRole, 'canViewLeases') && !hasPermission(userRole, 'canViewProperties')
+            ? [{ name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' }]
+            : []),
         ...(hasPermission(userRole, 'canViewProperties')
             ? [
                 { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
