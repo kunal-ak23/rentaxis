@@ -14,6 +14,7 @@ import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
 import BounceChequeDialog from "@/components/cheques/BounceChequeDialog";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
+import UnappliedPaymentsTile from "@/components/cheques/UnappliedPaymentsTile";
 import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount, type Page } from "@/lib/api/ledger";
@@ -220,6 +221,8 @@ export default function ChequeRegisterPage() {
             </div>
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={refresh} />}
+
+            <UnappliedPaymentsTile visible={canCancel} />
 
             {summary && (
                 <div
