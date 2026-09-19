@@ -94,6 +94,10 @@ public class PropertyAccountService {
             template(AccountRole.MAINTENANCE_CHARGES, "Maintenance Charges - {property}", "C-01-02");
             template(AccountRole.RENT_PENALTY, "Rent Penalty - {property}", "C-01-02");
             template(AccountRole.CHEQUE_RETURN_PENALTY, "Cheque Return Penalty - {property}", "C-01-02");
+            // Where a penalty raised for neither of the above lands (spec §7.3,
+            // PenaltyReason.OTHER). Without a row here the "Other" reason exists in
+            // the UI and refuses on approval with an unmapped-role error.
+            template(AccountRole.OTHER_INCOME, "Other Income - {property}", "C-01-02");
         }
         defaultIfMissing(AccountRole.CASH, "A-02-05-001");
         defaultIfMissing(AccountRole.OUTPUT_VAT, "B-01-03-001");

@@ -16,6 +16,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Line;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
+import com.datagami.rentaxis.core.service.penalty.PenaltyRuleEngine;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
@@ -37,6 +38,7 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -105,8 +107,17 @@ public class ChequeService {
     private final LeaseChequeRegistrar registrar;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final NotificationService notificationService;
+    private final PenaltyRuleEngine penaltyRules;
     private final ApplicationEventPublisher events;
 
+    /**
+     * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
+     * over a layering mistake: the register tells the penalty module when a cheque
+     * bounced, and the penalty module asks the register to create the collection
+     * row an approval is paid through ({@code PenaltyAssessmentService.approve} →
+     * {@link #addRowToPostedLease}). Both directions are real, so one of them has
+     * to be resolved on first use.
+     */
     public ChequeService(ChequeRepository chequeRepository,
                          LeaseRepository leaseRepository,
                          AccountRepository accountRepository,
@@ -114,6 +125,7 @@ public class ChequeService {
                          LeaseChequeRegistrar registrar,
                          LeaseAccessPolicy leaseAccessPolicy,
                          NotificationService notificationService,
+                         @Lazy PenaltyRuleEngine penaltyRules,
                          ApplicationEventPublisher events) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
@@ -122,6 +134,7 @@ public class ChequeService {
         this.registrar = registrar;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.notificationService = notificationService;
+        this.penaltyRules = penaltyRules;
         this.events = events;
     }
 
@@ -231,8 +244,11 @@ public class ChequeService {
 
         applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
         chequeRepository.save(cheque);
-        // A cheque cleared after its grace period is a late payment; the penalty
-        // proposal hook is added by the penalty module.
+        // A cheque cleared after its grace period is a late payment. Inside this
+        // transaction on purpose: "the money arrived late" and "finance should look
+        // at a late fee" are one fact, and a proposal that failed to write while the
+        // clearing committed would lose it silently.
+        penaltyRules.onLateClear(cheque, r.dateOrToday());
         publishCleared(cheque);
         return dto(cheque, lease);
     }
@@ -328,8 +344,11 @@ public class ChequeService {
                 "Instalment #" + cheque.getSeqNo() + " of " + money(amount)
                         + " AED was returned" + (r.failureReason() != null ? " (" + r.failureReason() + ")" : "")
                         + ". Please arrange a replacement.");
-        // The threshold count and the fine itself are the penalty module's; the
-        // penalty proposal hook is added by the penalty module.
+        // The threshold count and the fine itself are the penalty module's. Called
+        // after the save so the bounce this call is recording is inside the count,
+        // and inside this transaction so a rule that cannot write its proposal rolls
+        // the bounce back rather than leaving a returned cheque finance never sees.
+        penaltyRules.onBounce(cheque);
         return dto(cheque, lease);
     }
 

@@ -96,6 +96,28 @@ public class LeaseAccessPolicy {
     }
 
     /**
+     * The properties a restricted caller may see, or {@code null} when they see
+     * everything.
+     *
+     * <p>{@link #filterReadable} and {@link #canRead} answer per lease, which is
+     * the wrong shape for a <em>paged</em> list hanging off a property: filtering
+     * a page after the database produced it reports a total that counts rows the
+     * caller may not see and hands back short pages. So a caller that pages by
+     * property pushes this into its own query instead.</p>
+     *
+     * <p>Fails closed exactly as {@link #canRead} does: a renter, a tenant user or
+     * an unauthenticated caller gets an empty list, which selects nothing — not
+     * an absent restriction, which would select everything.</p>
+     */
+    public List<UUID> visiblePropertyIds() {
+        Caller caller = currentCaller();
+        if (caller.seesEverything()) {
+            return null;
+        }
+        return caller.isPropertyManager() ? caller.assignedPropertyIds() : List.of();
+    }
+
+    /**
      * Guard for <em>changing</em> a lease or anything hanging off it — a cheque
      * moving through the register, a termination, a settlement.
      *

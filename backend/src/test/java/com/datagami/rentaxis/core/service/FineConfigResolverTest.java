@@ -183,6 +183,7 @@ class FineConfigResolverTest {
                 new BigDecimal("1000"),
                 7,
                 BigDecimal.valueOf(25),
+                2, true, false,
                 FineConfig.Source.ORG
         );
 

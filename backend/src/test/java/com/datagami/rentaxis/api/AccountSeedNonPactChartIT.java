@@ -158,7 +158,12 @@ class AccountSeedNonPactChartIT {
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getBody()).isNotEmpty();
 
-        assertThat(templateRoles(tenantId)).hasSize(13);
+        // 14 since the penalty module (spec §7.3) added OTHER_INCOME, which
+        // PenaltyReason.OTHER credits and which had no mapping of any kind before.
+        assertThat(templateRoles(tenantId))
+                .hasSize(14)
+                .contains(AccountRole.OTHER_INCOME.name(), AccountRole.RENT_PENALTY.name(),
+                        AccountRole.CHEQUE_RETURN_PENALTY.name());
         assertThat(defaultRoles(tenantId)).contains(AccountRole.CASH.name(), AccountRole.OUTPUT_VAT.name(),
                 AccountRole.INPUT_VAT.name(), AccountRole.ROUNDING_OFF.name(), AccountRole.DISCOUNT_ALLOWED.name(),
                 AccountRole.FORFEITED_INCOME.name(), AccountRole.OPENING_BALANCE_DIFFERENCE.name());

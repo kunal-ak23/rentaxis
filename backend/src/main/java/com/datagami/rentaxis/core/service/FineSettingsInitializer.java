@@ -30,6 +30,16 @@ public class FineSettingsInitializer {
     static final BigDecimal DEFAULT_CLOSED = new BigDecimal("1000");
     static final int        DEFAULT_GRACE  = 7;
     static final BigDecimal DEFAULT_RATE   = new BigDecimal("25");
+    /**
+     * Spec §7.3: the accountant charges after the second returned cheque, not the
+     * first. Public because the settings controller creates the row too when a
+     * tenant saves before anything has read its defaults, and these columns are
+     * NOT NULL — two places that must seed the same numbers.
+     */
+    public static final int     DEFAULT_BOUNCES_BEFORE_PENALTY = 2;
+    public static final boolean DEFAULT_AUTO_PROPOSE_CHEQUE_RETURN = true;
+    /** Off by default: a daily late fee proposed on every instalment would bury the worklist. */
+    public static final boolean DEFAULT_AUTO_PROPOSE_LATE_PAYMENT  = false;
 
     private final LandlordOrgFineSettingsRepository orgRepo;
 
@@ -42,6 +52,9 @@ public class FineSettingsInitializer {
         o.setFineAccountClosedAmount(DEFAULT_CLOSED);
         o.setFineGraceDays(DEFAULT_GRACE);
         o.setFinePerDayRate(DEFAULT_RATE);
+        o.setBouncesBeforePenalty(DEFAULT_BOUNCES_BEFORE_PENALTY);
+        o.setAutoProposeChequeReturn(DEFAULT_AUTO_PROPOSE_CHEQUE_RETURN);
+        o.setAutoProposeLatePayment(DEFAULT_AUTO_PROPOSE_LATE_PAYMENT);
         return orgRepo.save(o);
     }
 }

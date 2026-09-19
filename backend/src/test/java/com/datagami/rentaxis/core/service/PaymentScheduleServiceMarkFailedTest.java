@@ -124,6 +124,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.ORG));
 
         MarkFailedResult result = service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
@@ -151,6 +152,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.ORG));
 
         service.markFailed(payment.getId(), ChequeFailureReason.SIGNATURE_MISMATCH, null);
@@ -169,6 +171,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.ORG));
 
         service.markFailed(payment.getId(), ChequeFailureReason.ACCOUNT_CLOSED, null);
@@ -188,6 +191,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.PROPERTY));
 
         service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
@@ -275,6 +279,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.ORG));
 
         service.markFailed(payment.getId(), ChequeFailureReason.SIGNATURE_MISMATCH, null);
@@ -373,6 +378,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("1000"),
                 7,
                 new BigDecimal("25"),
+                2, true, false,
                 FineConfig.Source.ORG);
     }
 

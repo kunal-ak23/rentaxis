@@ -35,6 +35,21 @@ public class LandlordOrgFineSettings extends BaseTenantEntity {
     @Column(name = "fine_per_day_rate", nullable = false)
     private BigDecimal finePerDayRate;
 
+    /**
+     * Returned cheques on one lease before a penalty is proposed (spec §7.3).
+     * The client's accountant charges after two or three, not after the first.
+     */
+    @Column(name = "bounces_before_penalty", nullable = false)
+    private Integer bouncesBeforePenalty;
+
+    /** Whether a returned cheque past the threshold raises a proposal by itself. */
+    @Column(name = "auto_propose_cheque_return", nullable = false)
+    private Boolean autoProposeChequeReturn;
+
+    /** Whether rent cleared after its grace period raises a proposal by itself. */
+    @Column(name = "auto_propose_late_payment", nullable = false)
+    private Boolean autoProposeLatePayment;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
