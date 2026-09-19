@@ -11,6 +11,11 @@ export const PERMISSIONS = {
     canCreateProperties: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canViewProperties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // Draft-lease create/update/delete. NOT widened to ACCOUNTANT for
+    // accounting-v2: LeaseController's POST /leases, PUT /{id} and DELETE /{id}
+    // are all @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')") — an
+    // accountant posts and amends a lease that already exists (canPostLeases)
+    // but does not draft one. Widen this only alongside those annotations.
     canManageLeases: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
@@ -60,6 +65,46 @@ export const PERMISSIONS = {
     // Mirrors AccountController/PropertyAccountController's
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
     canManageAccountSetup: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+
+    // ---- accounting-v2 plan 2: leasing / cheque register / penalties ----
+    //
+    // Mirrors LeaseController#postLease and #amendLeaseLines:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')")
+    // on POST /leases/{id}/post (incl. dry-run) and POST /leases/{id}/amend-lines.
+    canPostLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Mirrors LeaseController#renewLease's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')").
+    // Drafting next year's contract is open to a property manager — it writes no
+    // journals — unlike posting it, which does.
+    canRenewLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors LeaseController#extendLease's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')") — unlike
+    // renew, an extension posts a TCO immediately, so PROPERTY_MANAGER is excluded.
+    canExtendLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Mirrors ChequeController's STAFF group (deposit, clear, receive, bounce,
+    // replace, details, cash-receipt, deposit-batch) and LeaseController's cheque
+    // grid endpoints (generate, generate numbers, save rows, bulk-attach), all
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')").
+    canManageCheques: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors ChequeController's FINANCE group on PUT /{id}/cancel:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). Narrower
+    // than canManageCheques on purpose — cancelling reverses the registering
+    // journal, a finance correction, so PROPERTY_MANAGER may work the register but
+    // not cancel a row on it.
+    canCancelCheques: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Mirrors PenaltyAssessmentController#list and #propose's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')") —
+    // spotting that a renter should be fined is part of running a building.
+    canProposePenalties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors PenaltyAssessmentController#approve/#waive/#reverse's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')") — turning
+    // a proposal into a charge on the ledger is finance's decision, not a manager's.
+    canApprovePenalties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Mirrors ChargeTypeController's write methods (POST, PUT /{id}):
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). The
+    // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
+    // and Spring Security does not combine the two — the narrower one wins on writes.
+    canManageChargeTypes: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
