@@ -1,7 +1,7 @@
 import { test as setup } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { login, register, createTenant, listTenants, createUser, createProperty, createUnit, createRenter, createLease } from './helpers/api-client';
+import { login, register, createTenant, listTenants, createUser, createProperty, createUnit, createRenter, createLease, seedChartOfAccounts } from './helpers/api-client';
 
 const CONTEXT_PATH = path.join(__dirname, '.test-context.json');
 
@@ -68,6 +68,19 @@ setup('seed test data', async () => {
     } catch (e: any) {
       console.log(`User ${u.email} creation failed: ${e.message}`);
     }
+  }
+
+  // 2b. Seed the chart of accounts (+ property account template + charge
+  //     types, chained server-side) before any property exists, so the
+  //     property created below gets its own generated account set and the
+  //     draft lease below has a RENT / SECURITY_DEPOSIT charge type to use.
+  //     accounting-v2 plan 2's `lines`-based leases need this; v1's flat
+  //     rentAmount/depositAmount body never did.
+  try {
+    await seedChartOfAccounts(adminId, adminRole, testTenantId);
+    console.log('Seeded chart of accounts');
+  } catch (e: any) {
+    console.log(`Chart of accounts seed failed (may already exist): ${e.message}`);
   }
 
   // 3. Create test property

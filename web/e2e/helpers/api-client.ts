@@ -157,6 +157,58 @@ export async function createRenter(
   });
 }
 
+// v1's `createLease` (flat rentAmount/depositAmount body, no `lines`) lived
+// here. Its replacement — `lines`-based, matching accounting-v2 plan 2's
+// `DraftLeaseInput` — is defined below, next to `generateCheques`/
+// `postLease`/`createAndPostLease`, the v2 flow that replaces the deleted
+// `PUT /leases/{id}/activate`.
+
+export async function generateContract(
+  userId: string,
+  role: string,
+  tenantId: string,
+  leaseId: string,
+) {
+  return apiCall<any>(`/api/v1/leases/${leaseId}/generate-contract`, {
+    method: 'POST',
+    headers: authHeaders(userId, role, tenantId),
+  });
+}
+
+/**
+ * Seeds the tenant's chart of accounts (+ the property account template +
+ * the charge-type catalogue, chained server-side — see
+ * `AccountController#seedDefaultAccounts`). Idempotent; safe to call once per
+ * tenant right after it is created and before any property, so every
+ * property created afterwards gets its own generated account set and every
+ * lease line has a RENT / SECURITY_DEPOSIT charge type to point at.
+ *
+ * accounting-v2 plan 2 replaced the flat `rentAmount`/`depositAmount`/
+ * `paymentTerms` lease body with `lines` cut from this catalogue, and
+ * `PUT /leases/{id}/activate` is gone — a lease now becomes ACTIVE only by
+ * `POST /leases/{id}/post`, which needs a real chart behind it.
+ */
+export async function seedChartOfAccounts(
+  userId: string,
+  role: string,
+  tenantId: string,
+) {
+  return apiCall<any[]>('/api/v1/finance/accounts/seed', {
+    method: 'POST',
+    headers: authHeaders(userId, role, tenantId),
+  });
+}
+
+/**
+ * v2's replacement for `activateLease`: draft (with `lines`) → generate the
+ * cheque grid → post. `PUT /leases/{id}/activate` and the flat
+ * rentAmount/depositAmount/paymentTerms body it took no longer exist
+ * (LeaseController, `web/src/lib/api/leasing.ts`).
+ *
+ * `rentAmount` here is the FULL contract value for the term (matches the
+ * wizard's own RENT line), not a monthly figure — same convention the old
+ * v1 `createLease` used for its `rentAmount` field.
+ */
 export async function createLease(
   userId: string,
   role: string,
@@ -171,6 +223,10 @@ export async function createLease(
     paymentTerms?: number;
   },
 ) {
+  const lines = [
+    { chargeTypeCode: 'RENT', grossAmount: lease.rentAmount },
+    { chargeTypeCode: 'SECURITY_DEPOSIT', grossAmount: lease.depositAmount ?? 5000 },
+  ];
   return apiCall<{ id: string; status: string }>('/api/v1/leases', {
     method: 'POST',
     headers: authHeaders(userId, role, tenantId),
@@ -179,33 +235,66 @@ export async function createLease(
       renterId: lease.renterId,
       startDate: lease.startDate,
       endDate: lease.endDate,
-      rentAmount: lease.rentAmount,
-      depositAmount: lease.depositAmount || 5000,
       paymentTerms: lease.paymentTerms || 4,
+      paymentMethod: 'CHEQUE',
+      depositPaymentMethod: 'CHEQUE',
+      lines,
     }),
   });
 }
 
-export async function generateContract(
+/** `POST /leases/{id}/cheques/generate` — every field optional, the service fills in the lease's own defaults. */
+export async function generateCheques(
   userId: string,
   role: string,
   tenantId: string,
   leaseId: string,
+  req: { installments?: number; firstDueDate?: string; distribution?: string } = {},
 ) {
-  return apiCall<any>(`/api/v1/leases/${leaseId}/generate-contract`, {
+  return apiCall<any[]>(`/api/v1/leases/${leaseId}/cheques/generate`, {
     method: 'POST',
     headers: authHeaders(userId, role, tenantId),
+    body: JSON.stringify(req),
   });
 }
 
-export async function activateLease(
+/** `POST /leases/{id}/post` — writes the TCO (+ PDR per cheque) and moves the lease to ACTIVE. */
+export async function postLease(
   userId: string,
   role: string,
   tenantId: string,
   leaseId: string,
 ) {
-  return apiCall<{ id: string; status: string }>(`/api/v1/leases/${leaseId}/activate`, {
-    method: 'PUT',
-    headers: authHeaders(userId, role, tenantId),
-  });
+  return apiCall<{ lease: { id: string; status: string }; tcoJournalId: string; tcoEntryNumber: string; cheques: any[] }>(
+    `/api/v1/leases/${leaseId}/post`,
+    {
+      method: 'POST',
+      headers: authHeaders(userId, role, tenantId),
+    },
+  );
+}
+
+/**
+ * The full v2 replacement for the old draft-then-`PUT .../activate` pair:
+ * create the draft with `lines`, cut the cheque grid, post. Returns the
+ * posted lease (ACTIVE) the way `activateLease` used to.
+ */
+export async function createAndPostLease(
+  userId: string,
+  role: string,
+  tenantId: string,
+  lease: {
+    unitId: string;
+    renterId: string;
+    startDate: string;
+    endDate: string;
+    rentAmount: number;
+    depositAmount?: number;
+    paymentTerms?: number;
+  },
+) {
+  const draft = await createLease(userId, role, tenantId, lease);
+  await generateCheques(userId, role, tenantId, draft.id, { installments: lease.paymentTerms || 4 });
+  const posted = await postLease(userId, role, tenantId, draft.id);
+  return posted.lease;
 }

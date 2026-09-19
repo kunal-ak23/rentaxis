@@ -1152,6 +1152,17 @@ export const api = {
   // 3 by that formula and 2 here, which is what the backend actually charges.
   monthsInclusive,
 
+  /**
+   * v2's draft-lease body: `lines` cut from the tenant's charge-type
+   * catalogue (`RENT` + `SECURITY_DEPOSIT`, seeded by `seedDefaultAccounts`
+   * below), not the v1 flat `rentAmount`/`monthlyRent`/`depositAmount`.
+   * `rentAmount` here is the full contract value for the term — the same
+   * convention the old helper used for its own `rentAmount`.
+   *
+   * The draft is NOT posted — callers that need an ACTIVE lease (the old
+   * `activateLease` contract) call `postLeaseFlow` below, which chains
+   * generate-cheques + post the way the wizard does.
+   */
   createLease: (
     pctx: ProdContext,
     l: {
@@ -1163,49 +1174,60 @@ export const api = {
       paymentTerms?: number;
       depositAmount?: number;
     },
-  ) => {
-    // Mirror the backend exactly. Diverging here produces a lease the API
-    // rejects, and because 01-provision runs first in a serial suite, that
-    // failure takes every downstream spec with it.
-    const months = monthsInclusive(l.startDate, l.endDate);
-    // PaymentScheduleService clamps the cheque count to the month count
-    // ("if (n > totalMonths) n = (int) totalMonths"), so a 4-cheque request on a
-    // 2-month lease actually issues 2. Sizing the deposit off the *unclamped*
-    // count under-provisions it and the largest cheque then breaches the cap.
-    const paymentTerms = Math.max(1, Math.min(l.paymentTerms ?? 4, months));
-    // The backend prefers monthlyRent x months whenever monthlyRent is set,
-    // which it always is below — so the total we send must agree with it.
-    const totalRent = l.rentAmount * months;
-    // PaymentScheduleService caps the largest cheque at the deposit amount.
-    // Default the fixture deposit to the average installment so the helper
-    // remains valid as dates, monthly rent, or cheque count change.
-    const depositAmount = l.depositAmount ?? Math.ceil(totalRent / paymentTerms);
-    return postJson<{ id: string; status: string }>(pctx, '/v1/leases', {
+  ) =>
+    postJson<{ id: string; status: string }>(pctx, '/v1/leases', {
       unitId: l.unitId,
       renterId: l.renterId,
       startDate: l.startDate,
       endDate: l.endDate,
-      rentAmount: totalRent, // lifetime — matches wizard
-      monthlyRent: l.rentAmount,
-      depositAmount,
-      ejariNumber: null,
-      paymentTerms,
+      paymentTerms: l.paymentTerms ?? 4,
       paymentMethod: 'CHEQUE',
       depositPaymentMethod: 'CHEQUE',
-      paymentReferenceNumber: null,
-      agreementDate: null,
-      adminFee: 0,
-      parkingRemoteFee: 0,
-      rentVatApplicable: false,
-      adminFeeVatApplicable: false,
-      securityDepositVatApplicable: false,
-      parkingRemoteVatApplicable: false,
-    });
+      lines: [
+        { chargeTypeCode: 'RENT', grossAmount: l.rentAmount },
+        { chargeTypeCode: 'SECURITY_DEPOSIT', grossAmount: l.depositAmount ?? 5000 },
+      ],
+    }),
+  /** `POST /leases/{id}/cheques/generate` — the service fills in every omitted field from the lease's own defaults. */
+  generateCheques: (
+    pctx: ProdContext,
+    leaseId: string,
+    req: { installments?: number; firstDueDate?: string; distribution?: string; foldDepositsAndFeesIntoFirst?: boolean } = {},
+  ) => postJson<Array<{ id: string; seqNo: number; amount: number; status: string; mode: string }>>(
+    pctx,
+    `/v1/leases/${leaseId}/cheques/generate`,
+    req,
+  ),
+  /** `POST /leases/{id}/post` — writes the TCO (+ PDR per cheque) and moves the lease to ACTIVE. */
+  postDraftLease: (pctx: ProdContext, leaseId: string) =>
+    postJson<{
+      lease: { id: string; status: string };
+      tcoJournalId: string;
+      tcoEntryNumber: string;
+      cheques: Array<{ id: string; seqNo: number; amount: number; status: string }>;
+    }>(pctx, `/v1/leases/${leaseId}/post`, undefined),
+  /**
+   * v2's replacement for the old `activateLease`: create the draft, cut the
+   * cheque grid, post. `PUT /leases/{id}/activate` (no body, no Content-Type)
+   * and the payment-schedule it used to spin up are both gone.
+   */
+  postLeaseFlow: async (
+    pctx: ProdContext,
+    l: {
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      rentAmount: number;
+      paymentTerms?: number;
+      depositAmount?: number;
+    },
+  ) => {
+    const draft = await api.createLease(pctx, l);
+    await api.generateCheques(pctx, draft.id, { installments: l.paymentTerms ?? 4 });
+    const posted = await api.postDraftLease(pctx, draft.id);
+    return posted.lease;
   },
-  // The leases page calls PUT /activate with no body at all (no Content-Type).
-  // Our helper sends `{}` which is functionally equivalent.
-  activateLease: (pctx: ProdContext, leaseId: string) =>
-    putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
   getLease: (pctx: ProdContext, leaseId: string) =>
     getJson<{
       id: string;
@@ -1214,18 +1236,30 @@ export const api = {
       startDate: string;
       endDate: string;
       status: string;
-      rentAmount: number;
-      monthlyRent: number;
-      depositAmount: number;
+      rentAmount: number | null;
+      depositAmount: number | null;
       ejariNumber: string | null;
-      paymentTerms: number;
-      installmentDistribution: string;
-      paymentMethod: string;
-      depositPaymentMethod: string;
+      paymentTerms: number | null;
+      installmentDistribution: string | null;
+      paymentMethod: string | null;
+      depositPaymentMethod: string | null;
       paymentReferenceNumber: string | null;
       agreementDate: string | null;
-      rentVatApplicable: boolean;
+      rentVatApplicable: boolean | null;
+      contractValue: number | null;
+      lines: Array<{ id: string; seqNo: number; chargeTypeCode: string; grossAmount: number; netAmount: number }>;
     }>(pctx, `/v1/leases/${leaseId}`),
+  getLeaseCheques: (pctx: ProdContext, leaseId: string) =>
+    getJson<Array<{
+      id: string;
+      seqNo: number;
+      amount: number;
+      status: string;
+      mode: string;
+      chequeNumber: string | null;
+      due: boolean;
+      overdue: boolean;
+    }>>(pctx, `/v1/leases/${leaseId}/cheques`),
   updateDraftLease: (
     pctx: ProdContext,
     leaseId: string,
@@ -1234,17 +1268,15 @@ export const api = {
       renterId: string;
       startDate: string;
       endDate: string;
-      rentAmount: number;
-      monthlyRent: number;
-      depositAmount: number;
-      ejariNumber: string | null;
-      paymentTerms: number;
-      installmentDistribution: string;
-      paymentMethod: string;
-      depositPaymentMethod: string;
-      paymentReferenceNumber: string | null;
-      agreementDate: string | null;
-      rentVatApplicable: boolean;
+      ejariNumber?: string | null;
+      paymentTerms?: number | null;
+      installmentDistribution?: string | null;
+      paymentMethod?: string | null;
+      depositPaymentMethod?: string | null;
+      paymentReferenceNumber?: string | null;
+      agreementDate?: string | null;
+      rentVatApplicable?: boolean | null;
+      lines: Array<{ chargeTypeCode?: string | null; chargeTypeId?: string | null; grossAmount: number; discountAmount?: number | null }>;
     },
   ) => putJson<{ id: string; status: string; ejariNumber: string; paymentReferenceNumber: string }>(
     pctx,
@@ -1253,24 +1285,39 @@ export const api = {
   ),
   deleteDraftLease: (pctx: ProdContext, leaseId: string) =>
     deleteOk(pctx, `/v1/leases/${leaseId}`),
-  updateLeasePaymentSchedule: (
+  /**
+   * v2's replacement for the old per-row `updateLeasePaymentSchedule`:
+   * `PUT /leases/{id}/cheques` re-saves the whole DRAFT grid in one call
+   * (`ChequeGrid`'s own `toChequeRows`/`leaseApi.saveCheques`).
+   */
+  saveLeaseCheques: (
     pctx: ProdContext,
     leaseId: string,
     rows: Array<{
-      scheduleId: string;
-      dueDate: string;
-      amount: number;
-      paymentMethod: 'CHEQUE' | 'BANK_TRANSFER' | 'CASH' | 'ONLINE';
+      id?: string | null;
+      seqNo?: number | null;
+      postingDate?: string | null;
       chequeNumber?: string | null;
       chequeDate?: string | null;
-      bankName?: string | null;
+      payeeBank?: string | null;
+      debitAccountId?: string | null;
+      amount: number;
+      narration?: string | null;
+      mode?: 'PDC' | 'CASH' | 'TRANSFER' | 'ONLINE';
     }>,
-  ) => putJson<Array<{
-    id: string;
-    status: string;
-    paymentMethod: string;
-    chequeNumber: string | null;
-  }>>(pctx, `/v1/leases/${leaseId}/payment-schedule`, { rows }),
+  ) => putJson<Array<{ id: string; status: string; mode: string; chequeNumber: string | null }>>(
+    pctx,
+    `/v1/leases/${leaseId}/cheques`,
+    rows,
+  ),
+  /**
+   * `scheduleId` is kept as the field name Task 15 aliased for the upload
+   * screen (`BulkAttachChequeItem#chequeId`, `@JsonAlias("scheduleId")`), but
+   * it now names a cheque-register row, not a payment-schedule row, and the
+   * response is `{ cheques: ChequeDTO[] }`, not `{ schedules: [...] }` — a
+   * bulk attach never posts, so status stays whatever it was (DRAFT or
+   * REGISTERED), never "COLLECTED".
+   */
   bulkAttachCheques: (
     pctx: ProdContext,
     leaseId: string,
@@ -1285,11 +1332,32 @@ export const api = {
       imageUploadedAt: string;
     }>,
   ) => postJson<{
-    schedules: Array<{ id: string; status: string; chequeNumber: string; chequeImageBlobPath: string }>;
+    cheques: Array<{ id: string; status: string; chequeNumber: string; imageUrl: string | null }>;
   }>(pctx, `/v1/leases/${leaseId}/cheques/bulk-attach`, { items }),
-  extendLease: (pctx: ProdContext, leaseId: string, newEndDate: string) =>
-    postJson<{ id: string; status: string; endDate: string }>(pctx, `/v1/leases/${leaseId}/extend`, {
+  /**
+   * v2's `extend` posts a fresh TCO for the extension's own `lines` and
+   * registers `cheques` whose total must equal those lines' VAT-inclusive
+   * total (`ExtendLeaseDialog`'s own `matches` gate) — unlike the v1
+   * single-field `{ newEndDate }` body. `lineGrossAmount` is one new RENT
+   * line for the extension period; `chequeAmount` (defaults to the same
+   * figure — VAT is off by default on a RENT line) is what the one cheque
+   * this helper registers for it must carry.
+   */
+  extendLease: (
+    pctx: ProdContext,
+    leaseId: string,
+    newEndDate: string,
+    lineGrossAmount: number,
+    chequeAmount: number = lineGrossAmount,
+  ) =>
+    postJson<{
+      lease: { id: string; status: string; endDate: string };
+      tcoJournalId: string;
+      cheques: Array<{ id: string; amount: number; status: string }>;
+    }>(pctx, `/v1/leases/${leaseId}/extend`, {
       newEndDate,
+      lines: [{ chargeTypeCode: 'RENT', grossAmount: lineGrossAmount }],
+      cheques: [{ amount: chequeAmount, mode: 'PDC', postingDate: newEndDate }],
     }),
   getSettlementPreview: (pctx: ProdContext, leaseId: string) =>
     getJson<{
@@ -1422,98 +1490,99 @@ export const api = {
       avgSatisfaction: number;
     }>(pctx, `/v1/tickets/reports?propertyId=${propertyId}`),
 
-  // Payment schedule + cheque lifecycle. Important: each payment-schedule row
-  // IS the cheque (no separate /cheques resource). Lifecycle endpoints are
-  // PUT on /v1/payments/{id}/{action} and all take UpdatePaymentStatusDTO.
-  getPaymentScheduleForLease: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{
-      id: string;
-      dueDate: string;
-      amount: number;
-      status: string;
-      paymentMethod: string;
-      isBookingDeposit: boolean;
-      isSecurityDeposit: boolean;
-      isCharge: boolean;
-    }>>(
-      pctx,
-      `/v1/payments/lease/${leaseId}`,
-    ),
-  collectPayment: (
+  // Cheque register lifecycle (accounting v2 plan 2). There is no
+  // payment-schedule resource and no PENDING→COLLECTED step any more: a
+  // cheque exists as REGISTERED the moment it is generated/posted, and moves
+  // REGISTERED → DEPOSITED → CLEARED/BOUNCED → REPLACED via
+  // `ChequeController` (`web/src/lib/api/leasing.ts` `chequeApi`).
+  depositCheque: (pctx: ProdContext, chequeId: string, dto: { date?: string; notes?: string } = {}) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/cheques/${chequeId}/deposit`, dto),
+  /** REGISTERED CASH/TRANSFER only — confirms a row straight to CLEARED, no deposit step. */
+  receiveCheque: (pctx: ProdContext, chequeId: string, dto: { date?: string; notes?: string } = {}) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/cheques/${chequeId}/receive`, dto),
+  clearCheque: (pctx: ProdContext, chequeId: string, dto: { date?: string; notes?: string } = {}) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/cheques/${chequeId}/clear`, dto),
+  /** `body.failureReason` is required — the backend 400s a bounce without one. */
+  bounceCheque: (
     pctx: ProdContext,
-    paymentScheduleId: string,
-    dto: { chequeNumber?: string; bankName?: string; chequeDate?: string; payerName?: string; notes?: string },
-  ) =>
-    putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/collect`, dto),
-  depositPayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
-    putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/deposit`, dto),
-  clearPayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
-    putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/clear`, dto),
-  bouncePayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
-    putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/bounce`, dto),
-  markPaymentFailed: (
-    pctx: ProdContext,
-    paymentScheduleId: string,
+    chequeId: string,
     failureReason: 'BOUNCE' | 'SIGNATURE_MISMATCH' | 'ACCOUNT_CLOSED',
-    notes: string,
+    dto: { date?: string; notes?: string } = {},
   ) =>
-    postJson<{
-      schedule: { id: string; status: string };
-      penalty: {
-        id: string;
-        penaltyType: string;
-        penaltyAmount: number;
-        fineGraceDays: number;
-        finePerDayRate: number;
-      };
-    }>(pctx, `/v1/payments/${paymentScheduleId}/mark-failed`, {
+    putJson<{ id: string; status: string; failureReason: string }>(pctx, `/v1/cheques/${chequeId}/bounce`, {
+      ...dto,
       failureReason,
-      notes,
-      effectiveDate: new Date().toISOString().slice(0, 10),
     }),
-  listPenalties: (pctx: ProdContext, leaseId: string, status = 'all') =>
+  replaceCheque: (
+    pctx: ProdContext,
+    chequeId: string,
+    replacements: Array<{ amount: number; mode?: 'PDC' | 'CASH' | 'TRANSFER'; chequeNumber?: string | null; chequeDate?: string | null; payeeBank?: string | null }>,
+    dto: { date?: string; notes?: string } = {},
+  ) =>
+    postJson<Array<{ id: string; status: string; amount: number }>>(pctx, `/v1/cheques/${chequeId}/replace`, {
+      ...dto,
+      replacements,
+    }),
+  chequeSummary: (pctx: ProdContext, propertyId?: string) =>
+    getJson<{
+      registeredCount: number; registeredAmount: number;
+      depositedCount: number; depositedAmount: number;
+      clearedThisMonthAmount: number;
+      bouncedCount: number; bouncedAmount: number;
+      dueCount: number; dueAmount: number;
+      overdueCount: number; overdueAmount: number;
+    }>(pctx, `/v1/cheques/summary${propertyId ? `?propertyId=${propertyId}` : ''}`),
+  chequeAging: (pctx: ProdContext, propertyId?: string) =>
+    getJson<{ buckets: Array<{ label: string; count: number; amount: number }>; totalOutstanding: number; totalCount: number }>(
+      pctx,
+      `/v1/cheques/aging${propertyId ? `?propertyId=${propertyId}` : ''}`,
+    ),
+
+  // Penalty worklist (`PenaltyAssessmentController`, `/api/v1/penalties`) —
+  // replaces v1's payment-schedule `mark-failed` (auto-charged) and the old
+  // `/v1/penalties/{id}/payments`/`/waive` shapes. Proposing raises no
+  // journal; only `approve` does, and it also opens a collection row on the
+  // register that is paid down like any other cheque (deposit/clear it, or
+  // receive it as cash via `cashReceipt` below) rather than through a
+  // separate "penalty payment" endpoint.
+  proposePenalty: (
+    pctx: ProdContext,
+    body: { leaseId: string; chequeId?: string | null; reason: 'CHEQUE_RETURN' | 'LATE_PAYMENT' | 'OTHER'; amount: number; description?: string | null },
+  ) =>
+    postJson<{ id: string; status: string; reason: string; amount: number }>(pctx, '/v1/penalties', body),
+  approvePenalty: (pctx: ProdContext, penaltyId: string, date?: string) =>
+    postJson<{ id: string; status: string; journalId: string; collectionChequeId: string; collectionStatus: string }>(
+      pctx,
+      `/v1/penalties/${penaltyId}/approve`,
+      { date },
+    ),
+  waivePenalty: (pctx: ProdContext, penaltyId: string, note: string) =>
+    postJson<{ id: string; status: string; resolutionNote: string }>(pctx, `/v1/penalties/${penaltyId}/waive`, { note }),
+  reversePenalty: (pctx: ProdContext, penaltyId: string, note: string, date?: string) =>
+    postJson<{ id: string; status: string; resolutionNote: string }>(pctx, `/v1/penalties/${penaltyId}/reverse`, { date, note }),
+  listPenalties: (pctx: ProdContext, leaseId: string, status?: 'PROPOSED' | 'APPROVED' | 'WAIVED' | 'REVERSED') =>
     getJson<{
       content: Array<{
         id: string;
-        paymentScheduleId: string;
         leaseId: string;
-        penaltyType: string;
-        failureReason: string;
-        penaltyAmount: number;
-        currentTotal: number;
-        outstanding: number;
-        waived: boolean;
-        waivedReason: string | null;
+        chequeId: string | null;
+        chequeNumber: string | null;
+        reason: string;
+        amount: number;
         status: string;
-        payments: Array<{ id: string; amount: number; paymentMethod: string }>;
+        collectionChequeId: string | null;
+        collectionStatus: string | null;
+        resolutionNote: string | null;
       }>;
-    }>(pctx, `/v1/penalties?leaseId=${leaseId}&status=${status}&size=100`),
-  recordPenaltyPayment: (
+    }>(pctx, `/v1/penalties?leaseId=${leaseId}${status ? `&status=${status}` : ''}&size=200`),
+  myPenalties: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; leaseId: string; reason: string; amount: number; status: string }>>(pctx, '/v1/penalties/mine'),
+  /** `POST /cheques/lease/{leaseId}/cash-receipt` — a new CASH/TRANSFER row, created and received in one call. */
+  cashReceipt: (
     pctx: ProdContext,
-    penaltyId: string,
-    amount: number,
-    reference: string,
-  ) =>
-    postJson<{
-      id: string;
-      amount: number;
-      paymentMethod: string;
-      paymentReference: string;
-    }>(pctx, `/v1/penalties/${penaltyId}/payments`, {
-      amount,
-      paymentMethod: 'BANK_TRANSFER',
-      paymentReference: reference,
-      receivedAt: new Date().toISOString().slice(0, 10),
-      notes: 'TEST-E2E penalty receipt',
-    }),
-  waivePenalty: (pctx: ProdContext, penaltyId: string, reason: string) =>
-    postJson<{
-      id: string;
-      waived: boolean;
-      waivedReason: string;
-      outstanding: number;
-      status: string;
-    }>(pctx, `/v1/penalties/${penaltyId}/waive`, { reason }),
+    leaseId: string,
+    body: { postingDate?: string; amount: number; narration?: string | null; debitAccountId?: string | null; mode?: 'CASH' | 'TRANSFER' },
+  ) => postJson<{ id: string; status: string; amount: number; mode: string }>(pctx, `/v1/cheques/lease/${leaseId}/cash-receipt`, body),
 
   // Vendor — payload matches the finance/vendors page (handleSubmit). The
   // entity does NOT have `category`, `contactEmail`, or `contactPhone`
