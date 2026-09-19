@@ -12,6 +12,7 @@ import {
     Save,
     DollarSign,
     Clock,
+    Bell,
 } from "lucide-react";
 import { canConfigureFines } from "@/lib/rbac";
 import type { UserRole } from "@/lib/rbac";
@@ -23,14 +24,29 @@ type FineConfig = {
     accountClosedAmount: number;
     graceDays: number;
     perDayRate: number;
+    /**
+     * The penalty module's own three fields (`FineConfigDTO`, spec §7.3).
+     * Optional on the wire — the PUT treats a missing one as "leave it
+     * alone" — but this screen always has a value to send once it has
+     * loaded, either the server's own or {@link DEFAULT_FINE_CONFIG}'s.
+     */
+    bouncesBeforePenalty: number;
+    autoProposeChequeReturn: boolean;
+    autoProposeLatePayment: boolean;
 };
 
+// Mirrors FineSettingsInitializer's own DEFAULT_* constants, so a tenant
+// whose settings row does not exist yet (a fresh GET creates one server-side,
+// but the client's own 404 fallback should still agree with it).
 const DEFAULT_FINE_CONFIG: FineConfig = {
     bounceAmount: 500,
     signatureMismatchAmount: 500,
     accountClosedAmount: 1000,
     graceDays: 7,
     perDayRate: 25,
+    bouncesBeforePenalty: 2,
+    autoProposeChequeReturn: true,
+    autoProposeLatePayment: false,
 };
 
 export default function FinesSettingsPage() {
@@ -55,7 +71,11 @@ export default function FinesSettingsPage() {
             const res = await fetch("/api/proxy/v1/settings/fines");
             if (res.ok) {
                 const data = await res.json();
-                setConfig(data);
+                // The penalty fields are nullable on the DTO in principle (the PUT
+                // treats a missing one as "leave it alone"), but the GET always
+                // returns a fully-seeded row — this merge only guards a partial
+                // response, it does not paper over a real gap.
+                setConfig({ ...DEFAULT_FINE_CONFIG, ...data });
             } else if (res.status === 404) {
                 setConfig(DEFAULT_FINE_CONFIG);
             } else {
@@ -277,6 +297,50 @@ export default function FinesSettingsPage() {
                         </div>
                         <p className="text-[10px] text-muted mt-1">{t("perDayRateHint")}</p>
                     </div>
+                </div>
+            </div>
+
+            {/* Penalty proposal Section — FineConfigDTO's own three fields (spec §7.3) */}
+            <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 mb-6">
+                <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6 flex items-center gap-2">
+                    <Bell size={14} className="text-primary/60" />
+                    {t("sectionPenaltyModule")}
+                </h2>
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
+                            {t("bouncesBeforePenalty")}
+                        </label>
+                        <NumberInput showZero
+                            min={1}
+                            step={1}
+                            value={config.bouncesBeforePenalty}
+                            onChange={(v) => updateField("bouncesBeforePenalty", Math.max(1, v))}
+                            className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
+                        />
+                        <p className="text-[10px] text-muted mt-1">{t("bouncesBeforePenaltyHint")}</p>
+                    </div>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={config.autoProposeChequeReturn}
+                            onChange={(e) => updateField("autoProposeChequeReturn", e.target.checked)}
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/20"
+                        />
+                        <span className="text-xs font-semibold text-foreground">{t("autoProposeChequeReturn")}</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={config.autoProposeLatePayment}
+                            onChange={(e) => updateField("autoProposeLatePayment", e.target.checked)}
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/20"
+                        />
+                        <span className="text-xs font-semibold text-foreground">{t("autoProposeLatePayment")}</span>
+                    </label>
                 </div>
 
                 {/* Save Button */}
