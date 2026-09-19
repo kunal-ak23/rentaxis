@@ -64,13 +64,16 @@ public class WebhookService {
             String eventType = json.optString("event", "unknown");
             webhookLog.setEventType(eventType);
 
-            JSONObject paymentEntity = json
-                    .optJSONObject("payload")
-                    .optJSONObject("payment")
-                    .optJSONObject("entity");
+            // Step by step rather than chained: a delivery missing any one of these
+            // levels — a probe, a different event shape, a truncated body — used to
+            // NPE on the next optJSONObject and be reported as a 500 "Error: null".
+            JSONObject payloadNode = json.optJSONObject("payload");
+            JSONObject paymentNode = payloadNode == null ? null : payloadNode.optJSONObject("payment");
+            JSONObject paymentEntity = paymentNode == null ? null : paymentNode.optJSONObject("entity");
 
             if (paymentEntity == null) {
-                webhookLog.setProcessingResult("No payment entity found in payload");
+                webhookLog.setProcessingResult("Malformed payload: no payment entity");
+                webhookLog.setProcessed(true);
                 return;
             }
 
@@ -103,8 +106,22 @@ public class WebhookService {
 
             switch (eventType) {
                 case "payment.captured" -> {
-                    onlinePaymentService.captureFromWebhook(onlinePayment.getId(), paymentId);
-                    webhookLog.setProcessingResult("Payment captured successfully");
+                    // What the gateway says it actually took, in the currency's
+                    // smallest unit, passed through for the money check. -1 stands
+                    // for "the delivery carried no amount"; 0 is a real (absurd)
+                    // figure and must not be confused with absent.
+                    long minorUnits = paymentEntity.optLong("amount", -1L);
+                    String unapplied = onlinePaymentService.captureFromWebhook(
+                            onlinePayment.getId(), paymentId,
+                            minorUnits < 0 ? null : minorUnits,
+                            blankToNull(paymentEntity.optString("currency", null)));
+                    // Processed either way, and 200 either way. An unappliable
+                    // capture is a recorded fact, not a delivery to retry: the
+                    // gateway redelivering it forever would neither create the
+                    // missing instalment nor issue the refund that is owed.
+                    webhookLog.setProcessingResult(unapplied == null
+                            ? "Payment captured successfully"
+                            : "Captured but not applied: " + unapplied);
                 }
                 case "payment.failed" -> {
                     onlinePaymentService.failFromWebhook(onlinePayment.getId(),
@@ -133,7 +150,7 @@ public class WebhookService {
      * payload forever.</p>
      */
     private String verifyDelivery(String payload, String signature) {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             return "No active gateway config found for tenant";
         }
@@ -145,6 +162,10 @@ public class WebhookService {
         PaymentGatewayProvider provider = paymentGatewayFactory.getProvider("RAZORPAY");
         boolean valid = provider.verifyWebhookSignature(payload, signature, encryptionService.decrypt(secret));
         return valid ? null : "Webhook signature verification failed";
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private static String failureReason(JSONObject paymentEntity) {

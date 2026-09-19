@@ -18,6 +18,7 @@ import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.PaymentGateway;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.entity.Renter;
@@ -69,7 +70,15 @@ import java.util.UUID;
  * roads run through {@link #capture}, which takes the {@code online_payments} row
  * lock first and clears the cheque <em>before</em> marking the payment captured —
  * so the payment can never claim money the register has not booked, and the
- * second report finds a CLEARED ONLINE row and posts nothing.</p>
+ * second report of the same capture posts nothing.</p>
+ *
+ * <p><b>A capture the register cannot accept is recorded, not absorbed.</b> Two
+ * orders against one instalment, a clerk banking the cheque mid-payment, an amount
+ * that is not the row's: the money is real and the instalment cannot take it, so
+ * the payment lands in {@code CAPTURED_UNAPPLIED} with the reason on it and an
+ * {@code ERROR} line, the gateway gets a 200 so it stops retrying, and the renter
+ * is told their payment arrived but was not applied. The alternative — a second
+ * {@code CRT}, or a silent "already done" — is money nobody can account for.</p>
  *
  * <p><b>Every public method is {@code @Transactional}</b>: {@code TenantAspect}
  * only enables the Hibernate tenant filter inside a transaction, so a read outside
@@ -325,7 +334,16 @@ public class OnlinePaymentService {
                 .orElseThrow(() -> new NotFoundException(
                         "Online payment not found for order: " + request.getGatewayOrderId()));
 
-        TenantGatewayConfig config = activeConfig();
+        // BEFORE the signature is even checked, and emphatically before anything is
+        // released. A failing signature releases the session, so without this a
+        // renter could post someone else's order id with any old signature and hand
+        // that renter's pending instalment back to the register mid-payment — a
+        // denial of service on another tenancy, using nothing but an order id.
+        if (onlinePayment.getCheque() != null) {
+            requireGatewayAccess(onlinePayment.getCheque());
+        }
+
+        TenantGatewayConfig config = activeConfig(onlinePayment.getGateway());
         String apiSecret = encryptionService.decrypt(config.getApiSecretEncrypted());
         PaymentGatewayProvider provider = paymentGatewayFactory.getProvider(config.getGateway().getCode());
         boolean valid = provider.verifyPaymentSignature(
@@ -337,7 +355,21 @@ public class OnlinePaymentService {
         VerifyPaymentResponseDTO response = new VerifyPaymentResponseDTO();
         if (valid) {
             onlinePayment.setGatewaySignature(request.getGatewaySignature());
-            capture(onlinePayment, request.getGatewayPaymentId(), LocalDate.now());
+            // No reported amount on this path: the client callback carries only
+            // ids and a signature, and PaymentGatewayProvider exposes no order
+            // fetch to ask Razorpay what it actually charged. So the only money
+            // check available here is the recorded order amount against the row,
+            // which capture() does for both paths; the webhook, which does carry
+            // the captured amount, is what catches a gateway charging something
+            // else. Noted in the task report.
+            String unapplied = capture(onlinePayment, request.getGatewayPaymentId(), null, null, LocalDate.now());
+            if (unapplied != null) {
+                response.setSuccess(false);
+                response.setMessage("Your payment was received but could not be applied to this instalment ("
+                        + unapplied + "). Please contact the landlord for a refund.");
+                response.setPaymentId(onlinePayment.getGatewayPaymentId());
+                return response;
+            }
             response.setSuccess(true);
             response.setMessage("Payment verified and recorded successfully");
             response.setPaymentId(onlinePayment.getGatewayPaymentId());
@@ -368,10 +400,20 @@ public class OnlinePaymentService {
      * discards the {@code WebhookLog} row the handler writes in its {@code finally}
      * (losing the record of exactly the anomaly worth recording) and turns a clean
      * catch-and-continue into an {@code UnexpectedRollbackException} at commit.</p>
+     *
+     * @param reportedMinorUnits the gateway's own captured amount in minor units
+     *        (fils/paise), from the webhook payload; null when the delivery did not
+     *        carry one.
+     * @return null when the capture was applied, else the reason it could not be —
+     *         a reason is <em>not</em> an error: the money is real, the state is
+     *         recorded as {@code CAPTURED_UNAPPLIED}, and this transaction must
+     *         commit so the record survives and the gateway stops retrying.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void captureFromWebhook(UUID onlinePaymentId, String gatewayPaymentId) {
-        capture(lockPayment(onlinePaymentId), gatewayPaymentId, LocalDate.now());
+    public String captureFromWebhook(UUID onlinePaymentId, String gatewayPaymentId,
+                                     Long reportedMinorUnits, String reportedCurrency) {
+        return capture(lockPayment(onlinePaymentId), gatewayPaymentId,
+                reportedMinorUnits, reportedCurrency, LocalDate.now());
     }
 
     /** The gateway reporting that the session failed; same {@code REQUIRES_NEW} reasoning. */
@@ -429,8 +471,18 @@ public class OnlinePaymentService {
      *
      * <p>The notification and the email fire only on the transition, so a retried
      * webhook does not send the renter a second receipt for one payment.</p>
+     *
+     * <p><b>A verified capture the register cannot accept is recorded, never
+     * absorbed.</b> {@link #unappliable} names the cases; when it answers, this
+     * writes {@code CAPTURED_UNAPPLIED} and returns normally so the state
+     * <em>commits</em>. Throwing would roll the record back and leave the gateway
+     * retrying a delivery nobody can act on; returning "already done" would lose
+     * the fact that the landlord owes a refund.</p>
+     *
+     * @return null when the capture was applied, else the reason it was not.
      */
-    private void capture(OnlinePayment onlinePayment, String gatewayPaymentId, LocalDate capturedOn) {
+    private String capture(OnlinePayment onlinePayment, String gatewayPaymentId,
+                           Long reportedMinorUnits, String reportedCurrency, LocalDate capturedOn) {
         Cheque cheque = onlinePayment.getCheque();
         if (cheque == null) {
             throw new BusinessRuleViolationException(
@@ -443,20 +495,26 @@ public class OnlinePaymentService {
         // It has to be decided HERE rather than left to clearOnline's own
         // idempotency, which only forgives an already-CLEARED row of mode ONLINE —
         // and most rows paid online are ordinary PDC instalments that keep their
-        // mode. Deliberately conjunctive: a CLEARED row whose payment is not
-        // captured means somebody banked the cheque while the renter was paying for
-        // it, and that must reach clearOnline and be refused loudly rather than be
-        // swallowed as a duplicate.
+        // mode. Deliberately conjunctive, and the conjunction is what identifies
+        // "cleared by THIS payment": nothing links an OnlinePayment to the CRT it
+        // produced, but a payment whose own status is CAPTURED is the one that
+        // produced the clearing it is looking at. Any OTHER payment arriving at a
+        // CLEARED row falls through to unappliable() — which is the two-orders case.
         if (onlinePayment.getStatus() == OnlinePaymentStatus.CAPTURED
                 && cheque.getStatus() == ChequeStatus.CLEARED) {
-            return;
+            return null;
         }
 
-        if (cheque.getStatus() == ChequeStatus.REGISTERED
-                && (cheque.getMode() == ChequeMode.ONLINE || cheque.getMode() == ChequeMode.PDC)) {
+        String reason = unappliable(onlinePayment, cheque, reportedMinorUnits, reportedCurrency);
+        if (reason != null) {
+            markUnapplied(onlinePayment, cheque, gatewayPaymentId, reason);
+            return reason;
+        }
+
+        if (cheque.getStatus() == ChequeStatus.REGISTERED) {
             chequeService.registerOnlinePending(cheque.getId());
         }
-        chequeService.clearOnline(cheque.getId(), capturedOn, settlementAccountId());
+        chequeService.clearOnline(cheque.getId(), capturedOn, settlementAccountId(onlinePayment));
 
         onlinePayment.setStatus(OnlinePaymentStatus.CAPTURED);
         if (gatewayPaymentId != null && !gatewayPaymentId.isBlank()) {
@@ -474,6 +532,101 @@ public class OnlinePaymentService {
         notifyRenter(onlinePayment, "PAYMENT_CLEARED", "Online Payment Successful",
                 "Instalment #" + cheque.getSeqNo() + " of " + cheque.getAmount()
                         + " AED was paid online. Your receipt is available.");
+        return null;
+    }
+
+    /**
+     * Why this verified capture cannot be posted to this row — or null when it can.
+     *
+     * <p>Three families, all of them real and none of them the renter's fault:</p>
+     *
+     * <ul>
+     *   <li><b>The row is already settled by something else.</b> Two orders can
+     *       exist against one instalment: the renter abandons the first checkout,
+     *       the row goes back to REGISTERED, they pay through a second order — and
+     *       then the first order captures too. Both are genuine money; only one
+     *       instalment exists. The second arrival is a refund, not a second
+     *       {@code CRT}.</li>
+     *   <li><b>A clerk moved the row.</b> DEPOSITED (the paper is at the bank and
+     *       will clear there), CANCELLED, REPLACED or RETURNED. Clearing any of
+     *       them online would post against an instrument the register has already
+     *       accounted for another way.</li>
+     *   <li><b>The money does not match.</b> The order was raised for the row's
+     *       amount, so anything else — a part payment, a different currency, a
+     *       gateway reporting a figure the order never asked for — is not this
+     *       instalment being settled, and posting it would clear a 12,000 debt with
+     *       9,000.</li>
+     * </ul>
+     *
+     * <p>A CASH or TRANSFER row is refused too: those are recorded when they arrive,
+     * by {@code receive()}, and a gateway has no business clearing one.</p>
+     */
+    private static String unappliable(OnlinePayment onlinePayment, Cheque cheque,
+                                      Long reportedMinorUnits, String reportedCurrency) {
+        ChequeStatus status = cheque.getStatus();
+        if (status == ChequeStatus.CLEARED) {
+            return "instalment " + cheque.getSeqNo() + " was already settled by another payment";
+        }
+        if (status != ChequeStatus.REGISTERED && status != ChequeStatus.ONLINE_PENDING) {
+            return "instalment " + cheque.getSeqNo() + " is " + status + " and can no longer be paid online";
+        }
+        if (cheque.getMode() != ChequeMode.ONLINE && cheque.getMode() != ChequeMode.PDC) {
+            return "instalment " + cheque.getSeqNo() + " is a " + cheque.getMode() + " receipt";
+        }
+
+        BigDecimal ordered = onlinePayment.getAmount();
+        if (ordered == null || cheque.getAmount() == null
+                || ordered.compareTo(cheque.getAmount()) != 0) {
+            return "the order was for " + ordered + " but instalment " + cheque.getSeqNo()
+                    + " is " + cheque.getAmount();
+        }
+        if (reportedCurrency != null && onlinePayment.getCurrency() != null
+                && !reportedCurrency.equalsIgnoreCase(onlinePayment.getCurrency())) {
+            return "the gateway captured " + reportedCurrency + " but the order was "
+                    + onlinePayment.getCurrency();
+        }
+        if (reportedMinorUnits != null && reportedMinorUnits != minorUnits(ordered)) {
+            // Razorpay speaks in the currency's smallest unit — RazorpayProvider
+            // multiplies by 100 on the way out, so the comparison happens there too
+            // rather than dividing a long back into a BigDecimal and arguing about
+            // rounding.
+            return "the gateway captured " + reportedMinorUnits + " minor units but the order was "
+                    + minorUnits(ordered);
+        }
+        return null;
+    }
+
+    private static long minorUnits(BigDecimal amount) {
+        return amount.multiply(BigDecimal.valueOf(100)).longValue();
+    }
+
+    /**
+     * Money taken that the register refused: named, logged and kept.
+     *
+     * <p>No {@code CRT}, no success email, no "your payment went through"
+     * notification — the renter has paid and the instalment is not settled, and
+     * telling them otherwise is worse than telling them nothing. The {@code ERROR}
+     * line is what a finance person greps for when a renter says they paid twice;
+     * it carries ids and an amount and no credentials.</p>
+     */
+    private void markUnapplied(OnlinePayment onlinePayment, Cheque cheque,
+                               String gatewayPaymentId, String reason) {
+        if (gatewayPaymentId != null && !gatewayPaymentId.isBlank()) {
+            onlinePayment.setGatewayPaymentId(gatewayPaymentId);
+        }
+        onlinePayment.setStatus(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        onlinePayment.setFailureReason(
+                "Captured but not applied: " + reason
+                        + (onlinePayment.getGatewayPaymentId() != null
+                                ? " (gateway payment " + onlinePayment.getGatewayPaymentId() + ")" : ""));
+        onlinePayment.setUpdatedAt(Instant.now());
+        onlinePaymentRepository.save(onlinePayment);
+
+        log.error("Captured online payment could not be applied: payment={} order={} gatewayPayment={} "
+                        + "cheque={} amount={} {} — reason: {}. A refund is owed.",
+                onlinePayment.getId(), onlinePayment.getGatewayOrderId(),
+                onlinePayment.getGatewayPaymentId(), cheque.getId(),
+                onlinePayment.getAmount(), onlinePayment.getCurrency(), reason);
     }
 
     /**
@@ -509,9 +662,30 @@ public class OnlinePaymentService {
     }
 
     private TenantGatewayConfig activeConfig() {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        return activeConfig(null);
+    }
+
+    /**
+     * The tenant's active gateway configuration, resolved the same way every time.
+     *
+     * <p>{@code preferred} is the gateway the order was actually created under
+     * ({@code OnlinePayment.gateway}), so a capture settles into <em>that</em>
+     * provider's account rather than into whichever active config the database
+     * happened to list first. The config <em>id</em> is not recorded on the payment
+     * — there is no column for it — so two active configs for the same gateway
+     * still resolve by order; that is why the query is ordered.</p>
+     */
+    private TenantGatewayConfig activeConfig(PaymentGateway preferred) {
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             throw new BusinessRuleViolationException("No active payment gateway configured");
+        }
+        if (preferred != null) {
+            for (TenantGatewayConfig config : configs) {
+                if (config.getGateway() != null && preferred.getId().equals(config.getGateway().getId())) {
+                    return config;
+                }
+            }
         }
         return configs.get(0);
     }
@@ -521,8 +695,8 @@ public class OnlinePaymentService {
      * nominated one, in which case the capture falls back to the property's BANK
      * role exactly as a counter receipt does.
      */
-    private UUID settlementAccountId() {
-        Account settlement = activeConfig().getSettlementAccount();
+    private UUID settlementAccountId(OnlinePayment onlinePayment) {
+        Account settlement = activeConfig(onlinePayment.getGateway()).getSettlementAccount();
         return settlement != null ? settlement.getId() : null;
     }
 

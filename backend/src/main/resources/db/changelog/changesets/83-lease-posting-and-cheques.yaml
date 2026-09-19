@@ -174,6 +174,15 @@ databaseChangeLog:
             tableName: online_payments
             columns:
               - column: { name: cheque_id, type: uuid, constraints: { foreignKeyName: fk_online_payment_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+        # An online payment is started against a register row now, never against a
+        # schedule, so payment_schedule_id (NOT NULL since 13) has to give way or
+        # the first cheque-only row is rejected by the database. The constraint
+        # goes, not the column: 84 deletes payment_schedules and takes the column
+        # with it.
+        - dropNotNullConstraint:
+            tableName: online_payments
+            columnName: payment_schedule_id
+            columnDataType: uuid
         - addColumn:
             tableName: meeting_details
             columns:
@@ -182,6 +191,7 @@ databaseChangeLog:
         - sql:
             sql: |
               ALTER TABLE meeting_details DROP COLUMN IF EXISTS cheque_ids;
+              ALTER TABLE online_payments ALTER COLUMN payment_schedule_id SET NOT NULL;
               ALTER TABLE online_payments DROP COLUMN IF EXISTS cheque_id;
               ALTER TABLE tenant_gateway_configs DROP COLUMN IF EXISTS settlement_account_id;
               ALTER TABLE rent_collection_settings DROP COLUMN IF EXISTS bounces_before_penalty;

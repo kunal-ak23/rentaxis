@@ -15,10 +15,13 @@ import com.datagami.rentaxis.domain.entity.OnlinePayment;
 import com.datagami.rentaxis.domain.entity.PaymentGateway;
 import com.datagami.rentaxis.domain.entity.TenantGatewayConfig;
 import com.datagami.rentaxis.domain.entity.WebhookLog;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
 import com.datagami.rentaxis.domain.repository.PaymentGatewayRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -96,6 +99,7 @@ class WebhookAuditDurabilityIT {
     @Autowired PaymentGatewayRepository paymentGatewayRepository;
     @Autowired TenantGatewayConfigRepository tenantGatewayConfigRepository;
     @Autowired ChequeRepository chequeRepository;
+    @Autowired LeaseRepository leaseRepository;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -130,9 +134,20 @@ class WebhookAuditDurabilityIT {
                 List.of(line("RENT", "48000")), 4, "500010");
         chequeId = posted.cheques().get(0).id();
 
-        // At the bank, not in a gateway session: clearOnline refuses anything that
-        // is not ONLINE_PENDING, which is the anomaly the audit row must survive.
-        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+        // A register row on a lease that is no longer on the books. The cheque
+        // itself is REGISTERED and the money matches, so the capture is applicable
+        // as far as OnlinePaymentService can tell — and then the register refuses
+        // it outright, because a cheque may not move on an unposted lease. That
+        // throw is the anomaly the audit row has to survive.
+        //
+        // Not a DEPOSITED row any more: since fix round 1 that is a recognised,
+        // recorded outcome (CAPTURED_UNAPPLIED) rather than an exception, so it no
+        // longer exercises the REQUIRES_NEW rollback boundary at all.
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepository.findById(posted.lease().getId()).orElseThrow();
+            lease.setStatus(LeaseStatus.DRAFT);
+            leaseRepository.save(lease);
+        });
 
         PaymentGateway gateway = paymentGatewayRepository.findByCode("RAZORPAY")
                 .orElseGet(() -> {
@@ -205,7 +220,7 @@ class WebhookAuditDurabilityIT {
 
         // The register never moved and nothing posted.
         Cheque reloaded = tx.execute(s -> chequeRepository.findById(chequeId).orElseThrow());
-        assertThat(reloaded.getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(reloaded.getStatus()).isEqualTo(ChequeStatus.REGISTERED);
         assertThat(reloaded.getCrtJournalId()).isNull();
         Long crts = jdbc.queryForObject(
                 "select count(*) from journal_entries where tenant_id = ? and doc_type = 'CRT' and source_id = ?",

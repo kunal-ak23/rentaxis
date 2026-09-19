@@ -32,7 +32,7 @@ public class TenantGatewayConfigService {
 
     @Transactional(readOnly = true)
     public TenantGatewayConfigDTO getActiveConfig() {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             return null;
         }
@@ -46,7 +46,7 @@ public class TenantGatewayConfigService {
                 .orElseThrow(() -> new RuntimeException("Payment gateway not found"));
 
         TenantGatewayConfig config;
-        List<TenantGatewayConfig> existingConfigs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> existingConfigs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (!existingConfigs.isEmpty()) {
             config = existingConfigs.get(0);
         } else {
@@ -117,7 +117,7 @@ public class TenantGatewayConfigService {
 
     @Transactional(readOnly = true)
     public String testConnection() {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             return "No active gateway configuration found";
         }

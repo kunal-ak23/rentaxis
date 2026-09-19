@@ -173,5 +173,3 @@ databaseChangeLog:
       file: db/changelog/changesets/82-drop-v1-finance.yaml
   - include:
       file: db/changelog/changesets/83-lease-posting-and-cheques.yaml
-  - include:
-      file: db/changelog/changesets/83b-online-payment-schedule-nullable.yaml

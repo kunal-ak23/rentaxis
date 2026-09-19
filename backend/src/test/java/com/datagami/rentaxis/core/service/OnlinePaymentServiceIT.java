@@ -7,6 +7,8 @@ import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
+import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
+import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
@@ -14,6 +16,7 @@ import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -34,6 +37,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
@@ -105,6 +109,7 @@ class OnlinePaymentServiceIT {
     @Autowired WebhookService webhookService;
     @Autowired RentReceiptService receipts;
     @Autowired ChequeService chequeService;
+    @Autowired PenaltyAssessmentService penalties;
     @Autowired TenantGatewayConfigService gatewayConfigService;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService generation;
@@ -145,6 +150,9 @@ class OnlinePaymentServiceIT {
     private static final LocalDate CONTRACT_DATE = TODAY.minusMonths(3);
     private static final LocalDate START = TODAY.minusMonths(2);
     private static final LocalDate END = START.plusYears(1).minusDays(1);
+
+    /** One instalment of the fixture lease: 48,000 over four. */
+    private static final BigDecimal INSTALMENT = new BigDecimal("12000");
 
     private static final String PAYMENT_ID = "pay_IT_0001";
     private static final String SIGNATURE = "sig_IT_0001";
@@ -355,9 +363,7 @@ class OnlinePaymentServiceIT {
     void anUnverifiedWebhookPostsNothing() {
         UUID chequeId = firstCheque();
         onlinePayments.createOrder(chequeId);
-        when(provider.verifyWebhookSignature(anyString(), any(), anyString())).thenReturn(false);
-
-        asWebhook(() -> webhookService.processRazorpayWebhook(capturedPayload(), "forged"));
+        webhookDelivers(capturedPayload(), "forged");
 
         assertThat(reread(chequeId).getStatus())
                 .as("a payload the tenant's secret does not vouch for may not move the register")
@@ -377,12 +383,12 @@ class OnlinePaymentServiceIT {
         UUID chequeId = firstCheque();
         onlinePayments.createOrder(chequeId);
         tx.executeWithoutResult(s -> {
-            TenantGatewayConfig config = configRepo.findByIsActiveTrue().get(0);
+            TenantGatewayConfig config = configRepo.findByIsActiveTrueOrderByCreatedAtAscIdAsc().get(0);
             config.setWebhookSecretEncrypted(null);
             configRepo.save(config);
         });
 
-        asWebhook(() -> webhookService.processRazorpayWebhook(capturedPayload(), SIGNATURE));
+        webhookDelivers(capturedPayload(), signatureFor(WEBHOOK_SECRET));
 
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
         assertThat(crtCount(chequeId)).isZero();
@@ -426,9 +432,7 @@ class OnlinePaymentServiceIT {
     void aFailedPaymentWebhookReleasesTheRow() {
         UUID chequeId = firstCheque();
         onlinePayments.createOrder(chequeId);
-        when(provider.verifyWebhookSignature(anyString(), any(), anyString())).thenReturn(true);
-
-        asWebhook(() -> webhookService.processRazorpayWebhook(failedPayload(), SIGNATURE));
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
 
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
         assertThat(crtCount(chequeId)).isZero();
@@ -447,8 +451,7 @@ class OnlinePaymentServiceIT {
         onlinePayments.createOrder(chequeId);
         webhookCaptured();
 
-        when(provider.verifyWebhookSignature(anyString(), any(), anyString())).thenReturn(true);
-        asWebhook(() -> webhookService.processRazorpayWebhook(failedPayload(), SIGNATURE));
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
 
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
         assertThat(crtCount(chequeId)).isEqualTo(1L);
@@ -594,6 +597,268 @@ class OnlinePaymentServiceIT {
     }
 
     // ------------------------------------------------------------------
+    // captures the register cannot accept
+    // ------------------------------------------------------------------
+
+    /**
+     * Two orders, one instalment, both paid.
+     *
+     * <p>The renter opens checkout, abandons it (the row goes back to REGISTERED),
+     * opens it again and pays through the second order — and then the first order
+     * captures too, because they had in fact completed it and the gateway was slow
+     * to say so. Both payments are real money against one debt. The second to arrive
+     * cannot post a {@code CRT} (the instalment is settled) and must not be waved
+     * through as a duplicate (it is a different payment, and a refund is owed), so
+     * it lands in {@code CAPTURED_UNAPPLIED}.</p>
+     */
+    @Test
+    void aSecondOrderCapturedOnASettledInstalmentIsRecordedAsUnapplied() {
+        UUID chequeId = firstCheque();
+
+        String abandoned = startOrder(chequeId);
+        onlinePayments.cancelPendingOnlinePayment(chequeId);
+        startOrder(chequeId);
+        webhookCaptured();
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
+
+        orderId = abandoned;
+        webhookCaptured();
+
+        assertThat(crtCount(chequeId))
+                .as("one instalment, one CRT, however many orders were paid")
+                .isEqualTo(1L);
+        assertThat(paymentByOrder(abandoned).getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(paymentByOrder(abandoned).getFailureReason())
+                .contains("already settled by another payment")
+                .contains(PAYMENT_ID);
+        assertThat(lastWebhookResult()).contains("Captured but not applied");
+        assertThat(successNotifications(chequeId))
+                .as("the renter is not told a second time that their instalment is paid")
+                .isEqualTo(1L);
+    }
+
+    /** The same, on the ONLINE-mode replacement row a bounced cheque is paid through. */
+    @Test
+    void aSecondOrderCapturedOnASettledOnlineReplacementRowIsRecordedAsUnapplied() {
+        UUID bouncedId = bounceFirstCheque();
+        startOrder(bouncedId);
+        UUID onlineRow = tx.execute(s -> chequeRepo.findById(bouncedId).orElseThrow().getReplacedBy().getId());
+        assertThat(reread(onlineRow).getMode()).isEqualTo(ChequeMode.ONLINE);
+        // Back off the replacement row so the two competing sessions below both
+        // start from REGISTERED, the way a renter opening checkout twice would.
+        onlinePayments.cancelPendingOnlinePayment(onlineRow);
+
+        String abandoned = startOrder(onlineRow);
+        onlinePayments.cancelPendingOnlinePayment(onlineRow);
+        startOrder(onlineRow);
+        webhookCaptured();
+
+        orderId = abandoned;
+        webhookCaptured();
+
+        assertThat(crtCount(onlineRow)).isEqualTo(1L);
+        assertThat(paymentByOrder(abandoned).getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+    }
+
+    /**
+     * A clerk banked the cheque while the renter was paying for it. The paper will
+     * clear at the bank; the gateway's money cannot clear the same row.
+     */
+    @Test
+    void aCaptureForARowAClerkHasMovedIsRecordedAsUnapplied() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        onlinePayments.cancelPendingOnlinePayment(chequeId);
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+
+        webhookCaptured();
+
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(crtCount(chequeId)).isZero();
+        OnlinePayment payment = onlyPayment();
+        assertThat(payment.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(payment.getFailureReason()).contains("DEPOSITED");
+        assertThat(successNotifications(chequeId)).isZero();
+    }
+
+    /** The gateway charged less than the instalment: it does not settle it. */
+    @Test
+    void anUnderPaymentIsRecordedAsUnappliedAndPostsNothing() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+
+        assertThat(crtCount(chequeId)).isZero();
+        assertThat(reread(chequeId).getStatus())
+                .as("the row stays pending: the instalment is not settled by 9,000 of 12,000")
+                .isEqualTo(ChequeStatus.ONLINE_PENDING);
+        OnlinePayment payment = onlyPayment();
+        assertThat(payment.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(payment.getFailureReason()).contains("900000").contains("1200000");
+        assertThat(lastWebhookResult()).contains("Captured but not applied");
+    }
+
+    @Test
+    void aCaptureInTheWrongCurrencyIsRecordedAsUnapplied() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+
+        webhookDelivers(capturedPayload(1_200_000L, "INR"), signatureFor(WEBHOOK_SECRET));
+
+        assertThat(crtCount(chequeId)).isZero();
+        OnlinePayment payment = onlyPayment();
+        assertThat(payment.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(payment.getFailureReason()).contains("INR");
+    }
+
+    /**
+     * The order and the row disagree — the instalment was amended after the order
+     * was raised, say. Checked on both paths, since the client callback carries no
+     * amount of its own to compare against.
+     */
+    @Test
+    void anOrderRaisedForADifferentAmountIsRecordedAsUnappliedOnTheVerifyPath() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        tx.executeWithoutResult(s -> {
+            OnlinePayment payment = onlinePaymentRepo.findByGatewayOrderId(orderId).orElseThrow();
+            payment.setAmount(new BigDecimal("9000"));
+            onlinePaymentRepo.save(payment);
+        });
+        when(provider.verifyPaymentSignature(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+        VerifyPaymentResponseDTO response = onlinePayments.verifyPayment(verifyRequest());
+
+        assertThat(response.isSuccess()).isFalse();
+        assertThat(response.getMessage()).contains("could not be applied").contains("refund");
+        assertThat(crtCount(chequeId)).isZero();
+        assertThat(onlyPayment().getStatus())
+                .as("the CAPTURED_UNAPPLIED record must commit, not roll back with an exception")
+                .isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+    }
+
+    // ------------------------------------------------------------------
+    // the signature is checked against THIS tenant's secret
+    // ------------------------------------------------------------------
+
+    @Test
+    void theDeliveryIsVerifiedAgainstThisTenantsOwnSecret() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+
+        webhookCaptured();
+
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        // Not "some secret": the one belonging to the tenant that owns this order.
+        org.mockito.Mockito.verify(provider)
+                .verifyWebhookSignature(anyString(), any(), org.mockito.ArgumentMatchers.eq(WEBHOOK_SECRET));
+    }
+
+    /**
+     * A payload signed with another tenant's webhook secret is not this tenant's
+     * delivery, however valid it is for whoever made it.
+     */
+    @Test
+    void aPayloadSignedForAnotherTenantsSecretIsRejected() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        String otherTenantSecret = seedOtherTenantGateway();
+
+        webhookDelivers(capturedPayload(), signatureFor(otherTenantSecret));
+
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(crtCount(chequeId)).isZero();
+        assertThat(onlyPaymentOfThisTenant().getStatus()).isEqualTo(OnlinePaymentStatus.CREATED);
+        assertThat(lastWebhookResult()).contains("signature verification failed");
+    }
+
+    // ------------------------------------------------------------------
+    // malformed deliveries
+    // ------------------------------------------------------------------
+
+    @Test
+    void aMalformedPayloadIsRecordedAndIgnored() {
+        webhookDelivers("{\"event\":\"payment.captured\"}", signatureFor(WEBHOOK_SECRET));
+
+        // Read straight off the table: a delivery that never resolved an order has
+        // no tenant on its audit row, so the tenant-scoped read would not see it.
+        java.util.Map<String, Object> log = jdbc.queryForMap(
+                "select processing_result, processed from webhook_logs order by created_at desc limit 1");
+        assertThat((String) log.get("processing_result"))
+                .as("a body with no payment entity is a malformed delivery, not a 500")
+                .contains("Malformed payload");
+        assertThat((Boolean) log.get("processed"))
+                .as("there is nothing to retry, so the gateway is told we are done with it")
+                .isTrue();
+    }
+
+    // ------------------------------------------------------------------
+    // who may act on a pending session
+    // ------------------------------------------------------------------
+
+    /**
+     * A bad signature releases the session — so the caller has to be entitled to
+     * the session first. Otherwise any renter could hand any other renter's
+     * in-flight instalment back to the register with nothing but an order id.
+     */
+    @Test
+    void anotherRenterCannotReleaseAPendingSessionWithABadSignature() {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        Renter stranger = fixtures.createRenter("Somebody Else");
+
+        asRenter(stranger);
+        when(provider.verifyPaymentSignature(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+        assertThatThrownBy(() -> onlinePayments.verifyPayment(verifyRequest()))
+                .isInstanceOf(NotFoundException.class);
+
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(reread(chequeId).getStatus())
+                .as("the rightful renter's session is untouched")
+                .isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(onlyPayment().getStatus()).isEqualTo(OnlinePaymentStatus.CREATED);
+    }
+
+    // ------------------------------------------------------------------
+    // approved penalties on the renter's list
+    // ------------------------------------------------------------------
+
+    /**
+     * An approved penalty is an ordinary CASH row on the lease. It shows on the
+     * renter's list carrying its assessment id, it is summed into every row's
+     * {@code penaltyOutstanding} banner, and it stops counting once collected.
+     */
+    @Test
+    void anApprovedPenaltyAppearsAsARowAndIsSummedUntilItIsCollected() {
+        UUID bouncedId = bounceFirstCheque();
+        UUID leaseId = leaseId();
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, bouncedId, PenaltyReason.CHEQUE_RETURN, new BigDecimal("500"),
+                "Returned cheque fee"), UUID.randomUUID());
+        penalties.approve(proposed.id(), TODAY);
+
+        List<RenterChequeDTO> rows = onlinePayments.getMyPayments(fixtures.renter().getUserId());
+
+        RenterChequeDTO fine = rows.stream()
+                .filter(r -> r.penaltyAssessmentId() != null)
+                .findFirst().orElseThrow();
+        assertThat(fine.penaltyAssessmentId()).isEqualTo(proposed.id());
+        assertThat(fine.amount()).isEqualByComparingTo("500");
+        assertThat(fine.mode()).isEqualTo(ChequeMode.CASH);
+        assertThat(rows).allSatisfy(r ->
+                assertThat(r.penaltyOutstanding()).isEqualByComparingTo("500"));
+
+        chequeService.receive(fine.id(), ChequeActionRequest.on(TODAY));
+
+        List<RenterChequeDTO> afterCollection = onlinePayments.getMyPayments(fixtures.renter().getUserId());
+        assertThat(afterCollection).allSatisfy(r ->
+                assertThat(r.penaltyOutstanding())
+                        .as("a fine that has been paid is no longer outstanding")
+                        .isEqualByComparingTo("0"));
+    }
+
+    // ------------------------------------------------------------------
     // fixtures
     // ------------------------------------------------------------------
 
@@ -701,9 +966,19 @@ class OnlinePaymentServiceIT {
         return request;
     }
 
+    /** What the gateway says it took: the instalment, in fils, in AED. */
     private String capturedPayload() {
+        return capturedPayload(INSTALMENT.multiply(BigDecimal.valueOf(100)).longValue(), "AED");
+    }
+
+    /**
+     * The same delivery with the money spelled out, so a test can say "the gateway
+     * charged 9,000 of a 12,000 instalment" or "it charged INR".
+     */
+    private String capturedPayload(long minorUnits, String currency) {
         return "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{"
-                + "\"order_id\":\"" + orderId + "\",\"id\":\"" + PAYMENT_ID + "\"}}}}";
+                + "\"order_id\":\"" + orderId + "\",\"id\":\"" + PAYMENT_ID + "\","
+                + "\"amount\":" + minorUnits + ",\"currency\":\"" + currency + "\"}}}}";
     }
 
     private String failedPayload() {
@@ -718,8 +993,31 @@ class OnlinePaymentServiceIT {
 
     /** A verified capture delivered by the gateway, with no user in the context. */
     private void webhookCaptured() {
-        when(provider.verifyWebhookSignature(anyString(), any(), anyString())).thenReturn(true);
-        asWebhook(() -> webhookService.processRazorpayWebhook(capturedPayload(), SIGNATURE));
+        webhookDelivers(capturedPayload(), signatureFor(WEBHOOK_SECRET));
+    }
+
+    /**
+     * One delivery, signed with whatever secret the caller names.
+     *
+     * <p>The faked provider only answers true when the signature it is handed was
+     * made for the secret it is handed, which is what makes "the right tenant's
+     * secret" an assertion rather than an assumption: a stub that returned true for
+     * every secret would pass whether or not the handler looked up the right
+     * tenant's configuration.</p>
+     */
+    private void webhookDelivers(String payload, String signature) {
+        bindSignaturesToSecrets();
+        asWebhook(() -> webhookService.processRazorpayWebhook(payload, signature));
+    }
+
+    private void bindSignaturesToSecrets() {
+        when(provider.verifyWebhookSignature(anyString(), any(), anyString()))
+                .thenAnswer(inv -> signatureFor(inv.getArgument(2)).equals(inv.getArgument(1)));
+    }
+
+    /** The only signature that verifies against this secret. */
+    private static String signatureFor(String secret) {
+        return "sig-for-" + secret;
     }
 
     /** The same capture reported by the browser coming back from Razorpay. */
@@ -809,12 +1107,83 @@ class OnlinePaymentServiceIT {
         return tx.execute(s -> onlinePaymentRepo.findByCheque_Id(chequeId));
     }
 
-    private String lastWebhookResult() {
+    private OnlinePayment paymentByOrder(String order) {
+        return tx.execute(s -> onlinePaymentRepo.findByGatewayOrderId(order).orElseThrow());
+    }
+
+    /**
+     * The only payment belonging to this test's tenant. {@link #onlyPayment} counts
+     * every row in the database, which the two-tenant case deliberately adds to.
+     */
+    private OnlinePayment onlyPaymentOfThisTenant() {
+        List<OnlinePayment> mine = allPayments().stream()
+                .filter(p -> fixtures.tenantId().equals(p.getTenantId()))
+                .toList();
+        assertThat(mine).hasSize(1);
+        return mine.get(0);
+    }
+
+    /**
+     * A gateway session on this row under a fresh order id.
+     *
+     * <p>The faked gateway answers with whatever {@link #orderId} currently holds,
+     * so a test that opens two checkouts has to rotate it — two payments sharing one
+     * {@code gateway_order_id} would make the webhook's lookup ambiguous and the
+     * test would be measuring that instead of what it means to.</p>
+     *
+     * @return this order's id, so the caller can come back to it later.
+     */
+    private String startOrder(UUID chequeId) {
+        orderId = "order_IT_" + UUID.randomUUID();
+        onlinePayments.createOrder(chequeId);
+        return orderId;
+    }
+
+    /** Another landlord org with a gateway configuration and a secret of its own. */
+    private String seedOtherTenantGateway() {
+        String secret = "whsec_other_" + UUID.randomUUID().toString().substring(0, 6);
+        UUID mine = fixtures.tenantId();
+        UUID other = tx.execute(s -> {
+            com.datagami.rentaxis.domain.entity.LandlordOrg org =
+                    new com.datagami.rentaxis.domain.entity.LandlordOrg();
+            org.setName("Other-Tenant-" + UUID.randomUUID());
+            return orgRepo.save(org).getId();
+        });
+        TenantContextHolder.setTenantId(other);
+        try {
+            PaymentGateway gateway = tx.execute(s -> gatewayRepo.findByCode("RAZORPAY").orElseThrow());
+            tx.executeWithoutResult(s -> {
+                TenantGatewayConfig config = new TenantGatewayConfig();
+                config.setGateway(gateway);
+                config.setApiKeyEncrypted(encryptionService.encrypt("rzp_other_key"));
+                config.setApiSecretEncrypted(encryptionService.encrypt("rzp_other_secret"));
+                config.setWebhookSecretEncrypted(encryptionService.encrypt(secret));
+                config.setIsActive(true);
+                configRepo.save(config);
+            });
+        } finally {
+            TenantContextHolder.setTenantId(mine);
+        }
+        return secret;
+    }
+
+    /** How many "your payment went through" rows the renter has for this row. */
+    private long successNotifications(UUID chequeId) {
+        return jdbc.queryForObject(
+                "select count(*) from notifications where tenant_id = ? and type = 'PAYMENT_CLEARED' "
+                        + "and reference_type = 'CHEQUE' and reference_id = ?",
+                Long.class, fixtures.tenantId(), chequeId);
+    }
+
+    private com.datagami.rentaxis.domain.entity.WebhookLog lastWebhookLog() {
         return tx.execute(s -> webhookLogs.findAll().stream()
                 .filter(l -> fixtures.tenantId().equals(l.getTenantId()))
                 .reduce((a, b) -> b)
-                .orElseThrow()
-                .getProcessingResult());
+                .orElseThrow());
+    }
+
+    private String lastWebhookResult() {
+        return lastWebhookLog().getProcessingResult();
     }
 
     private Account leaf(AccountRole role) {

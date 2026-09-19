@@ -78,7 +78,7 @@ class TenantGatewayConfigServiceTest {
 
     @Test
     void saveConfig_keepsExistingCredentials_whenAbsent() {
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of(existingConfig));
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of(existingConfig));
 
         service.saveConfig(dto(null, null));
 
@@ -90,7 +90,7 @@ class TenantGatewayConfigServiceTest {
 
     @Test
     void saveConfig_keepsExistingCredentials_whenBlank() {
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of(existingConfig));
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of(existingConfig));
 
         service.saveConfig(dto("", ""));
 
@@ -101,7 +101,7 @@ class TenantGatewayConfigServiceTest {
 
     @Test
     void saveConfig_ignoresRoundTrippedMaskedKey() {
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of(existingConfig));
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of(existingConfig));
 
         // A client echoing back the masked key from the GET response must not overwrite the real one
         service.saveConfig(dto("rzp_test****", null));
@@ -113,7 +113,7 @@ class TenantGatewayConfigServiceTest {
 
     @Test
     void saveConfig_updatesCredentials_whenProvided() {
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of(existingConfig));
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of(existingConfig));
         when(encryptionService.encrypt("rzp_live_newkey")).thenReturn("enc-new-key");
         when(encryptionService.encrypt("newsecret")).thenReturn("enc-new-secret");
 
@@ -126,7 +126,7 @@ class TenantGatewayConfigServiceTest {
     @Test
     void saveConfig_updatesTestModeOnly_whenCredentialsOmitted() {
         existingConfig.setIsTestMode(true);
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of(existingConfig));
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of(existingConfig));
 
         TenantGatewayConfigDTO update = dto(null, null);
         update.setIsTestMode(false);
@@ -140,7 +140,7 @@ class TenantGatewayConfigServiceTest {
 
     @Test
     void saveConfig_rejectsNewConfig_withoutCredentials() {
-        when(tenantGatewayConfigRepository.findByIsActiveTrue()).thenReturn(List.of());
+        when(tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc()).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.saveConfig(dto("", null)))
                 .isInstanceOf(IllegalArgumentException.class)
