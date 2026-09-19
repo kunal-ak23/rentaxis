@@ -1,11 +1,14 @@
 import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
 
 /**
- * The register's own row actions — separate from the lease page's
- * `ChequeGrid#actionsFor`, which offers a narrower set (no cancel, no
- * mode-aware receive/deposit split, no late-return bounce on a cleared row):
- * the lease page works one contract's grid at a time and never needed those,
- * and widening it would be a change to a screen this task does not own.
+ * What a cheque row offers, by the state and the instrument it is in.
+ *
+ * The one definition, shared by the register and by the lease page's own
+ * `ChequeGrid`. The lease page briefly carried a second, narrower table of its
+ * own: it offered Receive on ONLINE_PENDING (which the server always 400s),
+ * never offered Receive on a cash row, and never offered the late-return
+ * bounce on a cleared PDC. Two tables over one state machine is how a screen
+ * comes to disagree with the server about what a row can do.
  *
  * Mirrors `ChequeController`'s own transitions (spec §7.4):
  *  - REGISTERED + PDC        → deposit, details, cancel

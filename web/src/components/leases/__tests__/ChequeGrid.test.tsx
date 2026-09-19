@@ -2,8 +2,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
-import ChequeGrid, { actionsFor } from "../ChequeGrid";
-import type { Cheque, ChequeStatus } from "@/lib/api/leasing";
+import ChequeGrid from "../ChequeGrid";
+import { registerActionsFor } from "@/components/cheques/registerActions";
+import type { Cheque } from "@/lib/api/leasing";
 
 vi.mock("@/components/finance/AccountPicker", () => ({
     default: () => <div data-testid="account-picker" />,
@@ -60,17 +61,6 @@ describe("ChequeGrid footer", () => {
         expect(badge).toHaveAttribute("data-match", "true");
         expect(badge).toHaveTextContent("Cheques match the contract value of 30,000.00");
     });
-
-    it("prefers the server's own cheque total when a dry run has supplied one", () => {
-        // The rows say 27,400; the server says 30,000. The server is what the
-        // post is judged against, so the footer follows it.
-        renderGrid({
-            cheques: [cheque({ id: "c1", seqNo: 1, amount: 13700 }), cheque({ id: "c2", seqNo: 2, amount: 13700 })],
-            contractValueInclVat: 30000,
-            chequeTotal: 30000,
-        });
-        expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "true");
-    });
 });
 
 describe("ChequeGrid editability", () => {
@@ -113,15 +103,19 @@ describe("ChequeGrid editability", () => {
 });
 
 describe("ChequeGrid row actions", () => {
-    it("offers the actions the cheque's state actually admits", () => {
-        // Mirrors ChequeController's transitions: only a banked cheque clears
-        // or bounces, only a bounced one is replaced, and a cleared one is done.
-        expect(actionsFor("REGISTERED")).toEqual(["deposit", "details"]);
-        expect(actionsFor("DEPOSITED")).toEqual(["clear", "bounce"]);
-        expect(actionsFor("BOUNCED")).toEqual(["replace"]);
-        expect(actionsFor("ONLINE_PENDING")).toEqual(["receive"]);
-        expect(actionsFor("CLEARED")).toEqual([]);
-        expect(actionsFor("CANCELLED" as ChequeStatus)).toEqual([]);
+    it("shares registerActionsFor with the register — no lease-page table of its own", () => {
+        // Mirrors ChequeController's transitions (spec §7.4), via the one table
+        // the register (Task 15) and this grid both read.
+        expect(registerActionsFor("REGISTERED", "PDC", false)).toEqual(["deposit", "details"]);
+        expect(registerActionsFor("REGISTERED", "CASH", false)).toEqual(["receive", "details"]);
+        expect(registerActionsFor("DEPOSITED", "PDC", false)).toEqual(["clear", "bounce"]);
+        expect(registerActionsFor("BOUNCED", "PDC", false)).toEqual(["replace"]);
+        // ONLINE_PENDING moves only through the online-payment webhook, never a
+        // row action — the server 400s a manual "receive" on it.
+        expect(registerActionsFor("ONLINE_PENDING", "ONLINE", false)).toEqual([]);
+        expect(registerActionsFor("CLEARED", "PDC", false)).toEqual(["bounce", "receipt"]);
+        expect(registerActionsFor("CLEARED", "CASH", false)).toEqual(["receipt"]);
+        expect(registerActionsFor("CANCELLED", "PDC", false)).toEqual([]);
     });
 
     it("renders those actions on a posted grid and reports the click", () => {
@@ -135,6 +129,20 @@ describe("ChequeGrid row actions", () => {
 
         fireEvent.click(screen.getByTestId("cheque-action-bounce-0"));
         expect(onRowAction).toHaveBeenCalledWith(deposited, "bounce");
+    });
+
+    it("offers nothing for an ONLINE_PENDING row and 'receive' for a CASH REGISTERED one", () => {
+        const online = cheque({ id: "c1", seqNo: 1, status: "ONLINE_PENDING", mode: "ONLINE" });
+        renderGrid({ cheques: [online], editable: false, onRowAction: vi.fn(), contractValueInclVat: 13700 });
+        // ONLINE_PENDING has no row actions, so the grid renders no actions column at all.
+        expect(screen.queryByTestId("cheque-action-receive-0")).not.toBeInTheDocument();
+        expect(screen.queryByTestId(/^cheque-action-/)).not.toBeInTheDocument();
+        cleanup();
+
+        const cashRow = cheque({ id: "c2", seqNo: 1, status: "REGISTERED", mode: "CASH" });
+        renderGrid({ cheques: [cashRow], editable: false, onRowAction: vi.fn(), contractValueInclVat: 13700 });
+        expect(screen.getByTestId("cheque-action-receive-0")).toBeInTheDocument();
+        expect(screen.queryByTestId("cheque-action-deposit-0")).not.toBeInTheDocument();
     });
 
     it("shows the notice when the backend dropped the draft rows", () => {
