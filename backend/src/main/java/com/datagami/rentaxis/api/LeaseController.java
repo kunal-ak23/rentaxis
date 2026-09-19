@@ -3,18 +3,20 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.*;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
-import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.AmendLeaseLinesRequest;
+import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequeNumbersRequest;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
+import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
+import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
@@ -55,6 +57,7 @@ public class LeaseController {
     private final LeaseInteractionService leaseInteractionService;
     private final ChequeGenerationService chequeGenerationService;
     private final LeasePostingService leasePostingService;
+    private final LeaseRenewalService leaseRenewalService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -251,12 +254,38 @@ public class LeaseController {
         return ResponseEntity.ok(leaseService.terminateLease(id, null));
     }
 
+    // --- Renewal chain and extension (spec §6.6, §6.7) ---------------------
+
+    /**
+     * Draft the successor to this lease: same unit, same renter, new term, and a
+     * link back to the contract it replaces.
+     *
+     * <p>Open to PROPERTY_MANAGER as well as the finance roles, and that asymmetry
+     * with <em>post</em> is deliberate: drafting next year's contract is the
+     * building manager's job — it writes no journals and changes nothing about the
+     * lease being renewed — while deciding when it goes on the books is the
+     * accountant's.</p>
+     */
+    @PostMapping("/{id}/renew")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<LeaseDTO> renewLease(@PathVariable UUID id,
+                                               @Valid @RequestBody RenewLeaseRequest request) {
+        return ResponseEntity.ok(leaseRenewalService.renew(id, request));
+    }
+
+    /**
+     * Extend a posted lease: new lines for the extra window, a further TCO for
+     * them, the cheques that pay for it registered on the spot.
+     *
+     * <p>Finance roles only. Unlike a renewal this posts immediately — there is no
+     * draft to review, because the lease is already on the books and its grid
+     * closed when it posted.</p>
+     */
     @PostMapping("/{id}/extend")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<LeaseDTO> extendLease(
-            @PathVariable UUID id,
-            @RequestBody ExtendLeaseDTO dto) {
-        return ResponseEntity.ok(leaseService.extendLease(id, dto.getNewEndDate()));
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<PostLeaseResponse> extendLease(@PathVariable UUID id,
+                                                         @Valid @RequestBody ExtendLeaseRequest request) {
+        return ResponseEntity.ok(leaseRenewalService.extend(id, request));
     }
 
     @GetMapping("/{id}/events")

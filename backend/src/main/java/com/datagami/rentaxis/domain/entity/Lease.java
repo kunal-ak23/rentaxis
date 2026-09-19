@@ -142,6 +142,21 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "chain_id")
     private UUID chainId;
 
+    /**
+     * The accountant chose "carry the deposit forward" when this lease was created
+     * as a renewal (spec §6.6).
+     *
+     * <p>It is a decision recorded on the draft and acted on once, when the lease
+     * <em>posts</em>: {@code DepositCarryForward} then writes one {@code JV} moving
+     * the predecessor's remaining deposit liability onto this lease's dimension.
+     * Storing it rather than asking again at post time is what makes the review
+     * screen's promise and the posting's behaviour the same decision — and what
+     * stops a renewal being drafted with no deposit line and posted with no
+     * carry-forward either, leaving the money stranded on a retired contract.</p>
+     */
+    @Column(name = "carry_deposit_forward", nullable = false)
+    private boolean carryDepositForward = false;
+
     // ---- posting (filled by Task 6) -----------------------------------------
 
     @Column(name = "receivable_account_id")

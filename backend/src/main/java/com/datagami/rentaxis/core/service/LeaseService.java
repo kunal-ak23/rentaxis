@@ -55,7 +55,6 @@ public class LeaseService {
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LeaseAttachmentRepository leaseAttachmentRepository;
-    private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseInteractionRepository leaseInteractionRepository;
@@ -75,7 +74,6 @@ public class LeaseService {
                         LeaseEventRepository leaseEventRepository,
                         LeaseDocumentRepository leaseDocumentRepository,
                         LeaseAttachmentRepository leaseAttachmentRepository,
-                        PaymentScheduleService paymentScheduleService,
                         PaymentScheduleRepository paymentScheduleRepository,
                         LeaseChargeRepository leaseChargeRepository,
                         LeaseInteractionRepository leaseInteractionRepository,
@@ -94,7 +92,6 @@ public class LeaseService {
         this.leaseEventRepository = leaseEventRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.leaseAttachmentRepository = leaseAttachmentRepository;
-        this.paymentScheduleService = paymentScheduleService;
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.leaseChargeRepository = leaseChargeRepository;
         this.leaseInteractionRepository = leaseInteractionRepository;
@@ -241,6 +238,27 @@ public class LeaseService {
         unitRepository.save(unit);
     }
 
+    /**
+     * Whether the only thing standing between this unit and a new lease is the very
+     * lease being renewed.
+     *
+     * <p>Asked of the <em>leases</em>, not of {@code unit.status}. A unit is left
+     * OCCUPIED by a lease that has since expired, and a renewal of an EXPIRED
+     * contract is exactly the case this exists for; conversely a unit that looks
+     * occupied because a third lease holds it must still be refused. "No ACTIVE
+     * lease on this unit other than the predecessor" is the question that answers
+     * both, and it is the same question {@link #claimUnitForLease} asks when the
+     * successor eventually posts.</p>
+     */
+    private boolean heldOnlyBy(Unit unit, Lease predecessor) {
+        if (predecessor == null || predecessor.getUnit() == null
+                || !predecessor.getUnit().getId().equals(unit.getId())) {
+            return false;
+        }
+        return leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+                .allMatch(other -> other.getId().equals(predecessor.getId()));
+    }
+
     private Lease findLeaseWithTenantCheck(UUID id) {
         Lease lease = leaseRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -274,10 +292,44 @@ public class LeaseService {
 
     @Transactional
     public LeaseDTO createDraftLease(CreateLeaseDTO dto) {
+        return createDraft(dto, null, false);
+    }
+
+    /**
+     * The successor in a renewal chain: the same draft, told which contract it
+     * replaces (spec §6.6).
+     *
+     * <p>It goes through {@link #createDraft} rather than building a lease of its
+     * own, because a renewal is a lease in every respect that matters — the same
+     * line validation, the same credit-account resolution, the same derived totals,
+     * the same "Lease drafted" trail. A second creation path would be a second set
+     * of defaults to keep in step, and the one that drifts is always the one used
+     * once a year.</p>
+     *
+     * <p>Called by {@code LeaseRenewalService}, which owns the rules about
+     * <em>whether</em> a lease may be renewed; this owns what the successor looks
+     * like.</p>
+     */
+    @Transactional
+    public LeaseDTO createRenewalDraft(CreateLeaseDTO dto, Lease predecessor, boolean carryDepositForward) {
+        if (predecessor == null) {
+            throw new IllegalArgumentException("A renewal needs the lease it renews");
+        }
+        return createDraft(dto, predecessor, carryDepositForward);
+    }
+
+    private LeaseDTO createDraft(CreateLeaseDTO dto, Lease predecessor, boolean carryDepositForward) {
         Unit unit = unitRepository.findById(dto.getUnitId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
 
-        if (unit.getStatus() != UnitStatus.VACANT) {
+        // A renewal of the unit's own sitting tenant is the one case where an
+        // occupied unit is not an obstacle: the renter has not moved out, and
+        // requiring the predecessor to be terminated first would mean vacating the
+        // unit — which is a moment it is lettable to somebody else — in order to
+        // keep letting it to the person living in it. Any other occupancy is still
+        // refused, so a renewal cannot be used to slip a second lease onto a unit
+        // a third contract holds.
+        if (unit.getStatus() != UnitStatus.VACANT && !heldOnlyBy(unit, predecessor)) {
             throw new BusinessRuleViolationException("Cannot create lease. Unit is not vacant.");
         }
 
@@ -289,6 +341,13 @@ public class LeaseService {
         lease.setRenter(renter);
         applyHeader(lease, dto, unit);
         lease.setStatus(LeaseStatus.DRAFT);
+        if (predecessor != null) {
+            lease.setRenewedFromLeaseId(predecessor.getId());
+            // The chain's head is the first lease in it; a predecessor drafted
+            // before chain_id existed has none, and is its own head.
+            lease.setChainId(predecessor.getChainId() != null ? predecessor.getChainId() : predecessor.getId());
+            lease.setCarryDepositForward(carryDepositForward);
+        }
 
         Lease savedLease = leaseRepository.save(lease);
 
@@ -310,7 +369,8 @@ public class LeaseService {
         // side effect of drafting is what produced schedules nobody had agreed to
         // and that an edit then silently replaced.
 
-        recordEvent(savedLease, null, LeaseStatus.DRAFT, "Lease drafted");
+        recordEvent(savedLease, null, LeaseStatus.DRAFT,
+                predecessor == null ? "Lease drafted" : "Lease drafted as a renewal of " + predecessor.getId());
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_CREATED,
@@ -391,10 +451,52 @@ public class LeaseService {
         leaseLineRepository.deleteByLease_Id(lease.getId());
         leaseLineRepository.flush();
 
+        insertLines(lease, inputs, 0);
+    }
+
+    /**
+     * Add lines to a lease <em>without</em> disturbing the ones already on it,
+     * numbering them on from the last existing position (spec §6.7).
+     *
+     * <p>{@link #applyLines} cannot serve here and the difference is not stylistic.
+     * A lease that is being extended is already posted: its existing lines are what
+     * the original {@code TCO} was raised from, and the whole point of an additive
+     * extension is that the original entry is never reversed. Deleting and
+     * re-inserting the lines would orphan that journal from the rows it describes
+     * — same amounts, new ids, and nothing to tie a segment or a recognition row
+     * back to.</p>
+     *
+     * <p>Everything else is identical: the same charge-type lookup, the same
+     * amount rules, the same credit-account resolution and the same RENT-period
+     * defaults. Callers that need a particular period (an extension does — its
+     * rent covers the new window, not the whole term) say so on the input.</p>
+     *
+     * @return the rows just written, in position order, so the caller can post
+     *         against exactly these and name them in its event.
+     */
+    @Transactional
+    public List<LeaseLine> appendLines(Lease lease, List<LeaseLineInput> inputs) {
+        if (inputs == null || inputs.isEmpty()) {
+            throw new BusinessRuleViolationException("At least one line is required");
+        }
+        int lastSeq = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
+                .mapToInt(LeaseLine::getSeqNo).max().orElse(0);
+        return insertLines(lease, inputs, lastSeq);
+    }
+
+    /**
+     * The shared body of {@link #applyLines} and {@link #appendLines}: validate
+     * each input, resolve its charge type and credit account, write the row.
+     *
+     * @param startingSeq the position the first new line follows — 0 for a
+     *                    replacement, the last existing position for an append.
+     */
+    private List<LeaseLine> insertLines(Lease lease, List<LeaseLineInput> inputs, int startingSeq) {
         UUID propertyId = lease.getUnit() != null && lease.getUnit().getProperty() != null
                 ? lease.getUnit().getProperty().getId() : null;
 
-        int seqNo = 0;
+        List<LeaseLine> written = new java.util.ArrayList<>(inputs.size());
+        int seqNo = startingSeq;
         for (LeaseLineInput in : inputs) {
             seqNo++;
             ChargeType type = resolveChargeType(in, seqNo);
@@ -444,9 +546,26 @@ public class LeaseService {
                 line.setPeriodEnd(in.periodEnd());
             }
 
-            leaseLineRepository.save(line);
+            written.add(leaseLineRepository.save(line));
         }
         leaseLineRepository.flush();
+        return List.copyOf(written);
+    }
+
+    /**
+     * The charge type a line input names, resolved exactly as {@link #applyLines}
+     * resolves it — same lookup, same refusal wording.
+     *
+     * <p>Exposed for callers that have to know what a line <em>is</em> before they
+     * are willing to write it. An extension refuses a DEPOSIT line and needs the
+     * behaviour to say so, and it has to say so before it appends anything, so that
+     * a rejected request leaves no half-built extension behind. Resolving it a
+     * second time inside {@code insertLines} costs a cached lookup; a second copy
+     * of the lookup would cost a divergent error message.</p>
+     */
+    @Transactional(readOnly = true)
+    public ChargeType chargeTypeOf(LeaseLineInput in, int seqNo) {
+        return resolveChargeType(in, seqNo);
     }
 
     private ChargeType resolveChargeType(LeaseLineInput in, int seqNo) {
@@ -774,42 +893,12 @@ public class LeaseService {
         return mapToDTO(savedLease);
     }
 
-    @Transactional
-    public LeaseDTO extendLease(UUID leaseId, LocalDate newEndDate) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
-
-        if (lease.getStatus() != LeaseStatus.ACTIVE) {
-            throw new BusinessRuleViolationException("Only ACTIVE leases can be extended");
-        }
-        if (!newEndDate.isAfter(lease.getEndDate())) {
-            throw new BusinessRuleViolationException("New end date must be after the current end date");
-        }
-
-        LocalDate previousEndDate = lease.getEndDate();
-        lease.setEndDate(newEndDate);
-        Lease savedLease = leaseRepository.save(lease);
-
-        // Bill the extension. Without this the extra months were never
-        // invoiced, never reached the aging report, and could not be added
-        // afterwards — updatePaymentSchedule is DRAFT-only and schedule
-        // generation short-circuits once installments exist — so the rent was
-        // simply lost, with a 200 and an event to say all was well.
-        int addedInstallments =
-                paymentScheduleService.extendScheduleForLease(savedLease, previousEndDate, newEndDate).size();
-
-        recordEvent(savedLease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
-                "Lease extended from " + previousEndDate + " to " + newEndDate
-                        + " (" + addedInstallments + " installment(s) added)");
-
-        // Update listing availability and notify interested renters
-        try {
-            unitListingService.syncAvailableFrom(lease.getUnit().getId(), newEndDate);
-        } catch (Exception e) {
-            // Non-critical
-        }
-
-        return mapToDTO(savedLease);
-    }
+    // extendLease is gone. It moved end_date and generated payment-schedule
+    // installments — a billing mechanism that no longer exists — while leaving the
+    // lease's lines, its cheque grid and its journals describing the original term.
+    // An extension is a posting now: LeaseRenewalService.extend appends RENT lines
+    // for the new window, posts a further TCO and registers the cheques that pay
+    // for it (spec §6.7).
 
     @Transactional
     public LeaseDTO terminateWithSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {

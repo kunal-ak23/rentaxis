@@ -45,6 +45,18 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     List<Lease> findByStatus(LeaseStatus status);
 
+    /**
+     * The successors somebody has already drafted from this lease (spec §6.6).
+     *
+     * <p>Renewing twice is what this answers. Two drafts pointing at one
+     * predecessor both claim the same unit and both expect to retire it on posting;
+     * whichever posts second would find the predecessor already RENEWED and the
+     * unit held by its sibling, and the refusal would arrive at posting time with
+     * a grid already cut and cheques already collected.</p>
+     */
+    @Query("SELECT l FROM Lease l WHERE l.renewedFromLeaseId = :leaseId")
+    List<Lease> findByRenewedFromLeaseId(@Param("leaseId") UUID leaseId);
+
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
 

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -45,7 +46,6 @@ class LeaseServiceUnitOccupancyTest {
     private UnitRepository unitRepository;
     private RenterRepository renterRepository;
     private PaymentScheduleRepository paymentScheduleRepository;
-    private PaymentScheduleService paymentScheduleService;
     private LeaseInteractionRepository leaseInteractionRepository;
     private LeaseLineRepository leaseLineRepository;
     private ChequeRepository chequeRepository;
@@ -57,7 +57,6 @@ class LeaseServiceUnitOccupancyTest {
         unitRepository = mock(UnitRepository.class);
         renterRepository = mock(RenterRepository.class);
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
-        paymentScheduleService = mock(PaymentScheduleService.class);
         leaseInteractionRepository = mock(LeaseInteractionRepository.class);
         LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
         LeaseChargeRepository leaseChargeRepository = mock(LeaseChargeRepository.class);
@@ -78,7 +77,6 @@ class LeaseServiceUnitOccupancyTest {
                 mock(LeaseEventRepository.class),
                 leaseDocumentRepository,
                 mock(LeaseAttachmentRepository.class),
-                paymentScheduleService,
                 paymentScheduleRepository,
                 leaseChargeRepository,
                 leaseInteractionRepository,
@@ -105,7 +103,6 @@ class LeaseServiceUnitOccupancyTest {
         when(unitRepository.save(any(Unit.class))).thenAnswer(inv -> inv.getArgument(0));
         // No other lease holds any unit unless a test says so.
         when(leaseRepository.findByUnitIdAndStatus(any(), any())).thenReturn(List.of());
-        when(paymentScheduleService.extendScheduleForLease(any(), any(), any())).thenReturn(List.of());
     }
 
     /** Makes findByIdForUpdate resolve to this lease's unit. */
@@ -296,29 +293,6 @@ class LeaseServiceUnitOccupancyTest {
         assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
     }
 
-    // ---- extension bills the months it adds (#198) --------------------------
-
-    @Test
-    void extendLease_billsTheExtensionThroughTheScheduleService() {
-        Lease lease = lease(LeaseStatus.ACTIVE);
-        lease.setStartDate(java.time.LocalDate.of(2026, 1, 1));
-        lease.setEndDate(java.time.LocalDate.of(2026, 12, 31));
-        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
-
-        java.time.LocalDate newEnd = java.time.LocalDate.of(2027, 6, 30);
-        service.extendLease(lease.getId(), newEnd);
-
-        // The wiring is the point: extendLease used to move the end date and
-        // nothing else, so the extra months were never invoiced. Asserting on
-        // the collaborator call is what stops that regressing — a test that only
-        // exercised the schedule service directly would not have caught it.
-        verify(paymentScheduleService).extendScheduleForLease(
-                any(Lease.class),
-                eq(java.time.LocalDate.of(2026, 12, 31)),
-                eq(newEnd));
-        assertThat(lease.getEndDate()).isEqualTo(newEnd);
-    }
-
     // ---- draft deletion releases lease_interactions (#200) ------------------
 
     @Test
@@ -345,6 +319,10 @@ class LeaseServiceUnitOccupancyTest {
      * against the lease's lines and registered by the post — a schedule appearing
      * as a side effect of a status change is what let a lease bill a renter for
      * instalments nobody had agreed.
+     *
+     * <p>Asserted on the repository rather than on {@code PaymentScheduleService}:
+     * {@code LeaseService} no longer holds a reference to that service at all, and
+     * "no schedule row was written" is the fact worth pinning down anyway.</p>
      */
     @Test
     void markActiveOnPosting_doesNotGenerateAPaymentSchedule() {
@@ -353,6 +331,7 @@ class LeaseServiceUnitOccupancyTest {
 
         service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
 
-        verify(paymentScheduleService, org.mockito.Mockito.never()).generateScheduleForLease(any(Lease.class));
+        verify(paymentScheduleRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any(PaymentSchedule.class));
     }
 }

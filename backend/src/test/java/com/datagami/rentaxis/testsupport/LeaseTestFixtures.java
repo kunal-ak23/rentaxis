@@ -2,6 +2,7 @@ package com.datagami.rentaxis.testsupport;
 
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
@@ -316,6 +317,21 @@ public class LeaseTestFixtures {
             numberGrid(leaseId, startingNumber);
         }
         return leasePosting.post(leaseId);
+    }
+
+    /**
+     * A line covering an explicit period — what an extension's rent line is, and
+     * what a renewal's copied rent line becomes.
+     */
+    public static LeaseLineInput linePeriod(String chargeTypeCode, String gross, LocalDate from, LocalDate to) {
+        return new LeaseLineInput(null, chargeTypeCode, new BigDecimal(gross), BigDecimal.ZERO,
+                null, null, null, from, to);
+    }
+
+    /** One cheque row: an amount on a date, PDC by default, no number. */
+    public static ChequeRowInput chequeRow(String amount, LocalDate chequeDate) {
+        return new ChequeRowInput(null, null, null, null, chequeDate, "Emirates NBD", null, null,
+                new BigDecimal(amount), null, null);
     }
 
     private LeaseService requireLeaseServices() {

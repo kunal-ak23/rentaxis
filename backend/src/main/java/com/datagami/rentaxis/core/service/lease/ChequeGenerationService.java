@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The cheque grid on a draft lease (spec §7.1) — how a contract's money is cut
@@ -471,6 +472,68 @@ public class ChequeGenerationService {
         chequeRepository.saveAll(out);
         chequeRepository.flush();
         return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
+    }
+
+    /**
+     * Rows added to a lease that is already on the books, numbered on from the
+     * last position — the instruments that pay for an extension (spec §6.7).
+     *
+     * <p>The rows are written {@code DRAFT} and left that way: the caller registers
+     * each one through {@code LeaseChequeRegistrar}, which is what turns it into an
+     * instrument with a {@code PDR} behind it. Splitting it that way is deliberate —
+     * every other row on a posted lease registers the moment it is created, and an
+     * extension must not register a single one until its whole set of lines, rows
+     * and accounts has been found acceptable.</p>
+     *
+     * <p>Not a public endpoint and not reachable from the grid: {@code generate},
+     * {@code saveRows} and {@code generateNumbers} all refuse a posted lease, and
+     * this takes the {@code Lease} rather than an id precisely so it cannot be
+     * called without the caller having already locked and vetted it.
+     * {@code ChequeRowRules} still applies, through the same door a replacement
+     * row uses.</p>
+     *
+     * @param fallbackPostingDate the journal date for rows that name none — the
+     *                            extension's contract date, not today.
+     */
+    List<Cheque> appendRows(Lease lease, List<ChequeRowInput> rows, LocalDate fallbackPostingDate) {
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        Set<String> taken = register.stream()
+                .filter(c -> c.getMode() == ChequeMode.PDC && c.getChequeNumber() != null)
+                .map(Cheque::getChequeNumber)
+                .collect(Collectors.toCollection(HashSet::new));
+        ChequeRowRules.validateNewRows(rows, taken, "cheque");
+
+        int seq = register.stream().mapToInt(Cheque::getSeqNo).max().orElse(0);
+        Account fallbackDebit = null;
+        boolean fallbackResolved = false;
+        List<Cheque> out = new ArrayList<>(rows.size());
+        for (ChequeRowInput row : rows) {
+            Cheque c = blank(lease);
+            c.setSeqNo(++seq);
+            c.setPostingDate(row.postingDate() != null ? row.postingDate() : fallbackPostingDate);
+            c.setChequeDate(row.chequeDate());
+            c.setAmount(row.amount());
+            c.setNarration(row.narration());
+            c.setMode(row.mode() == null ? ChequeMode.PDC : row.mode());
+            c.setChequeNumber(blankToNull(row.chequeNumber()));
+            c.setPayeeBank(row.payeeBank());
+            if (row.payerName() != null && !row.payerName().isBlank()) {
+                c.setPayerName(row.payerName());
+            }
+            if (row.debitAccountId() != null) {
+                c.setDebitAccount(account(row.debitAccountId()));
+            } else {
+                if (!fallbackResolved) {
+                    fallbackDebit = debitAccount(null, lease);
+                    fallbackResolved = true;
+                }
+                c.setDebitAccount(fallbackDebit);
+            }
+            out.add(c);
+        }
+        chequeRepository.saveAll(out);
+        chequeRepository.flush();
+        return List.copyOf(out);
     }
 
     // ------------------------------------------------------------------

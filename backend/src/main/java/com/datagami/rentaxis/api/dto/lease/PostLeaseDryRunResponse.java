@@ -18,12 +18,20 @@ import java.util.List;
  * {@code chequeTotal} is actually required to equal — the two differ exactly when
  * some line carries VAT, and showing only one of them is how a grid that is
  * "short by 100" looks like a rounding bug.</p>
+ *
+ * <p>{@code depositCarriedForward} is what the renewal's {@code JV} would move off
+ * the predecessor (spec §6.6), and zero for every lease that is not a renewal with
+ * the flag set. It is shown because it is emphatically <em>not</em> the deposit
+ * printed on last year's contract: a deposit partly refunded or partly forfeited
+ * during the term carries forward at what is left of it, and the accountant
+ * approving the renewal is the person who needs to notice the difference.</p>
  */
 public record PostLeaseDryRunResponse(boolean ok,
                                       List<String> errors,
                                       BigDecimal contractValue,
                                       BigDecimal contractValueInclVat,
                                       BigDecimal chequeTotal,
+                                      BigDecimal depositCarriedForward,
                                       JournalPlan journals) {
 
     /** The journals the post would write: one TCO of {@code tcoLines} lines, and {@code pdr} PDRs. */

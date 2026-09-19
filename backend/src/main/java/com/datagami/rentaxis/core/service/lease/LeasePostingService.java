@@ -15,6 +15,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
+import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ChargeType;
@@ -94,7 +95,7 @@ public class LeasePostingService {
      * static one shared by every concurrent post is a data race that shows up as a
      * garbled figure in an error message nobody can reproduce.
      */
-    private static String money(BigDecimal amount) {
+    static String money(BigDecimal amount) {
         return String.format(Locale.ROOT, "%,.2f", amount);
     }
 
@@ -108,6 +109,8 @@ public class LeasePostingService {
     private final LeaseChequeRegistrar chequeRegistrar;
     private final LeaseService leaseService;
     private final LeaseAccessPolicy leaseAccessPolicy;
+    private final DepositCarryForward depositCarryForward;
+    private final RenewalOpportunityService renewalOpportunities;
     private final ApplicationEventPublisher events;
 
     public LeasePostingService(LeaseRepository leaseRepository,
@@ -120,6 +123,8 @@ public class LeasePostingService {
                                LeaseChequeRegistrar chequeRegistrar,
                                LeaseService leaseService,
                                LeaseAccessPolicy leaseAccessPolicy,
+                               DepositCarryForward depositCarryForward,
+                               RenewalOpportunityService renewalOpportunities,
                                ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
@@ -131,6 +136,8 @@ public class LeasePostingService {
         this.chequeRegistrar = chequeRegistrar;
         this.leaseService = leaseService;
         this.leaseAccessPolicy = leaseAccessPolicy;
+        this.depositCarryForward = depositCarryForward;
+        this.renewalOpportunities = renewalOpportunities;
         this.events = events;
     }
 
@@ -158,6 +165,13 @@ public class LeasePostingService {
 
         JournalEntry tco = postTco(lease, plan.pairs());
         registerCheques(lease, cheques);
+
+        // The renter's deposit follows them into the new contract (spec §6.6). It
+        // has to happen inside this transaction and before the predecessor is
+        // retired: the JV is subject to the same period lock as the TCO, and a
+        // renewal that went on the books without the deposit that paid for it
+        // would leave the money on a lease nothing will ever settle.
+        depositCarryForward.carry(lease);
 
         // The predecessor is retired *before* the successor goes ACTIVE, and while
         // the successor's own row is still untouched — see markPredecessorRenewed.
@@ -192,12 +206,19 @@ public class LeasePostingService {
 
         PostingPlan plan = validate(lease, lines, cheques);
         List<String> errors = plan.errors(propertyIdOf(lease));
+        // What "carry the deposit forward" is actually worth today. Shown because
+        // it is not the figure on last year's contract — a partly refunded deposit
+        // carries only what is left — and an accountant approving the renewal
+        // should see the number before the JV exists. The lock problem it could hit
+        // is the contract date's, which is already in `errors`: the JV is dated the
+        // same day as the TCO.
         return new PostLeaseDryRunResponse(
                 errors.isEmpty(),
                 errors,
                 plan.contractValue(),
                 plan.contractValueInclVat(),
                 plan.chequeTotal(),
+                depositCarryForward.total(lease),
                 new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size()));
     }
 
@@ -370,60 +391,16 @@ public class LeasePostingService {
         }
         accountErrors.addAll(receivableOverrideErrors(lease));
 
-        BigDecimal net = BigDecimal.ZERO;
-        BigDecimal gross = BigDecimal.ZERO;
-        List<Pair> pairs = new ArrayList<>();
-        for (LeaseLine line : lines) {
-            ChargeType type = line.getChargeType();
-            String code = type != null ? type.getCode() : "?";
-            String where = "Line " + line.getSeqNo() + " (" + code + ")";
-            BigDecimal lineNet = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
-            BigDecimal lineVat = LeaseVat.vatOf(line);
-            net = net.add(lineNet);
-            gross = gross.add(lineNet).add(lineVat);
-
-            Account credit = line.getCreditAccount();
-            if (credit == null) {
-                // The draft was allowed to be saved unmapped (see LeaseLine); this is
-                // where that debt comes due.
-                accountErrors.add(where + " has no credit account.");
-                continue;
-            }
-            // Re-checked rather than trusted: the account was an active leaf of the
-            // right type when the line was entered, and a chart of accounts is edited
-            // between drafting a lease and posting it.
-            if (credit.isGroup()) {
-                accountErrors.add(where + ": credit account " + credit.getCode() + " is a group account.");
-                continue;
-            }
-            if (!credit.isActive()) {
-                accountErrors.add(where + ": credit account " + credit.getCode() + " is inactive.");
-                continue;
-            }
-
-            String narration = narrationOf(line, type);
-            if (lineNet.signum() > 0) {
-                pairs.add(PostingRequest.pair(
-                        LeaseChequeRegistrar.drReceivable(lease, lineNet).withNarration(narration),
-                        PostingRequest.cr(credit.getId(), lineNet).withNarration(narration)));
-            }
-            if (lineVat.signum() > 0) {
-                String vatNarration = "VAT on " + (type != null ? type.getNameEn() : code);
-                pairs.add(PostingRequest.pair(
-                        LeaseChequeRegistrar.drReceivable(lease, lineVat).withNarration(vatNarration),
-                        PostingRequest.cr(AccountRole.OUTPUT_VAT, lineVat).withNarration(vatNarration)));
-            }
-        }
+        LinePlan linePlan = planLines(lease, lines);
+        BigDecimal net = linePlan.net();
+        BigDecimal gross = linePlan.gross();
+        List<Pair> pairs = linePlan.pairs();
+        accountErrors.addAll(linePlan.errors());
         if (!lines.isEmpty() && gross.signum() <= 0) {
             accountErrors.add("The lease charges nothing to post.");
         }
 
-        UUID propertyId = propertyIdOf(lease);
-        for (AccountRole role : requiredRoles(lease, lines, cheques)) {
-            if (accountResolver.resolveOrNull(role, propertyId) == null) {
-                missingRoles.add(role);
-            }
-        }
+        missingRoles.addAll(unmappedRoles(lease, lines, cheques));
 
         BigDecimal chequeTotal = BigDecimal.ZERO;
         if (cheques.isEmpty()) {
@@ -460,6 +437,89 @@ public class LeasePostingService {
         otherErrors.addAll(periodLockErrors(lease, cheques));
 
         return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, accountErrors, otherErrors);
+    }
+
+    /**
+     * The {@code TCO} pairs a set of lines would raise, and everything wrong with
+     * the accounts they name.
+     *
+     * <p>Split out of {@link #validate} because an extension posts a further TCO
+     * for its <em>new lines only</em> (spec §6.7) and has to build it by the very
+     * same rules: one pair per line against the lease's receivable, a second pair
+     * against {@code OUTPUT_VAT} where the line carries VAT, the same narration
+     * rule, the same re-check of a credit account that may have been retired since
+     * the line was entered. Copying thirty lines of that into the extension is how
+     * two doors onto one ledger come to disagree about which account a fee credits.
+     * Package-visible, not public: {@code LeaseRenewalService} is the only caller
+     * and this is not an API.</p>
+     */
+    LinePlan planLines(Lease lease, List<LeaseLine> lines) {
+        List<String> errors = new ArrayList<>();
+        BigDecimal net = BigDecimal.ZERO;
+        BigDecimal gross = BigDecimal.ZERO;
+        List<Pair> pairs = new ArrayList<>();
+        for (LeaseLine line : lines) {
+            ChargeType type = line.getChargeType();
+            String code = type != null ? type.getCode() : "?";
+            String where = "Line " + line.getSeqNo() + " (" + code + ")";
+            BigDecimal lineNet = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+            BigDecimal lineVat = LeaseVat.vatOf(line);
+            net = net.add(lineNet);
+            gross = gross.add(lineNet).add(lineVat);
+
+            Account credit = line.getCreditAccount();
+            if (credit == null) {
+                // The draft was allowed to be saved unmapped (see LeaseLine); this is
+                // where that debt comes due.
+                errors.add(where + " has no credit account.");
+                continue;
+            }
+            // Re-checked rather than trusted: the account was an active leaf of the
+            // right type when the line was entered, and a chart of accounts is edited
+            // between drafting a lease and posting it.
+            if (credit.isGroup()) {
+                errors.add(where + ": credit account " + credit.getCode() + " is a group account.");
+                continue;
+            }
+            if (!credit.isActive()) {
+                errors.add(where + ": credit account " + credit.getCode() + " is inactive.");
+                continue;
+            }
+
+            String narration = narrationOf(line, type);
+            if (lineNet.signum() > 0) {
+                pairs.add(PostingRequest.pair(
+                        LeaseChequeRegistrar.drReceivable(lease, lineNet).withNarration(narration),
+                        PostingRequest.cr(credit.getId(), lineNet).withNarration(narration)));
+            }
+            if (lineVat.signum() > 0) {
+                String vatNarration = "VAT on " + (type != null ? type.getNameEn() : code);
+                pairs.add(PostingRequest.pair(
+                        LeaseChequeRegistrar.drReceivable(lease, lineVat).withNarration(vatNarration),
+                        PostingRequest.cr(AccountRole.OUTPUT_VAT, lineVat).withNarration(vatNarration)));
+            }
+        }
+        return new LinePlan(pairs, net, gross, errors);
+    }
+
+    /** What {@link #planLines} found: the entry to write, its totals, and its complaints. */
+    record LinePlan(List<Pair> pairs, BigDecimal net, BigDecimal gross, List<String> errors) {
+    }
+
+    /**
+     * The roles {@link #requiredRoles} asks for that the property has no account
+     * for. Package-visible for the same reason as {@link #planLines}: an extension
+     * needs exactly this question answered about its own lines and rows.
+     */
+    Set<AccountRole> unmappedRoles(Lease lease, List<LeaseLine> lines, List<Cheque> cheques) {
+        Set<AccountRole> missing = EnumSet.noneOf(AccountRole.class);
+        UUID propertyId = propertyIdOf(lease);
+        for (AccountRole role : requiredRoles(lease, lines, cheques)) {
+            if (accountResolver.resolveOrNull(role, propertyId) == null) {
+                missing.add(role);
+            }
+        }
+        return missing;
     }
 
     /**
@@ -503,14 +563,24 @@ public class LeasePostingService {
      * accountant has to move.</p>
      */
     private List<String> periodLockErrors(Lease lease, List<Cheque> cheques) {
+        return periodLockErrors(lease.getContractDate(), cheques);
+    }
+
+    /**
+     * The same check against an explicit entry date. An extension's TCO carries the
+     * <em>extension's</em> contract date, not the lease's original one, and its
+     * rows carry their own posting dates; asking the lease would check a period
+     * nothing is being written into.
+     */
+    List<String> periodLockErrors(LocalDate entryDate, List<Cheque> cheques) {
         UUID tenantId = TenantContextHolder.getTenantId();
         LocalDate locked = tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
                 .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
         if (locked == null) return List.of();
 
         List<String> errors = new ArrayList<>();
-        if (lease.getContractDate() != null && !lease.getContractDate().isAfter(locked)) {
-            errors.add("Cannot post on " + lease.getContractDate() + ": books are locked through " + locked + ".");
+        if (entryDate != null && !entryDate.isAfter(locked)) {
+            errors.add("Cannot post on " + entryDate + ": books are locked through " + locked + ".");
         }
         for (Cheque c : cheques) {
             if (c.getPostingDate() != null && !c.getPostingDate().isAfter(locked)) {
@@ -565,10 +635,26 @@ public class LeasePostingService {
     // ------------------------------------------------------------------
 
     private JournalEntry postTco(Lease lease, List<Pair> pairs) {
+        return postTco(lease, pairs, lease.getContractDate(), contractNarration(lease));
+    }
+
+    /**
+     * A {@code TCO} on this lease with a date and a narration of the caller's
+     * choosing — what an extension posts (spec §6.7).
+     *
+     * <p>Same doc type, same source, same dimensions as the contract's own
+     * posting, because in the ledger an extension <em>is</em> more of the same
+     * contract: the renter owes more against the same receivable under the same
+     * lease. It is found by {@code sourceType LEASE / sourceId leaseId} alongside
+     * the original, which is why nothing new is written onto the lease to point at
+     * it — {@code lease.postingJournalId} keeps naming the first TCO, the one an
+     * amendment would reverse.</p>
+     */
+    JournalEntry postTco(Lease lease, List<Pair> pairs, LocalDate entryDate, String narration) {
         return postingService.post(PostingRequest.ofPairs(
                 JournalDocType.TCO,
-                lease.getContractDate(),
-                contractNarration(lease),
+                entryDate,
+                narration,
                 LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.LEASE,
                 lease.getId(),
@@ -612,12 +698,31 @@ public class LeasePostingService {
     private void markPredecessorRenewed(Lease lease, String entryNumber) {
         if (lease.getRenewedFromLeaseId() == null) return;
         Lease predecessor = leaseRepository.findByIdScopedToTenant(lease.getRenewedFromLeaseId()).orElse(null);
-        if (predecessor == null || predecessor.getStatus() != LeaseStatus.ACTIVE) return;
-        predecessor.setStatus(LeaseStatus.RENEWED);
-        leaseRepository.saveAndFlush(predecessor);
-        leaseService.recordLeaseEvent(predecessor, LeaseStatus.ACTIVE, LeaseStatus.RENEWED,
-                "Renewed by " + entryNumber);
+        if (predecessor == null) return;
+
+        // The three statuses LeaseRenewalService will renew from. An EXPIRED or
+        // NOTICE_GIVEN predecessor is retired here too: RENEWED is not merely "was
+        // active and stopped", it is "handed its unit, and possibly its deposit, to
+        // the next contract", and that is exactly what has just happened to it.
+        if (RENEWABLE_PREDECESSOR.contains(predecessor.getStatus())) {
+            LeaseStatus previous = predecessor.getStatus();
+            predecessor.setStatus(LeaseStatus.RENEWED);
+            leaseRepository.saveAndFlush(predecessor);
+            leaseService.recordLeaseEvent(predecessor, previous, LeaseStatus.RENEWED,
+                    "Renewed by " + entryNumber);
+        }
+
+        // The renewal funnel closes when the successor is on the books, not when
+        // somebody remembers to tick it. markRenewedIfOpen, not markRenewed: this
+        // is a @Transactional proxy, and the NotFoundException the throwing variant
+        // raises for a lease with no open opportunity — an early renewal, or one
+        // already closed by hand — would mark this whole post rollback-only.
+        renewalOpportunities.markRenewedIfOpen(predecessor.getId());
     }
+
+    /** What a lease must be for a successor's post to retire it (spec §6.6). */
+    static final Set<LeaseStatus> RENEWABLE_PREDECESSOR =
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.EXPIRED, LeaseStatus.NOTICE_GIVEN);
 
     // ------------------------------------------------------------------
     // helpers
@@ -629,7 +734,7 @@ public class LeasePostingService {
      * <p>A NOWAIT conflict is a 400 that says "try again", not a 500: the other
      * caller is almost certainly the same accountant double-clicking Post.</p>
      */
-    private Lease lockLease(UUID leaseId) {
+    Lease lockLease(UUID leaseId) {
         Lease lease;
         try {
             lease = leaseRepository.findByIdForUpdate(leaseId)
@@ -666,7 +771,7 @@ public class LeasePostingService {
         return sb.toString();
     }
 
-    private static UUID propertyIdOf(Lease lease) {
+    static UUID propertyIdOf(Lease lease) {
         Unit unit = lease.getUnit();
         return unit != null && unit.getProperty() != null ? unit.getProperty().getId() : null;
     }
@@ -677,7 +782,7 @@ public class LeasePostingService {
                 ? c.getChequeNumber() : "row " + c.getSeqNo();
     }
 
-    private PostLeaseResponse response(Lease lease, JournalEntry tco, List<Cheque> cheques) {
+    PostLeaseResponse response(Lease lease, JournalEntry tco, List<Cheque> cheques) {
         LocalDate today = LocalDate.now();
         List<ChequeDTO> rows = cheques.stream()
                 .map(c -> ChequeMapper.toDto(c, today, lease.getGracePeriodDays()))
