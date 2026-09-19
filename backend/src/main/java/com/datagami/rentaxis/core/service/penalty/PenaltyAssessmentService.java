@@ -406,6 +406,28 @@ public class PenaltyAssessmentService {
                 .toList();
     }
 
+    /**
+     * What this lease still owes in fines — Σ of the APPROVED assessments whose
+     * collection row has not CLEARED.
+     *
+     * <p>The settlement's deduction, and deliberately not "every penalty ever
+     * charged": an approved fine the renter has already paid is money the landlord
+     * has, and deducting it again from the deposit would charge them twice. Nor is
+     * it "every live penalty": a PROPOSED one is finance still deciding, and a
+     * settlement is not the place that decision gets made by default.</p>
+     *
+     * <p>No access check here. The only caller is {@code SettlementService}, which
+     * has already run {@code LeaseAccessPolicy} on the lease before it builds a
+     * preview; adding a second gate would mean a manager could be refused a figure
+     * on a screen they were just allowed to open.</p>
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal outstandingForLease(UUID leaseId) {
+        if (leaseId == null) return BigDecimal.ZERO;
+        BigDecimal total = repository.sumOutstandingForLease(leaseId);
+        return total != null ? total : BigDecimal.ZERO;
+    }
+
     // ------------------------------------------------------------------
     // guards and plumbing
     // ------------------------------------------------------------------

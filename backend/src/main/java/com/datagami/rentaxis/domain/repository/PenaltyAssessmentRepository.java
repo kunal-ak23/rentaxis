@@ -14,6 +14,7 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -72,4 +73,33 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
      */
     boolean existsByCheque_IdAndReasonAndStatusIn(UUID chequeId, PenaltyReason reason,
                                                   Collection<PenaltyAssessmentStatus> statuses);
+
+    /**
+     * What this lease still owes in fines: Σ of the APPROVED assessments whose
+     * collection row has not CLEARED — the figure a settlement deducts from the
+     * deposit.
+     *
+     * <p>APPROVED only. A PROPOSED fine is finance still deciding, and settling a
+     * lease on the strength of a charge nobody has agreed to would take the
+     * renter's deposit for it. WAIVED and REVERSED are decisions that the fine is
+     * not owed.</p>
+     *
+     * <p>The CLEARED test is on the <em>collection row</em>, not on the assessment:
+     * an approved penalty stays APPROVED forever — that is its terminal state — and
+     * what changes when the renter pays is the register row the approval created
+     * for it. Reading the assessment's own status instead would deduct
+     * every fine the renter has ever been charged, including the paid ones.</p>
+     *
+     * <p>A null collection row counts as outstanding. It should not happen — an
+     * approval creates one in the same transaction — but a charge with no visible
+     * means of collection is exactly the thing a settlement must not quietly drop.</p>
+     */
+    @Query("""
+        select coalesce(sum(p.amount), 0) from PenaltyAssessment p
+        where p.lease.id = :leaseId
+          and p.status = com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED
+          and (p.collectionCheque is null
+               or p.collectionCheque.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
+        """)
+    BigDecimal sumOutstandingForLease(@Param("leaseId") UUID leaseId);
 }

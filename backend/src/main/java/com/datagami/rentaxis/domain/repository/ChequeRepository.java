@@ -198,6 +198,35 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                          Pageable pageable);
 
     /**
+     * {@link #findDue} for one lease — what the renter still owes on this contract
+     * today, which is what a settlement deducts from their deposit.
+     *
+     * <p>Same predicate as {@link #findDue}, word for word, and it has to stay that
+     * way: the register screen and the settlement preview disagreeing about whether
+     * a bounced cheque is owed is a number the accountant cannot reconcile against
+     * any screen. Not expressed as {@code findDue} with a lease filter because that
+     * query is paged and property-scoped for a caller; a settlement is scoped by the
+     * lease itself and wants every row, not a page of them.</p>
+     *
+     * <p>DRAFT rows cannot appear: they are neither REGISTERED, DEPOSITED nor
+     * BOUNCED. The lease-status exclusion still earns its place — a draft lease's
+     * grid can carry REGISTERED rows after an import — though a lease being settled
+     * is past that point by definition.</p>
+     */
+    @Query("""
+        select c from Cheque c
+        where c.lease.id = :leaseId
+          and ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                and c.chequeDate <= :today)
+               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        order by c.seqNo asc
+        """)
+    List<Cheque> findDueForLease(@Param("leaseId") UUID leaseId, @Param("today") LocalDate today);
+
+    /**
      * The day's deposit run: paper the landlord physically walks to the bank. Only
      * {@code PDC} rows — cash and transfers never were paper — and only ones not
      * already banked.

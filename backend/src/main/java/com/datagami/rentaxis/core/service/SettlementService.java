@@ -8,21 +8,23 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
+import com.datagami.rentaxis.core.service.lease.LeaseDepositLedger;
+import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementDeductionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -40,9 +42,26 @@ public class SettlementService {
     private final LeaseSettlementDeductionRepository leaseSettlementDeductionRepository;
     private final LeaseRepository leaseRepository;
     private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
-    private final PaymentScheduleRepository paymentScheduleRepository;
-    private final PenaltyService penaltyService;
+    private final ChequeRepository chequeRepository;
+    private final LeaseDepositLedger depositLedger;
+    private final PenaltyAssessmentService penaltyAssessmentService;
     private final DeductionAttachmentService deductionAttachmentService;
+
+    /**
+     * What the landlord is actually holding for this lease.
+     *
+     * <p><b>The ledger, not {@code lease.depositAmount}.</b> The contract column is
+     * what was <em>charged</em>; by the time a lease is being settled the deposit
+     * may have been partly refunded, partly forfeited against a repair, or carried
+     * forward wholesale into a renewal. Offering the renter a refund computed from
+     * the contract figure hands back money the landlord no longer has — and on a
+     * RENEWED lease whose deposit went to the successor, it hands back the whole of
+     * it twice. Same collaborator the carry-forward uses, so the two can never
+     * disagree (spec §6.6).</p>
+     */
+    private BigDecimal depositHeld(Lease lease) {
+        return depositLedger.depositHeld(lease);
+    }
 
     @Transactional(readOnly = true)
     public SettlementPreviewDTO getSettlementPreview(UUID leaseId) {
@@ -52,17 +71,33 @@ public class SettlementService {
         leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         Lease lease = findLeaseWithTenantCheck(leaseId);
 
-        BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
+        BigDecimal depositAmount = depositHeld(lease);
 
-        // Sum all PENDING and ONLINE_PENDING payment schedules as unpaid rent
-        List<PaymentSchedule> payments = paymentScheduleRepository.findByLeaseId(leaseId);
-        BigDecimal unpaidRentTotal = payments.stream()
-                .filter(ps -> ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING || ps.getStatus() == PaymentStatus.OVERDUE)
-                .map(PaymentSchedule::getAmount)
+        // Unpaid rent is the register's DUE rows — the same predicate the register
+        // screen, the reminder job and the aging report use (ChequeDueRules.due), so
+        // the settlement cannot show an arrears figure the collections screen
+        // disagrees with. DRAFT rows are excluded by the query: a proposal nobody
+        // handed over is not a debt.
+        //
+        // Plan 3 replaces this with the receivable's ledger balance, which is the
+        // real answer — the register knows what instruments are outstanding, not
+        // what rent has been earned. Until then this is the closest operational
+        // truth, and it is the number the old schedule-based preview meant.
+        // Penalty collection rows are skipped here and only here. Approving a
+        // penalty puts a CASH row on the register dated that day, so it is due the
+        // moment it exists — leaving it in would charge the renter's deposit for
+        // the same fine twice, once as "unpaid rent" and once as "penalties". The
+        // filter is in the service rather than in the query so findDueForLease
+        // stays a word-for-word mirror of the register's own due predicate.
+        List<Cheque> due = chequeRepository.findDueForLease(leaseId, LocalDate.now());
+        BigDecimal unpaidRentTotal = due.stream()
+                .filter(c -> c.getPenaltyAssessmentId() == null)
+                .map(Cheque::getAmount)
+                .filter(a -> a != null)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Get total unwaived penalties
-        BigDecimal penaltyTotal = penaltyService.getTotalUnwaivedPenalties(leaseId);
+        // APPROVED assessments whose collection row has not cleared.
+        BigDecimal penaltyTotal = penaltyAssessmentService.outstandingForLease(leaseId);
 
         BigDecimal suggestedRefund = depositAmount.subtract(unpaidRentTotal).subtract(penaltyTotal);
 
@@ -78,7 +113,7 @@ public class SettlementService {
     public LeaseSettlement createSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
 
-        BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
+        BigDecimal depositAmount = depositHeld(lease);
 
         LeaseSettlement settlement = new LeaseSettlement();
         settlement.setLeaseId(leaseId);
@@ -127,7 +162,10 @@ public class SettlementService {
         // and write settlements for properties they were never assigned.
         leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
         Lease lease = findLeaseWithTenantCheck(leaseId);
-        BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
+        // The same figure the preview showed. A draft built from the contract column
+        // while the preview was built from the ledger would quietly change the
+        // refund the moment the accountant pressed Save.
+        BigDecimal depositAmount = depositHeld(lease);
 
         Optional<LeaseSettlement> existingOpt = leaseSettlementRepository.findByLeaseId(leaseId);
         LeaseSettlement settlement;
