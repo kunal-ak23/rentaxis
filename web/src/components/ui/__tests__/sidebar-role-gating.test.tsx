@@ -8,13 +8,21 @@ import en from "../../../../messages/en.json";
  * Which sidebar links each role is offered.
  *
  * <p>The finance group used to be one gate — `canAccessFinance`, which admits
- * ACCOUNTANT. But Payments, Vendors, Bank Accounts and Staff sit behind
- * PaymentScheduleController / VendorController / BankAccountController /
- * StaffController, none of which grant ACCOUNTANT. An accountant was therefore
- * shown four links that 403 on arrival. The ledger pages (chart of accounts,
- * journals, general ledger, tenant ledger, trial balance) are the ones that
- * actually admit the role, and they stay on `canAccessFinance`; the rest moved
- * to `canAccessFinanceOps`.
+ * ACCOUNTANT. But Vendors, Bank Accounts and Staff sit behind
+ * VendorController / BankAccountController / StaffController, none of which
+ * grant ACCOUNTANT. An accountant was therefore shown links that 403 on
+ * arrival. The ledger pages (chart of accounts, journals, general ledger,
+ * tenant ledger, trial balance) are the ones that actually admit the role,
+ * and they stay on `canAccessFinance`; Vendors/Bank Accounts/Staff moved to
+ * `canAccessFinanceOps`.
+ *
+ * <p>The cheque register replaced Payments and moved to its own gate,
+ * `canManageCheques` — `ChequeController`'s STAFF group admits SA/TA/
+ * ACCOUNTANT/PROPERTY_MANAGER, unlike the old Payments link which sat behind
+ * `canAccessFinanceOps` (SA/TA only) because `PaymentScheduleController`
+ * refused both. An accountant and a property manager now both see the
+ * register; only cancelling a cheque (a separate, narrower permission) stays
+ * off PROPERTY_MANAGER's plate.
  */
 
 const role = { current: "ACCOUNTANT" };
@@ -76,7 +84,7 @@ afterEach(() => {
 });
 
 describe("sidebar finance gating", () => {
-    it("offers an accountant the ledger pages", () => {
+    it("offers an accountant the ledger pages and the cheque register", () => {
         const { container } = renderAs("ACCOUNTANT");
         const links = hrefs(container);
 
@@ -86,6 +94,10 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/general-ledger",
             "/dashboard/finance/tenant-ledger",
             "/dashboard/finance/trial-balance",
+            "/dashboard/finance/cheques",
+            "/dashboard/finance/cheques/collection",
+            "/dashboard/finance/cheques/return-replace",
+            "/dashboard/finance/cheques/post-dated",
             "/dashboard/settings/account-template",
             "/dashboard/settings/fiscal",
         ]));
@@ -96,7 +108,6 @@ describe("sidebar finance gating", () => {
         const links = hrefs(container);
 
         for (const href of [
-            "/dashboard/finance/payments",
             "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",
             "/dashboard/staff",
@@ -112,24 +123,32 @@ describe("sidebar finance gating", () => {
 
         expect(links).toEqual(expect.arrayContaining([
             "/dashboard/finance/accounts",
-            "/dashboard/finance/payments",
+            "/dashboard/finance/cheques",
             "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",
             "/dashboard/staff",
         ]));
     });
 
-    /** Pinned by walkthrough 13 too: a property manager sees no finance link at all. */
-    it("offers a property manager no finance or staff link", () => {
+    /** ChequeController's STAFF group admits PROPERTY_MANAGER, unlike the old
+     *  Payments link — pinned by walkthrough 13 for the OTHER finance pages,
+     *  which still refuse a property manager outright. */
+    it("offers a property manager the cheque register but no other finance or staff link", () => {
         const { container } = renderAs("PROPERTY_MANAGER");
         const links = hrefs(container);
 
-        expect(links.filter(h => h.startsWith("/dashboard/finance/"))).toEqual([]);
+        expect(links).toEqual(expect.arrayContaining([
+            "/dashboard/finance/cheques",
+            "/dashboard/finance/cheques/collection",
+            "/dashboard/finance/cheques/return-replace",
+            "/dashboard/finance/cheques/post-dated",
+        ]));
+        expect(links.filter(h => h.startsWith("/dashboard/finance/") && !h.startsWith("/dashboard/finance/cheques"))).toEqual([]);
         expect(links).not.toContain("/dashboard/staff");
     });
 
     it("renders the group heading only when the group has items", () => {
-        const { container } = renderAs("PROPERTY_MANAGER");
+        const { container } = renderAs("SECURITY_GUARD");
         expect(hrefs(container).some(h => h.startsWith("/dashboard/finance/"))).toBe(false);
         cleanup();
         renderAs("ACCOUNTANT");

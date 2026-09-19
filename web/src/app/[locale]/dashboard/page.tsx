@@ -343,7 +343,7 @@ export default function DashboardPage() {
           sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
         />
         <Link
-          href="/dashboard/finance/payments?status=OVERDUE"
+          href="/dashboard/finance/cheques"
           aria-label={t("viewOverduePayments")}
           className="block rounded-[var(--radius-lg)] transition-all hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
         >

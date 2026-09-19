@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import BulkChequeUploadFlow from "../BulkChequeUploadFlow";
+import type { Cheque } from "@/lib/api/leasing";
 
 // Mock next-intl's useTranslations to return the key directly.
 vi.mock("next-intl", () => ({
@@ -11,22 +12,39 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("next/image", () => ({
-  default: (props: any) => {
+  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
     // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
     return <img {...props} />;
   },
 }));
 
-const schedules = [
-  { id: "s1", installmentNumber: 1, dueDate: "2026-06-05", amount: 5000, status: "PENDING" },
-  { id: "s2", installmentNumber: 2, dueDate: "2026-07-05", amount: 5000, status: "PENDING" },
+function makeCheque(over: Partial<Cheque> & { id: string; seqNo: number; postingDate: string; amount: number }): Cheque {
+  return {
+    leaseId: "L1", propertyId: "p1", unitId: "u1", renterId: "r1",
+    propertyName: null, unitIdentifier: null, renterName: null,
+    chequeNumber: null, chequeDate: null, payeeBank: null, payerName: null,
+    debitAccountId: null, debitAccountName: null,
+    narration: null, mode: "PDC", status: "REGISTERED",
+    failureReason: null, replacesId: null, replacedById: null, imageUrl: null,
+    depositedAt: null, clearedAt: null, bouncedAt: null, returnedAt: null,
+    pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
+    due: false, overdue: false, daysOverdue: 0,
+    ...over,
+  };
+}
+
+// Two REGISTERED, PDC rows the flow may attach scans to (postingDate is the
+// row's own maturity — what a scanned cheque's date is matched against).
+const rows: Cheque[] = [
+  makeCheque({ id: "s1", seqNo: 1, postingDate: "2026-06-05", amount: 5000 }),
+  makeCheque({ id: "s2", seqNo: 2, postingDate: "2026-07-05", amount: 5000 }),
 ];
 
-// Schedules that include a charge/SD row at lease-start, same date as the first rent cheque.
-const schedulesWithCharge = [
-  { id: "sd1", installmentNumber: 0, dueDate: "2026-06-01", amount: 10000, status: "PENDING", isSecurityDeposit: true },
-  { id: "s1", installmentNumber: 1, dueDate: "2026-06-05", amount: 5000, status: "PENDING" },
-  { id: "s2", installmentNumber: 2, dueDate: "2026-07-05", amount: 5000, status: "PENDING" },
+// A DEPOSITED row must never be offered — bulk-attach only edits REGISTERED rows.
+const rowsWithDeposited: Cheque[] = [
+  makeCheque({ id: "sd1", seqNo: 0, postingDate: "2026-06-01", amount: 10000, status: "DEPOSITED" }),
+  makeCheque({ id: "s1", seqNo: 1, postingDate: "2026-06-05", amount: 5000 }),
+  makeCheque({ id: "s2", seqNo: 2, postingDate: "2026-07-05", amount: 5000 }),
 ];
 
 function makeFile(name: string): File {
@@ -38,7 +56,7 @@ beforeEach(() => {
   global.URL.createObjectURL = vi.fn(() => "blob:mock");
   global.URL.revokeObjectURL = vi.fn();
   if (!("randomUUID" in (global.crypto ?? {}))) {
-    // @ts-expect-error
+    // @ts-expect-error -- jsdom's crypto has no randomUUID; stub it for the test
     global.crypto = { ...global.crypto, randomUUID: () => `id-${Math.random().toString(36).slice(2)}` };
   }
 });
@@ -49,7 +67,7 @@ afterEach(() => {
 });
 
 describe("BulkChequeUploadFlow", () => {
-  it("auto-maps closest cheque date to due date and approves successfully", async () => {
+  it("auto-maps closest cheque date to a row and approves with chequeId in the payload", async () => {
     const fetchMock = vi.fn()
       // Two /extract calls:
       .mockResolvedValueOnce({
@@ -71,12 +89,12 @@ describe("BulkChequeUploadFlow", () => {
       // bulk-attach call:
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ schedules: [] }),
+        json: async () => ({ cheques: [] }),
       });
     global.fetch = fetchMock;
 
     const onSuccess = vi.fn();
-    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={onSuccess} onClose={() => {}} />);
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={onSuccess} onClose={() => {}} />);
 
     // Simulate folder pick.
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -97,9 +115,36 @@ describe("BulkChequeUploadFlow", () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
 
-    // bulk-attach was the 3rd call.
+    // bulk-attach was the 3rd call, and targets the cheque row by chequeId.
     const lastCall = fetchMock.mock.calls[2];
     expect(lastCall[0]).toBe("/api/proxy/v1/leases/L1/cheques/bulk-attach");
+    const body = JSON.parse(lastCall[1].body);
+    expect(body.items.map((i: { chequeId: string }) => i.chequeId).sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("only offers REGISTERED PDC rows — a DEPOSITED row is not a bulk-attach target", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+        extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-01", confidence: "HIGH" },
+        warnings: [],
+      }),
+    });
+    global.fetch = fetchMock;
+
+    render(<BulkChequeUploadFlow leaseId="L2" rows={rowsWithDeposited} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c1.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    const select = document.querySelector("select") as HTMLSelectElement;
+    const options = Array.from(select.options).map(o => o.value);
+    expect(options).not.toContain("sd1");
+    expect(options).toContain("s1");
   });
 
   it("ready count = only fully-complete rows (overlapping buckets must not be double-subtracted)", async () => {
@@ -113,7 +158,7 @@ describe("BulkChequeUploadFlow", () => {
           warnings: [],
         }),
       })
-      // row 2: OCR failed → empty row (needs date AND bank AND installment — overlapping buckets)
+      // row 2: OCR failed → empty row (needs date AND bank AND row — overlapping buckets)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -124,7 +169,7 @@ describe("BulkChequeUploadFlow", () => {
       });
     global.fetch = fetchMock;
 
-    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     Object.defineProperty(input, "files", { value: [makeFile("a.png"), makeFile("b.png")], configurable: true });
     fireEvent.change(input);
@@ -138,7 +183,7 @@ describe("BulkChequeUploadFlow", () => {
     expect(approve.textContent).toContain('"total":2');
   });
 
-  it("disables approve when a row is missing a schedule", async () => {
+  it("disables approve when a row is missing a target cheque row", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -149,7 +194,7 @@ describe("BulkChequeUploadFlow", () => {
     });
     global.fetch = fetchMock;
 
-    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     Object.defineProperty(input, "files", { value: [makeFile("x.png")], configurable: true });
     fireEvent.change(input);
@@ -160,48 +205,9 @@ describe("BulkChequeUploadFlow", () => {
     expect(approve.closest("button")).toBeDisabled();
   });
 
-  it("auto-map skips SD/charge rows — cheque dated at lease-start maps to rent installment, not security deposit", async () => {
+  it("shows mismatch chip when cheque amount differs from the row's amount, approve stays enabled", async () => {
     const fetchMock = vi.fn()
-      // extract call: cheque dated 2026-06-01, same as the SD row's dueDate
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-06-01T00:00:00Z" },
-          extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-01", confidence: "HIGH" },
-          warnings: [],
-        }),
-      });
-    global.fetch = fetchMock;
-
-    render(
-      <BulkChequeUploadFlow
-        leaseId="L2"
-        schedules={schedulesWithCharge}
-        onSuccess={() => {}}
-        onClose={() => {}}
-      />
-    );
-
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    Object.defineProperty(input, "files", { value: [makeFile("c1.png")], configurable: true });
-    fireEvent.change(input);
-    fireEvent.click(screen.getByText("continueToExtract"));
-
-    await waitFor(() => screen.getByText("colChequeNumber"));
-
-    // The single cheque (dated 2026-06-01) should auto-map to s1 (2026-06-05),
-    // NOT to sd1 (2026-06-01 — the security deposit row).
-    const selects = document.querySelectorAll("select");
-    expect((selects[0] as HTMLSelectElement).value).toBe("s1");
-
-    // The SD row (sd1) must still be visible in the dropdown for manual selection.
-    const options = Array.from((selects[0] as HTMLSelectElement).options).map(o => o.value);
-    expect(options).toContain("sd1");
-  });
-
-  it("shows mismatch chip when cheque amount differs from installment amount, approve stays enabled", async () => {
-    const fetchMock = vi.fn()
-      // extract call: cheque amount 4500, but installment s1 is 5000
+      // extract call: cheque amount 4500, but row s1 is 5000
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -213,12 +219,12 @@ describe("BulkChequeUploadFlow", () => {
       // bulk-attach call:
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ schedules: [] }),
+        json: async () => ({ cheques: [] }),
       });
     global.fetch = fetchMock;
 
     const onSuccess = vi.fn();
-    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={onSuccess} onClose={() => {}} />);
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={onSuccess} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     Object.defineProperty(input, "files", { value: [makeFile("c1.png")], configurable: true });
     fireEvent.change(input);

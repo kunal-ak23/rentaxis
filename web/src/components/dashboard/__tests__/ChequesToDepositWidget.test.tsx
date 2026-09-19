@@ -10,15 +10,13 @@ vi.mock("@/i18n/routing", () => ({
   ),
 }));
 
-import ChequesToDepositWidget from "../ChequesToDepositWidget";
+const toDeposit = vi.fn();
+vi.mock("@/lib/api/leasing", async orig => {
+  const m = await orig<typeof import("@/lib/api/leasing")>();
+  return { ...m, chequeApi: { ...m.chequeApi, toDeposit: (...a: unknown[]) => toDeposit(...(a as [])) } };
+});
 
-function mockFetch(body: unknown) {
-  global.fetch = vi.fn(async (url: unknown) => {
-    // ensure the widget hits the dedicated endpoint
-    expect(String(url)).toContain("/payments/to-deposit");
-    return { ok: true, json: async () => body } as Response;
-  }) as unknown as typeof fetch;
-}
+import ChequesToDepositWidget from "../ChequesToDepositWidget";
 
 afterEach(() => {
   cleanup();
@@ -26,8 +24,8 @@ afterEach(() => {
 });
 
 describe("ChequesToDepositWidget", () => {
-  it("lists cheques due for deposit", async () => {
-    mockFetch({
+  it("lists cheques due for deposit, from the collection endpoint", async () => {
+    toDeposit.mockResolvedValue({
       content: [
         { id: "p1", leaseId: "l1", renterName: "Omar R", unitIdentifier: "B-204", amount: 7000, chequeDate: "2026-06-04", chequeNumber: "100123" },
       ],
@@ -44,10 +42,12 @@ describe("ChequesToDepositWidget", () => {
     expect(screen.getByText(/Cheques to deposit \(1\)/)).toBeTruthy();
     expect(screen.getByText(/#100123/)).toBeTruthy();
     expect(screen.getByText(/Omar R/).closest("a")).toHaveAttribute("href", "/dashboard/leases/l1");
+    expect(toDeposit).toHaveBeenCalledWith({ page: 0, size: 5 });
+    expect(screen.getByRole("link", { name: /view all/i })).toHaveAttribute("href", "/dashboard/finance/cheques/collection");
   });
 
   it("shows an empty state when nothing is due for deposit", async () => {
-    mockFetch({ content: [], totalElements: 0 });
+    toDeposit.mockResolvedValue({ content: [], totalElements: 0 });
     render(
             <NextIntlClientProvider locale="en" messages={en}>
                 <ChequesToDepositWidget />

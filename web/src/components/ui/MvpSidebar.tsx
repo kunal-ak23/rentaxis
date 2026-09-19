@@ -29,6 +29,8 @@ import {
     NotebookText,
     LayoutTemplate,
     CalendarClock,
+    Banknote,
+    RefreshCcw,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -46,7 +48,7 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
-    const tPayments = useTranslations("Payments");
+    const tCheques = useTranslations("Cheques");
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tDashboard = useTranslations("Dashboard");
     const tVendors = useTranslations("Vendors");
@@ -124,9 +126,13 @@ export default function MvpSidebar() {
     // journal vouchers are where entries are read and posted, and the three
     // ledger reports are what the old reports page only gestured at.
     //
-    // Two gates, not one: the ledger pages admit ACCOUNTANT, the operational ones
-    // (payments, vendors, bank accounts) do not — their controllers stop at
-    // TENANT_ADMIN, so listing them for an accountant only produced 403s.
+    // Three gates, not one: the ledger pages admit ACCOUNTANT; the cheque
+    // register's own controller (ChequeController's STAFF group) admits
+    // ACCOUNTANT *and* PROPERTY_MANAGER, unlike the old Payments link, which sat
+    // behind canAccessFinanceOps (SA/TA only) because PaymentScheduleController
+    // refused an accountant. The remaining operational pages (vendors, bank
+    // accounts) still do not admit either role — their controllers stop at
+    // TENANT_ADMIN.
     const financeItems = [
         ...(hasPermission(userRole, 'canAccessFinance') ? [
             { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
@@ -135,8 +141,13 @@ export default function MvpSidebar() {
             { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
             { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
         ] : []),
+        ...(hasPermission(userRole, 'canManageCheques') ? [
+            { name: tCheques("register"), href: "/dashboard/finance/cheques", icon: CreditCard, tourId: 'sidebar-cheques-register' },
+            { name: tCheques("collection"), href: "/dashboard/finance/cheques/collection", icon: Banknote, tourId: 'sidebar-cheques-collection' },
+            { name: tCheques("returnReplace"), href: "/dashboard/finance/cheques/return-replace", icon: RefreshCcw, tourId: 'sidebar-cheques-return-replace' },
+            { name: tCheques("postDated"), href: "/dashboard/finance/cheques/post-dated", icon: CalendarClock, tourId: 'sidebar-cheques-post-dated' },
+        ] : []),
         ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
-            { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
             { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
             { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
         ] : []),

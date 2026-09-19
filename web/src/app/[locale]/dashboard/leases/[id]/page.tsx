@@ -18,7 +18,8 @@ import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { toChequeRows, type ChequeRowAction } from "@/components/leases/ChequeGrid";
-import ChequeActionDialog from "@/components/leases/ChequeActionDialog";
+import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
+import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
@@ -84,6 +85,7 @@ export default function LeaseDetailPage() {
 
     const t = useTranslations("Leasing");
     const tMaster = useTranslations("MasterData");
+    const tBulkUpload = useTranslations("bulkChequeUpload");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -115,6 +117,7 @@ export default function LeaseDetailPage() {
     const [chequeAction, setChequeAction] = useState<{ action: ChequeRowAction; cheque: Cheque } | null>(null);
     const [chequeBusy, setChequeBusy] = useState(false);
     const [chequeError, setChequeError] = useState<string | null>(null);
+    const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
     const [docName, setDocName] = useState("");
     const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -549,6 +552,16 @@ export default function LeaseDetailPage() {
                                             <Save size={12} /> {t("saveCheques")}
                                         </button>
                                     )}
+                                    {!drafting && canCheques && cheques.some(c => c.status === "REGISTERED" && c.mode === "PDC") && (
+                                        <button
+                                            type="button"
+                                            data-testid="lease-bulk-upload-cheques"
+                                            onClick={() => setBulkUploadOpen(true)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
+                                        >
+                                            <Upload size={12} /> {tBulkUpload("entryButton")}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -780,6 +793,18 @@ export default function LeaseDetailPage() {
                 onClose={() => setChequeAction(null)}
                 onDone={handleChequeAction}
             />
+
+            {bulkUploadOpen && (
+                <BulkChequeUploadFlow
+                    leaseId={leaseId}
+                    rows={cheques}
+                    onClose={() => setBulkUploadOpen(false)}
+                    onSuccess={async () => {
+                        setBulkUploadOpen(false);
+                        await loadLease();
+                    }}
+                />
+            )}
 
             <ConfirmDialog
                 isOpen={deleteOpen}

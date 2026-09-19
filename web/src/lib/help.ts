@@ -33,7 +33,7 @@ export const HELP_PAGE_MAP: Record<string, { article?: string; tour?: string }> 
   '/dashboard/renters': { article: 'properties--managing-properties' },
   '/dashboard/tickets': { article: 'renter--submitting-tickets' },
   '/dashboard/finance/accounts': { article: 'finance--chart-of-accounts', tour: 'finance-overview' },
-  '/dashboard/finance/payments': { article: 'leases--payment-schedules' },
+  '/dashboard/finance/cheques': { article: 'leases--payment-schedules' },
   '/dashboard/renter-portal': { article: 'renter--renter-portal-overview', tour: 'renter-portal' },
   '/dashboard/renter-portal/payments': { article: 'renter--making-payments' },
   '/dashboard/staff': { article: 'admin--managing-staff' },
