@@ -225,6 +225,72 @@ class LeaseAccessPolicyTest {
         assertThat(policy.filterReadable(List.of(lease(assignedPropertyId, myRenterId)))).isEmpty();
     }
 
+    // ---- manage, which is not read -----------------------------------------
+
+    /**
+     * Reading a lease and moving its money are different questions, and for a
+     * renter they have different answers: a renter passes {@code requireReadable}
+     * for their own tenancy contract, which is correct, and must not therefore be
+     * able to mark their own cheque cleared or bounce it off their statement.
+     */
+    @Test
+    void aRenterMayReadTheirOwnLeaseButNeverManageIt() {
+        authenticateAs("RENTER");
+        renterRecord(myRenterId);
+        Lease mine = lease(assignedPropertyId, myRenterId);
+
+        assertThat(policy.canRead(mine)).isTrue();
+        assertThat(policy.canManage(mine)).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(mine))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Lease not found");
+    }
+
+    @Test
+    void aTenantUserCannotManageEither() {
+        authenticateAs("TENANT_USER");
+        renterRecord(myRenterId);
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isFalse();
+    }
+
+    @Test
+    void tenantWideRolesManageEveryLease() {
+        for (String role : List.of("SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT")) {
+            authenticateAs(role);
+            assertThatCode(() -> policy.requireManageable(lease(otherPropertyId, otherRenterId)))
+                    .as(role)
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    /** A manager manages exactly the buildings they were assigned — the same set they read. */
+    @Test
+    void aPropertyManagerManagesOnlyTheirAssignedProperties() {
+        authenticateAs("PROPERTY_MANAGER");
+        assignedTo(assignedPropertyId);
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isTrue();
+        assertThat(policy.canManage(lease(otherPropertyId, otherRenterId))).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(lease(otherPropertyId, otherRenterId)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void anUnauthenticatedCallerManagesNothing() {
+        SecurityContextHolder.clearContext();
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isFalse();
+    }
+
+    @Test
+    void aNullLeaseIsNotManageable() {
+        authenticateAs("TENANT_ADMIN");
+
+        assertThat(policy.canManage(null)).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(null)).isInstanceOf(NotFoundException.class);
+    }
+
     @Test
     void aLeaseWithNoUnitIsNotReadableByAManager() {
         // Defensive: a malformed lease must not become universally readable.

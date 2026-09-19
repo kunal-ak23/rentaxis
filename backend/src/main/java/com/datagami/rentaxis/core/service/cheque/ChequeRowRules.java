@@ -66,7 +66,7 @@ public final class ChequeRowRules {
                         where + "cheque " + row.id() + " is not a draft row of this lease");
             }
 
-            validateRow(row, where, seenNumbers, takenByOthers);
+            validateRow(row, where, seenNumbers, takenByOthers, false);
         }
     }
 
@@ -91,8 +91,29 @@ public final class ChequeRowRules {
                 throw new BusinessRuleViolationException(
                         where + "a new row cannot carry the id of an existing cheque");
             }
-            validateRow(row, where, seenNumbers, takenNumbers);
+            validateRow(row, where, seenNumbers, takenNumbers, false);
         }
+    }
+
+    /**
+     * The one row a payment gateway creates: same amount and date rules, but
+     * {@code ONLINE} is the point rather than a mistake.
+     *
+     * <p>A separate entry point rather than a flag on the public one, and
+     * certainly rather than relaxing {@link #validateRow}: "ONLINE receipts are
+     * recorded by the payment gateway, not entered on the grid" is a rule about
+     * <em>who</em> is creating the row, so the only caller that may say otherwise
+     * is the one place in the codebase that <em>is</em> the payment gateway path
+     * ({@code ChequeService.replaceForOnlinePayment}). Every user-facing door —
+     * the draft grid, a manual replacement, a row added to a posted lease — keeps
+     * meeting the refusal.</p>
+     */
+    public static void validateGatewayRow(ChequeRowInput row, Set<String> takenNumbers) {
+        if (row == null) throw new BusinessRuleViolationException("The gateway row is empty");
+        if (row.mode() != ChequeMode.ONLINE) {
+            throw new BusinessRuleViolationException("A gateway row must be an ONLINE receipt");
+        }
+        validateRow(row, "", new HashSet<>(), takenNumbers, true);
     }
 
     /**
@@ -103,9 +124,10 @@ public final class ChequeRowRules {
      * accumulating across the payload, so two rows in the same request collide with
      * each other and not only with what is already stored.</p>
      */
-    static void validateRow(ChequeRowInput row, String where, Set<String> seenNumbers, Set<String> takenElsewhere) {
+    static void validateRow(ChequeRowInput row, String where, Set<String> seenNumbers, Set<String> takenElsewhere,
+                            boolean fromGateway) {
         ChequeMode mode = row.mode() == null ? ChequeMode.PDC : row.mode();
-        if (mode == ChequeMode.ONLINE) {
+        if (mode == ChequeMode.ONLINE && !fromGateway) {
             // An online receipt is created by the payment gateway callback with
             // its own reference, never typed into the grid.
             throw new BusinessRuleViolationException(

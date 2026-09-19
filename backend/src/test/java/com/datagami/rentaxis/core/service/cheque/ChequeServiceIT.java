@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
@@ -369,12 +370,114 @@ class ChequeServiceIT {
     }
 
     @Test
+    void receivingATransferLandsInTheBank() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        ChequeDTO transfer = service.addRowToPostedLease(leaseId,
+                row(null, REPLACE_DATE, REPLACE_DATE, "3000", ChequeMode.TRANSFER));
+
+        ChequeDTO received = service.receive(transfer.id(), ChequeActionRequest.on(REPLACE_DATE));
+
+        Account bank = leaf(AccountRole.BANK);
+        assertThat(received.status()).isEqualTo(ChequeStatus.CLEARED);
+        assertPair(received.crtJournalId(), JournalDocType.CRT, REPLACE_DATE, transfer.id(), leaseId,
+                bank, leaf(AccountRole.PDC_RECEIVABLE), "3000");
+        assertThat(received.debitAccountId()).isEqualTo(bank.getId());
+    }
+
+    @Test
     void receivingAPostDatedChequeIsRefused() {
         PostLeaseResponse r = posted();
 
         assertThatThrownBy(() -> service.receive(r.cheques().get(0).id(), ChequeActionRequest.on(CLEAR_DATE)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Only a CASH or TRANSFER receipt can be received directly");
+    }
+
+    /** Cash never went to a bank, so there is no deposit run to put it on. */
+    @Test
+    void depositingACashRowIsRefused() {
+        PostLeaseResponse r = posted();
+        ChequeDTO cash = service.addRowToPostedLease(r.lease().getId(),
+                row(null, REPLACE_DATE, REPLACE_DATE, "1500", ChequeMode.CASH));
+
+        assertThatThrownBy(() -> service.deposit(cash.id(), ChequeActionRequest.on(DEPOSIT_DATE)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only a post-dated cheque can be deposited");
+
+        assertThat(reread(cash.id()).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+    }
+
+    /** Cash in the drawer does not un-arrive, and a settled transfer is reversed as its own receipt. */
+    @Test
+    void cashThatWasReceivedCannotLaterBounce() {
+        PostLeaseResponse r = posted();
+        ChequeDTO cash = service.addRowToPostedLease(r.lease().getId(),
+                row(null, REPLACE_DATE, REPLACE_DATE, "1500", ChequeMode.CASH));
+        service.receive(cash.id(), ChequeActionRequest.on(REPLACE_DATE));
+
+        assertThatThrownBy(() -> service.bounce(cash.id(),
+                new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only a post-dated cheque can bounce after it has cleared");
+
+        assertThat(entryCount(JournalDocType.CBR, cash.id())).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // where the money is allowed to land
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code debitAccountId} was a free hand into the chart of accounts. Debiting
+     * the rent receivable this very cheque was raised against would double the
+     * debt and show the money as still owed rather than collected.
+     */
+    @Test
+    void aDebitAccountThatIsNotBankOrCashIsRefused() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        Account rentReceivable = leaf(AccountRole.RENT_RECEIVABLE);
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+
+        assertThatThrownBy(() -> service.clear(chequeId,
+                new ChequeActionRequest(CLEAR_DATE, null, null, rentReceivable.getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Debit account " + rentReceivable.getCode() + " must be a bank or cash account");
+
+        Cheque unchanged = reread(chequeId);
+        assertThat(unchanged.getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(unchanged.getCrtJournalId()).isNull();
+    }
+
+    @Test
+    void aSecondBankLeafIsAnAcceptableDebitAccount() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        UUID chequeId = r.cheques().get(0).id();
+        Account mashreq = otherBank();
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+
+        ChequeDTO cleared = service.clear(chequeId,
+                new ChequeActionRequest(CLEAR_DATE, null, null, mashreq.getId()));
+
+        assertPair(cleared.crtJournalId(), JournalDocType.CRT, CLEAR_DATE, chequeId, leaseId,
+                mashreq, leaf(AccountRole.PDC_RECEIVABLE), "12750");
+    }
+
+    /** The same rule on the deposit run, where the account is only remembered. */
+    @Test
+    void depositBatchRefusesADebitAccountThatIsNotBankOrCash() {
+        PostLeaseResponse r = posted();
+        List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
+        Account rentReceivable = leaf(AccountRole.RENT_RECEIVABLE);
+
+        assertThatThrownBy(() -> service.depositBatch(
+                new DepositBatchRequest(ids, DEPOSIT_DATE, rentReceivable.getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("must be a bank or cash account");
+
+        assertThat(reread(ids.get(0)).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
     }
 
     // ------------------------------------------------------------------
@@ -491,6 +594,9 @@ class ChequeServiceIT {
 
         // 12,750 back on, 12,000 taken off again: the residual is exactly the gap.
         assertThat(balance(rentReceivable, leaseId)).isEqualByComparingTo("750");
+        // And the other leg: 53,000 registered, the bounce releases 12,750 of paper,
+        // the two replacements put 12,000 of new paper in the drawer.
+        assertThat(balance(pdc, leaseId)).isEqualByComparingTo("52250");
     }
 
     @Test
@@ -610,20 +716,127 @@ class ChequeServiceIT {
                 settlement, leaf(AccountRole.PDC_RECEIVABLE), "12750");
     }
 
+    /**
+     * A bounced row is the one the renter most wants to pay and the one that must
+     * not be paid in place: its CBR already credited PDC receivable back to nothing,
+     * so a capture against it would credit a balance that is not there.
+     */
+    @Test
+    void aBouncedChequeCannotBePaidOnlineWithoutBeingReplaced() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+        service.bounce(chequeId, new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null));
+
+        assertThatThrownBy(() -> service.registerOnlinePending(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Replace the bounced cheque before paying online");
+
+        // And the bounce is still on the record, not laundered into REGISTERED.
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.BOUNCED);
+    }
+
+    @Test
+    void revertOnlinePendingOnlyAcceptsAPendingRow() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+
+        assertThatThrownBy(() -> service.revertOnlinePending(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Can only revert cheques in ONLINE_PENDING (current: REGISTERED)");
+    }
+
+    @Test
+    void aCashRowCannotBePaidThroughTheGateway() {
+        PostLeaseResponse r = posted();
+        ChequeDTO cash = service.addRowToPostedLease(r.lease().getId(),
+                row(null, REPLACE_DATE, REPLACE_DATE, "1500", ChequeMode.CASH));
+
+        assertThatThrownBy(() -> service.registerOnlinePending(cash.id()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only a post-dated cheque or an online row can be paid through the gateway");
+    }
+
+    /**
+     * The gateway's actual door: bounce, supersede with an ONLINE row, pay it. The
+     * point of the detour is the closing balances — the replacement's own PDR is
+     * what the capture clears, so both receivables end at zero and the settlement
+     * account holds the money.
+     */
+    @Test
+    void gatewayReplacementClearsTheBouncedDebtEndToEnd() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        UUID bouncedId = r.cheques().get(0).id();
+        Account settlement = otherBank();
+        service.deposit(bouncedId, ChequeActionRequest.on(DEPOSIT_DATE));
+        service.bounce(bouncedId, new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null));
+
+        ChequeDTO online = service.replaceForOnlinePayment(bouncedId, REPLACE_DATE);
+
+        assertThat(online.mode()).isEqualTo(ChequeMode.ONLINE);
+        assertThat(online.status()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(online.amount()).isEqualByComparingTo("12750");
+        assertThat(online.chequeDate()).isEqualTo(REPLACE_DATE);
+        assertThat(online.chequeNumber()).isNull();
+        assertThat(online.narration()).isEqualTo("Online payment for cheque 100040");
+        assertThat(online.replacesId()).isEqualTo(bouncedId);
+        assertPair(online.pdrJournalId(), JournalDocType.PDR, REPLACE_DATE, online.id(), leaseId,
+                leaf(AccountRole.PDC_RECEIVABLE), leaf(AccountRole.RENT_RECEIVABLE), "12750");
+
+        Cheque superseded = reread(bouncedId);
+        assertThat(superseded.getStatus()).isEqualTo(ChequeStatus.REPLACED);
+        UUID replacedBy = tx.execute(s -> chequeRepo.findById(bouncedId).orElseThrow().getReplacedBy().getId());
+        assertThat(replacedBy).isEqualTo(online.id());
+
+        service.registerOnlinePending(online.id());
+        ChequeDTO captured = service.clearOnline(online.id(), CLEAR_DATE, settlement.getId());
+
+        assertThat(captured.status()).isEqualTo(ChequeStatus.CLEARED);
+        assertPair(captured.crtJournalId(), JournalDocType.CRT, CLEAR_DATE, online.id(), leaseId,
+                settlement, leaf(AccountRole.PDC_RECEIVABLE), "12750");
+        // This leg is square: the bounce raised 12,750 of rent receivable, the
+        // replacement's PDR took it off again, and the capture turned the paper into
+        // money. The other four cheques are still outstanding, so only this leg nets.
+        assertThat(balance(leaf(AccountRole.RENT_RECEIVABLE), leaseId)).isEqualByComparingTo("0");
+        assertThat(balance(settlement, leaseId)).isEqualByComparingTo("12750");
+        assertThat(balance(leaf(AccountRole.PDC_RECEIVABLE), leaseId)).isEqualByComparingTo("40250");
+    }
+
     /** Gateways retry their webhooks; a retry must not collect the instalment twice. */
     @Test
     void clearOnlineIsIdempotent() {
         PostLeaseResponse r = posted();
-        UUID chequeId = r.cheques().get(0).id();
-        service.registerOnlinePending(chequeId);
+        UUID bouncedId = r.cheques().get(0).id();
+        service.deposit(bouncedId, ChequeActionRequest.on(DEPOSIT_DATE));
+        service.bounce(bouncedId, new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null));
+        UUID onlineId = service.replaceForOnlinePayment(bouncedId, REPLACE_DATE).id();
+        service.registerOnlinePending(onlineId);
 
-        ChequeDTO first = service.clearOnline(chequeId, CLEAR_DATE, null);
-        ChequeDTO again = service.clearOnline(chequeId, CLEAR_DATE.plusDays(1), null);
+        ChequeDTO first = service.clearOnline(onlineId, CLEAR_DATE, null);
+        ChequeDTO again = service.clearOnline(onlineId, CLEAR_DATE.plusDays(1), null);
 
         assertThat(again.status()).isEqualTo(ChequeStatus.CLEARED);
         assertThat(again.crtJournalId()).isEqualTo(first.crtJournalId());
         assertThat(again.clearedAt()).isEqualTo(CLEAR_DATE);
-        assertThat(entryCount(JournalDocType.CRT, chequeId)).isEqualTo(1L);
+        assertThat(entryCount(JournalDocType.CRT, onlineId)).isEqualTo(1L);
+    }
+
+    /**
+     * A cheque that cleared at the bank arriving at the capture endpoint means the
+     * webhook is pointing at the wrong row. Answering "fine, already done" would
+     * hide that, so only an ONLINE row gets the idempotent shortcut.
+     */
+    @Test
+    void clearOnlineRefusesAChequeThatClearedAtTheBank() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+        service.clear(chequeId, ChequeActionRequest.on(CLEAR_DATE));
+
+        assertThatThrownBy(() -> service.clearOnline(chequeId, CLEAR_DATE, null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an online payment row");
     }
 
     // ------------------------------------------------------------------
@@ -654,6 +867,110 @@ class ChequeServiceIT {
                 .hasMessageContaining("post the lease before changing its register rows");
 
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+    }
+
+    /**
+     * Defensive: a REGISTERED row with no registering journal is a row the ledger
+     * has never heard of. Cancelling it must say so rather than dying inside
+     * {@code PostingService.reverse(null, …)}.
+     */
+    @Test
+    void cancellingARowWithNoRegisteringJournalIsRefusedCleanly() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findById(chequeId).orElseThrow();
+            c.setPdrJournalId(null);
+            chequeRepo.save(c);
+        });
+
+        assertThatThrownBy(() -> service.cancel(chequeId, ChequeActionRequest.on(BOUNCE_DATE)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has no registering journal to reverse");
+
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+    }
+
+    /**
+     * The tenant boundary, from the outside. Another landlord org holding this
+     * cheque's id sees nothing, and cannot smuggle one of its own bank accounts
+     * into somebody else's clearing entry either.
+     */
+    @Test
+    void anotherTenantCanNeitherMoveTheChequeNorLendItAnAccount() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        UUID tenantA = fixtures.tenantId();
+
+        LeaseTestFixtures other = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService).bootstrap();
+        UUID otherBankId = tx.execute(s -> resolver.resolve(AccountRole.BANK, other.property().getId())).getId();
+
+        // As the other tenant: the cheque is simply not there.
+        assertThatThrownBy(() -> service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE)))
+                .isInstanceOf(NotFoundException.class);
+
+        // Back as the owner: the other tenant's bank does not exist for this one.
+        TenantContextHolder.setTenantId(tenantA);
+        assertThatThrownBy(() -> service.deposit(chequeId,
+                new ChequeActionRequest(DEPOSIT_DATE, null, null, otherBankId)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("does not exist");
+
+        Cheque unchanged = reread(chequeId);
+        assertThat(unchanged.getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(unchanged.getDepositedAt()).isNull();
+    }
+
+    /**
+     * Two clerks adding a row to the same lease at the same moment.
+     *
+     * <p>A new row's position is max+1 over the register, so without the lease-row
+     * lock both read 5 and both write position 6 — nothing in the database forbids
+     * it, because only the cheque number is indexed. With the lock one of them
+     * either waits its turn and gets 7, or fails fast with "try again". Both are
+     * acceptable; two rows claiming position 6 is not.</p>
+     */
+    @Test
+    void concurrentAddsNeverDuplicateASequenceNumber() throws Exception {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        UUID tenant = fixtures.tenantId();
+
+        CyclicBarrier bothReady = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Callable<Object>> racers = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            racers.add(() -> {
+                TenantContextHolder.setTenantId(tenant);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    bothReady.await(10, TimeUnit.SECONDS);
+                    return service.addRowToPostedLease(leaseId,
+                            row(null, REPLACE_DATE, REPLACE_DATE, "500", ChequeMode.CASH));
+                } catch (RuntimeException ex) {
+                    return ex;
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+        }
+        List<Future<Object>> results;
+        try {
+            results = pool.invokeAll(racers, 60, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        List<Object> outcomes = new ArrayList<>();
+        for (Future<Object> f : results) outcomes.add(f.get());
+
+        assertThat(outcomes).filteredOn(o -> !(o instanceof ChequeDTO))
+                .allMatch(BusinessRuleViolationException.class::isInstance);
+        List<Integer> seqNos = tx.execute(s -> chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+                .map(Cheque::getSeqNo).toList());
+        assertThat(seqNos).doesNotHaveDuplicates();
+        assertThat(outcomes).filteredOn(ChequeDTO.class::isInstance).isNotEmpty();
     }
 
     @Test

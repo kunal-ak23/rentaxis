@@ -95,6 +95,48 @@ public class LeaseAccessPolicy {
         return caller.seesEverything() || canRead(lease, caller);
     }
 
+    /**
+     * Guard for <em>changing</em> a lease or anything hanging off it — a cheque
+     * moving through the register, a termination, a settlement.
+     *
+     * <p>Reading and writing are different questions and were being answered by
+     * one method. A renter passes {@link #requireReadable} for their own lease,
+     * which is correct: it is their tenancy contract. It is emphatically not a
+     * licence to mark their own cheque cleared. So finance actions ask this
+     * instead, and the split is: tenant-wide roles pass, a property manager
+     * passes for the buildings they were actually assigned — exactly the set
+     * {@link #canRead} gives them, since a manager who may see a lease is a
+     * manager who may run its collections — and renters and tenant users are
+     * refused outright.</p>
+     *
+     * <p>{@link NotFoundException} again rather than access-denied, for the same
+     * reason: a 403 on a lease id confirms the lease exists.</p>
+     */
+    public void requireManageable(Lease lease) {
+        if (!canManage(lease)) {
+            throw new NotFoundException("Lease not found");
+        }
+    }
+
+    public boolean canManage(Lease lease) {
+        return canManage(lease, currentCaller());
+    }
+
+    private boolean canManage(Lease lease, Caller caller) {
+        if (lease == null) {
+            return false;
+        }
+        if (caller.seesEverything()) {
+            return true;
+        }
+        if (caller.isPropertyManager()) {
+            return canRead(lease, caller);
+        }
+        // Renters, tenant users, unrecognised roles and unauthenticated callers:
+        // they may be entitled to look at the contract, never to move its money.
+        return false;
+    }
+
     private boolean canRead(Lease lease, Caller caller) {
         if (lease == null) {
             return false;

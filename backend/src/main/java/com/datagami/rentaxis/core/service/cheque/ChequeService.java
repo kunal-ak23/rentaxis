@@ -24,6 +24,8 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -36,12 +38,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -88,10 +89,6 @@ import java.util.UUID;
 public class ChequeService {
 
     private static final Logger log = LoggerFactory.getLogger(ChequeService.class);
-
-    /** "12,750.00" — the shape an accountant reads amounts in, in the refusal messages. */
-    private static final DecimalFormat MONEY =
-            new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
     /**
      * A lease whose contract is on the books. Its cheques are instruments against
@@ -141,7 +138,7 @@ public class ChequeService {
     public ChequeDTO deposit(UUID chequeId, ChequeActionRequest request) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "deposit", ChequeStatus.REGISTERED);
         requireDepositable(cheque);
 
@@ -208,7 +205,7 @@ public class ChequeService {
         List<ChequeDTO> out = new ArrayList<>(ids.size());
         for (UUID id : ids) {
             Cheque c = byId.get(id);
-            Lease lease = postedLeaseOf(c);
+            Lease lease = managedLeaseOf(c);
             applyDeposit(c, date, request.debitAccountId(), null);
             chequeRepository.save(c);
             publishDeposited(c);
@@ -229,7 +226,7 @@ public class ChequeService {
     public ChequeDTO clear(UUID chequeId, ChequeActionRequest request) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "clear", ChequeStatus.DEPOSITED);
 
         applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
@@ -251,7 +248,7 @@ public class ChequeService {
     public ChequeDTO receive(UUID chequeId, ChequeActionRequest request) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "receive", ChequeStatus.REGISTERED);
         if (cheque.getMode() != ChequeMode.CASH && cheque.getMode() != ChequeMode.TRANSFER) {
             throw new BusinessRuleViolationException(
@@ -283,7 +280,7 @@ public class ChequeService {
     public ChequeDTO bounce(UUID chequeId, ChequeActionRequest request) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "bounce", ChequeStatus.DEPOSITED, ChequeStatus.CLEARED);
         boolean afterClearing = cheque.getStatus() == ChequeStatus.CLEARED;
         if (afterClearing && cheque.getMode() != ChequeMode.PDC) {
@@ -328,7 +325,7 @@ public class ChequeService {
                 ChequePayload.ofCheque(cheque, null,
                         r.failureReason() != null ? r.failureReason().name() : null));
         notifyRenter(cheque, "PAYMENT_BOUNCED", "Cheque Failed",
-                "Instalment #" + cheque.getSeqNo() + " of " + MONEY.format(amount)
+                "Instalment #" + cheque.getSeqNo() + " of " + money(amount)
                         + " AED was returned" + (r.failureReason() != null ? " (" + r.failureReason() + ")" : "")
                         + ". Please arrange a replacement.");
         // The threshold count and the fine itself are the penalty module's; the
@@ -358,11 +355,16 @@ public class ChequeService {
     public List<ChequeDTO> replace(UUID chequeId, ReplaceChequeRequest request) {
         if (request == null) throw new BusinessRuleViolationException("At least one replacement is required");
         Cheque bounced = lock(chequeId);
-        Lease lease = postedLeaseOf(bounced);
+        Lease lease = managedLeaseOf(bounced);
+        // The lease row is locked too: seq numbers are max+1 over the register, so
+        // two replacements agreed at the same moment on the same lease would both
+        // read the same maximum and both claim the same position.
+        lockLease(lease.getId());
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
 
         List<ChequeRowInput> rows = request.replacements();
-        ChequeRowRules.validateNewRows(rows, takenNumbers(lease.getId()), "replacement");
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        ChequeRowRules.validateNewRows(rows, takenNumbers(register), "replacement");
 
         BigDecimal total = BigDecimal.ZERO;
         for (ChequeRowInput row : rows) {
@@ -370,15 +372,20 @@ public class ChequeService {
         }
         if (total.compareTo(bounced.getAmount()) > 0) {
             throw new BusinessRuleViolationException(
-                    "The replacements total " + MONEY.format(total) + " but " + label(bounced)
-                            + " was " + MONEY.format(bounced.getAmount())
+                    "The replacements total " + money(total) + " but " + label(bounced)
+                            + " was " + money(bounced.getAmount())
                             + "; a replacement cannot collect more than the cheque it replaces.");
         }
 
         LocalDate date = request.dateOrToday();
         List<ChequeDTO> out = new ArrayList<>(rows.size());
-        int seq = nextSeqNo(lease.getId());
+        int seq = nextSeqNo(register);
         for (ChequeRowInput row : rows) {
+            // The registrar directly, not addRowToPostedLease: that is a public
+            // method on this same bean, so calling it here would bypass the Spring
+            // proxy anyway, and it would re-lock the lease and re-read the register
+            // once per replacement. The row-building and PDR steps are shared; the
+            // guards this method already ran are not repeated.
             Cheque replacement = newRow(lease, row, seq++, date);
             replacement.setReplaces(bounced);
             chequeRepository.save(replacement);
@@ -398,6 +405,54 @@ public class ChequeService {
         return out;
     }
 
+    /**
+     * The gateway's door into the register: a bounced cheque becomes one
+     * {@code ONLINE} row the renter can pay through Razorpay (spec §9.3).
+     *
+     * <p>This exists because a bounced row cannot be paid online <em>in place</em>.
+     * Its {@code CBR} has already credited PDC receivable back to nothing and put
+     * the debt on rent receivable; a capture against that row would post a
+     * {@code CRT} crediting a PDC balance that is no longer there, driving it
+     * negative while the rent receivable it was meant to settle stays debited. So
+     * the bounce is replaced first, exactly as a paper replacement is, and the new
+     * row carries its own {@code PDR} — which is precisely the PDC balance the
+     * capture then clears.</p>
+     *
+     * <p>One row, the same amount, dated the day the renter is paying: the renter
+     * is not negotiating instalments here, they are settling a specific failed
+     * cheque. {@code ONLINE} is refused on every user-facing path
+     * ({@code saveRows}, {@link #replace}, {@link #addRowToPostedLease}) and
+     * created only here, so an online row always has a gateway behind it.</p>
+     */
+    @Transactional
+    public ChequeDTO replaceForOnlinePayment(UUID bouncedChequeId, LocalDate date) {
+        Cheque bounced = lock(bouncedChequeId);
+        Lease lease = gatewayLeaseOf(bounced);
+        lockLease(lease.getId());
+        requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
+
+        LocalDate on = date != null ? date : LocalDate.now();
+        ChequeRowInput gatewayRow = new ChequeRowInput(
+                null, null, on, null, on, null, null, null,
+                bounced.getAmount(), "Online payment for cheque " + label(bounced), ChequeMode.ONLINE);
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        // The gateway overload, not the public one: the rule that ONLINE is never
+        // typed in stays where every other caller meets it.
+        ChequeRowRules.validateGatewayRow(gatewayRow, takenNumbers(register));
+
+        Cheque replacement = newRow(lease, gatewayRow, nextSeqNo(register), on);
+        replacement.setReplaces(bounced);
+        chequeRepository.save(replacement);
+        registrar.register(lease, replacement);
+
+        bounced.setReplacedBy(replacement);
+        moveTo(bounced, ChequeStatus.REPLACED, "Replaced by an online payment row");
+        chequeRepository.save(bounced);
+
+        publish(EmailEventType.CHEQUE_RECEIVED, replacement, ChequePayload.ofCheque(replacement, null, null));
+        return dto(replacement, lease);
+    }
+
     // ------------------------------------------------------------------
     // -> CANCELLED / RETURNED  (reversal of the PDR)
     // ------------------------------------------------------------------
@@ -415,7 +470,7 @@ public class ChequeService {
     public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
 
         reversePdr(cheque, r.dateOrToday(), reasonOr(r.notes(), "Cheque cancelled"));
@@ -433,7 +488,7 @@ public class ChequeService {
     @Transactional
     public ChequeDTO returnToTenant(UUID chequeId, LocalDate date, String reason) {
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "return", ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED);
 
         LocalDate on = date != null ? date : LocalDate.now();
@@ -462,23 +517,27 @@ public class ChequeService {
      * quietly registered: on a draft lease the grid is still editable, Σ rows is
      * still checked against the contract value at posting time, and a row that
      * arrived through here would carry a journal the post would then duplicate.</p>
+     *
+     * <p><b>The lease row is locked first.</b> The new row's position is max+1 over
+     * the register, so two clerks adding a row to the same lease at the same moment
+     * would both read the same maximum and both write position 6. Nothing in the
+     * database forbids that — only the cheque number is indexed — so the register
+     * would quietly show two "row 6"s.</p>
      */
     @Transactional
     public ChequeDTO addRowToPostedLease(UUID leaseId, ChequeRowInput row) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
-            throw new NotFoundException("Lease not found");
-        }
-        leaseAccessPolicy.requireReadable(lease);
+        Lease lease = lockLease(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
         if (!POSTED.contains(lease.getStatus())) {
             throw new BusinessRuleViolationException(
                     "This lease is " + lease.getStatus() + "; use the cheque grid to add rows until it is posted.");
         }
-        ChequeRowRules.validateNewRows(List.of(row), takenNumbers(leaseId), "row");
+        // Read once: the numbers already taken and the last position come off the
+        // same list, and a second query would be a second chance to disagree.
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        ChequeRowRules.validateNewRows(List.of(row), takenNumbers(register), "row");
 
-        Cheque cheque = newRow(lease, row, nextSeqNo(leaseId), LocalDate.now());
+        Cheque cheque = newRow(lease, row, nextSeqNo(register), LocalDate.now());
         chequeRepository.save(cheque);
         registrar.register(lease, cheque);
         publish(EmailEventType.CHEQUE_RECEIVED, cheque, ChequePayload.ofCheque(cheque, null, null));
@@ -493,30 +552,45 @@ public class ChequeService {
      * The renter started paying this instalment online. Nothing posts: an
      * authorisation is not money, and a gateway session that is abandoned has to
      * leave the register exactly as it found it.
+     *
+     * <p><b>REGISTERED only.</b> A bounced row looks like the obvious thing to
+     * offer the renter — it is the debt they most urgently owe — and it is exactly
+     * the row that must not go down this path. Its {@code CBR} already credited PDC
+     * receivable back to nothing, so the {@code CRT} on capture would credit a
+     * balance that is not there (PDC goes negative, rent receivable stays debited),
+     * and an abandoned session reverting to REGISTERED would launder the bounce
+     * out of the register entirely. {@link #replaceForOnlinePayment} is the way
+     * in: it supersedes the bounce with an ONLINE row that has its own PDR.</p>
      */
     @Transactional
     public ChequeDTO registerOnlinePending(UUID chequeId) {
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
-        boolean payable = cheque.getStatus() == ChequeStatus.REGISTERED
-                // A bounced row is a live debt from the moment it failed, and paying
-                // it online is the fastest way the renter can cure it.
-                || (cheque.getStatus() == ChequeStatus.BOUNCED && ChequeDueRules.due(cheque, LocalDate.now()));
-        if (!payable) {
+        Lease lease = gatewayLeaseOf(cheque);
+        if (cheque.getStatus() == ChequeStatus.BOUNCED) {
+            throw new BusinessRuleViolationException("Replace the bounced cheque before paying online");
+        }
+        requireStatus(cheque, "start an online payment for", ChequeStatus.REGISTERED);
+        if (cheque.getMode() != ChequeMode.PDC && cheque.getMode() != ChequeMode.ONLINE) {
+            // Cash and bank transfers are recorded when they arrive, by receive();
+            // there is nothing for a gateway to authorise.
             throw new BusinessRuleViolationException(
-                    "Can only start an online payment for cheques in REGISTERED or BOUNCED (current: "
-                            + cheque.getStatus() + ")");
+                    "Only a post-dated cheque or an online row can be paid through the gateway; "
+                            + label(cheque) + " is a " + cheque.getMode() + " receipt.");
         }
         moveTo(cheque, ChequeStatus.ONLINE_PENDING, null);
         chequeRepository.save(cheque);
         return dto(cheque, lease);
     }
 
-    /** The gateway session failed or was abandoned; the row goes back on the register. */
+    /**
+     * The gateway session failed or was abandoned; the row goes back on the
+     * register exactly as it left — REGISTERED, which is the only status it can
+     * have arrived from.
+     */
     @Transactional
     public ChequeDTO revertOnlinePending(UUID chequeId) {
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = gatewayLeaseOf(cheque);
         requireStatus(cheque, "revert", ChequeStatus.ONLINE_PENDING);
         moveTo(cheque, ChequeStatus.REGISTERED, null);
         chequeRepository.save(cheque);
@@ -527,16 +601,22 @@ public class ChequeService {
      * The gateway captured the payment: the same {@code CRT} any other receipt
      * writes, into the settlement account the gateway pays out to.
      *
-     * <p><b>Idempotent on an already-cleared row.</b> Payment gateways retry their
+     * <p><b>Idempotent on an already-captured row.</b> Payment gateways retry their
      * webhooks, and a retry that posted a second CRT would collect the same
-     * instalment twice. A row that is already CLEARED is returned as it stands.</p>
+     * instalment twice. An {@code ONLINE} row that is already CLEARED is therefore
+     * returned as it stands — but only an ONLINE one: a cheque that cleared at the
+     * bank arriving here means the webhook is pointing at the wrong row, and
+     * answering "fine, already done" would hide that.</p>
      */
     @Transactional
     public ChequeDTO clearOnline(UUID chequeId, LocalDate capturedOn, UUID settlementAccountId) {
         Cheque cheque = lock(chequeId);
-        Lease lease = postedLeaseOf(cheque);
+        Lease lease = gatewayLeaseOf(cheque);
         if (cheque.getStatus() == ChequeStatus.CLEARED) {
-            return dto(cheque, lease);
+            if (cheque.getMode() == ChequeMode.ONLINE) {
+                return dto(cheque, lease);
+            }
+            throw new BusinessRuleViolationException(label(cheque) + " is not an online payment row");
         }
         requireStatus(cheque, "capture", ChequeStatus.ONLINE_PENDING);
 
@@ -554,7 +634,7 @@ public class ChequeService {
         if (debitAccountId != null) {
             // Which of our banks the paper physically went to. Recorded now so the
             // CRT that follows debits it rather than re-resolving the role.
-            cheque.setDebitAccount(account(debitAccountId));
+            cheque.setDebitAccount(settlementAccount(debitAccountId));
         }
         cheque.setDepositedAt(date);
         moveTo(cheque, ChequeStatus.DEPOSITED, notes);
@@ -573,7 +653,13 @@ public class ChequeService {
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes) {
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
-        Account debit = debitAccountId != null ? account(debitAccountId) : cheque.getDebitAccount();
+        // Checked on the way in whichever door it came through: an override the
+        // caller typed, and the account already on the row — that one was validated
+        // when it was set, but a chart of accounts is edited, and a receivable leaf
+        // debited here would look exactly like money in the bank on the balance sheet.
+        Account debit = debitAccountId != null
+                ? settlementAccount(debitAccountId)
+                : requireSettlementAccount(cheque.getDebitAccount());
         // No resolveOrNull fallback and no try/catch: when the row names no account
         // the role goes into the request and PostingService resolves it, so an
         // unmapped BANK is one refusal from one place.
@@ -648,7 +734,7 @@ public class ChequeService {
         // against the CASH role, which is the tenant-level default, and forcing the
         // property's bank onto it here would bank cash that never went to a bank.
         if (row.debitAccountId() != null) {
-            c.setDebitAccount(account(row.debitAccountId()));
+            c.setDebitAccount(settlementAccount(row.debitAccountId()));
         }
         return c;
     }
@@ -687,16 +773,74 @@ public class ChequeService {
     }
 
     /**
-     * The cheque's lease, required to be on the books.
-     *
-     * <p>Checked before the status guard on purpose: a REGISTERED row on a lease
-     * someone reverted to DRAFT would otherwise deposit and clear happily against a
-     * receivable the ledger never raised.</p>
+     * The lease row, locked, tenant-checked — taken by every path that adds a row
+     * to the register, because a new row's position is computed as max+1 over the
+     * lease's existing rows.
      */
-    private Lease postedLeaseOf(Cheque cheque) {
+    private Lease lockLease(UUID leaseId) {
+        Lease lease;
+        try {
+            lease = leaseRepository.findByIdForUpdate(leaseId)
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+        } catch (PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(BEING_UPDATED);
+        }
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
+    }
+
+    /**
+     * The cheque's lease, for a finance action: the caller must be entitled to
+     * <em>manage</em> it, and it must be on the books.
+     *
+     * <p>Manage, not read. A renter passes {@code requireReadable} for their own
+     * lease — it is their contract — which would have let them mark their own
+     * cheque cleared or bounce it back off their statement.</p>
+     *
+     * <p>Both checks happen before the status guard on purpose: a REGISTERED row on
+     * a lease someone reverted to DRAFT would otherwise deposit and clear happily
+     * against a receivable the ledger never raised.</p>
+     */
+    private Lease managedLeaseOf(Cheque cheque) {
         Lease lease = cheque.getLease();
         if (lease == null) throw new NotFoundException("Lease not found");
-        leaseAccessPolicy.requireReadable(lease);
+        leaseAccessPolicy.requireManageable(lease);
+        return requirePosted(lease);
+    }
+
+    /**
+     * The same lease for the payment-gateway path, which has three possible
+     * callers and only one of them is staff.
+     *
+     * <ul>
+     *   <li><b>A manager</b> starting the payment for a renter at the counter:
+     *       passes on {@code canManage}.</li>
+     *   <li><b>The renter</b>, in their own portal, paying their own instalment:
+     *       passes only for a lease that is theirs — which is exactly what
+     *       {@code requireReadable} decides for a renter. This is the one place a
+     *       renter may move a register row, and all they can do with it is pay.</li>
+     *   <li><b>The gateway's webhook</b>, which carries no user at all: allowed,
+     *       because there is nobody to authorise. That is not a hole — an
+     *       unauthenticated HTTP request never reaches a service (see
+     *       {@code ApiSecurityFilter}), so a null SecurityContext here means an
+     *       internal caller, and the webhook's own authorisation is its signature
+     *       check (Task 10).</li>
+     * </ul>
+     */
+    private Lease gatewayLeaseOf(Cheque cheque) {
+        Lease lease = cheque.getLease();
+        if (lease == null) throw new NotFoundException("Lease not found");
+        if (SecurityContextHolder.getContext().getAuthentication() != null
+                && !leaseAccessPolicy.canManage(lease)) {
+            leaseAccessPolicy.requireReadable(lease);
+        }
+        return requirePosted(lease);
+    }
+
+    private static Lease requirePosted(Lease lease) {
         if (!POSTED.contains(lease.getStatus())) {
             throw new BusinessRuleViolationException(
                     "This cheque's lease is " + lease.getStatus()
@@ -737,9 +881,22 @@ public class ChequeService {
         // The clock, not the transition's date: the date columns say when the money
         // moved, statusChangedAt says when we were told.
         cheque.setStatusChangedAt(Instant.now());
-        if (notes != null && !notes.isBlank()) {
-            cheque.setNotes(notes);
-        }
+        appendNote(cheque, notes);
+    }
+
+    /**
+     * Notes accumulate; they are not a field the last transition owns.
+     *
+     * <p>A cheque that bounced with "insufficient funds" and was then replaced with
+     * "renter paying by transfer" has two facts about it, and overwriting the first
+     * with the second threw away the only free-text record of why the instrument
+     * failed. Each line is dated so the column reads as a log.</p>
+     */
+    private static void appendNote(Cheque cheque, String note) {
+        if (note == null || note.isBlank()) return;
+        String stamped = LocalDate.now() + ": " + note.trim();
+        String existing = cheque.getNotes();
+        cheque.setNotes(existing == null || existing.isBlank() ? stamped : existing + "\n" + stamped);
     }
 
     private static String reasonOr(String reason, String fallback) {
@@ -755,15 +912,43 @@ public class ChequeService {
                 .orElseThrow(() -> new BusinessRuleViolationException("Account " + id + " does not exist"));
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(a.getTenantId())) {
+            // Another tenant's account, which to this one simply does not exist.
             throw new BusinessRuleViolationException("Account " + id + " does not exist");
         }
         return a;
     }
 
+    private Account settlementAccount(UUID id) {
+        return requireSettlementAccount(account(id));
+    }
+
+    /**
+     * An account cleared funds may actually land in.
+     *
+     * <p>Without this, {@code debitAccountId} was a free hand into the chart of
+     * accounts: passing the property's rent-receivable leaf would debit the
+     * receivable the cheque was raised against, silently doubling the debt and
+     * showing the money as still owed rather than as collected. The rule is the
+     * narrow one the column means — an active asset leaf whose sub-type is BANK or
+     * CASH — and it is applied to the caller's override, to the account already on
+     * the row, and to a row's account as it is created.</p>
+     */
+    private static Account requireSettlementAccount(Account a) {
+        if (a == null) return null;
+        boolean settles = !a.isGroup() && a.isActive()
+                && a.getAccountType() == AccountType.ASSET
+                && (a.getAccountSubType() == AccountSubType.BANK || a.getAccountSubType() == AccountSubType.CASH);
+        if (!settles) {
+            throw new BusinessRuleViolationException(
+                    "Debit account " + a.getCode() + " must be a bank or cash account");
+        }
+        return a;
+    }
+
     /** Cheque numbers already live on the lease — everything a new row may not reuse. */
-    private Set<String> takenNumbers(UUID leaseId) {
+    private static Set<String> takenNumbers(List<Cheque> register) {
         Set<String> taken = new HashSet<>();
-        for (Cheque c : chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+        for (Cheque c : register) {
             if (c.getMode() == ChequeMode.PDC && c.getChequeNumber() != null) {
                 taken.add(c.getChequeNumber());
             }
@@ -771,9 +956,17 @@ public class ChequeService {
         return taken;
     }
 
-    private int nextSeqNo(UUID leaseId) {
-        return chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
-                .mapToInt(Cheque::getSeqNo).max().orElse(0) + 1;
+    /**
+     * The next position on the register. Safe only under the lease row lock — see
+     * {@link #lockLease}.
+     */
+    private static int nextSeqNo(List<Cheque> register) {
+        return register.stream().mapToInt(Cheque::getSeqNo).max().orElse(0) + 1;
+    }
+
+    /** "12,750.00" — the shape an accountant reads amounts in, in the refusal messages. */
+    private static String money(BigDecimal amount) {
+        return String.format(Locale.ROOT, "%,.2f", amount);
     }
 
     private static String label(Cheque c) {
