@@ -13,6 +13,9 @@ import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
  * Mirrors `ChequeController`'s own transitions (spec §7.4):
  *  - REGISTERED + PDC        → deposit, details, cancel
  *  - REGISTERED + CASH/TRANSFER → receive, details, cancel
+ *  - REGISTERED + ONLINE     → details, cancel only — `ChequeService#receive`
+ *    accepts only CASH and TRANSFER, and an ONLINE row waiting to be paid
+ *    moves to ONLINE_PENDING through the gateway, not through this dialog
  *  - DEPOSITED               → clear, bounce
  *  - CLEARED + PDC           → bounce (late return), receipt
  *  - CLEARED + CASH/TRANSFER → receipt only — cash does not un-arrive, and a
@@ -35,7 +38,13 @@ export function registerActionsFor(
 ): RegisterAction[] {
     switch (status) {
         case "REGISTERED": {
-            const actions: RegisterAction[] = [mode === "PDC" ? "deposit" : "receive", "details"];
+            const actions: RegisterAction[] = [];
+            // `receive()` on the server accepts only CASH and TRANSFER; an ONLINE
+            // row is settled by the gateway, and offering "receive" for it here
+            // would always 400.
+            if (mode === "PDC") actions.push("deposit");
+            else if (mode === "CASH" || mode === "TRANSFER") actions.push("receive");
+            actions.push("details");
             if (canCancel) actions.push("cancel");
             return actions;
         }

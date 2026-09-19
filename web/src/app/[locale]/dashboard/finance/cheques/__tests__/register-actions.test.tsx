@@ -27,6 +27,11 @@ describe("registerActionsFor", () => {
             expect(registerActionsFor("REGISTERED", "PDC", false)).toEqual(["deposit", "details"]);
             expect(registerActionsFor("REGISTERED", "CASH", false)).toEqual(["receive", "details"]);
         });
+
+        it("never offers Receive for an ONLINE row — ChequeService#receive 400s on anything but CASH/TRANSFER", () => {
+            expect(registerActionsFor("REGISTERED", "ONLINE", true)).toEqual(["details", "cancel"]);
+            expect(registerActionsFor("REGISTERED", "ONLINE", false)).toEqual(["details"]);
+        });
     });
 
     describe("DEPOSITED", () => {
