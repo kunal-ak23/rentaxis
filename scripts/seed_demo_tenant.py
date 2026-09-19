@@ -546,6 +546,20 @@ def main():
 
     def make_lease(unit, renter, rent, terms, distribution, deposit, charges=None,
                    booking=None, activate=True):
+        """accounting-v2 plan 2 minimal fix: `PUT .../activate` and the flat
+        rentAmount/depositAmount/paymentTerms body are gone — a lease is now
+        built from `lines` (cut from the charge-type catalogue seeded by
+        `/finance/accounts/seed`, called above) and becomes ACTIVE only via
+        generate-cheques + post.
+
+        `charges` (per-charge-type fee lines, e.g. Admin Fee, Parking) and
+        `booking` (a separate booking-deposit cheque) are NOT reproduced here
+        — every v1 call site below just gets a RENT + SECURITY_DEPOSIT line,
+        same as the wizard's own default. Modelling the full charge/booking
+        structure in `lines` terms is the plan 5 rewrite this fix explicitly
+        defers to; this keeps the script *running* against v2, not feature-
+        complete with v1.
+        """
         if unit["id"] in existing_leases:
             return existing_leases[unit["id"]]
         body = {
@@ -553,26 +567,30 @@ def main():
             "renterId": renter["id"],
             "startDate": iso(year_start),
             "endDate": iso(year_end),
-            "rentAmount": rent,
-            "depositAmount": deposit,
             "paymentTerms": terms,
             "installmentDistribution": distribution,
             "paymentMethod": "CHEQUE",
             "depositPaymentMethod": "CHEQUE",
             "agreementDate": iso(year_start - dt.timedelta(days=10)),
             "rentVatApplicable": False,
+            "lines": [
+                {"chargeTypeCode": "RENT", "grossAmount": rent},
+                {"chargeTypeCode": "SECURITY_DEPOSIT", "grossAmount": deposit},
+            ],
         }
-        if charges:
-            body["charges"] = charges
-        if booking:
-            body["bookingDeposit"] = booking
         lease = api.post("/api/v1/leases", json=body)
         if activate:
-            api.put(f"/api/v1/leases/{lease['id']}/activate")
+            api.post(f"/api/v1/leases/{lease['id']}/cheques/generate",
+                     json={"installments": terms, "distribution": distribution})
+            posted = api.post(f"/api/v1/leases/{lease['id']}/post")
+            lease = posted["lease"]
         return lease
 
-    # Note: business rule — no cheque may exceed depositAmount, so deposits
-    # here are >= the largest cheque in each plan.
+    # v2's cheque generator has no "no cheque may exceed the deposit" cap
+    # (that was a v1 PaymentScheduleService rule) — the deposit figures below
+    # are kept as-is for continuity with the old demo data, not because v2
+    # requires it. `charges=`/`booking=` are accepted but not modelled in
+    # `lines` yet — see make_lease's own docstring.
     lease_ahmed = make_lease(
         a101, ahmed, 85000, 4, "LAST_LARGER", 22000,
         charges=[{"name": "Admin Fee", "amount": 1500.0, "vatApplicable": True,
@@ -607,107 +625,70 @@ def main():
         "sara": lease_sara["id"],
     }
 
-    # ── 5. Cheque lifecycle on payment schedules ─────────────────────────────
+    # ── 5. Cheque lifecycle on the register ──────────────────────────────────
+    # accounting-v2 plan 2 minimal fix: there is no payment-schedule resource
+    # and no PENDING/"collect" step any more — `POST .../cheques/generate`
+    # already registered every row (chequeNumber/bank/payer included) when
+    # `make_lease` posted the lease above. Walk REGISTERED -> DEPOSITED ->
+    # CLEARED/BOUNCED via `/api/v1/cheques/{id}/...` instead.
     def rent_rows(lease_id):
-        rows = api.get(f"/api/v1/payments/lease/{lease_id}") or []
-        rows = [
-            r for r in rows
-            if not r.get("isBookingDeposit") and not r.get("isSecurityDeposit")
-            and not r.get("isCharge")
-        ]
-        return sorted(rows, key=lambda r: r["installmentNumber"])
+        rows = api.get(f"/api/v1/leases/{lease_id}/cheques") or []
+        rows = [r for r in rows if r.get("mode") == "PDC"]
+        return sorted(rows, key=lambda r: r["seqNo"])
 
-    def cheque_body(number, bank, date, payer):
-        return {
-            "chequeNumber": number,
-            "bankName": bank,
-            "payerName": payer,
-            "chequeDate": iso(date),
-        }
-
-    def advance(row, target, body):
-        """Walk a schedule row PENDING→COLLECTED→DEPOSITED→CLEARED/BOUNCED,
-        skipping transitions already done (safe to re-run). Each transition
-        carries a realistic value date derived from the cheque date (handed
-        over on the cheque date, banked next day, cleared/bounced a few days
-        later) — never in the future."""
-        rank = {"PENDING": 0, "COLLECTED": 1, "DEPOSITED": 2,
-                "CLEARED": 3, "BOUNCED": 3}
-        status = row.get("status", "PENDING")
+    def advance(row, target, chequeDate):
+        """Walk a cheque row REGISTERED→DEPOSITED→CLEARED/BOUNCED, skipping
+        transitions already done (safe to re-run). Each transition carries a
+        realistic value date derived from the cheque date (banked the day
+        after, cleared/bounced a few days later) — never in the future."""
+        rank = {"REGISTERED": 0, "DEPOSITED": 1, "CLEARED": 2, "BOUNCED": 2}
+        status = row.get("status", "REGISTERED")
         if status in ("BOUNCED", "CLEARED") or status == target:
             return
-        pid = row["id"]
-        cheque_date = dt.date.fromisoformat(body["chequeDate"])
+        cid = row["id"]
 
         def eff(days_after):
-            return iso(min(cheque_date + dt.timedelta(days=days_after), TODAY))
+            return iso(min(chequeDate + dt.timedelta(days=days_after), TODAY))
 
-        if status == "PENDING" and rank[target] >= 1:
-            api.put(f"/api/v1/payments/{pid}/collect",
-                    json={**body, "effectiveDate": eff(0)})
-            status = "COLLECTED"
-        if status == "COLLECTED" and rank[target] >= 2:
-            api.put(f"/api/v1/payments/{pid}/deposit",
-                    json={"effectiveDate": eff(1)})
+        if status == "REGISTERED" and rank[target] >= 1:
+            api.put(f"/api/v1/cheques/{cid}/deposit", json={"date": eff(1)})
             status = "DEPOSITED"
         if status == "DEPOSITED" and target == "CLEARED":
-            api.put(f"/api/v1/payments/{pid}/clear",
-                    json={"effectiveDate": eff(4)})
+            api.put(f"/api/v1/cheques/{cid}/clear", json={"date": eff(4)})
         if status == "DEPOSITED" and target == "BOUNCED":
-            api.post(f"/api/v1/payments/{pid}/mark-failed",
-                     json={"failureReason": "BOUNCE",
-                           "notes": "Insufficient funds",
-                           "effectiveDate": eff(5)})
+            api.put(f"/api/v1/cheques/{cid}/bounce",
+                    json={"date": eff(5), "failureReason": "BOUNCE",
+                          "notes": "Insufficient funds"})
 
-    # Ahmed: Q1 cleared, Q2 deposited, Q3 collected (banking date arrived →
-    # shows in "Cheques to deposit"), Q4 pending.
+    # Ahmed: Q1 cleared, Q2 deposited, Q3 registered (a REGISTERED-but-due row
+    # still shows in "Cheques to deposit"), Q4 registered.
     rows = rent_rows(lease_ahmed["id"])
-    advance(rows[0], "CLEARED",
-            cheque_body("200101", "Emirates NBD", year_start, "Ahmed Hassan"))
-    advance(rows[1], "DEPOSITED",
-            cheque_body("200102", "Emirates NBD", dt.date(TODAY.year, 4, 1),
-                        "Ahmed Hassan"))
-    advance(rows[2], "COLLECTED",
-            cheque_body("200103", "Emirates NBD", TODAY - dt.timedelta(days=2),
-                        "Ahmed Hassan"))
-    log("Ahmed: cleared + deposited + collected-awaiting-deposit cheques")
+    advance(rows[0], "CLEARED", year_start)
+    advance(rows[1], "DEPOSITED", dt.date(TODAY.year, 4, 1))
+    log("Ahmed: cleared + deposited + registered-awaiting-deposit cheques")
 
-    # Fatima: Q1 cleared; Q2 bounced (mark-failed → penalty).
+    # Fatima: Q1 cleared; Q2 bounced. A single bounce does not cross the
+    # org's default auto-propose threshold (2 — FineSettingsInitializer), so
+    # this does NOT auto-create a penalty the way v1's mark-failed did;
+    # propose it by hand from the lease's Penalties tab in the live demo.
     rows = rent_rows(lease_fatima["id"])
-    advance(rows[0], "CLEARED",
-            cheque_body("300201", "FAB", year_start, "Fatima Al Zaabi"))
-    advance(rows[1], "BOUNCED",
-            cheque_body("300202", "FAB", dt.date(TODAY.year, 4, 1),
-                        "Fatima Al Zaabi"))
+    advance(rows[0], "CLEARED", year_start)
+    advance(rows[1], "BOUNCED", dt.date(TODAY.year, 4, 1))
     bounced_payment_id = rows[1]["id"]
-    log("Fatima: bounced Q2 cheque (penalty auto-created)")
+    log("Fatima: bounced Q2 cheque (propose the penalty from the Penalties tab)")
 
-    # Rajesh: Jan–May cleared, June left pending → overdue with penalty accruing.
+    # Rajesh: Jan–May cleared, June left registered → overdue.
     rows = rent_rows(lease_rajesh["id"])
     for i, row in enumerate(rows[:5]):
-        d = dt.date(TODAY.year, i + 1, 1)
-        advance(row, "CLEARED",
-                cheque_body(f"4003{i:02d}", "Dubai Islamic Bank", d,
-                            "Rajesh Kumar"))
+        advance(row, "CLEARED", dt.date(TODAY.year, i + 1, 1))
     log("Rajesh: 5 cleared monthly cheques; June installment overdue")
 
-    # Security deposits, booking deposit and charges on the ACTIVE leases were
-    # handed over at signing — clear them so the dashboard collection trend
-    # tracks expected. (Rent rows above keep their scripted lifecycle; Sara's
-    # PENDING_SIGNATURE lease is intentionally untouched.)
-    banks = {lease_ahmed["id"]: ("Emirates NBD", "Ahmed Hassan"),
-             lease_fatima["id"]: ("FAB", "Fatima Al Zaabi"),
-             lease_rajesh["id"]: ("Dubai Islamic Bank", "Rajesh Kumar")}
-    seq = 900001
-    for lease_id, (bank, payer) in banks.items():
-        for row in api.get(f"/api/v1/payments/lease/{lease_id}") or []:
-            non_rent = (row.get("isBookingDeposit") or row.get("isSecurityDeposit")
-                        or row.get("isCharge"))
-            if not non_rent:
-                continue
-            advance(row, "CLEARED", cheque_body(str(seq), bank, year_start, payer))
-            seq += 1
-    log("deposit / charge rows cleared for active leases")
+    # v1 kept the security deposit as its own payment-schedule row, separate
+    # from the rent installments, and cleared it here. v2's cheque generator
+    # folds the SECURITY_DEPOSIT line into cheque #1 by default
+    # (`foldDepositsAndFeesIntoFirst`, ChequeGenerationService) — there is no
+    # separate deposit row left to clear; it rode along with cheque #1 in the
+    # per-lease loops above.
 
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
