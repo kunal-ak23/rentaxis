@@ -221,9 +221,11 @@ export async function createLease(
     rentAmount: number;
     depositAmount?: number;
     paymentTerms?: number;
+    /** Overrides the default RENT + SECURITY_DEPOSIT pair entirely — e.g. a rent-only cheque grid. */
+    lines?: Array<{ chargeTypeCode: string; grossAmount: number }>;
   },
 ) {
-  const lines = [
+  const lines = lease.lines ?? [
     { chargeTypeCode: 'RENT', grossAmount: lease.rentAmount },
     { chargeTypeCode: 'SECURITY_DEPOSIT', grossAmount: lease.depositAmount ?? 5000 },
   ];
@@ -241,6 +243,19 @@ export async function createLease(
       lines,
     }),
   });
+}
+
+/** `GET /leases/{id}/cheques` — the register rows cut for this lease. */
+export async function getLeaseCheques(
+  userId: string,
+  role: string,
+  tenantId: string,
+  leaseId: string,
+) {
+  return apiCall<Array<{ id: string; seqNo: number; amount: number; status: string; mode: string }>>(
+    `/api/v1/leases/${leaseId}/cheques`,
+    { headers: authHeaders(userId, role, tenantId) },
+  );
 }
 
 /** `POST /leases/{id}/cheques/generate` — every field optional, the service fills in the lease's own defaults. */
