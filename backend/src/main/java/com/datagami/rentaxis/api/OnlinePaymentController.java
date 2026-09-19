@@ -3,11 +3,16 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.CreateOrderRequestDTO;
 import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterChequeDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentTotalsDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
 import com.datagami.rentaxis.core.service.OnlinePaymentService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,5 +61,31 @@ public class OnlinePaymentController {
     public ResponseEntity<Void> cancelPendingPayment(@PathVariable UUID chequeId) {
         onlinePaymentService.cancelPendingOnlinePayment(chequeId);
         return ResponseEntity.ok().build();
+    }
+
+    // ------------------------------------------------------------------
+    // finance's refund worklist
+    // ------------------------------------------------------------------
+
+    /**
+     * Money the gateway took that the register refused ({@code CAPTURED_UNAPPLIED}),
+     * newest capture first.
+     *
+     * <p>Finance's, not the renter's, and not a property manager's: what is on
+     * this list is money to be refunded — money out — which is the line the
+     * register draws for cancelling a cheque too.</p>
+     */
+    @GetMapping("/unapplied")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<Page<UnappliedOnlinePaymentDTO>> unapplied(
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(onlinePaymentService.unapplied(pageable));
+    }
+
+    /** The same worklist as a dashboard tile: how many, and how much is owed back. */
+    @GetMapping("/unapplied/count")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<UnappliedOnlinePaymentTotalsDTO> unappliedCount() {
+        return ResponseEntity.ok(onlinePaymentService.unappliedTotals());
     }
 }

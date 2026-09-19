@@ -3,12 +3,15 @@ package com.datagami.rentaxis.domain.repository;
 import com.datagami.rentaxis.domain.entity.OnlinePayment;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,4 +54,55 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, UU
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OnlinePayment o where o.gatewayOrderId = :orderId")
     Optional<OnlinePayment> findByGatewayOrderIdForUpdate(@Param("orderId") String orderId);
+
+    /**
+     * Finance's refund worklist: captures the gateway took that the register
+     * refused ({@code CAPTURED_UNAPPLIED}), newest capture first.
+     *
+     * <p><b>Tenant-scoped twice.</b> The explicit {@code tenantId} predicate is
+     * the query's own guarantee; the Hibernate tenant filter (on inside the
+     * caller's transaction) is the second. A null tenant matches nothing.</p>
+     *
+     * <p>Everything the row renders is fetch-joined (cheque, its lease, property,
+     * unit and renter — all to-one, so the page limit still runs in SQL): without
+     * it a page of 25 is five lazy loads per row. The count query carries no
+     * fetch joins, which Hibernate rejects in a count.</p>
+     *
+     * <p>The order is fixed here, not taken from the {@code Pageable}: pass an
+     * unsorted one. {@code updatedAt} is when the capture was recorded as
+     * unappliable.</p>
+     */
+    @Query(value = """
+            select o from OnlinePayment o
+            join fetch o.cheque c
+            join fetch c.lease l
+            join fetch c.property p
+            left join fetch c.unit u
+            join fetch c.renter r
+            where o.tenantId = :tenantId
+              and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            order by o.updatedAt desc nulls last, o.createdAt desc, o.id
+            """,
+            countQuery = """
+            select count(o) from OnlinePayment o
+            where o.tenantId = :tenantId
+              and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    Page<OnlinePayment> findUnapplied(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /** How many refunds are outstanding — the dashboard tile's count. */
+    @Query("""
+            select count(o) from OnlinePayment o
+            where o.tenantId = :tenantId
+              and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    long countUnapplied(@Param("tenantId") UUID tenantId);
+
+    /** What they add up to. Zero, never null. */
+    @Query("""
+            select coalesce(sum(o.amount), 0) from OnlinePayment o
+            where o.tenantId = :tenantId
+              and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
+            """)
+    BigDecimal sumUnapplied(@Param("tenantId") UUID tenantId);
 }

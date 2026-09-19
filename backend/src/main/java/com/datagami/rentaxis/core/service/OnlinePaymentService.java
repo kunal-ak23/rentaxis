@@ -2,6 +2,8 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterChequeDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentDTO;
+import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentTotalsDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
@@ -15,6 +17,7 @@ import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -36,6 +39,9 @@ import com.datagami.rentaxis.domain.repository.TenantGatewayConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -233,6 +239,73 @@ public class OnlinePaymentService {
         return rentCollectionSettingsRepository.findByPropertyId(propertyId)
                 .map(RentCollectionSettings::getOnlinePaymentEnabled)
                 .orElse(Boolean.TRUE) != Boolean.FALSE;
+    }
+
+    // ------------------------------------------------------------------
+    // finance's refund worklist
+    // ------------------------------------------------------------------
+
+    /**
+     * Captures the gateway took that the register could not accept
+     * ({@code CAPTURED_UNAPPLIED}), newest capture first — each one a refund the
+     * landlord owes the renter.
+     *
+     * <p>The order is fixed by the query; any sort on the request is ignored, so a
+     * client cannot sort by a path the fetch-joined query does not know. Tenant
+     * scope is the query's own {@code tenant_id} predicate and the Hibernate
+     * filter, which {@code TenantAspect} enables inside this transaction. With no
+     * tenant selected (a super admin who has not picked one) the list is empty.</p>
+     */
+    @Transactional(readOnly = true)
+    public Page<UnappliedOnlinePaymentDTO> unapplied(Pageable pageable) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        Pageable page = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        if (tenantId == null) {
+            return Page.empty(page);
+        }
+        // Mapped inside this transaction; the relations are fetch-joined anyway.
+        return onlinePaymentRepository.findUnapplied(tenantId, page)
+                .map(OnlinePaymentService::toUnappliedDto);
+    }
+
+    /** The same worklist as two numbers for a dashboard tile; the total is zero, never null. */
+    @Transactional(readOnly = true)
+    public UnappliedOnlinePaymentTotalsDTO unappliedTotals() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            return new UnappliedOnlinePaymentTotalsDTO(0, BigDecimal.ZERO);
+        }
+        BigDecimal total = onlinePaymentRepository.sumUnapplied(tenantId);
+        return new UnappliedOnlinePaymentTotalsDTO(
+                onlinePaymentRepository.countUnapplied(tenantId),
+                total != null ? total : BigDecimal.ZERO);
+    }
+
+    private static UnappliedOnlinePaymentDTO toUnappliedDto(OnlinePayment payment) {
+        Cheque cheque = payment.getCheque();
+        Lease lease = cheque.getLease();
+        Property property = cheque.getProperty();
+        Unit unit = cheque.getUnit();
+        Renter renter = cheque.getRenter();
+        return new UnappliedOnlinePaymentDTO(
+                payment.getId(),
+                payment.getCreatedAt(),
+                // markUnapplied stamps updatedAt as it records the capture; there is
+                // no column of its own for the capture time.
+                payment.getUpdatedAt(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getGatewayOrderId(),
+                payment.getGatewayPaymentId(),
+                payment.getFailureReason(),
+                cheque.getId(),
+                cheque.getChequeNumber(),
+                cheque.getStatus(),
+                lease.getId(),
+                LeaseService.displayContractNumber(property.getCode(), lease.getContractNumber()),
+                renter.getNameEn(),
+                property.getNameEn(),
+                unit != null ? unit.getUnitNumber() : null);
     }
 
     // ------------------------------------------------------------------
