@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import LedgerTable from "@/components/finance/LedgerTable";
+import { narrowLedgersToLease } from "@/components/finance/narrowLedger";
 import { fmtAmount, ledgerApi, type AccountLedger, type JournalEntry } from "@/lib/api/ledger";
 import { ApiError, leaseApi } from "@/lib/api/leasing";
 import { fmtIsoDate } from "./leaseMath";
@@ -55,11 +56,7 @@ export default function LeaseJournalsTab({ leaseId, renterId, renterName }: Prop
                 ]);
                 if (signal.cancelled) return;
                 setEntries(page.content ?? []);
-                setLedgers(
-                    renterLedgers
-                        .map(l => ({ ...l, rows: l.rows.filter(r => r.leaseId === leaseId) }))
-                        .filter(l => l.rows.length > 0),
-                );
+                setLedgers(narrowLedgersToLease(renterLedgers, leaseId));
             } catch (e) {
                 if (!signal.cancelled) setError(e instanceof ApiError ? e.message : tl("journalsFailed"));
             } finally {
