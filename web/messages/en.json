@@ -162,7 +162,16 @@
     "vacant": "Vacant",
     "vatApplicable": "VAT 5%",
     "view": "View",
-    "welcomeRenter": "Welcome to your Renter Portal"
+    "welcomeRenter": "Welcome to your Renter Portal",
+    "viewSettlement": "View settlement",
+    "maintenanceTickets": "Maintenance Tickets",
+    "viewAll": "View all",
+    "noTicketsForUnit": "No maintenance tickets for this unit.",
+    "attachFile": "Attach file",
+    "settlementSummary": "Settlement Summary",
+    "totalDeductions": "Total deductions",
+    "refundToRenter": "Refund to renter",
+    "interactions": "Interactions"
   },
   "LandlordOrg": {
     "phone": "Phone",
@@ -1810,7 +1819,8 @@
     "errLineNeedsType": "Every line needs a charge type.",
     "errDiscountOverAmount": "A discount cannot be more than the line's amount.",
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "noPenalties": "No penalties raised against this contract."
   },
   "Cheques": {
     "register": "Cheque Register",

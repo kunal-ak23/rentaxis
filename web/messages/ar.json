@@ -162,7 +162,16 @@
     "vacant": "شاغرة",
     "vatApplicable": "ضريبة القيمة المضافة 5%",
     "view": "عرض",
-    "welcomeRenter": "مرحباً بك في بوابة المستأجر"
+    "welcomeRenter": "مرحباً بك في بوابة المستأجر",
+    "viewSettlement": "عرض التسوية",
+    "maintenanceTickets": "تذاكر الصيانة",
+    "viewAll": "عرض الكل",
+    "noTicketsForUnit": "لا توجد تذاكر صيانة لهذه الوحدة.",
+    "attachFile": "إرفاق ملف",
+    "settlementSummary": "ملخص التسوية",
+    "totalDeductions": "إجمالي الخصومات",
+    "refundToRenter": "المبلغ المُعاد للمستأجر",
+    "interactions": "التواصل"
   },
   "LandlordOrg": {
     "phone": "الهاتف",
@@ -1810,7 +1819,8 @@
     "errLineNeedsType": "كل بند يحتاج إلى نوع رسم.",
     "errDiscountOverAmount": "لا يمكن أن يتجاوز الخصم مبلغ البند.",
     "draftSavedGenerateCheques": "تم حفظ المسودة. أنشئ جدول الشيكات ثم راجع ورحّل.",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "noPenalties": "لا توجد غرامات على هذا العقد."
   },
   "Cheques": {
     "register": "سجل الشيكات",
