@@ -31,9 +31,15 @@ test('tenant admin previews contract, extends, and settles the active lease', as
   extendedEndDate.setMonth(extendedEndDate.getMonth() + 2);
   const newEndDate = extendedEndDate.toISOString().slice(0, 10);
 
-  const extended = await api.extendLease(taCtx, ctx.lease.id, newEndDate);
-  expect(extended.status).toBe('ACTIVE');
-  expect(extended.endDate).toBe(newEndDate);
+  // accounting-v2 plan 2's extend posts a fresh TCO for the extension's own
+  // `lines`, and the cheques registered for it must total the SAME
+  // VAT-inclusive figure (ExtendLeaseDialog's own `matches` gate) — unlike
+  // v1's single-field `{ newEndDate }` body. One RENT line of 50,000, one
+  // PDC cheque of 50,000: RENT's `vatApplicableDefault` is false, so gross
+  // and VAT-inclusive coincide and the two figures need no separate VAT calc.
+  const extended = await api.extendLease(taCtx, ctx.lease.id, newEndDate, 50_000);
+  expect(extended.lease.status).toBe('ACTIVE');
+  expect(extended.lease.endDate).toBe(newEndDate);
 
   const settlementPreview = await api.getSettlementPreview(taCtx, ctx.lease.id);
   expect(settlementPreview.depositAmount).toBeGreaterThan(0);

@@ -5,8 +5,9 @@
  * page that drove them were retired with the one-legged ledger in accounting
  * v2 plan 1; the general ledger, tenant ledger and trial balance have their own
  * pages and are covered by 13-finance-and-settings. What is left here is the
- * dashboard KPI surface and the aging report, which is sourced from payment
- * schedules rather than the ledger.
+ * dashboard KPI surface and the aging report, which plan 2 re-sources from
+ * the cheque register (`GET /cheques/aging`) rather than payment schedules —
+ * `/v1/payments/aging-report` is gone along with the rest of `/v1/payments/*`.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -23,8 +24,8 @@ test('tenant admin loads dashboard KPIs and the aging report', async ({ browser 
   const pctx = await loginAsNextAuth(ctx.baseURL, ctx.adminEmail, ctx.adminPassword);
   await setActiveTenant(pctx, ctx.tenant.id);
 
-  const res = await pctx.request.get('/api/proxy/v1/payments/aging-report');
-  expect(res.status(), `aging-report returned ${res.status()}`).toBeLessThan(500);
+  const res = await pctx.request.get('/api/proxy/v1/cheques/aging');
+  expect(res.status(), `aging returned ${res.status()}`).toBeLessThan(500);
 
   const browserCtx = await browser.newContext({ baseURL: ctx.baseURL });
   const page = await browserCtx.newPage();

@@ -2,9 +2,15 @@
  * 10b — Draft lease administration before financial processing.
  *
  * Covers the non-file parts of the lease detail administration surface:
- * metadata edits, per-row payment-plan edits, bulk cheque attachment, and
+ * metadata edits, a DRAFT cheque-grid re-save, bulk cheque attachment, and
  * draft deletion. The cheque image reference is deliberately synthetic and
  * points at no real blob, so this scenario cannot orphan a production file.
+ *
+ * accounting-v2 plan 2: the draft's payment plan is now the cheque grid
+ * (`PUT /leases/{id}/cheques`, `POST /leases/{id}/cheques/bulk-attach`), cut
+ * from `lines` rather than a flat rentAmount/paymentTerms body. Nothing here
+ * posts — bulk attach only writes cheque number/bank/payer/date/image onto
+ * existing DRAFT rows (`LeaseController#bulkAttachCheques`'s own doc).
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -55,41 +61,44 @@ test('tenant admin edits a draft payment plan, bulk-attaches a cheque, and delet
     renterId: original.renterId,
     startDate: original.startDate,
     endDate: original.endDate,
-    rentAmount: original.rentAmount,
-    monthlyRent: original.monthlyRent,
-    depositAmount: original.depositAmount,
     ejariNumber: `TEST-EJARI-${ctx.runSuffix}`,
     paymentTerms: original.paymentTerms,
     installmentDistribution: original.installmentDistribution,
     paymentMethod: original.paymentMethod,
-    depositPaymentMethod: 'BANK_TRANSFER',
+    // v2's DraftPaymentMethod only admits CHEQUE | ONLINE — v1's BANK_TRANSFER
+    // is no longer a value the wizard (or this helper) may SAVE a draft as.
+    depositPaymentMethod: 'ONLINE',
     paymentReferenceNumber: `TEST-REF-${ctx.runSuffix}`,
     agreementDate,
     rentVatApplicable: original.rentVatApplicable,
+    // Re-send the same lines the server handed back — updateDraftLease's
+    // `PUT /leases/{id}` re-saves the whole draft, lines included.
+    lines: original.lines.map((l) => ({ chargeTypeCode: l.chargeTypeCode, grossAmount: l.grossAmount })),
   });
   expect(updated.status).toBe('DRAFT');
   expect(updated.ejariNumber).toBe(`TEST-EJARI-${ctx.runSuffix}`);
   expect(updated.paymentReferenceNumber).toBe(`TEST-REF-${ctx.runSuffix}`);
 
-  const schedule = await api.getPaymentScheduleForLease(adminCtx, created.id);
-  const editableRows = schedule.filter(
-    (row) => row.status === 'PENDING' && !row.isBookingDeposit && !row.isSecurityDeposit && !row.isCharge,
-  );
+  // The cheque grid is generated on the draft — still DRAFT-status rows,
+  // since nothing has posted (ChequeGrid/`leaseApi.generateCheques`).
+  const grid = await api.generateCheques(adminCtx, created.id, { installments: 4 });
+  const editableRows = grid.filter((row) => row.status === 'DRAFT' && row.mode === 'PDC');
   expect(editableRows.length).toBeGreaterThanOrEqual(2);
 
+  // `PUT /leases/{id}/cheques` re-saves the WHOLE grid, not one row — flip
+  // just the first row's mode to CASH and resend every row unchanged.
   const cashRow = editableRows[0];
-  const editedSchedule = await api.updateLeasePaymentSchedule(adminCtx, created.id, [
-    {
-      scheduleId: cashRow.id,
-      dueDate: cashRow.dueDate,
-      amount: cashRow.amount,
-      paymentMethod: 'CASH',
-    },
-  ]);
-  expect(editedSchedule.find((row) => row.id === cashRow.id)).toMatchObject({
-    paymentMethod: 'CASH',
-    chequeNumber: null,
-  });
+  const savedGrid = await api.saveLeaseCheques(
+    adminCtx,
+    created.id,
+    grid.map((row) => ({
+      id: row.id,
+      seqNo: row.seqNo,
+      amount: row.amount,
+      mode: row.id === cashRow.id ? 'CASH' : (row.mode as 'PDC' | 'CASH' | 'TRANSFER' | 'ONLINE'),
+    })),
+  );
+  expect(savedGrid.find((row) => row.id === cashRow.id)).toMatchObject({ mode: 'CASH' });
 
   const chequeRow = editableRows[1];
   const syntheticBlobPath = `e2e/nonexistent/${ctx.runSuffix}.png`;
@@ -97,7 +106,7 @@ test('tenant admin edits a draft payment plan, bulk-attaches a cheque, and delet
     {
       scheduleId: chequeRow.id,
       chequeNumber: `TEST-BULK-${ctx.runSuffix}`,
-      chequeDate: chequeRow.dueDate,
+      chequeDate: startDate,
       bankName: 'TEST-E2E Bank',
       payerName: `TEST-Draft Renter ${ctx.runSuffix}`,
       imageUrl: `https://example.invalid/${syntheticBlobPath}`,
@@ -105,12 +114,12 @@ test('tenant admin edits a draft payment plan, bulk-attaches a cheque, and delet
       imageUploadedAt: new Date().toISOString(),
     },
   ]);
-  expect(attached.schedules).toHaveLength(1);
-  expect(attached.schedules[0]).toMatchObject({
+  expect(attached.cheques).toHaveLength(1);
+  // A bulk attach never posts — status stays whatever it was (DRAFT here),
+  // never a v1-style "COLLECTED".
+  expect(attached.cheques[0]).toMatchObject({
     id: chequeRow.id,
-    status: 'COLLECTED',
     chequeNumber: `TEST-BULK-${ctx.runSuffix}`,
-    chequeImageBlobPath: syntheticBlobPath,
   });
 
   await api.deleteDraftLease(adminCtx, created.id);

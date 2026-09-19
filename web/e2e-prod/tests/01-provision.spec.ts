@@ -120,16 +120,16 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   const today = new Date();
   const startDate = today.toISOString().slice(0, 10);
   const endDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const lease = await api.createLease(taCtx, {
+  // accounting-v2 plan 2: a lease becomes ACTIVE only through draft (with
+  // `lines`) -> generate cheques -> post. `PUT /leases/{id}/activate` and
+  // the flat rentAmount/depositAmount body are gone.
+  const activated = await api.postLeaseFlow(taCtx, {
     unitId: unit.id,
     renterId: renter.id,
     startDate,
     endDate,
     rentAmount: 50000,
   });
-
-  // 8. Activate (TA).
-  const activated = await api.activateLease(taCtx, lease.id);
   expect(activated.status).toMatch(/ACTIVE/i);
 
   // 9. Persist for downstream specs.
@@ -150,7 +150,7 @@ test('provision tenant + property + unit + renter + active lease', async () => {
           email: renterEmail,
           portalPassword: renter.portalPassword,
         },
-        lease: { id: lease.id, status: activated.status },
+        lease: { id: activated.id, status: activated.status },
         adminEmail,
         adminPassword,
         pmEmail,
