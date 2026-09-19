@@ -2,7 +2,7 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.datagami.rentaxis.core.service.BlobStorageService;
 import com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 class ChequeImageRetentionJobTest {
 
     @Mock
-    private PaymentScheduleRepository repo;
+    private ChequeRepository repo;
 
     @Mock
     private BlobStorageService blob;
@@ -40,12 +40,12 @@ class ChequeImageRetentionJobTest {
 
     @Test
     void purge_noOldRows_doesNothing() {
-        when(repo.findChequeImagesOlderThan(any())).thenReturn(List.of());
+        when(repo.findImagePurgeBatch(any(), any())).thenReturn(List.of());
 
         job.purge();
 
         verify(blob, never()).delete(any(), any());
-        verify(repo, never()).clearChequeImage(any());
+        verify(repo, never()).clearImage(any());
     }
 
     @Test
@@ -54,7 +54,7 @@ class ChequeImageRetentionJobTest {
         UUID t2 = UUID.randomUUID();
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
-        when(repo.findChequeImagesOlderThan(any())).thenReturn(List.of(
+        when(repo.findImagePurgeBatch(any(), any())).thenReturn(List.of(
                 new ChequeImagePurgeRow(id1, t1, "cheques/a.jpg"),
                 new ChequeImagePurgeRow(id2, t2, "cheques/b.jpg")
         ));
@@ -63,8 +63,8 @@ class ChequeImageRetentionJobTest {
 
         verify(blob).delete(t1, "cheques/a.jpg");
         verify(blob).delete(t2, "cheques/b.jpg");
-        verify(repo).clearChequeImage(id1);
-        verify(repo).clearChequeImage(id2);
+        verify(repo).clearImage(id1);
+        verify(repo).clearImage(id2);
     }
 
     @Test
@@ -73,7 +73,7 @@ class ChequeImageRetentionJobTest {
         UUID t2 = UUID.randomUUID();
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
-        when(repo.findChequeImagesOlderThan(any())).thenReturn(List.of(
+        when(repo.findImagePurgeBatch(any(), any())).thenReturn(List.of(
                 new ChequeImagePurgeRow(id1, t1, "cheques/a.jpg"),
                 new ChequeImagePurgeRow(id2, t2, "cheques/b.jpg")
         ));
@@ -81,18 +81,18 @@ class ChequeImageRetentionJobTest {
 
         job.purge();
 
-        verify(repo, never()).clearChequeImage(id1);
+        verify(repo, never()).clearImage(id1);
         verify(blob).delete(t2, "cheques/b.jpg");
-        verify(repo).clearChequeImage(id2);
+        verify(repo).clearImage(id2);
     }
 
     @Test
     void purge_usesConfiguredRetentionDays() {
         ReflectionTestUtils.setField(job, "retentionDays", 45);
-        when(repo.findChequeImagesOlderThan(any())).thenReturn(List.of());
+        when(repo.findImagePurgeBatch(any(), any())).thenReturn(List.of());
 
         job.purge();
 
-        verify(repo).findChequeImagesOlderThan(eq(LocalDate.now().minusDays(45)));
+        verify(repo).findImagePurgeBatch(eq(LocalDate.now().minusDays(45)), any());
     }
 }

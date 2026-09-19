@@ -118,7 +118,7 @@ class LeaseAttachmentAccessTest {
                 policy,
                 docRepo,
                 mock(com.datagami.rentaxis.domain.repository.LandlordOrgRepository.class),
-                mock(com.datagami.rentaxis.domain.repository.PaymentScheduleRepository.class),
+                mock(com.datagami.rentaxis.domain.repository.ChequeRepository.class),
                 mock(com.datagami.rentaxis.domain.repository.LeaseLineRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class));
 

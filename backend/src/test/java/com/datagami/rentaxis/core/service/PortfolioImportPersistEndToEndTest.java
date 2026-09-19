@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -53,6 +54,7 @@ class PortfolioImportPersistEndToEndTest {
     @Mock ImportJobRepository importJobRepository;
     @Mock LeaseService leaseService;
     @Mock ChargeTypeService chargeTypeService;
+    @Mock ChequeGenerationService chequeGenerationService;
 
     PortfolioImportPersistService service;
 
@@ -61,7 +63,9 @@ class PortfolioImportPersistEndToEndTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, importJobRepository,
-                leaseService, chargeTypeService);
+                leaseService, chargeTypeService, chequeGenerationService);
+        lenient().when(chequeGenerationService.generateFor(any(), any())).thenReturn(java.util.List.of());
+        lenient().when(chequeGenerationService.saveRowsFor(any(), any())).thenReturn(java.util.List.of());
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(buildingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(unitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -113,15 +117,15 @@ class PortfolioImportPersistEndToEndTest {
                         .startsWith("RENT").contains("SECURITY_DEPOSIT"));
         verify(leaseService, org.mockito.Mockito.times(5)).syncDerivedTotals(any(Lease.class));
 
-        // Counters serialized into the JSONB column. chequesFromSheet still counts
-        // the sheet's rows (scenario 2's four) even though no schedule rows are
-        // written from them — Task 5 turns them into cheques.
+        // Counters serialized into the JSONB column. chequesFromSheet counts the
+        // sheet's rows (scenario 2's four); schedulesCreated now counts the register
+        // rows the import wrote — those four plus scenario 4's booking cheque.
         assertThat(job.getErrors()).startsWith("{");
         PortfolioImportJobDetailsDTO details = new ObjectMapper()
                 .readValue(job.getErrors(), PortfolioImportJobDetailsDTO.class);
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
-        assertThat(job.getSchedulesCreated()).isZero();
+        assertThat(job.getSchedulesCreated()).isEqualTo(5);
 
         // Job summary counters.
         assertThat(job.getLeasesCreated()).isEqualTo(5);

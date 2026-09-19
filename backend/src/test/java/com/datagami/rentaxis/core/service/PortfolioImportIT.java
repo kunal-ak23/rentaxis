@@ -62,6 +62,7 @@ class PortfolioImportIT {
     @Autowired LeaseRepository leaseRepository;
     @Autowired LeaseLineRepository leaseLineRepository;
     @Autowired PaymentScheduleRepository paymentScheduleRepository;
+    @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepository;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired UnitRepository unitRepository;
     @Autowired RenterRepository renterRepository;
@@ -119,19 +120,14 @@ class PortfolioImportIT {
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
 
-        // Instrument-level data on the Cheques sheet and the booking-deposit
-        // columns is read, counted and then dropped. Counting it without saying so
-        // reads as "imported" on the summary screen, so both get a warning the
-        // admin can act on.
-        assertThat(details.getWarnings()).isNotNull();
-        assertThat(details.getWarnings()).extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
-                .anySatisfy(m -> assertThat(m)
-                        .contains("cheque row(s) from the Cheques sheet were not imported")
-                        .contains("cheque register"))
-                .anySatisfy(m -> assertThat(m)
-                        .contains("booking deposit instrument was not imported"));
-        assertThat(details.getWarnings()).extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getSheet)
-                .contains("Cheques", "Leases");
+        // The Cheques sheet and the booking-deposit columns land on the register
+        // now, so neither is dropped and neither is warned about.
+        assertThat(details.getWarnings() == null
+                ? java.util.List.<com.datagami.rentaxis.api.dto.ImportErrorDTO>of()
+                : details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .noneSatisfy(m -> assertThat(m).contains("not imported"));
+        assertThat(details.getErrors()).isNullOrEmpty();
 
         // Persisted leases — read back via tenant-filtered repository.
         // Lease.unit and Lease.renter are LAZY @ManyToOne; the persistence context
@@ -178,14 +174,25 @@ class PortfolioImportIT {
         assertThat(scenario5.getTotalDays()).isEqualTo(365);
         assertThat(scenario5.getChainId()).isEqualTo(scenario5.getId());
 
-        // Scenario 2's Cheques sheet fixes the instalment count; the rows become
-        // cheques in a later step rather than payment schedules here.
+        // Scenario 2's Cheques sheet fixes the instalment count, and its four rows
+        // are the lease's register: written as typed, not regenerated.
         Lease tenant2Lease = leases.stream()
                 .filter(l -> tenant2RenterId.equals(l.getRenter().getId()))
                 .findFirst().orElseThrow();
         assertThat(tenant2Lease.getPaymentTerms()).isEqualTo(4);
         assertThat(paymentScheduleRepository.findAll()).isEmpty();
-        assertThat(completed.getSchedulesCreated()).isZero();
+
+        // Every imported lease now carries instruments, and the job's counter says
+        // how many. The import used to create none at all.
+        assertThat(completed.getSchedulesCreated()).isPositive();
+        assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(tenant2Lease.getId()))
+                .hasSize(4)
+                .allSatisfy(c -> assertThat(c.getStatus())
+                        .isEqualTo(com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT));
+        // A lease with no Cheques sheet gets the grid generated from its own lines
+        // and payment terms, exactly as the draft wizard would.
+        assertThat(leases).allSatisfy(l ->
+                assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(l.getId())).isNotEmpty());
     }
 
     @Test

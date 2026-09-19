@@ -645,108 +645,6 @@ public class PaymentScheduleService {
         return saved;
     }
 
-    @Transactional
-    public List<PaymentScheduleDTO> bulkAttachCheques(UUID leaseId, List<BulkAttachChequeItem> items) {
-        if (items == null || items.isEmpty()) {
-            throw new BulkAttachValidationException("items must not be empty");
-        }
-
-        // Spec §7.2 step 1: lease must exist and belong to the caller's tenant.
-        // The Hibernate tenant filter (BaseTenantEntity, applyToLoadByKey=true)
-        // gates this lookup so cross-tenant ids resolve to empty — both
-        // not-found and cross-tenant collapse to 404. The JPQL wrapper kept
-        // here was originally needed because Hibernate's default behavior
-        // bypassed @Filter on load-by-key; the project-wide fix on
-        // BaseTenantEntity makes either form correct now.
-        leaseRepository.findByIdScopedToTenant(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
-
-        // Detect duplicate scheduleId / chequeNumber within the request.
-        List<BulkAttachErrorRow> errors = new ArrayList<>();
-        Set<UUID> seenScheduleIds = new HashSet<>();
-        Set<String> seenChequeNumbers = new HashSet<>();
-        for (BulkAttachChequeItem it : items) {
-            if (!seenScheduleIds.add(it.getScheduleId())) {
-                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_schedule_id_in_request"));
-            }
-            if (!seenChequeNumbers.add(it.getChequeNumber())) {
-                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_cheque_number_in_request"));
-            }
-        }
-        if (!errors.isEmpty()) {
-            throw new BulkAttachValidationException(errors, false);
-        }
-
-        // Load every targeted schedule in one shot under PESSIMISTIC_WRITE so
-        // concurrent bulk-attach callers can't both pass the PENDING precheck.
-        List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
-        List<PaymentSchedule> schedules;
-        try {
-            schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
-        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(
-                    "One or more of these payments are currently being updated by another request. Please try again.");
-        }
-        Map<UUID, PaymentSchedule> byId = schedules.stream()
-                .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
-
-        // Validate each row.
-        List<BulkAttachErrorRow> notPending = new ArrayList<>();
-        List<BulkAttachErrorRow> badRows = new ArrayList<>();
-        for (BulkAttachChequeItem it : items) {
-            PaymentSchedule ps = byId.get(it.getScheduleId());
-            if (ps == null) {
-                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_found"));
-                continue;
-            }
-            if (!ps.getLease().getId().equals(leaseId)) {
-                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_in_lease"));
-                continue;
-            }
-            if (ps.getStatus() != PaymentStatus.PENDING) {
-                notPending.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_pending"));
-            }
-        }
-        if (!badRows.isEmpty()) {
-            throw new BulkAttachValidationException(badRows, false);
-        }
-        if (!notPending.isEmpty()) {
-            throw new BulkAttachValidationException(notPending, true);
-        }
-
-        // Cheque number conflict against other schedules on this lease.
-        // Single targeted query — returns only the conflicting numbers
-        // instead of loading every schedule on the lease.
-        List<String> incomingChequeNumbers = items.stream()
-                .map(BulkAttachChequeItem::getChequeNumber)
-                .toList();
-        Set<String> existingChequeNumbers = Set.copyOf(
-                paymentScheduleRepository.findConflictingChequeNumbersOnLease(
-                        leaseId, incomingChequeNumbers, scheduleIds));
-        List<BulkAttachErrorRow> chequeConflicts = items.stream()
-                .filter(it -> existingChequeNumbers.contains(it.getChequeNumber()))
-                .map(it -> new BulkAttachErrorRow(it.getScheduleId(), "cheque_number_already_used_on_lease"))
-                .toList();
-        if (!chequeConflicts.isEmpty()) {
-            throw new BulkAttachValidationException(chequeConflicts, false);
-        }
-
-        // Apply each row via the shared helper — sets fields, saves,
-        // publishes the CHEQUE_RECEIVED event, and notifies the renter in a
-        // nested REQUIRES_NEW transaction.
-        Instant now = Instant.now();
-        UUID tenantId = TenantContextHolder.getTenantId();
-        List<PaymentSchedule> updated = new ArrayList<>(items.size());
-        for (BulkAttachChequeItem it : items) {
-            PaymentSchedule ps = byId.get(it.getScheduleId());
-            updated.add(applyChequeReceived(
-                    ps,
-                    it.getChequeNumber(), it.getBankName(), it.getPayerName(), it.getChequeDate(),
-                    it.getImageUrl(), it.getImageBlobPath(), it.getImageUploadedAt(),
-                    now, tenantId));
-        }
-        return updated.stream().map(this::mapToDTO).toList();
-    }
 
     @Transactional
     public PaymentScheduleDTO depositPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
@@ -867,9 +765,11 @@ public class PaymentScheduleService {
 
         // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
 
-        // Renter notifications — both PAYMENT_BOUNCED (existing template) and
-        // PENALTY_INCURRED (extracted to NotificationService.sendPenaltyIncurred
-        // in M7). Wrapped so a downed mailer never blocks the status transition
+        // Renter notification for the bounce itself. PENALTY_INCURRED is no longer
+        // sent from here: a fine is only a fact about the renter's balance once
+        // finance has approved the assessment, so that notification belongs to
+        // PenaltyAssessmentService.approve and is fired from nowhere else.
+        // Wrapped so a downed mailer never blocks the status transition
         // (notifications are best-effort, not part of the audit-critical path).
         try {
             UUID renterUserId = saved.getLease().getRenter().getUserId();
@@ -880,7 +780,6 @@ public class PaymentScheduleService {
                                 + " was marked " + reason + ". A fine of " + fineAmount
                                 + " AED has been added. Please arrange a replacement and clear the fine.",
                         "PAYMENT", saved.getId());
-                notificationService.sendPenaltyIncurred(saved, reason, fineAmount, savedPenalty.getId());
             }
         } catch (Exception e) {
             log.warn("Failed to send mark-failed notifications for payment {}: {}", saved.getId(), e.getMessage());

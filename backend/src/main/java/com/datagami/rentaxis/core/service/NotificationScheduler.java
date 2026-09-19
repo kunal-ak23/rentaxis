@@ -1,12 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,12 +19,28 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * The daily nudges: what is about to fall due, what is late, and whose lease is
+ * running out.
+ *
+ * <p><b>Tenants.</b> A scheduled run has no authenticated caller and no tenant
+ * context, so {@code TenantAspect} leaves the Hibernate tenant filter off and one
+ * pass covers every organisation. Each notification is addressed with the tenant
+ * id carried on the row it came from, which is what keeps a cross-tenant sweep
+ * from cross-addressing anything.</p>
+ *
+ * <p><b>Read-only.</b> The job reads the register and sends; it never moves a row
+ * through it. Marking a cheque overdue used to be a write this job did, and a
+ * status the reminder job invented is exactly how the register and the ledger
+ * came to disagree — lateness is derived from the date and the lease's grace by
+ * {@link ChequeDueRules}, every time it is asked.</p>
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class NotificationScheduler {
 
-    private final PaymentScheduleRepository paymentScheduleRepository;
+    private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;
     private final NotificationService notificationService;
     private final RentCollectionSettingsRepository rentSettingsRepository;
@@ -68,64 +84,75 @@ public class NotificationScheduler {
             reminderDays.addAll(List.of(7, 3, 1)); // defaults
         }
 
-        // For each reminder day offset, check pending payments due on that date
+        // One bounded query per offset. The previous version loaded every schedule
+        // in the database and filtered in Java, once per configured offset.
         for (int daysBefore : reminderDays) {
             LocalDate targetDate = today.plusDays(daysBefore);
-            List<PaymentSchedule> payments = paymentScheduleRepository.findAll().stream()
-                    .filter(ps -> ps.getStatus() == PaymentStatus.PENDING)
-                    .filter(ps -> ps.getDueDate().equals(targetDate))
-                    .toList();
+            List<Cheque> maturing = chequeRepository.findRegisteredMaturingOn(targetDate);
 
-            for (PaymentSchedule payment : payments) {
+            for (Cheque cheque : maturing) {
                 try {
-                    if (payment.getLease() != null && payment.getLease().getRenter() != null
-                            && payment.getLease().getRenter().getUserId() != null) {
+                    java.util.UUID renterUserId = renterUserId(cheque);
+                    if (renterUserId != null) {
                         notificationService.notify(
-                                payment.getTenantId(),
-                                payment.getLease().getRenter().getUserId(),
+                                cheque.getTenantId(),
+                                renterUserId,
                                 "PAYMENT_DUE",
                                 "Payment Due Reminder",
-                                "Installment #" + payment.getInstallmentNumber() + " of "
-                                        + payment.getAmount() + " is due in " + daysBefore + " day(s).",
-                                "PAYMENT",
-                                payment.getId());
+                                "Installment #" + cheque.getSeqNo() + " of "
+                                        + cheque.getAmount() + " is due in " + daysBefore + " day(s).",
+                                "CHEQUE",
+                                cheque.getId());
                     }
                 } catch (Exception e) {
-                    log.warn("Failed to send payment reminder for payment {}", payment.getId(), e);
+                    log.warn("Failed to send payment reminder for cheque {}", cheque.getId(), e);
                 }
             }
 
-            log.info("Sent {} payment due reminders for {} days before due date", payments.size(), daysBefore);
+            log.info("Sent {} payment due reminders for {} days before due date", maturing.size(), daysBefore);
         }
     }
 
+    /**
+     * The chasing list.
+     *
+     * <p>Only the rows that are past the lease's <em>grace</em> period, not merely
+     * past their date: a renter whose contract gives them five days is not late on
+     * day one, and telling them they are is how a reminder becomes noise the whole
+     * estate ignores.</p>
+     */
     private void checkOverduePayments() {
         log.info("Checking overdue payments...");
         LocalDate today = LocalDate.now();
 
-        List<PaymentSchedule> overduePayments = paymentScheduleRepository.findOverdue(today);
-
-        for (PaymentSchedule payment : overduePayments) {
+        int sent = 0;
+        for (Cheque cheque : chequeRepository.findAllDue(today)) {
+            Lease lease = cheque.getLease();
+            int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
+            if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
+                continue;
+            }
             try {
-                if (payment.getLease() != null && payment.getLease().getRenter() != null
-                        && payment.getLease().getRenter().getUserId() != null) {
-                    long daysOverdue = java.time.temporal.ChronoUnit.DAYS.between(payment.getDueDate(), today);
+                java.util.UUID renterUserId = renterUserId(cheque);
+                if (renterUserId != null) {
+                    int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
                     notificationService.notify(
-                            payment.getTenantId(),
-                            payment.getLease().getRenter().getUserId(),
+                            cheque.getTenantId(),
+                            renterUserId,
                             "PAYMENT_OVERDUE",
                             "Payment Overdue",
-                            "Installment #" + payment.getInstallmentNumber() + " of "
-                                    + payment.getAmount() + " is " + daysOverdue + " day(s) overdue.",
-                            "PAYMENT",
-                            payment.getId());
+                            "Installment #" + cheque.getSeqNo() + " of "
+                                    + cheque.getAmount() + " is " + daysOverdue + " day(s) overdue.",
+                            "CHEQUE",
+                            cheque.getId());
+                    sent++;
                 }
             } catch (Exception e) {
-                log.warn("Failed to send overdue notification for payment {}", payment.getId(), e);
+                log.warn("Failed to send overdue notification for cheque {}", cheque.getId(), e);
             }
         }
 
-        log.info("Sent {} overdue payment notifications", overduePayments.size());
+        log.info("Sent {} overdue payment notifications", sent);
     }
 
     private void checkExpiringLeases() {
@@ -162,5 +189,20 @@ public class NotificationScheduler {
 
             log.info("Sent {} lease expiry notifications for {} days before expiry", expiringLeases.size(), daysBefore);
         }
+    }
+
+    /**
+     * Off the cheque's own renter, falling back to the lease's.
+     *
+     * <p>The row carries its renter so a bounce stays attributable after a renewal
+     * moves the lease; the fallback covers rows written before that denormalisation
+     * existed.</p>
+     */
+    private static java.util.UUID renterUserId(Cheque cheque) {
+        if (cheque.getRenter() != null && cheque.getRenter().getUserId() != null) {
+            return cheque.getRenter().getUserId();
+        }
+        Lease lease = cheque.getLease();
+        return lease != null && lease.getRenter() != null ? lease.getRenter().getUserId() : null;
     }
 }

@@ -25,11 +25,9 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -55,7 +53,6 @@ public class LeaseService {
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LeaseAttachmentRepository leaseAttachmentRepository;
-    private final PaymentScheduleRepository paymentScheduleRepository;
     private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseInteractionRepository leaseInteractionRepository;
     private final LeaseLineRepository leaseLineRepository;
@@ -74,7 +71,6 @@ public class LeaseService {
                         LeaseEventRepository leaseEventRepository,
                         LeaseDocumentRepository leaseDocumentRepository,
                         LeaseAttachmentRepository leaseAttachmentRepository,
-                        PaymentScheduleRepository paymentScheduleRepository,
                         LeaseChargeRepository leaseChargeRepository,
                         LeaseInteractionRepository leaseInteractionRepository,
                         LeaseLineRepository leaseLineRepository,
@@ -92,7 +88,6 @@ public class LeaseService {
         this.leaseEventRepository = leaseEventRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.leaseAttachmentRepository = leaseAttachmentRepository;
-        this.paymentScheduleRepository = paymentScheduleRepository;
         this.leaseChargeRepository = leaseChargeRepository;
         this.leaseInteractionRepository = leaseInteractionRepository;
         this.leaseLineRepository = leaseLineRepository;
@@ -759,9 +754,8 @@ public class LeaseService {
         // if a previous flow left one behind, drop the row(s) too.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
         leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
-        paymentScheduleRepository.deleteAll(paymentScheduleRepository.findByLeaseId(leaseId));
-        // lease_charges FK is NO ACTION (like payment_schedules); remove the
-        // lease's charges before deleting the lease or the FK constraint blocks it.
+        // lease_charges FK is NO ACTION; remove the lease's charges before
+        // deleting the lease or the FK constraint blocks it.
         leaseChargeRepository.deleteAll(leaseChargeRepository.findByLeaseId(leaseId));
         // lease_lines cascades on delete, but cheques.lease_id does not — a draft
         // with generated cheques would be undeletable behind an opaque 500, which
@@ -864,15 +858,10 @@ public class LeaseService {
 
         releaseUnitIfNoOtherActiveLease(lease);
 
-        // Cancel pending payment schedules
-        List<PaymentSchedule> pendingPayments = paymentScheduleRepository.findByLeaseId(leaseId);
-        for (PaymentSchedule ps : pendingPayments) {
-            if (ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING || ps.getStatus() == PaymentStatus.OVERDUE) {
-                ps.setStatus(PaymentStatus.CANCELLED);
-                paymentScheduleRepository.save(ps);
-            }
-        }
-
+        // The cheque register is deliberately untouched. What happens to a
+        // terminated lease's uncleared instruments — handed back, banked, or held
+        // against a settlement — is the settlement flow's decision (spec §9.1),
+        // and cancelling them here would reverse registrations behind its back.
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
                 notes != null ? notes : "Lease terminated early");

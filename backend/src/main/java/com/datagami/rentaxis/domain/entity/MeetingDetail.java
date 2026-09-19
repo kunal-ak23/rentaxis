@@ -25,8 +25,16 @@ public class MeetingDetail extends BaseTenantEntity {
     @Column(name = "detail_type", length = 30, nullable = false)
     private String detailType;
 
-    @Column(name = "payment_schedule_ids", columnDefinition = "uuid[]")
-    private UUID[] paymentScheduleIds;
+    /**
+     * The cheques a CHEQUE_REPLACEMENT meeting is about.
+     *
+     * <p>Mapped to {@code cheque_ids} (changeset 83). The old
+     * {@code payment_schedule_ids} column is left in place and unmapped until the
+     * payment-schedule table itself goes: dropping a column in the same change
+     * that stops reading it leaves no way back if anything still points at it.</p>
+     */
+    @Column(name = "cheque_ids", columnDefinition = "uuid[]")
+    private UUID[] chequeIds;
 
     @Column(name = "proposed_start_date")
     private LocalDate proposedStartDate;

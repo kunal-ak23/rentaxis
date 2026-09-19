@@ -14,12 +14,12 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
+import com.datagami.rentaxis.core.service.cheque.ChequeDetailsService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
-import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.SettlementService;
 import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
 import com.datagami.rentaxis.domain.entity.enums.InteractionDirection;
@@ -52,10 +52,10 @@ public class LeaseController {
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
     private final SettlementService settlementService;
-    private final PaymentScheduleService paymentScheduleService;
     private final RenewalOpportunityService renewalOpportunityService;
     private final LeaseInteractionService leaseInteractionService;
     private final ChequeGenerationService chequeGenerationService;
+    private final ChequeDetailsService chequeDetailsService;
     private final LeasePostingService leasePostingService;
     private final LeaseRenewalService leaseRenewalService;
 
@@ -348,13 +348,22 @@ public class LeaseController {
 
     // --- Bulk Cheque Attach ---
 
+    /**
+     * A stack of scanned cheques assigned to the lease's register rows in one act.
+     *
+     * <p>Targets the rows themselves — a DRAFT row of the grid or a REGISTERED
+     * instrument — and writes only number, bank, payer, date and image. Nothing
+     * posts: the receivable was raised when the row registered and is exactly the
+     * same size afterwards. A DEPOSITED or later row is refused with the same
+     * error-row shape as any other bad item.</p>
+     */
     @PostMapping("/{leaseId}/cheques/bulk-attach")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<BulkAttachChequesResponse> bulkAttachCheques(
             @PathVariable UUID leaseId,
             @Valid @RequestBody BulkAttachChequesRequest request) {
-        var schedules = paymentScheduleService.bulkAttachCheques(leaseId, request.getItems());
-        return ResponseEntity.ok(new BulkAttachChequesResponse(schedules));
+        return ResponseEntity.ok(new BulkAttachChequesResponse(
+                chequeDetailsService.bulkAttach(leaseId, request.getItems())));
     }
 
     // --- Renewal ---

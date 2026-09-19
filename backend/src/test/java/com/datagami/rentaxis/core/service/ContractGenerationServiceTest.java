@@ -6,11 +6,12 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.LeaseDocument;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -19,7 +20,7 @@ import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -61,7 +62,7 @@ class ContractGenerationServiceTest {
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
-                mock(PaymentScheduleRepository.class),
+                mock(ChequeRepository.class),
                 leaseLineRepository,
                 mock(ApplicationEventPublisher.class));
     }
@@ -211,45 +212,82 @@ class ContractGenerationServiceTest {
         assertThat(exemptCount).isEqualTo(1);
     }
 
-    private PaymentSchedule ps(LocalDate chequeDate, String chqNo, String bank, BigDecimal amount,
-                                String purpose, boolean booking) {
-        PaymentSchedule p = new PaymentSchedule();
-        p.setChequeDate(chequeDate);
-        p.setChequeNumber(chqNo);
-        p.setBankName(bank);
-        p.setAmount(amount);
-        p.setPurposeLabel(purpose);
-        p.setBookingDeposit(booking); // Lombok strips "is" prefix on primitive boolean setters
-        return p;
+    /**
+     * One DRAFT register row, which is what a contract for a DRAFT lease prints.
+     * {@code seqNo} only breaks ties between rows sharing a date.
+     */
+    private Cheque chq(int seqNo, LocalDate chequeDate, String chqNo, String bank, BigDecimal amount,
+                       String narration) {
+        Cheque c = new Cheque();
+        c.setSeqNo(seqNo);
+        c.setChequeDate(chequeDate);
+        c.setChequeNumber(chqNo);
+        c.setPayeeBank(bank);
+        c.setAmount(amount);
+        c.setNarration(narration);
+        c.setStatus(ChequeStatus.DRAFT);
+        return c;
     }
 
+    private static Lease draftLease() {
+        Lease l = new Lease();
+        l.setStatus(LeaseStatus.DRAFT);
+        return l;
+    }
+
+    /**
+     * The register's own order, not the calendar's. A booking cheque and a deposit
+     * are both dated at signing, so a date sort would lift them above the rent
+     * instalments they were agreed alongside.
+     */
     @Test
-    void section4OrdersByChequeDateAscWithBookingLast() {
-        PaymentSchedule p1 = ps(LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
-                "RENT - 1ST INSTALLMENT", false);
-        PaymentSchedule p2 = ps(LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
-                "RENT - 2ND INSTALLMENT", false);
-        PaymentSchedule booking = ps(LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
-                "BOOKING RECEIVED", true);
+    void section4PrintsTheRegisterInScheduleOrder() {
+        Cheque c1 = chq(1, LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
+                "RENT - 1ST INSTALLMENT");
+        Cheque c2 = chq(2, LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
+                "RENT - 2ND INSTALLMENT");
+        Cheque booking = chq(3, LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
+                "BOOKING RECEIVED");
 
-        // Pass them in random order; the method should sort
-        String html = service.buildSection4Rows(List.of(p2, booking, p1));
+        // Passed in random order; the method sorts.
+        String html = service.buildSection4Rows(draftLease(), List.of(c2, booking, c1));
 
-        int idxP1 = html.indexOf("18,050.00");
-        int idxP2 = html.indexOf("13,750.00");
+        int idxC1 = html.indexOf("18,050.00");
+        int idxC2 = html.indexOf("13,750.00");
         int idxBooking = html.indexOf("BOOKING RECEIVED");
-        assertThat(idxP1).isPositive();
-        assertThat(idxP2).isPositive();
+        assertThat(idxC1).isPositive();
+        assertThat(idxC2).isPositive();
         assertThat(idxBooking).isPositive();
-        assertThat(idxP1).isLessThan(idxP2);
-        assertThat(idxBooking).isGreaterThan(idxP2); // booking last
+        assertThat(idxC1).isLessThan(idxC2);
+        assertThat(idxBooking).isGreaterThan(idxC2);
+    }
+
+    /**
+     * A contract prints the instruments it is collected through, not the history of
+     * the ones that failed.
+     */
+    @Test
+    void section4OnAPostedLeaseSkipsCancelledAndSupersededRows() {
+        Cheque live = chq(1, LocalDate.of(2026, 4, 18), "000001", "ENBD", new BigDecimal("18050"),
+                "RENT - 1ST INSTALLMENT");
+        live.setStatus(ChequeStatus.REGISTERED);
+        Cheque bounced = chq(2, LocalDate.of(2026, 5, 18), "000002", "ENBD", new BigDecimal("13750"),
+                "RENT - 2ND INSTALLMENT");
+        bounced.setStatus(ChequeStatus.REPLACED);
+
+        Lease posted = new Lease();
+        posted.setStatus(LeaseStatus.ACTIVE);
+        String html = service.buildSection4Rows(posted, List.of(live, bounced));
+
+        assertThat(html).contains("18,050.00");
+        assertThat(html).doesNotContain("13,750.00");
     }
 
     @Test
     void section4FormatsDateAsDayMonthYear() {
-        PaymentSchedule p = ps(LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("100"),
-                "RENT - 1ST INSTALLMENT", false);
-        String html = service.buildSection4Rows(List.of(p));
+        Cheque c = chq(1, LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("100"),
+                "RENT - 1ST INSTALLMENT");
+        String html = service.buildSection4Rows(draftLease(), List.of(c));
         assertThat(html).contains("18 Apr 2026");
     }
 
@@ -266,7 +304,7 @@ class ContractGenerationServiceTest {
                 leaseRepo,
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
                 mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
-                mock(PaymentScheduleRepository.class),
+                mock(ChequeRepository.class),
                 mock(LeaseLineRepository.class), mock(ApplicationEventPublisher.class));
 
         svc.assignContractNumberIfNull(lease);
@@ -349,14 +387,14 @@ class ContractGenerationServiceTest {
         return lines;
     }
 
-    private List<PaymentSchedule> buildSchedules() {
-        PaymentSchedule p1 = ps(LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
-                "RENT - 1ST INSTALLMENT", false);
-        PaymentSchedule p2 = ps(LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
-                "RENT - 2ND INSTALLMENT", false);
-        PaymentSchedule booking = ps(LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
-                "BOOKING RECEIVED", true);
-        return List.of(p1, p2, booking);
+    private List<Cheque> buildRegister() {
+        return List.of(
+                chq(1, LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
+                        "RENT - 1ST INSTALLMENT"),
+                chq(2, LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
+                        "RENT - 2ND INSTALLMENT"),
+                chq(3, LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
+                        "BOOKING RECEIVED"));
     }
 
     /**
@@ -365,14 +403,14 @@ class ContractGenerationServiceTest {
      * render a PDF or write to disk under the project root.
      */
     private ContractGenerationService buildSpyForFullFlow(Lease lease, LandlordOrg org,
-                                                         List<PaymentSchedule> schedules,
+                                                         List<Cheque> register,
                                                          List<LeaseLine> lines,
                                                          Long maxContractNumber,
                                                          Path tmpStorage) throws Exception {
         LeaseRepository leaseRepo = mock(LeaseRepository.class);
         LeaseDocumentRepository docRepo = mock(LeaseDocumentRepository.class);
         LandlordOrgRepository orgRepo = mock(LandlordOrgRepository.class);
-        PaymentScheduleRepository scheduleRepo = mock(PaymentScheduleRepository.class);
+        ChequeRepository chequeRepo = mock(ChequeRepository.class);
         LeaseLineRepository lineRepo = mock(LeaseLineRepository.class);
 
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
@@ -381,7 +419,7 @@ class ContractGenerationServiceTest {
 
         when(orgRepo.findById(lease.getTenantId())).thenReturn(Optional.of(org));
 
-        when(scheduleRepo.findByLeaseId(lease.getId())).thenReturn(schedules);
+        when(chequeRepo.findByLease_IdOrderBySeqNoAsc(lease.getId())).thenReturn(register);
         when(lineRepo.findByLease_IdOrderBySeqNoAsc(lease.getId())).thenReturn(lines);
 
         when(docRepo.findByLeaseId(lease.getId())).thenReturn(Collections.emptyList());
@@ -395,7 +433,7 @@ class ContractGenerationServiceTest {
         ContractGenerationService realSvc = new ContractGenerationService(
                 leaseRepo,
                 mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class),
-                docRepo, orgRepo, scheduleRepo,
+                docRepo, orgRepo, chequeRepo,
                 lineRepo, mock(ApplicationEventPublisher.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
@@ -414,6 +452,47 @@ class ContractGenerationServiceTest {
         return svc;
     }
 
+    /**
+     * Section 4 is the lease's register, printed.
+     *
+     * <p>It was empty for the whole of plan 2 until the contract stopped reading
+     * payment schedules — a contract that lists no instruments tells the renter
+     * nothing about what they have handed over, and the omission is invisible
+     * unless something asserts the total.</p>
+     */
+    @Test
+    void generateContract_printsTheRegisterInSection4WithItsTotal() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg org = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Renter renter = buildRenter(tenantId);
+        Lease lease = buildLease(tenantId, unit, renter, false);
+
+        Path tmpStorage = Files.createTempDirectory("contract-section4-");
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildRegister(), buildLines(false), 1750L, tmpStorage);
+
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.generateContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        String html = htmlCaptor.getValue();
+
+        // Every instrument, with its number, its bank and its money.
+        assertThat(html).contains("18,050.00").contains("13,750.00").contains("1,000.00");
+        assertThat(html).contains("000001").contains("ENBD");
+        assertThat(html).contains("RENT - 1ST INSTALLMENT").contains("BOOKING RECEIVED");
+
+        // Σ of the printed rows is the register's total: 18,050 + 13,750 + 1,000.
+        String section4 = service.buildSection4Rows(lease, buildRegister());
+        assertThat(section4).isNotEmpty();
+        BigDecimal printed = java.util.regex.Pattern.compile("class=\"num\">([0-9,]+\\.[0-9]{2})<")
+                .matcher(section4).results()
+                .map(m -> new BigDecimal(m.group(1).replace(",", "")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(printed).isEqualByComparingTo("32800.00");
+    }
+
     @Test
     void generateContract_residentialFullFlow_substitutesAllPlaceholders() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -425,7 +504,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
+                lease, org, buildRegister(), buildLines(false), 1750L, tmpStorage);
 
         // Capture the HTML passed to renderPdf so we can assert on it.
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
@@ -519,7 +598,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(true), 1750L, tmpStorage);
+                lease, org, buildRegister(), buildLines(true), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.generateContract(lease.getId());
@@ -564,7 +643,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
+                lease, org, buildRegister(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         byte[] bytes = svc.previewContract(lease.getId());
@@ -610,7 +689,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
+                lease, org, buildRegister(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
@@ -668,7 +747,7 @@ class ContractGenerationServiceTest {
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(false), 1750L, tmpStorage);
+                lease, org, buildRegister(), buildLines(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
@@ -745,7 +824,7 @@ class ContractGenerationServiceTest {
         rejectedDocument.setDocumentUrl(rejectedPdf.toString());
 
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, org, buildSchedules(), buildLines(false), 1750L, contractRoot);
+                lease, org, buildRegister(), buildLines(false), 1750L, contractRoot);
         LeaseDocumentRepository docRepo = extractDocRepo(svc);
         when(docRepo.findByLeaseId(lease.getId())).thenReturn(List.of(rejectedDocument));
 

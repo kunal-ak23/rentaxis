@@ -100,11 +100,13 @@ public class PortfolioImportController {
         dto.setUnitsCreated(job.getUnitsCreated());
         dto.setRentersCreated(job.getRentersCreated());
         dto.setLeasesCreated(job.getLeasesCreated());
-        dto.setPaymentSchedulesCreated(job.getSchedulesCreated());
+        // The job's schedules_created column now counts the cheque rows the import
+        // built; the wire name follows what it holds.
+        dto.setChequesCreated(job.getSchedulesCreated());
 
         // The errors column carries either:
         //   - the legacy array form (List<ImportErrorDTO>) for jobs older than the
-        //     bulk-import payment-schedule extension and validation-failed jobs, or
+        //     bulk-import counters extension and validation-failed jobs, or
         //   - the new wrapper form (PortfolioImportJobDetailsDTO) carrying counters
         //     and warnings alongside any errors. Detect by the first non-whitespace
         //     character so existing rows keep parsing.

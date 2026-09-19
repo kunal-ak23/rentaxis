@@ -10,13 +10,14 @@ import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
@@ -73,7 +74,7 @@ public class ContractGenerationService {
     private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LandlordOrgRepository landlordOrgRepository;
-    private final PaymentScheduleRepository paymentScheduleRepository;
+    private final ChequeRepository chequeRepository;
     private final LeaseLineRepository leaseLineRepository;
     private final ApplicationEventPublisher events;
 
@@ -90,14 +91,14 @@ public class ContractGenerationService {
             com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy,
                                      LeaseDocumentRepository leaseDocumentRepository,
                                      LandlordOrgRepository landlordOrgRepository,
-                                     PaymentScheduleRepository paymentScheduleRepository,
+                                     ChequeRepository chequeRepository,
                                      LeaseLineRepository leaseLineRepository,
                                      ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
-        this.paymentScheduleRepository = paymentScheduleRepository;
+        this.chequeRepository = chequeRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.events = events;
     }
@@ -239,8 +240,7 @@ public class ContractGenerationService {
             throw new NotFoundException("Lease not found");
         }
 
-        // As in generateContract: previewing writes nothing. Section 4 renders
-        // whatever schedule rows exist until Task 11 moves it to cheques.
+        // As in generateContract: previewing writes nothing.
 
         // Use placeholder for contract number when none assigned yet; do not
         // assign / mutate the lease's contract number on the preview path.
@@ -257,8 +257,9 @@ public class ContractGenerationService {
         LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
                 .orElseThrow(() -> new NotFoundException("Landlord organization not found for tenant"));
 
-        // Load payment schedules
-        List<PaymentSchedule> schedules = paymentScheduleRepository.findByLeaseId(lease.getId());
+        // The instruments the contract is collected through: the lease's own
+        // cheque register, in schedule order.
+        List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
 
         // Load template + terms partials
         String template = loadResource("templates/contract-template.html");
@@ -272,7 +273,7 @@ public class ContractGenerationService {
         // Build dynamic sections
         String section3Rows = buildSection3Rows(lease);
         String section3Total = buildSection3Total(lease);
-        String section4Rows = buildSection4Rows(schedules);
+        String section4Rows = buildSection4Rows(lease, cheques);
 
         // Grand total = every line's net, face amounts. Reading the lines rather
         // than rentAmount + depositAmount + lease_charges is not a refactor: fees
@@ -540,46 +541,66 @@ public class ContractGenerationService {
     }
 
     /**
-     * Build the rows for Section 4 (Payment Details). Sorts non-booking
-     * installments by chequeDate ASC and appends booking-deposit rows last.
+     * Section 4 (Payment Details): the instruments the renter actually hands over.
+     *
+     * <p>Rendered from the lease's cheque register rather than a schedule, because
+     * the register <em>is</em> the list of instruments — the schedule was a derived
+     * plan and a contract that printed one while the renter wrote cheques against
+     * the other is exactly the disagreement this rewrite removes.</p>
+     *
+     * <p><b>Which rows.</b> A contract is generated for a DRAFT or
+     * PENDING_SIGNATURE lease, where the grid rows are still {@code DRAFT}: those
+     * are what the contract is proposing, so they print. Once a lease is on the
+     * books the rows have registered and a DRAFT row would be a half-finished
+     * edit, so every non-cancelled row prints instead. Cancelled, returned and
+     * superseded instruments never print — the contract is a statement of what is
+     * being collected, not a history of what failed.</p>
+     *
+     * <p>Ordered by the register's own position, not by the date on the paper.
+     * That is the order the grid was typed in and the order Section 3 lists the
+     * charges in, so the two tables read together: rent instalments first, then
+     * the deposit and the booking cheque, which are dated at signing and would
+     * otherwise jump to the top of a date-sorted list.</p>
      */
-    public String buildSection4Rows(List<PaymentSchedule> schedules) {
-        if (schedules == null || schedules.isEmpty()) return "";
+    public String buildSection4Rows(Lease lease, List<Cheque> cheques) {
+        if (cheques == null || cheques.isEmpty()) return "";
 
-        List<PaymentSchedule> regular = new ArrayList<>();
-        List<PaymentSchedule> booking = new ArrayList<>();
-        for (PaymentSchedule p : schedules) {
-            if (p.isBookingDeposit()) {
-                booking.add(p);
-            } else {
-                regular.add(p);
-            }
+        boolean draftContract = lease == null
+                || lease.getStatus() == LeaseStatus.DRAFT
+                || lease.getStatus() == LeaseStatus.PENDING_SIGNATURE;
+        List<Cheque> printable = new ArrayList<>();
+        for (Cheque c : cheques) {
+            boolean include = draftContract
+                    ? c.getStatus() == ChequeStatus.DRAFT
+                    : c.getStatus() != ChequeStatus.CANCELLED
+                        && c.getStatus() != ChequeStatus.RETURNED
+                        && c.getStatus() != ChequeStatus.REPLACED;
+            if (include) printable.add(c);
         }
-        Comparator<PaymentSchedule> byChequeDate = Comparator.comparing(
-                PaymentSchedule::getChequeDate,
-                Comparator.nullsLast(Comparator.naturalOrder()));
-        regular.sort(byChequeDate);
-        booking.sort(byChequeDate);
+        printable.sort(Comparator.comparingInt(Cheque::getSeqNo)
+                .thenComparing(Cheque::getChequeDate, Comparator.nullsLast(Comparator.naturalOrder())));
 
         StringBuilder sb = new StringBuilder();
         int sNo = 1;
-        for (PaymentSchedule p : regular) {
-            appendSection4Row(sb, sNo++, p);
-        }
-        for (PaymentSchedule p : booking) {
-            appendSection4Row(sb, sNo++, p);
+        for (Cheque c : printable) {
+            appendSection4Row(sb, sNo++, c);
         }
         return sb.toString();
     }
 
-    private void appendSection4Row(StringBuilder sb, int sNo, PaymentSchedule p) {
+    /**
+     * One row. "In Favour Of" carries the instrument's narration — "Rent - 1st
+     * Installment | SD" — which is what the grid folded the deposits and fees into
+     * and therefore what the cheque is actually for.
+     */
+    private void appendSection4Row(StringBuilder sb, int sNo, Cheque c) {
         sb.append("<tr>")
                 .append("<td class=\"center\">").append(sNo).append("</td>")
-                .append("<td>").append(escapeUserText(p.getChequeNumber())).append("</td>")
-                .append("<td>").append(p.getChequeDate() != null ? formatDate(p.getChequeDate()) : "").append("</td>")
-                .append("<td>").append(escapeUserText(p.getPurposeLabel())).append("</td>")
-                .append("<td>").append(escapeUserText(p.getBankName())).append("</td>")
-                .append("<td class=\"num\">").append(formatAmount(nz(p.getAmount()))).append("</td>")
+                .append("<td>").append(escapeUserText(c.getChequeNumber())).append("</td>")
+                .append("<td>").append(c.getChequeDate() != null ? formatDate(c.getChequeDate()) : "").append("</td>")
+                .append("<td>").append(escapeUserText(c.getNarration())).append("</td>")
+                .append("<td>").append(escapeUserText(c.getPayeeBank())).append("</td>")
+                .append("<td class=\"num\">").append(formatAmount(nz(c.getAmount()))).append("</td>")
                 .append("</tr>");
     }
 

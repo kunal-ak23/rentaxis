@@ -77,7 +77,6 @@ class LeaseServiceUnitOccupancyTest {
                 mock(LeaseEventRepository.class),
                 leaseDocumentRepository,
                 mock(LeaseAttachmentRepository.class),
-                paymentScheduleRepository,
                 leaseChargeRepository,
                 leaseInteractionRepository,
                 leaseLineRepository,

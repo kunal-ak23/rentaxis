@@ -2,8 +2,10 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.domain.repository.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -48,6 +50,7 @@ class PortfolioImportPersistServiceTest {
     @Mock ImportJobRepository importJobRepository;
     @Mock LeaseService leaseService;
     @Mock ChargeTypeService chargeTypeService;
+    @Mock ChequeGenerationService chequeGenerationService;
 
     PortfolioImportPersistService service;
 
@@ -56,7 +59,11 @@ class PortfolioImportPersistServiceTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, importJobRepository,
-                leaseService, chargeTypeService);
+                leaseService, chargeTypeService, chequeGenerationService);
+        // The grid itself is ChequeGenerationServiceIT's subject; here the question
+        // is only which rows the import hands it.
+        lenient().when(chequeGenerationService.generateFor(any(), any())).thenReturn(List.of());
+        lenient().when(chequeGenerationService.saveRowsFor(any(), any())).thenReturn(List.of());
 
         // save(...) → return the input entity, simulating ID assignment.
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -183,28 +190,39 @@ class PortfolioImportPersistServiceTest {
     }
 
     /**
-     * The booking deposit no longer becomes a payment-schedule row — the import
-     * creates no schedules at all now. What survives is the validation (all four
-     * columns or none) and the counter the job reports, which is what the import
-     * screen shows the admin.
+     * The booking cheque is an instrument the renter handed over, so it becomes a
+     * row on the register like any other — number, bank and date included. It used
+     * to be read, validated, counted and then thrown away with a warning.
      */
     @Test
-    void persist_bookingDeposit_isCountedOnTheJob() throws Exception {
+    void persist_bookingDeposit_becomesARegisterRow() throws Exception {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .bookingDeposit("10000", "BD-001", "2026-02-15", "Emirates NBD"));
         ImportJob job = newJob();
 
         service.persistWorkbook(wb, job);
 
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
+        verify(chequeGenerationService).saveRowsFor(any(Lease.class), rows.capture());
+        assertThat(rows.getValue()).singleElement().satisfies(r -> {
+            assertThat(r.chequeNumber()).isEqualTo("BD-001");
+            assertThat(r.payeeBank()).isEqualTo("Emirates NBD");
+            assertThat(r.chequeDate()).isEqualTo(java.time.LocalDate.of(2026, 2, 15));
+            assertThat(r.amount()).isEqualByComparingTo("10000");
+            assertThat(r.narration()).isEqualTo("Booking Deposit");
+        });
+
         var details = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(job.getErrors(),
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
-        assertThat(job.getSchedulesCreated()).isZero();
-        // Counted but not stored, so the job has to say so.
-        assertThat(details.getWarnings())
+        assertThat(job.getSchedulesCreated()).isEqualTo(1);
+        // Nothing was dropped, so nothing is warned about.
+        assertThat(details.getWarnings() == null ? List.<com.datagami.rentaxis.api.dto.ImportErrorDTO>of()
+                : details.getWarnings())
                 .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
-                .anySatisfy(m -> assertThat(m).contains("booking deposit instrument was not imported"));
+                .noneSatisfy(m -> assertThat(m).contains("not imported"));
     }
 
     @Test
@@ -278,8 +296,13 @@ class PortfolioImportPersistServiceTest {
         assertThat(lastSaved.getPaymentTerms()).isEqualTo(5);
     }
 
+    /**
+     * The Cheques sheet is a statement of the instruments the renter handed over,
+     * so every column of it lands on the register: the date on the paper, its
+     * number, its bank, and the mode the Method column names.
+     */
     @Test
-    void persist_chequesSheet_isReportedOnTheJobWithoutCreatingSchedules() throws Exception {
+    void persist_chequesSheet_becomesTheLeasesGrid() throws Exception {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .paymentTerms("3")
                 .startDate("2026-01-01").endDate("2026-12-31"));
@@ -298,11 +321,56 @@ class PortfolioImportPersistServiceTest {
                 .readValue(job.getErrors(),
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
         assertThat(details.getChequesFromSheet()).isEqualTo(3);
-        assertThat(job.getSchedulesCreated()).isZero();
-        assertThat(details.getWarnings())
+        assertThat(job.getSchedulesCreated()).isEqualTo(3);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
+        verify(chequeGenerationService).saveRowsFor(any(Lease.class), rows.capture());
+        assertThat(rows.getValue()).hasSize(3);
+        assertThat(rows.getValue()).extracting(ChequeRowInput::mode)
+                .containsExactly(ChequeMode.PDC, ChequeMode.CASH, ChequeMode.TRANSFER);
+        // ChequeOrPaymentDate when the sheet gives one, else the instalment's DueDate.
+        assertThat(rows.getValue()).extracting(ChequeRowInput::chequeDate)
+                .containsExactly(java.time.LocalDate.of(2026, 1, 1),
+                        java.time.LocalDate.of(2026, 5, 1),
+                        java.time.LocalDate.of(2026, 9, 1));
+        // A cheque number is a PDC's; a cash row has none and a transfer's
+        // reference is not one, which ChequeRowRules would refuse outright.
+        assertThat(rows.getValue()).extracting(ChequeRowInput::chequeNumber)
+                .containsExactly("C-1", null, null);
+        // Nothing is generated when the sheet says what the instruments are.
+        verify(chequeGenerationService, never()).generateFor(any(), any());
+    }
+
+    /**
+     * A sheet row the shared rules refuse is an import error, not an exception
+     * that kills the workbook: the admin gets the rest of their portfolio and a
+     * line telling them which lease to fix.
+     */
+    @Test
+    void persist_chequesSheetRowBreakingTheRowRules_isReportedAndTheGridIsSkipped() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b
+                .paymentTerms("2")
+                .startDate("2026-01-01").endDate("2026-12-31"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "20000", "CHEQUE"),
+                // The same cheque number twice on one lease.
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "2", "2026-07-01", "2026-07-01", "C-1", "Emirates NBD", "20000", "CHEQUE"));
+        ImportJob job = newJob();
+
+        service.persistWorkbook(wb, job);
+
+        verify(chequeGenerationService, never()).saveRowsFor(any(), any());
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getErrors())
                 .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
-                .anySatisfy(m -> assertThat(m)
-                        .contains("3 cheque row(s) from the Cheques sheet were not imported"));
+                .anySatisfy(m -> assertThat(m).contains("C-1"));
+        // The lease itself still landed.
+        assertThat(job.getLeasesCreated()).isEqualTo(1);
     }
 
     @Test

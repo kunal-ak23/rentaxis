@@ -238,7 +238,7 @@ public class ChequeGenerationService {
      * "11st Installment" on the eleventh cheque of a twelve-cheque lease — the most
      * common lease there is.</p>
      */
-    static String ordinal(int i) {
+    public static String ordinal(int i) {
         int lastTwo = i % 100;
         if (lastTwo >= 11 && lastTwo <= 13) return i + "th";
         return switch (i % 10) {
@@ -274,7 +274,23 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> generate(UUID leaseId, GenerateChequesRequest request) {
-        Lease lease = draftLease(leaseId);
+        return generateFor(draftLease(leaseId), request);
+    }
+
+    /**
+     * The same, against a lease the caller has already loaded and vetted.
+     *
+     * <p>Exists for the portfolio import, which runs on a background thread with a
+     * tenant context but no {@code Authentication} at all: {@code LeaseAccessPolicy}
+     * fails closed, so the id-taking form would answer "Lease not found" for a lease
+     * the import created three lines earlier. The DRAFT check stays here — that is a
+     * rule about the grid, not about who is asking — and every caller that does have
+     * a user goes through {@link #generate(UUID, GenerateChequesRequest)}.</p>
+     */
+    @Transactional
+    public List<ChequeDTO> generateFor(Lease lease, GenerateChequesRequest request) {
+        requireDraft(lease);
+        UUID leaseId = lease.getId();
         GenerateChequesRequest r = request == null
                 ? new GenerateChequesRequest(null, null, null, null, null, null, null)
                 : request;
@@ -404,7 +420,14 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> saveRows(UUID leaseId, List<ChequeRowInput> rows) {
-        Lease lease = draftLease(leaseId);
+        return saveRowsFor(draftLease(leaseId), rows);
+    }
+
+    /** {@link #saveRows} against an already-vetted lease — see {@link #generateFor}. */
+    @Transactional
+    public List<ChequeDTO> saveRowsFor(Lease lease, List<ChequeRowInput> rows) {
+        requireDraft(lease);
+        UUID leaseId = lease.getId();
         List<ChequeRowInput> input = rows == null ? List.of() : rows;
 
         List<Cheque> existing = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
@@ -600,7 +623,13 @@ public class ChequeGenerationService {
     }
 
     private Lease draftLease(UUID leaseId) {
-        Lease lease = readableLease(leaseId);
+        return requireDraft(readableLease(leaseId));
+    }
+
+    private static Lease requireDraft(Lease lease) {
+        if (lease == null) {
+            throw new NotFoundException("Lease not found");
+        }
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException(
                     "Only DRAFT leases can have their cheque grid changed; this lease is " + lease.getStatus());

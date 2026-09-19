@@ -284,14 +284,11 @@ class PaymentScheduleServiceMarkFailedTest {
 
         service.markFailed(payment.getId(), ChequeFailureReason.SIGNATURE_MISMATCH, null);
 
-        // PENALTY_INCURRED is now sent via the dedicated NotificationService
-        // helper — verify the helper was invoked with the right schedule, reason,
-        // and fine amount.
-        ArgumentCaptor<BigDecimal> fineCaptor = ArgumentCaptor.forClass(BigDecimal.class);
-        verify(notificationService, times(1)).sendPenaltyIncurred(
-                eq(payment), eq(ChequeFailureReason.SIGNATURE_MISMATCH),
-                fineCaptor.capture(), any(UUID.class));
-        assertThat(fineCaptor.getValue()).isEqualByComparingTo("750");
+        // PENALTY_INCURRED is no longer sent from here. A fine is only a fact
+        // about the renter's balance once finance has approved the assessment, so
+        // the notification belongs to PenaltyAssessmentService.approve; a bounce
+        // on its own tells the renter their cheque failed and nothing more.
+        verify(notificationService, never()).sendPenaltyIncurred(any());
     }
 
     @Test

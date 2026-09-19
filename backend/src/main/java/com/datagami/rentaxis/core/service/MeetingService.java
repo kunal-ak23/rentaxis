@@ -114,7 +114,7 @@ public class MeetingService {
             MeetingDetail detail = new MeetingDetail();
             detail.setMeeting(saved);
             detail.setDetailType(dto.getPurpose().name());
-            detail.setPaymentScheduleIds(dto.getPaymentScheduleIds());
+            detail.setChequeIds(dto.getChequeIds());
             detail.setProposedStartDate(dto.getProposedStartDate());
             detail.setProposedEndDate(dto.getProposedEndDate());
             detail.setProposedRentAmount(dto.getProposedRentAmount());
@@ -467,7 +467,7 @@ public class MeetingService {
     private MeetingDetailDTO mapDetailToDTO(MeetingDetail detail) {
         MeetingDetailDTO dto = new MeetingDetailDTO();
         dto.setDetailType(detail.getDetailType());
-        dto.setPaymentScheduleIds(detail.getPaymentScheduleIds());
+        dto.setChequeIds(detail.getChequeIds());
         dto.setProposedStartDate(detail.getProposedStartDate());
         dto.setProposedEndDate(detail.getProposedEndDate());
         dto.setProposedRentAmount(detail.getProposedRentAmount());

@@ -2,14 +2,11 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Unit;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +19,19 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * A tenancy whose end date has passed becomes EXPIRED, and its unit becomes
+ * available again.
+ *
+ * <p><b>It does not touch the cheque register.</b> The job used to cancel every
+ * uncollected instalment on the way past, and that was wrong in the one direction
+ * that costs the landlord money: a held, undeposited cheque for the final month
+ * is still an instrument against a debt the renter genuinely owes, and a lease
+ * reaching its end date does not settle it. Deciding what happens to uncleared
+ * paper — returned, banked, or carried into a renewal — is the termination and
+ * settlement flow's job, where a human is looking at the contract. Expiry is a
+ * calendar fact and posts nothing.</p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -30,7 +40,6 @@ public class LeaseExpirationJob {
     private final LeaseRepository leaseRepository;
     private final LeaseEventRepository leaseEventRepository;
     private final UnitRepository unitRepository;
-    private final PaymentScheduleRepository paymentScheduleRepository;
 
     @Scheduled(cron = "0 0 0 * * ?") // Run at midnight every day
     @Transactional
@@ -60,18 +69,7 @@ public class LeaseExpirationJob {
                 unitRepository.save(unit);
             }
 
-            // Cancel what will never be collected, as terminateLease does.
-            // Leaving these PENDING kept an expired lease's installments in the
-            // aging report as live arrears against a renter who has gone.
-            for (PaymentSchedule ps : paymentScheduleRepository.findByLeaseId(lease.getId())) {
-                if (ps.getStatus() == PaymentStatus.PENDING
-                        || ps.getStatus() == PaymentStatus.ONLINE_PENDING
-                        || ps.getStatus() == PaymentStatus.OVERDUE) {
-                    ps.setStatus(PaymentStatus.CANCELLED);
-                    paymentScheduleRepository.save(ps);
-                }
-            }
-
+            // The register is deliberately left alone — see the class note.
             leaseRepository.save(lease);
 
             LeaseEvent event = new LeaseEvent();
