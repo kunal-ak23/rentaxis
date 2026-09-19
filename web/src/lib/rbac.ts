@@ -17,6 +17,14 @@ export const PERMISSIONS = {
     // accountant posts and amends a lease that already exists (canPostLeases)
     // but does not draft one. Widen this only alongside those annotations.
     canManageLeases: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // Reading contracts: the list, the detail page and the sidebar link.
+    // Separate from canManageLeases because the two answer different questions —
+    // an ACCOUNTANT posts, amends and extends a contract (canPostLeases,
+    // canExtendLeases) but never drafts one, and until this key existed the
+    // Leases link was gated on canViewProperties, which does not admit them:
+    // the role that owns posting could not reach the screen it posts from.
+    // Mirrors LeaseController's read methods (GET /leases, /paged, /{id}).
+    canViewLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
     // tenant ledger, trial balance. ACCOUNTANT is admitted because every controller

@@ -68,8 +68,21 @@ export type LeaseStatus =
 
 export type InstallmentDistribution = "UNIFORM" | "FIRST_LARGER" | "LAST_LARGER" | "FIRST_AND_LAST_LARGER";
 
-/** CreateLeaseDTO#paymentMethod is a free string ("CHEQUE" or "ONLINE" per its own doc), not this enum's full range. */
+/**
+ * What a lease is read back as. The column still holds the older, wider set on
+ * leases drafted before accounting-v2, so a lease that comes back says
+ * BANK_TRANSFER or CASH and the type has to admit it.
+ */
 export type PaymentMethod = "CHEQUE" | "ONLINE" | "BANK_TRANSFER" | "CASH";
+
+/**
+ * What a draft may be SAVED as. `CreateLeaseDTO#paymentMethod` is a free string
+ * on the wire, but its own doc admits only these two, and the cheque grid is
+ * cut from one of them — a draft saved as BANK_TRANSFER generated a grid the
+ * service had no mode for. Narrower than {@link PaymentMethod} on purpose: the
+ * wider one is what the server may return, this is what the client may send.
+ */
+export type DraftPaymentMethod = "CHEQUE" | "ONLINE";
 
 // ---- types (mirror the backend DTOs — see api/dto/lease, api/dto/cheque, api/dto/penalty) ----
 
@@ -131,8 +144,8 @@ export type DraftLeaseInput = {
   ejariNumber?: string | null;
   paymentTerms?: number | null;
   installmentDistribution?: InstallmentDistribution | null;
-  paymentMethod?: PaymentMethod | null;
-  depositPaymentMethod?: PaymentMethod | null;
+  paymentMethod?: DraftPaymentMethod | null;
+  depositPaymentMethod?: DraftPaymentMethod | null;
   paymentReferenceNumber?: string | null;
   agreementDate?: string | null;
   rentVatApplicable?: boolean | null;
