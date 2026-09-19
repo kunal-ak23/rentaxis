@@ -20,6 +20,24 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Razorpay's own report of what happened to a payment.
+ *
+ * <p><b>The signature is the only authorisation this path has.</b> A webhook
+ * arrives with no user and no session, so {@code ChequeService}'s gateway guard
+ * treats it as a trusted internal caller — which is sound precisely because
+ * {@link #verifyDelivery} has already proved the payload came from the gateway.
+ * Everything that can change money therefore lives strictly <em>after</em> that
+ * check returns clean, and the lookup before it reads state without touching it.
+ * Reordering those two is not a refactor; it is handing the register to anyone who
+ * can POST to {@code /api/webhooks/razorpay}.</p>
+ *
+ * <p><b>An unverifiable delivery is refused, not waved through.</b> An
+ * organisation that has not configured a webhook secret cannot have its deliveries
+ * checked, so they are recorded and dropped. Treating "no secret" as "no check
+ * needed" would leave the register open on exactly the tenants nobody has
+ * finished setting up.</p>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -34,7 +52,6 @@ public class WebhookService {
 
     @Transactional
     public void processRazorpayWebhook(String payload, String signature) {
-        // Log the webhook
         WebhookLog webhookLog = new WebhookLog();
         webhookLog.setGatewayCode("RAZORPAY");
         webhookLog.setPayloadJson(payload);
@@ -43,12 +60,10 @@ public class WebhookService {
         webhookLog.setCreatedAt(Instant.now());
 
         try {
-            // Parse payload to extract order_id
             JSONObject json = new JSONObject(payload);
             String eventType = json.optString("event", "unknown");
             webhookLog.setEventType(eventType);
 
-            // Extract order_id from payload
             JSONObject paymentEntity = json
                     .optJSONObject("payload")
                     .optJSONObject("payment")
@@ -56,62 +71,47 @@ public class WebhookService {
 
             if (paymentEntity == null) {
                 webhookLog.setProcessingResult("No payment entity found in payload");
-                webhookLogRepository.save(webhookLog);
                 return;
             }
 
             String orderId = paymentEntity.optString("order_id");
             String paymentId = paymentEntity.optString("id");
 
-            // Look up OnlinePayment via unfiltered native query (no tenant filter)
+            // Which tenant this delivery belongs to. Read through the unfiltered
+            // native query because no tenant context exists yet — and read-only:
+            // nothing below this point mutates anything until the signature holds.
             Optional<OnlinePayment> optPayment = onlinePaymentRepository.findByGatewayOrderIdUnfiltered(orderId);
             if (optPayment.isEmpty()) {
                 webhookLog.setProcessingResult("No online payment found for order: " + orderId);
-                webhookLogRepository.save(webhookLog);
                 return;
             }
 
             OnlinePayment onlinePayment = optPayment.get();
             UUID tenantId = onlinePayment.getTenantId();
             webhookLog.setTenantId(tenantId);
-
-            // Set tenant context for downstream operations
             TenantContextHolder.setTenantId(tenantId);
 
-            // Verify webhook signature
-            List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
-            if (configs.isEmpty()) {
-                webhookLog.setProcessingResult("No active gateway config found for tenant");
-                webhookLogRepository.save(webhookLog);
+            // ---------------------------------------------------------------
+            // The gate. Nothing above it changes state; nothing below it runs
+            // without a signature this tenant's own secret vouches for.
+            // ---------------------------------------------------------------
+            String rejection = verifyDelivery(payload, signature);
+            if (rejection != null) {
+                webhookLog.setProcessingResult(rejection);
                 return;
             }
 
-            TenantGatewayConfig config = configs.get(0);
-            if (config.getWebhookSecretEncrypted() != null) {
-                String webhookSecret = encryptionService.decrypt(config.getWebhookSecretEncrypted());
-                PaymentGatewayProvider provider = paymentGatewayFactory.getProvider("RAZORPAY");
-                boolean signatureValid = provider.verifyWebhookSignature(payload, signature, webhookSecret);
-                if (!signatureValid) {
-                    webhookLog.setProcessingResult("Webhook signature verification failed");
-                    webhookLogRepository.save(webhookLog);
-                    return;
+            switch (eventType) {
+                case "payment.captured" -> {
+                    onlinePaymentService.captureFromWebhook(onlinePayment.getId(), paymentId);
+                    webhookLog.setProcessingResult("Payment captured successfully");
                 }
-            }
-
-            // Process payment.captured event
-            if ("payment.captured".equals(eventType)) {
-                // Webhook signature already verified above - directly update payment status
-                // Do NOT call verifyPayment() as it expects client-side signature format
-                onlinePayment.setStatus(com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED);
-                onlinePayment.setGatewayPaymentId(paymentId);
-                onlinePayment.setUpdatedAt(Instant.now());
-                onlinePaymentRepository.save(onlinePayment);
-
-                // Clear the associated payment schedule
-                onlinePaymentService.clearPaymentFromWebhook(onlinePayment.getPaymentSchedule());
-                webhookLog.setProcessingResult("Payment captured successfully");
-            } else {
-                webhookLog.setProcessingResult("Event type not handled: " + eventType);
+                case "payment.failed" -> {
+                    onlinePaymentService.failFromWebhook(onlinePayment.getId(),
+                            failureReason(paymentEntity));
+                    webhookLog.setProcessingResult("Payment failed; the register row was released");
+                }
+                default -> webhookLog.setProcessingResult("Event type not handled: " + eventType);
             }
 
             webhookLog.setProcessed(true);
@@ -122,5 +122,37 @@ public class WebhookService {
             webhookLogRepository.save(webhookLog);
             TenantContextHolder.clear();
         }
+    }
+
+    /**
+     * Null when the delivery is provably Razorpay's; otherwise the reason it is
+     * not, for the audit row.
+     *
+     * <p>Returns rather than throws so the handler records the rejection and
+     * answers 200: a gateway that is told "500" retries the same unverifiable
+     * payload forever.</p>
+     */
+    private String verifyDelivery(String payload, String signature) {
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        if (configs.isEmpty()) {
+            return "No active gateway config found for tenant";
+        }
+        TenantGatewayConfig config = configs.get(0);
+        String secret = config.getWebhookSecretEncrypted();
+        if (secret == null || secret.isBlank()) {
+            return "No webhook secret configured for this tenant; the delivery cannot be verified";
+        }
+        PaymentGatewayProvider provider = paymentGatewayFactory.getProvider("RAZORPAY");
+        boolean valid = provider.verifyWebhookSignature(payload, signature, encryptionService.decrypt(secret));
+        return valid ? null : "Webhook signature verification failed";
+    }
+
+    private static String failureReason(JSONObject paymentEntity) {
+        String description = paymentEntity.optString("error_description", null);
+        if (description != null && !description.isBlank()) {
+            return description;
+        }
+        String code = paymentEntity.optString("error_code", null);
+        return code != null && !code.isBlank() ? code : "Gateway reported the payment failed";
     }
 }

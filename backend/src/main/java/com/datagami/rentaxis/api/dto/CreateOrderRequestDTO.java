@@ -6,5 +6,6 @@ import java.util.UUID;
 
 @Data
 public class CreateOrderRequestDTO {
-    private UUID paymentScheduleId;
+    /** The register row being paid — a {@code cheques} id (spec §9.3). */
+    private UUID chequeId;
 }

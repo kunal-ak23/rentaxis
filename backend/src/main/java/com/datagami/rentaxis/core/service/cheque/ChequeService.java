@@ -963,8 +963,14 @@ public class ChequeService {
      * narrow one the column means — an active asset leaf whose sub-type is BANK or
      * CASH — and it is applied to the caller's override, to the account already on
      * the row, and to a row's account as it is created.</p>
+     *
+     * <p>Public because the gateway's settlement account is the same question asked
+     * at configuration time rather than at clearing time: {@code TenantGatewayConfigService}
+     * validates the account an organisation nominates for Razorpay payouts through
+     * this very check (and then narrows it to BANK), so the account a capture may
+     * debit can never be one this would refuse.</p>
      */
-    private static Account requireSettlementAccount(Account a) {
+    public static Account requireSettlementAccount(Account a) {
         if (a == null) return null;
         boolean settles = !a.isGroup() && a.isActive()
                 && a.getAccountType() == AccountType.ASSET

@@ -10,7 +10,6 @@ import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.MarkFailedResult;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
-import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
@@ -40,7 +39,6 @@ import java.util.UUID;
 public class PaymentScheduleController {
 
     private final PaymentScheduleService paymentScheduleService;
-    private final RentReceiptService rentReceiptService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -185,15 +183,8 @@ public class PaymentScheduleController {
         return paymentScheduleService.getPaymentStatsByLeaseIds(leaseIds);
     }
 
-    @GetMapping("/{id}/receipt")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
-    public ResponseEntity<byte[]> downloadReceipt(@PathVariable UUID id) {
-        byte[] pdf = rentReceiptService.generateReceipt(id);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=receipt-" + id.toString().substring(0, 8) + ".pdf")
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(pdf);
-    }
+    // GET /{id}/receipt moved to ChequeReceiptController: a receipt is a cleared
+    // cheque-register row now, and a schedule id no longer names one (spec §9.3).
 
     /**
      * Previews an installment schedule for a prospective lease. Distribution-cap

@@ -30,6 +30,20 @@ public class TenantGatewayConfig extends BaseTenantEntity {
     @Column(name = "webhook_secret_encrypted", columnDefinition = "TEXT")
     private String webhookSecretEncrypted;
 
+    /**
+     * The bank leaf the gateway actually pays out to (spec §9.3).
+     *
+     * <p>A capture is money in a specific bank account, not in "the property's
+     * BANK role": Razorpay settles into one nominated account for the whole
+     * organisation, and a {@code CRT} that debited whichever leaf the property
+     * template happened to name would put the gateway's settlements somewhere the
+     * bank statement never shows them. Left null, the capture falls back to the
+     * BANK role exactly as a counter receipt does.</p>
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "settlement_account_id")
+    private Account settlementAccount;
+
     @Column(name = "is_active")
     private Boolean isActive;
 

@@ -5,13 +5,20 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.OnlinePayment;
+import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.Renter;
+import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,46 +31,62 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.List;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+/**
+ * The receipt for a collected instalment (spec §9.3).
+ *
+ * <p><b>A receipt is a cleared register row rendered as a PDF.</b> There is no
+ * receipt entity and no receipt table: the cheque's own id gives the receipt its
+ * number, its {@code clearedAt} gives the number its period, and the {@code CRT}
+ * behind it is the entry an accountant reconciles the paper against. Which is why
+ * only a CLEARED row may be rendered — a receipt for money that has not landed is
+ * the one document a landlord must not be able to hand out.</p>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RentReceiptService {
 
-    private final PaymentScheduleRepository paymentScheduleRepository;
+    private final ChequeRepository chequeRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final OnlinePaymentRepository onlinePaymentRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
 
+    /**
+     * @param chequeId a CLEARED row on a lease the caller may read. A renter passes
+     *        for their own tenancy and for nobody else's — {@code requireReadable}
+     *        answers "not found" rather than "forbidden", so a receipt id cannot be
+     *        used to enumerate a landlord's collections.
+     */
     @Transactional(readOnly = true)
-    public byte[] generateReceipt(UUID paymentScheduleId) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentScheduleId)
+    public byte[] generateReceipt(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
-        if (payment.getStatus() != PaymentStatus.CLEARED) {
+        Lease lease = cheque.getLease();
+        // Before the status check: "this cleared" and "this did not" are both facts
+        // about someone else's tenancy when the caller is not entitled to the lease.
+        leaseAccessPolicy.requireReadable(lease);
+
+        if (cheque.getStatus() != ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException("Receipt can only be generated for cleared payments");
         }
 
-        Lease lease = payment.getLease();
-        Unit unit = lease.getUnit();
-        Property property = unit.getProperty();
-        Renter renter = lease.getRenter();
+        Unit unit = cheque.getUnit();
+        Property property = cheque.getProperty();
+        Renter renter = cheque.getRenter();
 
-        // Get org info
         UUID tenantId = TenantContextHolder.getTenantId();
-        LandlordOrg org = null;
-        if (tenantId != null) {
-            org = landlordOrgRepository.findById(tenantId).orElse(null);
-        }
+        LandlordOrg org = tenantId != null ? landlordOrgRepository.findById(tenantId).orElse(null) : null;
 
-        // Load template
         String template;
         try {
             ClassPathResource resource = new ClassPathResource("templates/receipt-template.html");
@@ -72,19 +95,19 @@ public class RentReceiptService {
             throw new RuntimeException("Failed to load receipt template", e);
         }
 
-        // Format amount
         NumberFormat nf = NumberFormat.getNumberInstance(Locale.US);
         nf.setMinimumFractionDigits(2);
         nf.setMaximumFractionDigits(2);
-        String formattedAmount = nf.format(payment.getAmount());
+        String formattedAmount = nf.format(cheque.getAmount());
 
-        // Receipt number: RR-YYYY-MM-SHORT_ID (e.g. RR-2026-03-A1B2C3D4)
-        String receiptNumber = "RR-" + String.format("%d-%02d", payment.getDueDate().getYear(), payment.getDueDate().getMonthValue())
-                + "-" + payment.getId().toString().substring(0, 8).toUpperCase();
+        // RR-YYYY-MM-SHORT_ID, dated by when the money landed rather than by when
+        // the PDF was asked for: two downloads of one receipt are one receipt.
+        LocalDate clearedAt = cheque.getClearedAt() != null ? cheque.getClearedAt() : cheque.getChequeDate();
+        String receiptNumber = "RR-" + String.format("%d-%02d", clearedAt.getYear(), clearedAt.getMonthValue())
+                + "-" + cheque.getId().toString().substring(0, 8).toUpperCase();
 
         DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
-        // Populate template
         String html = template
                 .replace("{{ORG_LOGO}}", org != null && org.getLogoUrl() != null && !org.getLogoUrl().isEmpty()
                         ? "<img src=\"" + org.getLogoUrl() + "\" style=\"height: 40px; margin-bottom: 8px;\" />"
@@ -93,51 +116,54 @@ public class RentReceiptService {
                 .replace("{{ORG_ADDRESS}}", org != null && org.getAddress() != null ? safe(org.getAddress()) : "")
                 .replace("{{ORG_TRN}}", org != null && org.getTrn() != null ? "TRN: " + safe(org.getTrn()) : "")
                 .replace("{{RECEIPT_NUMBER}}", receiptNumber)
-                .replace("{{RECEIPT_DATE}}", LocalDate.now().format(dateFmt))
+                .replace("{{RECEIPT_DATE}}", clearedAt.format(dateFmt))
                 .replace("{{AMOUNT}}", formattedAmount)
-                .replace("{{PROPERTY_NAME}}", safe(property.getNameEn()))
-                .replace("{{UNIT_NUMBER}}", safe(unit.getUnitNumber()))
-                .replace("{{PROPERTY_ADDRESS}}", property.getAddress() != null ? safe(property.getAddress())
-                        : (property.getEmirate() != null ? property.getEmirate().name().replace('_', ' ') : ""))
-                .replace("{{RENTER_NAME}}", safe(renter.getNameEn()))
-                .replace("{{RENTER_EMAIL}}", renter.getEmail() != null ? safe(renter.getEmail()) : "N/A")
-                .replace("{{RENTER_PHONE}}", renter.getPhone() != null ? safe(renter.getPhone()) : "N/A")
-                .replace("{{INSTALLMENT_NUMBER}}", String.valueOf(payment.getInstallmentNumber()))
-                .replace("{{DUE_DATE}}", payment.getDueDate().format(dateFmt))
-                .replace("{{PAYMENT_METHOD}}", payment.getPaymentMethod() != null ? safe(payment.getPaymentMethod()) : "N/A")
-                .replace("{{CHEQUE_NUMBER}}", payment.getChequeNumber() != null ? safe(payment.getChequeNumber()) : "N/A")
-                .replace("{{BANK_NAME}}", payment.getBankName() != null ? safe(payment.getBankName()) : "N/A")
-                .replace("{{ONLINE_PAYMENT_ID}}", getOnlinePaymentId(paymentScheduleId))
+                .replace("{{PROPERTY_NAME}}", property != null ? safe(property.getNameEn()) : "")
+                .replace("{{UNIT_NUMBER}}", unit != null ? safe(unit.getUnitNumber()) : "")
+                .replace("{{PROPERTY_ADDRESS}}", propertyAddress(property))
+                .replace("{{RENTER_NAME}}", renter != null ? safe(renter.getNameEn()) : "")
+                .replace("{{RENTER_EMAIL}}", renter != null && renter.getEmail() != null ? safe(renter.getEmail()) : "N/A")
+                .replace("{{RENTER_PHONE}}", renter != null && renter.getPhone() != null ? safe(renter.getPhone()) : "N/A")
+                .replace("{{INSTALLMENT_NUMBER}}", String.valueOf(cheque.getSeqNo()))
+                .replace("{{DUE_DATE}}", cheque.getChequeDate().format(dateFmt))
+                .replace("{{PAYMENT_METHOD}}", cheque.getMode().name())
+                .replace("{{PARTICULARS}}", cheque.getNarration() != null ? safe(cheque.getNarration()) : "N/A")
+                .replace("{{CHEQUE_NUMBER}}", cheque.getChequeNumber() != null ? safe(cheque.getChequeNumber()) : "N/A")
+                .replace("{{BANK_NAME}}", cheque.getPayeeBank() != null ? safe(cheque.getPayeeBank()) : "N/A")
+                .replace("{{ONLINE_PAYMENT_ID}}", gatewayReference(chequeId))
                 .replace("{{GENERATED_AT}}", java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm")));
 
         byte[] pdfBytes = renderPdf(html);
 
-        // Structured email event: RENT_RECEIPT_AVAILABLE
         // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
         // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
         // and update RentReceiptPayload accordingly.
         String receiptFileName = "receipt-" + receiptNumber + ".pdf";
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.RENT_RECEIPT_AVAILABLE,
-                TenantContextHolder.getTenantId(),
-                new RentReceiptPayload(
-                        paymentScheduleId,  // no separate receipt entity; use paymentScheduleId as stable receipt ref
-                        lease.getId(),
-                        renter.getUserId(),
-                        formattedAmount + " AED",
-                        LocalDate.now().toString(),
-                        Base64.getEncoder().encodeToString(pdfBytes),
-                        receiptFileName
-                ),
-                "RENT_RECEIPT_AVAILABLE:" + paymentScheduleId));
+                tenantId,
+                RentReceiptPayload.ofCheque(cheque, formattedAmount + " AED",
+                        Base64.getEncoder().encodeToString(pdfBytes), receiptFileName),
+                "RENT_RECEIPT_AVAILABLE:" + chequeId));
 
         return pdfBytes;
     }
 
-    private String getOnlinePaymentId(UUID paymentScheduleId) {
+    private static String propertyAddress(Property property) {
+        if (property == null) {
+            return "";
+        }
+        if (property.getAddress() != null) {
+            return property.getAddress().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        }
+        return property.getEmirate() != null ? property.getEmirate().name().replace('_', ' ') : "";
+    }
+
+    /** The gateway's own payment reference, when this row was collected online. */
+    private String gatewayReference(UUID chequeId) {
         try {
-            List<OnlinePayment> onlinePayments = onlinePaymentRepository.findByPaymentScheduleId(paymentScheduleId);
-            return onlinePayments.stream()
+            List<OnlinePayment> payments = onlinePaymentRepository.findByCheque_Id(chequeId);
+            return payments.stream()
                     .filter(op -> op.getStatus() == OnlinePaymentStatus.CAPTURED)
                     .findFirst()
                     .map(op -> op.getGatewayPaymentId() != null ? op.getGatewayPaymentId() : "N/A")

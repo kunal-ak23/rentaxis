@@ -34,6 +34,9 @@ class TenantGatewayConfigServiceTest {
     PaymentGatewayRepository paymentGatewayRepository;
 
     @Mock
+    com.datagami.rentaxis.domain.repository.AccountRepository accountRepository;
+
+    @Mock
     EncryptionService encryptionService;
 
     TenantGatewayConfigService service;
@@ -44,7 +47,7 @@ class TenantGatewayConfigServiceTest {
     @BeforeEach
     void setUp() {
         service = new TenantGatewayConfigService(
-                tenantGatewayConfigRepository, paymentGatewayRepository, encryptionService);
+                tenantGatewayConfigRepository, paymentGatewayRepository, accountRepository, encryptionService);
 
         gateway = new PaymentGateway();
         gateway.setId(UUID.randomUUID());
