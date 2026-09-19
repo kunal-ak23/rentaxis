@@ -186,6 +186,68 @@ class DashboardServiceScopingIT {
     }
 
     /**
+     * The portfolio tiles are the manager's buildings too.
+     *
+     * <p>These counts were the last part of the screen left organisation-wide: a
+     * manager assigned to one of two buildings was shown both properties, both
+     * buildings' units, every lease and the whole estate's contracted rent, above
+     * money tiles that had already been narrowed to theirs. Occupancy was the worst
+     * of it — an average over buildings they cannot act on, presented as their
+     * number.</p>
+     */
+    @Test
+    void aManagersPortfolioTilesCountOnlyTheirOwnProperties() {
+        DashboardSummaryDTO wholeEstate = dashboard.getSummary();
+        assertThat(wholeEstate.getTotalProperties()).isEqualTo(2);
+        assertThat(wholeEstate.getTotalUnits()).isEqualTo(2);
+        assertThat(wholeEstate.getActiveLeases()).isEqualTo(2);
+        assertThat(wholeEstate.getTotalRentRevenue()).isEqualByComparingTo("75000"); // 51,000 + 24,000
+
+        asPropertyManagerFor(fixtures.property().getId());
+        DashboardSummaryDTO scoped = dashboard.getSummary();
+
+        assertThat(scoped.getTotalProperties()).isEqualTo(1);
+        assertThat(scoped.getTotalUnits()).isEqualTo(1);
+        assertThat(scoped.getOccupiedUnits()).isEqualTo(1);
+        assertThat(scoped.getVacantUnits()).isZero();
+        assertThat(scoped.getOccupancyRate()).isEqualTo(100.0);
+        assertThat(scoped.getActiveLeases()).isEqualTo(1);
+        assertThat(scoped.getDraftLeases()).isZero();
+        // Their building's contracted rent, not the estate's.
+        assertThat(scoped.getTotalRentRevenue()).isEqualByComparingTo("51000");
+    }
+
+    /** The manager of the other building sees that one, and its rent. */
+    @Test
+    void theOtherManagerSeesTheOtherBuilding() {
+        asPropertyManagerFor(theirProperty.getId());
+        DashboardSummaryDTO scoped = dashboard.getSummary();
+
+        assertThat(scoped.getTotalProperties()).isEqualTo(1);
+        assertThat(scoped.getTotalUnits()).isEqualTo(1);
+        assertThat(scoped.getActiveLeases()).isEqualTo(1);
+        assertThat(scoped.getTotalRentRevenue()).isEqualByComparingTo("24000");
+    }
+
+    /** A DRAFT lease counts on its own tile and contributes no revenue. */
+    @Test
+    void aDraftLeaseCountsAsADraftAndNotAsRevenue() {
+        // A second, vacant unit in the manager's own building: the one their posted
+        // lease sits on is already occupied.
+        Unit spare = fixtures.createUnit(fixtures.property(), "102");
+        fixtures.draftLease(spare, fixtures.createRenter("Draft Renter"),
+                CONTRACT_DATE, START, END, List.of(line("RENT", "9000")));
+
+        DashboardSummaryDTO wholeEstate = dashboard.getSummary();
+        assertThat(wholeEstate.getDraftLeases()).isEqualTo(1);
+        assertThat(wholeEstate.getTotalRentRevenue()).isEqualByComparingTo("75000");
+
+        asPropertyManagerFor(fixtures.property().getId());
+        assertThat(dashboard.getSummary().getDraftLeases()).isEqualTo(1);
+        assertThat(dashboard.getSummary().getTotalRentRevenue()).isEqualByComparingTo("51000");
+    }
+
+    /**
      * A caller scoped to nothing — a manager with no assignment — gets zeros and an
      * empty chart, not the organisation's books.
      */
@@ -194,6 +256,15 @@ class DashboardServiceScopingIT {
         asPropertyManagerFor(null);
 
         DashboardSummaryDTO summary = dashboard.getSummary();
+        // The portfolio block too: an unassigned manager is not shown the estate.
+        assertThat(summary.getTotalProperties()).isZero();
+        assertThat(summary.getTotalUnits()).isZero();
+        assertThat(summary.getOccupiedUnits()).isZero();
+        assertThat(summary.getOccupancyRate()).isEqualTo(0.0);
+        assertThat(summary.getActiveLeases()).isZero();
+        assertThat(summary.getDraftLeases()).isZero();
+        assertThat(summary.getExpiringLeases()).isZero();
+        assertThat(summary.getTotalRentRevenue()).isEqualByComparingTo("0");
         assertThat(summary.getPendingAmount()).isEqualByComparingTo("0");
         assertThat(summary.getCollectedAmount()).isEqualByComparingTo("0");
         assertThat(summary.getOverdueAmount()).isEqualByComparingTo("0");

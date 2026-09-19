@@ -14,12 +14,49 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface LeaseRepository extends JpaRepository<Lease, UUID> {
+
+    /**
+     * Lease counts and contracted rent per status, within the caller's properties.
+     *
+     * <p>Returns {@code [LeaseStatus, Long count, BigDecimal rent]}. The dashboard
+     * reads three tiles off it — active, draft and total rent revenue — which is why
+     * it is one grouped aggregate rather than three counts.</p>
+     *
+     * <p>Joined through the unit to its property because that is where a lease's
+     * building lives. The join is inner: {@code leases.unit_id} is NOT NULL, so no
+     * lease can be lost by it.</p>
+     */
+    @Query("""
+        select l.status, count(l), coalesce(sum(l.rentAmount), 0)
+        from Lease l
+        where (:unrestricted = true or l.unit.property.id in :propertyIds)
+        group by l.status
+        """)
+    List<Object[]> countAndRentByStatusInScope(@Param("unrestricted") boolean unrestricted,
+                                               @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * Live tenancies ending inside {@code [from, to]}, within the caller's
+     * properties — the "expiring soon" tile.
+     */
+    @Query("""
+        select count(l) from Lease l
+        where l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE
+          and l.endDate >= :from and l.endDate <= :to
+          and (:unrestricted = true or l.unit.property.id in :propertyIds)
+        """)
+    long countExpiringInScope(@Param("from") LocalDate from,
+                              @Param("to") LocalDate to,
+                              @Param("unrestricted") boolean unrestricted,
+                              @Param("propertyIds") Collection<UUID> propertyIds);
+
     List<Lease> findByTenantId(UUID tenantId);
     Page<Lease> findByTenantId(UUID tenantId, Pageable pageable);
 

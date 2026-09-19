@@ -6,8 +6,6 @@ import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.Property;
-import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
@@ -53,75 +51,88 @@ public class DashboardService {
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
 
+    /**
+     * The whole dashboard, for whoever is asking.
+     *
+     * <p><b>One scope, every tile.</b> A property manager is assigned buildings, and
+     * every number on this screen is about those buildings and no others — the
+     * portfolio counts and the occupancy rate as much as the money. An unscoped
+     * headline above a scoped list is two faults at once: the tile is somebody
+     * else's estate, and the screen contradicts the pages it links to, which is how
+     * a manager learns to trust neither.</p>
+     *
+     * <p><b>Counted in the database.</b> Each block is an aggregate over the
+     * caller's properties rather than a {@code findAll()} the service then walks:
+     * this is the first screen after login, and the tables behind it are the largest
+     * the system has.</p>
+     */
     @Transactional(readOnly = true)
     public DashboardSummaryDTO getSummary() {
         DashboardSummaryDTO summary = new DashboardSummaryDTO();
+        Scope scope = scope();
+        LocalDate today = LocalDate.now();
 
         // --- Portfolio ---
-        List<Property> properties = propertyRepository.findAll();
-        summary.setTotalProperties(properties.size());
+        summary.setTotalProperties(scope.blocked() ? 0
+                : (int) propertyRepository.countInScope(scope.unrestricted(), scope.propertyIds()));
 
-        List<Unit> units = unitRepository.findAll();
-        summary.setTotalUnits(units.size());
-
-        int occupiedCount = 0;
-        int vacantCount = 0;
-        for (Unit unit : units) {
-            if (unit.getStatus() == UnitStatus.OCCUPIED) {
-                occupiedCount++;
-            } else if (unit.getStatus() == UnitStatus.VACANT) {
-                vacantCount++;
+        long totalUnits = 0;
+        long occupiedCount = 0;
+        long vacantCount = 0;
+        if (!scope.blocked()) {
+            for (Object[] row : unitRepository.countByStatusInScope(
+                    scope.unrestricted(), scope.propertyIds())) {
+                UnitStatus status = (UnitStatus) row[0];
+                long count = ((Number) row[1]).longValue();
+                totalUnits += count;
+                if (status == UnitStatus.OCCUPIED) {
+                    occupiedCount = count;
+                } else if (status == UnitStatus.VACANT) {
+                    vacantCount = count;
+                }
             }
         }
-        summary.setOccupiedUnits(occupiedCount);
-        summary.setVacantUnits(vacantCount);
-        summary.setOccupancyRate(units.isEmpty() ? 0.0
-                : (double) occupiedCount / units.size() * 100.0);
+        summary.setTotalUnits((int) totalUnits);
+        summary.setOccupiedUnits((int) occupiedCount);
+        summary.setVacantUnits((int) vacantCount);
+        // Of the units the caller can see. A manager's occupancy is their own
+        // buildings' occupancy; averaging in the rest of the estate would tell them
+        // nothing about the one thing they are answerable for.
+        summary.setOccupancyRate(totalUnits == 0 ? 0.0
+                : (double) occupiedCount / totalUnits * 100.0);
 
         // --- Leases ---
-        List<Lease> allLeases = leaseRepository.findAll();
-
-        int activeCount = 0;
-        int draftCount = 0;
-        int expiringCount = 0;
+        long activeCount = 0;
+        long draftCount = 0;
         BigDecimal totalRentRevenue = BigDecimal.ZERO;
-        LocalDate today = LocalDate.now();
-        LocalDate thirtyDaysFromNow = today.plusDays(30);
-
-        for (Lease lease : allLeases) {
-            if (lease.getStatus() == LeaseStatus.ACTIVE) {
-                activeCount++;
-                totalRentRevenue = totalRentRevenue.add(
-                        lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
-
-                // Expiring = ACTIVE leases where endDate is within 30 days from today
-                if (lease.getEndDate() != null
-                        && !lease.getEndDate().isAfter(thirtyDaysFromNow)
-                        && !lease.getEndDate().isBefore(today)) {
-                    expiringCount++;
+        if (!scope.blocked()) {
+            for (Object[] row : leaseRepository.countAndRentByStatusInScope(
+                    scope.unrestricted(), scope.propertyIds())) {
+                LeaseStatus status = (LeaseStatus) row[0];
+                if (status == LeaseStatus.ACTIVE) {
+                    activeCount = ((Number) row[1]).longValue();
+                    // Contracted rent on live tenancies only: a draft is a proposal
+                    // and a terminated one is over.
+                    totalRentRevenue = nz((BigDecimal) row[2]);
+                } else if (status == LeaseStatus.DRAFT) {
+                    draftCount = ((Number) row[1]).longValue();
                 }
-            } else if (lease.getStatus() == LeaseStatus.DRAFT) {
-                draftCount++;
             }
         }
-
-        summary.setActiveLeases(activeCount);
-        summary.setDraftLeases(draftCount);
-        summary.setExpiringLeases(expiringCount);
+        summary.setActiveLeases((int) activeCount);
+        summary.setDraftLeases((int) draftCount);
+        // Expiring = ACTIVE leases ending within 30 days, today included.
+        summary.setExpiringLeases(scope.blocked() ? 0
+                : (int) leaseRepository.countExpiringInScope(today, today.plusDays(30),
+                        scope.unrestricted(), scope.propertyIds()));
         summary.setTotalRentRevenue(totalRentRevenue);
 
         // --- Financial (the cheque register) ---
         //
-        // Aggregated in the database rather than by walking every row: the register
-        // is the largest table a landlord of any size has, and the dashboard is the
-        // first screen after login. Cheques on unsigned leases and DRAFT grid rows
-        // are proposals rather than money owed, and every query here excludes them.
-        //
-        // Scoped exactly as the register is. A property manager's dashboard totals
-        // have to equal what they see on /api/v1/cheques for the same properties:
-        // an unscoped headline over a scoped list is both a leak — the tile is the
-        // whole organisation's money — and a screen that contradicts itself.
-        Scope scope = scope();
+        // Cheques on unsigned leases and DRAFT grid rows are proposals rather than
+        // money owed, and every query here excludes them. A property manager's
+        // totals have to equal what they see on /api/v1/cheques for the same
+        // properties, which is why the scope resolved above is the one used here.
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate nextMonthStart = monthStart.plusMonths(1);
 

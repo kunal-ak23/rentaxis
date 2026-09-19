@@ -263,7 +263,24 @@ public class ChequeDetailsService {
     // plumbing
     // ------------------------------------------------------------------
 
+    /**
+     * The row, locked, tenant-checked.
+     *
+     * <p>The tenant check is the same two-part one {@link #bulkAttach} makes, and
+     * for the same reason. Matching the context against the row's tenant is what
+     * the Hibernate filter already does; refusing a call that carries <em>no</em>
+     * context is the half it cannot do, because {@code TenantAspect} only enables
+     * the filter when there is one — without it the lookup returns another
+     * organisation's cheque and {@code requireManageable} answers on roles, not on
+     * tenancy. A request always carries a tenant ({@code ApiSecurityFilter}), so
+     * arriving here without one means an internal caller that has no business
+     * editing cheque details.</p>
+     */
     private Cheque lock(UUID chequeId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new NotFoundException("Cheque not found");
+        }
         Cheque cheque;
         try {
             cheque = chequeRepository.findByIdForUpdate(chequeId)
@@ -271,8 +288,7 @@ public class ChequeDetailsService {
         } catch (PessimisticLockingFailureException e) {
             throw new BusinessRuleViolationException(BEING_UPDATED);
         }
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(cheque.getTenantId())) {
+        if (!tenantId.equals(cheque.getTenantId())) {
             throw new NotFoundException("Cheque not found");
         }
         return cheque;

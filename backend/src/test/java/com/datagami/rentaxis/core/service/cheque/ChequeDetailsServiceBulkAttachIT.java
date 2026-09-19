@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.datagami.rentaxis.api.dto.BulkAttachChequeItem;
 import com.datagami.rentaxis.api.dto.BulkAttachErrorRow;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.BulkAttachValidationException;
@@ -83,6 +84,7 @@ class ChequeDetailsServiceBulkAttachIT {
     private static final LocalDate END = LocalDate.of(2027, 1, 31);
 
     private LeaseTestFixtures fixtures;
+    private UUID tenantId;
     private UUID leaseId;
     private List<Cheque> register;
 
@@ -92,6 +94,7 @@ class ChequeDetailsServiceBulkAttachIT {
                 propertyService, accountService, propertyAccountService, chargeTypeService)
                 .bootstrap()
                 .withLeaseServices(leaseService, generation, posting);
+        tenantId = fixtures.tenantId();
         // Unnumbered on purpose: the numbers are what this test is about.
         leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000")), 4, null).lease().getId();
@@ -240,6 +243,44 @@ class ChequeDetailsServiceBulkAttachIT {
                 .isInstanceOf(BulkAttachValidationException.class)
                 .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e))
                         .containsExactly("cheque_not_in_lease"));
+    }
+
+    /**
+     * The single-row edit refuses a call with no tenant context, exactly as the
+     * batch does.
+     *
+     * <p>Without a context {@code TenantAspect} never enables the Hibernate filter,
+     * so the locking lookup returns whatever row the id names — including another
+     * organisation's — and {@code requireManageable} lets a TENANT_ADMIN through
+     * because it answers on roles, not on tenancy. The guard inside {@code lock} is
+     * the only thing standing there.</p>
+     */
+    @Test
+    void updateDetailsRefusesACallWithNoTenantContext() {
+        UUID id = register.getFirst().getId();
+        ChequeRowInput edit = new ChequeRowInput(null, null, null, "C-NO-TENANT",
+                LocalDate.of(2026, 3, 1), "Emirates NBD", null, null, null, null, null);
+
+        TenantContextHolder.clear();
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+
+        assertThatThrownBy(() -> details.updateDetails(id, edit))
+                .isInstanceOf(NotFoundException.class);
+
+        TenantContextHolder.setTenantId(tenantId);
+        assertThat(reread().getFirst().getChequeNumber()).isNull();
+    }
+
+    /** And it does the ordinary edit when the tenant is there. */
+    @Test
+    void updateDetailsWritesTheNumberWhenTheCallIsTenantScoped() {
+        UUID id = register.getFirst().getId();
+
+        details.updateDetails(id, new ChequeRowInput(null, null, null, "C-OK",
+                LocalDate.of(2026, 3, 1), "Mashreq", null, null, null, null, null));
+
+        assertThat(reread().getFirst().getChequeNumber()).isEqualTo("C-OK");
+        assertThat(reread().getFirst().getPayeeBank()).isEqualTo("Mashreq");
     }
 
     /** The happy path, so the refusals above are refusals of something that otherwise works. */
