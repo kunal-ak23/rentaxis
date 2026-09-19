@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import type { PenaltyAssessment } from "@/lib/api/leasing";
 import type { UserRole } from "@/lib/rbac";
+import { todayIso } from "@/components/leases/leaseMath";
 
 /**
  * Proposing a fine and deciding one are different permissions, and the screen
@@ -93,7 +94,11 @@ describe("LeasePenaltiesTab role gating", () => {
         expect(api.approve).not.toHaveBeenCalled();
 
         screen.getByTestId("penalty-approve-confirm").click();
-        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", expect.any(String)));
+        // The exact date, not expect.any(String): decisionDate and decisionNote
+        // are both strings, and decisionNote defaults to "" — which is itself a
+        // String — so a swap that wired the note in place of the date would still
+        // satisfy expect.any(String) here.
+        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso()));
         await waitFor(() =>
             expect(screen.getByTestId("penalty-error")).toHaveTextContent("This penalty has already been waived."),
         );

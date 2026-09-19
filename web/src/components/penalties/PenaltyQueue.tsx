@@ -157,7 +157,7 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                     <th className={th}>{tl("chequeNo")}</th>
                                     <th className={th}>{t("failureReason")}</th>
                                     <th className={`${th} text-end`}>{tl("amount")}</th>
-                                    <th className={th}>{t("proposedByAt")}</th>
+                                    <th className={th}>{t("proposedAt")}</th>
                                     <th className={th}>{tl("actions")}</th>
                                 </tr>
                             </thead>
@@ -231,6 +231,7 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                 onConfirm={confirmDecision}
                 confirmText={decision ? t(decision.action) : ""}
                 cancelText={tl("cancel")}
+                confirmDisabled={decision?.action === "waive" && !decisionNote.trim()}
                 busy={busyId === decision?.row.id}
                 destructive={decision?.action === "reverse"}
                 confirmTestId={decision ? `penalty-${decision.action}-confirm` : "penalty-decision-confirm"}

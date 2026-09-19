@@ -1,8 +1,9 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
 import type { PenaltyAssessment } from "@/lib/api/leasing";
+import { todayIso } from "@/components/leases/leaseMath";
 
 /**
  * The finance-wide penalty queue: who may even open it, and — inside it —
@@ -78,6 +79,12 @@ describe("Penalties queue page — access", () => {
         expect(await screen.findByTestId("penalty-approve-0")).toBeInTheDocument();
         expect(screen.getByTestId("penalty-waive-0")).toBeInTheDocument();
     });
+
+    it("labels the date column for what it actually shows — the DTO carries proposedBy as a bare id, never rendered", async () => {
+        renderPage();
+        expect(await screen.findByText("Proposed At")).toBeInTheDocument();
+        expect(screen.queryByText(/proposed by/i)).not.toBeInTheDocument();
+    });
 });
 
 describe("Penalties queue page — decisions", () => {
@@ -88,7 +95,11 @@ describe("Penalties queue page — decisions", () => {
         expect(api.approve).not.toHaveBeenCalled();
 
         screen.getByTestId("penalty-approve-confirm").click();
-        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", expect.any(String)));
+        // The exact date, not expect.any(String): decisionDate and decisionNote
+        // are both strings, and decisionNote defaults to "" — which is itself a
+        // String — so a swap that wired the note in place of the date would still
+        // satisfy expect.any(String) here.
+        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso()));
     });
 
     it("Waive needs a confirm with a note before it calls the API", async () => {
@@ -99,8 +110,29 @@ describe("Penalties queue page — decisions", () => {
         // No date field on Waive — only Approve and Reverse carry one.
         expect(screen.queryByTestId("penalty-decision-date")).not.toBeInTheDocument();
 
+        // PenaltyAssessmentService#waive 400s a blank note, so the confirm stays
+        // disabled until one is typed (see the dedicated disabled-state test below).
+        fireEvent.change(note, { target: { value: "Renter disputed in good faith" } });
         screen.getByTestId("penalty-waive-confirm").click();
-        await waitFor(() => expect(api.waive).toHaveBeenCalledWith("pen-1", undefined));
+        await waitFor(() => expect(api.waive).toHaveBeenCalledWith("pen-1", "Renter disputed in good faith"));
+    });
+
+    it("keeps the Waive confirm disabled until a note is typed — the server 400s a blank one", async () => {
+        renderPage();
+        (await screen.findByTestId("penalty-waive-0")).click();
+        const confirm = await screen.findByTestId("penalty-waive-confirm");
+        const note = screen.getByTestId("penalty-decision-note");
+
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(note, { target: { value: "   " } });
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(note, { target: { value: "Renter disputed in good faith" } });
+        expect(confirm).not.toBeDisabled();
+
+        confirm.click();
+        await waitFor(() => expect(api.waive).toHaveBeenCalledWith("pen-1", "Renter disputed in good faith"));
     });
 
     it("offers Reverse, not Approve/Waive, on an APPROVED row, gated the same way", async () => {

@@ -1897,7 +1897,7 @@
     "gatewayPaymentId": "معرّف دفعة البوابة",
     "capturedAt": "وقت التحصيل",
     "accessDenied": "لا تملك صلاحية الوصول إلى سجل الشيكات.",
-    "proposedByAt": "اقتُرحت بواسطة / بتاريخ",
+    "proposedAt": "تاريخ الاقتراح",
     "decisionDate": "التاريخ",
     "decisionNote": "ملاحظة",
     "noPenaltiesQueue": "لا توجد غرامات بهذه الحالة.",

@@ -1897,7 +1897,7 @@
     "gatewayPaymentId": "Gateway Payment ID",
     "capturedAt": "Captured At",
     "accessDenied": "You do not have permission to work the cheque register.",
-    "proposedByAt": "Proposed by / at",
+    "proposedAt": "Proposed At",
     "decisionDate": "Date",
     "decisionNote": "Note",
     "noPenaltiesQueue": "No penalties in this status.",
