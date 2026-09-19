@@ -606,7 +606,15 @@ public class ChequeService {
                     "A counter receipt must be a CASH or TRANSFER row"
                             + (mode == null ? "" : "; this one is " + mode) + ".");
         }
-        ChequeDTO created = addRowToPostedLease(leaseId, row);
+        // The row's own date is the posting date when it names none, not today: a
+        // receipt written up on Monday for cash taken on Friday would otherwise get
+        // a PDR dated after the CRT that settles it — an instrument that cleared
+        // before it was registered, which no reconciliation can explain.
+        ChequeRowInput onItsOwnDate = row.postingDate() != null ? row
+                : new ChequeRowInput(row.id(), row.seqNo(), row.chequeDate(), row.chequeNumber(),
+                        row.chequeDate(), row.payeeBank(), row.payerName(), row.debitAccountId(),
+                        row.amount(), row.narration(), row.mode());
+        ChequeDTO created = addRowToPostedLease(leaseId, onItsOwnDate);
         return receive(created.id(), new ChequeActionRequest(
                 row.chequeDate(), null, null, row.debitAccountId()));
     }

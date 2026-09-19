@@ -21,6 +21,8 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
@@ -56,6 +58,7 @@ import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The register's read side against a real database and a real posted lease.
@@ -336,6 +339,90 @@ class ChequeQueryServiceIT {
         assertThat(page).hasSize(4);
         assertThat(page).isSortedAccordingTo(
                 java.util.Comparator.comparing(ChequeDTO::chequeDate).thenComparing(ChequeDTO::seqNo));
+    }
+
+    /**
+     * The combination the portfolio import creates: a lease that is ACTIVE carrying
+     * rows that are still DRAFT.
+     *
+     * <p>Filtering on the lease's status alone let these onto the register as
+     * instruments with no {@code PDR} behind them — paper the landlord was told it
+     * held and nobody had handed over. A DRAFT row is a grid row wherever it sits.</p>
+     */
+    @Test
+    void draftRowsOnAPostedLeaseAreInvisibleToTheRegister() {
+        UUID leaseId = posted().lease().getId();
+        ChequeSummaryDTO before = query.summary(null, AS_OF);
+
+        // A grid row added to the ACTIVE lease behind the register's back, exactly
+        // as the import leaves one.
+        UUID draftRowId = tx.execute(s -> {
+            Cheque live = chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).getFirst();
+            Cheque draft = new Cheque();
+            draft.setTenantId(live.getTenantId());
+            draft.setLease(live.getLease());
+            draft.setUnit(live.getUnit());
+            draft.setProperty(live.getProperty());
+            draft.setRenter(live.getRenter());
+            draft.setSeqNo(99);
+            draft.setPostingDate(CONTRACT_DATE);
+            draft.setChequeDate(LocalDate.of(2026, 3, 1));
+            draft.setAmount(new BigDecimal("9999"));
+            draft.setStatus(ChequeStatus.DRAFT);
+            draft.setStatusChangedAt(java.time.Instant.now());
+            return chequeRepo.save(draft).getId();
+        });
+
+        // Nothing moved: not the list, not a tile, not the per-lease stats.
+        assertThat(query.search(null, null, null, null, null, null, PageRequest.of(0, 50)).getContent())
+                .extracting(ChequeDTO::id).doesNotContain(draftRowId);
+        ChequeSummaryDTO after = query.summary(null, AS_OF);
+        assertThat(after.registeredCount()).isEqualTo(before.registeredCount());
+        assertThat(after.dueAmount()).isEqualByComparingTo(before.dueAmount());
+        assertThat(query.statsByLeases(List.of(leaseId), AS_OF).getFirst().total()).isEqualTo(4);
+        assertThat(query.due(null, AS_OF, Pageable.unpaged()).getContent())
+                .extracting(ChequeDTO::id).doesNotContain(draftRowId);
+
+        // And it is not a register row you can fetch by id either — the grid is read
+        // through the lease.
+        assertThatThrownBy(() -> query.get(draftRowId)).isInstanceOf(NotFoundException.class);
+    }
+
+    /**
+     * A manager may not read a row belonging to a building they were not assigned.
+     * Not found rather than forbidden, so the error code cannot be used to discover
+     * that the cheque exists.
+     */
+    @Test
+    void aManagerCannotFetchAForeignPropertysRow() {
+        UUID mine = posted().lease().getId();
+        Property otherProperty = fixtures.createProperty("OTH");
+        Unit otherUnit = fixtures.createUnit(otherProperty, "909");
+        Renter otherRenter = fixtures.createRenter("Other Renter");
+        UUID theirs = fixtures.postedLease(otherUnit, otherRenter, CONTRACT_DATE, START, END,
+                List.of(line("RENT", "24000")), 2, "200010").lease().getId();
+        UUID ownRow = register(mine).getFirst().getId();
+        UUID foreignRow = register(theirs).getFirst().getId();
+
+        asPropertyManagerFor(fixtures.property().getId());
+
+        // Their building: gone. Ours: there, so the refusal is about the property
+        // and not about the manager being unable to read anything.
+        assertThatThrownBy(() -> query.get(foreignRow)).isInstanceOf(NotFoundException.class);
+        assertThat(query.get(ownRow).id()).isEqualTo(ownRow);
+    }
+
+    /** A batch bigger than the cap is refused rather than silently truncated. */
+    @Test
+    void statsByLeasesRefusesAnOversizedBatch() {
+        List<UUID> tooMany = java.util.stream.Stream
+                .generate(UUID::randomUUID)
+                .limit(ChequeQueryService.MAX_STATS_LEASES + 1)
+                .toList();
+
+        assertThatThrownBy(() -> query.statsByLeases(tooMany, AS_OF))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(String.valueOf(ChequeQueryService.MAX_STATS_LEASES));
     }
 
     /** A cheque on a lease nobody has signed is a proposal, not money owed. */

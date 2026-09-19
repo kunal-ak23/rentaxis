@@ -29,6 +29,7 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -274,21 +275,33 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> generate(UUID leaseId, GenerateChequesRequest request) {
-        return generateFor(draftLease(leaseId), request);
+        return generateForSystemImport(draftLease(leaseId), request);
     }
 
     /**
-     * The same, against a lease the caller has already loaded and vetted.
+     * The same, for the portfolio import: a lease the caller has already created in
+     * this transaction, passed as an entity rather than looked up by id.
      *
-     * <p>Exists for the portfolio import, which runs on a background thread with a
-     * tenant context but no {@code Authentication} at all: {@code LeaseAccessPolicy}
-     * fails closed, so the id-taking form would answer "Lease not found" for a lease
-     * the import created three lines earlier. The DRAFT check stays here — that is a
-     * rule about the grid, not about who is asking — and every caller that does have
-     * a user goes through {@link #generate(UUID, GenerateChequesRequest)}.</p>
+     * <p><b>Who may call this.</b> The bulk importer
+     * ({@code PortfolioImportPersistService}) and {@link #generate} itself. It is
+     * {@code public} only because the importer lives in another package; it is not
+     * an entry point for a request handler, and a controller that reaches for it
+     * instead of the id-taking form is a bug.</p>
+     *
+     * <p><b>Why it exists.</b> The import runs on a background thread with a tenant
+     * context but no {@code Authentication} at all. {@code LeaseAccessPolicy} fails
+     * closed, so the id-taking form answers "Lease not found" for a lease the import
+     * created three lines earlier.</p>
+     *
+     * <p><b>What replaces the policy check.</b> The absence of a user is the licence,
+     * so it is asserted rather than assumed: when an {@code Authentication} <em>is</em>
+     * present it must be one {@code requireManageable} would accept, and the lease
+     * must belong to the current tenant. A renter who reached this through some
+     * future caller is refused exactly as they would be on the ordinary door.</p>
      */
     @Transactional
-    public List<ChequeDTO> generateFor(Lease lease, GenerateChequesRequest request) {
+    public List<ChequeDTO> generateForSystemImport(Lease lease, GenerateChequesRequest request) {
+        requireSystemOrManager(lease);
         requireDraft(lease);
         UUID leaseId = lease.getId();
         GenerateChequesRequest r = request == null
@@ -420,12 +433,17 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> saveRows(UUID leaseId, List<ChequeRowInput> rows) {
-        return saveRowsFor(draftLease(leaseId), rows);
+        return saveRowsForSystemImport(draftLease(leaseId), rows);
     }
 
-    /** {@link #saveRows} against an already-vetted lease — see {@link #generateFor}. */
+    /**
+     * {@link #saveRows} for the portfolio import — same door, same guards, and the
+     * same restriction on who may knock. See
+     * {@link #generateForSystemImport(Lease, GenerateChequesRequest)}.
+     */
     @Transactional
-    public List<ChequeDTO> saveRowsFor(Lease lease, List<ChequeRowInput> rows) {
+    public List<ChequeDTO> saveRowsForSystemImport(Lease lease, List<ChequeRowInput> rows) {
+        requireSystemOrManager(lease);
         requireDraft(lease);
         UUID leaseId = lease.getId();
         List<ChequeRowInput> input = rows == null ? List.of() : rows;
@@ -624,6 +642,32 @@ public class ChequeGenerationService {
 
     private Lease draftLease(UUID leaseId) {
         return requireDraft(readableLease(leaseId));
+    }
+
+    /**
+     * The guard that stands in for {@code LeaseAccessPolicy} on the entity-taking
+     * doors: a background caller with no user, or a user who could have managed the
+     * lease anyway.
+     *
+     * <p>Both halves matter. Without the authentication check, "no policy applies"
+     * would mean "anyone who can reach the method", so a renter-facing path added
+     * later would edit somebody's grid. Without the tenant check, an entity handed
+     * in from outside the tenant filter's reach would be written to under the wrong
+     * organisation — the id-taking form gets that from {@code readableLease}, and
+     * this form has no lookup to get it from.</p>
+     */
+    private void requireSystemOrManager(Lease lease) {
+        if (lease == null) {
+            throw new NotFoundException("Lease not found");
+        }
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        if (SecurityContextHolder.getContext().getAuthentication() != null
+                && !leaseAccessPolicy.canManage(lease)) {
+            throw new NotFoundException("Lease not found");
+        }
     }
 
     private static Lease requireDraft(Lease lease) {

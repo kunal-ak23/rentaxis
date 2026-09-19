@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
@@ -33,6 +34,7 @@ import static org.mockito.Mockito.when;
 class DashboardServicePendingThisMonthTest {
 
     private ChequeRepository chequeRepository;
+    private LeaseAccessPolicy leaseAccessPolicy;
     private DashboardService service;
 
     @BeforeEach
@@ -45,10 +47,15 @@ class DashboardServicePendingThisMonthTest {
         when(unitRepository.findAll()).thenReturn(List.of());
         when(leaseRepository.findAll()).thenReturn(List.of());
         when(chequeRepository.findDue(any(), any(), anyBoolean(), any(), any())).thenReturn(Page.empty());
-        when(chequeRepository.findRecentlyChanged(any())).thenReturn(List.of());
+        when(chequeRepository.findRecentlyChanged(anyBoolean(), any(), any())).thenReturn(List.of());
         when(chequeRepository.sumClearedBetween(any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(BigDecimal.ZERO);
-        service = new DashboardService(propertyRepository, unitRepository, leaseRepository, chequeRepository);
+        // Unrestricted by default: the scoping itself is ChequeQueryServiceIT's and
+        // DashboardServiceScopingIT's subject, not this test's.
+        leaseAccessPolicy = mock(LeaseAccessPolicy.class);
+        when(leaseAccessPolicy.visiblePropertyIds()).thenReturn(null);
+        service = new DashboardService(propertyRepository, unitRepository, leaseRepository,
+                chequeRepository, leaseAccessPolicy);
     }
 
     @Test
@@ -59,7 +66,7 @@ class DashboardServicePendingThisMonthTest {
                 new Object[]{ChequeStatus.CLEARED, 2L, new BigDecimal("9999")},
                 // Not outstanding: the paper is back with the tenant.
                 new Object[]{ChequeStatus.RETURNED, 1L, new BigDecimal("4000")}));
-        when(chequeRepository.sumByStatusInAndChequeDateBetween(any(), any(), any()))
+        when(chequeRepository.sumByStatusInAndChequeDateBetween(any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(new BigDecimal("1000"));
 
         DashboardSummaryDTO summary = service.getSummary();
@@ -78,7 +85,8 @@ class DashboardServicePendingThisMonthTest {
         when(chequeRepository.totalsByStatus(eq(null), eq(true), any())).thenReturn(List.of());
         java.time.LocalDate monthStart = java.time.LocalDate.now().withDayOfMonth(1);
         when(chequeRepository.sumByStatusInAndChequeDateBetween(
-                argThatContainsOutstanding(), eq(monthStart), eq(monthStart.plusMonths(1))))
+                argThatContainsOutstanding(), eq(monthStart), eq(monthStart.plusMonths(1)),
+                anyBoolean(), any()))
                 .thenReturn(new BigDecimal("777"));
 
         assertThat(service.getSummary().getPendingThisMonthAmount()).isEqualByComparingTo("777");

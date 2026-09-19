@@ -114,12 +114,43 @@ public class NotificationScheduler {
     }
 
     /**
+     * Should a renter hear about this instalment today, given how late it is?
+     *
+     * <p>The job runs daily over every due row, so without a cadence a renter with
+     * one unpaid cheque gets the same message every morning for a year: the first
+     * week is a reminder, the second is nagging, and by the third the whole estate
+     * has filtered the sender. So: a nudge on days 1, 3, 7 and 14, then monthly,
+     * and nothing at all past {@link #MAX_OVERDUE_REMINDER_DAYS} — a debt that old
+     * is a collections matter somebody is handling by hand, not something a cron
+     * job should keep announcing.</p>
+     *
+     * <p>Day zero sends nothing. That is the day grace ran out, and the "due today"
+     * reminder has already gone.</p>
+     *
+     * <p>Package-private and pure so the cadence can be tested as a table rather
+     * than by running a scheduler against a database.</p>
+     */
+    static boolean shouldRemind(int daysOverdue) {
+        if (daysOverdue <= 0 || daysOverdue > MAX_OVERDUE_REMINDER_DAYS) {
+            return false;
+        }
+        return switch (daysOverdue) {
+            case 1, 3, 7, 14 -> true;
+            default -> daysOverdue % 30 == 0;
+        };
+    }
+
+    /** Past this, the reminder job stops talking and a human takes over. */
+    static final int MAX_OVERDUE_REMINDER_DAYS = 180;
+
+    /**
      * The chasing list.
      *
      * <p>Only the rows that are past the lease's <em>grace</em> period, not merely
      * past their date: a renter whose contract gives them five days is not late on
      * day one, and telling them they are is how a reminder becomes noise the whole
-     * estate ignores.</p>
+     * estate ignores. {@link #shouldRemind} then decides whether today is one of the
+     * days this particular debt is worth mentioning.</p>
      */
     private void checkOverduePayments() {
         log.info("Checking overdue payments...");
@@ -132,10 +163,13 @@ public class NotificationScheduler {
             if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
                 continue;
             }
+            int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
+            if (!shouldRemind(daysOverdue)) {
+                continue;
+            }
             try {
                 java.util.UUID renterUserId = renterUserId(cheque);
                 if (renterUserId != null) {
-                    int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
                     notificationService.notify(
                             cheque.getTenantId(),
                             renterUserId,

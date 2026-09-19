@@ -157,10 +157,26 @@ public class NotificationService {
      * would turn "we are thinking about it" into "you owe this". Only the approval
      * is a fact about their balance.</p>
      *
-     * <p>Best-effort: a downed mailer must not roll back the charge, so the failure
-     * is logged rather than thrown. The in-app row is written in its own
-     * transaction by {@code notify}.</p>
+     * <p><b>Its own transaction, and no catch inside it.</b> A failed notification
+     * row must not take a posted penalty down with it, and the obvious shape — call
+     * {@code notify} and swallow what it throws — does the opposite: {@code notify}
+     * is a self-invocation, so it bypasses the proxy and joins the approval's
+     * transaction, a failed insert marks that transaction rollback-only, and the
+     * approval then dies at commit with an {@code UnexpectedRollbackException}.
+     *
+     * <p>So the propagation lives here, on a method {@code PenaltyAssessmentService}
+     * calls across the bean boundary where the proxy actually applies, and the
+     * failure is allowed to escape: the inner transaction rolls back cleanly and
+     * <em>the caller</em> catches. This is the same mechanism
+     * {@code ChequeService.notifyRenter} reaches through {@code notifyInAppInNewTx},
+     * arranged so the catch sits outside the new transaction rather than inside
+     * it.</p>
+     *
+     * <p>The in-app row only. The structured {@code PENALTY_INCURRED} email is
+     * published by the outbox pipeline, and going through {@code notify}'s legacy
+     * mapping as well would send the renter a second copy.</p>
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendPenaltyIncurred(PenaltyAssessment assessment) {
         if (assessment == null) {
             return;
@@ -181,13 +197,8 @@ public class NotificationService {
         String body = "A " + assessment.getAmount() + " AED penalty has been added" + about
                 + " (" + assessment.getReason().label()
                 + "). Please clear it via bank transfer, cheque, or cash.";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
-                    body, "PENALTY", assessment.getId());
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_INCURRED notification for penalty {}: {}",
-                    assessment.getId(), e.getMessage());
-        }
+        saveNotificationRow(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
+                body, "PENALTY", assessment.getId());
     }
 
     /**

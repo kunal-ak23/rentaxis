@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
@@ -30,6 +31,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -447,6 +451,64 @@ class ChequeGenerationServiceIT {
         assertThatThrownBy(() -> service.saveRows(leaseId, edit))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("not a draft row of this lease");
+    }
+
+    /**
+     * The system-import doors are not a way round {@code LeaseAccessPolicy}.
+     *
+     * <p>They exist because the bulk import runs on a background thread with no
+     * {@code Authentication} at all, and the id-taking form fails closed there. The
+     * absence of a user is the licence, so it is asserted: when a user <em>is</em>
+     * authenticated they must be one who could have managed the lease anyway. A
+     * renter reaching this through some future caller is refused exactly as they
+     * would be on the ordinary door — not found, so the error cannot be used to
+     * discover the lease exists.</p>
+     */
+    @Test
+    void theSystemImportDoorsRefuseAUserWhoCouldNotManageTheLease() {
+        UUID leaseId = draft().getId();
+        List<ChequeRowInput> rows = List.of(new ChequeRowInput(
+                null, null, null, null, START, "Emirates NBD", null, null,
+                new java.math.BigDecimal("1000"), "Rent", ChequeMode.PDC));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null,
+                        List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
+
+        // Inside a transaction, as the importer calls it: the lease is a managed
+        // entity there, and its unit and property resolve.
+        assertThatThrownBy(() -> tx.executeWithoutResult(s ->
+                service.saveRowsForSystemImport(leaseRepository.findById(leaseId).orElseThrow(), rows)))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> tx.executeWithoutResult(s ->
+                service.generateForSystemImport(leaseRepository.findById(leaseId).orElseThrow(), fourCheques())))
+                .isInstanceOf(NotFoundException.class);
+        List<Cheque> untouched = tx.execute(s -> chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
+        assertThat(untouched).isEmpty();
+
+        // The background caller — no Authentication at all — is the one they are for.
+        SecurityContextHolder.clearContext();
+        List<ChequeDTO> written = tx.execute(s ->
+                service.saveRowsForSystemImport(leaseRepository.findById(leaseId).orElseThrow(), rows));
+        assertThat(written).hasSize(1);
+    }
+
+    /**
+     * And they refuse a lease belonging to another organisation. The entity comes
+     * in from outside the tenant filter's reach, so this form has no lookup to get
+     * the check from.
+     */
+    @Test
+    void theSystemImportDoorsRefuseAnotherTenantsLease() {
+        UUID leaseId = draft().getId();
+        Lease theirs = tx.execute(s -> leaseRepository.findById(leaseId).orElseThrow());
+
+        fixtures.newTenant();
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s ->
+                service.generateForSystemImport(theirs, fourCheques())))
+                .isInstanceOf(NotFoundException.class);
     }
 
     /** Numbering skips the cash rows rather than burning a number on them. */

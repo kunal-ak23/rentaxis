@@ -62,8 +62,8 @@ class PortfolioImportPersistServiceTest {
                 leaseService, chargeTypeService, chequeGenerationService);
         // The grid itself is ChequeGenerationServiceIT's subject; here the question
         // is only which rows the import hands it.
-        lenient().when(chequeGenerationService.generateFor(any(), any())).thenReturn(List.of());
-        lenient().when(chequeGenerationService.saveRowsFor(any(), any())).thenReturn(List.of());
+        lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(List.of());
+        lenient().when(chequeGenerationService.saveRowsForSystemImport(any(), any())).thenReturn(List.of());
 
         // save(...) → return the input entity, simulating ID assignment.
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -204,7 +204,7 @@ class PortfolioImportPersistServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
-        verify(chequeGenerationService).saveRowsFor(any(Lease.class), rows.capture());
+        verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
         assertThat(rows.getValue()).singleElement().satisfies(r -> {
             assertThat(r.chequeNumber()).isEqualTo("BD-001");
             assertThat(r.payeeBank()).isEqualTo("Emirates NBD");
@@ -325,7 +325,7 @@ class PortfolioImportPersistServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
-        verify(chequeGenerationService).saveRowsFor(any(Lease.class), rows.capture());
+        verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
         assertThat(rows.getValue()).hasSize(3);
         assertThat(rows.getValue()).extracting(ChequeRowInput::mode)
                 .containsExactly(ChequeMode.PDC, ChequeMode.CASH, ChequeMode.TRANSFER);
@@ -339,7 +339,7 @@ class PortfolioImportPersistServiceTest {
         assertThat(rows.getValue()).extracting(ChequeRowInput::chequeNumber)
                 .containsExactly("C-1", null, null);
         // Nothing is generated when the sheet says what the instruments are.
-        verify(chequeGenerationService, never()).generateFor(any(), any());
+        verify(chequeGenerationService, never()).generateForSystemImport(any(), any());
     }
 
     /**
@@ -362,7 +362,7 @@ class PortfolioImportPersistServiceTest {
 
         service.persistWorkbook(wb, job);
 
-        verify(chequeGenerationService, never()).saveRowsFor(any(), any());
+        verify(chequeGenerationService, never()).saveRowsForSystemImport(any(), any());
         var details = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(job.getErrors(),
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);

@@ -64,8 +64,8 @@ class PortfolioImportPersistEndToEndTest {
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, importJobRepository,
                 leaseService, chargeTypeService, chequeGenerationService);
-        lenient().when(chequeGenerationService.generateFor(any(), any())).thenReturn(java.util.List.of());
-        lenient().when(chequeGenerationService.saveRowsFor(any(), any())).thenReturn(java.util.List.of());
+        lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(java.util.List.of());
+        lenient().when(chequeGenerationService.saveRowsForSystemImport(any(), any())).thenReturn(java.util.List.of());
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(buildingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(unitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

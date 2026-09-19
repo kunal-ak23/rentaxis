@@ -273,6 +273,59 @@ class PenaltyAssessmentServiceIT {
         jdbc.update("update leases set status = ? where id = ?", status.name(), leaseId);
     }
 
+    /**
+     * The renter cannot be told, and the fine is charged anyway.
+     *
+     * <p>Approving posts a {@code PEN} and creates the collection row the fine is
+     * paid through. Telling the renter is the last thing it does and the least
+     * important: a notifications table that refuses the insert must not unwind a
+     * charge finance has decided on.</p>
+     *
+     * <p>The trap this pins down is a specific one. The notification used to run in
+     * the approval's own transaction, so a failed insert marked <em>that</em>
+     * transaction rollback-only; the catch swallowed the exception and the approval
+     * then died at commit with an {@code UnexpectedRollbackException} — a fine
+     * nobody could charge because a notification failed. It runs in its own
+     * {@code REQUIRES_NEW} transaction now, with the catch outside it.</p>
+     */
+    @Test
+    void anApprovalSurvivesANotificationThatCannotBeWritten() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        ChequeDTO bounced = bounceFirst(r);
+        PenaltyAssessmentDTO proposed = proposal(leaseId, bounced.id(), PenaltyReason.CHEQUE_RETURN, "500");
+
+        // Make the in-app row impossible to write, exactly as a bad migration or a
+        // full disk would.
+        // NOT VALID: other tests in this class share the container and may already
+        // have written one of these rows. The constraint only has to stop the *next*
+        // insert.
+        jdbc.execute("alter table notifications add constraint no_penalty_incurred_it "
+                + "check (type <> 'PENALTY_INCURRED') not valid");
+        PenaltyAssessmentDTO approved;
+        try {
+            approved = service.approve(proposed.id(), APPROVE_DATE);
+        } finally {
+            jdbc.execute("alter table notifications drop constraint if exists no_penalty_incurred_it");
+        }
+
+        // The charge stands, whole: status, journal and the row it will be collected on.
+        assertThat(approved.status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+        assertThat(approved.journalId()).isNotNull();
+        assertThat(approved.collectionChequeId()).isNotNull();
+        assertThat(entry(approved.journalId()).getDocType()).isEqualTo(JournalDocType.PEN);
+        PenaltyAssessmentStatus persisted =
+                tx.execute(s -> assessments.findById(proposed.id()).orElseThrow().getStatus());
+        assertThat(persisted).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+
+        // And nothing was written for the renter, which is the whole point of the
+        // failure being survivable rather than invisible.
+        Long rows = jdbc.queryForObject(
+                "select count(*) from notifications where tenant_id = ? and type = 'PENALTY_INCURRED'",
+                Long.class, fixtures.tenantId());
+        assertThat(rows).as("the notification really did fail to write").isZero();
+    }
+
     /** One proposal raised by hand, so a test about approval need not bounce anything. */
     private PenaltyAssessmentDTO proposal(UUID leaseId, UUID chequeId, PenaltyReason reason, String amount) {
         return service.propose(new ProposePenaltyRequest(leaseId, chequeId, reason,

@@ -139,10 +139,22 @@ public class ChequeDetailsService {
         if (items == null || items.isEmpty()) {
             throw new BulkAttachValidationException("items must not be empty");
         }
+        // The call must be tenant-scoped, and scoped to *this* lease's tenant.
+        //
+        // The second half is what the Hibernate filter already does when a tenant
+        // context is set; the first half is the half it cannot do. With no context
+        // TenantAspect leaves the filter off entirely, so findById happily returns
+        // another organisation's lease and every check after this one would pass —
+        // requireManageable answers on roles, not on tenancy. A request always
+        // carries a tenant (ApiSecurityFilter), so reaching here without one means
+        // an internal caller that has no business writing cheque details.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new NotFoundException("Lease not found");
+        }
         Lease lease = leaseRepository.findById(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+        if (!tenantId.equals(lease.getTenantId())) {
             throw new NotFoundException("Lease not found");
         }
         leaseAccessPolicy.requireManageable(lease);

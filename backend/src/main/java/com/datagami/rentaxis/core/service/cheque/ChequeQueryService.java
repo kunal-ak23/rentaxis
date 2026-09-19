@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.cheque.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeSummaryDTO;
 import com.datagami.rentaxis.api.dto.cheque.LeaseChequeStatsDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.domain.entity.Cheque;
@@ -127,10 +128,20 @@ public class ChequeQueryService {
         return toDtos(rows);
     }
 
-    /** One row, if the caller is entitled to the lease behind it. */
+    /**
+     * One register row, if the caller is entitled to the lease behind it.
+     *
+     * <p>A {@code DRAFT} row answers "not found" here even to a caller who may see
+     * the lease: it is a grid row, and the grid is read through
+     * {@code GET /api/v1/leases/&#123;id&#125;/cheques}. Answering it from the
+     * register would make a proposal look like an instrument someone is holding.</p>
+     */
     public ChequeDTO get(UUID chequeId) {
         Cheque cheque = chequeRepository.findById(chequeId)
                 .orElseThrow(() -> new NotFoundException("Cheque not found"));
+        if (cheque.getStatus() == ChequeStatus.DRAFT) {
+            throw new NotFoundException("Cheque not found");
+        }
         Lease lease = cheque.getLease();
         // requireReadable, not requireManageable: looking at a receipt is not moving
         // its money, and it answers "not found" rather than "forbidden" so a caller
@@ -251,6 +262,15 @@ public class ChequeQueryService {
         if (leaseIds == null || leaseIds.isEmpty()) {
             return List.of();
         }
+        if (leaseIds.size() > MAX_STATS_LEASES) {
+            // An unbounded `in` list is a table's worth of rows behind one request.
+            // The screen this serves renders a page of leases, so the cap is well
+            // above anything it asks for and refusing is better than quietly
+            // truncating a list the caller believes it got an answer for.
+            throw new BusinessRuleViolationException(
+                    "Ask for at most " + MAX_STATS_LEASES + " leases at a time; this request named "
+                            + leaseIds.size() + ".");
+        }
         Scope scope = scope(null);
         if (scope.blocked()) {
             return List.of();
@@ -258,7 +278,7 @@ public class ChequeQueryService {
         LocalDate on = on(today);
         List<UUID> distinct = leaseIds.stream().distinct().toList();
         Map<UUID, Accumulator> byLease = new LinkedHashMap<>();
-        for (Cheque c : chequeRepository.findByLease_IdInOrderBySeqNoAsc(distinct)) {
+        for (Cheque c : chequeRepository.findRegisterRowsForLeases(distinct)) {
             Lease lease = c.getLease();
             if (lease == null || !scope.allows(c.getProperty())) {
                 continue;
@@ -280,6 +300,9 @@ public class ChequeQueryService {
     // ------------------------------------------------------------------
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+
+    /** Leases one {@code stats-by-leases} call may name. */
+    static final int MAX_STATS_LEASES = 200;
 
     /**
      * The due rows behind the tiles and the aging report.

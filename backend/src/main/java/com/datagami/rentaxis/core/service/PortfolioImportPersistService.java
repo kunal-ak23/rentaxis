@@ -371,13 +371,13 @@ public class PortfolioImportPersistService {
                     if (!chequeRows.isEmpty()) {
                         savedLease.setPaymentTerms(chequeRows.size());
                     }
-                    chequeGenerationService.saveRowsFor(savedLease, gridRows);
+                    chequeGenerationService.saveRowsForSystemImport(savedLease, gridRows);
                     chequesOnThisLease = gridRows.size();
                     chequesFromSheet += chequeRows.size();
                 }
             } else if (savedLease.getPaymentTerms() != null && savedLease.getPaymentTerms() >= 1
                     && savedLease.getRentAmount() != null && savedLease.getRentAmount().signum() > 0) {
-                chequesOnThisLease = chequeGenerationService.generateFor(savedLease,
+                chequesOnThisLease = chequeGenerationService.generateForSystemImport(savedLease,
                         new GenerateChequesRequest(savedLease.getPaymentTerms(), startDate,
                                 null, null, null, null, null)).size();
             }

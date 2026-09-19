@@ -5,6 +5,7 @@ import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -13,10 +14,12 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
+import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -35,6 +38,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -83,9 +87,12 @@ class ChequeControllerIT {
     @Autowired UnitRepository unitRepo;
     @Autowired PropertyService propertyService;
     @Autowired AccountService accountService;
+    @Autowired AccountResolver resolver;
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
+    @Autowired JournalEntryRepository entries;
+    @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate tx;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 1, 5);
@@ -135,6 +142,19 @@ class ChequeControllerIT {
 
     private Cheque reread(UUID chequeId) {
         return tx.execute(s -> chequeRepo.findById(chequeId).orElseThrow());
+    }
+
+    private LocalDate entryDate(UUID entryId) {
+        return tx.execute(s -> entries.findById(entryId).orElseThrow().getEntryDate());
+    }
+
+    private long registerSize() {
+        return reread().size();
+    }
+
+    private long journalEntryCount() {
+        return jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
+                Long.class, fixtures.tenantId());
     }
 
     private User user(UserRole role) {
@@ -339,6 +359,58 @@ class ChequeControllerIT {
         assertThat(row.getPdrJournalId()).isNotNull();
         assertThat(row.getCrtJournalId()).isNotNull();
         assertThat(row.getClearedAt()).isEqualTo(LocalDate.of(2026, 9, 10));
+    }
+
+    /**
+     * Cash taken on Friday, written up on Monday: both journals file on the day the
+     * money moved.
+     *
+     * <p>The row's posting date defaults to its own cheque date rather than to
+     * today, so a back-dated receipt cannot produce a {@code PDR} dated <em>after</em>
+     * the {@code CRT} that settles it — an instrument that cleared before it was
+     * registered, which no reconciliation can explain.</p>
+     */
+    @Test
+    void aBackDatedCashReceiptFilesBothJournalsOnTheRowsOwnDate() {
+        ResponseEntity<Map> created = map(accountant, HttpMethod.POST,
+                "/api/v1/cheques/lease/" + leaseId + "/cash-receipt",
+                Map.of("amount", 2500, "chequeDate", "2026-07-03", "mode", "CASH",
+                        "narration", "Counter receipt, written up late"));
+
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.OK);
+        UUID id = UUID.fromString((String) created.getBody().get("id"));
+        Cheque row = reread(id);
+        assertThat(row.getPostingDate()).isEqualTo(LocalDate.of(2026, 7, 3));
+        assertThat(row.getClearedAt()).isEqualTo(LocalDate.of(2026, 7, 3));
+        assertThat(entryDate(row.getPdrJournalId())).isEqualTo(LocalDate.of(2026, 7, 3));
+        assertThat(entryDate(row.getCrtJournalId())).isEqualTo(LocalDate.of(2026, 7, 3));
+        assertThat(entryDate(row.getPdrJournalId()))
+                .isBeforeOrEqualTo(entryDate(row.getCrtJournalId()));
+    }
+
+    /**
+     * The two halves are one act. When the receiving half refuses, the row it would
+     * have received must not be left behind — a registered instrument for money the
+     * counter never took, with a PDR raising a receivable against it.
+     */
+    @Test
+    void aCashReceiptThatCannotBeReceivedLeavesNoRowAndNoJournal() {
+        long rowsBefore = registerSize();
+        long entriesBefore = journalEntryCount();
+
+        // A debit account that is not a bank or cash leaf: accepted while the row is
+        // built, refused by the clearing half.
+        UUID receivable = tx.execute(s ->
+                resolver.resolve(AccountRole.RENT_RECEIVABLE, fixtures.property().getId()).getId());
+
+        assertThat(status(accountant, HttpMethod.POST,
+                "/api/v1/cheques/lease/" + leaseId + "/cash-receipt",
+                Map.of("amount", 1500, "chequeDate", "2026-09-10", "mode", "CASH",
+                        "debitAccountId", receivable.toString())))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        assertThat(registerSize()).isEqualTo(rowsBefore);
+        assertThat(journalEntryCount()).isEqualTo(entriesBefore);
     }
 
     /** A PDC is paper to be banked, not something that arrives over the counter. */

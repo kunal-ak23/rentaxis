@@ -363,16 +363,18 @@ class ChequeRepositoryIT {
                 .isEqualByComparingTo("0");
     }
 
+    /** The retention purge only looks at rows that still hold a blob. */
     @Test
-    void findImagesOlderThan_picksOnlyRowsStillHoldingABlob() {
+    void findImagePurgeBatch_picksOnlyRowsStillHoldingABlob() {
         Cheque withImage = cheque(1, "000001", LocalDate.of(2020, 1, 1), ChequeStatus.CLEARED, ChequeMode.PDC);
         withImage.setImageBlobPath("cheques/000001.jpg");
         cheques.save(withImage);
         cheque(2, "000002", LocalDate.of(2020, 1, 1), ChequeStatus.CLEARED, ChequeMode.PDC);
 
-        assertThat(inTx(() -> cheques.findImagesOlderThan(LocalDate.of(2021, 1, 1))))
-                .extracting(Cheque::getChequeNumber).containsExactly("000001");
-        assertThat(inTx(() -> cheques.findImagesOlderThan(LocalDate.of(2019, 1, 1)))).isEmpty();
+        assertThat(inTx(() -> cheques.findImagePurgeBatch(LocalDate.of(2021, 1, 1), PAGE)))
+                .extracting(ChequeImagePurgeRow::chequeImageBlobPath)
+                .containsExactly("cheques/000001.jpg");
+        assertThat(inTx(() -> cheques.findImagePurgeBatch(LocalDate.of(2019, 1, 1), PAGE))).isEmpty();
     }
 
     /**

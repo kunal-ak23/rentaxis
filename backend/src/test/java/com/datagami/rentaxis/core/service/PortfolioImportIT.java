@@ -5,6 +5,8 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -29,6 +31,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -63,6 +66,7 @@ class PortfolioImportIT {
     @Autowired LeaseLineRepository leaseLineRepository;
     @Autowired PaymentScheduleRepository paymentScheduleRepository;
     @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepository;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueryService;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired UnitRepository unitRepository;
     @Autowired RenterRepository renterRepository;
@@ -185,14 +189,30 @@ class PortfolioImportIT {
         // Every imported lease now carries instruments, and the job's counter says
         // how many. The import used to create none at all.
         assertThat(completed.getSchedulesCreated()).isPositive();
+
+        // They are DRAFT rows: the lease's *grid*, not its register. The import
+        // writes what the sheet said and posts nothing, so there is no PDR behind
+        // any of them — which is exactly why the register must not show them as
+        // instruments the landlord is holding.
         assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(tenant2Lease.getId()))
                 .hasSize(4)
-                .allSatisfy(c -> assertThat(c.getStatus())
-                        .isEqualTo(com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT));
+                .allSatisfy(c -> {
+                    assertThat(c.getStatus()).isEqualTo(ChequeStatus.DRAFT);
+                    assertThat(c.getPdrJournalId()).isNull();
+                });
         // A lease with no Cheques sheet gets the grid generated from its own lines
         // and payment terms, exactly as the draft wizard would.
         assertThat(leases).allSatisfy(l ->
                 assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(l.getId())).isNotEmpty());
+
+        // And none of it reaches the register — not the list, not a tile, not the
+        // per-lease stats — although the imported leases are ACTIVE.
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(chequeQueryService.search(null, null, null, null, null, null,
+                org.springframework.data.domain.PageRequest.of(0, 100)).getContent()).isEmpty();
+        assertThat(chequeQueryService.summary(null, LocalDate.now()).registeredCount()).isZero();
+        assertThat(chequeQueryService.statsByLeases(
+                leases.stream().map(Lease::getId).toList(), LocalDate.now())).isEmpty();
     }
 
     @Test

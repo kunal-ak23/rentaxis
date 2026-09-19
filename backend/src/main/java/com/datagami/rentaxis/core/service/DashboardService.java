@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
 import com.datagami.rentaxis.api.dto.MonthlyCollectionDTO;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -50,6 +51,7 @@ public class DashboardService {
     private final UnitRepository unitRepository;
     private final LeaseRepository leaseRepository;
     private final ChequeRepository chequeRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
     @Transactional(readOnly = true)
     public DashboardSummaryDTO getSummary() {
@@ -112,15 +114,22 @@ public class DashboardService {
         //
         // Aggregated in the database rather than by walking every row: the register
         // is the largest table a landlord of any size has, and the dashboard is the
-        // first screen after login. Cheques on unsigned leases (DRAFT /
-        // PENDING_SIGNATURE) are a proposal rather than money owed and every query
-        // here excludes them.
+        // first screen after login. Cheques on unsigned leases and DRAFT grid rows
+        // are proposals rather than money owed, and every query here excludes them.
+        //
+        // Scoped exactly as the register is. A property manager's dashboard totals
+        // have to equal what they see on /api/v1/cheques for the same properties:
+        // an unscoped headline over a scoped list is both a leak — the tile is the
+        // whole organisation's money — and a screen that contradicts itself.
+        Scope scope = scope();
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate nextMonthStart = monthStart.plusMonths(1);
 
         Map<ChequeStatus, BigDecimal> byStatus = new EnumMap<>(ChequeStatus.class);
-        for (Object[] row : chequeRepository.totalsByStatus(null, true, List.of())) {
-            byStatus.put((ChequeStatus) row[0], nz((BigDecimal) row[2]));
+        if (!scope.blocked()) {
+            for (Object[] row : chequeRepository.totalsByStatus(null, scope.unrestricted(), scope.propertyIds())) {
+                byStatus.put((ChequeStatus) row[0], nz((BigDecimal) row[2]));
+            }
         }
         BigDecimal outstanding = BigDecimal.ZERO;
         for (ChequeStatus s : OUTSTANDING) {
@@ -131,18 +140,22 @@ public class DashboardService {
         summary.setPendingAmount(outstanding);
         // Maturing inside the current calendar month. Earlier unpaid instalments
         // are not here — they surface under "overdue".
-        summary.setPendingThisMonthAmount(nz(chequeRepository.sumByStatusInAndChequeDateBetween(
-                OUTSTANDING, monthStart, nextMonthStart)));
+        summary.setPendingThisMonthAmount(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumByStatusInAndChequeDateBetween(
+                        OUTSTANDING, monthStart, nextMonthStart,
+                        scope.unrestricted(), scope.propertyIds())));
 
         // Overdue is ChequeDueRules over the register's due rows, not "past its
         // date": grace is a per-lease number and a dashboard that ignored it would
         // show a renter as late days before their own contract says they are.
         BigDecimal overdueAmount = BigDecimal.ZERO;
-        for (Cheque c : chequeRepository.findDue(null, today, true, List.of(),
-                org.springframework.data.domain.Pageable.unpaged()).getContent()) {
-            Lease lease = c.getLease();
-            if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
-                overdueAmount = overdueAmount.add(nz(c.getAmount()));
+        if (!scope.blocked()) {
+            for (Cheque c : chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.Pageable.unpaged()).getContent()) {
+                Lease lease = c.getLease();
+                if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
+                    overdueAmount = overdueAmount.add(nz(c.getAmount()));
+                }
             }
         }
         summary.setOverdueAmount(overdueAmount);
@@ -151,24 +164,50 @@ public class DashboardService {
         // By clearedAt, which is a date rather than a timestamp, so the old
         // UAE-timezone correction around month boundaries no longer applies:
         // "the day the money landed" is already the landlord's local day.
-        summary.setReceivedThisMonth(nz(chequeRepository.sumClearedBetween(
-                monthStart, nextMonthStart, null, true, List.of())));
-        summary.setReceivedLastMonth(nz(chequeRepository.sumClearedBetween(
-                monthStart.minusMonths(1), monthStart, null, true, List.of())));
+        summary.setReceivedThisMonth(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumClearedBetween(monthStart, nextMonthStart, null,
+                        scope.unrestricted(), scope.propertyIds())));
+        summary.setReceivedLastMonth(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumClearedBetween(monthStart.minusMonths(1), monthStart, null,
+                        scope.unrestricted(), scope.propertyIds())));
 
         // --- Recent Activity ---
         List<DashboardSummaryDTO.RecentActivityItem> activityItems = new ArrayList<>();
-        for (Cheque c : chequeRepository.findRecentlyChanged(
-                org.springframework.data.domain.PageRequest.of(0, RECENT_ACTIVITY_ROWS))) {
-            DashboardSummaryDTO.RecentActivityItem item = new DashboardSummaryDTO.RecentActivityItem();
-            item.setType("PAYMENT_" + c.getStatus().name());
-            item.setDescription(buildChequeDescription(c));
-            item.setTimestamp(c.getStatusChangedAt().toString());
-            activityItems.add(item);
+        if (!scope.blocked()) {
+            for (Cheque c : chequeRepository.findRecentlyChanged(scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.PageRequest.of(0, RECENT_ACTIVITY_ROWS))) {
+                DashboardSummaryDTO.RecentActivityItem item = new DashboardSummaryDTO.RecentActivityItem();
+                item.setType("PAYMENT_" + c.getStatus().name());
+                item.setDescription(buildChequeDescription(c));
+                item.setTimestamp(c.getStatusChangedAt().toString());
+                activityItems.add(item);
+            }
         }
         summary.setRecentActivity(activityItems);
 
         return summary;
+    }
+
+    /**
+     * Who is looking at the dashboard, resolved once.
+     *
+     * <p>The same three answers {@code ChequeQueryService} works from: everything,
+     * these properties, or nothing. {@code blocked} is the last of those — a renter,
+     * a tenant user, or a manager assigned to no building — and it short-circuits
+     * every query rather than asking Postgres to match an empty {@code in} list.</p>
+     */
+    private Scope scope() {
+        List<java.util.UUID> visible = leaseAccessPolicy.visiblePropertyIds();
+        if (visible == null) {
+            return new Scope(true, List.of(), false);
+        }
+        if (visible.isEmpty()) {
+            return new Scope(false, List.of(), true);
+        }
+        return new Scope(false, visible, false);
+    }
+
+    private record Scope(boolean unrestricted, List<java.util.UUID> propertyIds, boolean blocked) {
     }
 
     /**
@@ -183,8 +222,11 @@ public class DashboardService {
         LocalDate from = start.atDay(1);
         LocalDate toExclusive = current.plusMonths(1).atDay(1);
 
+        Scope scope = scope();
         Map<String, BigDecimal[]> byYm = new HashMap<>();
-        for (Object[] row : chequeRepository.aggregateMonthly(from, toExclusive)) {
+        for (Object[] row : scope.blocked() ? List.<Object[]>of()
+                : chequeRepository.aggregateMonthly(from, toExclusive,
+                        scope.unrestricted(), scope.propertyIds())) {
             String ym = (String) row[0];
             BigDecimal expected = row[1] != null ? (BigDecimal) row[1] : BigDecimal.ZERO;
             BigDecimal collected = row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO;

@@ -31,6 +31,8 @@ import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -82,6 +84,8 @@ import java.util.UUID;
  */
 @Service
 public class PenaltyAssessmentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PenaltyAssessmentService.class);
 
     /** Statuses that mean "this proposal is still live", for the duplicate guard. */
     static final Set<PenaltyAssessmentStatus> OPEN =
@@ -275,7 +279,18 @@ public class PenaltyAssessmentService {
         // The renter hears about a fine here and only here. A PROPOSED assessment
         // is finance deciding whether to charge them — some are waived — and
         // telling them about one would turn a deliberation into a demand.
-        notificationService.sendPenaltyIncurred(approved);
+        //
+        // Caught out here rather than inside the notification: it runs in its own
+        // REQUIRES_NEW transaction, so a failed notification row rolls that one back
+        // and leaves this one untouched. Catching it in there would mark the new
+        // transaction rollback-only and surface as an UnexpectedRollbackException on
+        // the approval — a fine nobody could charge because a notification failed.
+        try {
+            notificationService.sendPenaltyIncurred(approved);
+        } catch (Exception e) {
+            log.warn("Penalty {} was approved but the renter could not be notified: {}",
+                    approved.getId(), e.getMessage());
+        }
         return dto(approved);
     }
 
