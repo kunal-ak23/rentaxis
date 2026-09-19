@@ -31,12 +31,13 @@ import java.util.UUID;
  * The penalty worklist and the three decisions finance can take on a proposal
  * (spec §7.3).
  *
- * <p><b>Why {@code /penalty-assessments} and not {@code /penalties}.</b> The v1
- * {@code PenaltyController} still owns {@code /api/v1/penalties} and is still what
- * the web app calls; two {@code @RequestMapping}s over the same GET and the same
- * {@code /{id}/waive} would refuse to start the context at all. The v1 controller
- * is deleted in task 12, and this moves onto the plain path then — one rename,
- * rather than a live endpoint broken for a sprint.</p>
+ * <p>It served {@code /api/v1/penalty-assessments} while v1's
+ * {@code PenaltyController} still owned {@code /api/v1/penalties}: two
+ * {@code @RequestMapping}s over the same GET and the same {@code /&#123;id&#125;/waive}
+ * refuse to start the context at all. That controller went with the v1 penalty
+ * tables (changeset 84), so this is on the plain path now — one rename at the
+ * moment the old endpoint stopped existing, rather than a live endpoint broken
+ * for a sprint.</p>
  *
  * <p><b>Approving is not a manager's decision.</b> Listing and proposing are open
  * to a property manager, because spotting that a renter should be fined is part of
@@ -49,7 +50,7 @@ import java.util.UUID;
  * touch this penalty".</p>
  */
 @RestController
-@RequestMapping("/api/v1/penalty-assessments")
+@RequestMapping("/api/v1/penalties")
 public class PenaltyAssessmentController {
 
     private static final int MAX_PAGE_SIZE = 200;

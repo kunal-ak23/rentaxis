@@ -1,7 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -13,12 +12,10 @@ import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseAttachmentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
-import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +42,6 @@ class LeaseServiceUnitOccupancyTest {
     private LeaseRepository leaseRepository;
     private UnitRepository unitRepository;
     private RenterRepository renterRepository;
-    private PaymentScheduleRepository paymentScheduleRepository;
     private LeaseInteractionRepository leaseInteractionRepository;
     private LeaseLineRepository leaseLineRepository;
     private ChequeRepository chequeRepository;
@@ -56,10 +52,8 @@ class LeaseServiceUnitOccupancyTest {
         leaseRepository = mock(LeaseRepository.class);
         unitRepository = mock(UnitRepository.class);
         renterRepository = mock(RenterRepository.class);
-        paymentScheduleRepository = mock(PaymentScheduleRepository.class);
         leaseInteractionRepository = mock(LeaseInteractionRepository.class);
         LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
-        LeaseChargeRepository leaseChargeRepository = mock(LeaseChargeRepository.class);
 
         // Pass-through by default: these tests are about lease behaviour, not
         // authorization. LeaseAccessPolicyTest covers the scoping itself.
@@ -77,7 +71,6 @@ class LeaseServiceUnitOccupancyTest {
                 mock(LeaseEventRepository.class),
                 leaseDocumentRepository,
                 mock(LeaseAttachmentRepository.class),
-                leaseChargeRepository,
                 leaseInteractionRepository,
                 leaseLineRepository,
                 mock(ChargeTypeRepository.class),
@@ -91,8 +84,6 @@ class LeaseServiceUnitOccupancyTest {
 
         when(leaseRepository.save(any(Lease.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(leaseDocumentRepository.findByLeaseId(any())).thenReturn(List.of());
-        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of());
-        when(paymentScheduleRepository.findByLeaseId(any())).thenReturn(List.of());
         when(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(List.of());
         // Activation and termination now take the unit row FOR UPDATE so the
         // occupancy check and the status flip cannot interleave with a
@@ -314,23 +305,25 @@ class LeaseServiceUnitOccupancyTest {
     }
 
     /**
-     * Going ACTIVE no longer generates a payment plan. Cheques are cut explicitly
-     * against the lease's lines and registered by the post — a schedule appearing
-     * as a side effect of a status change is what let a lease bill a renter for
-     * instalments nobody had agreed.
+     * Going ACTIVE cuts no instruments. Cheques are generated explicitly against
+     * the lease's lines and registered by the post — a payment plan appearing as a
+     * side effect of a status change is what let a lease bill a renter for
+     * instalments nobody had agreed to.
      *
-     * <p>Asserted on the repository rather than on {@code PaymentScheduleService}:
-     * {@code LeaseService} no longer holds a reference to that service at all, and
-     * "no schedule row was written" is the fact worth pinning down anyway.</p>
+     * <p>This used to assert that no {@code payment_schedules} row was written.
+     * That table is gone (changeset 84) and the register took its place, so the
+     * same fact is now pinned on {@code ChequeRepository}.</p>
      */
     @Test
-    void markActiveOnPosting_doesNotGenerateAPaymentSchedule() {
+    void markActiveOnPosting_cutsNoInstruments() {
         Lease lease = lease(LeaseStatus.DRAFT);
         lockableUnit(lease);
 
         service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
 
-        verify(paymentScheduleRepository, org.mockito.Mockito.never())
-                .save(org.mockito.ArgumentMatchers.any(PaymentSchedule.class));
+        verify(chequeRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+        verify(chequeRepository, org.mockito.Mockito.never())
+                .saveAll(org.mockito.ArgumentMatchers.any());
     }
 }

@@ -53,7 +53,6 @@ public class LeaseService {
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LeaseAttachmentRepository leaseAttachmentRepository;
-    private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseInteractionRepository leaseInteractionRepository;
     private final LeaseLineRepository leaseLineRepository;
     private final ChargeTypeRepository chargeTypeRepository;
@@ -71,7 +70,6 @@ public class LeaseService {
                         LeaseEventRepository leaseEventRepository,
                         LeaseDocumentRepository leaseDocumentRepository,
                         LeaseAttachmentRepository leaseAttachmentRepository,
-                        LeaseChargeRepository leaseChargeRepository,
                         LeaseInteractionRepository leaseInteractionRepository,
                         LeaseLineRepository leaseLineRepository,
                         ChargeTypeRepository chargeTypeRepository,
@@ -88,7 +86,6 @@ public class LeaseService {
         this.leaseEventRepository = leaseEventRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.leaseAttachmentRepository = leaseAttachmentRepository;
-        this.leaseChargeRepository = leaseChargeRepository;
         this.leaseInteractionRepository = leaseInteractionRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chargeTypeRepository = chargeTypeRepository;
@@ -754,9 +751,6 @@ public class LeaseService {
         // if a previous flow left one behind, drop the row(s) too.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
         leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
-        // lease_charges FK is NO ACTION; remove the lease's charges before
-        // deleting the lease or the FK constraint blocks it.
-        leaseChargeRepository.deleteAll(leaseChargeRepository.findByLeaseId(leaseId));
         // lease_lines cascades on delete, but cheques.lease_id does not — a draft
         // with generated cheques would be undeletable behind an opaque 500, which
         // is exactly the failure lease_interactions produced below.

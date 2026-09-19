@@ -15,7 +15,7 @@ public record RentReceiptPayload(
 ) {
 
     /**
-     * The register's shape of the receipt email (spec §9.3).
+     * The receipt email for one cleared register row (spec §9.3).
      *
      * <p>{@code receiptId} is the cheque's id: there is no receipt entity, and the
      * cleared row <em>is</em> the receipt — one CLEARED cheque, one receipt number,

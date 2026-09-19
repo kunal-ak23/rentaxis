@@ -28,10 +28,10 @@ public class MeetingDetail extends BaseTenantEntity {
     /**
      * The cheques a CHEQUE_REPLACEMENT meeting is about.
      *
-     * <p>Mapped to {@code cheque_ids} (changeset 83). The old
-     * {@code payment_schedule_ids} column is left in place and unmapped until the
-     * payment-schedule table itself goes: dropping a column in the same change
-     * that stops reading it leaves no way back if anything still points at it.</p>
+     * <p>Mapped to {@code cheque_ids} (changeset 83). Its v1 predecessor was
+     * dropped by changeset 84 without a backfill: those ids named rows in a table
+     * that no longer exists, and copying them across would have pointed
+     * replacement meetings at whichever cheque happened to share a uuid.</p>
      */
     @Column(name = "cheque_ids", columnDefinition = "uuid[]")
     private UUID[] chequeIds;

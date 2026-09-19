@@ -1,0 +1,46 @@
+databaseChangeLog:
+  # Accounting v2 plan 2, final step. The cheque register (cheques) replaced
+  # payment_schedules; lease_lines replaced lease_charges; penalty_assessments
+  # replaced payment_penalties/penalty_payments. Wipe-and-reseed (spec D4).
+  #
+  # The columns on *other* tables go in the same block as the tables they point
+  # at. Leaving one behind is not harmless: online_payments.payment_schedule_id
+  # would be a dangling uuid nobody can resolve, and meeting_details
+  # .payment_schedule_ids an array of ids into a table that no longer exists.
+  #
+  # meeting_details.cheque_ids (83) is deliberately NOT backfilled from
+  # payment_schedule_ids. Those ids named payment_schedules rows, and a cheque id
+  # equal to a schedule id would be a coincidence, so copying them across would
+  # point CHEQUE_REPLACEMENT meetings at whatever cheque happened to share the
+  # uuid — or, far more likely, at nothing at all while looking populated. Under
+  # wipe-and-reseed there is no history worth carrying, so the column starts
+  # empty and the meetings screen fills it from here on.
+  - changeSet:
+      id: 84-drop-v1-schedules
+      author: claude
+      changes:
+        - sql:
+            sql: |
+              -- online_payments.cheque_id became the link in 83 and is nullable
+              -- there only because the v1 rows had no cheque to point at. Making
+              -- it NOT NULL would fail on exactly those rows, so they go first:
+              -- wipe-and-reseed is the agreed posture for this migration
+              -- (spec D4), and a captured payment that settles nothing on the
+              -- register is a row no v2 screen, receipt or journal can read.
+              DELETE FROM online_payments WHERE cheque_id IS NULL;
+              ALTER TABLE online_payments DROP CONSTRAINT IF EXISTS fk_online_payment_schedule;
+              ALTER TABLE online_payments DROP COLUMN IF EXISTS payment_schedule_id;
+              ALTER TABLE online_payments ALTER COLUMN cheque_id SET NOT NULL;
+              ALTER TABLE meeting_details DROP COLUMN IF EXISTS payment_schedule_ids;
+              DROP TABLE IF EXISTS penalty_payments CASCADE;
+              DROP TABLE IF EXISTS payment_penalties CASCADE;
+              DROP TABLE IF EXISTS payment_schedules CASCADE;
+              DROP TABLE IF EXISTS lease_charges CASCADE;
+              -- leases.monthly_rent: v1's derived rent mirror. lease_lines are the
+              -- source of truth now and LeaseService.monthlyRentOf computes the
+              -- figure from the term, so nothing has read this column since 83.
+              ALTER TABLE leases DROP COLUMN IF EXISTS monthly_rent;
+      rollback:
+        - sql:
+            # no rollback: v1 schedules are retired (a bare "SELECT 1 -- ..." scalar with ": " does not parse in SnakeYAML)
+            sql: "SELECT 1"

@@ -8,14 +8,12 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,7 +62,6 @@ class PortfolioImportIT {
     @Autowired ImportJobRepository importJobRepository;
     @Autowired LeaseRepository leaseRepository;
     @Autowired LeaseLineRepository leaseLineRepository;
-    @Autowired PaymentScheduleRepository paymentScheduleRepository;
     @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepository;
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueryService;
     @Autowired LandlordOrgRepository landlordOrgRepository;
@@ -163,7 +160,8 @@ class PortfolioImportIT {
         // The sheet's money columns land as charge lines, and rentAmount /
         // depositAmount on the lease are the derived mirrors of them. This
         // replaces the old assertions on security-deposit and one-time-charge
-        // payment-schedule rows: the import writes no schedules at all now.
+        // payment-schedule rows: those are lines now, and the table they lived in
+        // no longer exists (changeset 84).
         List<LeaseLine> scenario5Lines = leaseLineRepository
                 .findByLease_IdOrderBySeqNoAsc(scenario5.getId());
         assertThat(scenario5Lines).extracting(l -> l.getChargeType().getCode())
@@ -184,7 +182,6 @@ class PortfolioImportIT {
                 .filter(l -> tenant2RenterId.equals(l.getRenter().getId()))
                 .findFirst().orElseThrow();
         assertThat(tenant2Lease.getPaymentTerms()).isEqualTo(4);
-        assertThat(paymentScheduleRepository.findAll()).isEmpty();
 
         // Every imported lease now carries instruments, and the job's counter says
         // how many. The import used to create none at all.

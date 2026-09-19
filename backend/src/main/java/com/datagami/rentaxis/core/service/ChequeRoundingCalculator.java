@@ -45,76 +45,30 @@ public final class ChequeRoundingCalculator {
     /** Smallest currency unit, used for UNIFORM cent distribution. */
     private static final BigDecimal CENT = new BigDecimal("0.01");
 
-    private static final BigDecimal TEN = new BigDecimal("10");
-
-    /**
-     * The ladder the two-and-three-argument overloads have always used.
-     *
-     * <p>The 10 step is a v2 denomination: PACT writes cheque grids in tens, and
-     * {@link #distribute(BigDecimal, int, InstallmentDistribution, BigDecimal)}
-     * reaches it by asking for it. It is deliberately withheld from the callers
-     * that do not, because those callers are v1 payment schedules whose rows are
-     * already in the database. Offering them 10 would silently re-shape every
-     * split whose per-cheque average falls between 10 and 100 — 250 over 4
-     * cheques is [62.50 × 4] today and would become [60, 60, 60, 70] — and a
-     * regenerated schedule would then disagree with the one the renter was sent.
-     * Nothing about the 10 step is wrong; it is just not this ladder's.</p>
-     */
-    private static final List<BigDecimal> LEGACY_STEPS =
-            STEPS.stream().filter(s -> s.compareTo(TEN) != 0).toList();
-
     public record Result(List<BigDecimal> amounts, BigDecimal step) {}
 
     private ChequeRoundingCalculator() {}
 
     /**
-     * Distributes {@code totalRent} across {@code n} cheques using the default
-     * LAST_LARGER strategy.
-     *
-     * @param totalRent total amount to distribute (must be > 0).
-     * @param n number of cheques (>= 1).
-     */
-    public static Result distribute(BigDecimal totalRent, int n) {
-        return distribute(totalRent, n, InstallmentDistribution.LAST_LARGER);
-    }
-
-    /**
-     * Distributes {@code totalRent} across {@code n} cheques, placing the
-     * rounding residual per the chosen {@link InstallmentDistribution} strategy.
+     * Distributes {@code totalRent} across {@code n} cheques, placing the rounding
+     * residual per the chosen {@link InstallmentDistribution} and flooring the base
+     * to a denomination no coarser than {@code minStep} (spec §7.1).
      *
      * <ul>
-     *   <li>UNIFORM — even per-cheque amount; the cent remainder is spread one
-     *       cent at a time across the earliest cheques so the sum is exact.</li>
-     *   <li>LAST_LARGER (default) — non-last cheques floored to a clean step;
-     *       the remainder lands on the last cheque.</li>
+     *   <li>UNIFORM — even per-cheque amount; the cent remainder is spread one cent
+     *       at a time across the earliest cheques so the sum is exact.</li>
+     *   <li>LAST_LARGER — non-last cheques floored to a clean step; the remainder
+     *       lands on the last cheque.</li>
      *   <li>FIRST_LARGER — remainder on the first cheque.</li>
      *   <li>FIRST_AND_LAST_LARGER — remainder split across first + last.</li>
      * </ul>
      *
-     * <p><b>Zero-value cheque guard:</b> for the stepped strategies
-     * (LAST_LARGER, FIRST_LARGER, FIRST_AND_LAST_LARGER), any candidate step
-     * whose floored per-cheque base evaluates to zero (i.e.
-     * {@code floor(totalRent/n, step) <= 0}) is skipped. This prevents the
-     * legacy {@code [0, 0, …, total]} output that occurred when the average
-     * per-cheque rent was smaller than the candidate step (e.g. totalRent=1500,
-     * n=4 with a 1000-step would floor to 0). The algorithm falls through to
-     * finer steps until it finds one that yields a positive base amount,
-     * producing a clean split such as {@code [300, 300, 300, 600]} instead.</p>
-     *
-     * <p>Every positive rent and cheque count produces a schedule; this method
-     * does not reject a lease.</p>
-     *
-     * @param totalRent total amount to distribute (must be > 0).
-     * @param n number of cheques (>= 1).
-     * @param strategy remainder-placement strategy; null defaults to LAST_LARGER.
-     */
-    public static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy) {
-        return distribute(totalRent, n, strategy, LEGACY_STEPS);
-    }
-
-    /**
-     * Same split, but the rounding ladder starts at {@code minStep} rather than at
-     * the coarsest denomination — the cheque grid's form of the rule (spec §7.1).
+     * <p><b>Zero-value cheque guard:</b> for the stepped strategies, a candidate
+     * step whose floored per-cheque base evaluates to zero is skipped, and the
+     * ladder falls through to a finer one. Without it, 1,500 over 4 cheques at a
+     * 1,000 step floors to zero and produces {@code [0, 0, 0, 1500]} rather than
+     * {@code [300, 300, 300, 600]}. Every positive rent and cheque count therefore
+     * produces a schedule; this method does not reject a lease.</p>
      *
      * <p>A PACT cheque grid is written in tens, not in thousands: 61,000 over six
      * cheques is 10,160 five times with 10,200 absorbing the residual, where the
@@ -129,7 +83,17 @@ public final class ChequeRoundingCalculator {
      * still falls through to cents rather than failing. A null {@code minStep}
      * means the full ladder.</p>
      *
+     * <p>The two- and three-argument overloads that started at the coarsest
+     * denomination went with v1's payment schedules (changeset 84). They withheld
+     * the 10 step so a regenerated schedule could not disagree with one the renter
+     * had already been sent; with no rows left to regenerate, there is nothing for
+     * a second ladder to protect.</p>
+     *
+     * @param totalRent total amount to distribute (must be &gt; 0).
+     * @param n number of cheques (&gt;= 1).
+     * @param strategy remainder-placement strategy; null defaults to LAST_LARGER.
      * @param minStep coarsest rounding denomination to try; finer steps follow.
+     *                Null means the full ladder, starting at 1,000.
      */
     public static Result distribute(BigDecimal totalRent, int n, InstallmentDistribution strategy, BigDecimal minStep) {
         List<BigDecimal> ladder = minStep == null

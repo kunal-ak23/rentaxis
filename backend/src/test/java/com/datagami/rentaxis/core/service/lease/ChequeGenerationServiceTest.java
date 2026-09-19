@@ -42,14 +42,14 @@ class ChequeGenerationServiceTest {
     }
 
     /**
-     * Without the tens step the same 61,000 falls to the default ladder's 1,000 and
+     * Without the tens step the same 61,000 falls to the full ladder's 1,000 and
      * writes 11,000 + 10,000 × 5 — a whole denomination of rent moved onto the first
      * cheque. This is the assertion that fails if {@code TEN} is ever widened.
      */
     @Test
     void theCoarseLadderWouldHaveWrittenAVeryDifferentGrid() {
         var coarse = ChequeRoundingCalculator.distribute(bd("61000"), 6,
-                InstallmentDistribution.FIRST_LARGER).amounts();
+                InstallmentDistribution.FIRST_LARGER, null).amounts();
         assertThat(coarse).containsExactly(
                 bd("11000"), bd("10000"), bd("10000"), bd("10000"), bd("10000"), bd("10000"));
     }

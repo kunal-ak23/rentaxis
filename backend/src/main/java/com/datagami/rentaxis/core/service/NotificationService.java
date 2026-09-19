@@ -10,9 +10,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.DeviceToken;
 import com.datagami.rentaxis.domain.entity.Notification;
-import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
-import com.datagami.rentaxis.domain.entity.PenaltyPayment;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
@@ -201,55 +199,11 @@ public class NotificationService {
                 body, "PENALTY", assessment.getId());
     }
 
-    /**
-     * Penalty has been fully cleared by a payment receipt (bank transfer, cheque,
-     * or cash). The body confirms the receipt + amount so the renter has a clear
-     * paper trail in their notification feed / email.
-     */
-    public void sendPenaltyCleared(PaymentPenalty penalty, PenaltyPayment receipt) {
-        UUID tenantId = penalty.getTenantId() != null
-                ? penalty.getTenantId()
-                : TenantContextHolder.getTenantId();
-        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
-                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
-                .orElse(null);
-        if (renterUserId == null) {
-            log.warn("PENALTY_CLEARED notification skipped — no renter user id for penalty {}", penalty.getId());
-            return;
-        }
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been cleared after receipt of "
-                + receipt.getAmount() + " AED via " + receipt.getPaymentMethod() + ".";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_CLEARED", "Penalty Cleared",
-                    body, "PENALTY", penalty.getId());
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_CLEARED notification for penalty {}: {}", penalty.getId(), e.getMessage());
-        }
-    }
-
-    /**
-     * Penalty has been waived by the property manager. Body explains the
-     * goodwill / reason so the renter understands why the fine is gone.
-     */
-    public void sendPenaltyWaived(PaymentPenalty penalty, String reason) {
-        UUID tenantId = penalty.getTenantId() != null
-                ? penalty.getTenantId()
-                : TenantContextHolder.getTenantId();
-        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
-                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
-                .orElse(null);
-        if (renterUserId == null) {
-            log.warn("PENALTY_WAIVED notification skipped — no renter user id for penalty {}", penalty.getId());
-            return;
-        }
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been waived. Reason: " + reason + ".";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_WAIVED", "Penalty Waived",
-                    body, "PENALTY", penalty.getId());
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_WAIVED notification for penalty {}: {}", penalty.getId(), e.getMessage());
-        }
-    }
+    // sendPenaltyCleared / sendPenaltyWaived went with the v1 penalty tables
+    // (changeset 84). Neither has a v2 counterpart yet: a waiver is an internal
+    // decision the renter was never told about anyway, and a fine is now collected
+    // through its register row, so "your penalty cleared" is the same event as the
+    // receipt for that row rather than a message of its own.
 
     @Transactional(readOnly = true)
     public List<NotificationDTO> getNotifications(UUID userId, int page, int size, boolean unreadOnly) {

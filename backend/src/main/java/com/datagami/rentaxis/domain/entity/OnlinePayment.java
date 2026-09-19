@@ -12,14 +12,12 @@ import java.util.UUID;
 /**
  * One gateway session against one register row (spec §9.3).
  *
- * <p><b>{@code cheque} is the row being paid.</b> Every payment created from
- * Task 10 onwards names a cheque and nothing else: the renter pays an instalment
- * on the register, the capture clears that row with a {@code CRT}, and a receipt
- * is the cleared row rendered as a PDF.</p>
- *
- * <p>{@code paymentSchedule} is the v1 shape, kept mapped and nullable only until
- * Task 12 drops {@code payment_schedules} with the column. Nothing writes it any
- * more; a row with a schedule and no cheque is a pre-v2 record.</p>
+ * <p><b>{@code cheque} is the row being paid</b>, and the only thing a payment
+ * can be about: the renter pays an instalment on the register, the capture clears
+ * that row with a {@code CRT}, and a receipt is the cleared row rendered as a PDF.
+ * Not nullable — changeset 84 deleted the pre-v2 rows that had a schedule instead
+ * (spec D4) and made the column NOT NULL, because a captured payment that settles
+ * nothing on the register is one no screen, receipt or journal can read.</p>
  */
 @Entity
 @Table(name = "online_payments")
@@ -31,15 +29,10 @@ public class OnlinePayment extends BaseTenantEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    /** The register row this session is paying. Null only on pre-v2 rows. */
+    /** The register row this session is paying. */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cheque_id")
+    @JoinColumn(name = "cheque_id", nullable = false)
     private Cheque cheque;
-
-    /** v1 only; dropped with {@code payment_schedules} in Task 12. */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "payment_schedule_id")
-    private PaymentSchedule paymentSchedule;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "gateway_id", nullable = false)

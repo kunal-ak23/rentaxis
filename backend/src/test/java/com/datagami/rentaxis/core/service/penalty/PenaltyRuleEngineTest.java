@@ -2,11 +2,9 @@ package com.datagami.rentaxis.core.service.penalty;
 
 import com.datagami.rentaxis.core.service.FineConfig;
 import com.datagami.rentaxis.core.service.FineConfigResolver;
-import com.datagami.rentaxis.core.service.PenaltyCalculationService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
@@ -355,47 +353,44 @@ class PenaltyRuleEngineTest {
     }
 
     // ------------------------------------------------------------------
-    // lateAmount: pinned against the v1 arithmetic it was copied from
+    // lateAmount: pinned to the arithmetic it was copied from
     // ------------------------------------------------------------------
 
     /**
-     * {@link PenaltyRuleEngine#lateAmount} is a copy of
-     * {@code PenaltyCalculationService.calculatePenalty}, taken so the v1 class can
-     * be deleted in task 12 without the formula going with it. A copy that drifts
-     * is worse than no copy: the register's running estimate and the proposal
-     * finance actually approves would quote different money for the same lateness.
-     * So both are computed here over the same inputs and required to agree.
+     * {@link PenaltyRuleEngine#lateAmount} is a copy of v1's
+     * {@code PenaltyCalculationService.calculatePenalty}, taken so that class could
+     * be deleted without the formula going with it. The expectations below were
+     * computed by that class before it was deleted (changeset 84) and are pinned
+     * here as literals — the two used to be run against each other, which stopped
+     * being possible once one of them no longer existed.
      *
      * <p>The percentage branch is the one that matters. It rounds the daily figure
-     * to two decimals <em>before</em> multiplying by the days, which for 12,750 at
-     * 0.5% over 10 days is 637.50 rather than the 637.5 an unrounded chain gives —
-     * a difference that grows with the number of days.</p>
+     * to two decimals <em>before</em> multiplying by the days: 9,999 at 0.5% is
+     * 49.995, which rounds to 50.00 and gives 500.00 over ten days, where an
+     * unrounded chain gives 499.95. The gap grows with the number of days, so this
+     * is part of the formula rather than an implementation detail — a drifting copy
+     * would have the register's running estimate and the proposal finance actually
+     * approves quoting different money for the same lateness.</p>
      */
     @ParameterizedTest
     @CsvSource({
-            "FIXED_PER_DAY, 50,   12750, 1",
-            "FIXED_PER_DAY, 50,   12750, 10",
-            "FIXED_PER_DAY, 12.5, 12750, 3",
-            "PERCENTAGE,    0.5,  12750, 1",
-            "PERCENTAGE,    0.5,  12750, 10",
-            "PERCENTAGE,    2,    9999,  7",
-            "PERCENTAGE,    0.01, 1000,  30"
+            "FIXED_PER_DAY, 50,   12750, 1,  50",
+            "FIXED_PER_DAY, 50,   12750, 10, 500",
+            "FIXED_PER_DAY, 12.5, 12750, 3,  37.5",
+            "PERCENTAGE,    0.5,  12750, 1,  63.75",
+            "PERCENTAGE,    0.5,  12750, 10, 637.50",
+            "PERCENTAGE,    0.5,  9999,  10, 500.00",
+            "PERCENTAGE,    2,    9999,  7,  1399.86",
+            "PERCENTAGE,    0.01, 1000,  30, 3.00"
     })
-    void lateAmountAgreesWithTheV1Calculation(PenaltyType type, BigDecimal rate,
-                                              BigDecimal amount, int daysLate) {
+    void lateAmountMatchesTheV1Formula(PenaltyType type, BigDecimal rate,
+                                       BigDecimal amount, int daysLate, BigDecimal expected) {
         RentCollectionSettings s = new RentCollectionSettings();
         s.setPenaltyType(type);
         s.setPenaltyAmount(rate);
         s.setGracePeriodDays(0);
 
-        PaymentSchedule schedule = new PaymentSchedule();
-        schedule.setDueDate(LocalDate.of(2026, 10, 2));
-        schedule.setAmount(amount);
-
-        BigDecimal v1 = new PenaltyCalculationService()
-                .calculatePenalty(schedule, s, schedule.getDueDate().plusDays(daysLate));
-
-        assertThat(PenaltyRuleEngine.lateAmount(amount, s, daysLate)).isEqualByComparingTo(v1);
+        assertThat(PenaltyRuleEngine.lateAmount(amount, s, daysLate)).isEqualByComparingTo(expected);
     }
 
     @Test

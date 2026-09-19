@@ -9,16 +9,16 @@ import java.util.UUID;
  * The variables every cheque email interpolates (received, deposited, cleared,
  * bounced).
  *
- * <p><b>{@code paymentScheduleId} is the id of the row the email is about</b> —
- * a {@code payment_schedules} row for the v1 path, a {@code cheques} row for the
- * v2 register. It is nothing but a dedupe key and a reference on the rendered
- * mail; nothing loads it back, so the two sources can share the field until the
- * v1 path is deleted. The name is kept rather than fixed because it is a record
- * component, which means it is also the template variable name, and renaming it
- * would silently blank the variable in every cheque template at once.</p>
+ * <p><b>{@code chequeId} is the id of the register row the email is about.</b> It
+ * is nothing but a dedupe key and a reference on the rendered mail; nothing loads
+ * it back. It was called {@code paymentScheduleId} while the v1 path shared this
+ * payload — a record component is also the template variable name, so renaming it
+ * then would have blanked it in every cheque template. Checked before renaming:
+ * no template under {@code templates/email} interpolates it, so the rename is
+ * invisible to the rendered mail.</p>
  */
 public record ChequePayload(
-        UUID paymentScheduleId,
+        UUID chequeId,
         UUID leaseId,
         UUID renterUserId,
         UUID propertyManagerUserId,
@@ -32,11 +32,10 @@ public record ChequePayload(
 ) {
 
     /**
-     * The v2 register's shape of the same email.
+     * The payload for one register row.
      *
-     * <p>{@code propertyManagerUserId} is left null exactly as the schedule path
-     * leaves it: it is not stored on the lease, and {@code RecipientResolver}
-     * falls back to the tenant's admins.</p>
+     * <p>{@code propertyManagerUserId} is left null: it is not stored on the
+     * lease, and {@code RecipientResolver} falls back to the tenant's admins.</p>
      *
      * <p>Reads the cheque's lazy relations, so it must be called inside the
      * transaction that loaded it.</p>

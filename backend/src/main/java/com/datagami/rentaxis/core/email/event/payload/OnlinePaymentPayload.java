@@ -16,16 +16,15 @@ public record OnlinePaymentPayload(
 ) {
 
     /**
-     * The register's shape of the same email (spec §9.3).
+     * The payload for a gateway payment against one register row (spec §9.3).
      *
      * <p>The amount is the <em>cheque's</em>, not the order's: they are the same
      * figure today, but the row is what the ledger booked and what the receipt will
      * show, and a gateway that ever rounds its order differently should not make
      * the email disagree with the books.</p>
      *
-     * <p>{@code propertyManagerUserId} is left null exactly as the schedule path
-     * left it: it is not stored on the lease, and {@code RecipientResolver} falls
-     * back to the tenant's admins.</p>
+     * <p>{@code propertyManagerUserId} is left null: it is not stored on the
+     * lease, and {@code RecipientResolver} falls back to the tenant's admins.</p>
      *
      * <p>Reads the cheque's lazy relations, so it must be called inside the
      * transaction that loaded it.</p>

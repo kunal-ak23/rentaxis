@@ -164,7 +164,7 @@ class PenaltyAssessmentControllerIT {
         return request(caller, method, path, body).toBodilessEntity().getStatusCode();
     }
 
-    private static final String BASE = "/api/v1/penalty-assessments";
+    private static final String BASE = "/api/v1/penalties";
 
     private Map<String, Object> newProposal() {
         return Map.of("leaseId", leaseId.toString(), "reason", "CHEQUE_RETURN", "amount", 250);

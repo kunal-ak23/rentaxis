@@ -21,9 +21,6 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, UU
     /** Every gateway session started against one register row, newest last. */
     List<OnlinePayment> findByCheque_Id(UUID chequeId);
 
-    /** v1 only, and unused since Task 10; dropped with the column in Task 12. */
-    List<OnlinePayment> findByPaymentScheduleId(UUID id);
-
     List<OnlinePayment> findByStatus(OnlinePaymentStatus status);
 
     @Query(value = "SELECT * FROM online_payments WHERE gateway_order_id = ?1", nativeQuery = true)
