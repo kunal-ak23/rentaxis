@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import AccountPicker from "@/components/finance/AccountPicker";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque, type ChequeFailureReason } from "@/lib/api/leasing";
@@ -12,6 +11,14 @@ import { ApiError, chequeApi, type Cheque, type ChequeFailureReason } from "@/li
  * A cheque bounced — from DEPOSITED (the ordinary case) or from CLEARED, PDC
  * only, as a late return (spec §7.4). The server enforces which; this dialog
  * is opened for either and always sends the same request shape.
+ *
+ * No debit-account override here, unlike deposit / clear / receive.
+ * `ChequeService.bounce` (:310-370) never reads `r.debitAccountId()`: the
+ * credit side of the CBR is the cheque's own debit account for a late return
+ * (:329-332) or PDC receivable for a DEPOSITED one (:334). Offering the picker
+ * told an accountant they had chosen which bank is credited back while the
+ * entry ignored them — a wrong belief about a journal, which is worse than a
+ * missing field.
  */
 
 const field =
@@ -22,19 +29,17 @@ const FAILURE_REASONS: ChequeFailureReason[] = ["BOUNCE", "SIGNATURE_MISMATCH", 
 
 type Props = {
     cheque: Cheque | null;
-    propertyId?: string | null;
     onClose: () => void;
     onDone: () => void;
 };
 
-export default function BounceChequeDialog({ cheque, propertyId, onClose, onDone }: Props) {
+export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
 
     const [date, setDate] = useState(todayIso());
     const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
     const [notes, setNotes] = useState("");
-    const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +48,6 @@ export default function BounceChequeDialog({ cheque, propertyId, onClose, onDone
         setDate(todayIso());
         setFailureReason("BOUNCE");
         setNotes("");
-        setDebitAccountId(null);
         setError(null);
     }, [cheque]);
 
@@ -57,7 +61,6 @@ export default function BounceChequeDialog({ cheque, propertyId, onClose, onDone
                 date,
                 notes: notes || null,
                 failureReason,
-                debitAccountId,
             });
             onDone();
         } catch (e) {
@@ -106,17 +109,6 @@ export default function BounceChequeDialog({ cheque, propertyId, onClose, onDone
                             <option key={r} value={r}>{t(`failureReasons.${r}`)}</option>
                         ))}
                     </select>
-                </div>
-                <div>
-                    <label className={label}>{tl("debitAccount")}</label>
-                    <AccountPicker
-                        value={debitAccountId}
-                        onChange={setDebitAccountId}
-                        leafOnly
-                        propertyId={propertyId}
-                        placeholder={tl("debitAccount")}
-                    />
-                    <p className="text-[10px] text-muted mt-1">{t("debitAccountOverrideHint")}</p>
                 </div>
                 <div>
                     <label className={label} htmlFor="bounce-notes">{tl("narration")}</label>

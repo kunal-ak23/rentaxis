@@ -1794,7 +1794,8 @@
     "errDiscountOverAmount": "A discount cannot be more than the line's amount.",
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
     "cancel": "Cancel",
-    "noPenalties": "No penalties raised against this contract."
+    "noPenalties": "No penalties raised against this contract.",
+    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot re-price the contract. Change the cheque grid first, or keep the total as it is."
   },
   "Cheques": {
     "register": "Cheque Register",
@@ -1901,7 +1902,17 @@
     "decisionDate": "Date",
     "decisionNote": "Note",
     "noPenaltiesQueue": "No penalties in this status.",
-    "penaltiesAccessDenied": "You do not have permission to view the penalty queue."
+    "penaltiesAccessDenied": "You do not have permission to view the penalty queue.",
+    "rowError": {
+      "onlineNotTyped": "Row {row}: online receipts are recorded by the payment gateway, not entered on the grid",
+      "amountPositive": "Row {row}: amount must be greater than zero",
+      "pdcDateRequired": "Row {row}: a post-dated cheque needs the date written on it",
+      "receiptDateRequired": "Row {row}: this receipt needs the date it is expected on",
+      "numberOnlyOnPdc": "Row {row}: only a post-dated cheque carries a cheque number",
+      "numberTaken": "Row {row}: cheque number {number} is already used on this lease"
+    },
+    "releaseOnline": "Release",
+    "releaseOnlineHint": "The online payment session was never completed. Releasing puts the cheque back on the register as Registered, so it can be collected another way."
   },
   "Common": {
     "loadFailed": "Couldn't load this. Please try again.",

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
@@ -89,10 +89,9 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
                 </div>
                 <div>
                     <label className={label}>{tl("debitAccount")}</label>
-                    <AccountPicker
+                    <SettlementAccountPicker
                         value={debitAccountId}
                         onChange={setDebitAccountId}
-                        leafOnly
                         propertyId={propertyId}
                         placeholder={tl("debitAccount")}
                     />

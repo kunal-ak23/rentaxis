@@ -23,13 +23,27 @@ import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
  *    editing this one (`ChequeService#bounce` 400s a non-PDC bounce after
  *    clearing, so the UI never offers it)
  *  - BOUNCED                 → replace
- *  - everything else (REPLACED, CANCELLED, RETURNED, ONLINE_PENDING) → none
+ *  - ONLINE_PENDING          → releaseOnline — a gateway session that was
+ *    abandoned without a callback leaves the row parked out of the register's
+ *    reach: not payable, not depositable, not cancellable. Staff release it
+ *    back to REGISTERED (`POST /cheques/{id}/release-online`), which is the
+ *    same move the gateway makes when it reports a failure
+ *  - everything else (REPLACED, CANCELLED, RETURNED) → none
  *
  * `cancel` is gated separately: it reverses the registering journal
  * (`canCancelCheques`, SA/TA/ACCOUNTANT), narrower than the rest of the
  * register (`canManageCheques`, which also admits PROPERTY_MANAGER).
  */
-export type RegisterAction = "deposit" | "receive" | "details" | "cancel" | "clear" | "bounce" | "replace" | "receipt";
+export type RegisterAction =
+    | "deposit"
+    | "receive"
+    | "details"
+    | "cancel"
+    | "clear"
+    | "bounce"
+    | "replace"
+    | "receipt"
+    | "releaseOnline";
 
 export function registerActionsFor(
     status: ChequeStatus,
@@ -54,6 +68,11 @@ export function registerActionsFor(
             return mode === "PDC" ? ["bounce", "receipt"] : ["receipt"];
         case "BOUNCED":
             return ["replace"];
+        case "ONLINE_PENDING":
+            // Not a state transition the renter can finish from here: the
+            // gateway either calls back or it does not. Staff put the row back
+            // on the register so it can be collected another way.
+            return ["releaseOnline"];
         default:
             return [];
     }

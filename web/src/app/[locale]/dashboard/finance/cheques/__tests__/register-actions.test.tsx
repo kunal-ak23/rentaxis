@@ -62,9 +62,19 @@ describe("registerActionsFor", () => {
         });
     });
 
+    describe("ONLINE_PENDING", () => {
+        it("offers only Release — the row is parked mid-gateway and staff put it back", () => {
+            // A session that was abandoned without a callback leaves the row
+            // neither payable nor depositable nor cancellable; `POST
+            // /cheques/{id}/release-online` returns it to REGISTERED.
+            expect(registerActionsFor("ONLINE_PENDING", "ONLINE", true)).toEqual(["releaseOnline"]);
+            expect(registerActionsFor("ONLINE_PENDING", "PDC", false)).toEqual(["releaseOnline"]);
+        });
+    });
+
     describe("terminal / non-actionable statuses", () => {
-        it("offers nothing for REPLACED, CANCELLED, RETURNED or ONLINE_PENDING", () => {
-            for (const status of ["REPLACED", "CANCELLED", "RETURNED", "ONLINE_PENDING"] as const) {
+        it("offers nothing for REPLACED, CANCELLED or RETURNED", () => {
+            for (const status of ["REPLACED", "CANCELLED", "RETURNED"] as const) {
                 expect(registerActionsFor(status, "PDC", true)).toEqual([]);
             }
         });

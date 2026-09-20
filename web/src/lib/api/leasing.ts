@@ -427,6 +427,20 @@ export type RenterCheque = {
   gracePeriodDays: number;
   penaltyOutstanding: number;
   payable: number;
+  /**
+   * Whether the gateway would actually take this row — the server's own
+   * predicate, not a guess from `status` and `mode` here.
+   * `ChequeService.registerOnlinePending` (:656-662) refuses anything but a
+   * PDC or an ONLINE row ("Only a post-dated cheque or an online row can be
+   * paid through the gateway; row 3 is a CASH receipt"), and `payable` alone
+   * did not say so — a lease drafted with CASH or TRANSFER instalments showed
+   * the renter a Pay button that failed with a raw Java string every time.
+   *
+   * Optional because a backend that has not shipped the field yet must not
+   * turn the button on: {@link PayOnlineButton} treats an absent value as
+   * false.
+   */
+  payableOnline?: boolean;
   onlineEnabled: boolean;
   penaltyAssessmentId: string | null;
   failureReason: ChequeFailureReason | null;
@@ -583,6 +597,13 @@ export const chequeApi = {
   replace: (id: string, body: ReplaceChequeInput) => send<Cheque[]>("POST", `/cheques/${id}/replace`, body),
   cancel: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/cancel`, body),
   updateDetails: (id: string, body: ChequeRowInput) => send<Cheque>("PUT", `/cheques/${id}/details`, body),
+  /**
+   * Put an ONLINE_PENDING row back on the register (→ REGISTERED) when the
+   * gateway session was abandoned and never called back. Staff-only
+   * (`canManageCheques`); the renter's own abandonment is handled by
+   * `onlinePayApi.cancel`.
+   */
+  releaseOnline: (id: string, body?: ChequeActionInput) => send<Cheque>("POST", `/cheques/${id}/release-online`, body),
   cashReceipt: (leaseId: string, body: ChequeRowInput) => send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body),
   /** Not a fetch — the endpoint streams a PDF; callers open/download this path directly. */
   receiptUrl: (id: string) => `${BASE}/cheques/${id}/receipt`,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
@@ -14,6 +14,7 @@ import {
     type ChequeFailureReason,
 } from "@/lib/api/leasing";
 import type { RegisterAction } from "./registerActions";
+import { chequeRowIsValid } from "./chequeRowRules";
 
 /**
  * Deposit, receive, correct or cancel one cheque — the register's own
@@ -76,7 +77,12 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         setNotes("");
         setFailureReason("BOUNCE");
         setDebitAccountId(cheque.debitAccountId);
-        setChequeNumber(cheque.chequeNumber ?? "");
+        // A replacement is a NEW instrument, so it starts without a number:
+        // `ChequeService.takenNumbers` (:1096-1104) collects from every row of
+        // the lease whatever its status, the bounced one included, so seeding
+        // the bounced cheque's own number made "cheque number 100041 is already
+        // used on this lease" the guaranteed answer.
+        setChequeNumber(action === "replace" ? "" : cheque.chequeNumber ?? "");
         setChequeDate((cheque.chequeDate ?? "").slice(0, 10));
         setPayeeBank(cheque.payeeBank ?? "");
         setAmount(cheque.amount);
@@ -84,6 +90,19 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
     }, [action, cheque]);
 
     if (!action || !cheque) return null;
+
+    /**
+     * The replacement row exactly as it will be sent, judged by the client
+     * mirror of `ChequeRowRules.validateRow` — so this dialog cannot offer a
+     * Replace whose row the server refuses (a blank date on a PDC being the
+     * one that used to get through).
+     */
+    const replacementRow = {
+        chequeNumber: chequeNumber || null,
+        chequeDate: chequeDate || null,
+        amount,
+        mode: cheque.mode,
+    };
 
     const submit = async () => {
         setBusy(true);
@@ -104,6 +123,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     break;
                 case "cancel":
                     await chequeApi.cancel(cheque.id, { date, notes: notes || null });
+                    break;
+                case "releaseOnline":
+                    await chequeApi.releaseOnline(cheque.id, { date, notes: notes || null });
                     break;
                 case "details":
                     await chequeApi.updateDetails(cheque.id, {
@@ -126,13 +148,10 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                         notes: notes || null,
                         replacements: [
                             {
+                                ...replacementRow,
                                 postingDate: date,
-                                chequeNumber: chequeNumber || null,
-                                chequeDate: chequeDate || null,
                                 payeeBank: payeeBank || null,
                                 debitAccountId,
-                                amount,
-                                mode: cheque.mode,
                             },
                         ],
                     });
@@ -158,7 +177,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
             cancelText={tl("cancel")}
             busy={busy}
             destructive={action === "bounce" || action === "cancel"}
-            confirmDisabled={action === "replace" && amount <= 0}
+            confirmDisabled={action === "replace" && !chequeRowIsValid(replacementRow)}
             confirmTestId={`cheque-${action}-confirm`}
         >
             <div className="space-y-3">
@@ -176,6 +195,12 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             onChange={e => setDate(e.target.value)}
                         />
                     </div>
+                )}
+
+                {action === "releaseOnline" && (
+                    <p className="text-[11px] text-muted" data-testid="release-online-hint">
+                        {t("releaseOnlineHint")}
+                    </p>
                 )}
 
                 {action === "bounce" && (
@@ -202,10 +227,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                 {action === "deposit" && (
                     <div>
                         <label className={label}>{tl("debitAccount")}</label>
-                        <AccountPicker
+                        <SettlementAccountPicker
                             value={debitAccountId}
                             onChange={setDebitAccountId}
-                            leafOnly
                             propertyId={propertyId}
                             placeholder={tl("debitAccount")}
                         />

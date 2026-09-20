@@ -47,7 +47,7 @@ type Filters = { status: ChequeStatus | ""; mode: ChequeMode | ""; propertyId: s
 const emptyFilters: Filters = { status: "", mode: "", propertyId: "", from: "", to: "", search: "" };
 
 /** The dialog's own single-row action set — bounce, replace and receipt are handled separately. */
-type SingleRowAction = Extract<RegisterAction, "deposit" | "receive" | "details" | "cancel" | "clear">;
+type SingleRowAction = Extract<RegisterAction, "deposit" | "receive" | "details" | "cancel" | "clear" | "releaseOnline">;
 
 export default function ChequeRegisterPage() {
     const t = useTranslations("Cheques");
@@ -441,7 +441,6 @@ export default function ChequeRegisterPage() {
 
             <BounceChequeDialog
                 cheque={bounceTarget}
-                propertyId={bounceTarget?.propertyId}
                 onClose={() => setBounceTarget(null)}
                 onDone={() => {
                     setBounceTarget(null);

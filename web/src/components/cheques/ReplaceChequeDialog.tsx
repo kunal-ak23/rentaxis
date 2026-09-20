@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import { round2 } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque, type ChequeMode, type ChequeRowInput } from "@/lib/api/leasing";
+import { TYPEABLE_MODES, chequeRowsAreValid } from "./chequeRowRules";
 
 /**
  * A bounced cheque is replaced by one or more new instruments (spec §7.4,
@@ -30,7 +31,7 @@ type ReplacementRow = {
     narration: string;
 };
 
-const REPLACEMENT_MODES: ChequeMode[] = ["PDC", "CASH", "TRANSFER"];
+const REPLACEMENT_MODES: ChequeMode[] = TYPEABLE_MODES;
 
 const field =
     "w-full bg-input border border-border rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -92,20 +93,30 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
     const residual = round2(cheque.amount - total);
     const overBounced = total > cheque.amount + 0.005;
 
+    /**
+     * The wire shape, built once so the submit gate below judges exactly what
+     * the server will be sent rather than a near-miss of it.
+     */
+    const replacements: ChequeRowInput[] = rows.map(r => ({
+        postingDate: r.chequeDate || date,
+        chequeNumber: r.mode === "PDC" ? r.chequeNumber || null : null,
+        // Every mode needs the date it matures or is expected on —
+        // ChequeRowRules.validateRow (:140-144) refuses a null for CASH and
+        // TRANSFER too ("a CASH receipt needs the date it is expected on").
+        // Only the NUMBER is PDC-only (:148). Nulling the date here made Cash
+        // and Bank Transfer replacements impossible to submit at all.
+        chequeDate: r.chequeDate || null,
+        payeeBank: r.payeeBank || null,
+        debitAccountId: r.debitAccountId,
+        amount: r.amount || 0,
+        narration: r.narration || null,
+        mode: r.mode,
+    }));
+
     const submit = async () => {
         setBusy(true);
         setError(null);
         try {
-            const replacements: ChequeRowInput[] = rows.map(r => ({
-                postingDate: r.chequeDate || date,
-                chequeNumber: r.mode === "PDC" ? r.chequeNumber || null : null,
-                chequeDate: r.mode === "PDC" ? r.chequeDate || null : null,
-                payeeBank: r.payeeBank || null,
-                debitAccountId: r.debitAccountId,
-                amount: r.amount || 0,
-                narration: r.narration || null,
-                mode: r.mode,
-            }));
             await chequeApi.replace(cheque.id, { date, notes: notes || null, replacements });
             onDone();
         } catch (e) {
@@ -126,7 +137,7 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
             confirmText={t("replace")}
             cancelText={tl("cancel")}
             busy={busy}
-            confirmDisabled={overBounced || total <= 0 || rows.some(r => !r.amount || r.amount <= 0)}
+            confirmDisabled={overBounced || total <= 0 || !chequeRowsAreValid(replacements)}
             confirmTestId="replace-confirm"
             width="lg"
         >
@@ -206,10 +217,9 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
                             </div>
                             <div>
                                 <label className={label}>{tl("debitAccount")}</label>
-                                <AccountPicker
+                                <SettlementAccountPicker
                                     value={r.debitAccountId}
                                     onChange={id => patch(r.key, { debitAccountId: id })}
-                                    leafOnly
                                     propertyId={propertyId}
                                     placeholder={tl("debitAccount")}
                                 />

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { todayIso } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, leaseApi, type Cheque, type ChequeMode, type LeaseDetail } from "@/lib/api/leasing";
@@ -207,10 +207,9 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                     </div>
                     <div>
                         <label className={label}>{tl("debitAccount")}</label>
-                        <AccountPicker
+                        <SettlementAccountPicker
                             value={debitAccountId}
                             onChange={setDebitAccountId}
-                            leafOnly
                             propertyId={lease?.propertyId}
                             placeholder={tl("debitAccount")}
                         />

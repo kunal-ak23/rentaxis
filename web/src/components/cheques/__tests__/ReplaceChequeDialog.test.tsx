@@ -101,6 +101,41 @@ describe("ReplaceChequeDialog", () => {
         );
     });
 
+    it("sends a Cash replacement's date instead of discarding it — every mode needs one", async () => {
+        renderDialog(bouncedCheque(10000));
+        fireEvent.change(screen.getByTestId("replace-row-0-mode"), { target: { value: "CASH" } });
+        fireEvent.change(screen.getByTestId("replace-row-0-date"), { target: { value: "2026-07-15" } });
+
+        expect(screen.getByTestId("replace-confirm")).toBeEnabled();
+        fireEvent.click(screen.getByTestId("replace-confirm"));
+
+        await waitFor(() => expect(replace).toHaveBeenCalled());
+        // ChequeRowRules.validateRow (:140-144) refuses a null chequeDate for
+        // CASH and TRANSFER too — nulling it made Cash and Bank Transfer
+        // replacements a guaranteed 400 with no field the operator could fix.
+        expect(replace).toHaveBeenCalledWith("c1", expect.objectContaining({
+            replacements: [expect.objectContaining({ mode: "CASH", chequeDate: "2026-07-15", chequeNumber: null })],
+        }));
+    });
+
+    it("blocks submit on a row the server's row rules would refuse", () => {
+        renderDialog(bouncedCheque(10000));
+        fireEvent.change(screen.getByTestId("replace-row-0-date"), { target: { value: "" } });
+        expect(screen.getByTestId("replace-confirm")).toBeDisabled();
+
+        fireEvent.change(screen.getByTestId("replace-row-0-date"), { target: { value: "2026-07-15" } });
+        expect(screen.getByTestId("replace-confirm")).toBeEnabled();
+
+        // Two rows may not claim the same cheque number — the server accumulates
+        // `seenNumbers` across the payload (ChequeRowRules.java:152).
+        fireEvent.click(screen.getByTestId("replace-add-row"));
+        fireEvent.change(screen.getByTestId("replace-row-0-amount"), { target: { value: "5000" } });
+        fireEvent.change(screen.getByTestId("replace-row-0-number"), { target: { value: "000900" } });
+        fireEvent.change(screen.getByTestId("replace-row-1-amount"), { target: { value: "5000" } });
+        fireEvent.change(screen.getByTestId("replace-row-1-number"), { target: { value: "000900" } });
+        expect(screen.getByTestId("replace-confirm")).toBeDisabled();
+    });
+
     it("removes a row but never below one", () => {
         renderDialog(bouncedCheque(10000));
         expect(screen.getByTestId("replace-row-0-remove")).toBeDisabled();
