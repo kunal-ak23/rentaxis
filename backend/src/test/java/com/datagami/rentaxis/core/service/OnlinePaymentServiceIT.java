@@ -566,6 +566,87 @@ class OnlinePaymentServiceIT {
                 .isEqualTo("Payment captured successfully");
     }
 
+    /**
+     * REFUNDED is in MONEY_CAPTURED but nothing exercised it: the set could have
+     * lost that member and every test would still have passed. Money that has
+     * been given back is still money the gateway took, so a redelivered capture
+     * must not re-apply it - that would clear the register row a second time
+     * against a payment the landlord no longer holds.
+     */
+    @Test
+    void aCaptureReportForARefundedPaymentChangesNothing() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+        OnlinePayment unapplied = onlyPayment();
+        assertThat(unapplied.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+
+        // The refund is issued outside this service today; the status is what a
+        // later refund flow will set, and this rule has to hold when it does.
+        unapplied.setStatus(OnlinePaymentStatus.REFUNDED);
+        onlinePaymentRepo.saveAndFlush(unapplied);
+        OnlinePayment before = onlyPayment();
+        ChequeStatus rowBefore = chequeRepo.findById(chequeId).orElseThrow().getStatus();
+        Thread.sleep(20);
+
+        webhookDelivers(capturedPayload(), signatureFor(WEBHOOK_SECRET));
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.REFUNDED);
+        assertThat(after.getAmount()).isEqualByComparingTo(before.getAmount());
+        assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+        assertThat(chequeRepo.findById(chequeId).orElseThrow().getStatus())
+                .as("a refunded payment must not clear the row a second time")
+                .isEqualTo(rowBefore);
+        assertThat(lastWebhookLog().getProcessed()).isTrue();
+    }
+
+    @Test
+    void aFailureReportForARefundedPaymentChangesNothing() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+        OnlinePayment unapplied = onlyPayment();
+        unapplied.setStatus(OnlinePaymentStatus.REFUNDED);
+        onlinePaymentRepo.saveAndFlush(unapplied);
+        OnlinePayment before = onlyPayment();
+        Thread.sleep(20);
+
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.REFUNDED);
+        assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+        assertThat(lastWebhookResult()).startsWith("ignored: payment already captured");
+    }
+
+    /**
+     * The other side of the rule, and the one that must NOT be terminal. A
+     * session the gateway reported as failed is released and the row goes back
+     * to REGISTERED; if a capture then arrives - deliveries are not ordered, and
+     * a late capture means the money really was taken - it has to be applied,
+     * not ignored. FAILED is deliberately absent from MONEY_CAPTURED, and
+     * nothing pinned that until now.
+     */
+    @Test
+    void aCaptureThatArrivesAfterTheSessionWasReleasedStillApplies() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
+        assertThat(onlyPayment().getStatus()).isEqualTo(OnlinePaymentStatus.FAILED);
+        assertThat(chequeRepo.findById(chequeId).orElseThrow().getStatus())
+                .isEqualTo(ChequeStatus.REGISTERED);
+
+        webhookDelivers(capturedPayload(), signatureFor(WEBHOOK_SECRET));
+
+        assertThat(onlyPayment().getStatus())
+                .as("money that was taken late is still money taken")
+                .isEqualTo(OnlinePaymentStatus.CAPTURED);
+        assertThat(chequeRepo.findById(chequeId).orElseThrow().getStatus())
+                .isEqualTo(ChequeStatus.CLEARED);
+        assertThat(lastWebhookResult()).isEqualTo("Payment captured successfully");
+    }
+
     // ------------------------------------------------------------------
     // receipts
     // ------------------------------------------------------------------
