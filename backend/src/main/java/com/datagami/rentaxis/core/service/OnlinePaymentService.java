@@ -109,6 +109,17 @@ public class OnlinePaymentService {
             ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED, ChequeStatus.ONLINE_PENDING,
             ChequeStatus.BOUNCED);
 
+    /**
+     * The gateway took the money. A payment in one of these never goes backwards:
+     * no later failure report, signature failure or redelivered capture may change
+     * its status, amount or capture time ({@code updatedAt}).
+     */
+    private static final Set<OnlinePaymentStatus> MONEY_CAPTURED = EnumSet.of(
+            OnlinePaymentStatus.CAPTURED, OnlinePaymentStatus.CAPTURED_UNAPPLIED,
+            OnlinePaymentStatus.REFUNDED);
+
+    private static final String UNAPPLIED_PREFIX = "Captured but not applied: ";
+
     private final ChequeRepository chequeRepository;
     private final OnlinePaymentRepository onlinePaymentRepository;
     private final TenantGatewayConfigRepository tenantGatewayConfigRepository;
@@ -447,11 +458,14 @@ public class OnlinePaymentService {
             response.setMessage("Payment verified and recorded successfully");
             response.setPaymentId(onlinePayment.getGatewayPaymentId());
         } else {
-            release(onlinePayment, "Signature verification failed");
+            String ignored = release(onlinePayment, "Signature verification failed");
             response.setSuccess(false);
             response.setMessage("Payment verification failed");
-            notifyRenter(onlinePayment, "PAYMENT_FAILED", "Online Payment Failed",
-                    "Your online payment could not be verified. Please try again.");
+            // A captured payment is left as it is, and the renter is not told it failed.
+            if (ignored == null) {
+                notifyRenter(onlinePayment, "PAYMENT_FAILED", "Online Payment Failed",
+                        "Your online payment could not be verified. Please try again.");
+            }
         }
         return response;
     }
@@ -489,10 +503,15 @@ public class OnlinePaymentService {
                 reportedMinorUnits, reportedCurrency, LocalDate.now());
     }
 
-    /** The gateway reporting that the session failed; same {@code REQUIRES_NEW} reasoning. */
+    /**
+     * The gateway reporting that the session failed; same {@code REQUIRES_NEW} reasoning.
+     *
+     * @return null when the session was released, else why the report was ignored
+     *         (the payment had already captured), for the webhook audit row.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void failFromWebhook(UUID onlinePaymentId, String reason) {
-        release(lockPayment(onlinePaymentId), reason == null ? "Gateway reported the payment failed" : reason);
+    public String failFromWebhook(UUID onlinePaymentId, String reason) {
+        return release(lockPayment(onlinePaymentId), reason == null ? "Gateway reported the payment failed" : reason);
     }
 
     /**
@@ -562,20 +581,26 @@ public class OnlinePaymentService {
                     "This online payment has no register row; it cannot be cleared.");
         }
 
-        // The same capture, reported a second time: this payment already booked it
-        // and the row it booked is cleared, so there is nothing left to do.
+        // The same capture, reported a second time. Decided on the PAYMENT's status
+        // alone, and before anything is written, so the first capture's outcome and
+        // time (updatedAt) stand:
         //
-        // It has to be decided HERE rather than left to clearOnline's own
-        // idempotency, which only forgives an already-CLEARED row of mode ONLINE —
-        // and most rows paid online are ordinary PDC instalments that keep their
-        // mode. Deliberately conjunctive, and the conjunction is what identifies
-        // "cleared by THIS payment": nothing links an OnlinePayment to the CRT it
-        // produced, but a payment whose own status is CAPTURED is the one that
-        // produced the clearing it is looking at. Any OTHER payment arriving at a
-        // CLEARED row falls through to unappliable() — which is the two-orders case.
-        if (onlinePayment.getStatus() == OnlinePaymentStatus.CAPTURED
-                && cheque.getStatus() == ChequeStatus.CLEARED) {
+        // - CAPTURED: this payment already booked its CRT. Nothing else is left to
+        //   do, whatever the row has done since — a row bounced from CLEARED (a
+        //   chargeback) must not turn an applied capture into a refund. It has to
+        //   be decided HERE rather than left to clearOnline's own idempotency, which
+        //   only forgives an already-CLEARED row of mode ONLINE. Any OTHER payment
+        //   arriving at a CLEARED row is still CREATED and falls through to
+        //   unappliable(): the two-orders case.
+        // - CAPTURED_UNAPPLIED / REFUNDED: already recorded as money the register
+        //   refused; answer with the recorded reason and re-record nothing.
+        if (onlinePayment.getStatus() == OnlinePaymentStatus.CAPTURED) {
             return null;
+        }
+        if (MONEY_CAPTURED.contains(onlinePayment.getStatus())) {
+            log.warn("Ignoring a repeated capture report for online payment {}: already {}",
+                    onlinePayment.getId(), onlinePayment.getStatus());
+            return recordedUnappliedReason(onlinePayment);
         }
 
         String reason = unappliable(onlinePayment, cheque, reportedMinorUnits, reportedCurrency);
@@ -689,7 +714,7 @@ public class OnlinePaymentService {
         }
         onlinePayment.setStatus(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
         onlinePayment.setFailureReason(
-                "Captured but not applied: " + reason
+                UNAPPLIED_PREFIX + reason
                         + (onlinePayment.getGatewayPaymentId() != null
                                 ? " (gateway payment " + onlinePayment.getGatewayPaymentId() + ")" : ""));
         onlinePayment.setUpdatedAt(Instant.now());
@@ -706,14 +731,19 @@ public class OnlinePaymentService {
      * The session did not produce money: the row goes back to REGISTERED and the
      * payment is marked failed.
      *
-     * <p>A captured payment is never released. A late "payment.failed" delivery for
-     * a session that already captured would otherwise hand a cleared instalment
-     * back to the renter as unpaid while the {@code CRT} stayed in the ledger.</p>
+     * <p>A captured payment is never released and never touched — applied,
+     * unapplied or refunded. A late "payment.failed" delivery would otherwise hand
+     * a cleared instalment back to the renter as unpaid while the {@code CRT}
+     * stayed in the ledger, or flip an unapplied capture to FAILED and drop a
+     * refund that is still owed off finance's list.</p>
+     *
+     * @return null when released, else why the report was ignored.
      */
-    private void release(OnlinePayment onlinePayment, String reason) {
-        if (onlinePayment.getStatus() == OnlinePaymentStatus.CAPTURED) {
-            log.warn("Ignoring a failure report for online payment {}: it was already captured", onlinePayment.getId());
-            return;
+    private String release(OnlinePayment onlinePayment, String reason) {
+        if (MONEY_CAPTURED.contains(onlinePayment.getStatus())) {
+            log.warn("Ignoring a failure report for online payment {}: it was already {}",
+                    onlinePayment.getId(), onlinePayment.getStatus());
+            return "ignored: payment already captured (" + onlinePayment.getStatus() + ")";
         }
         Cheque cheque = onlinePayment.getCheque();
         if (cheque != null && cheque.getStatus() == ChequeStatus.ONLINE_PENDING) {
@@ -723,6 +753,16 @@ public class OnlinePaymentService {
         onlinePayment.setFailureReason(reason);
         onlinePayment.setUpdatedAt(Instant.now());
         onlinePaymentRepository.save(onlinePayment);
+        return null;
+    }
+
+    /** The reason markUnapplied recorded, without its prefix, for a repeated report. */
+    private static String recordedUnappliedReason(OnlinePayment onlinePayment) {
+        String recorded = onlinePayment.getFailureReason();
+        if (recorded == null || recorded.isBlank()) {
+            return "already recorded as " + onlinePayment.getStatus();
+        }
+        return recorded.startsWith(UNAPPLIED_PREFIX) ? recorded.substring(UNAPPLIED_PREFIX.length()) : recorded;
     }
 
     // ------------------------------------------------------------------

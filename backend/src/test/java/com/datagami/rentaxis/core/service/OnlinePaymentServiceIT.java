@@ -67,6 +67,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -456,6 +458,112 @@ class OnlinePaymentServiceIT {
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
         assertThat(crtCount(chequeId)).isEqualTo(1L);
         assertThat(onlyPayment().getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED);
+    }
+
+    // ------------------------------------------------------------------
+    // a captured payment never goes backwards
+    // ------------------------------------------------------------------
+
+    /**
+     * A late "failed" delivery for an applied capture changes nothing on the
+     * payment (not status, amount or capture time) and is logged as processed
+     * with the reason it was ignored.
+     */
+    @Test
+    void aFailureReportAfterACaptureLeavesThePaymentUntouchedAndIsLoggedAsIgnored() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookCaptured();
+        OnlinePayment before = onlyPayment();
+        Thread.sleep(20);
+
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED);
+        assertThat(after.getAmount()).isEqualByComparingTo(before.getAmount());
+        assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+        assertThat(after.getFailureReason()).isNull();
+        assertThat(lastWebhookLog().getProcessed()).isTrue();
+        assertThat(lastWebhookResult()).startsWith("ignored: payment already captured");
+        assertThat(onlinePayments.unappliedTotals().count()).isZero();
+    }
+
+    /**
+     * The same late "failed" delivery for a capture the register refused: the
+     * refund is still owed, so the payment stays CAPTURED_UNAPPLIED and stays on
+     * finance's list with the same count and total.
+     */
+    @Test
+    void aFailureReportAfterAnUnappliedCaptureKeepsItOnTheRefundList() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+        OnlinePayment before = onlyPayment();
+        assertThat(before.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        var totalsBefore = onlinePayments.unappliedTotals();
+        Thread.sleep(20);
+
+        webhookDelivers(failedPayload(), signatureFor(WEBHOOK_SECRET));
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(after.getAmount()).isEqualByComparingTo(before.getAmount());
+        assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+        assertThat(after.getFailureReason()).isEqualTo(before.getFailureReason());
+        assertThat(lastWebhookLog().getProcessed()).isTrue();
+        assertThat(lastWebhookResult()).startsWith("ignored: payment already captured");
+
+        assertThat(onlinePayments.unapplied(PageRequest.of(0, 25)).getContent())
+                .extracting(r -> r.id()).containsExactly(after.getId());
+        assertThat(onlinePayments.unappliedTotals()).isEqualTo(totalsBefore);
+        assertThat(totalsBefore.count()).isEqualTo(1L);
+    }
+
+    /** A second delivery of an unapplied capture does not move its capture time. */
+    @Test
+    void aDuplicateUnappliedCaptureKeepsTheFirstCaptureTime() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+        OnlinePayment first = onlyPayment();
+        Thread.sleep(20);
+
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(after.getUpdatedAt()).isEqualTo(first.getUpdatedAt());
+        assertThat(after.getFailureReason()).isEqualTo(first.getFailureReason());
+        assertThat(onlinePayments.unapplied(PageRequest.of(0, 25)).getContent().getFirst().capturedAt())
+                .isEqualTo(first.getUpdatedAt());
+    }
+
+    /**
+     * An applied capture redelivered after its row bounced from CLEARED (a
+     * chargeback) is still the applied capture: it neither turns into a refund
+     * nor moves its capture time.
+     */
+    @Test
+    void aRedeliveredCaptureAfterTheRowBouncedStaysAppliedWithItsFirstCaptureTime() throws Exception {
+        UUID chequeId = firstCheque();
+        onlinePayments.createOrder(chequeId);
+        webhookCaptured();
+        OnlinePayment first = onlyPayment();
+        chequeService.bounce(chequeId, new ChequeActionRequest(TODAY, null, ChequeFailureReason.BOUNCE, null));
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.BOUNCED);
+        Thread.sleep(20);
+
+        webhookCaptured();
+
+        OnlinePayment after = onlyPayment();
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED);
+        assertThat(after.getUpdatedAt()).isEqualTo(first.getUpdatedAt());
+        assertThat(after.getFailureReason()).isNull();
+        assertThat(onlinePayments.unappliedTotals().count()).isZero();
+        assertThat(lastWebhookResult())
+                .as("an applied capture is reported as applied, not as a refund")
+                .isEqualTo("Payment captured successfully");
     }
 
     // ------------------------------------------------------------------

@@ -124,9 +124,13 @@ public class WebhookService {
                             : "Captured but not applied: " + unapplied);
                 }
                 case "payment.failed" -> {
-                    onlinePaymentService.failFromWebhook(onlinePayment.getId(),
+                    // Processed either way: a failure report for a payment that
+                    // already captured is a recorded, deliberate no-op.
+                    String ignored = onlinePaymentService.failFromWebhook(onlinePayment.getId(),
                             failureReason(paymentEntity));
-                    webhookLog.setProcessingResult("Payment failed; the register row was released");
+                    webhookLog.setProcessingResult(ignored == null
+                            ? "Payment failed; the register row was released"
+                            : ignored);
                 }
                 default -> webhookLog.setProcessingResult("Event type not handled: " + eventType);
             }
