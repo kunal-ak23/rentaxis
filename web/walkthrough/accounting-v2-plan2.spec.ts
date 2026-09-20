@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Locator, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
@@ -173,21 +173,23 @@ async function hold(page: Page, ms = 2200) {
 }
 
 /**
- * SearchableSelect (web/src/components/ui/SearchableSelect.tsx) has no
- * htmlFor-linked label. Its trigger is `role="combobox"`; opening it inserts
- * a second combobox (the search box) immediately after the trigger, which
- * shifts every later trigger's index by one until this one closes again.
- * VERIFY: confirmed by reading the component, not by running it.
+ * Pick from a SearchableSelect (web/src/components/ui/SearchableSelect.tsx):
+ * the trigger is a button with role="combobox", the search field inside the
+ * open dropdown is another, and the results are role="option".
+ *
+ * `scope` matters. These indices are positional, and the leases page behind
+ * the wizard has its own status-filter combobox, so an unscoped nth(0) picks
+ * that one up - it sits under the modal overlay, never becomes clickable, and
+ * the click hangs until the test times out rather than failing with anything
+ * that names the cause. Scoping to the wizard keeps the count to its own
+ * fields.
  */
-async function pickSearchable(page: Page, triggerIndex: number, query: string) {
-    const combos = page.getByRole('combobox');
+async function pickSearchable(scope: Locator, triggerIndex: number, query: string) {
+    const combos = scope.getByRole('combobox');
     await combos.nth(triggerIndex).click();
-    const searchBox = page.getByRole('combobox').nth(triggerIndex + 1);
+    const searchBox = scope.getByRole('combobox').nth(triggerIndex + 1);
     await searchBox.fill(query);
-    await page
-        .getByRole('option', { name: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
-        .first()
-        .click();
+    await scope.getByRole('option').filter({ hasText: query }).first().click();
 }
 
 // AccountPicker (web/src/components/finance/AccountPicker.tsx) fields —
@@ -309,8 +311,11 @@ test('01 draft a lease with lines through the wizard', async ({ browser }) => {
         await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
 
         // Step 1: parties.
-        await pickSearchable(page, 0, unit.unitNumber);
-        await pickSearchable(page, 1, RENTER);
+        // Scoped to the wizard: the leases page behind the modal has a status
+        // filter that is also a combobox, and it would otherwise be nth(0).
+        const wizard = page.getByTestId('lease-wizard');
+        await pickSearchable(wizard, 0, unit.unitNumber);
+        await pickSearchable(wizard, 1, RENTER);
         await page.getByTestId('wizard-next').click();
 
         // Step 2: terms.
@@ -335,7 +340,9 @@ test('01 draft a lease with lines through the wizard', async ({ browser }) => {
             page.waitForResponse((r) => /\/api\/proxy\/v1\/leases$/.test(r.url()) && r.request().method() === 'POST'),
             page.getByTestId('wizard-next').click(),
         ]);
-        expect(createRes.status(), 'the draft must actually be created').toBe(200);
+        // 201 Created: LeaseController.createDraftLease answers with
+        // HttpStatus.CREATED, unlike post/renew/extend/amend which are 200.
+        expect(createRes.status(), 'the draft must actually be created').toBe(201);
         const draft = await createRes.json();
         leaseMainId = draft.id;
         expect(leaseMainId, 'draft lease id').toBeTruthy();
@@ -366,14 +373,21 @@ test('02 generate the cheque grid — rent split evenly, the deposit its own row
         await page.getByLabel('Fold deposits and fees into the first cheque').uncheck();
         await page.getByTestId('cheque-generate-confirm').click();
 
-        // VERIFY: whether the standalone deposit cheque lands at seqNo 1
-        // (dated at signing, before any rent instalment) or is appended
-        // after the four rent rows is unconfirmed — filter by amount rather
-        // than by row index so either ordering still proves the same thing.
         const rows = page.locator('[data-testid^="cheque-row-"]');
         await expect(rows).toHaveCount(5, { timeout: 10_000 });
-        await expect(rows.filter({ hasText: '12,000' })).toHaveCount(4);
-        await expect(rows.filter({ hasText: '10,000' })).toHaveCount(1);
+
+        // A freshly generated grid is editable, so each amount is a NumberInput
+        // (type="number"). Its value is a property, not text, so hasText cannot
+        // see it - the amounts have to be read off the inputs. Sorted, so the
+        // deposit row's position stays irrelevant, which was the VERIFY here.
+        const amountInputs = rows.locator('input[type="number"][aria-label*="mount"]');
+        await expect(amountInputs).toHaveCount(5);
+        const amounts = (
+            await amountInputs.evaluateAll((els) => els.map((el) => Number((el as HTMLInputElement).value)))
+        ).sort((a, b) => a - b);
+        expect(amounts, 'four rent cheques of 12,000 and the deposit on its own 10,000 row').toEqual([
+            10_000, 12_000, 12_000, 12_000, 12_000,
+        ]);
         await expect(page.getByTestId('cheque-grid-total')).toContainText('58,000');
         await expect(page.getByTestId('cheque-grid-match')).toHaveAttribute('data-match', 'true');
         await hold(page);
@@ -401,10 +415,25 @@ test('03 a dry run reports validation errors and writes nothing', async ({ brows
         record('lease', draft.id, 'LEASE_DRYRUN (draft, deliberately broken)');
         await adminApi('POST', `/api/v1/leases/${draft.id}/cheques/generate`, { installments: 4 });
         // Break the grid: one cheque short, so Σ cheques != contract value.
-        const cheques = await adminApi<Array<{ id: string; seqNo: number; amount: number; mode: string; debitAccountId: string | null; narration: string | null }>>(
-            'GET',
-            `/api/v1/leases/${draft.id}/cheques`,
-        );
+        //
+        // PUT /cheques replaces each row wholesale, so every field the row
+        // carries has to be sent back, not just the ones being changed - a row
+        // without its chequeDate is refused outright ("a post-dated cheque needs
+        // the date written on it") and the scenario never reaches its dry run.
+        type ChequeRow = {
+            id: string;
+            seqNo: number;
+            amount: number;
+            mode: string;
+            debitAccountId: string | null;
+            narration: string | null;
+            postingDate: string | null;
+            chequeNumber: string | null;
+            chequeDate: string | null;
+            payeeBank: string | null;
+            payerName: string | null;
+        };
+        const cheques = await adminApi<ChequeRow[]>('GET', `/api/v1/leases/${draft.id}/cheques`);
         const rows = cheques.map((c) => ({
             id: c.id,
             seqNo: c.seqNo,
@@ -412,6 +441,11 @@ test('03 a dry run reports validation errors and writes nothing', async ({ brows
             debitAccountId: c.debitAccountId,
             narration: c.narration,
             mode: c.mode,
+            postingDate: c.postingDate,
+            chequeNumber: c.chequeNumber,
+            chequeDate: c.chequeDate,
+            payeeBank: c.payeeBank,
+            payerName: c.payerName,
         }));
         await adminApi('PUT', `/api/v1/leases/${draft.id}/cheques`, rows);
 
@@ -422,7 +456,10 @@ test('03 a dry run reports validation errors and writes nothing', async ({ brows
         await expect(page.getByTestId('post-lease-confirm')).toBeDisabled();
 
         // Nothing was written: close the dialog and the lease is still DRAFT.
-        await page.getByRole('button', { name: 'Cancel' }).click();
+        // Two buttons answer to the name "Cancel": the dialog's icon close
+        // (aria-label, no text) and the footer button. hasText picks the footer
+        // one - the icon has no text node - and keeps strict mode satisfied.
+        await page.getByRole('button', { name: 'Cancel' }).filter({ hasText: 'Cancel' }).click();
         await page.reload();
         await expect(page.getByTestId('lease-status')).toHaveText(/draft/i);
 
@@ -456,7 +493,14 @@ test('04 post LEASE_MAIN — the TCO journal and the tenant ledger', async ({ br
 
         await expect(page.getByTestId('lease-banner')).toBeVisible({ timeout: 10_000 });
         await expect(page.getByTestId('lease-status')).toHaveText(/active/i);
-        await expect(page.getByTestId('lease-posting-journal')).toContainText(leaseMainTco);
+        // The link reads "View posting journal · Posted <date>" - the entry
+        // number is not in its text. What matters here is that it points at the
+        // journal THIS posting created; the number itself is asserted on the
+        // journal page below, after following it.
+        await expect(page.getByTestId('lease-posting-journal')).toHaveAttribute(
+            'href',
+            new RegExp(posted.tcoJournalId),
+        );
 
         await page.getByTestId('lease-posting-journal').click();
         await page.waitForURL(/\/dashboard\/finance\/journals\/[0-9a-f-]{36}/, { timeout: 15_000 });
@@ -778,7 +822,8 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toBeVisible({ timeout: 10_000 });
         await expect(page.getByTestId('amend-lines-confirm')).toBeDisabled();
-        await page.getByRole('button', { name: 'Cancel' }).click();
+        // Same two-Cancel ambiguity as scenario 03: take the footer button.
+        await page.getByRole('button', { name: 'Cancel' }).filter({ hasText: 'Cancel' }).click();
 
         // A second, untouched lease — every cheque still REGISTERED — is
         // where amending actually goes through.
