@@ -5,6 +5,7 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -77,6 +78,23 @@ public class LeaseAccessPolicy {
         if (!caller.seesEverything() && !canRead(lease, caller)) {
             throw new NotFoundException("Lease not found");
         }
+    }
+
+    /**
+     * Whether a real, authenticated principal is on the SecurityContext.
+     *
+     * <p>Spring Security's {@code AnonymousAuthenticationFilter} installs an
+     * {@link AnonymousAuthenticationToken} on every request that carries no
+     * credentials, so {@code getAuthentication() != null} is TRUE even for the
+     * gateway webhook, which is unauthenticated by design and vouched for by its
+     * signature instead. A caller asking "is there a user here to authorise?"
+     * must ask this, not the context directly — reading the context naively
+     * makes the webhook look like a logged-in stranger, and the lease guard
+     * answers "Lease not found" for a payment the renter has already made.</p>
+     */
+    public boolean hasAuthenticatedCaller() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
     }
 
     /**

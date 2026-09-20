@@ -226,7 +226,7 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
             tenantId: tenant.id,
         });
         record('user', user.id, `${email} (${role})`);
-        return { email, password };
+        return { id: user.id, email, password };
     };
 
     const admin = await make('TENANT_ADMIN', 'admin', `Walkthrough Admin ${SUFFIX}`);
@@ -247,6 +247,15 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
         type: 'RESIDENTIAL',
     });
     record('property', property.id, PROPERTY);
+
+    // A PROPERTY_MANAGER with no assignment sees no leases at all:
+    // LeaseAccessPolicy scopes them to their assigned properties, and an empty
+    // list reads as "nothing". Scenario 15 needs a manager who can genuinely
+    // open a lease before it can show which actions they are refused - an
+    // unassigned one would be refused everything, for the wrong reason. The
+    // property does not exist when the users are created, so this is a second
+    // step rather than propertyIds on the create call.
+    await api(scoped, 'POST', `/api/v1/users/${manager.id}/properties/${property.id}`);
 
     const renterEmail = `wt2-renter-${SUFFIX}@example.invalid`;
     const renter = await api<{ id: string; userId: string; portalPassword: string | null }>(scoped, 'POST', '/api/v1/renters', {
@@ -456,10 +465,12 @@ test('03 a dry run reports validation errors and writes nothing', async ({ brows
         await expect(page.getByTestId('post-lease-confirm')).toBeDisabled();
 
         // Nothing was written: close the dialog and the lease is still DRAFT.
-        // Two buttons answer to the name "Cancel": the dialog's icon close
-        // (aria-label, no text) and the footer button. hasText picks the footer
-        // one - the icon has no text node - and keeps strict mode satisfied.
-        await page.getByRole('button', { name: 'Cancel' }).filter({ hasText: 'Cancel' }).click();
+        // LeaseDialog's own footer cancel. Not getByRole('button', {name:
+        // 'Cancel'}): the dialog's icon close carries the same accessible name,
+        // and on a lease page every cheque row has its own Cancel action too -
+        // six of them matched here. Only one LeaseDialog is open at a time, so
+        // this testid is unambiguous.
+        await page.getByTestId('lease-dialog-cancel').click();
         await page.reload();
         await expect(page.getByTestId('lease-status')).toHaveText(/draft/i);
 
@@ -829,6 +840,15 @@ test('12 extend LEASE_MAIN — a fresh TCO for the extension period alone', asyn
         await page.getByTestId('lease-line-amount-0').fill('8000');
         const chequeTable = page.getByTestId('extend-cheque-grid');
         await chequeTable.getByLabel(/^Amount 1$/).fill('8000');
+        // ExtendLeaseDialog seeds its row with a postingDate but no cheque
+        // date, and its confirm gate checks only the dates, the match and the
+        // lines - so submitting without one reaches the server and comes back
+        // as a raw 400 ("a post-dated cheque needs the date written on it").
+        // The instalment falls in the extension window, which opens the day
+        // after the current end date. (Leasing.chequeDate renders as "Date".)
+        const extWindowStart = new Date(plusYear());
+        extWindowStart.setDate(extWindowStart.getDate() + 1);
+        await chequeTable.getByLabel(/^Date 1$/).fill(iso(extWindowStart));
         await expect(page.getByTestId('extend-match')).toHaveAttribute('data-match', 'true', { timeout: 10_000 });
 
         const [extendRes] = await Promise.all([
@@ -862,8 +882,9 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toBeVisible({ timeout: 10_000 });
         await expect(page.getByTestId('amend-lines-confirm')).toBeDisabled();
-        // Same two-Cancel ambiguity as scenario 03: take the footer button.
-        await page.getByRole('button', { name: 'Cancel' }).filter({ hasText: 'Cancel' }).click();
+        // The dialog's footer cancel (see scenario 03) - this page also has a
+        // Cancel action on every cheque row.
+        await page.getByTestId('lease-dialog-cancel').click();
 
         // A second, untouched lease — every cheque still REGISTERED — is
         // where amending actually goes through.
@@ -883,10 +904,22 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
         record('lease', posted.lease.id, 'LEASE_AMEND');
 
         await page.goto(`/en/dashboard/leases/${posted.lease.id}`);
+
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toHaveCount(0);
-        await page.getByTestId('lease-line-amount-0').fill('9500');
-        await page.getByTestId('amend-reason').fill(`WT2 rent correction ${SUFFIX}`);
+
+        // Amend REDISTRIBUTES the lines; it cannot change what the lease is
+        // worth. The cheques are not part of this dialog, so raising the total
+        // would leave the grid short and the server refuses ("Cheque grid
+        // totals 9,000.00 but contract value is 9,500.00") - see issue #267.
+        // The real correction amend is for: part of what was booked as rent was
+        // actually an admin fee. Σ stays 9,000, so the single cheque still
+        // covers it.
+        await page.getByTestId('lease-line-amount-0').fill('8000');
+        await page.getByTestId('lease-lines-add').click();
+        await page.getByTestId('lease-line-type-1').selectOption({ label: 'Admin Fee' });
+        await page.getByTestId('lease-line-amount-1').fill('1000');
+        await page.getByTestId('amend-reason').fill(`WT2 rent reclassified as admin fee ${SUFFIX}`);
 
         const [amendRes] = await Promise.all([
             page.waitForResponse((r) => /\/leases\/[0-9a-f-]{36}\/amend-lines$/.test(r.url()) && r.request().method() === 'POST'),
@@ -894,7 +927,7 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
         ]);
         expect(amendRes.status()).toBe(200);
         const amended = await amendRes.json();
-        expect(amended.lease.contractValue).toBe(9_500);
+        expect(amended.lease.contractValue, 'an amend reclassifies, it does not re-price').toBe(9_000);
         await hold(page);
     } finally {
         await close();
@@ -957,12 +990,11 @@ test('14 the renter pays a due cheque online', async ({ browser }) => {
         await page.goto('/en/dashboard/renter-portal/payments');
         await expect(page.getByTestId(`due-row-${dueChequeId}`)).toBeVisible({ timeout: 10_000 });
 
+        // Asserted, not probed: this scenario exists to show a renter paying
+        // online, and an early return on a missing button would let it "pass"
+        // having proved nothing. The rent-settings POST above is what offers it.
         const payBtn = page.getByTestId(`pay-online-${dueChequeId}`);
-        if (!(await payBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-            console.log('  GAP: Pay button not offered — onlineEnabled likely still false; see the rent-settings VERIFY above.');
-            await hold(page);
-            return;
-        }
+        await expect(payBtn, 'the renter must be offered online payment').toBeVisible({ timeout: 10_000 });
 
         const [orderRes] = await Promise.all([
             page.waitForResponse((r) => /\/api\/proxy\/v1\/online-payments\/create-order$/.test(r.url()) && r.request().method() === 'POST'),

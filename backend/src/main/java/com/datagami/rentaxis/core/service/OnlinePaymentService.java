@@ -834,8 +834,9 @@ public class OnlinePaymentService {
         if (lease == null) {
             throw new NotFoundException("Lease not found");
         }
-        if (SecurityContextHolder.getContext().getAuthentication() != null
-                && !leaseAccessPolicy.canManage(lease)) {
+        // Not `getAuthentication() != null`: the anonymous filter makes that true
+        // for the signature-verified webhook too. See hasAuthenticatedCaller.
+        if (leaseAccessPolicy.hasAuthenticatedCaller() && !leaseAccessPolicy.canManage(lease)) {
             leaseAccessPolicy.requireReadable(lease);
         }
         return lease;

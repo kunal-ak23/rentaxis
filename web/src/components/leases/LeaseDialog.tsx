@@ -69,6 +69,7 @@ export default function LeaseDialog({
                 <div className="px-5 py-3.5 border-t border-border bg-input/50 flex justify-end gap-2 shrink-0">
                     <button
                         type="button"
+                        data-testid="lease-dialog-cancel"
                         onClick={onClose}
                         disabled={busy}
                         className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border border-border text-foreground hover:bg-input cursor-pointer disabled:opacity-50"
