@@ -5,11 +5,13 @@ import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import com.razorpay.Utils;
 import org.json.JSONObject;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 
 @Component
+@ConditionalOnProperty(name = "rentaxis.gateway.stub.enabled", havingValue = "false", matchIfMissing = true)
 public class RazorpayProvider implements PaymentGatewayProvider {
 
     @Override

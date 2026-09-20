@@ -47,6 +47,13 @@ server:
 rentaxis:
   contracts:
     storage-path: ./data/contracts
+  gateway:
+    stub:
+      # Removes the one live call to Razorpay (order creation) so the recorded
+      # walkthrough and the local stack can exercise the online-payment path
+      # without a gateway account. Signature verification stays real. Never true
+      # in production - see StubRazorpayProvider.
+      enabled: ${RENTAXIS_GATEWAY_STUB_ENABLED:false}
   encryption:
     key: ${RENTAXIS_ENCRYPTION_KEY:}
   listings:
