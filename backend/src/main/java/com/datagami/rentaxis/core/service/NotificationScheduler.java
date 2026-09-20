@@ -4,9 +4,11 @@ import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
@@ -44,6 +48,7 @@ public class NotificationScheduler {
     private final LeaseRepository leaseRepository;
     private final NotificationService notificationService;
     private final RentCollectionSettingsRepository rentSettingsRepository;
+    private final OnlinePaymentRepository onlinePaymentRepository;
 
     @Scheduled(cron = "0 0 8 * * *") // 8 AM daily
     @Transactional(readOnly = true)
@@ -144,6 +149,34 @@ public class NotificationScheduler {
     static final int MAX_OVERDUE_REMINDER_DAYS = 180;
 
     /**
+     * How long an open gateway checkout buys a renter before the row is chased.
+     *
+     * <p>An {@code ONLINE_PENDING} row <em>is</em> owed — nothing has posted, and
+     * {@link ChequeDueRules#due} counts it — but a renter sitting on Razorpay's
+     * page should not be told their instalment is overdue while they are paying it.
+     * Past this window the session is an abandonment (the gateway sends no
+     * {@code payment.failed} for one, and there is no expiry sweep), so the row is
+     * chased exactly as a REGISTERED one is.</p>
+     */
+    static final Duration ABANDONED_CHECKOUT_AFTER = Duration.ofMinutes(30);
+
+    /**
+     * Whether a due row may be chased today, given any checkout open on it.
+     *
+     * <p>A pure function of the three inputs so the window can be asserted without
+     * a clock or a database, the same way {@link #shouldRemind} is.</p>
+     *
+     * @param newestOpenCheckout when the newest still-CREATED gateway order on this
+     *        row was started, or null when there is none.
+     */
+    static boolean chaseable(ChequeStatus status, Instant newestOpenCheckout, Instant now) {
+        if (status != ChequeStatus.ONLINE_PENDING || newestOpenCheckout == null) {
+            return true;
+        }
+        return !newestOpenCheckout.isAfter(now.minus(ABANDONED_CHECKOUT_AFTER));
+    }
+
+    /**
      * The chasing list.
      *
      * <p>Only the rows that are past the lease's <em>grace</em> period, not merely
@@ -157,10 +190,19 @@ public class NotificationScheduler {
         LocalDate today = LocalDate.now();
 
         int sent = 0;
+        Instant now = Instant.now();
         for (Cheque cheque : chequeRepository.findAllDue(today)) {
             Lease lease = cheque.getLease();
             int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
             if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
+                continue;
+            }
+            // A row the renter is in the middle of paying online is owed but not yet
+            // worth chasing. Asked only for the one status it can be true of, so the
+            // ordinary due row costs no query.
+            if (cheque.getStatus() == ChequeStatus.ONLINE_PENDING
+                    && !chaseable(cheque.getStatus(),
+                            onlinePaymentRepository.latestOpenCheckoutStartedAt(cheque.getId()), now)) {
                 continue;
             }
             int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);

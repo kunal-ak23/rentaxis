@@ -9,6 +9,7 @@ import com.datagami.rentaxis.api.dto.cheque.LeaseChequeStatsDTO;
 import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.OnlinePaymentService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.core.service.cheque.ChequeDetailsService;
 import com.datagami.rentaxis.core.service.cheque.ChequeQueryService;
@@ -75,6 +76,8 @@ public class ChequeController {
     private final ChequeService chequeService;
     private final ChequeDetailsService detailsService;
     private final RentReceiptService rentReceiptService;
+    /** Only for {@link #releaseOnline}: the gateway session is that service's to end. */
+    private final OnlinePaymentService onlinePaymentService;
 
     // ------------------------------------------------------------------
     // reads
@@ -202,6 +205,23 @@ public class ChequeController {
     public ChequeDTO cancel(@PathVariable UUID id,
                             @RequestBody(required = false) ChequeActionRequest request) {
         return chequeService.cancel(id, request);
+    }
+
+    /**
+     * Hand an abandoned gateway session back to the register.
+     *
+     * <p>A renter who closes the browser tab mid-checkout leaves the row
+     * {@code ONLINE_PENDING}, and nothing expires it — the gateway reports nothing
+     * for an order nobody finished. Until this existed, that instalment could not be
+     * banked, received, cancelled or handed back by anybody. STAFF because it is the
+     * register being corrected; {@code OnlinePaymentService} refuses it outright
+     * once the gateway has actually taken money, because then what is owed is a
+     * refund and not a release.</p>
+     */
+    @PostMapping("/{id}/release-online")
+    @PreAuthorize(STAFF)
+    public ChequeDTO releaseOnline(@PathVariable UUID id) {
+        return onlinePaymentService.releaseOnlinePending(id);
     }
 
     /** Number, bank, payer and the date on the paper — REGISTERED rows only, no journal. */

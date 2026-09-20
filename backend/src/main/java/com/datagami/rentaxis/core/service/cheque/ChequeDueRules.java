@@ -27,13 +27,25 @@ public final class ChequeDueRules {
      * arrived. A bounced cheque is due <em>whatever its date</em>: it already failed,
      * so the debt is live from that moment and does not wait for a calendar date to
      * pass.</p>
+     *
+     * <p><b>{@code ONLINE_PENDING} is due too.</b> A renter who opens checkout and
+     * closes the browser tab leaves the row there — Razorpay sends no
+     * {@code payment.failed} for an abandoned order and there is no expiry sweep —
+     * and an authorisation is not money: nothing has posted, the instalment is
+     * exactly as unpaid as it was a minute earlier. Leaving it out made the row
+     * vanish from the due list, the aging report and the settlement preview's
+     * arrears all at once, so a settlement would under-deduct by that instalment and
+     * every screen would agree, because they all forgot the same state. Chasing it
+     * is a separate question from owing it: {@code NotificationScheduler} keeps
+     * quiet while a checkout younger than its window is open.</p>
      */
     public static boolean due(Cheque cheque, LocalDate today) {
         ChequeStatus status = cheque.getStatus();
         if (status == ChequeStatus.BOUNCED) {
             return true;
         }
-        return (status == ChequeStatus.REGISTERED || status == ChequeStatus.DEPOSITED)
+        return (status == ChequeStatus.REGISTERED || status == ChequeStatus.DEPOSITED
+                || status == ChequeStatus.ONLINE_PENDING)
                 && !cheque.getChequeDate().isAfter(today);
     }
 

@@ -1,8 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+
+import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -62,6 +66,46 @@ class NotificationSchedulerCadenceTest {
     }
 
     /** A negative count cannot happen — {@code daysOverdue} floors at zero — but it is not a send. */
+    /**
+     * A row in an open checkout is owed but not yet chased.
+     *
+     * <p>{@code ONLINE_PENDING} counts as due — nothing has posted, so the instalment
+     * is exactly as unpaid as it was before the renter clicked Pay — but telling
+     * someone their rent is overdue while they are on the gateway's own page is the
+     * kind of reminder that teaches people to ignore reminders. Past the window the
+     * session is an abandonment (the gateway reports nothing for an order nobody
+     * finished) and the row is chased like any other.
+     */
+    @ParameterizedTest(name = "{0}, checkout {1}m ago → chase={2}")
+    @CsvSource({
+            // Not in a session at all: the window never applies.
+            "REGISTERED,     1,   true",
+            "DEPOSITED,      1,   true",
+            "BOUNCED,        1,   true",
+            // In a session: silence inside the window, chased outside it.
+            "ONLINE_PENDING, 0,   false",
+            "ONLINE_PENDING, 29,  false",
+            "ONLINE_PENDING, 30,  true",
+            "ONLINE_PENDING, 31,  true",
+            "ONLINE_PENDING, 600, true",
+    })
+    void anOpenCheckoutSuppressesTheChaseUntilItIsOldEnough(ChequeStatus status, long minutesAgo, boolean chase) {
+        Instant now = Instant.parse("2026-09-21T09:00:00Z");
+        assertThat(NotificationScheduler.chaseable(status, now.minus(Duration.ofMinutes(minutesAgo)), now))
+                .isEqualTo(chase);
+    }
+
+    /**
+     * No open order at all — the renter finished or the session was superseded — so
+     * there is nothing to wait for and the row is chased immediately.
+     */
+    @Test
+    void anOnlinePendingRowWithNoOpenCheckoutIsChasedAtOnce() {
+        Instant now = Instant.parse("2026-09-21T09:00:00Z");
+        assertThat(NotificationScheduler.chaseable(ChequeStatus.ONLINE_PENDING, null, now)).isTrue();
+        assertThat(NotificationScheduler.ABANDONED_CHECKOUT_AFTER).isEqualTo(Duration.ofMinutes(30));
+    }
+
     @Test
     void aNonPositiveCountNeverSends() {
         assertThat(NotificationScheduler.shouldRemind(-1)).isFalse();

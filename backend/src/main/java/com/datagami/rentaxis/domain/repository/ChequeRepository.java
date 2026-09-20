@@ -176,14 +176,22 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * per-row flag, so a row the query returns and the rule calls not-due (or the
      * reverse) is a count that disagrees with the list under it.</p>
      *
-     * <p>Hence {@code DEPOSITED} (at the bank, but the money has not landed) and
-     * {@code BOUNCED} <em>whatever its date</em>: a returned cheque already failed,
-     * so the debt is live from that moment and does not wait for a calendar date.</p>
+     * <p>Hence {@code DEPOSITED} (at the bank, but the money has not landed),
+     * {@code ONLINE_PENDING} (a gateway session is open and an authorisation is not
+     * money; an abandoned one has no expiry sweep behind it) and {@code BOUNCED}
+     * <em>whatever its date</em>: a returned cheque already failed, so the debt is
+     * live from that moment and does not wait for a calendar date.</p>
+     *
+     * <p>{@code ChequeRepositoryIT.theDuePredicateAndTheDueQueriesAgreeOnEveryStatus}
+     * walks every status on both sides of its date and asserts set equality against
+     * the rule, so a status added to one and not the other fails rather than
+     * quietly dropping money off a screen.</p>
      */
     @Query("""
         select c from Cheque c
         where ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
                 and c.chequeDate <= :today)
                or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
@@ -217,7 +225,8 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         select c from Cheque c
         where c.lease.id = :leaseId
           and ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
                 and c.chequeDate <= :today)
                or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
@@ -251,14 +260,17 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * The post-dated book for a month: what matures between {@code from} and
      * {@code to} and has not been settled yet, in maturity order (spec §7.4).
      *
-     * <p>{@code REGISTERED} and {@code DEPOSITED} only. A cleared row is money
-     * already in, a bounced one belongs on the due list rather than the forward
-     * book, and a cancelled or returned one is paper nobody holds.</p>
+     * <p>Uncleared instruments only — {@code REGISTERED}, {@code DEPOSITED} and
+     * {@code ONLINE_PENDING}, which is a session in flight over an instalment
+     * nothing has settled. A cleared row is money already in, a bounced one belongs
+     * on the due list rather than the forward book, and a cancelled or returned one
+     * is paper nobody holds.</p>
      */
     @Query("""
         select c from Cheque c
         where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
           and c.chequeDate >= :from and c.chequeDate <= :to
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
@@ -460,7 +472,8 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     @Query("""
         select c from Cheque c
         where ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED)
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
                 and c.chequeDate <= :today)
                or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,

@@ -452,6 +452,171 @@ class OnlinePaymentServiceIT {
         assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
     }
 
+    // ------------------------------------------------------------------
+    // an abandoned checkout is not a dead end
+    // ------------------------------------------------------------------
+
+    /**
+     * The renter closed the browser <em>tab</em>, not the modal.
+     *
+     * <p>Nothing tells us: Razorpay sends no {@code payment.failed} for an order
+     * nobody finished, and there is no expiry sweep. The row sat in
+     * {@code ONLINE_PENDING} for ever — {@code createOrder} refused a non-REGISTERED
+     * row, so the renter could not retry, and every staff action on the register
+     * refuses the status, so nobody could bank the paper, cancel it or hand it back
+     * either. The renter may now simply start again; the stale session is
+     * superseded so only one order is live on the row.</p>
+     */
+    @Test
+    void aRenterMayRestartACheckoutTheyAbandoned() {
+        UUID chequeId = firstCheque();
+        String abandoned = startOrder(chequeId);
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+
+        String retry = startOrder(chequeId);
+
+        assertThat(retry).isNotEqualTo(abandoned);
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(paymentByOrder(abandoned).getStatus())
+                .as("only one checkout may be live on a row")
+                .isEqualTo(OnlinePaymentStatus.FAILED);
+        assertThat(paymentByOrder(abandoned).getFailureReason()).contains("Superseded");
+        assertThat(paymentByOrder(retry).getStatus()).isEqualTo(OnlinePaymentStatus.CREATED);
+        assertThat(paymentByOrder(retry).getAmount()).isEqualByComparingTo("12000");
+
+        // And the retry settles the instalment exactly once.
+        webhookCaptured();
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(crtCount(chequeId)).isEqualTo(1L);
+    }
+
+    /**
+     * FAILED is deliberately not terminal, so superseding a session cannot lose a
+     * capture that was genuinely made through it: the late capture on the abandoned
+     * order still posts, and the newer order is then the one that is refunded.
+     */
+    @Test
+    void aSupersededCheckoutThatCapturesLateIsStillApplied() {
+        UUID chequeId = firstCheque();
+        String abandoned = startOrder(chequeId);
+        String retry = startOrder(chequeId);
+
+        orderId = abandoned;
+        webhookCaptured();
+
+        assertThat(paymentByOrder(abandoned).getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED);
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(crtCount(chequeId)).isEqualTo(1L);
+
+        orderId = retry;
+        webhookCaptured();
+        assertThat(paymentByOrder(retry).getStatus())
+                .as("two payments, one instalment: the second is a refund, not a second CRT")
+                .isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(crtCount(chequeId)).isEqualTo(1L);
+    }
+
+    /** A renter cannot open a fresh checkout over money the gateway has already taken. */
+    @Test
+    void aRestartIsRefusedOnceTheGatewayHasTakenTheMoney() {
+        UUID chequeId = firstCheque();
+        startOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+        assertThat(onlyPayment().getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+
+        assertThatThrownBy(() -> onlinePayments.createOrder(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already been taken by the gateway");
+        assertThat(allPayments()).hasSize(1);
+    }
+
+    /**
+     * Staff can hand an abandoned session back to the register, which is what makes
+     * the instalment workable again — bankable, cancellable, returnable.
+     */
+    @Test
+    void staffCanReleaseAnAbandonedOnlineSessionBackToTheRegister() {
+        UUID chequeId = firstCheque();
+        String abandoned = startOrder(chequeId);
+
+        ChequeDTO released = onlinePayments.releaseOnlinePending(chequeId);
+
+        assertThat(released.status()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(crtCount(chequeId)).isZero();
+        assertThat(paymentByOrder(abandoned).getStatus()).isEqualTo(OnlinePaymentStatus.FAILED);
+        assertThat(paymentByOrder(abandoned).getFailureReason()).contains("Released by staff");
+
+        // The point of releasing it: the register can work the row again.
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+    }
+
+    /**
+     * Once the gateway has taken money, what is owed is a refund and not a release:
+     * releasing would invite a second collection of the same instalment and drop the
+     * capture off finance's worklist.
+     */
+    @Test
+    void releasingIsRefusedOnceTheGatewayHasTakenTheMoney() {
+        UUID chequeId = firstCheque();
+        startOrder(chequeId);
+        webhookDelivers(capturedPayload(900_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+
+        assertThatThrownBy(() -> onlinePayments.releaseOnlinePending(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("refund");
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(onlyPayment().getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(onlinePayments.unappliedTotals().count()).isEqualTo(1L);
+    }
+
+    /** Releasing is staff work: a renter may not reach it even for their own row. */
+    @Test
+    void aRenterCannotReleaseTheirOwnPendingRow() {
+        UUID chequeId = firstCheque();
+        startOrder(chequeId);
+        asRenter(fixtures.renter());
+
+        assertThatThrownBy(() -> onlinePayments.releaseOnlinePending(chequeId))
+                .isInstanceOf(NotFoundException.class);
+
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+    }
+
+    /** A row that is not in a session is refused in the register's own words. */
+    @Test
+    void releasingARowThatIsNotInASessionIsRefused() {
+        UUID chequeId = firstCheque();
+
+        assertThatThrownBy(() -> onlinePayments.releaseOnlinePending(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Can only revert cheques in ONLINE_PENDING");
+    }
+
+    /**
+     * The state is owed money, and every "what is outstanding" question now says so.
+     * A settlement that forgot it would hand the renter back a deposit with an
+     * instalment still unpaid.
+     */
+    @Test
+    void anAbandonedSessionStaysOnTheDueListAndInSettlementArrears() {
+        UUID chequeId = firstCheque();
+        startOrder(chequeId);
+
+        List<Cheque> arrears = tx.execute(s -> chequeRepo.findDueForLease(leaseId(), TODAY));
+        List<Cheque> chased = tx.execute(s -> chequeRepo.findAllDue(TODAY));
+
+        assertThat(arrears).extracting(Cheque::getId)
+                .as("the settlement preview's arrears read this query")
+                .contains(chequeId);
+        assertThat(chased).extracting(Cheque::getId)
+                .as("and the overdue reminder job walks this one")
+                .contains(chequeId);
+    }
+
     @Test
     void aFailedSignatureOnTheClientCallbackReleasesTheRow() {
         UUID chequeId = firstCheque();

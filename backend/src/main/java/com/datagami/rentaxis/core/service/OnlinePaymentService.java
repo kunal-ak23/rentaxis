@@ -351,9 +351,11 @@ public class OnlinePaymentService {
             throw new BusinessRuleViolationException(
                     "This instalment is not due yet; it can be paid from " + cheque.getChequeDate() + ".");
         }
-        if (cheque.getStatus() != ChequeStatus.REGISTERED && cheque.getStatus() != ChequeStatus.BOUNCED) {
+        ChequeStatus status = cheque.getStatus();
+        if (status != ChequeStatus.REGISTERED && status != ChequeStatus.BOUNCED
+                && status != ChequeStatus.ONLINE_PENDING) {
             throw new BusinessRuleViolationException(
-                    "This instalment cannot be paid online (current: " + cheque.getStatus() + ")");
+                    "This instalment cannot be paid online (current: " + status + ")");
         }
         if (cheque.getProperty() != null && !onlinePaymentEnabled(cheque.getProperty().getId())) {
             throw new BusinessRuleViolationException("Online payment is switched off for this property");
@@ -361,17 +363,31 @@ public class OnlinePaymentService {
 
         TenantGatewayConfig config = activeConfig();
 
-        UUID targetId = cheque.getStatus() == ChequeStatus.BOUNCED
-                ? chequeService.replaceForOnlinePayment(chequeId, today).id()
-                : chequeId;
-        ChequeDTO pending = chequeService.registerOnlinePending(targetId);
+        UUID targetId;
+        BigDecimal amount;
+        if (status == ChequeStatus.ONLINE_PENDING) {
+            // The renter closed the browser tab mid-checkout and came back. Razorpay
+            // sends no payment.failed for an abandoned order and there is no expiry
+            // sweep, so refusing here left them unable to pay their own instalment
+            // through any door at all — the row could not be deposited, received,
+            // cancelled or handed back either. The stale session is superseded and
+            // the row stays pending for the new order.
+            supersedeAbandonedCheckouts(cheque);
+            targetId = chequeId;
+            amount = cheque.getAmount();
+        } else {
+            targetId = status == ChequeStatus.BOUNCED
+                    ? chequeService.replaceForOnlinePayment(chequeId, today).id()
+                    : chequeId;
+            amount = chequeService.registerOnlinePending(targetId).amount();
+        }
 
         String apiKey = encryptionService.decrypt(config.getApiKeyEncrypted());
         String apiSecret = encryptionService.decrypt(config.getApiSecretEncrypted());
         String currency = currencyOf(config);
         PaymentGatewayProvider provider = paymentGatewayFactory.getProvider(config.getGateway().getCode());
         CreateOrderResponseDTO response = provider.createOrder(
-                pending.amount(), currency, "CHQ-" + targetId.toString().substring(0, 8), apiKey, apiSecret);
+                amount, currency, "CHQ-" + targetId.toString().substring(0, 8), apiKey, apiSecret);
 
         Cheque target = chequeRepository.findById(targetId)
                 .orElseThrow(() -> new NotFoundException("Cheque not found"));
@@ -379,7 +395,7 @@ public class OnlinePaymentService {
         onlinePayment.setCheque(target);
         onlinePayment.setGateway(config.getGateway());
         onlinePayment.setGatewayOrderId(response.getOrderId());
-        onlinePayment.setAmount(pending.amount());
+        onlinePayment.setAmount(amount);
         onlinePayment.setCurrency(currency);
         onlinePayment.setStatus(OnlinePaymentStatus.CREATED);
         // Zero, not the old add-on: an approved penalty is its own register row
@@ -512,6 +528,87 @@ public class OnlinePaymentService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String failFromWebhook(UUID onlinePaymentId, String reason) {
         return release(lockPayment(onlinePaymentId), reason == null ? "Gateway reported the payment failed" : reason);
+    }
+
+    /**
+     * Staff hand an abandoned gateway session back to the register (spec §7.2).
+     *
+     * <p><b>Why this exists.</b> {@code ONLINE_PENDING} used to be a dead end. A
+     * renter who closes the browser <em>tab</em> — not the modal, which calls
+     * {@link #cancelPendingOnlinePayment} — leaves the row there: Razorpay sends no
+     * {@code payment.failed} for an abandoned order, there is no expiry sweep, and
+     * every staff action on the register ({@code deposit}, {@code receive},
+     * {@code cancel}, {@code returnToTenant}) refuses the status. The paper cheque
+     * for that instalment could no longer be banked, the lease could not be amended,
+     * and a termination could not hand the instrument back.</p>
+     *
+     * <p><b>Refused once money exists.</b> A payment in {@code MONEY_CAPTURED} means
+     * the gateway took the renter's money — applied, unapplied or refunded — and
+     * releasing the row would either invite a second collection or hide a refund
+     * that is owed. That decision belongs to finance on the unapplied worklist, not
+     * to a button that says "release".</p>
+     *
+     * <p>Manage-level, not the gateway's three-way rule: this is staff correcting
+     * the register, so a renter may not reach it even for their own row. The
+     * transition itself is {@code revertOnlinePending}'s, unchanged, so a row that
+     * is not in a session is refused in the same words as everywhere else.</p>
+     */
+    @Transactional
+    public ChequeDTO releaseOnlinePending(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId)
+                .orElseThrow(() -> new NotFoundException("Cheque not found"));
+        Lease lease = cheque.getLease();
+        if (lease == null) {
+            throw new NotFoundException("Lease not found");
+        }
+        leaseAccessPolicy.requireManageable(lease);
+
+        List<OnlinePayment> sessions = onlinePaymentRepository.findByCheque_Id(chequeId);
+        requireNoMoneyTaken(sessions,
+                "The gateway has already taken money for this instalment, so the row cannot be released. "
+                        + "Check the unapplied-payments list: what is owed here is a refund, not a release.");
+
+        ChequeDTO released = chequeService.revertOnlinePending(chequeId);
+        failOpenCheckouts(sessions, "Released by staff: the renter's checkout was abandoned");
+        return released;
+    }
+
+    /**
+     * The renter is starting a fresh checkout over a session they never finished:
+     * the old order is marked failed so only one is live on the row.
+     *
+     * <p>Not {@code release()}: that would revert the cheque to REGISTERED, and the
+     * row is about to be pending again for the new order. FAILED is deliberately not
+     * in {@code MONEY_CAPTURED}, so if the abandoned order turns out to have captured
+     * after all, that capture is still applied — and if both capture, the second
+     * lands in {@code CAPTURED_UNAPPLIED} as a refund, which is the existing
+     * two-orders rule.</p>
+     */
+    private void supersedeAbandonedCheckouts(Cheque cheque) {
+        List<OnlinePayment> sessions = onlinePaymentRepository.findByCheque_Id(cheque.getId());
+        requireNoMoneyTaken(sessions,
+                "A payment for this instalment has already been taken by the gateway. "
+                        + "Please contact the landlord rather than paying it again.");
+        failOpenCheckouts(sessions, "Superseded by a new checkout on the same instalment");
+    }
+
+    private static void requireNoMoneyTaken(List<OnlinePayment> sessions, String message) {
+        for (OnlinePayment session : sessions) {
+            if (MONEY_CAPTURED.contains(session.getStatus())) {
+                throw new BusinessRuleViolationException(message);
+            }
+        }
+    }
+
+    private void failOpenCheckouts(List<OnlinePayment> sessions, String reason) {
+        for (OnlinePayment session : sessions) {
+            if (session.getStatus() == OnlinePaymentStatus.CREATED) {
+                session.setStatus(OnlinePaymentStatus.FAILED);
+                session.setFailureReason(reason);
+                session.setUpdatedAt(Instant.now());
+                onlinePaymentRepository.save(session);
+            }
+        }
     }
 
     /**

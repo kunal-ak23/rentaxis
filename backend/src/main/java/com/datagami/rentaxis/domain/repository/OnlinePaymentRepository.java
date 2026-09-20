@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,6 +55,28 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, UU
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OnlinePayment o where o.gatewayOrderId = :orderId")
     Optional<OnlinePayment> findByGatewayOrderIdForUpdate(@Param("orderId") String orderId);
+
+    /**
+     * When the newest still-open checkout on this row was started, or null when
+     * there is none.
+     *
+     * <p>An {@code ONLINE_PENDING} row is owed money ({@code ChequeDueRules.due})
+     * but it is not always worth chasing: a renter who is on Razorpay's page right
+     * now should not get an overdue reminder about the instalment they are in the
+     * middle of paying. {@code NotificationScheduler} asks this and keeps quiet
+     * while the answer is inside its window; past it the row is an abandonment and
+     * is chased like any other.</p>
+     *
+     * <p>Unfiltered by tenant in practice, and deliberately: the caller is a
+     * scheduled sweep with no tenant context, and it asks about one cheque id it
+     * already holds.</p>
+     */
+    @Query("""
+        select max(o.createdAt) from OnlinePayment o
+        where o.cheque.id = :chequeId
+          and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CREATED
+        """)
+    Instant latestOpenCheckoutStartedAt(@Param("chequeId") UUID chequeId);
 
     /**
      * Finance's refund worklist: captures the gateway took that the register

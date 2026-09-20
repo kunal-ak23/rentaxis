@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.repository;
 
+import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -28,7 +29,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -63,6 +67,8 @@ class ChequeRepositoryIT {
 
     static final LocalDate TODAY = LocalDate.of(2026, 9, 18);
     static final Pageable PAGE = PageRequest.of(0, 20);
+    /** Big enough for one row per status on both sides of its date, unpaged in effect. */
+    static final Pageable BIG_PAGE = PageRequest.of(0, 200);
 
     UUID tenantId, propertyId, unitId, renterId, leaseId;
 
@@ -245,6 +251,9 @@ class ChequeRepositoryIT {
         Cheque bouncedInTheFuture = cheque(4, "000004", TODAY.plusMonths(2), ChequeStatus.BOUNCED, ChequeMode.PDC);
         cheque(5, "000005", TODAY.minusMonths(1), ChequeStatus.CLEARED, ChequeMode.PDC);
         cheque(6, null, TODAY.minusDays(2), ChequeStatus.DRAFT, ChequeMode.PDC);
+        // A gateway session in flight over a matured instalment: nothing has posted,
+        // so the money is as owed as it was before the renter opened checkout.
+        Cheque inCheckout = cheque(7, "000007", TODAY.minusDays(4), ChequeStatus.ONLINE_PENDING, ChequeMode.PDC);
 
         List<UUID> expected = due(null).stream()
                 .filter(c -> c.getLease().getId().equals(leaseId))
@@ -253,9 +262,61 @@ class ChequeRepositoryIT {
 
         assertThat(expected).as("the register's own answer, so a drifting fixture cannot make this vacuous")
                 .containsExactlyInAnyOrder(maturedRegistered.getId(), maturedDeposited.getId(),
-                        bouncedInTheFuture.getId());
+                        bouncedInTheFuture.getId(), inCheckout.getId());
         assertThat(dueForLease(leaseId)).extracting(Cheque::getId)
                 .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    /**
+     * {@link ChequeDueRules#due} and the three SQL copies of it are one rule, and
+     * this is where that is enforced rather than hoped for.
+     *
+     * <p>{@code findDue} backs the register screen, the aging report and the summary
+     * tiles; {@code findDueForLease} backs the settlement preview's arrears;
+     * {@code findAllDue} is what the overdue reminder job walks. Each is the rule
+     * written out in JPQL a second, third and fourth time, and the type system says
+     * nothing about them agreeing — which is exactly how {@code ONLINE_PENDING} came
+     * to be missing from all four at once: every screen agreed, and every screen was
+     * wrong by one instalment.</p>
+     *
+     * <p>So: one row per status, on each side of its date, and set equality against
+     * what the Java rule says about the very same rows. A status added to the enum
+     * and to one side only fails here.</p>
+     */
+    @Test
+    void theDuePredicateAndTheDueQueriesAgreeOnEveryStatus() {
+        List<Cheque> seeded = new ArrayList<>();
+        int seq = 0;
+        for (ChequeStatus status : ChequeStatus.values()) {
+            for (int offset : new int[]{-2, 0, 2}) {
+                seq++;
+                seeded.add(cheque(seq, String.format("%06d", seq), TODAY.plusDays(offset), status, ChequeMode.PDC));
+            }
+        }
+
+        Set<UUID> byTheRule = seeded.stream()
+                .filter(c -> ChequeDueRules.due(c, TODAY))
+                .map(Cheque::getId)
+                .collect(Collectors.toSet());
+        assertThat(byTheRule).as("a vacuous set would make every equality below true").isNotEmpty();
+
+        assertThat(mine(inTx(() -> cheques.findDue(null, TODAY, true, List.of(), BIG_PAGE).getContent())))
+                .as("findDue — the register, the aging report and the tiles")
+                .isEqualTo(byTheRule);
+        assertThat(mine(dueForLease(leaseId)))
+                .as("findDueForLease — the settlement preview's arrears")
+                .isEqualTo(byTheRule);
+        assertThat(mine(inTx(() -> cheques.findAllDue(TODAY))))
+                .as("findAllDue — the overdue reminder job")
+                .isEqualTo(byTheRule);
+    }
+
+    /** The ids of this test's own lease's rows, as a set. */
+    private Set<UUID> mine(List<Cheque> rows) {
+        return rows.stream()
+                .filter(c -> c.getLease() != null && leaseId.equals(c.getLease().getId()))
+                .map(Cheque::getId)
+                .collect(Collectors.toSet());
     }
 
     /**

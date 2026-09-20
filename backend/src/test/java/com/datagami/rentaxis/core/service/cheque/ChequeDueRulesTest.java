@@ -42,13 +42,18 @@ class ChequeDueRulesTest {
             "BOUNCED,    -1, true",
             "BOUNCED,     0, true",
             "BOUNCED,     1, true",
+            // A gateway session in flight: an authorisation is not money, nothing has
+            // posted, and an abandoned checkout has no expiry sweep behind it — so the
+            // instalment is owed exactly as a REGISTERED one is, on the same dates.
+            "ONLINE_PENDING, -1, true",
+            "ONLINE_PENDING,  0, true",
+            "ONLINE_PENDING,  1, false",
             // Nothing is owed on these, whatever the date says.
             "DRAFT,      -1, false",
             "CLEARED,    -1, false",
             "REPLACED,   -1, false",
             "CANCELLED,  -1, false",
             "RETURNED,   -1, false",
-            "ONLINE_PENDING, -1, false",
     })
     void due_dependsOnStatusAndWhetherTheChequeDateHasArrived(ChequeStatus status, int offsetDays, boolean expected) {
         assertThat(ChequeDueRules.due(cheque(status, TODAY.plusDays(offsetDays)), TODAY)).isEqualTo(expected);
@@ -85,9 +90,23 @@ class ChequeDueRulesTest {
     /** Overdue is due-and-late: a cheque nobody is owed money on is never overdue. */
     @ParameterizedTest
     @EnumSource(value = ChequeStatus.class,
-            names = {"DRAFT", "CLEARED", "REPLACED", "CANCELLED", "RETURNED", "ONLINE_PENDING"})
+            names = {"DRAFT", "CLEARED", "REPLACED", "CANCELLED", "RETURNED"})
     void overdue_isFalseForStatusesThatAreNotDue(ChequeStatus status) {
         assertThat(ChequeDueRules.overdue(cheque(status, TODAY.minusYears(1)), 0, TODAY)).isFalse();
+    }
+
+    /**
+     * A checkout somebody opened a year ago and never finished is overdue, like any
+     * other unpaid instalment. Whether the renter is <em>chased</em> for it while
+     * the session is minutes old is {@code NotificationScheduler}'s window, not this
+     * predicate's: owing and chasing are different questions and conflating them is
+     * how the state fell off every screen at once.
+     */
+    @Test
+    void overdue_anAbandonedGatewaySessionIsLateLikeAnyOtherUnpaidRow() {
+        assertThat(ChequeDueRules.overdue(cheque(ChequeStatus.ONLINE_PENDING, TODAY.minusYears(1)), 0, TODAY))
+                .isTrue();
+        assertThat(ChequeDueRules.overdue(cheque(ChequeStatus.ONLINE_PENDING, TODAY), 0, TODAY)).isFalse();
     }
 
     /** A long-bounced cheque is overdue however it is dated. */
