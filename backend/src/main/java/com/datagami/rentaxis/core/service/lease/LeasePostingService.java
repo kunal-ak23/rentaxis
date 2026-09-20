@@ -31,9 +31,11 @@ import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
+import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
@@ -103,6 +105,7 @@ public class LeasePostingService {
     private final LeaseLineRepository leaseLineRepository;
     private final ChequeRepository chequeRepository;
     private final AccountRepository accountRepository;
+    private final JournalEntryRepository journalEntryRepository;
     private final TenantFiscalSettingsRepository fiscalSettingsRepository;
     private final AccountResolver accountResolver;
     private final PostingService postingService;
@@ -117,6 +120,7 @@ public class LeasePostingService {
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
                                AccountRepository accountRepository,
+                               JournalEntryRepository journalEntryRepository,
                                TenantFiscalSettingsRepository fiscalSettingsRepository,
                                AccountResolver accountResolver,
                                PostingService postingService,
@@ -130,6 +134,7 @@ public class LeasePostingService {
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
         this.accountRepository = accountRepository;
+        this.journalEntryRepository = journalEntryRepository;
         this.fiscalSettingsRepository = fiscalSettingsRepository;
         this.accountResolver = accountResolver;
         this.postingService = postingService;
@@ -290,6 +295,18 @@ public class LeasePostingService {
      * transaction would roll an early reversal back anyway, but it would also have
      * consumed a TCR number for a correction that never happened, and gaps in a
      * numbered journal series are the kind of thing an auditor asks about.</p>
+     *
+     * <p><b>Every POSTED {@code TCO} on the lease is reversed, not just the one
+     * {@code postingJournalId} names.</b> An extension (spec §6.7) posts a second
+     * TCO and deliberately leaves the first on the lease, so a lease that has been
+     * extended carries two. This method reposts <em>all</em> the lease's lines —
+     * {@code applyLines} replaces the whole set, and the Σ check below is against Σ
+     * of the whole register — so reversing one of the two would have left the
+     * extension's charges on the books twice: rent receivable and income overstated
+     * by exactly the extension's value, while the Σ guard reported everything was
+     * fine because it was comparing the new total against the same total. Reverse
+     * exactly the journals whose lines are being reposted, and the ledger after an
+     * amendment is what a from-scratch posting of the amended lease would be.</p>
      */
     @Transactional
     public PostLeaseResponse amendLines(UUID leaseId, List<LeaseLineInput> newLines, String reason) {
@@ -300,6 +317,10 @@ public class LeasePostingService {
         }
         UUID reversedJournalId = lease.getPostingJournalId();
         if (reversedJournalId == null) {
+            throw new BusinessRuleViolationException("This lease has no posting journal to amend");
+        }
+        List<JournalEntry> contractEntries = postedContractEntries(leaseId);
+        if (contractEntries.isEmpty()) {
             throw new BusinessRuleViolationException("This lease has no posting journal to amend");
         }
 
@@ -320,7 +341,10 @@ public class LeasePostingService {
         PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
 
-        postingService.reverse(reversedJournalId, LocalDate.now(), reason);
+        LocalDate reversedOn = LocalDate.now();
+        for (JournalEntry contract : contractEntries) {
+            postingService.reverse(contract.getId(), reversedOn, reason);
+        }
         JournalEntry tco = postTco(lease, plan.pairs());
 
         lease.setPostingJournalId(tco.getId());
@@ -337,6 +361,26 @@ public class LeasePostingService {
     @Transactional
     public PostLeaseResponse amendLines(UUID leaseId, AmendLeaseLinesRequest request) {
         return amendLines(leaseId, request.lines(), request.reason());
+    }
+
+    /**
+     * Every still-POSTED {@code TCO} raised against this lease, oldest first — the
+     * contract's own and one per extension.
+     *
+     * <p>There is no column listing them and there deliberately is not one: a lease
+     * extended three times would need three, and {@code postingJournalId} already
+     * names the first. They are found the way every other journal on a lease is
+     * found, by {@code sourceType LEASE / sourceId leaseId}, narrowed to TCO (a
+     * deposit carry-forward JV shares the source) and to POSTED (a TCO an earlier
+     * amendment already reversed is history, and {@code PostingService.reverse}
+     * refuses to reverse it twice anyway).</p>
+     */
+    private List<JournalEntry> postedContractEntries(UUID leaseId) {
+        return journalEntryRepository
+                .findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(JournalSourceType.LEASE, leaseId)
+                .stream()
+                .filter(e -> e.getDocType() == JournalDocType.TCO && e.getStatus() == JournalStatus.POSTED)
+                .toList();
     }
 
     // ------------------------------------------------------------------

@@ -995,6 +995,110 @@ class LeaseRenewalServiceIT {
         assertThat(balanceOf(leaf(AccountRole.RENT_RECEIVABLE), leaseId)).isEqualByComparingTo("0");
     }
 
+    // ------------------------------------------------------------------
+    // extend × amend — the cross-task seam
+    // ------------------------------------------------------------------
+
+    /**
+     * Amending an extended lease reverses <em>both</em> TCOs and reposts one.
+     *
+     * <p>This is the seam neither task could see on its own. {@code extend} appends
+     * lines and rows and posts a second TCO, leaving {@code postingJournalId} on the
+     * first. {@code amendLines} replaces <b>all</b> the lease's lines and validates Σ
+     * of <b>all</b> its cheques against the new total — so the only input that passes
+     * is one that re-includes the extension's charges — and it used to reverse only
+     * the journal {@code postingJournalId} named. The extension's own TCO stayed
+     * POSTED beside a fresh TCO that charged the same money again: rent receivable
+     * and income overstated by exactly the extension's value, with the Σ guard
+     * reporting everything was fine because it was comparing the same total against
+     * itself.</p>
+     *
+     * <p>The figures below are the whole assertion. After a clean amendment the
+     * ledger has to be what a from-scratch posting of the amended lease would be:
+     * receivable back to zero (every charge covered by a cheque), income at the
+     * amended split and not the sum of two postings, and one live TCO.</p>
+     */
+    @Test
+    void amendingAnExtendedLeaseReversesEveryTcoAndDoesNotDoubleBookTheExtension() {
+        UUID leaseId = postedWithFee();                       // 51,000 rent + 2,000 fee
+        UUID originalTcoId = reread(leaseId).getPostingJournalId();
+        UUID extensionTcoId = renewal.extend(leaseId, extension("12000", "12000")).tcoJournalId();
+
+        Account receivable = leaf(AccountRole.RENT_RECEIVABLE);
+        Account rentIncome = leaf(AccountRole.ADVANCE_RENT);
+        Account adminIncome = leaf(AccountRole.ADMIN_FEE);
+        Account pdc = leaf(AccountRole.PDC_RECEIVABLE);
+        assertThat(balanceOf(receivable, leaseId)).isEqualByComparingTo("0");
+
+        // The same 65,000 of cheques, re-cut: 1,000 of rent moved to the admin fee,
+        // and the extension's own rent line restated exactly as it stands.
+        posting.amendLines(leaseId, List.of(
+                line("RENT", "50000"),
+                line("ADMIN_FEE", "3000"),
+                linePeriod("RENT", "12000", END.plusDays(1), NEW_END)), "Fee split corrected");
+
+        // ---- one live TCO, both old ones reversed -------------------------
+        assertThat(tx.execute(s -> entries.findById(originalTcoId).orElseThrow()).getStatus())
+                .isEqualTo(JournalStatus.REVERSED);
+        assertThat(tx.execute(s -> entries.findById(extensionTcoId).orElseThrow()).getStatus())
+                .as("the extension's TCO charges money the fresh TCO charges again")
+                .isEqualTo(JournalStatus.REVERSED);
+
+        List<JournalEntry> live = tcosOf(leaseId).stream()
+                .filter(e -> e.getStatus() == JournalStatus.POSTED)
+                .toList();
+        assertThat(live).hasSize(1);
+        UUID repostedId = live.get(0).getId();
+        assertThat(reread(leaseId).getPostingJournalId()).isEqualTo(repostedId);
+        // One reversal per journal reposted, and no more.
+        Long tcrs = jdbc.queryForObject(
+                "select count(*) from journal_entries where tenant_id = ? and doc_type = 'TCR'",
+                Long.class, fixtures.tenantId());
+        assertThat(tcrs).isEqualTo(2L);
+
+        // ---- the trial balance, per account -------------------------------
+        // Everything charged is covered by an instrument, as it was before the amendment.
+        assertThat(balanceOf(receivable, leaseId)).isEqualByComparingTo("0");
+        // 50,000 + the extension's 12,000, credited once. The bug left this at -74,000.
+        assertThat(balanceOf(rentIncome, leaseId)).isEqualByComparingTo("-62000");
+        assertThat(balanceOf(adminIncome, leaseId)).isEqualByComparingTo("-3000");
+        // The register never moved: the cheques are the amendment's precondition.
+        assertThat(balanceOf(pdc, leaseId)).isEqualByComparingTo("65000");
+        assertThat(registerOf(leaseId)).hasSize(6);
+
+        // The reposted TCO carries every line, including the extension's.
+        assertThat(linesOf(repostedId)).hasSize(6);
+        assertThat(leaseLines(leaseId)).hasSize(3);
+    }
+
+    /**
+     * And the same holds a second time round: amending an already-amended extended
+     * lease reverses the one live TCO and no more. A TCO an earlier amendment
+     * already reversed is history — {@code PostingService.reverse} refuses to
+     * reverse it twice, so a filter that forgot the POSTED test would turn the
+     * second amendment into a 400.
+     */
+    @Test
+    void amendingTwiceReversesOnlyTheLiveTco() {
+        UUID leaseId = postedWithFee();
+        renewal.extend(leaseId, extension("12000", "12000"));
+        posting.amendLines(leaseId, List.of(
+                line("RENT", "50000"),
+                line("ADMIN_FEE", "3000"),
+                linePeriod("RENT", "12000", END.plusDays(1), NEW_END)), "First correction");
+
+        posting.amendLines(leaseId, List.of(
+                line("RENT", "49000"),
+                line("ADMIN_FEE", "4000"),
+                linePeriod("RENT", "12000", END.plusDays(1), NEW_END)), "Second correction");
+
+        assertThat(tcosOf(leaseId).stream().filter(e -> e.getStatus() == JournalStatus.POSTED).toList())
+                .hasSize(1);
+        assertThat(balanceOf(leaf(AccountRole.RENT_RECEIVABLE), leaseId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(leaf(AccountRole.ADVANCE_RENT), leaseId)).isEqualByComparingTo("-61000");
+        assertThat(balanceOf(leaf(AccountRole.ADMIN_FEE), leaseId)).isEqualByComparingTo("-4000");
+    }
+
     /** A cheque row this lease already uses the number of is refused, as anywhere else. */
     @Test
     void extendAppliesTheSameChequeRowRulesAsEverywhereElse() {
