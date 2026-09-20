@@ -29,6 +29,7 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -302,7 +303,10 @@ public class ChequeGenerationService {
     @Transactional
     public List<ChequeDTO> generateForSystemImport(Lease lease, GenerateChequesRequest request) {
         requireSystemOrManager(lease);
-        requireDraft(lease);
+        // The same lease row lock the id-taking door takes, and for the same reason
+        // — this form writes the identical rows. Re-locking a row this transaction
+        // already holds (the {@link #generate} path) is a no-op.
+        lease = requireDraft(lockLease(lease.getId()));
         UUID leaseId = lease.getId();
         GenerateChequesRequest r = request == null
                 ? new GenerateChequesRequest(null, null, null, null, null, null, null)
@@ -444,7 +448,9 @@ public class ChequeGenerationService {
     @Transactional
     public List<ChequeDTO> saveRowsForSystemImport(Lease lease, List<ChequeRowInput> rows) {
         requireSystemOrManager(lease);
-        requireDraft(lease);
+        // See generateForSystemImport: the lock is the rows' protection, not the
+        // caller's, so it belongs on every door that rewrites them.
+        lease = requireDraft(lockLease(lease.getId()));
         UUID leaseId = lease.getId();
         List<ChequeRowInput> input = rows == null ? List.of() : rows;
 
@@ -640,8 +646,49 @@ public class ChequeGenerationService {
         return requested == null ? ChequeMode.PDC : requested;
     }
 
+    /**
+     * The lease, locked, tenant-checked, readable-checked and <em>still</em> DRAFT.
+     *
+     * <p><b>The lock comes first, and the status is read after it.</b> These writers
+     * rewrite whole cheque rows — {@code deleteAll} on the rows a payload omits,
+     * full-column updates on the ones it keeps, a renumbered grid — and they used to
+     * do it against a lease they had read without a lock. Under READ_COMMITTED that
+     * is the race {@code LeasePostingService.post} was given the lease lock to
+     * prevent, arrived at from the other side: the grid save reads DRAFT, Post locks
+     * the lease and registers every row with its own PDR, and the save then flushes
+     * status=DRAFT and {@code pdr_journal_id}=null over instruments the ledger now
+     * points at. Nothing errors, and Σ cheques no longer holds.</p>
+     *
+     * <p>Reading the status before taking the lock would be the same bug wearing a
+     * lock: Post commits in between and the check answers from a row that has since
+     * moved. So {@link #lockLease} is the first thing that touches the lease, and
+     * {@link #requireDraft} runs on what it returns.</p>
+     *
+     * <p>NOWAIT, so the loser is an immediate "try again" rather than a connection
+     * parked behind an accountant's open tab — the same shape as
+     * {@code ChequeService.lockLease} and {@code LeasePostingService.lockLease}.</p>
+     */
     private Lease draftLease(UUID leaseId) {
-        return requireDraft(readableLease(leaseId));
+        Lease lease = lockLease(leaseId);
+        leaseAccessPolicy.requireReadable(lease);
+        return requireDraft(lease);
+    }
+
+    /** The lease row, locked and tenant-checked, with the NOWAIT conflict translated. */
+    private Lease lockLease(UUID leaseId) {
+        Lease lease;
+        try {
+            lease = leaseRepository.findByIdForUpdate(leaseId)
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+        } catch (PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(
+                    "This lease is being posted by another request. Please try again.");
+        }
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
     }
 
     /**

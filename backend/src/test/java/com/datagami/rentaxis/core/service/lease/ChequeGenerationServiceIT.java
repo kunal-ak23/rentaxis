@@ -39,11 +39,19 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,6 +85,8 @@ class ChequeGenerationServiceIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired TransactionTemplate tx;
+    /** A second connection, for holding the lease row lock the way a Post does. */
+    @Autowired DataSource dataSource;
 
     private LeaseTestFixtures fixtures;
 
@@ -421,6 +431,124 @@ class ChequeGenerationServiceIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Only DRAFT");
         assertThatThrownBy(() -> service.generateNumbers(leaseId, "100040"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only DRAFT");
+    }
+
+    /**
+     * The grid writers take the same lease row lock Post takes.
+     *
+     * <p>Under READ_COMMITTED they did not, and that is a race with money in it: a
+     * property manager's {@code saveRows} reads the lease as DRAFT and its rows as
+     * DRAFT; an accountant's Post then locks the lease, writes the TCO and a PDR per
+     * row and flips them to REGISTERED; the grid save finally flushes its
+     * {@code deleteAll} and its full-column updates over rows that are now
+     * registered instruments on an ACTIVE lease — status back to DRAFT,
+     * {@code pdr_journal_id} back to null, amounts and positions rewritten. The
+     * ledger keeps the journals; the register no longer describes them, and nothing
+     * anywhere errors.</p>
+     *
+     * <p>Locking makes the loser a clean "try again". The lock is held here from a
+     * second connection, which is exactly what a Post in another transaction looks
+     * like from this one, and all three writers are asserted because they are three
+     * doors onto the same rows.</p>
+     *
+     * <p><b>"Immediately" is asserted, not assumed.</b> NOWAIT is the half of the
+     * fix that keeps the loser off the connection pool, and a writer that took no
+     * lock at all would not fail here — it would <em>block</em>, because inserting a
+     * cheque takes a FOR KEY SHARE lock on its lease row and the FOR UPDATE held
+     * below already conflicts with that. So each call runs on a worker with a
+     * deadline: a refusal that never arrives is as much a failure as the wrong one,
+     * and the test says so instead of hanging.</p>
+     */
+    @Test
+    void everyGridWriterRefusesWhileTheLeaseRowIsLockedByAPost() throws Exception {
+        UUID leaseId = draft().getId();
+        List<ChequeDTO> rows = service.generate(leaseId, fourCheques());
+        List<ChequeRowInput> edit = rows.stream().map(r -> asInput(r, null)).toList();
+
+        try (Connection posting = dataSource.getConnection()) {
+            posting.setAutoCommit(false);
+            try (PreparedStatement lock = posting.prepareStatement(
+                    "select id from leases where id = ? for update")) {
+                lock.setObject(1, leaseId);
+                lock.executeQuery();
+            }
+
+            assertRefusedImmediately("generate", () -> service.generate(leaseId, fourCheques()));
+            assertRefusedImmediately("saveRows", () -> service.saveRows(leaseId, edit));
+            assertRefusedImmediately("generateNumbers", () -> service.generateNumbers(leaseId, "100040"));
+
+            posting.rollback();
+        }
+
+        // And the refusal really was the lock, not a lease this test had broken:
+        // the same call goes through the moment the row is free.
+        assertThat(service.generateNumbers(leaseId, "100040"))
+                .filteredOn(r -> r.chequeNumber() != null)
+                .isNotEmpty();
+    }
+
+    /**
+     * One grid write, on a worker, with a deadline: it must come back refused, and
+     * it must come back. A writer holding no lock does not throw here, it waits for
+     * the row — so "the call never returned" is reported as the failure it is
+     * rather than as a hung suite.
+     */
+    private void assertRefusedImmediately(String what, Runnable call) throws Exception {
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        try {
+            Future<Throwable> outcome = worker.submit(() -> {
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                TenantContextHolder.setTenantId(fixtures.tenantId());
+                try {
+                    call.run();
+                    return null;
+                } catch (Throwable t) {
+                    return t;
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+            Throwable thrown;
+            try {
+                thrown = outcome.get(30, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                outcome.cancel(true);
+                throw new AssertionError(what + " never returned: it is waiting for the lease row "
+                        + "rather than refusing, which is the whole bug this guards.");
+            }
+            assertThat(thrown)
+                    .as("%s must be refused while the lease row is locked", what)
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("try again");
+        } finally {
+            worker.shutdownNow();
+        }
+    }
+
+    /**
+     * The status is re-read under the lock, not carried in from before it.
+     *
+     * <p>A grid write that locked the row and then decided on a status it had
+     * already read would be no better than not locking: Post commits between the
+     * two, and the writer proceeds against an ACTIVE lease holding a lock that
+     * proves nothing. The lease is moved out of DRAFT by a separate transaction
+     * here — which is what the accountant's Post is — and the writer has to notice.</p>
+     */
+    @Test
+    void aGridWriteSeesALeaseThatLeftDraftInAnotherTransaction() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+
+        tx.executeWithoutResult(s -> {
+            Lease row = leaseRepository.findById(leaseId).orElseThrow();
+            row.setStatus(LeaseStatus.ACTIVE);
+            leaseRepository.save(row);
+        });
+
+        assertThatThrownBy(() -> service.saveRows(leaseId, List.of()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Only DRAFT");
     }

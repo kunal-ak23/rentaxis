@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -168,4 +169,18 @@ public class Cheque extends BaseTenantEntity {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+
+    /**
+     * The belt under the lease row lock.
+     *
+     * <p>Every writer of these rows takes that lock — {@code LeasePostingService.post},
+     * {@code ChequeService}'s transitions, and (since the final fix wave)
+     * {@code ChequeGenerationService}'s draft-grid writers. This is what stops a
+     * future writer that forgets it from flushing a stale read over a registered
+     * instrument: the grid save that lost the race is refused at commit instead of
+     * quietly resetting {@code status} and {@code pdr_journal_id} on a row the
+     * ledger already points at.</p>
+     */
+    @Version
+    private Long version;
 }

@@ -119,6 +119,11 @@ databaseChangeLog:
               - column: { name: cbr_journal_id, type: uuid, constraints: { foreignKeyName: fk_cheques_cbr_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
               - column: { name: penalty_assessment_id, type: uuid }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              # Optimistic lock. The lease row lock is what serialises the grid
+              # writers against Post; this is the belt under it, so a write that
+              # somehow reached a row without holding that lock still cannot
+              # overwrite a registered instrument from a stale read.
+              - column: { name: version, type: bigint, defaultValueNumeric: 0 }
         - sql:
             sql: |
               ALTER TABLE cheques ADD CONSTRAINT ck_cheques_amount_positive CHECK (amount > 0);
