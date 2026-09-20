@@ -1249,6 +1249,141 @@ class OnlinePaymentServiceIT {
     }
 
     // ------------------------------------------------------------------
+    // what the portal offers is what the gateway accepts
+    // ------------------------------------------------------------------
+
+    /**
+     * An approved fine is payable through the gateway, end to end.
+     *
+     * <p>Spec §7.3 lets an approval be collected as CASH, TRANSFER or ONLINE and
+     * §11 lists "approved penalties, Razorpay pay" in the renter portal — and
+     * {@code PenaltyAssessmentService.approve} always writes the collection row as
+     * CASH. The portal advertised it as payable and {@code registerOnlinePending}
+     * then refused it as "a CASH receipt", on the one charge a landlord most wants
+     * settled quickly.</p>
+     *
+     * <p>The row keeps its CASH mode: the capture posts the identical
+     * Dr settlement / Cr PDC receivable it posts for rent, and leaving the mode
+     * alone is what keeps the fine receivable over the counter as well.</p>
+     */
+    @Test
+    void anApprovedPenaltyIsPayableThroughTheGatewayAndClearsTheSameWay() {
+        UUID fineId = approvedPenaltyRow();
+        RenterChequeDTO fine = row(myPayments(), fineId);
+        assertThat(fine.mode()).isEqualTo(ChequeMode.CASH);
+        assertThat(fine.payable()).isEqualByComparingTo("500");
+        assertThat(fine.payableOnline())
+                .as("a fine the portal offers must be one the gateway accepts")
+                .isTrue();
+
+        startOrder(fineId);
+        assertThat(reread(fineId).getStatus()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        webhookDelivers(capturedPayload(50_000L, "AED"), signatureFor(WEBHOOK_SECRET));
+
+        Cheque cleared = reread(fineId);
+        assertThat(cleared.getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(crtCount(fineId)).isEqualTo(1L);
+        // Into the gateway's settlement account, exactly as a rent capture does.
+        List<JournalLine> lines = tx.execute(s -> journalLines
+                .findByEntry_IdOrderByLineNoAsc(cleared.getCrtJournalId()));
+        assertThat(lines.get(0).getAccountId()).isEqualTo(settlementAccount.getId());
+        assertThat(lines.get(0).getDebit()).isEqualByComparingTo("500");
+        assertThat(lines.get(1).getAccountId()).isEqualTo(leaf(AccountRole.PDC_RECEIVABLE).getId());
+
+        // And the fine stops counting against the lease.
+        assertThat(myPayments()).allSatisfy(r ->
+                assertThat(r.penaltyOutstanding()).isEqualByComparingTo("0"));
+    }
+
+    /**
+     * A fine whose gateway session was released is still a fine somebody can pay
+     * over the counter — which is why the collection row keeps its CASH mode
+     * instead of being rewritten to ONLINE for the sake of a flag.
+     */
+    @Test
+    void aReleasedPenaltySessionLeavesTheFineReceivableAtTheCounter() {
+        UUID fineId = approvedPenaltyRow();
+        startOrder(fineId);
+
+        onlinePayments.releaseOnlinePending(fineId);
+
+        assertThat(reread(fineId).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(reread(fineId).getMode()).isEqualTo(ChequeMode.CASH);
+        ChequeDTO received = chequeService.receive(fineId, ChequeActionRequest.on(TODAY));
+        assertThat(received.status()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(crtCount(fineId)).isEqualTo(1L);
+    }
+
+    /**
+     * The flag and the gate are one rule, asserted from both ends on rows that
+     * differ only in the dimension the rule cares about.
+     *
+     * <p>A CASH or TRANSFER <em>rent</em> row is owed — it has a payable amount —
+     * and is not payable online: that money arrives at the counter and
+     * {@code receive()} records it. Before {@code payableOnline} existed the portal
+     * offered it anyway and the renter got a Java sentence about a CASH receipt.</p>
+     */
+    @Test
+    void payableOnlineMatchesWhatTheGatewayActuallyAccepts() {
+        posted();
+        UUID cashRow = counterRow(ChequeMode.CASH, "1000");
+        UUID transferRow = counterRow(ChequeMode.TRANSFER, "1500");
+        UUID pdcRow = firstCheque();
+
+        List<RenterChequeDTO> rows = myPayments();
+
+        assertThat(row(rows, cashRow).payable()).as("it is owed").isEqualByComparingTo("1000");
+        assertThat(row(rows, cashRow).payableOnline()).isFalse();
+        assertThat(row(rows, transferRow).payableOnline()).isFalse();
+        assertThat(row(rows, pdcRow).payableOnline()).isTrue();
+
+        // And the gate agrees, in both directions.
+        assertThatThrownBy(() -> onlinePayments.createOrder(cashRow))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("CASH receipt");
+        assertThatThrownBy(() -> onlinePayments.createOrder(transferRow))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("TRANSFER receipt");
+        assertThat(onlinePayments.createOrder(pdcRow).getOrderId()).isNotNull();
+    }
+
+    /** The property's switch is one of the four guards, so it reaches the flag too. */
+    @Test
+    void payableOnlineIsFalseWhenThePropertyTakesNoOnlinePayments() {
+        disableOnlinePayments();
+        UUID chequeId = firstCheque();
+
+        RenterChequeDTO row = row(myPayments(), chequeId);
+        assertThat(row.payable()).as("still owed, just not through the gateway").isEqualByComparingTo("12000");
+        assertThat(row.payableOnline()).isFalse();
+    }
+
+    /** An abandoned checkout is payable again: the renter may restart it. */
+    @Test
+    void payableOnlineStaysTrueOnARowTheRenterAbandoned() {
+        UUID chequeId = firstCheque();
+        startOrder(chequeId);
+
+        RenterChequeDTO row = row(myPayments(), chequeId);
+        assertThat(row.status()).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(row.payable()).isEqualByComparingTo("12000");
+        assertThat(row.payableOnline()).isTrue();
+    }
+
+    /** A settled or banked row is neither payable nor payable online. */
+    @Test
+    void payableOnlineIsFalseOnceTheRowHasLeftTheRenterSHands() {
+        UUID chequeId = firstCheque();
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+
+        RenterChequeDTO row = row(myPayments(), chequeId);
+        assertThat(row.payable()).isEqualByComparingTo("0");
+        assertThat(row.payableOnline())
+                .as("the paper is at the bank and will clear there")
+                .isFalse();
+    }
+
+    // ------------------------------------------------------------------
     // fixtures
     // ------------------------------------------------------------------
 
@@ -1282,6 +1417,36 @@ class OnlinePaymentServiceIT {
         ChequeDTO first = registerRows().get(0);
         assertThat(first.chequeDate()).isBeforeOrEqualTo(TODAY);
         return first.id();
+    }
+
+    /** The renter's own list, read inside a transaction for the lazy relations. */
+    private List<RenterChequeDTO> myPayments() {
+        return tx.execute(s -> onlinePayments.getMyPayments(fixtures.renter().getUserId()));
+    }
+
+    /**
+     * An approved 500 fine on the fixture lease, as its collection row: the CASH
+     * row {@code PenaltyAssessmentService.approve} writes, carrying the assessment
+     * id. Raised off a bounced cheque because that is how a fine is actually
+     * proposed.
+     */
+    private UUID approvedPenaltyRow() {
+        UUID bouncedId = bounceFirstCheque();
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId(), bouncedId, PenaltyReason.CHEQUE_RETURN, new BigDecimal("500"),
+                "Returned cheque fee"), UUID.randomUUID());
+        penalties.approve(proposed.id(), TODAY);
+        return myPayments().stream()
+                .filter(r -> r.penaltyAssessmentId() != null)
+                .map(RenterChequeDTO::id)
+                .findFirst().orElseThrow();
+    }
+
+    /** A counter-mode row added to the posted lease, dated today so it is due. */
+    private UUID counterRow(ChequeMode mode, String amount) {
+        return chequeService.addRowToPostedLease(leaseId(), new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(
+                null, null, TODAY, null, TODAY, null, null, null,
+                new BigDecimal(amount), mode + " instalment", mode)).id();
     }
 
     private UUID bounceFirstCheque() {

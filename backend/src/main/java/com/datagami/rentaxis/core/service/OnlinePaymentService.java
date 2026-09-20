@@ -14,6 +14,7 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.OnlinePaymentPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
+import com.datagami.rentaxis.core.service.cheque.ChequeGatewayRules;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
@@ -110,6 +111,14 @@ public class OnlinePaymentService {
             ChequeStatus.BOUNCED);
 
     /**
+     * A row the renter can settle right now — the statuses {@link #createOrder}
+     * accepts, and the ones {@link #payable} puts an amount against. DEPOSITED is
+     * absent on purpose: the paper is at the bank and will clear there.
+     */
+    private static final Set<ChequeStatus> COLLECTABLE = EnumSet.of(
+            ChequeStatus.REGISTERED, ChequeStatus.BOUNCED, ChequeStatus.ONLINE_PENDING);
+
+    /**
      * The gateway took the money. A payment in one of these never goes backwards:
      * no later failure report, signature failure or redelivered capture may change
      * its status, amount or capture time ({@code updatedAt}).
@@ -196,6 +205,7 @@ public class OnlinePaymentService {
                     grace,
                     penaltyByLease.getOrDefault(lease.getId(), BigDecimal.ZERO),
                     payable(c, due),
+                    payableOnline(c, due, onlineEnabled),
                     onlineEnabled,
                     c.getPenaltyAssessmentId(),
                     c.getFailureReason(),
@@ -211,17 +221,43 @@ public class OnlinePaymentService {
     }
 
     /**
-     * What the "Pay now" button charges.
+     * What the renter still owes on this row today, by whatever means.
      *
      * <p>A {@code BOUNCED} row is payable although its PDC receivable is long
      * reversed: {@link #createOrder} supersedes it with an ONLINE replacement that
      * carries its own {@code PDR}, which is the balance the capture then clears.
-     * A {@code DEPOSITED} row is not — the paper is at the bank, and collecting it
+     * An {@code ONLINE_PENDING} row is payable because a checkout the renter
+     * abandoned is an unpaid instalment they may simply start again. A
+     * {@code DEPOSITED} row is not — the paper is at the bank, and collecting it
      * twice is exactly what the register exists to prevent.</p>
+     *
+     * <p>This is the <em>amount</em>, not the door: a CASH rent row is payable and
+     * is paid at the counter. {@link #payableOnline} is the door.</p>
      */
     private static BigDecimal payable(Cheque c, boolean due) {
-        boolean collectable = c.getStatus() == ChequeStatus.REGISTERED || c.getStatus() == ChequeStatus.BOUNCED;
-        return due && collectable ? c.getAmount() : BigDecimal.ZERO;
+        return due && COLLECTABLE.contains(c.getStatus()) ? c.getAmount() : BigDecimal.ZERO;
+    }
+
+    /**
+     * Whether {@link #createOrder} would accept this row right now — the renter
+     * portal's Pay-now flag.
+     *
+     * <p><b>Computed from the same rules the order path enforces</b>, which is the
+     * whole point of it existing. The portal used to decide from the status and the
+     * amount alone, so an approved penalty (a CASH collection row) and any
+     * TRANSFER-mode instalment were advertised as payable and then refused by
+     * {@code registerOnlinePending} with a raw Java sentence. The four conditions
+     * below are, in order, {@code createOrder}'s four guards.</p>
+     *
+     * <p>{@code onlineEnabled} is passed in rather than looked up: the caller has
+     * already memoised it per property, and asking again per row would be a query
+     * per instalment on a screen that is one query today.</p>
+     */
+    private static boolean payableOnline(Cheque c, boolean due, boolean onlineEnabled) {
+        return due
+                && COLLECTABLE.contains(c.getStatus())
+                && ChequeGatewayRules.payableThroughGateway(c)
+                && onlineEnabled;
     }
 
     private Map<UUID, BigDecimal> penaltyOutstandingByLease(List<Cheque> rows) {
@@ -352,8 +388,7 @@ public class OnlinePaymentService {
                     "This instalment is not due yet; it can be paid from " + cheque.getChequeDate() + ".");
         }
         ChequeStatus status = cheque.getStatus();
-        if (status != ChequeStatus.REGISTERED && status != ChequeStatus.BOUNCED
-                && status != ChequeStatus.ONLINE_PENDING) {
+        if (!COLLECTABLE.contains(status)) {
             throw new BusinessRuleViolationException(
                     "This instalment cannot be paid online (current: " + status + ")");
         }
@@ -753,8 +788,11 @@ public class OnlinePaymentService {
      *       9,000.</li>
      * </ul>
      *
-     * <p>A CASH or TRANSFER row is refused too: those are recorded when they arrive,
-     * by {@code receive()}, and a gateway has no business clearing one.</p>
+     * <p>A CASH or TRANSFER <em>rent</em> row is refused too: those are recorded
+     * when they arrive, by {@code receive()}, and a gateway has no business clearing
+     * one. An approved penalty's collection row is CASH by construction and is
+     * deliberately not refused — {@link ChequeGatewayRules} is the one place that
+     * decides, shared with the order path and the renter's portal.</p>
      */
     private static String unappliable(OnlinePayment onlinePayment, Cheque cheque,
                                       Long reportedMinorUnits, String reportedCurrency) {
@@ -765,7 +803,7 @@ public class OnlinePaymentService {
         if (status != ChequeStatus.REGISTERED && status != ChequeStatus.ONLINE_PENDING) {
             return "instalment " + cheque.getSeqNo() + " is " + status + " and can no longer be paid online";
         }
-        if (cheque.getMode() != ChequeMode.ONLINE && cheque.getMode() != ChequeMode.PDC) {
+        if (!ChequeGatewayRules.payableThroughGateway(cheque)) {
             return "instalment " + cheque.getSeqNo() + " is a " + cheque.getMode() + " receipt";
         }
 

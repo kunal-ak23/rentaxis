@@ -21,9 +21,19 @@ import java.util.UUID;
  *
  * @param installmentNumber the row's position on the lease's schedule ({@code seqNo}).
  * @param dueDate the date on the instrument — when the money is owed.
- * @param payable what the "Pay now" button charges: the amount for a due row the
- *        renter can actually settle, zero otherwise. A BOUNCED row <em>is</em>
- *        payable — {@code createOrder} supersedes it with an online row first.
+ * @param payable what the renter still owes on this row today, by whatever means:
+ *        the amount for a due row they can actually settle, zero otherwise. A
+ *        BOUNCED row <em>is</em> payable — {@code createOrder} supersedes it with
+ *        an online row first — and so is an ONLINE_PENDING one, which is a checkout
+ *        they abandoned and may simply start again.
+ * @param payableOnline whether the gateway would accept this row right now:
+ *        {@code createOrder}'s own four guards, computed by the very method it
+ *        enforces them with ({@code ChequeGatewayRules.payableThroughGateway} plus
+ *        due, status and the property's switch). It exists because the portal used
+ *        to decide from {@code payable} alone and so offered Pay-now on every CASH
+ *        and TRANSFER instalment — and on every approved penalty, which is a CASH
+ *        collection row — each of which the register then refused with a raw Java
+ *        sentence. A fine <em>is</em> payable online; a cash rent row is not.
  * @param penaltyOutstanding Σ of this lease's uncleared approved-penalty collection
  *        rows. Repeated on every row of the lease: it is a property of the lease,
  *        not of the instalment, and the screen shows it as a lease-level banner.
@@ -53,6 +63,7 @@ public record RenterChequeDTO(UUID id,
                               int gracePeriodDays,
                               BigDecimal penaltyOutstanding,
                               BigDecimal payable,
+                              boolean payableOnline,
                               boolean onlineEnabled,
                               UUID penaltyAssessmentId,
                               ChequeFailureReason failureReason,

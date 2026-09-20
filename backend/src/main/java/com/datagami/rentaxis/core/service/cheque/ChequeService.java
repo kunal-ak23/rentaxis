@@ -636,6 +636,10 @@ public class ChequeService {
      * authorisation is not money, and a gateway session that is abandoned has to
      * leave the register exactly as it found it.
      *
+     * <p><b>Which rows.</b> {@link ChequeGatewayRules#payableThroughGateway} decides,
+     * and it is the same method the renter's portal computes its Pay-now flag from
+     * — a portal that offered what this refuses was the whole of finding I4.</p>
+     *
      * <p><b>REGISTERED only.</b> A bounced row looks like the obvious thing to
      * offer the renter — it is the debt they most urgently owe — and it is exactly
      * the row that must not go down this path. Its {@code CBR} already credited PDC
@@ -653,12 +657,15 @@ public class ChequeService {
             throw new BusinessRuleViolationException("Replace the bounced cheque before paying online");
         }
         requireStatus(cheque, "start an online payment for", ChequeStatus.REGISTERED);
-        if (cheque.getMode() != ChequeMode.PDC && cheque.getMode() != ChequeMode.ONLINE) {
+        if (!ChequeGatewayRules.payableThroughGateway(cheque)) {
             // Cash and bank transfers are recorded when they arrive, by receive();
-            // there is nothing for a gateway to authorise.
+            // there is nothing for a gateway to authorise. An approved penalty's
+            // collection row is the exception and the rule knows it — see
+            // ChequeGatewayRules.
             throw new BusinessRuleViolationException(
-                    "Only a post-dated cheque or an online row can be paid through the gateway; "
-                            + label(cheque) + " is a " + cheque.getMode() + " receipt.");
+                    "Only a post-dated cheque, an online row or an approved penalty can be paid "
+                            + "through the gateway; " + label(cheque) + " is a "
+                            + cheque.getMode() + " receipt.");
         }
         moveTo(cheque, ChequeStatus.ONLINE_PENDING, null);
         chequeRepository.save(cheque);
