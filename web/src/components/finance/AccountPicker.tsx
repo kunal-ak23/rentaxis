@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ledgerApi, type Account } from "@/lib/api/ledger";
+import { ledgerApi, type Account, type AccountSubType } from "@/lib/api/ledger";
 
 /**
  * The chart of accounts is small (hundreds of rows), tenant-wide and changes
@@ -31,6 +31,12 @@ type Props = {
     value: string | null;
     onChange: (id: string) => void;
     accountType?: string;
+    /**
+     * Narrow further than `accountType` — the sub-types a field can actually
+     * hold. A cheque's debit account is the case that needs it: the server
+     * accepts only BANK or CASH (see {@link SettlementAccountPicker}).
+     */
+    accountSubTypes?: AccountSubType[];
     /** Only postable (non-group) accounts. Default: true. */
     leafOnly?: boolean;
     /** Only group (non-postable) accounts — the mirror of `leafOnly`, for parent pickers. */
@@ -46,6 +52,7 @@ export default function AccountPicker({
     value,
     onChange,
     accountType,
+    accountSubTypes,
     leafOnly = true,
     groupOnly = false,
     propertyId,
@@ -66,10 +73,11 @@ export default function AccountPicker({
                 .filter(a => (groupOnly ? a.group : !leafOnly || !a.group))
                 .filter(a => a.active)
                 .filter(a => !accountType || a.accountType === accountType)
+                .filter(a => !accountSubTypes || (a.accountSubType !== null && accountSubTypes.includes(a.accountSubType)))
                 .filter(a => !propertyId || a.propertyId === null || a.propertyId === propertyId)
                 .filter(a => !q || `${a.code} ${a.name} ${a.alias ?? ""}`.toLowerCase().includes(q.toLowerCase()))
                 .slice(0, 50),
-        [accounts, q, accountType, leafOnly, groupOnly, propertyId],
+        [accounts, q, accountType, accountSubTypes, leafOnly, groupOnly, propertyId],
     );
 
     const selected = accounts.find(a => a.id === value);
