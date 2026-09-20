@@ -14,6 +14,13 @@ import { ApiError, onlinePayApi, type RenterCheque } from "@/lib/api/leasing";
  * that is both due and the property's own `onlineEnabled`, but the same
  * guard is repeated here so this component can never render a Pay button
  * the backend would refuse.
+ *
+ * `payableOnline` is the whole of that refusal in one field, computed by the
+ * server from the same predicate the gateway enforces
+ * (`ChequeService.registerOnlinePending`, :656-662 — a PDC or an ONLINE row,
+ * never a CASH or TRANSFER instalment). It is read strictly: absent means no
+ * button, so a backend that has not shipped the field cannot leave the old
+ * always-offered behaviour in place by omission.
  */
 
 type RazorpayHandlerResponse = {
@@ -72,6 +79,7 @@ export default function PayOnlineButton({ cheque, onPaid }: Props) {
     const [error, setError] = useState<string | null>(null);
 
     if (!cheque.onlineEnabled || !cheque.due || cheque.payable <= 0) return null;
+    if (!(cheque.payableOnline ?? false)) return null;
 
     const pay = async () => {
         setBusy(true);

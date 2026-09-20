@@ -7,9 +7,10 @@ import type { RenterCheque } from "@/lib/api/leasing";
 /**
  * The renter's payments screen, rebuilt on `onlinePayApi.myPayments`
  * (`RenterChequeDTO[]`) rather than v1's payment-schedule shape. The one
- * thing this screen must never get wrong: "Pay" only ever shows on a row
- * that is both due and the property's own online-enabled — never on
- * history, never on a due-but-cash-only row.
+ * thing this screen must never get wrong: "Pay" only ever shows on a row the
+ * gateway would actually take — due, the property's own online-enabled, and
+ * flagged `payableOnline` by the server (a PDC or an ONLINE row; never a CASH
+ * or TRANSFER instalment) — never on history.
  */
 
 const api = vi.hoisted(() => ({ myPayments: vi.fn() }));
@@ -26,7 +27,7 @@ function row(over: Partial<RenterCheque> = {}): RenterCheque {
         amount: 12500, status: "REGISTERED", mode: "PDC", chequeNumber: "CHQ-1",
         bankName: "ENBD", narration: null, propertyName: "Belle Vue", unitIdentifier: "A-204",
         renterName: "Tenant", due: true, overdue: false, daysOverdue: 0, gracePeriodDays: 5,
-        penaltyOutstanding: 0, payable: 12500, onlineEnabled: true, penaltyAssessmentId: null,
+        penaltyOutstanding: 0, payable: 12500, payableOnline: true, onlineEnabled: true, penaltyAssessmentId: null,
         failureReason: null, clearedAt: null, statusChangedAt: null,
         ...over,
     };
@@ -62,6 +63,18 @@ describe("RenterPaymentsPage — due rows", () => {
 
         expect(screen.getByTestId("history-row-cleared")).toBeInTheDocument();
         expect(screen.queryByTestId("pay-online-cleared")).not.toBeInTheDocument();
+    });
+
+    it("never shows Pay on a CASH instalment the gateway would refuse", async () => {
+        // `payableOnline` is the server's own predicate
+        // (ChequeService.registerOnlinePending, :656-662); the row is due,
+        // online-enabled and payable, and still must not offer Pay.
+        api.myPayments.mockResolvedValue([
+            row({ id: "cash", due: true, mode: "CASH", payableOnline: false }),
+        ]);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("due-row-cash")).toBeInTheDocument());
+        expect(screen.queryByTestId("pay-online-cash")).not.toBeInTheDocument();
     });
 
     it("never shows Pay on a fully-paid (payable = 0) row even if flagged due", async () => {

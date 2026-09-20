@@ -167,7 +167,24 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                         <td className={td}>{p.renterName || "—"}</td>
                                         <td className={`${td} text-muted`}>{p.propertyName || "—"}</td>
                                         <td className={td}>{p.chequeNumber || "—"}</td>
-                                        <td className={td}>{t(`reason.${p.reason}`)}</td>
+                                        <td className={td}>
+                                            {t(`reason.${p.reason}`)}
+                                            {/*
+                                              * The justification the proposer was asked for
+                                              * (`LeasePenaltiesTab` collects it and posts it as
+                                              * `description`) — the approver is the only person who
+                                              * acts on this row, and used to be the one person never
+                                              * shown why it exists.
+                                              */}
+                                            {p.description && (
+                                                <span
+                                                    className="block text-[11px] text-muted mt-0.5"
+                                                    data-testid={`penalty-description-${i}`}
+                                                >
+                                                    {p.description}
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(p.amount)}</td>
                                         <td className={`${td} text-muted`}>
                                             {p.proposedAt ? fmtIsoDate(p.proposedAt, locale) : "—"}

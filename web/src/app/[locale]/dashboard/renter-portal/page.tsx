@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingModal";
 import RenewalBanner from "@/components/renewals/RenewalBanner";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import type { RenterCheque } from "@/lib/api/leasing";
 
 type Lease = {
     id: string;
@@ -57,11 +58,15 @@ export default function RenterPortalPage() {
     const tCommon = useTranslations("Common");
     const tPayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
+    const tLeasing = useTranslations("Leasing");
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
-    const [paymentsByLease, setPaymentsByLease] = useState<Record<string, Array<{ id: string; installmentNumber: number; dueDate: string; amount: number; status: string; paymentMethod: string }>>>({});
+    // `/online-payments/my-payments` returns RenterChequeDTO rows. The local
+    // shape this used to declare carried a `paymentMethod` the DTO has never
+    // had, which is how the Method column came to render a hardcoded literal.
+    const [paymentsByLease, setPaymentsByLease] = useState<Record<string, RenterCheque[]>>({});
     const [expandedPlanLeaseId, setExpandedPlanLeaseId] = useState<string | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{
         title: string;
@@ -472,7 +477,16 @@ export default function RenterPortalPage() {
                                                                 <td className="px-3 py-2 tabular-nums">{p.installmentNumber}</td>
                                                                 <td className="px-3 py-2 tabular-nums">{new Date(p.dueDate).toLocaleDateString()}</td>
                                                                 <td className="px-3 py-2 text-end tabular-nums">{formatCurrencyCompact(p.amount)}</td>
-                                                                <td className="px-3 py-2 text-muted">{p.paymentMethod || 'CHEQUE'}</td>
+                                                                {/*
+                                                                  * These rows are RenterChequeDTO, which has
+                                                                  * no `paymentMethod` — the column was a
+                                                                  * hardcoded, untranslated "CHEQUE" on every
+                                                                  * row, bank transfers and online ones
+                                                                  * included. `mode` is the field that exists.
+                                                                  */}
+                                                                <td className="px-3 py-2 text-muted">
+                                                                    {p.mode ? tLeasing(`mode.${p.mode}`) : "—"}
+                                                                </td>
                                                             </tr>
                                                         );
                                                     })}

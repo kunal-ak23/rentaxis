@@ -27,7 +27,7 @@ function cheque(over: Partial<RenterCheque> = {}): RenterCheque {
         amount: 5000, status: "REGISTERED", mode: "PDC", chequeNumber: "000101",
         bankName: "ENBD", narration: null, propertyName: "L'Olivier", unitIdentifier: "A-101",
         renterName: "Tenant", due: true, overdue: false, daysOverdue: 0, gracePeriodDays: 5,
-        penaltyOutstanding: 0, payable: 5000, onlineEnabled: true, penaltyAssessmentId: null,
+        penaltyOutstanding: 0, payable: 5000, payableOnline: true, onlineEnabled: true, penaltyAssessmentId: null,
         failureReason: null, clearedAt: null, statusChangedAt: null,
         ...over,
     };
@@ -97,6 +97,27 @@ describe("PayOnlineButton gating", () => {
     it("renders Pay on a due, online-enabled, payable row", () => {
         renderButton();
         expect(screen.getByTestId("pay-online-c1")).toBeInTheDocument();
+    });
+
+    it("renders nothing on a row the gateway would refuse — a CASH or TRANSFER instalment", () => {
+        // `ChequeService.registerOnlinePending` (:656-662) takes a PDC or an
+        // ONLINE row and nothing else; the server says so in `payableOnline`,
+        // computed by that same predicate, rather than the client re-deriving it.
+        renderButton({ cheque: cheque({ mode: "CASH", payableOnline: false }) });
+        expect(screen.queryByTestId("pay-online-c1")).not.toBeInTheDocument();
+
+        cleanup();
+        renderButton({ cheque: cheque({ mode: "TRANSFER", payableOnline: false }) });
+        expect(screen.queryByTestId("pay-online-c1")).not.toBeInTheDocument();
+    });
+
+    it("renders nothing when the backend has not said the row is payable online", () => {
+        // Absent is not "yes". A client that guessed would put the old raw-400
+        // button straight back.
+        const withoutField: RenterCheque = cheque();
+        delete withoutField.payableOnline;
+        renderButton({ cheque: withoutField });
+        expect(screen.queryByTestId("pay-online-c1")).not.toBeInTheDocument();
     });
 });
 

@@ -80,6 +80,22 @@ describe("Penalties queue page — access", () => {
         expect(screen.getByTestId("penalty-waive-0")).toBeInTheDocument();
     });
 
+    it("shows the proposer's own justification to the person deciding (#265)", async () => {
+        // `LeasePenaltiesTab` asks the proposer for this and posts it as
+        // `description`; the approver is the only one who acts on the row.
+        renderPage();
+        expect(await screen.findByTestId("penalty-description-0")).toHaveTextContent("Cheque returned unpaid");
+    });
+
+    it("says nothing where there is no description rather than an empty line", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({ description: null })], totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-row-0")).toBeInTheDocument();
+        expect(screen.queryByTestId("penalty-description-0")).not.toBeInTheDocument();
+    });
+
     it("labels the date column for what it actually shows — the DTO carries proposedBy as a bare id, never rendered", async () => {
         renderPage();
         expect(await screen.findByText("Proposed At")).toBeInTheDocument();
