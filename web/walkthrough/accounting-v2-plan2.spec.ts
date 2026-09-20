@@ -508,14 +508,13 @@ test('04 post LEASE_MAIN — the TCO journal and the tenant ledger', async ({ br
         await expect(page.getByText('Posted', { exact: true }).first()).toBeVisible();
 
         // The tenant ledger — scoped to this one lease so no other fixture
-        // data can be mistaken for it.
+        // data can be mistaken for it. The page is opened so the recording
+        // shows it, but the assertion reads the API directly: a response
+        // captured across page.reload() has its body evicted by the time it can
+        // be read ("No resource with given identifier found").
         await page.goto(`/en/dashboard/finance/tenant-ledger?renterId=${fx.renter.id}&leaseId=${leaseMainId}`);
-        const [ledgerRead] = await Promise.all([
-            page.waitForResponse((r) => /\/api\/proxy\/v1\/finance\/ledger\/renter\//.test(r.url()) && r.request().method() === 'GET'),
-            page.reload(),
-        ]);
-        expect(ledgerRead.status()).toBe(200);
-        const ledgers = await ledgerRead.json();
+        await expect(page).toHaveURL(/tenant-ledger/);
+        const ledgers = await adminApi<unknown[]>('GET', `/api/v1/finance/ledger/renter/${fx.renter.id}`);
         expect(Array.isArray(ledgers) ? ledgers.length : 0, 'posting must leave entries on the tenant ledger').toBeGreaterThan(0);
         await hold(page);
     } finally {
@@ -534,6 +533,15 @@ test('05 a deposit batch — two REGISTERED rent cheques into the bank in one ac
         );
         const rentRows = cheques.filter((c) => c.mode === 'PDC' && c.amount === 12_000).sort((a, b) => a.seqNo - b.seqNo);
         expect(rentRows.length, 'four 12,000 rent cheques from scenario 02').toBe(4);
+
+        // Only matured paper reaches the deposit run: findToDeposit requires
+        // chequeDate <= today, and a lease that starts today has exactly one
+        // instalment mature, so there would be nothing to BATCH. Bring the
+        // second instalment forward through the register's own edit endpoint -
+        // a landlord may well hold a cheque dated today. Unlike PUT
+        // /leases/{id}/cheques, which replaces a row wholesale, this one
+        // patches the fields it is given.
+        await adminApi('PUT', `/api/v1/cheques/${rentRows[1].id}/details`, { chequeDate: today() });
 
         await page.goto('/en/dashboard/finance/cheques/collection');
         await page.waitForLoadState('networkidle');
@@ -572,7 +580,15 @@ test('06 clear a deposited cheque', async ({ browser }) => {
         await page.goto('/en/dashboard/finance/cheques');
         await page.waitForLoadState('networkidle');
         await page.getByTestId(`cheque-row-action-clear-${clearRow.id}`).click();
-        await page.getByTestId('cheque-clear-confirm').click();
+        // Wait for the clear itself rather than for a button. `bounce` is
+        // offered on a DEPOSITED row too, so its visibility proves nothing, and
+        // the API read below can otherwise beat the request - the first run's
+        // trace ends with this POST still in flight and the row still DEPOSITED.
+        const [clearRes] = await Promise.all([
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/clear$/.test(r.url()) && r.request().method() === 'POST'),
+            page.getByTestId('cheque-clear-confirm').click(),
+        ]);
+        expect(clearRes.status()).toBe(200);
         await expect(page.getByTestId(`cheque-row-action-bounce-${clearRow.id}`)).toBeVisible({ timeout: 10_000 });
 
         const after = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${clearRow.id}`);
@@ -597,7 +613,12 @@ test('07 bounce the second deposited cheque', async ({ browser }) => {
         await page.waitForLoadState('networkidle');
         await page.getByTestId(`cheque-row-action-bounce-${bounceChequeId}`).click();
         // BounceChequeDialog defaults failureReason to BOUNCE already.
-        await page.getByTestId('cheque-bounce-confirm').click();
+        // Same reasoning as scenario 06: pin the transition, not a button.
+        const [bounceRes] = await Promise.all([
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/bounce$/.test(r.url()) && r.request().method() === 'POST'),
+            page.getByTestId('cheque-bounce-confirm').click(),
+        ]);
+        expect(bounceRes.status()).toBe(200);
         await expect(page.getByTestId(`cheque-row-action-replace-${bounceChequeId}`)).toBeVisible({ timeout: 10_000 });
 
         const after = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${bounceChequeId}`);
@@ -619,7 +640,13 @@ test('08 replace the bounced cheque with a fresh instrument', async ({ browser }
         // ReplaceChequeDialog seeds row 0's amount to the bounced cheque's own
         // amount already (blankRow(0, cheque.amount)) — a like-for-like
         // replacement needs only the confirm.
-        await page.getByTestId('replace-confirm').click();
+        // Same reasoning as scenario 06. replace returns the pair of rows
+        // (the superseded one and its replacement), so 200 with a list.
+        const [replaceRes] = await Promise.all([
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/replace$/.test(r.url()) && r.request().method() === 'POST'),
+            page.getByTestId('replace-confirm').click(),
+        ]);
+        expect(replaceRes.status()).toBe(200);
         await expect(page.getByTestId(`cheque-row-action-replace-${bounceChequeId}`)).toHaveCount(0, { timeout: 10_000 });
 
         const after = await adminApi<{ status: string; replacedById: string | null }>('GET', `/api/v1/cheques/${bounceChequeId}`);
