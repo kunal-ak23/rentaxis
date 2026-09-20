@@ -255,7 +255,7 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
     // unassigned one would be refused everything, for the wrong reason. The
     // property does not exist when the users are created, so this is a second
     // step rather than propertyIds on the create call.
-    await api(scoped, 'POST', `/api/v1/users/${manager.id}/properties/${property.id}`);
+    await api(scoped, 'POST', `/api/admin/users/${manager.id}/properties/${property.id}`);
 
     const renterEmail = `wt2-renter-${SUFFIX}@example.invalid`;
     const renter = await api<{ id: string; userId: string; portalPassword: string | null }>(scoped, 'POST', '/api/v1/renters', {
