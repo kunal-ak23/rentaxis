@@ -883,7 +883,13 @@ test('14 the renter pays a due cheque online', async ({ browser }) => {
             page.waitForResponse((r) => /\/api\/proxy\/v1\/online-payments\/create-order$/.test(r.url()) && r.request().method() === 'POST'),
             payBtn.click(),
         ]);
-        expect(orderRes.status(), 'createOrder must succeed even with synthetic keys — Razorpay is only contacted by the checkout script, not by this call').toBe(200);
+        // The stack runs with rentaxis.gateway.stub.enabled=true, so
+        // StubRazorpayProvider answers for RAZORPAY: order creation is synthetic
+        // and nothing is sent to Razorpay. (The real RazorpayProvider calls
+        // client.orders.create here, which would throw on these synthetic keys -
+        // this scenario cannot run against it.) Signature verification is NOT
+        // stubbed, so the webhook below still has to be signed correctly.
+        expect(orderRes.status(), 'createOrder must succeed against the stubbed gateway').toBe(200);
         const order = await orderRes.json();
         expect(order.orderId).toBeTruthy();
         expect(order.amount).toBeTruthy();
@@ -914,17 +920,17 @@ test('14 the renter pays a due cheque online', async ({ browser }) => {
             headers: { 'Content-Type': 'application/json', 'X-Razorpay-Signature': signature },
             body: payload,
         });
-        if (webhookRes.ok) {
-            const afterWebhook = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${dueChequeId}`);
-            console.log(`  webhook accepted; cheque now ${afterWebhook.status}`);
-            if (afterWebhook.status === 'CLEARED') {
-                expect(afterWebhook.status).toBe('CLEARED');
-            } else {
-                console.log('  GAP: webhook was accepted but the cheque did not clear — captureFromWebhook may need a different payload shape than this spec guessed.');
-            }
-        } else {
-            console.log(`  GAP: webhook capture unreachable/refused (${webhookRes.status}) — recording the order-creation proof only, per the brief's own fallback.`);
-        }
+        // The shape, the minor-unit amount and the currency are all checked
+        // against the order: WebhookService reads payload.payment.entity
+        // .{order_id,id,amount,currency} and OnlinePaymentService compares the
+        // reported minor units against minorUnits(ordered) = amount * 100, which
+        // is exactly what createOrder reported above. Signed with this tenant's
+        // own webhook secret, so it passes the gate in WebhookService. This is
+        // the money moving, so it is asserted rather than logged.
+        expect(webhookRes.status, 'the signed webhook must be accepted').toBe(200);
+        const afterWebhook = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${dueChequeId}`);
+        expect(afterWebhook.status, 'the captured payment must clear its register row').toBe('CLEARED');
+        console.log(`  webhook accepted; cheque now ${afterWebhook.status}`);
         await hold(page);
     } finally {
         await close();

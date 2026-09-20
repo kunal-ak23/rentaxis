@@ -12,6 +12,13 @@ import path from 'node:path';
  * the dev e2e suite's `playwright.config.ts`, whose role projects would run
  * this spec five times.
  *
+ * The backend must run with `rentaxis.gateway.stub.enabled=true` (or
+ * `RENTAXIS_GATEWAY_STUB_ENABLED=true`). Scenario 14 drives a real online
+ * payment, and the production RazorpayProvider calls the live gateway to
+ * create the order, which throws on the synthetic keys this spec configures.
+ * The stub removes only that call - webhook signatures are still verified for
+ * real, so scenario 14 still proves the trust boundary.
+ *
  * video: 'on' — the recording IS the proof run. A take only exists because
  * the assertions in the same run passed.
  */
