@@ -60,4 +60,5 @@ jobs:
           # Unattended runs push a branch and open a PR; a human merges, because
           # in some of these repos a push to main is the production deploy.
           claude_args: |
+            --allowedTools "Bash(npm ci),Bash(npm run build),Bash(npx tsc:*),Bash(npx vitest:*),Bash(npx prisma generate),Bash(npx eslint:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
             --append-system-prompt "Open a pull request; never merge, never deploy, never push to main. Never run against production databases or handle credentials. Say what you verified by running it versus what you inferred. If you need a product decision, a credential, or an approval, or CI fails twice, stop and ask in a comment instead of guessing."
