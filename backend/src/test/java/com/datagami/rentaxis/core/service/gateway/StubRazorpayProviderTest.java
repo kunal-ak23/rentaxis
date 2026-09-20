@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.mock.env.MockEnvironment;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -14,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The stub exists so the walkthrough can drive the online-payment path without a
@@ -68,6 +71,38 @@ class StubRazorpayProviderTest {
                         .isInstanceOf(StubRazorpayProvider.class));
     }
 
+    // ---- the stub must never boot in production ----------------------------
+
+    /**
+     * A WARN banner is what the deployment had between an env typo and a gateway
+     * that takes no money: nobody reads container logs at 2am. An environment that
+     * has both the stub switched on and the {@code prod} profile active is a
+     * misconfiguration, and the application refuses to start rather than come up
+     * looking healthy while every renter's "Pay now" quietly does nothing.
+     */
+    @Test
+    @DisplayName("stub.enabled=true under the prod profile refuses to start")
+    void theStubRefusesToBootInProduction() {
+        MockEnvironment prod = new MockEnvironment();
+        prod.setActiveProfiles("prod");
+
+        assertThatThrownBy(() -> StubRazorpayProvider.refuseInProduction(prod))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("rentaxis.gateway.stub.enabled")
+                .hasMessageContaining("prod");
+    }
+
+    @Test
+    @DisplayName("any other profile boots the stub as before")
+    void theStubBootsOutsideProduction() {
+        MockEnvironment dev = new MockEnvironment();
+        dev.setActiveProfiles("dev", "walkthrough");
+
+        assertThatCode(() -> StubRazorpayProvider.refuseInProduction(dev)).doesNotThrowAnyException();
+        assertThatCode(() -> StubRazorpayProvider.refuseInProduction(new MockEnvironment()))
+                .doesNotThrowAnyException();
+    }
+
     // ---- order creation: no network, real minor units ----------------------
 
     @Test
@@ -81,6 +116,24 @@ class StubRazorpayProviderTest {
         assertThat(order.getGatewayCode()).isEqualTo("RAZORPAY");
         assertThat(order.getGatewayKey()).isEqualTo("rzp_test_key");
         assertThat(order.getOrderId()).startsWith("order_stub_");
+    }
+
+    /**
+     * The minor-unit conversion is a money comparison, not a display rounding: the
+     * capture path checks the gateway's reported figure against this number. A
+     * three-decimal amount is a bug upstream, and {@code longValue()} truncated it
+     * silently — 12,000.005 charged as 1,200,000 fils and reconciled as if it
+     * matched. It has to be an error instead.
+     */
+    @Test
+    @DisplayName("an amount with sub-fils precision is refused, not truncated")
+    void minorUnitsRefusesAnAmountItCannotRepresent() {
+        assertThat(PaymentGatewayProvider.minorUnits(new BigDecimal("12000.00"))).isEqualTo(1_200_000L);
+        assertThat(PaymentGatewayProvider.minorUnits(new BigDecimal("12000"))).isEqualTo(1_200_000L);
+        assertThat(PaymentGatewayProvider.minorUnits(new BigDecimal("0.01"))).isEqualTo(1L);
+
+        assertThatThrownBy(() -> PaymentGatewayProvider.minorUnits(new BigDecimal("12000.005")))
+                .isInstanceOf(ArithmeticException.class);
     }
 
     @Test

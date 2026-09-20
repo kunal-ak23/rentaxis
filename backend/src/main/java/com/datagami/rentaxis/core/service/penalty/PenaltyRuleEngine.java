@@ -147,12 +147,20 @@ public class PenaltyRuleEngine {
      * which is why a renter three months late arrived at a balance nobody had
      * decided on; here the whole late fee is proposed the day the money actually
      * lands, as one number finance can look at.</p>
+     *
+     * <p><b>A fine is not itself fine-able.</b> A penalty's collection row is dated
+     * the day the approval was made and most leases carry no grace at all, so
+     * finance receiving it a week later auto-proposed a LATE_PAYMENT penalty on the
+     * penalty. Only a proposal, so nobody was charged twice — but it is a row on
+     * the worklist nobody can explain to a renter, and the charge it would compound
+     * is one the landlord has already decided the size of.</p>
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void onLateClear(Cheque cheque, LocalDate clearedOn) {
         Lease lease = cheque == null ? null : cheque.getLease();
         UUID propertyId = propertyIdOf(cheque, lease);
         if (lease == null || propertyId == null || clearedOn == null || cheque.getChequeDate() == null) return;
+        if (cheque.getPenaltyAssessmentId() != null) return;
 
         FineConfig cfg = fineConfigResolver.resolve(propertyId, TenantContextHolder.getTenantId());
         if (!cfg.autoProposeLatePayment()) return;

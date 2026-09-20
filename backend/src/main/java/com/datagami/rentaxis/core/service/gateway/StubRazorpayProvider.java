@@ -3,7 +3,10 @@ package com.datagami.rentaxis.core.service.gateway;
 import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -30,20 +33,56 @@ import java.util.UUID;
  * <p>Off unless {@code rentaxis.gateway.stub.enabled=true} is set explicitly;
  * {@link RazorpayProvider} carries the inverse condition, so exactly one bean
  * answers to RAZORPAY and the default is always the real one.</p>
+ *
+ * <p><b>It cannot boot under the {@code prod} profile.</b> A WARN banner was all
+ * that stood between an environment-variable typo and a production estate whose
+ * "Pay now" quietly took no money from anybody: nobody reads container logs at
+ * 2am, and every renter would get an order id, a checkout and no charge. Failing
+ * to start is loud, immediate and reversible.</p>
  */
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "rentaxis.gateway.stub.enabled", havingValue = "true")
 public class StubRazorpayProvider implements PaymentGatewayProvider {
 
+    /**
+     * Injected rather than read from a static: the bean has to be constructible in
+     * a plain unit test, which is why the decision itself is
+     * {@link #refuseInProduction(Environment)} and this only supplies it.
+     */
+    private final Environment environment;
+
+    public StubRazorpayProvider() {
+        this(null);
+    }
+
+    @Autowired
+    public StubRazorpayProvider(Environment environment) {
+        this.environment = environment;
+    }
+
     @PostConstruct
     void announce() {
+        refuseInProduction(environment);
         log.warn("""
                 ====================================================================
                 RAZORPAY ORDER CREATION IS STUBBED (rentaxis.gateway.stub.enabled).
                 No order reaches the gateway and no money can move. Signature
                 verification is still real. Never enable this in production.
                 ====================================================================""");
+    }
+
+    /**
+     * The guard, separated from the bean so it can be asserted without standing up
+     * a context. A null environment is the unit-test case and is not production.
+     */
+    static void refuseInProduction(Environment environment) {
+        if (environment != null && environment.acceptsProfiles(Profiles.of("prod"))) {
+            throw new IllegalStateException(
+                    "rentaxis.gateway.stub.enabled=true with the prod profile active. The stubbed gateway "
+                            + "creates orders that reach no gateway and collect no money; refusing to start. "
+                            + "Unset rentaxis.gateway.stub.enabled (or set it to false) in this environment.");
+        }
     }
 
     @Override
@@ -59,7 +98,7 @@ public class StubRazorpayProvider implements PaymentGatewayProvider {
     @Override
     public CreateOrderResponseDTO createOrder(BigDecimal amount, String currency, String receiptId,
                                               String apiKey, String apiSecret) {
-        long amountInSmallestUnit = amount.multiply(BigDecimal.valueOf(100)).longValue();
+        long amountInSmallestUnit = PaymentGatewayProvider.minorUnits(amount);
 
         CreateOrderResponseDTO response = new CreateOrderResponseDTO();
         response.setOrderId("order_stub_" + UUID.randomUUID().toString().replace("-", "").substring(0, 14));

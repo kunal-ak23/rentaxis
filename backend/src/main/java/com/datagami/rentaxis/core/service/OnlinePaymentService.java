@@ -694,8 +694,13 @@ public class OnlinePaymentService {
         return null;
     }
 
+    /**
+     * The same conversion both providers put on the wire — shared rather than
+     * copied, because this is the other side of the comparison the capture check
+     * makes against what the gateway says it took.
+     */
     private static long minorUnits(BigDecimal amount) {
-        return amount.multiply(BigDecimal.valueOf(100)).longValue();
+        return PaymentGatewayProvider.minorUnits(amount);
     }
 
     /**
@@ -813,9 +818,25 @@ public class OnlinePaymentService {
         return settlement != null ? settlement.getId() : null;
     }
 
+    /**
+     * The currency an order is raised in. AED or nothing.
+     *
+     * <p>The register keeps its money in AED and a capture posts the <em>row's</em>
+     * AED amount, so a gateway that cannot take AED cannot be used to collect a
+     * rent instalment. The old fallback raised the order for the same number in
+     * rupees: a 12,000 AED instalment charged as ₹12,000 — about a seventh of the
+     * money — and then booked as settled in full. A refusal at order time is a
+     * configuration problem somebody fixes; the fallback was a reconciliation
+     * nobody would find.</p>
+     */
     private static String currencyOf(TenantGatewayConfig config) {
         String supported = config.getGateway().getSupportedCurrencies();
-        return supported != null && supported.contains("AED") ? "AED" : "INR";
+        if (supported == null || !supported.contains("AED")) {
+            throw new BusinessRuleViolationException(
+                    "The configured payment gateway (" + config.getGateway().getCode()
+                            + ") does not support AED, so this instalment cannot be collected through it.");
+        }
+        return "AED";
     }
 
     /**

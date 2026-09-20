@@ -337,6 +337,30 @@ class PenaltyRuleEngineTest {
         assertThat(proposedAmount()).isEqualByComparingTo("150");
     }
 
+    /**
+     * A fine is not itself fine-able.
+     *
+     * <p>Approving a penalty puts a CASH collection row on the register dated the
+     * approval day, and most leases carry no grace at all — so finance receiving it
+     * a week later auto-proposed a LATE_PAYMENT penalty <em>on the penalty</em>.
+     * Only a proposal, so nobody was charged twice, but it is a row on the worklist
+     * that exists for no reason anybody can explain to a renter.</p>
+     */
+    @Test
+    void aPenaltyCollectionRowIsNeverProposedALateFeeOfItsOwn() {
+        fineConfig(cfg(2, true, true));
+        settings(PenaltyType.FIXED_PER_DAY, "50", 30);
+        leaseGrace(0);
+        Cheque collection = cheque(null, "500", LocalDate.of(2026, 10, 2), null);
+        collection.setPenaltyAssessmentId(UUID.randomUUID());
+
+        // Ten days after the approval day, which on an ordinary rent row would be
+        // 500 AED of late fee.
+        engine.onLateClear(collection, LocalDate.of(2026, 10, 12));
+
+        verifyNoInteractions(assessmentService);
+    }
+
     /** The lease's default of zero makes the cheque date itself the deadline. */
     @Test
     void aLeaseWithNoGraceIsLateTheDayAfterTheChequeDate() {

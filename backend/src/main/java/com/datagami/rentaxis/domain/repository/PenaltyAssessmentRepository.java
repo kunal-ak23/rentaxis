@@ -93,13 +93,21 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
      * <p>A null collection row counts as outstanding. It should not happen — an
      * approval creates one in the same transaction — but a charge with no visible
      * means of collection is exactly the thing a settlement must not quietly drop.</p>
+     *
+     * <p><b>The join is written out.</b> Dereferencing {@code p.collectionCheque.status}
+     * inline makes Hibernate emit an INNER join, which drops every row with no
+     * collection cheque — so the {@code is null} arm above it could never match and
+     * the paragraph before this one was describing behaviour the query did not
+     * have. The same trap {@code ChequeRepository.search}'s javadoc warns about on
+     * {@code c.unit}.</p>
      */
     @Query("""
         select coalesce(sum(p.amount), 0) from PenaltyAssessment p
+        left join p.collectionCheque collection
         where p.lease.id = :leaseId
           and p.status = com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED
-          and (p.collectionCheque is null
-               or p.collectionCheque.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
+          and (collection is null
+               or collection.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
         """)
     BigDecimal sumOutstandingForLease(@Param("leaseId") UUID leaseId);
 }

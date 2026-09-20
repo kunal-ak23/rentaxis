@@ -218,6 +218,42 @@ class OnlinePaymentServiceIT {
         assertThat(payment.getPenaltyAmount()).isEqualByComparingTo("0");
     }
 
+    /**
+     * A gateway that cannot take AED is refused, not silently charged in INR.
+     *
+     * <p>The register keeps its money in AED and {@code capture} posts the row's AED
+     * amount. The old fallback raised the order for the same <em>number</em> in
+     * rupees, so a 12,000 AED instalment was charged as ₹12,000 and then booked as
+     * collected in full — money that was never taken, settled in the ledger.</p>
+     */
+    @Test
+    void anOrderIsRefusedWhenTheGatewayCannotTakeAed() {
+        UUID chequeId = firstCheque();
+        String before = tx.execute(s -> gatewayRepo.findByCode("RAZORPAY").orElseThrow().getSupportedCurrencies());
+        tx.executeWithoutResult(s -> {
+            PaymentGateway g = gatewayRepo.findByCode("RAZORPAY").orElseThrow();
+            g.setSupportedCurrencies("INR,USD");
+            gatewayRepo.save(g);
+        });
+        try {
+            assertThatThrownBy(() -> onlinePayments.createOrder(chequeId))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("AED");
+
+            assertThat(reread(chequeId).getStatus())
+                    .as("a refusal leaves the row on the register, not stranded in a session")
+                    .isEqualTo(ChequeStatus.REGISTERED);
+            assertThat(allPayments()).isEmpty();
+        } finally {
+            // payment_gateways is a shared catalogue table, not tenant-scoped.
+            tx.executeWithoutResult(s -> {
+                PaymentGateway g = gatewayRepo.findByCode("RAZORPAY").orElseThrow();
+                g.setSupportedCurrencies(before);
+                gatewayRepo.save(g);
+            });
+        }
+    }
+
     @Test
     void createOrderRefusesAnInstalmentThatIsNotDueYet() {
         List<ChequeDTO> register = registerRows();

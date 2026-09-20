@@ -340,6 +340,11 @@ class PenaltyAssessmentServiceIT {
                 new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null));
     }
 
+    /** Σ of the lease's uncollected approved fines, read inside a transaction. */
+    private BigDecimal outstanding(UUID leaseId) {
+        return tx.execute(s -> service.outstandingForLease(leaseId));
+    }
+
     /** How many rows the lease's register holds — a count taken inside a transaction. */
     private long registerSize(UUID leaseId) {
         Integer rows = tx.execute(s -> chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).size());
@@ -650,6 +655,35 @@ class PenaltyAssessmentServiceIT {
         assertThat(balance(receivable, leaseId)).isEqualByComparingTo(receivableBefore);
         assertThat(balance(pdc, leaseId)).isEqualByComparingTo(pdcBefore);
         assertThat(balance(income, leaseId)).isEqualByComparingTo(incomeBefore);
+    }
+
+    /**
+     * An APPROVED fine with no collection row of its own is still owed.
+     *
+     * <p>{@code sumOutstandingForLease}'s {@code p.collectionCheque is null} arm was
+     * unreachable: dereferencing {@code p.collectionCheque.status} in the same
+     * predicate makes Hibernate emit an <em>inner</em> join, which drops every row
+     * the null test was written to catch. Harmless while every approval creates its
+     * row in the same transaction — and exactly the shape a settlement must never
+     * quietly drop, because a charge with no visible means of collection is the one
+     * nobody will chase.</p>
+     */
+    @Test
+    void anApprovedFineWithNoCollectionRowStillCountsAsOutstanding() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        ChequeDTO bounced = bounceFirst(r);
+        PenaltyAssessmentDTO proposed = proposal(leaseId, bounced.id(), PenaltyReason.CHEQUE_RETURN, "500");
+        PenaltyAssessmentDTO approved = service.approve(proposed.id(), APPROVE_DATE);
+        assertThat(outstanding(leaseId)).isEqualByComparingTo("500");
+
+        // The link lost, the charge intact — a repaired row, a bad import, a future
+        // flow that detaches the receipt.
+        jdbc.update("update penalty_assessments set collection_cheque_id = null where id = ?", approved.id());
+
+        assertThat(outstanding(leaseId))
+                .as("a fine nobody can point a receipt at is still a fine the renter owes")
+                .isEqualByComparingTo("500");
     }
 
     /**
