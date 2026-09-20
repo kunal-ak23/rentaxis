@@ -1,9 +1,9 @@
 # Lets repo collaborators call Claude from an issue or PR by mentioning @claude.
 #
-# Requires the Claude GitHub App on this repo and an ANTHROPIC_API_KEY secret
-# (Settings > Secrets and variables > Actions). To bill a Claude subscription
-# instead, replace that input with:
-#   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+# Requires the Claude GitHub App on this repo and a CLAUDE_CODE_OAUTH_TOKEN secret
+# from `claude setup-token` (Settings > Secrets and variables > Actions). To bill
+# per-token API usage instead, replace that input with:
+#   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 name: Claude
 
 on:
@@ -56,7 +56,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Unattended runs push a branch and open a PR; a human merges, because
           # in some of these repos a push to main is the production deploy.
           claude_args: |
