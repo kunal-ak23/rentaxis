@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.ChequePayload;
@@ -192,7 +193,7 @@ public class ChequeService {
         try {
             cheques = chequeRepository.findAllByIdForUpdate(ids);
         } catch (PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(BEING_UPDATED);
+            throw new RowLockedException(BEING_UPDATED);
         }
         Map<UUID, Cheque> byId = new LinkedHashMap<>();
         for (Cheque c : cheques) {
@@ -856,7 +857,7 @@ public class ChequeService {
             cheque = chequeRepository.findByIdForUpdate(chequeId)
                     .orElseThrow(() -> new NotFoundException("Cheque not found"));
         } catch (PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(BEING_UPDATED);
+            throw new RowLockedException(BEING_UPDATED);
         }
         requireSameTenant(cheque);
         return cheque;
@@ -880,7 +881,7 @@ public class ChequeService {
             lease = leaseRepository.findByIdForUpdate(leaseId)
                     .orElseThrow(() -> new NotFoundException("Lease not found"));
         } catch (PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(BEING_UPDATED);
+            throw new RowLockedException(BEING_UPDATED);
         }
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {

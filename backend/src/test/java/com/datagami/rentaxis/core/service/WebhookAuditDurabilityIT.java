@@ -43,6 +43,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -51,6 +54,7 @@ import java.util.UUID;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -106,14 +110,24 @@ class WebhookAuditDurabilityIT {
     @Autowired UnitRepository unitRepo;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
+    @Autowired OnlinePaymentService onlinePaymentService;
+    /** A second connection, for holding the cheque row lock a concurrent caller would. */
+    @Autowired DataSource dataSource;
 
     @MockitoBean PaymentGatewayFactory gatewayFactory;
 
-    private static final String ORDER_ID = "order_webhook_audit_it";
     private static final LocalDate TODAY = LocalDate.now();
+
+    /**
+     * Per test, not a constant: the handler looks a delivery up by order id through
+     * an unfiltered native query, so two methods sharing one id make that lookup
+     * ambiguous and every case in here would be measuring that instead.
+     */
+    private String orderId;
 
     private LeaseTestFixtures fixtures;
     private UUID chequeId;
+    private UUID leaseId;
 
     @BeforeEach
     void setUp() {
@@ -133,6 +147,8 @@ class WebhookAuditDurabilityIT {
                 TODAY.minusMonths(3), TODAY.minusMonths(2), TODAY.plusMonths(10).minusDays(1),
                 List.of(line("RENT", "48000")), 4, "500010");
         chequeId = posted.cheques().get(0).id();
+        leaseId = posted.lease().getId();
+        orderId = "order_webhook_audit_it_" + UUID.randomUUID();
 
         // A register row on a lease that is no longer on the books. The cheque
         // itself is REGISTERED and the money matches, so the capture is applicable
@@ -170,7 +186,7 @@ class WebhookAuditDurabilityIT {
             OnlinePayment onlinePayment = new OnlinePayment();
             onlinePayment.setCheque(chequeRepository.findById(chequeId).orElseThrow());
             onlinePayment.setGateway(gateway);
-            onlinePayment.setGatewayOrderId(ORDER_ID);
+            onlinePayment.setGatewayOrderId(orderId);
             onlinePayment.setAmount(posted.cheques().get(0).amount());
             onlinePayment.setCurrency("AED");
             onlinePayment.setStatus(OnlinePaymentStatus.CREATED);
@@ -185,19 +201,37 @@ class WebhookAuditDurabilityIT {
         LeaseTestFixtures.clearAuth();
     }
 
+    /**
+     * A capture that throws is money the gateway took, so it lands on the refund
+     * list — it is never swallowed with a 200 and nothing to show for it.
+     *
+     * <p>This used to assert the opposite: "completes without throwing",
+     * {@code processed = false}, result "Error: …", and a payment still sitting at
+     * CREATED. Every one of those was true and none of them was enough. Razorpay
+     * treats 2xx as delivered and stops; the renter was charged, the payment was not
+     * on {@code /online-payments/unapplied}, the cheque had not moved, no CRT
+     * existed, and with the modal closed the {@code /verify} callback would never
+     * come. The only trace was a {@code webhook_logs} row nobody has a screen
+     * for.</p>
+     *
+     * <p>The failure here is deterministic — the lease was reverted to DRAFT, so the
+     * register refuses to move the row and will refuse it again tomorrow — so 200 is
+     * still the right answer to the gateway. What changes is that the capture is
+     * recorded as {@code CAPTURED_UNAPPLIED} with the reason, in its own
+     * transaction, which is where finance finds the refund they owe.</p>
+     */
     @Test
-    void processWebhook_whenClearFails_stillPersistsAuditLogAndDoesNotCorruptLedger() {
+    void processWebhook_whenPostingThrows_recordsTheCaptureAsARefundOwed() {
         String payload = "{"
                 + "\"event\":\"payment.captured\","
                 + "\"payload\":{\"payment\":{\"entity\":{"
-                + "\"order_id\":\"" + ORDER_ID + "\",\"id\":\"pay_webhook_audit_it\"}}}}";
+                + "\"order_id\":\"" + orderId + "\",\"id\":\"pay_webhook_audit_it\"}}}}";
 
         UUID tenantId = fixtures.tenantId();
         LeaseTestFixtures.clearAuth();
 
-        // The handler must swallow the clearing failure, record it, and return
-        // normally — NOT propagate an UnexpectedRollbackException from a
-        // rollback-only transaction.
+        // A deterministic refusal is still a 200: redelivering it forever would
+        // neither un-draft the lease nor issue the refund.
         assertThatCode(() -> webhookService.processRazorpayWebhook(payload, "sig"))
                 .doesNotThrowAnyException();
 
@@ -213,10 +247,24 @@ class WebhookAuditDurabilityIT {
                 .as("the webhook delivery must leave exactly one audit record")
                 .hasSize(1);
         WebhookLog log = logs.get(0);
-        assertThat(log.getProcessed()).as("a failed capture must not be marked processed").isFalse();
+        assertThat(log.getProcessed())
+                .as("the outcome is recorded and final; there is nothing to redeliver")
+                .isTrue();
         assertThat(log.getProcessingResult())
-                .as("the audit record must capture the failure reason")
-                .contains("Error");
+                .as("the audit record must name the refusal")
+                .contains("Captured but not applied")
+                .contains("could not be posted");
+
+        // The money is findable: on finance's refund list, with the reason on it.
+        OnlinePayment payment = tx.execute(s ->
+                onlinePaymentRepository.findByGatewayOrderId(orderId).orElseThrow());
+        assertThat(payment.getStatus())
+                .as("money the gateway took must never be left at CREATED")
+                .isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(payment.getFailureReason()).contains("could not be posted");
+        assertThat(payment.getGatewayPaymentId()).isEqualTo("pay_webhook_audit_it");
+        long owed = tx.execute(s -> onlinePaymentService.unappliedTotals().count());
+        assertThat(owed).as("and on the worklist finance actually opens").isEqualTo(1L);
 
         // The register never moved and nothing posted.
         Cheque reloaded = tx.execute(s -> chequeRepository.findById(chequeId).orElseThrow());
@@ -226,5 +274,106 @@ class WebhookAuditDurabilityIT {
                 "select count(*) from journal_entries where tenant_id = ? and doc_type = 'CRT' and source_id = ?",
                 Long.class, tenantId, chequeId);
         assertThat(crts).isZero();
+    }
+
+    /**
+     * A redelivery of the same unpostable capture restates nothing.
+     *
+     * <p>The reason and the capture time are the first delivery's. Rewriting them on
+     * every retry would move the row to the top of a worklist ordered by capture
+     * time for as long as the gateway keeps trying.
+     */
+    @Test
+    void aRedeliveredUnpostableCaptureDoesNotRestateTheRecord() throws Exception {
+        String payload = "{"
+                + "\"event\":\"payment.captured\","
+                + "\"payload\":{\"payment\":{\"entity\":{"
+                + "\"order_id\":\"" + orderId + "\",\"id\":\"pay_webhook_audit_it\"}}}}";
+        UUID tenantId = fixtures.tenantId();
+        LeaseTestFixtures.clearAuth();
+
+        webhookService.processRazorpayWebhook(payload, "sig");
+        TenantContextHolder.setTenantId(tenantId);
+        OnlinePayment first = tx.execute(s ->
+                onlinePaymentRepository.findByGatewayOrderId(orderId).orElseThrow());
+        Thread.sleep(20);
+
+        LeaseTestFixtures.clearAuth();
+        webhookService.processRazorpayWebhook(payload, "sig");
+        TenantContextHolder.setTenantId(tenantId);
+
+        OnlinePayment after = tx.execute(s ->
+                onlinePaymentRepository.findByGatewayOrderId(orderId).orElseThrow());
+        assertThat(after.getStatus()).isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
+        assertThat(after.getUpdatedAt()).isEqualTo(first.getUpdatedAt());
+        assertThat(after.getFailureReason()).isEqualTo(first.getFailureReason());
+    }
+
+    /**
+     * A <em>transient</em> failure gets the opposite answer: the delivery is refused
+     * so the gateway redelivers, and the audit row survives the rollback that goes
+     * with it.
+     *
+     * <p>The cheque's NOWAIT lock lost to a concurrent caller is the case the
+     * capture's own javadoc describes — the renter closing the modal at the moment
+     * Razorpay captures. Recording a refund for that would be wrong: the same
+     * delivery a second later posts cleanly. Razorpay backs off for about a day,
+     * which is far longer than any lock conflict.</p>
+     *
+     * <p>The audit row is the reason this is an assertion and not a comment: the
+     * rethrow rolls the handler's transaction back, so a log written through the
+     * handler's own session would vanish with it — losing the record of exactly the
+     * delivery an operator would go looking for.</p>
+     */
+    @Test
+    void processWebhook_whenTheFailureIsTransient_refusesTheDeliveryAndKeepsTheAuditRow() throws Exception {
+        // Put the lease back on the books: the refusal under test is the lock, not
+        // the lease's status.
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepository.findById(leaseId).orElseThrow();
+            lease.setStatus(LeaseStatus.ACTIVE);
+            leaseRepository.save(lease);
+        });
+        String payload = "{"
+                + "\"event\":\"payment.captured\","
+                + "\"payload\":{\"payment\":{\"entity\":{"
+                + "\"order_id\":\"" + orderId + "\",\"id\":\"pay_webhook_audit_it\"}}}}";
+        UUID tenantId = fixtures.tenantId();
+
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock = holder.prepareStatement(
+                    "select id from cheques where id = ? for update")) {
+                lock.setObject(1, chequeId);
+                lock.executeQuery();
+            }
+
+            LeaseTestFixtures.clearAuth();
+            assertThatThrownBy(() -> webhookService.processRazorpayWebhook(payload, "sig"))
+                    .as("a lock conflict must not be answered 200: the same delivery will post")
+                    .isInstanceOf(RuntimeException.class);
+
+            holder.rollback();
+        }
+
+        TenantContextHolder.setTenantId(tenantId);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+
+        List<WebhookLog> logs = tx.execute(s -> webhookLogRepository.findAll().stream()
+                .filter(l -> tenantId.equals(l.getTenantId()))
+                .toList());
+        assertThat(logs)
+                .as("the audit row must survive the rollback the rethrow causes")
+                .hasSize(1);
+        assertThat(logs.get(0).getProcessed()).isFalse();
+        assertThat(logs.get(0).getProcessingResult()).contains("redeliver");
+
+        // Nothing was recorded as a refund, because nothing is owed: the money will
+        // post when the gateway tries again.
+        OnlinePayment payment = tx.execute(s ->
+                onlinePaymentRepository.findByGatewayOrderId(orderId).orElseThrow());
+        assertThat(payment.getStatus()).isEqualTo(OnlinePaymentStatus.CREATED);
+        long owed = tx.execute(s -> onlinePaymentService.unappliedTotals().count());
+        assertThat(owed).isZero();
     }
 }

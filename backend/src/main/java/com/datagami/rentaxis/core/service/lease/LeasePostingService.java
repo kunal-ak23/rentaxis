@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.lease.PostLeaseDryRunResponse;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
@@ -784,7 +785,7 @@ public class LeasePostingService {
             lease = leaseRepository.findByIdForUpdate(leaseId)
                     .orElseThrow(() -> new NotFoundException("Lease not found"));
         } catch (PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(
+            throw new RowLockedException(
                     "This lease is being posted by another request. Please try again.");
         }
         UUID tenantId = TenantContextHolder.getTenantId();

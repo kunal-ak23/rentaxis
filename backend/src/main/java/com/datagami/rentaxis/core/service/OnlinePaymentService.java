@@ -566,6 +566,44 @@ public class OnlinePaymentService {
     }
 
     /**
+     * A capture that the register could not take because posting it <em>threw</em>:
+     * record it as money owed back, in a transaction of its own.
+     *
+     * <p>{@link #captureFromWebhook} answers the anticipated refusals by returning a
+     * reason and writing {@code CAPTURED_UNAPPLIED} itself. This is for the other
+     * kind: the books locked through today, a BANK role with no account behind it,
+     * a lease somebody reverted to DRAFT. Those roll the capture's own transaction
+     * back, so nothing at all was recorded — the renter was charged and the payment
+     * sat at CREATED, off finance's refund list, off the register, with the only
+     * trace a {@code webhook_logs} row nobody has a screen for.</p>
+     *
+     * <p>Money the gateway took must always be findable: applied to an instalment,
+     * or on the unapplied list as a refund. So the fact is written here, in a fresh
+     * transaction (the capture's is already rolled back), with the reason on it.</p>
+     *
+     * <p><b>The terminal rule still holds.</b> A payment already in
+     * {@code MONEY_CAPTURED} is left exactly as it is: a redelivery whose posting
+     * throws must not restate an applied capture as a refund, or move an unapplied
+     * one's capture time.</p>
+     *
+     * @return the reason as recorded, or the reason already on the row when this
+     *         capture had in fact been recorded before.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public String recordUnappliedCapture(UUID onlinePaymentId, String gatewayPaymentId, String reason) {
+        OnlinePayment onlinePayment = lockPayment(onlinePaymentId);
+        if (MONEY_CAPTURED.contains(onlinePayment.getStatus())) {
+            log.warn("A capture that could not be posted was already recorded for online payment {}: {}",
+                    onlinePayment.getId(), onlinePayment.getStatus());
+            return onlinePayment.getStatus() == OnlinePaymentStatus.CAPTURED
+                    ? null
+                    : recordedUnappliedReason(onlinePayment);
+        }
+        markUnapplied(onlinePayment, onlinePayment.getCheque(), gatewayPaymentId, reason);
+        return reason;
+    }
+
+    /**
      * Staff hand an abandoned gateway session back to the register (spec §7.2).
      *
      * <p><b>Why this exists.</b> {@code ONLINE_PENDING} used to be a dead end. A
@@ -863,7 +901,7 @@ public class OnlinePaymentService {
         log.error("Captured online payment could not be applied: payment={} order={} gatewayPayment={} "
                         + "cheque={} amount={} {} — reason: {}. A refund is owed.",
                 onlinePayment.getId(), onlinePayment.getGatewayOrderId(),
-                onlinePayment.getGatewayPaymentId(), cheque.getId(),
+                onlinePayment.getGatewayPaymentId(), cheque != null ? cheque.getId() : null,
                 onlinePayment.getAmount(), onlinePayment.getCurrency(), reason);
     }
 

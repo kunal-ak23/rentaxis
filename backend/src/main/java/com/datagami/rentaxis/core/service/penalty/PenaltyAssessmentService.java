@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.NotificationService;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
@@ -444,7 +445,7 @@ public class PenaltyAssessmentService {
             a = repository.findByIdForUpdate(id)
                     .orElseThrow(() -> new NotFoundException("Penalty not found"));
         } catch (PessimisticLockingFailureException e) {
-            throw new BusinessRuleViolationException(BEING_UPDATED);
+            throw new RowLockedException(BEING_UPDATED);
         }
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(a.getTenantId())) {

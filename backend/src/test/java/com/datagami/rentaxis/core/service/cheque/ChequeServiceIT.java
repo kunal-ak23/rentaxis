@@ -746,15 +746,27 @@ class ChequeServiceIT {
                 .hasMessage("Can only revert cheques in ONLINE_PENDING (current: REGISTERED)");
     }
 
+    /**
+     * A CASH <em>rent</em> row is recorded when the money arrives, by
+     * {@code receive()}; a gateway has no business clearing one. The exception is a
+     * penalty's collection row, which {@code PenaltyAssessmentService.approve}
+     * writes as CASH and the spec means to be payable online — see
+     * {@link ChequeGatewayRules}, which is the one place the two are told apart and
+     * is also what the renter's portal computes its Pay-now flag from. The accepting
+     * half of that rule is asserted end to end in
+     * {@code OnlinePaymentServiceIT.anApprovedPenaltyIsPayableThroughTheGatewayAndClearsTheSameWay},
+     * against a real approval rather than a fabricated assessment id.
+     */
     @Test
-    void aCashRowCannotBePaidThroughTheGateway() {
+    void aCashRentRowCannotBePaidThroughTheGateway() {
         PostLeaseResponse r = posted();
         ChequeDTO cash = service.addRowToPostedLease(r.lease().getId(),
                 row(null, REPLACE_DATE, REPLACE_DATE, "1500", ChequeMode.CASH));
 
         assertThatThrownBy(() -> service.registerOnlinePending(cash.id()))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Only a post-dated cheque or an online row can be paid through the gateway");
+                .hasMessageContaining("can be paid through the gateway")
+                .hasMessageContaining("is a CASH receipt");
     }
 
     /**
