@@ -583,9 +583,9 @@ test('06 clear a deposited cheque', async ({ browser }) => {
         // Wait for the clear itself rather than for a button. `bounce` is
         // offered on a DEPOSITED row too, so its visibility proves nothing, and
         // the API read below can otherwise beat the request - the first run's
-        // trace ends with this POST still in flight and the row still DEPOSITED.
+        // trace ends with this PUT still in flight and the row still DEPOSITED.
         const [clearRes] = await Promise.all([
-            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/clear$/.test(r.url()) && r.request().method() === 'POST'),
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/clear$/.test(r.url()) && r.request().method() === 'PUT'),
             page.getByTestId('cheque-clear-confirm').click(),
         ]);
         expect(clearRes.status()).toBe(200);
@@ -615,7 +615,7 @@ test('07 bounce the second deposited cheque', async ({ browser }) => {
         // BounceChequeDialog defaults failureReason to BOUNCE already.
         // Same reasoning as scenario 06: pin the transition, not a button.
         const [bounceRes] = await Promise.all([
-            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/bounce$/.test(r.url()) && r.request().method() === 'POST'),
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/bounce$/.test(r.url()) && r.request().method() === 'PUT'),
             page.getByTestId('cheque-bounce-confirm').click(),
         ]);
         expect(bounceRes.status()).toBe(200);
@@ -689,13 +689,20 @@ test('09 propose, approve and collect a penalty for the bounce', async ({ browse
         await page.goto('/en/dashboard/finance/penalties');
         await expect(page.getByTestId('penalty-queue')).toBeVisible();
         await page.getByTestId('penalty-tab-PROPOSED').click();
-        const row = page.locator('[data-testid^="penalty-row-"]').filter({ hasText: `WT2 bounced cheque ${SUFFIX}` }).first();
-        // VERIFY: the row index inside `penalty-approve-${i}` is positional,
-        // not the penalty's own id — resolved by locating the row by its own
-        // description text first, then its approve button within that row.
+        // The queue's columns are renter, property, cheque number, reason,
+        // amount and date - the proposer's description is NOT among them (see
+        // PenaltyQueue.tsx), so the row cannot be found by it. The renter name
+        // carries this run's random suffix, so it identifies the row uniquely.
+        // `penalty-approve-${i}` is positional, which is why the row is located
+        // first and its own Approve button taken from within it.
+        const row = page.locator('[data-testid^="penalty-row-"]').filter({ hasText: RENTER }).first();
+        await expect(row, 'the proposed penalty must reach the finance queue').toBeVisible({ timeout: 10_000 });
         await row.getByRole('button', { name: 'Approve' }).click();
-        await page.getByTestId('penalty-approve-confirm').click();
-        await expect(page.getByText('Approve', { exact: true })).toHaveCount(0, { timeout: 10_000 });
+        const [approveRes] = await Promise.all([
+            page.waitForResponse((r) => /\/penalties\/[0-9a-f-]{36}\/approve$/.test(r.url())),
+            page.getByTestId('penalty-approve-confirm').click(),
+        ]);
+        expect(approveRes.status()).toBe(200);
 
         // PenaltyAssessmentController has no single-resource GET — read the
         // decided row back off the list, filtered to this lease.
@@ -715,7 +722,13 @@ test('09 propose, approve and collect a penalty for the bounce', async ({ browse
         await page.goto('/en/dashboard/finance/cheques');
         await page.waitForLoadState('networkidle');
         await page.getByTestId(`cheque-row-action-receive-${collectionChequeId}`).click();
-        await page.getByTestId('cheque-receive-confirm').click();
+        // receive is a PUT, like clear and bounce; wait for it rather than for
+        // the row to disappear, which can be read before the write lands.
+        const [receiveRes] = await Promise.all([
+            page.waitForResponse((r) => /\/cheques\/[0-9a-f-]{36}\/receive$/.test(r.url()) && r.request().method() === 'PUT'),
+            page.getByTestId('cheque-receive-confirm').click(),
+        ]);
+        expect(receiveRes.status()).toBe(200);
         await expect(page.getByTestId(`cheque-row-action-receive-${collectionChequeId}`)).toHaveCount(0, { timeout: 10_000 });
 
         const collection = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${collectionChequeId}`);

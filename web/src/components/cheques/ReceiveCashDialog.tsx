@@ -90,6 +90,11 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
         try {
             const cheque = await chequeApi.cashReceipt(lease.id, {
                 postingDate: date,
+                // A counter receipt is taken and expected on the same day, and
+                // the service requires both: cashReceipt() hands chequeDate
+                // straight to receive(), which refuses a null with "a CASH
+                // receipt needs the date it is expected on".
+                chequeDate: date,
                 amount,
                 narration: narration || null,
                 debitAccountId,
