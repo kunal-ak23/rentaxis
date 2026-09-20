@@ -17,7 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
-import ChequeGrid, { toChequeRows } from "@/components/leases/ChequeGrid";
+import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
@@ -576,7 +576,7 @@ export default function LeaseDetailPage() {
                                             type="button"
                                             data-testid="lease-save-cheques"
                                             onClick={() => runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques)))}
-                                            disabled={chequeBusy}
+                                            disabled={chequeBusy || !draftRowsAreValid(cheques)}
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
                                         >
                                             <Save size={12} /> {t("saveCheques")}

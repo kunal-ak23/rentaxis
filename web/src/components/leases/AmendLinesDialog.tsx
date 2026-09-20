@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { linesAreValid, splitLineErrors, toInputs, toRows, type LineRow } from "./leaseMath";
+import { linesAreValid, round2, splitLineErrors, toInputs, toRows, totalsOf, type LineRow } from "./leaseMath";
+import { fmtAmount } from "@/lib/api/ledger";
 import {
     ApiError,
     leaseApi,
@@ -23,6 +24,14 @@ import {
  * amendment would change underneath it, so the backend refuses — and so does
  * this, with the reason on the button rather than as a 400 after the
  * accountant has retyped every line.
+ *
+ * The second rule is the one this dialog used not to say out loud: an
+ * amendment REDISTRIBUTES a contract value, it does not re-price one.
+ * `LeasePostingService.validate(..., FOR_AMEND)` (LeasePostingService.java:431-436)
+ * re-checks Σ cheques against the new lines including VAT, and the cheque grid
+ * is not part of this form — so raising any line total leaves the untouched
+ * grid short and the server refuses. The same Σ-vs-Σ indicator the extension
+ * dialog shows is therefore shown here, and gates the button.
  */
 
 type Props = {
@@ -58,6 +67,10 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
     const blocker = amendBlockedBy(cheques);
     const { rest } = splitLineErrors(errors);
 
+    const totals = totalsOf(rows, chargeTypes);
+    const chequeTotal = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
+    const matches = Math.abs(round2(totals.inclVat - chequeTotal)) < 0.005;
+
     const submit = async () => {
         setBusy(true);
         setErrors([]);
@@ -79,7 +92,7 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
             onConfirm={submit}
             confirmText={t("amendLines")}
             cancelText={t("cancel")}
-            confirmDisabled={!!blocker || !reason.trim() || !linesAreValid(rows)}
+            confirmDisabled={!!blocker || !reason.trim() || !linesAreValid(rows) || !matches}
             busy={busy}
             confirmTestId="amend-lines-confirm"
             width="xl"
@@ -102,6 +115,19 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
                     onChange={setRows}
                     errors={errors}
                 />
+
+                <div
+                    data-testid="amend-match"
+                    data-match={matches ? "true" : "false"}
+                    className={`rounded-lg px-3 py-2 text-[11px] font-semibold ${
+                        matches ? "bg-success/10 text-success" : "bg-error/10 text-error"
+                    }`}
+                >
+                    {matches
+                        ? t("chequesMatch", { contract: fmtAmount(totals.inclVat) })
+                        : t("chequesMustEqual", { cheques: fmtAmount(chequeTotal), contract: fmtAmount(totals.inclVat) })}
+                    {!matches && <span className="block font-normal mt-0.5">{t("amendCannotReprice")}</span>}
+                </div>
 
                 <div>
                     <label htmlFor="amend-reason" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">

@@ -22,15 +22,27 @@ const CHARGE_TYPES: ChargeType[] = [{
     behaviour: "RENT", vatApplicableDefault: true, active: true, displayOrder: 1,
 }];
 
+function line(seqNo: number, grossAmount: number) {
+    return {
+        id: `ln${seqNo}`, seqNo, chargeTypeId: "ct-rent", chargeTypeCode: "RENT", chargeTypeName: "Rent",
+        behaviour: "RENT" as const, creditAccountId: "acc-1", creditAccountCode: "210100",
+        creditAccountName: "Advance Rent", grossAmount, discountAmount: 0, netAmount: grossAmount,
+        narration: null, vatApplicable: true, periodStart: null, periodEnd: null,
+    };
+}
+
+/**
+ * Two lines totalling 60,000.00 net — 63,000.00 incl. VAT, which is exactly
+ * what the four registered cheques below add up to. An amendment may move
+ * money between the two lines; it may not change what they come to.
+ */
 const LEASE = {
     id: "lease-1", propertyId: "p1", endDate: "2026-12-31", displayContractNumber: "TCO-26/15",
-    lines: [{
-        id: "ln1", seqNo: 1, chargeTypeId: "ct-rent", chargeTypeCode: "RENT", chargeTypeName: "Rent",
-        behaviour: "RENT" as const, creditAccountId: "acc-1", creditAccountCode: "210100",
-        creditAccountName: "Advance Rent", grossAmount: 60000, discountAmount: 0, netAmount: 60000,
-        narration: null, vatApplicable: true, periodStart: null, periodEnd: null,
-    }],
+    lines: [line(1, 40000), line(2, 20000)],
 } as unknown as LeaseDetail;
+
+/** Σ = 63,000.00 incl. VAT. */
+const MATCHING_CHEQUES = [cheque("REGISTERED", 1), cheque("REGISTERED", 2), cheque("REGISTERED", 3), cheque("REGISTERED", 4)];
 
 function cheque(status: Cheque["status"], seqNo = 1): Cheque {
     return {
@@ -38,7 +50,7 @@ function cheque(status: Cheque["status"], seqNo = 1): Cheque {
         propertyName: null, unitIdentifier: null, renterName: null, seqNo,
         postingDate: "2026-01-01", chequeNumber: `00010${seqNo}`, chequeDate: "2026-01-01",
         payeeBank: "ENBD", payerName: null, debitAccountId: null, debitAccountName: null,
-        amount: 15000, narration: null, mode: "PDC", status,
+        amount: 15750, narration: null, mode: "PDC", status,
         failureReason: null, replacesId: null, replacedById: null, imageUrl: null,
         depositedAt: null, clearedAt: null, bouncedAt: null, returnedAt: null,
         pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
@@ -82,35 +94,59 @@ describe("AmendLinesDialog", () => {
         expect(screen.getByTestId("amend-reason")).toBeDisabled();
     });
 
-    it("stays disabled without a reason, and posts the lines with it once given", async () => {
-        renderDialog([cheque("REGISTERED")]);
+    it("stays disabled without a reason, and posts the redistributed lines once given", async () => {
+        renderDialog(MATCHING_CHEQUES);
         const confirm = screen.getByTestId("amend-lines-confirm");
         expect(confirm).toBeDisabled();
 
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Parking removed at renewal" } });
         expect(confirm).toBeEnabled();
 
-        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "55000" } });
+        // Money moved between the two lines; the contract value is unchanged,
+        // which is the only kind of amendment the server accepts.
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "45000" } });
+        fireEvent.change(screen.getByTestId("lease-line-amount-1"), { target: { value: "15000" } });
+        expect(screen.getByTestId("amend-match")).toHaveAttribute("data-match", "true");
         fireEvent.click(confirm);
 
         await waitFor(() => expect(amendLines).toHaveBeenCalled());
         expect(amendLines).toHaveBeenCalledWith("lease-1", {
-            lines: [expect.objectContaining({ chargeTypeId: "ct-rent", grossAmount: 55000 })],
+            lines: [
+                expect.objectContaining({ chargeTypeId: "ct-rent", grossAmount: 45000 }),
+                expect.objectContaining({ chargeTypeId: "ct-rent", grossAmount: 15000 }),
+            ],
             reason: "Parking removed at renewal",
         });
+    });
+
+    it("blocks an amendment that re-prices the contract, and says why (#267)", () => {
+        renderDialog(MATCHING_CHEQUES);
+        const confirm = screen.getByTestId("amend-lines-confirm");
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Rent increase" } });
+        expect(confirm).toBeEnabled();
+
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "50000" } });
+
+        // LeasePostingService.validate(..., FOR_AMEND) re-checks Σ cheques
+        // against the new lines incl. VAT (:431-436) — the untouched grid is
+        // now 10,500.00 short and the server refuses.
+        const badge = screen.getByTestId("amend-match");
+        expect(badge).toHaveAttribute("data-match", "false");
+        expect(badge).toHaveTextContent("Cheques total 63,000.00 but contract value is 73,500.00");
+        expect(badge).toHaveTextContent("An amendment redistributes the contract value between the lines");
+        expect(confirm).toBeDisabled();
     });
 
     it("keeps confirm disabled once a discount exceeds its own line's amount", () => {
         // A reason alone used to be enough to enable Confirm — the dialog
         // posted the same bad line the wizard would have refused to advance
         // past, and let the server's 400 catch it instead.
-        renderDialog([cheque("REGISTERED")]);
+        renderDialog(MATCHING_CHEQUES);
         const confirm = screen.getByTestId("amend-lines-confirm");
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Parking removed at renewal" } });
         expect(confirm).toBeEnabled();
 
-        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "55000" } });
-        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "55000.01" } });
+        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "40000.01" } });
         expect(confirm).toBeDisabled();
 
         fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "0" } });

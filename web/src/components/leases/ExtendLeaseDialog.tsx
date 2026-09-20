@@ -6,9 +6,10 @@ import { Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
 import { NumberInput } from "@/components/ui/NumberInput";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { fmtAmount } from "@/lib/api/ledger";
 import { blankLine, linesAreValid, round2, splitLineErrors, toInputs, todayIso, totalsOf, type LineRow } from "./leaseMath";
+import { TYPEABLE_MODES, chequeRowsAreValid, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import {
     ApiError,
     leaseApi,
@@ -33,10 +34,21 @@ const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 const td = "px-2 py-1.5 text-xs";
-const MODES: ChequeMode[] = ["PDC", "CASH", "TRANSFER", "ONLINE"];
+const MODES: ChequeMode[] = TYPEABLE_MODES;
 
 /** A row of the extension's cheque grid. `key` is React's, not the server's. */
 type ChequeDraft = ChequeRowInput & { key: number };
+
+/**
+ * A row the server would accept as far as its defaults go: a PDC needs the
+ * date written on it (ChequeRowRules.java:140-141), so the date it is expected
+ * on starts equal to its posting date rather than empty — an Extend with the
+ * default row used to be live and always 400.
+ */
+function blankChequeRow(key: number): ChequeDraft {
+    const today = todayIso();
+    return { key, amount: 0, mode: "PDC", postingDate: today, chequeDate: today };
+}
 
 function stripKey(row: ChequeDraft): ChequeRowInput {
     const copy: Partial<ChequeDraft> = { ...row };
@@ -54,6 +66,7 @@ type Props = {
 
 export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, onExtended }: Props) {
     const t = useTranslations("Leasing");
+    const tc = useTranslations("Cheques");
     const [newEndDate, setNewEndDate] = useState("");
     const [contractDate, setContractDate] = useState(todayIso());
     const [rows, setRows] = useState<LineRow[]>([]);
@@ -66,13 +79,24 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
         setNewEndDate("");
         setContractDate(todayIso());
         setRows([blankLine(0)]);
-        setCheques([{ key: 0, amount: 0, mode: "PDC", postingDate: todayIso() }]);
+        setCheques([blankChequeRow(0)]);
         setErrors([]);
     }, [open]);
 
     const totals = totalsOf(rows, chargeTypes);
     const chequeTotal = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const matches = Math.abs(round2(chequeTotal - totals.inclVat)) < 0.005;
+    const chequeRows = cheques.map(stripKey);
+    const chequeRowErrors = chequeRowsErrors(chequeRows);
+    /**
+     * A row that has not been filled in yet is not a mistake, so the untouched
+     * default does not open the dialog in red. The gate below still counts it —
+     * the button is dead until the row is real — but "amount must be greater
+     * than zero" is only said about a row the operator has started on.
+     */
+    const shownRowErrors = chequeRowErrors.map((errs, i) =>
+        cheques[i]?.amount ? errs : errs.filter(e => e.code !== "amountPositive"),
+    );
     const { rest } = splitLineErrors(errors);
 
     const patchCheque = (key: number, next: Partial<ChequeDraft>) =>
@@ -86,7 +110,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                 newEndDate,
                 contractDate: contractDate || null,
                 lines: toInputs(rows),
-                cheques: cheques.map(stripKey),
+                cheques: chequeRows,
             });
             onExtended(res);
         } catch (e) {
@@ -104,7 +128,13 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
             onConfirm={submit}
             confirmText={t("extend")}
             cancelText={t("cancel")}
-            confirmDisabled={!newEndDate || newEndDate <= lease.endDate || !matches || !linesAreValid(rows)}
+            confirmDisabled={
+                !newEndDate ||
+                newEndDate <= lease.endDate ||
+                !matches ||
+                !linesAreValid(rows) ||
+                !chequeRowsAreValid(chequeRows)
+            }
             busy={busy}
             confirmTestId="extend-lease-confirm"
             width="xl"
@@ -207,10 +237,9 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                                             />
                                         </td>
                                         <td className={td}>
-                                            <AccountPicker
+                                            <SettlementAccountPicker
                                                 value={c.debitAccountId ?? null}
                                                 onChange={id => patchCheque(c.key, { debitAccountId: id })}
-                                                leafOnly
                                                 propertyId={lease.propertyId}
                                                 placeholder={t("debitAccount")}
                                             />
@@ -260,7 +289,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                                 onClick={() =>
                                     setCheques(cs => [
                                         ...cs,
-                                        { key: cs.reduce((m, c) => Math.max(m, c.key), -1) + 1, amount: 0, mode: "PDC", postingDate: todayIso() },
+                                        blankChequeRow(cs.reduce((m, c) => Math.max(m, c.key), -1) + 1),
                                     ])
                                 }
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
@@ -281,6 +310,17 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                             </span>
                         </div>
                     </div>
+                    {shownRowErrors.some(e => e.length > 0) && (
+                        <ul className="mt-2 text-[11px] text-error space-y-0.5" data-testid="extend-cheque-row-errors">
+                            {shownRowErrors.flatMap((errs, i) =>
+                                errs.map(e => (
+                                    <li key={`${i}-${e.code}`}>
+                                        {tc(`rowError.${e.code}`, { row: i + 1, number: e.number ?? "" })}
+                                    </li>
+                                )),
+                            )}
+                        </ul>
+                    )}
                 </section>
 
                 {rest.length > 0 && (

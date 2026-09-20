@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle2, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
-import AccountPicker from "@/components/finance/AccountPicker";
+import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
@@ -16,6 +16,7 @@ import type {
     InstallmentDistribution,
 } from "@/lib/api/leasing";
 import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
+import { TYPEABLE_MODES, chequeRowsAreValid, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import { fmtIsoDate, round2 } from "./leaseMath";
 
 /**
@@ -37,8 +38,6 @@ const tdNum = `${td} text-end tabular-nums`;
 const field =
     "w-full bg-input border border-border rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const numField = `${field} text-end tabular-nums`;
-
-const MODES: ChequeMode[] = ["PDC", "CASH", "TRANSFER", "ONLINE"];
 
 const STATUS_COLORS: Record<ChequeStatus, string> = {
     DRAFT: "bg-input text-muted",
@@ -120,6 +119,7 @@ export default function ChequeGrid({
 }: Props) {
     const t = useTranslations("Leasing");
     const tc = useTranslations("Cheques");
+    const tLedger = useTranslations("Ledger");
     const locale = useLocale();
 
     const [genOpen, setGenOpen] = useState(false);
@@ -134,6 +134,19 @@ export default function ChequeGrid({
 
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
+
+    /**
+     * What `ChequeRowRules` would refuse, said here rather than as a 400 after
+     * the accountant has typed the whole grid. The same predicate gates the
+     * Save button on both screens that own one — see {@link draftRowsAreValid}.
+     */
+    const rowErrors = editable ? chequeRowsErrors(toChequeRows(cheques)) : [];
+    const rowErrorLines = rowErrors.flatMap((errs, i) =>
+        errs.map(e => ({
+            key: `${i}-${e.code}`,
+            text: tc(`rowError.${e.code}`, { row: i + 1, number: e.number ?? "" }),
+        })),
+    );
 
     const showActions =
         !editable && !!onRowAction && cheques.some(c => registerActionsFor(c.status, c.mode, canCancelCheques).length > 0);
@@ -176,6 +189,16 @@ export default function ChequeGrid({
                 <p className="px-4 py-2 text-[11px] text-error bg-error/10 border-b border-error/20" data-testid="cheque-grid-error">
                     {error}
                 </p>
+            )}
+            {rowErrorLines.length > 0 && (
+                <ul
+                    className="px-4 py-2 text-[11px] text-error bg-error/10 border-b border-error/20 space-y-0.5"
+                    data-testid="cheque-grid-row-errors"
+                >
+                    {rowErrorLines.map(line => (
+                        <li key={line.key}>{line.text}</li>
+                    ))}
+                </ul>
             )}
 
             {editable && genOpen && (
@@ -222,10 +245,9 @@ export default function ChequeGrid({
                         />
                     </Labelled>
                     <Labelled label={t("debitAccount")}>
-                        <AccountPicker
+                        <SettlementAccountPicker
                             value={gen.debitAccountId ?? defaultBankAccountId ?? null}
                             onChange={id => setGen(g => ({ ...g, debitAccountId: id }))}
-                            leafOnly
                             propertyId={propertyId}
                             placeholder={t("debitAccount")}
                         />
@@ -237,7 +259,7 @@ export default function ChequeGrid({
                             value={gen.mode}
                             onChange={e => setGen(g => ({ ...g, mode: e.target.value as ChequeMode }))}
                         >
-                            {MODES.map(m => (
+                            {TYPEABLE_MODES.map(m => (
                                 <option key={m} value={m}>
                                     {t(`mode.${m}`)}
                                 </option>
@@ -316,7 +338,7 @@ export default function ChequeGrid({
                             <th className={thNum}>{t("amount")}</th>
                             <th className={th}>{t("narration")}</th>
                             <th className={th}>{t("chequeMode")}</th>
-                            {!editable && <th className={th}>{tc("status")}</th>}
+                            {!editable && <th className={th}>{tLedger("status")}</th>}
                             {showActions && <th className={th}>{t("actions")}</th>}
                         </tr>
                     </thead>
@@ -376,10 +398,9 @@ export default function ChequeGrid({
                                 </td>
                                 <td className={td}>
                                     {editable ? (
-                                        <AccountPicker
+                                        <SettlementAccountPicker
                                             value={c.debitAccountId}
                                             onChange={id => patch(c.id, { debitAccountId: id })}
-                                            leafOnly
                                             propertyId={propertyId}
                                             placeholder={t("debitAccount")}
                                         />
@@ -421,7 +442,7 @@ export default function ChequeGrid({
                                             value={c.mode}
                                             onChange={e => patch(c.id, { mode: e.target.value as ChequeMode })}
                                         >
-                                            {MODES.map(m => (
+                                            {TYPEABLE_MODES.map(m => (
                                                 <option key={m} value={m}>
                                                     {t(`mode.${m}`)}
                                                 </option>
@@ -507,6 +528,15 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
             {children}
         </div>
     );
+}
+
+/**
+ * Whether the grid as it stands can be saved — the client mirror of what
+ * `ChequeRowRules.validateGrid` will check, so the Save button on the wizard
+ * and on the lease page is dead for exactly the rows the server refuses.
+ */
+export function draftRowsAreValid(cheques: Cheque[]): boolean {
+    return chequeRowsAreValid(toChequeRows(cheques));
 }
 
 /** The wire shape of the grid as it stands, for `PUT /leases/{id}/cheques`. */

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
-import ChequeGrid from "../ChequeGrid";
+import ChequeGrid, { draftRowsAreValid } from "../ChequeGrid";
 import { registerActionsFor } from "@/components/cheques/registerActions";
 import type { Cheque } from "@/lib/api/leasing";
 
@@ -102,6 +102,72 @@ describe("ChequeGrid editability", () => {
     });
 });
 
+describe("ChequeGrid and the server's row rules", () => {
+    it("labels the Status column with a string, not the Cheques.status dictionary (#264)", () => {
+        renderGrid({
+            cheques: [cheque({ id: "c1", seqNo: 1, status: "DEPOSITED" })],
+            editable: false,
+            contractValueInclVat: 13700,
+        });
+        // `tc("status")` resolved to an object: next-intl logged INSUFFICIENT_PATH
+        // and rendered the raw key on every posted lease.
+        expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+        expect(screen.queryByText("Cheques.status")).not.toBeInTheDocument();
+    });
+
+    it("never offers ONLINE, in the row select or the generate form — no user-facing door accepts it", () => {
+        renderGrid({
+            cheques: [cheque({ id: "c1", seqNo: 1 })],
+            editable: true,
+            onChange: vi.fn(),
+            contractValueInclVat: 13700,
+        });
+        const rowModes = Array.from((screen.getByLabelText("Mode 1") as HTMLSelectElement).options).map(o => o.value);
+        expect(rowModes).toEqual(["PDC", "CASH", "TRANSFER"]);
+
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        const genModes = Array.from((screen.getByLabelText("Mode") as HTMLSelectElement).options).map(o => o.value);
+        expect(genModes).toEqual(["PDC", "CASH", "TRANSFER"]);
+    });
+
+    it("says what ChequeRowRules would refuse, per row, while the grid is editable", () => {
+        renderGrid({
+            cheques: [
+                cheque({ id: "c1", seqNo: 1, chequeDate: null }),
+                cheque({ id: "c2", seqNo: 2, amount: 0, chequeNumber: "000102" }),
+            ],
+            editable: true,
+            onChange: vi.fn(),
+            contractValueInclVat: 13700,
+        });
+        const errors = screen.getByTestId("cheque-grid-row-errors");
+        expect(errors).toHaveTextContent("Row 1: a post-dated cheque needs the date written on it");
+        expect(errors).toHaveTextContent("Row 2: amount must be greater than zero");
+    });
+
+    it("says nothing about rows on a posted lease, which are no longer typed", () => {
+        renderGrid({
+            cheques: [cheque({ id: "c1", seqNo: 1, chequeDate: null, status: "REGISTERED" })],
+            editable: false,
+            contractValueInclVat: 13700,
+        });
+        expect(screen.queryByTestId("cheque-grid-row-errors")).not.toBeInTheDocument();
+    });
+
+    it("draftRowsAreValid is the gate both Save buttons use", () => {
+        expect(draftRowsAreValid([cheque({ id: "c1", seqNo: 1 })])).toBe(true);
+        expect(draftRowsAreValid([cheque({ id: "c1", seqNo: 1, chequeDate: null })])).toBe(false);
+        expect(draftRowsAreValid([cheque({ id: "c1", seqNo: 1, amount: 0 })])).toBe(false);
+        // Two rows of one payload may not claim the same cheque number.
+        expect(
+            draftRowsAreValid([
+                cheque({ id: "c1", seqNo: 1, chequeNumber: "000101" }),
+                cheque({ id: "c2", seqNo: 2, chequeNumber: "000101" }),
+            ]),
+        ).toBe(false);
+    });
+});
+
 describe("ChequeGrid row actions", () => {
     it("shares registerActionsFor with the register — no lease-page table of its own", () => {
         // Mirrors ChequeController's transitions (spec §7.4), via the one table
@@ -110,9 +176,9 @@ describe("ChequeGrid row actions", () => {
         expect(registerActionsFor("REGISTERED", "CASH", false)).toEqual(["receive", "details"]);
         expect(registerActionsFor("DEPOSITED", "PDC", false)).toEqual(["clear", "bounce"]);
         expect(registerActionsFor("BOUNCED", "PDC", false)).toEqual(["replace"]);
-        // ONLINE_PENDING moves only through the online-payment webhook, never a
-        // row action — the server 400s a manual "receive" on it.
-        expect(registerActionsFor("ONLINE_PENDING", "ONLINE", false)).toEqual([]);
+        // ONLINE_PENDING never moves through "receive" — the server 400s that —
+        // but staff may release an abandoned gateway session back to the register.
+        expect(registerActionsFor("ONLINE_PENDING", "ONLINE", false)).toEqual(["releaseOnline"]);
         expect(registerActionsFor("CLEARED", "PDC", false)).toEqual(["bounce", "receipt"]);
         expect(registerActionsFor("CLEARED", "CASH", false)).toEqual(["receipt"]);
         expect(registerActionsFor("CANCELLED", "PDC", false)).toEqual([]);
@@ -131,12 +197,12 @@ describe("ChequeGrid row actions", () => {
         expect(onRowAction).toHaveBeenCalledWith(deposited, "bounce");
     });
 
-    it("offers nothing for an ONLINE_PENDING row and 'receive' for a CASH REGISTERED one", () => {
+    it("offers only Release on an ONLINE_PENDING row and 'receive' for a CASH REGISTERED one", () => {
         const online = cheque({ id: "c1", seqNo: 1, status: "ONLINE_PENDING", mode: "ONLINE" });
         renderGrid({ cheques: [online], editable: false, onRowAction: vi.fn(), contractValueInclVat: 13700 });
-        // ONLINE_PENDING has no row actions, so the grid renders no actions column at all.
+        // Receive would 400; releasing the abandoned session would not.
         expect(screen.queryByTestId("cheque-action-receive-0")).not.toBeInTheDocument();
-        expect(screen.queryByTestId(/^cheque-action-/)).not.toBeInTheDocument();
+        expect(screen.getByTestId("cheque-action-releaseOnline-0")).toBeInTheDocument();
         cleanup();
 
         const cashRow = cheque({ id: "c2", seqNo: 1, status: "REGISTERED", mode: "CASH" });

@@ -15,7 +15,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
-import ChequeGrid, { toChequeRows } from "@/components/leases/ChequeGrid";
+import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import { blankLine, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
@@ -496,7 +496,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 type="button"
                                 data-testid="wizard-save-cheques"
                                 onClick={saveCheques}
-                                disabled={busy || cheques.length === 0}
+                                disabled={busy || cheques.length === 0 || !draftRowsAreValid(cheques)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
                             >
                                 <Save size={12} /> {t("saveCheques")}
