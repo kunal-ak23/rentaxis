@@ -711,12 +711,14 @@ test('11 renew LEASE_MAIN, carrying the deposit forward', async ({ browser }) =>
         await expect(page.getByTestId('lease-renewed-from')).toBeVisible();
         await expect(page.getByTestId('lease-status')).toHaveText(/draft/i);
 
-        // The predecessor keeps running — RENEWED is a later, separate
-        // transition (LeaseController's own `/renewal/mark-renewed`), not
-        // something `renew` itself sets. VERIFY: confirmed by reading
-        // LeaseController's endpoint list, not by observing it happen.
+        // The predecessor keeps running: `renew` only drafts the successor.
+        // RENEWED is set by LeasePostingService.markPredecessorRenewed, and that
+        // fires when the SUCCESSOR is posted (LeasePostingService:178) - which
+        // this scenario never does, so ACTIVE is right. (`/renewal/mark-renewed`
+        // closes the renewal OPPORTUNITY, not the lease status.) Scenario 12
+        // depends on this holding: extend refuses anything but ACTIVE.
         const original = await adminApi<{ status: string }>('GET', `/api/v1/leases/${leaseMainId}`);
-        expect(original.status, 'the original stays ACTIVE until separately marked renewed').toBe('ACTIVE');
+        expect(original.status, 'the original stays ACTIVE until the successor is posted').toBe('ACTIVE');
         await hold(page);
     } finally {
         await close();
