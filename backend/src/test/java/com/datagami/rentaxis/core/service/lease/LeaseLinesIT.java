@@ -13,6 +13,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
@@ -22,6 +23,7 @@ import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -76,6 +78,7 @@ class LeaseLinesIT {
     @Autowired ChargeTypeRepository chargeTypeRepository;
     @Autowired PropertyAccountMappingRepository propertyMappingRepo;
     @Autowired TenantDefaultAccountMappingRepository defaultMappingRepo;
+    @Autowired RentCollectionSettingsRepository rentCollectionSettingsRepo;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -141,6 +144,58 @@ class LeaseLinesIT {
         LeaseLineDTO deposit = lease.getLines().get(2);
         assertThat(deposit.behaviour()).isEqualTo("DEPOSIT");
         assertThat(deposit.creditAccountName()).isEqualTo("Security Deposit " + fixtures.propertyName());
+    }
+
+    /**
+     * A lease drafted without an explicit grace takes the property's collection
+     * policy, not zero.
+     *
+     * <p>{@code rent_collection_settings.grace_period_days} had lost its last
+     * consumer: the settings screen went on saving a number that did nothing, while
+     * every lease created without an explicit grace was overdue on day one —
+     * chased by the reminder job and eligible for a late-payment fine the moment a
+     * cheque cleared a day late. Read at draft time and written onto the lease, so
+     * the window a renter agreed to does not move when somebody edits the
+     * property's policy in month nine.</p>
+     */
+    @Test
+    void aDraftTakesItsGraceFromThePropertysCollectionSettings() {
+        propertyGrace(5);
+
+        LeaseDTO fromTheProperty = draft(line("RENT", "51000"));
+        assertThat(fromTheProperty.getGracePeriodDays()).isEqualTo(5);
+
+        // An explicit value still wins: this lease's own terms, not the default.
+        CreateLeaseDTO explicit = fixtures.draftDto(START, END, List.of(line("RENT", "51000")));
+        explicit.setGracePeriodDays(0);
+        assertThat(leaseService.createDraftLease(explicit).getGracePeriodDays())
+                .as("a renter who agreed to no grace is not given five days")
+                .isZero();
+    }
+
+    /** No settings row, or none configured: no grace, exactly as before. */
+    @Test
+    void aPropertyWithNoCollectionSettingsStillDefaultsToNoGrace() {
+        assertThat(draft(line("RENT", "51000")).getGracePeriodDays()).isZero();
+
+        propertyGrace(null);
+        assertThat(draft(line("RENT", "51000")).getGracePeriodDays()).isZero();
+    }
+
+    /** The fixture property's rent-collection policy. */
+    private void propertyGrace(Integer days) {
+        tx.executeWithoutResult(s -> {
+            RentCollectionSettings settings = rentCollectionSettingsRepo
+                    .findByPropertyId(fixtures.property().getId())
+                    .orElseGet(() -> {
+                        RentCollectionSettings fresh = new RentCollectionSettings();
+                        fresh.setTenantId(fixtures.tenantId());
+                        fresh.setProperty(fixtures.property());
+                        return fresh;
+                    });
+            settings.setGracePeriodDays(days);
+            rentCollectionSettingsRepo.save(settings);
+        });
     }
 
     @Test

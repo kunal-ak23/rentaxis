@@ -76,6 +76,9 @@ class LeaseServiceUnitOccupancyTest {
                 mock(ChargeTypeRepository.class),
                 mock(AccountRepository.class),
                 chequeRepository,
+                // Answers empty by default: a draft with no explicit grace falls back
+                // to the property's rent-collection policy, and there is none here.
+                mock(com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository.class),
                 mock(com.datagami.rentaxis.core.service.ledger.AccountResolver.class),
                 mock(SettlementService.class),
                 mock(UnitListingService.class),

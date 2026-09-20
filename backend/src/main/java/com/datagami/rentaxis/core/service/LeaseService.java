@@ -58,6 +58,7 @@ public class LeaseService {
     private final ChargeTypeRepository chargeTypeRepository;
     private final AccountRepository accountRepository;
     private final ChequeRepository chequeRepository;
+    private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final AccountResolver accountResolver;
     private final SettlementService settlementService;
     private final UnitListingService unitListingService;
@@ -75,6 +76,7 @@ public class LeaseService {
                         ChargeTypeRepository chargeTypeRepository,
                         AccountRepository accountRepository,
                         ChequeRepository chequeRepository,
+                        RentCollectionSettingsRepository rentCollectionSettingsRepository,
                         AccountResolver accountResolver,
                         SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
@@ -91,6 +93,7 @@ public class LeaseService {
         this.chargeTypeRepository = chargeTypeRepository;
         this.accountRepository = accountRepository;
         this.chequeRepository = chequeRepository;
+        this.rentCollectionSettingsRepository = rentCollectionSettingsRepository;
         this.accountResolver = accountResolver;
         this.settlementService = settlementService;
         this.unitListingService = unitListingService;
@@ -750,7 +753,40 @@ public class LeaseService {
                 : (lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now());
         lease.setContractDate(contractDate);
         lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
-        lease.setGracePeriodDays(dto.getGracePeriodDays() != null ? dto.getGracePeriodDays() : 0);
+        lease.setGracePeriodDays(gracePeriodFor(dto, unit));
+    }
+
+    /**
+     * How many days late the renter may be before the register calls this lease
+     * overdue.
+     *
+     * <p>The lease's own field when the request names one; otherwise the property's
+     * {@code rent_collection_settings.grace_period_days}, which is where a landlord
+     * sets their collection policy once for a building.</p>
+     *
+     * <p>It used to default to zero, and that setting had lost its last consumer —
+     * so a screen went on saving a number that did nothing while every lease created
+     * without an explicit grace was overdue on day one, dunned by the reminder job
+     * and eligible for a late-payment fine the moment a cheque cleared a day late.
+     * Read at draft time and written onto the lease, not resolved on every read:
+     * the window a renter agreed to must not move because somebody edited the
+     * property's policy in month nine.</p>
+     *
+     * <p>Zero is still the floor — a setting of null, or a negative number somebody
+     * typed, means no grace rather than a nonsense one.</p>
+     */
+    private int gracePeriodFor(CreateLeaseDTO dto, Unit unit) {
+        if (dto.getGracePeriodDays() != null) {
+            return Math.max(0, dto.getGracePeriodDays());
+        }
+        UUID propertyId = unit != null && unit.getProperty() != null ? unit.getProperty().getId() : null;
+        if (propertyId == null) {
+            return 0;
+        }
+        Integer configured = rentCollectionSettingsRepository.findByPropertyId(propertyId)
+                .map(RentCollectionSettings::getGracePeriodDays)
+                .orElse(null);
+        return configured == null ? 0 : Math.max(0, configured);
     }
 
     /**
