@@ -1,0 +1,63 @@
+# Lets repo collaborators call Claude from an issue or PR by mentioning @claude.
+#
+# Requires the Claude GitHub App on this repo and an ANTHROPIC_API_KEY secret
+# (Settings > Secrets and variables > Actions). To bill a Claude subscription
+# instead, replace that input with:
+#   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+# One Claude run per issue/PR at a time; never cancel one mid-edit.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    # Only write-access accounts, and only on an explicit @claude. Without this
+    # gate anyone who can comment can spend tokens and steer the agent.
+    if: |
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      ||
+      (github.event_name == 'pull_request_review_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      ||
+      (github.event_name == 'pull_request_review' &&
+       contains(github.event.review.body, '@claude') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association))
+      ||
+      (github.event_name == 'issues' &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+       (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Unattended runs push a branch and open a PR; a human merges, because
+          # in some of these repos a push to main is the production deploy.
+          claude_args: |
+            --append-system-prompt "Open a pull request; never merge, never deploy, never push to main. Never run against production databases or handle credentials. Say what you verified by running it versus what you inferred. If you need a product decision, a credential, or an approval, or CI fails twice, stop and ask in a comment instead of guessing."
