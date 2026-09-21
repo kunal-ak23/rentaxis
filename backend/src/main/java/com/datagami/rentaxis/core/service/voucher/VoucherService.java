@@ -188,6 +188,47 @@ public class VoucherService {
         return vouchers.save(v);
     }
 
+    /**
+     * Correct a posted voucher: reverse its journal, mark it REVERSED, and post a
+     * fresh voucher carrying the corrected figures with {@code amendedFromId} set
+     * back to it (spec §10.1). Never edits the posted row — journal entries are
+     * immutable, so an "edit" that left the original journal in place would put the
+     * document and the ledger permanently out of step.
+     *
+     * <p>One transaction, deliberately: a reversal that survived a failed
+     * replacement would cancel the invoice and raise nothing in its place, and the
+     * vendor's balance would silently fall to zero.</p>
+     *
+     * @return the NEW voucher, already POSTED.
+     */
+    @Transactional
+    public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement) {
+        Voucher original = lockForWrite(voucherId);
+        if (original.getStatus() != VoucherStatus.POSTED) {
+            throw new BusinessRuleViolationException(
+                    "Only a POSTED voucher can be amended; this one is " + original.getStatus());
+        }
+        if (reversalDate == null) throw new BusinessRuleViolationException("A reversal date is required");
+        // Asked here as well as inside PostingService.reverse so that a reversal
+        // dated into a closed period is refused before any of this is written.
+        fiscal.assertOpen(reversalDate);
+
+        posting.reverse(original.getJournalId(), reversalDate, reason);
+        original.setStatus(VoucherStatus.REVERSED);
+        original.setUpdatedAt(Instant.now());
+        vouchers.save(original);
+
+        Voucher fresh = createDraft(replacement);
+        fresh.setAmendedFromId(original.getId());
+        // Flushed before post(), which loads the row by key and refreshes it under a
+        // lock: refresh overwrites the instance from the database, so an insert still
+        // sitting in the action queue would either be missed or would lose
+        // amendedFromId. (Same shape as the flush updateDraft needs, for the same
+        // reason: this class hands rows to Hibernate and then re-reads them.)
+        vouchers.saveAndFlush(fresh);
+        return post(fresh.getId());
+    }
+
     // ---- internals shared with post() in Tasks 3 and 4 ----
 
     /**
