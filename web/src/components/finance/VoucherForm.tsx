@@ -65,6 +65,18 @@ type DraftLine = {
     /** Kept as typed text so a half-entered "1." is not rewritten under the cursor. */
     amount: string;
     vatRate: string;
+    /**
+     * The line's OWN dimensions, not the header's.
+     *
+     * `VoucherLineInputDTO` carries both, and `VoucherService.apply` writes them
+     * onto the journal line — they are what put a maintenance invoice on one
+     * building's ledger rather than across the portfolio. A one-invoice,
+     * two-property bill is ordinary, so these belong per row. Empty string means
+     * "not set"; the server then falls back to the header
+     * (`apply`: `li.propertyId() == null ? in.propertyId() : li.propertyId()`).
+     */
+    propertyId: string;
+    unitId: string;
 };
 
 type VendorRow = {
@@ -75,13 +87,18 @@ type VendorRow = {
     payableAccount: { id: string; code: string; name: string } | null;
 };
 
+type UnitRow = { id: string; unitNumber: string; property: { id: string } | null };
+
 let lineKeySeq = 0;
-const newLine = (): DraftLine => ({
+/** A new row starts on the header's property, which is the common case for a single-site invoice. */
+const newLine = (propertyId = ""): DraftLine => ({
     key: `l${++lineKeySeq}`,
     accountId: null,
     description: "",
     amount: "",
     vatRate: "0",
+    propertyId,
+    unitId: "",
 });
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -138,6 +155,7 @@ export default function VoucherForm({
     const [docDate, setDocDate] = useState(todayIso);
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<VendorRow[]>([]);
+    const [units, setUnits] = useState<UnitRow[]>([]);
     const [invoiceNumber, setInvoiceNumber] = useState("");
     const [narration, setNarration] = useState("");
     const [propertyId, setPropertyId] = useState("");
@@ -188,6 +206,12 @@ export default function VoucherForm({
             .then(r => (r.ok ? r.json() : []))
             .then((rows: VendorRow[]) => alive && setVendors(Array.isArray(rows) ? rows : []))
             .catch(() => {});
+        // One unpaginated GET, kept with its property so a line's unit list can be
+        // filtered without a request per row (UnitController#getAllUnits).
+        fetch("/api/proxy/v1/units")
+            .then(r => (r.ok ? r.json() : []))
+            .then((rows: UnitRow[]) => alive && setUnits(Array.isArray(rows) ? rows : []))
+            .catch(() => {});
         ledgerApi.fiscal
             .get()
             .then(f => alive && setBooksLockedThrough(f.booksLockedThrough))
@@ -225,8 +249,10 @@ export default function VoucherForm({
                       description: l.description ?? "",
                       amount: String(l.amount),
                       vatRate: String(l.vatRate ?? 0),
+                      propertyId: l.propertyId ?? "",
+                      unitId: l.unitId ?? "",
                   }))
-                : [newLine()],
+                : [newLine(v.propertyId ?? "")],
         );
     }, []);
 
@@ -259,12 +285,22 @@ export default function VoucherForm({
 
     // ---- derived ----
 
-    /** `accountId -> vendorId` for every vendor payable in the chart. */
-    const payableOwners = useMemo(() => {
-        const map: Record<string, string> = {};
-        for (const v of vendors) if (v.payableAccount) map[v.payableAccount.id] = v.id;
-        return map;
-    }, [vendors]);
+    /**
+     * Every account that is some vendor's payable leaf — a SET, not an
+     * `accountId -> vendorId` map. Two vendors may share one leaf (no unique
+     * constraint on `vendors.payable_account_id`), and a map could only remember
+     * the last of them, so it refused one of the two a payment the server accepts.
+     */
+    const payableAccountIds = useMemo(
+        () => [...new Set(vendors.map(v => v.payableAccount?.id).filter((id): id is string => !!id))],
+        [vendors],
+    );
+
+    /** The selected vendor's own payable leaf — the account the rule compares against. */
+    const vendorPayableAccountId = useMemo(
+        () => vendors.find(v => v.id === vendorId)?.payableAccount?.id ?? null,
+        [vendors, vendorId],
+    );
 
     const numericLines = useMemo(
         () => lines.map(l => ({ amount: num(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
@@ -298,10 +334,12 @@ export default function VoucherForm({
                     amount: numericLines[i].amount,
                     vatRate: numericLines[i].vatRate,
                 })),
-                payableOwners: vendors.length ? payableOwners : undefined,
+                payableAccountIds: vendors.length ? payableAccountIds : undefined,
+                vendorPayableAccountId,
                 accounts: Object.keys(accounts).length ? accounts : undefined,
             }),
-        [type, vendorId, paymentAccountId, lines, numericLines, payableOwners, vendors.length, accounts],
+        [type, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
+         vendorPayableAccountId, vendors.length, accounts],
     );
 
     // ---- requests ----
@@ -325,7 +363,12 @@ export default function VoucherForm({
                 amount: numericLines[i].amount,
                 // Never a rate on a payment line, whatever is in state.
                 vatRate: withVat ? numericLines[i].vatRate : 0,
-                propertyId: propertyId || null,
+                // The LINE's dimensions. Sending the header's here was the bug: it
+                // collapsed a two-property invoice onto one ledger and dropped
+                // every unit. Null lets `VoucherService.apply` fall back to the
+                // header, which is what an unset row should mean.
+                propertyId: l.propertyId || null,
+                unitId: l.unitId || null,
             })),
         }),
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
@@ -355,7 +398,8 @@ export default function VoucherForm({
                 description: l.description || null,
                 amount: l.amount,
                 vatRate: withVat ? l.vatRate ?? 0 : 0,
-                propertyId: posted.propertyId ?? null,
+                propertyId: l.propertyId ?? null,
+                unitId: l.unitId ?? null,
             })),
         };
         return JSON.stringify(current) !== JSON.stringify(original);
@@ -477,9 +521,18 @@ export default function VoucherForm({
 
     const vendorName = (id: string) => vendors.find(v => v.id === id)?.nameEn ?? "";
 
+    /** The units of one property, name-sorted. Empty until a property is chosen. */
+    const unitsFor = (propId: string) =>
+        propId
+            ? units
+                  .filter(u => u.property?.id === propId)
+                  .sort((a, b) => a.unitNumber.localeCompare(b.unitNumber))
+            : [];
+
     // ---- render ----
 
-    const columns = 4 + (withVat ? 2 : 0) + 1;
+    // account, description, property, unit, amount, line total, actions (+ VAT rate and VAT amount)
+    const columns = 6 + (withVat ? 2 : 0) + 1;
 
     return (
         <div className="space-y-6" data-testid="voucher-form" data-voucher-type={type}>
@@ -681,6 +734,8 @@ export default function VoucherForm({
                             <tr>
                                 <th className={`${th} min-w-[220px]`}>{tLedger("account")}</th>
                                 <th className={th}>{t("description")}</th>
+                                <th className={th}>{t("property")}</th>
+                                <th className={th}>{tLedger("unit")}</th>
                                 <th className={`${th} text-end`}>{t("amount")}</th>
                                 {withVat && <th className={`${th} text-end`}>{t("vatRate")}</th>}
                                 {withVat && <th className={`${th} text-end`}>{t("vatAmount")}</th>}
@@ -717,6 +772,46 @@ export default function VoucherForm({
                                                 value={l.description}
                                                 onChange={e => setLine(i, { description: e.target.value })}
                                             />
+                                        </td>
+                                        <td className={td}>
+                                            <select
+                                                data-testid={`line-property-${i}`}
+                                                aria-label={t("property")}
+                                                className={`${field} w-40`}
+                                                disabled={!editable}
+                                                value={l.propertyId}
+                                                // Changing the property drops the unit with it:
+                                                // a unit belongs to exactly one property, so a
+                                                // kept one would post a line whose unit is not
+                                                // in its own building.
+                                                onChange={e => setLine(i, { propertyId: e.target.value, unitId: "" })}
+                                            >
+                                                <option value="">{t("allProperties")}</option>
+                                                {properties.options.map(pr => (
+                                                    <option key={pr.id} value={pr.id}>
+                                                        {pr.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className={td}>
+                                            <select
+                                                data-testid={`line-unit-${i}`}
+                                                aria-label={tLedger("unit")}
+                                                className={`${field} w-32`}
+                                                // A unit without a property to scope it would be a
+                                                // list of every unit in the portfolio.
+                                                disabled={!editable || !l.propertyId}
+                                                value={l.unitId}
+                                                onChange={e => setLine(i, { unitId: e.target.value })}
+                                            >
+                                                <option value="">{t("wholeProperty")}</option>
+                                                {unitsFor(l.propertyId).map(u => (
+                                                    <option key={u.id} value={u.id}>
+                                                        {u.unitNumber}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </td>
                                         <td className={`${td} text-end`}>
                                             <input
@@ -815,7 +910,7 @@ export default function VoucherForm({
                         <button
                             type="button"
                             data-testid="add-line"
-                            onClick={() => setLines(ls => [...ls, newLine()])}
+                            onClick={() => setLines(ls => [...ls, newLine(propertyId)])}
                             className="flex items-center gap-2 text-xs font-semibold text-primary cursor-pointer"
                         >
                             <Plus size={14} />

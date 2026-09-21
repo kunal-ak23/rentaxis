@@ -150,6 +150,18 @@ const VENDORS = [
     },
 ];
 
+/** `GET /v1/properties` returns portfolio-summary rows that wrap the property. */
+const PROPERTIES = [
+    { property: { id: "prop-1", nameEn: "L'Olivier", nameAr: "لوليفييه" } },
+    { property: { id: "prop-2", nameEn: "Marina Heights", nameAr: "مرسى هايتس" } },
+];
+
+const UNITS = [
+    { id: "unit-a1", unitNumber: "A-101", property: { id: "prop-1", nameEn: "L'Olivier" } },
+    { id: "unit-a2", unitNumber: "A-102", property: { id: "prop-1", nameEn: "L'Olivier" } },
+    { id: "unit-b1", unitNumber: "B-201", property: { id: "prop-2", nameEn: "Marina Heights" } },
+];
+
 function renderForm(type: "PISR" | "BPV" = "PISR", props: { voucherId?: string } = {}) {
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
@@ -190,7 +202,14 @@ beforeEach(() => {
     vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
-            const body = String(url).includes("/vendors") ? VENDORS : [];
+            const u = String(url);
+            const body = u.includes("/vendors")
+                ? VENDORS
+                : u.includes("/units")
+                  ? UNITS
+                  : u.includes("/properties")
+                    ? PROPERTIES
+                    : [];
             return new Response(JSON.stringify(body), {
                 status: 200,
                 headers: { "Content-Type": "application/json" },
@@ -594,6 +613,185 @@ describe("VoucherForm — the chart is the second layer behind the pickers", () 
         renderForm("PISR", { voucherId: "v1" });
         await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
         expect(screen.queryByTestId("voucher-blocker")).not.toBeInTheDocument();
+    });
+});
+
+describe("VoucherForm — line dimensions", () => {
+    /**
+     * `VoucherLineInputDTO` carries `propertyId` and `unitId`, and
+     * `VoucherService.apply` writes them onto the journal line. They are what put
+     * a maintenance invoice on ONE building's ledger. The form used to overwrite
+     * every line with the header property and never send a unit at all, so a
+     * two-property invoice collapsed onto one and a unit-level cost lost its unit
+     * the first time the voucher was saved.
+     */
+    const twoProperties = () =>
+        detail({
+            propertyId: "prop-1",
+            lines: [
+                {
+                    lineNo: 1, accountId: "acct-1", accountCode: "510100", accountName: "Maintenance",
+                    description: "Chillers", amount: 1000, vatRate: 5, vatAmount: 50,
+                    propertyId: "prop-1", unitId: "unit-a1",
+                },
+                {
+                    lineNo: 2, accountId: "acct-2", accountCode: "510200", accountName: "Cleaning",
+                    description: "Common areas", amount: 500, vatRate: 5, vatAmount: 25,
+                    propertyId: "prop-2", unitId: null,
+                },
+            ],
+        });
+
+    it("round-trips each line's own property and unit through Save", async () => {
+        api.get.mockResolvedValue(twoProperties());
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("line-property-0")).toHaveValue("prop-1"));
+        expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1");
+        expect(screen.getByTestId("line-property-1")).toHaveValue("prop-2");
+        expect(screen.getByTestId("line-unit-1")).toHaveValue("");
+
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.update).toHaveBeenCalled());
+        const body = api.update.mock.calls.at(-1)![1];
+        expect(body.lines[0]).toMatchObject({ propertyId: "prop-1", unitId: "unit-a1" });
+        expect(body.lines[1]).toMatchObject({ propertyId: "prop-2", unitId: null });
+    });
+
+    it("sends an edited line dimension, not the header's", async () => {
+        api.get.mockResolvedValue(twoProperties());
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("line-property-1")).toHaveValue("prop-2"));
+
+        fireEvent.change(screen.getByTestId("line-unit-1"), { target: { value: "unit-b1" } });
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.update).toHaveBeenCalled());
+        const body = api.update.mock.calls.at(-1)![1];
+        expect(body.lines[1]).toMatchObject({ propertyId: "prop-2", unitId: "unit-b1" });
+    });
+
+    it("offers only the chosen property's units, and clearing the property clears the unit", async () => {
+        api.get.mockResolvedValue(twoProperties());
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1"));
+
+        const unit0 = screen.getByTestId("line-unit-0") as HTMLSelectElement;
+        const offered = Array.from(unit0.options).map(o => o.value).filter(Boolean);
+        expect(offered).toEqual(["unit-a1", "unit-a2"]);
+
+        fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "" } });
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue(""));
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.update).toHaveBeenCalled());
+        expect(api.update.mock.calls.at(-1)![1].lines[0]).toMatchObject({ propertyId: null, unitId: null });
+    });
+
+    it("moves the unit off a line whose property changed", async () => {
+        api.get.mockResolvedValue(twoProperties());
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1"));
+        fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-2" } });
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue(""));
+
+        // Asserted on the PAYLOAD, not on the select: a select whose value has no
+        // matching option renders as "" while state still holds the stale unit,
+        // and it is the state that gets sent. A unit belongs to one property, so
+        // A-101 on a Marina Heights line is a journal nobody can explain.
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.update).toHaveBeenCalled());
+        expect(api.update.mock.calls.at(-1)![1].lines[0]).toMatchObject({
+            propertyId: "prop-2",
+            unitId: null,
+        });
+    });
+
+    it("defaults a new line to the header's property", async () => {
+        api.get.mockResolvedValue(twoProperties());
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("line-property-0")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("add-line"));
+        await waitFor(() => expect(screen.getByTestId("line-property-2")).toHaveValue("prop-1"));
+    });
+
+    it("carries line dimensions through Post amendment", async () => {
+        api.get.mockResolvedValue({ ...twoProperties(), status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" });
+        api.amend.mockResolvedValue(detail({ id: "v2", status: "POSTED", voucherNumber: "PISR/2026/0008" }));
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("amend-voucher"));
+        await screen.findByTestId("amend-banner");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1100" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        fireEvent.click(await screen.findByTestId("confirm-amend"));
+
+        await waitFor(() => expect(api.amend).toHaveBeenCalled());
+        const replacement = api.amend.mock.calls.at(-1)![1].replacement;
+        expect(replacement.lines[0]).toMatchObject({ propertyId: "prop-1", unitId: "unit-a1", amount: 1100 });
+        expect(replacement.lines[1]).toMatchObject({ propertyId: "prop-2", unitId: null });
+    });
+});
+
+describe("VoucherForm — two vendors sharing one payable account", () => {
+    /**
+     * `VoucherService.requirePayableLinesMatchTheVendor` compares on the ACCOUNT,
+     * not on the owner: "is this line my vendor's payable account?", not "is my
+     * vendor the only vendor who answers to it?". Nothing in the schema stops two
+     * vendors sharing one leaf. The client used to build a last-write-wins
+     * accountId → vendorId map, so with a shared account one of the two vendors
+     * was refused a payment the server would have accepted.
+     */
+    const SHARED = [
+        { id: "ven-1", nameEn: "Emirates Facilities", nameAr: "", active: true, payableAccount: { id: "pay-shared", code: "210101", name: "Group payable" } },
+        { id: "ven-2", nameEn: "Gulf Cooling", nameAr: "", active: true, payableAccount: { id: "pay-shared", code: "210101", name: "Group payable" } },
+        { id: "ven-3", nameEn: "Al Shirawi", nameAr: "", active: true, payableAccount: { id: "pay-3", code: "210103", name: "Al Shirawi" } },
+    ];
+
+    beforeEach(() => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string) => {
+                const u = String(url);
+                const body = u.includes("/vendors")
+                    ? SHARED
+                    : u.includes("/units")
+                      ? UNITS
+                      : u.includes("/properties")
+                        ? PROPERTIES
+                        : [];
+                return new Response(JSON.stringify(body), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }),
+        );
+    });
+
+    it.each(["ven-1", "ven-2"])("lets %s pay through the account they share", async vendorId => {
+        renderForm("BPV");
+        await screen.findByTestId("line-amount-0");
+        await waitFor(() => expect(screen.getByTestId("vendor")).toBeInTheDocument());
+        pickPaymentAccount("bank-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "500" } });
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: vendorId } });
+        pickLineAccount(0, "pay-shared");
+
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        expect(screen.queryByTestId("voucher-blocker")).not.toBeInTheDocument();
+    });
+
+    it("still refuses a third vendor's own payable", async () => {
+        renderForm("BPV");
+        await screen.findByTestId("line-amount-0");
+        await waitFor(() => expect(screen.getByTestId("vendor")).toBeInTheDocument());
+        pickPaymentAccount("bank-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "500" } });
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        pickLineAccount(0, "pay-3");
+
+        await waitFor(() =>
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(
+                en.Vouchers.otherVendorPayable.replace("{line}", "1"),
+            ),
+        );
     });
 });
 

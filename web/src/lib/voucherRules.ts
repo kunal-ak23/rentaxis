@@ -95,11 +95,20 @@ export type DraftShape = {
     paymentAccountId: string | null;
     lines: DraftLine[];
     /**
-     * `accountId -> vendorId` for every vendor payable account in the chart,
-     * built from the vendor list's `payableAccount`. Omitted when the vendor list
-     * has not loaded, which relaxes only the payable rules below.
+     * Every account that is SOME vendor's payable leaf.
+     *
+     * A set of account ids, not an `accountId -> vendorId` map, because the map
+     * could only hold one owner per account and nothing in the schema stops two
+     * vendors sharing one leaf (`vendors.payable_account_id` has no unique
+     * constraint). The old map was last-write-wins, so with a shared account one
+     * of the two vendors was refused a payment the server accepts.
+     *
+     * Omitted when the vendor list has not loaded, which relaxes only the payable
+     * rules below.
      */
-    payableOwners?: Record<string, string>;
+    payableAccountIds?: string[];
+    /** The selected vendor's own payable leaf — the account the rule compares against. */
+    vendorPayableAccountId?: string | null;
     /**
      * The chart of accounts by id, when it has loaded.
      *
@@ -177,6 +186,14 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
          * is wrong. A payable line with no vendor on the header is the same
          * mistake in a different hat.
          *
+         * The comparison is on the ACCOUNT, exactly as
+         * `VoucherService.requirePayableLinesMatchTheVendor` (:488-521) does it:
+         * "is this line my vendor's payable account?", not "is my vendor the only
+         * vendor who answers to it?". Two vendors may share one leaf, and a
+         * voucher naming either of them is settling precisely the account its own
+         * vendor is settled through — so both are allowed, which a per-owner
+         * comparison would get wrong for one of them.
+         *
          * BPV only, and explicitly so: `VoucherService.validate` guards its call
          * with `if (in.docType() == VoucherType.BPV)` and `requirePostable` calls
          * it from the BPV arm of its switch alone. A PISR line cannot structurally
@@ -184,15 +201,12 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
          * LIABILITY — but that is an invariant in a different file, and the two
          * should not be free to decouple silently.
          *
-         * With no vendor list loaded `payableOwners` is absent and these two
+         * With no vendor list loaded `payableAccountIds` is absent and these two
          * checks do not fire; the server still has the last word.
          */
-        if (d.type === "BPV") {
-            const owner = d.payableOwners?.[l.accountId];
-            if (owner) {
-                if (!d.vendorId) return { key: "payableNeedsVendor", line };
-                if (owner !== d.vendorId) return { key: "otherVendorPayable", line };
-            }
+        if (d.type === "BPV" && d.payableAccountIds?.includes(l.accountId)) {
+            if (!d.vendorId) return { key: "payableNeedsVendor", line };
+            if (l.accountId !== d.vendorPayableAccountId) return { key: "otherVendorPayable", line };
         }
     }
     return null;

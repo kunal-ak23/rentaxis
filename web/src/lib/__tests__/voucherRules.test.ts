@@ -150,24 +150,41 @@ describe("draftRefusal", () => {
      * payable needs a vendor. Mirrored ahead of the server so the form cannot
      * build the document that is about to be refused.
      */
+    /** VoucherService.requirePayableLinesMatchTheVendor compares on the ACCOUNT. */
+    it("lets either of two vendors sharing one payable account settle through it", () => {
+        const payableAccountIds = ["pay-shared"];
+        for (const vendorId of ["v1", "v2"]) {
+            expect(
+                draftRefusal({
+                    type: "BPV", vendorId, paymentAccountId: "p1",
+                    lines: [{ accountId: "pay-shared", amount: 100, vatRate: 0 }],
+                    payableAccountIds, vendorPayableAccountId: "pay-shared",
+                }),
+            ).toBeNull();
+        }
+    });
+
     it("refuses another vendor's payable on a payment-voucher line", () => {
-        const payableOwners = { "pay-v1": "v1", "pay-v2": "v2" };
+        const payableAccountIds = ["pay-v1", "pay-v2"];
         expect(
             draftRefusal({
                 type: "BPV", vendorId: "v1", paymentAccountId: "p1",
-                lines: [{ accountId: "pay-v2", amount: 100, vatRate: 0 }], payableOwners,
+                lines: [{ accountId: "pay-v2", amount: 100, vatRate: 0 }],
+                payableAccountIds, vendorPayableAccountId: "pay-v1",
             })?.key,
         ).toBe("otherVendorPayable");
         expect(
             draftRefusal({
                 type: "BPV", vendorId: "", paymentAccountId: "p1",
-                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }], payableOwners,
+                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }],
+                payableAccountIds, vendorPayableAccountId: null,
             })?.key,
         ).toBe("payableNeedsVendor");
         expect(
             draftRefusal({
                 type: "BPV", vendorId: "v1", paymentAccountId: "p1",
-                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }], payableOwners,
+                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }],
+                payableAccountIds, vendorPayableAccountId: "pay-v1",
             }),
         ).toBeNull();
     });
@@ -180,17 +197,19 @@ describe("draftRefusal", () => {
      * that is an invariant in a different file — this function states its own.
      */
     it("leaves a purchase invoice alone, whatever its lines sit on", () => {
-        const payableOwners = { "pay-v1": "v1", "pay-v2": "v2" };
+        const payableAccountIds = ["pay-v1", "pay-v2"];
         expect(
             draftRefusal({
                 type: "PISR", vendorId: "v1", paymentAccountId: null,
-                lines: [{ accountId: "pay-v2", amount: 100, vatRate: 5 }], payableOwners,
+                lines: [{ accountId: "pay-v2", amount: 100, vatRate: 5 }],
+                payableAccountIds, vendorPayableAccountId: "pay-v1",
             }),
         ).toBeNull();
         expect(
             draftRefusal({
                 type: "PISR", vendorId: "v2", paymentAccountId: null,
-                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 5 }], payableOwners,
+                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 5 }],
+                payableAccountIds, vendorPayableAccountId: "pay-v2",
             }),
         ).toBeNull();
     });

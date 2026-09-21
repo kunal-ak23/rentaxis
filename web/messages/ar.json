@@ -2137,6 +2137,7 @@
     "chequeDate": "تاريخ الشيك",
     "property": "العقار",
     "allProperties": "كل العقارات",
+    "wholeProperty": "العقار بأكمله",
     "description": "البيان",
     "amount": "المبلغ",
     "vatRate": "نسبة الضريبة %",

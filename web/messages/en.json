@@ -2137,6 +2137,7 @@
     "chequeDate": "Cheque date",
     "property": "Property",
     "allProperties": "All properties",
+    "wholeProperty": "Whole property",
     "description": "Description",
     "amount": "Amount",
     "vatRate": "VAT %",
