@@ -1,12 +1,16 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.ledger.PostingRequest;
+import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
+import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
+import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -26,6 +30,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -58,6 +63,7 @@ class JournalControllerIT {
     @Autowired AccountService accounts;
     @Autowired PropertyAccountService propertyAccounts;
     @Autowired PropertyRepository propertyRepo;
+    @Autowired PostingService posting;
 
     UUID tenantId;
     User accountant;
@@ -158,6 +164,34 @@ class JournalControllerIT {
         assertThat(rev.get("reversalOfId")).isEqualTo(id);
         assertThat(rev.get("entryNumber")).isEqualTo("JV-26/2");
         assertThat(getAs(accountant, "/api/v1/finance/journals/" + id).get("status")).isEqualTo("REVERSED");
+    }
+
+    /**
+     * The same guard over HTTP: {@code POST /journals/{id}/reverse} is for manual
+     * journal vouchers. An entry that belongs to a document is a 400 naming where
+     * to correct it — reversing it here would leave that document posted and its
+     * ledger empty. {@link com.datagami.rentaxis.core.service.ledger.JournalReverseSourceGuardIT}
+     * covers one case per source-type family.
+     */
+    @Test
+    void reversingADocumentsJournalIs400() {
+        UUID entryId;
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+            entryId = posting.post(new PostingRequest(
+                    JournalDocType.PISR, LocalDate.of(2026, 9, 17), "voucher fixture",
+                    PostingRequest.Dimensions.none(), JournalSourceType.VOUCHER, UUID.randomUUID(), null,
+                    List.of(PostingRequest.dr(UUID.fromString(bankId), new BigDecimal("100.00")),
+                            PostingRequest.cr(UUID.fromString(capitalId), new BigDecimal("100.00"))))).getId();
+        } finally {
+            TenantContextHolder.clear();
+        }
+
+        assertThatThrownBy(() -> postAs(accountant, "/api/v1/finance/journals/" + entryId + "/reverse")
+                .body(Map.of("date", "2026-09-18", "reason", "x")).retrieve().body(Map.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("voucher");
+        assertThat(getAs(accountant, "/api/v1/finance/journals/" + entryId).get("status")).isEqualTo("POSTED");
     }
 
     @Test

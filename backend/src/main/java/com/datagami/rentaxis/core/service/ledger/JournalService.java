@@ -118,11 +118,60 @@ public class JournalService {
         }
     }
 
+    /**
+     * Reverse a manual journal voucher — and nothing else.
+     *
+     * <p>Every other entry in this table belongs to a document that carries its own
+     * status: a voucher, a lease, a cheque, a recognition period, a settlement, a
+     * penalty, an import batch, an opening balance. Reversing one of those here
+     * leaves the <em>document</em> posted and its ledger empty, and neither screen
+     * says so — the voucher still reads POSTED while the vendor's payable has
+     * vanished, and its own Amend then dead-ends on "already reversed". Which of
+     * the two is lying is not recoverable from the data afterwards.</p>
+     *
+     * <p>So each document is corrected where it was created, and the refusal says
+     * where that is. {@link PostingService#reverse} — the call those documents make
+     * for themselves, inside the transaction that also moves their status — is
+     * deliberately not narrowed.</p>
+     */
     @Transactional
     public JournalEntryDTO reverse(UUID id, ReverseRequest r) {
+        JournalEntry entry = entries.findById(id).orElseThrow(() -> new NotFoundException("Journal entry not found"));
+        requireManual(entry);
         ReverseRequest req = r == null ? new ReverseRequest(null, null) : r;
         LocalDate date = req.date() == null ? LocalDate.now() : req.date();
+        // PostingService owns the rest of the immutability rule: an entry that is
+        // already REVERSED, and a reversal entry itself, are refused there.
         return toDto(posting.reverse(id, date, req.reason()), true);
+    }
+
+    private static void requireManual(JournalEntry e) {
+        if (e.getSourceType() == JournalSourceType.MANUAL) return;
+        throw new BusinessRuleViolationException(whereToCorrect(e.getSourceType()));
+    }
+
+    /**
+     * A null source type is an entry written before the column existed, not a
+     * manual voucher — the same reading the journal screen takes when it decides
+     * whether to offer Reverse at all.
+     */
+    private static String whereToCorrect(JournalSourceType source) {
+        if (source == null) {
+            return "This journal has no source document; only a manual journal voucher can be reversed here";
+        }
+        String belongsTo = switch (source) {
+            case VOUCHER -> "voucher; amend the voucher instead";
+            case LEASE -> "lease; amend or terminate the lease instead";
+            case CHEQUE -> "cheque; correct it from the cheque register";
+            case RECOGNITION -> "rent recognition period; re-run month-end instead";
+            case SETTLEMENT -> "lease settlement, which cannot be reversed";
+            case PENALTY -> "penalty; reverse it from the penalties queue";
+            case IMPORT -> "import batch; reverse the whole batch instead";
+            case OPENING_BALANCE -> "opening balance; correct it from the opening-balance screen";
+            case REVERSAL -> "reversal of another entry, and a reversal is never reversed";
+            case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
+        };
+        return "This journal belongs to a " + belongsTo;
     }
 
     @Transactional(readOnly = true)
