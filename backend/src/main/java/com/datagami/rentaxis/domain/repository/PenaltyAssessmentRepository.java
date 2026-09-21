@@ -62,6 +62,17 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
                                    @Param("propertyIds") Collection<UUID> propertyIds,
                                    Pageable pageable);
 
+    /**
+     * Every assessment ever raised on one lease.
+     *
+     * <p>Used by the cut-over undo ({@code ImportedLeaseReverter}), which has to
+     * refuse a reverse while finance still has a live proposal or an uncollected
+     * charge about a cheque the reverse is going to erase. Unpaged and unfiltered
+     * by status on purpose: the caller decides what "live" means, and a lease's
+     * penalty history is a handful of rows.</p>
+     */
+    List<PenaltyAssessment> findByLease_Id(UUID leaseId);
+
     /** The renter portal's list: what they were actually charged, never what was merely proposed. */
     List<PenaltyAssessment> findByRenter_IdAndStatusOrderByProposedAtAsc(UUID renterId, PenaltyAssessmentStatus status);
 

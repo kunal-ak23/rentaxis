@@ -1,0 +1,342 @@
+package com.datagami.rentaxis.core.service.cutover;
+
+import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
+import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.core.service.cutover.ContractImportPostService.BulkPostResult;
+import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
+import com.datagami.rentaxis.core.service.recognition.RecognitionService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.JournalLine;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
+import com.datagami.rentaxis.domain.entity.enums.SegmentStatus;
+import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
+import com.datagami.rentaxis.domain.repository.JournalLineRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
+import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * Import, post, reverse — and post again (controller ruling R12).
+ *
+ * <p>Two things have to be true for a cut-over to be usable at all. The first is
+ * that "Reverse batch" really is an undo: the lease-dimension ledger nets to zero
+ * for every account and the trial balance is back where it started, with every
+ * contract a clean DRAFT rather than merely a DRAFT. The second is that the undo
+ * is not a one-way door — the corrected portfolio goes back on the books and lands
+ * on exactly the same balances, because the imported statuses and the imported
+ * dates survive the reverse and the replay files the same journals on the same
+ * days.</p>
+ *
+ * <p>And the refusals, which matter more than they look: a batch whose contracts
+ * have been lived in since the cut-over must not be reversible at all, because
+ * taking the import off the books would leave a settlement, an amendment or a
+ * month-end close standing on journals that no longer exist.</p>
+ */
+@SpringBootTest
+@Testcontainers
+class ImportBatchRoundTripIT {
+
+    @Container @ServiceConnection
+    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @Autowired CutoverFixture fixture;
+    @Autowired ContractImportPersistService contractPersist;
+    @Autowired ContractImportPostService postService;
+    @Autowired ImportBatchService batches;
+    @Autowired ChequeService chequeService;
+    @Autowired RecognitionService recognition;
+    @Autowired LedgerQueryService ledger;
+    @Autowired LeaseRepository leaseRepo;
+    @Autowired ChequeRepository chequeRepo;
+    @Autowired UnitRepository unitRepo;
+    @Autowired JournalEntryRepository entries;
+    @Autowired JournalLineRepository journalLines;
+    @Autowired RecognitionEntryRepository recognitionEntries;
+    @Autowired RentSegmentRepository segments;
+    @Autowired TransactionTemplate tx;
+
+    UUID tenantId;
+
+    @BeforeEach
+    void setUp() {
+        tenantId = fixture.newCutOverTenant("ROUND");
+        fixture.authenticateAsTenantAdmin();
+    }
+
+    @AfterEach
+    void clear() {
+        TenantContextHolder.clear();
+        fixture.clearAuthentication();
+    }
+
+    // ------------------------------------------------------------------
+    // plumbing
+    // ------------------------------------------------------------------
+
+    private UUID importTheTemplate() throws Exception {
+        try (Workbook wb = fixture.template()) {
+            return contractPersist.persist(wb, fixture.newJob()).batchId();
+        }
+    }
+
+    private Lease leaseOf(String ref) {
+        return leaseRepo.findAll().stream()
+                .filter(l -> ref.equals(l.getExternalContractRef()))
+                .findFirst().orElseThrow(() -> new AssertionError("No lease " + ref));
+    }
+
+    private UUID leaseIdOf(String ref) {
+        return tx.execute(s -> leaseOf(ref).getId());
+    }
+
+    private List<com.datagami.rentaxis.domain.entity.JournalEntry> batchJournals(UUID batchId) {
+        return tx.execute(s -> entries.findByImportBatchIdOrderByCreatedAtAsc(batchId));
+    }
+
+    /** Account code → balance as at the cut-over, debit-positive, in code order. */
+    private Map<String, BigDecimal> trialBalance() {
+        return tx.execute(s -> {
+            Map<String, BigDecimal> out = new LinkedHashMap<>();
+            for (TrialBalanceRowDTO row : ledger.trialBalance(CutoverFixture.AS_OF, null)) {
+                out.put(row.code(), row.balance().stripTrailingZeros());
+            }
+            return out;
+        });
+    }
+
+    /**
+     * What the ledger holds against one lease, per account — the dimension a cut-over
+     * is undone along. Summed from the lines rather than from the trial balance,
+     * because the trial balance has no lease dimension.
+     */
+    private Map<UUID, BigDecimal> leaseDimensionBalances(UUID leaseId) {
+        return tx.execute(s -> {
+            Map<UUID, BigDecimal> out = new LinkedHashMap<>();
+            for (JournalLine l : journalLines.findAll()) {
+                if (!leaseId.equals(l.getLeaseId())) continue;
+                out.merge(l.getAccount().getId(),
+                        l.getDebit().subtract(l.getCredit()), BigDecimal::add);
+            }
+            return out;
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // the round trip
+    // ------------------------------------------------------------------
+
+    @Test
+    void reversingTheBatchNetsEveryLeaseDimensionAccountToZeroAndLeavesTheTrialBalanceFlat() throws Exception {
+        Map<String, BigDecimal> before = trialBalance();
+        assertThat(before).isEmpty();   // the import posts nothing; this is the baseline
+
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        UUID first = leaseIdOf("SAMPLE-0001");
+        assertThat(leaseDimensionBalances(first).values())
+                .anySatisfy(v -> assertThat(v.signum()).isNotZero());
+
+        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+
+        assertThat(leaseDimensionBalances(first).values())
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+        assertThat(leaseDimensionBalances(leaseIdOf("SAMPLE-0002")).values())
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+        assertThat(trialBalance().values())
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
+    }
+
+    /** "Clean DRAFT" is not "status = DRAFT" — the LeaseReverter contract, item by item. */
+    @Test
+    void everyContractComesBackAsACleanDraft() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+
+        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+
+        UUID first = leaseIdOf("SAMPLE-0001");
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(first).orElseThrow();
+            assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+            assertThat(lease.getPostingJournalId()).isNull();
+            assertThat(lease.getPostedAt()).isNull();
+            assertThat(lease.getPostedBy()).isNull();
+            // The import's INPUT survives: the lines and the reference are what the
+            // spreadsheet said, not what the posting did.
+            assertThat(lease.getExternalContractRef()).isEqualTo("SAMPLE-0001");
+
+            List<Cheque> rows = chequeRepo.findByLease_IdOrderBySeqNoAsc(first);
+            assertThat(rows).hasSize(2).allSatisfy(c -> {
+                assertThat(c.getStatus()).isEqualTo(ChequeStatus.DRAFT);
+                assertThat(c.getPdrJournalId()).isNull();
+                assertThat(c.getCrtJournalId()).isNull();
+                assertThat(c.getCbrJournalId()).isNull();
+                assertThat(c.getDepositedAt()).isNull();
+                assertThat(c.getClearedAt()).isNull();
+                assertThat(c.getBouncedAt()).isNull();
+                assertThat(c.getReturnedAt()).isNull();
+                assertThat(c.getStatusChangedAt()).isNull();
+                assertThat(c.getReplacedBy()).isNull();
+                assertThat(c.getReplaces()).isNull();
+            });
+            // …and the replay instruction is KEPT, which is what makes a re-post land
+            // on the same days.
+            Cheque cleared = rows.stream().filter(c -> "100001".equals(c.getChequeNumber()))
+                    .findFirst().orElseThrow();
+            assertThat(cleared.getImportedStatus()).isEqualTo(ChequeStatus.CLEARED);
+            assertThat(cleared.getImportedClearedOn()).isEqualTo(LocalDate.of(2026, 9, 25));
+            assertThat(cleared.getImportedDepositedOn()).isEqualTo(LocalDate.of(2026, 9, 25));
+
+            assertThat(recognitionEntries.findByLease_IdOrderByPeriodStartAsc(first))
+                    .isNotEmpty()
+                    .allSatisfy(e -> assertThat(e.getStatus()).isEqualTo(RecognitionStatus.CANCELLED));
+            assertThat(segments.findByLease_IdOrderByFromDateAsc(first))
+                    .isNotEmpty()
+                    .allSatisfy(seg -> assertThat(seg.getStatus()).isEqualTo(SegmentStatus.CANCELLED));
+        });
+
+        // The flat is lettable again, which is what lets a corrected workbook create
+        // a lease on it without tripping ux_leases_one_active_per_unit.
+        tx.executeWithoutResult(s -> assertThat(unitRepo.findAll())
+                .allSatisfy(u -> assertThat(u.getStatus()).isEqualTo(UnitStatus.VACANT)));
+    }
+
+    /**
+     * R12's headline: a reversed batch goes back on the books and lands on exactly
+     * the balances it had the first time.
+     *
+     * <p>It is a <em>successor</em> batch that holds the new journals —
+     * {@code markPosted} refuses REVERSED → POSTED by design, so an undo that has
+     * happened cannot become undoable twice — and the result says which one it is.</p>
+     */
+    @Test
+    void aReversedBatchRePostsToIdenticalBalances() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        Map<String, BigDecimal> firstTrialBalance = trialBalance();
+        UUID first = leaseIdOf("SAMPLE-0001");
+        UUID second = leaseIdOf("SAMPLE-0002");
+        Map<UUID, BigDecimal> firstLeaseOne = leaseDimensionBalances(first);
+        Map<UUID, BigDecimal> firstLeaseTwo = leaseDimensionBalances(second);
+        assertThat(firstTrialBalance).isNotEmpty();
+
+        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+        BulkPostResult again = postService.post(batchId);
+
+        assertThat(again.repostOf()).isEqualTo(batchId);
+        assertThat(again.batchId()).isNotEqualTo(batchId);
+        assertThat(again.leasesPosted()).isEqualTo(2);
+        assertThat(again.status()).isEqualTo(ImportBatchStatus.POSTED);
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
+
+        // The first post's journals and their mirrors net to zero, so the books after
+        // the second post read exactly as they did after the first.
+        assertThat(trialBalance()).isEqualTo(firstTrialBalance);
+        assertThat(leaseDimensionBalances(first)).isEqualTo(firstLeaseOne);
+        assertThat(leaseDimensionBalances(second)).isEqualTo(firstLeaseTwo);
+
+        // And on the same days: the CRT is still filed on the day PACT says the money
+        // reached the bank, not on the day somebody pressed Post the second time.
+        assertThat(batchJournals(again.batchId()))
+                .filteredOn(e -> e.getDocType() == com.datagami.rentaxis.domain.entity.enums.JournalDocType.CRT)
+                .singleElement()
+                .satisfies(e -> assertThat(e.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 25)));
+    }
+
+    // ------------------------------------------------------------------
+    // the refusals
+    // ------------------------------------------------------------------
+
+    @Test
+    void aBatchWhoseChequeHasClearedSinceTheCutOverCannotBeReversed() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        int journals = batchJournals(batchId).size();
+
+        UUID outstanding = tx.execute(s -> chequeRepo
+                .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
+        chequeService.deposit(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
+        chequeService.clear(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+
+        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("SAMPLE-0001")
+                .hasMessageContaining("100002")
+                .hasMessageContaining("cleared since the cut-over");
+
+        // Nothing was written: the refusal came before the first reversal.
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
+        assertThat(batchJournals(batchId)).hasSize(journals);
+        tx.executeWithoutResult(s ->
+                assertThat(leaseOf("SAMPLE-0001").getStatus()).isEqualTo(LeaseStatus.ACTIVE));
+    }
+
+    @Test
+    void aBatchWhoseRentAMonthEndCloseHasRecognisedCannotBeReversed() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+
+        // The ordinary close, the way the nightly job runs it: October's rent, after
+        // the books have opened, carrying no batch id.
+        RecognitionService.RecognitionRunResult run = recognition.runTo(LocalDate.of(2026, 10, 31), false);
+        assertThat(run.posted()).isGreaterThan(0);
+
+        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("month-end close after the cut-over");
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
+    }
+
+    @Test
+    void aBatchWhoseContractHasBeenTerminatedCannotBeReversed() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        UUID first = leaseIdOf("SAMPLE-0001");
+        tx.executeWithoutResult(s -> {
+            // Straight through the repository: this test is about the state, not about
+            // how a tenancy gets into it, and a real termination posts its own journals
+            // which would then be the blocker under test.
+            Lease lease = leaseRepo.findById(first).orElseThrow();
+            lease.setStatus(LeaseStatus.TERMINATED);
+            leaseRepo.save(lease);
+        });
+
+        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("SAMPLE-0001")
+                .hasMessageContaining("TERMINATED");
+    }
+}

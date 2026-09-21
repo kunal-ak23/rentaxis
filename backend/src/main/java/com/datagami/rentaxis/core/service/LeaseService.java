@@ -267,6 +267,19 @@ public class LeaseService {
      * in it. Overlaps should no longer be creatable, but production already
      * contains some, and this must not make those worse.
      */
+    /**
+     * Public door onto the same rule, for the one caller outside this class that
+     * has to give a unit back: {@code ImportedLeaseReverter}, undoing a cut-over
+     * import batch (spec §10.3). A re-import has to be able to create a lease on
+     * that flat again without tripping {@code ux_leases_one_active_per_unit}, and a
+     * second copy of "is anybody else living here" is how a unit comes to read
+     * VACANT with a renter in it.
+     */
+    @Transactional
+    public void releaseUnitIfNoOtherLiveLease(Lease lease) {
+        releaseUnitIfNoOtherActiveLease(lease);
+    }
+
     private void releaseUnitIfNoOtherActiveLease(Lease lease) {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());

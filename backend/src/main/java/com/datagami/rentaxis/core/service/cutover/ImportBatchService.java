@@ -172,6 +172,33 @@ public class ImportBatchService {
     }
 
     /**
+     * The batch and everything it created are gone (ruling I4).
+     *
+     * <p>Only from DRAFT or REVERSED. A POSTED batch still has journals behind its
+     * leases, and deleting the contracts out from under them would leave a ledger
+     * describing tenancies that no longer exist — reverse it first. A batch that is
+     * already DISCARDED has nothing left to delete.</p>
+     *
+     * <p>The batch row itself survives: after a discard it is the only record that
+     * the import ever happened, which is why {@code discarded_at}/{@code _by} are
+     * columns rather than a deletion.</p>
+     */
+    @Transactional
+    public ImportBatch markDiscarded(UUID batchId) {
+        ImportBatch b = get(batchId);
+        if (b.getStatus() != ImportBatchStatus.DRAFT && b.getStatus() != ImportBatchStatus.REVERSED) {
+            throw new BusinessRuleViolationException(
+                    "Import batch is " + b.getStatus() + "; only a DRAFT or REVERSED batch can be discarded"
+                            + (b.getStatus() == ImportBatchStatus.POSTED
+                            ? ". Reverse it first — its contracts are on the books." : "."));
+        }
+        b.setStatus(ImportBatchStatus.DISCARDED);
+        b.setDiscardedAt(Instant.now());
+        b.setDiscardedBy(currentUserId());
+        return batches.save(b);
+    }
+
+    /**
      * Undo the whole cut-over import (spec §10.3, controller ruling R12): every
      * journal the batch wrote is reversed, then every lease it created goes back to
      * a clean DRAFT.
@@ -223,6 +250,22 @@ public class ImportBatchService {
                     "This batch created " + leases.size() + " leases but no lease module is available to "
                             + "return them to DRAFT. Reversing the journals alone would leave posted leases "
                             + "with no journals.");
+        }
+
+        // R12: asked of every lease BEFORE a single journal is reversed. A contract
+        // that has been terminated, settled, amended, extended or renewed since the
+        // cut-over — or that has had a cheque move, rent recognised or a penalty
+        // raised outside this batch — is a fact the batch does not own and cannot
+        // undo. The transaction would roll a late refusal back correctly; what it
+        // would not do is tell the accountant which of six hundred contracts is in
+        // the way. See LeaseReverter#blockersAgainstRevert.
+        List<String> blockers = new ArrayList<>();
+        for (UUID leaseId : leases) {
+            blockers.addAll(reverter.blockersAgainstRevert(leaseId, batchId));
+        }
+        if (!blockers.isEmpty()) {
+            throw new BusinessRuleViolationException(
+                    "This batch cannot be reversed: " + String.join(" ", blockers));
         }
 
         List<JournalEntry> toReverse = new ArrayList<>(

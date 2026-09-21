@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cutover;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -11,8 +12,8 @@ import java.util.UUID;
  * the undo and nothing else. Depending on {@code LeaseService} outright would make
  * the cut-over package depend on the whole lease module — lease lines, cheques,
  * recognition, settlement — and would have made batch reverse untestable until
- * that module was finished. Plan 4 Task 11 declares
- * {@code LeaseService implements LeaseReverter}; this is the only seam plan 4
+ * that module was finished. Plan 4 Task 11 implements it as
+ * {@code core.service.lease.ImportedLeaseReverter}; this is the only seam plan 4
  * introduces.</p>
  *
  * <h2>The contract (spec §10.3, controller ruling R12)</h2>
@@ -71,4 +72,33 @@ public interface LeaseReverter {
 
     /** ACTIVE (or any posted state) → a clean DRAFT, as specified on the interface. */
     void revertToDraft(UUID leaseId);
+
+    /**
+     * Everything about this lease that makes the undo above impossible — asked of
+     * every lease of the batch <em>before</em> a single journal is reversed.
+     *
+     * <p><b>Why up front rather than as a failure part-way through.</b> The reverse
+     * is one transaction, so a late refusal would roll back correctly; what it would
+     * not do is tell the truth. "Reverse batch" is a button an accountant presses
+     * after reading a list of six hundred contracts, and the answer they need is
+     * <em>which</em> contract is in the way and why — not a rollback and a message
+     * about the first one the loop happened to reach.</p>
+     *
+     * <p>The cases are all the same shape: something real happened to this contract
+     * after the cut-over, and taking the import off the books would leave that
+     * something with nothing behind it. A terminated, settled, amended, extended or
+     * renewed lease; a cheque that has cleared, bounced, been replaced or been
+     * handed back since; rent a month-end close has already recognised; a penalty
+     * finance has raised. Each of those is a fact the batch does not own and cannot
+     * undo, so the honest answer is to name it and refuse.</p>
+     *
+     * @param batchId the batch being reversed — what a journal must carry to count
+     *                as this import's own work rather than as something that
+     *                happened afterwards.
+     * @return one sentence per blocker, naming the contract; empty when the lease
+     *         can go back to a clean DRAFT. A lease id that no longer resolves, or
+     *         that belongs to another tenant, blocks nothing: {@link #revertToDraft}
+     *         ignores it too.
+     */
+    List<String> blockersAgainstRevert(UUID leaseId, UUID batchId);
 }
