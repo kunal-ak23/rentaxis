@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -22,8 +23,63 @@ public class LeaseSettlement extends BaseTenantEntity {
     @Column(name = "lease_id", nullable = false)
     private UUID leaseId;
 
+    /**
+     * Legacy name for {@link #depositsHeld}: what the landlord is holding, read
+     * off the ledger. Kept because it is {@code NOT NULL} and the renter portal
+     * still reads it; written with the same figure.
+     */
     @Column(name = "deposit_amount", nullable = false)
     private BigDecimal depositAmount;
+
+    // ------------------------------------------------------------------
+    // the statement, snapshotted by finalise (changeset 85, spec §9.2)
+    //
+    // A draft's statement is recomputed from the ledger on every read, so these
+    // are the figures the STL was actually posted against rather than a cache.
+    // They stop moving the moment the settlement is FINALIZED, which is the whole
+    // point: the journal is immutable and the statement that explains it has to be
+    // too, however many cheques clear afterwards.
+    // ------------------------------------------------------------------
+
+    /** The date the {@code STL} carries. Null while the settlement is a draft. */
+    @Column(name = "settlement_date")
+    private LocalDate settlementDate;
+
+    @Column(name = "earned_rent", nullable = false)
+    private BigDecimal earnedRent = BigDecimal.ZERO;
+
+    @Column(name = "received_total", nullable = false)
+    private BigDecimal receivedTotal = BigDecimal.ZERO;
+
+    /** Debit-positive: +ve the renter owes, −ve the landlord does. */
+    @Column(name = "receivable_balance", nullable = false)
+    private BigDecimal receivableBalance = BigDecimal.ZERO;
+
+    @Column(name = "deposits_held", nullable = false)
+    private BigDecimal depositsHeld = BigDecimal.ZERO;
+
+    @Column(name = "penalties_outstanding", nullable = false)
+    private BigDecimal penaltiesOutstanding = BigDecimal.ZERO;
+
+    /**
+     * What the renter still owes after the deposit was applied, as a positive
+     * number; zero when the settlement refunds. {@link #refundAmount} is the other
+     * half of the same figure and exactly one of the two is ever non-zero.
+     */
+    @Column(name = "balance_due", nullable = false)
+    private BigDecimal balanceDue = BigDecimal.ZERO;
+
+    /** The account the refund was paid from; null when nothing was refunded. */
+    @Column(name = "refund_bank_account_id")
+    private UUID refundBankAccountId;
+
+    /** The {@code STL}. Null on a draft, and null on a finalised settlement that had nothing to post. */
+    @Column(name = "journal_id")
+    private UUID journalId;
+
+    /** The CASH row raised to collect a balance the deposit could not cover. */
+    @Column(name = "collection_cheque_id")
+    private UUID collectionChequeId;
 
     @Column(name = "total_deductions", nullable = false)
     private BigDecimal totalDeductions;

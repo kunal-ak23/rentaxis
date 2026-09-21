@@ -15,6 +15,8 @@ import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminationPreviewDTO;
+import com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest;
+import com.datagami.rentaxis.api.dto.settlement.SettlementStatementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.cheque.ChequeDetailsService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -268,14 +270,25 @@ public class LeaseController {
         return ResponseEntity.ok(leaseTerminationService.terminate(id, request, byUser));
     }
 
+    /**
+     * The move-out statement, computed live from the ledger (spec §9.2).
+     *
+     * <p>The path is the one the screen has always called; what comes back is no
+     * longer a deposit-minus-arrears guess but the statement itself — earned rent,
+     * cleared receipts, the receivable's own balance, deposits held, outstanding
+     * penalties, the draft's lines and the net refund. ACCOUNTANT is admitted
+     * because this is a finance document; a PROPERTY_MANAGER is admitted for the
+     * buildings they were assigned and scoped to them by {@code LeaseAccessPolicy}
+     * (a lease elsewhere is a 404, not a 403).</p>
+     */
     @GetMapping("/{id}/settlement/preview")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    public ResponseEntity<SettlementPreviewDTO> getSettlementPreview(@PathVariable UUID id) {
-        return ResponseEntity.ok(settlementService.getSettlementPreview(id));
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<SettlementStatementDTO> getSettlementStatement(@PathVariable UUID id) {
+        return ResponseEntity.ok(settlementService.statement(id));
     }
 
     @GetMapping("/{id}/settlement")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
@@ -284,8 +297,16 @@ public class LeaseController {
         }
     }
 
+    /**
+     * Save the settlement's lines.
+     *
+     * <p>PROPERTY_MANAGER is <em>not</em> here, and that asymmetry with the
+     * statement above is the same one preview/terminate draws: deciding what comes
+     * out of a renter's deposit is the accountant's call, looking at what a move-out
+     * costs is the building manager's.</p>
+     */
     @PostMapping("/{id}/settlement/draft")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
             @PathVariable UUID id,
             @Valid @RequestBody SaveSettlementDTO dto,
@@ -297,27 +318,29 @@ public class LeaseController {
     }
 
     /**
-     * Finalise the settlement.
+     * Finalise the settlement: one {@code STL} on {@code settlementDate}, and the
+     * lease CLOSED when nothing is left to collect (spec §9.2).
      *
-     * <p><b>It no longer terminates the lease.</b> Termination is its own act with
+     * <p><b>It does not terminate the lease.</b> Termination is its own act with
      * its own date, its own cheque decisions and its own journals
      * ({@code POST /{id}/terminate}), and it happens <em>first</em>: the statement
      * this finalises is drawn from the receivable that termination leaves behind.
-     * Folding the two together meant finalising a settlement silently flipped a
-     * contract to TERMINATED with today's date, no cheques returned and next
-     * September's rent still scheduled to be earned. Task 6 rewrites what finalise
-     * posts; this call now returns the lease unchanged apart from the settlement.</p>
+     * A lease that is still running is refused.</p>
+     *
+     * <p>Returns the settlement, not the lease: the interesting result is the
+     * journal number, the refund or balance due, and the collection row — all of
+     * which are on the settlement. The lease's new status is one more
+     * {@code GET /leases/{id}} away and the screen already has it.</p>
      */
     @PostMapping("/{id}/settlement/finalize")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    @Transactional
-    public ResponseEntity<LeaseDTO> finalizeSettlement(
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<SettlementResponseDTO> finalizeSettlement(
             @PathVariable UUID id,
+            @RequestBody FinalizeSettlementRequest body,
             HttpServletRequest request) {
         String userIdStr = request.getHeader("X-User-Id");
         UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
-        settlementService.finalizeSettlement(id, settledBy);
-        return ResponseEntity.ok(leaseService.getLeaseById(id));
+        return ResponseEntity.ok(settlementService.finalizeSettlement(id, body, settledBy));
     }
 
     // --- Renewal chain and extension (spec §6.6, §6.7) ---------------------

@@ -104,6 +104,13 @@ public class ChequeService {
     private static final Set<LeaseStatus> POSTED = EnumSet.of(
             LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
 
+    /**
+     * A contract that has ended and is being settled. Its register is closed to
+     * everything but {@link #addSettlementCollectionRow}.
+     */
+    private static final Set<LeaseStatus> SETTLEABLE = EnumSet.of(
+            LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.CLOSED);
+
     private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;
     private final LeaseEventRepository leaseEventRepository;
@@ -579,9 +586,42 @@ public class ChequeService {
             throw new BusinessRuleViolationException(
                     "This lease is " + lease.getStatus() + "; use the cheque grid to add rows until it is posted.");
         }
+        return addRow(lease, row);
+    }
+
+    /**
+     * The one row a lease may still acquire after it has ended: the balance a
+     * settlement could not cover out of the deposit (spec §9.2).
+     *
+     * <p><b>Not a widening of {@link #addRowToPostedLease}.</b> That method refuses
+     * a TERMINATED lease on purpose — a contract that has ended must not grow new
+     * instalments, and every user-facing door into the register goes through it. A
+     * settlement is the single legitimate exception: the renter genuinely owes
+     * money at the moment the tenancy closes, the debt is already sitting in rent
+     * receivable, and it needs an instrument to be collected on. Restricted to
+     * {@link #SETTLEABLE} statuses rather than "any status", so this cannot become
+     * the back door either.</p>
+     *
+     * <p>The row is ordinary in every other way: the same {@code PDR}, the same
+     * lifecycle, the same clearing rules. {@code SettlementService} is its only
+     * caller.</p>
+     */
+    @Transactional
+    public ChequeDTO addSettlementCollectionRow(UUID leaseId, ChequeRowInput row) {
+        Lease lease = lockLease(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
+        if (!POSTED.contains(lease.getStatus()) && !SETTLEABLE.contains(lease.getStatus())) {
+            throw new BusinessRuleViolationException(
+                    "This lease is " + lease.getStatus() + "; a settlement collection row needs a lease that has ended.");
+        }
+        return addRow(lease, row);
+    }
+
+    /** The shared body: validate against the register, register the row, post its PDR. */
+    private ChequeDTO addRow(Lease lease, ChequeRowInput row) {
         // Read once: the numbers already taken and the last position come off the
         // same list, and a second query would be a second chance to disagree.
-        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         ChequeRowRules.validateNewRows(List.of(row), takenNumbers(register), "row");
 
         Cheque cheque = newRow(lease, row, nextSeqNo(register), LocalDate.now());
