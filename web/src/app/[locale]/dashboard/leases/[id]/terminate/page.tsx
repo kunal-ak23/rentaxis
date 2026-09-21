@@ -75,6 +75,7 @@ export default function TerminateLeasePage() {
     const leaseId = params.id as string;
 
     const t = useTranslations("Termination");
+    const tLeasing = useTranslations("Leasing");
     const tLedger = useTranslations("Ledger");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -160,6 +161,8 @@ export default function TerminateLeasePage() {
 
     const rows = useMemo(() => (preview ? unclearedRows(preview) : []), [preview]);
     const receivableAfter = preview ? receivableAfterForSplit(preview, decisions) : 0;
+    /** Absent on an older server, and zero on every residential tenancy. */
+    const unearnedVat = preview?.unearnedVat ?? 0;
     const returnedCount = rows.filter(c => decisions[c.id] === "RETURN").length;
 
     const submit = async () => {
@@ -214,6 +217,7 @@ export default function TerminateLeasePage() {
                     href={`/dashboard/leases/${leaseId}`}
                     className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground"
                     data-testid="terminate-back"
+                    aria-label={t("backToLease")}
                 >
                     <ArrowLeft size={18} />
                 </Link>
@@ -231,7 +235,9 @@ export default function TerminateLeasePage() {
                     data-testid="terminate-not-terminable"
                     className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-sm"
                 >
-                    {t("notTerminable", { status: lease.status })}
+                    {/* The label, never the Java enum — in Arabic the raw token
+                        was the only Latin text in the sentence. */}
+                    {t("notTerminable", { status: tLeasing(`leaseStatus.${lease.status}`) })}
                 </div>
             )}
 
@@ -294,6 +300,22 @@ export default function TerminateLeasePage() {
                                     value={fmtAmount(preview.unearnedRent)}
                                     testId="terminate-unearned"
                                 />
+                                {/*
+                                  Only when there is any. It is zero on every
+                                  residential tenancy, and a permanent 0.00 card
+                                  beside four real figures reads as an omission
+                                  rather than as a fact. `receivableAfter`
+                                  already nets it off, so this is a disclosure,
+                                  not a term of the arithmetic.
+                                */}
+                                {unearnedVat > 0 && (
+                                    <Figure
+                                        label={t("unearnedVat")}
+                                        value={fmtAmount(unearnedVat)}
+                                        hint={t("unearnedVatHint")}
+                                        testId="terminate-unearned-vat"
+                                    />
+                                )}
                                 <Figure
                                     label={t("receivableAfter")}
                                     value={fmtAmount(receivableAfter)}

@@ -130,6 +130,16 @@ export const PERMISSIONS = {
     // purpose: reading the consequences of a move-out is the building manager's
     // job, posting the journals that end the contract is the accountant's.
     canPreviewTermination: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Taking a renter's notice: POST /leases/{id}/notice, ACTIVE → NOTICE_GIVEN.
+    // Mirrors LeaseController#giveNotice's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')")
+    // (LeaseController.java:250-251).
+    //
+    // Its own key rather than a reuse of canTerminateLeases: the annotation is
+    // one role wider, deliberately, because taking a notice writes no journal,
+    // hands nothing back and leaves every instrument on the register exactly
+    // where it was — which is the building manager's job, not finance's.
+    canGiveNotice: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     // Reading the move-out statement and the stored settlement row. Mirrors
     // LeaseController#getSettlementStatement and #getSettlement
     // (LeaseController.java:309-316) — both SA/TA/ACCOUNTANT/PM.

@@ -38,6 +38,10 @@ type Props = {
 
 export default function ChequeReturnTable({ rows, bounced, decisions, onChange, disabled }: Props) {
     const t = useTranslations("Termination");
+    // `mode` is a Java enum, and every other screen renders it through
+    // `Leasing.mode.*` — on the Arabic termination table these were the only
+    // Latin tokens in the grid.
+    const tLeasing = useTranslations("Leasing");
     const locale = useLocale();
 
     return (
@@ -67,7 +71,7 @@ export default function ChequeReturnTable({ rows, bounced, decisions, onChange, 
                                         <td className={`${td} tabular-nums`}>{c.seqNo}</td>
                                         <td className={td}>{c.chequeNumber || "—"}</td>
                                         <td className={td}>{fmtIsoDate(c.chequeDate, locale)}</td>
-                                        <td className={td}>{c.mode}</td>
+                                        <td className={td}>{tLeasing(`mode.${c.mode}`)}</td>
                                         <td className={`${td} text-end tabular-nums`}>{fmtAmount(c.amount)}</td>
                                         <td className={td}>
                                             <div

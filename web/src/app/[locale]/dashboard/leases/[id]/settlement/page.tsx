@@ -40,10 +40,14 @@ import {
  *
  * The gates, each mirroring `SettlementService`:
  *
- *  - only a TERMINATED / EXPIRED / CLOSED lease may be settled (`SETTLEABLE`
- *    :119-120, `requireSettleable` :645-660) — termination is its own act with
+ *  - only a TERMINATED / EXPIRED / RENEWED lease may be settled (`SETTLEABLE`
+ *    :144-145, `requireSettleable` :758-762) — termination is its own act with
  *    its own date and its own journals, and this statement is drawn from the
- *    receivable it leaves behind;
+ *    receivable it leaves behind. RENEWED is in because a predecessor that
+ *    settles instead of carrying its deposit forward is settled like any other
+ *    (spec §6.6); **CLOSED is not**, because closure already requires a
+ *    FINALIZED settlement — a closed contract's statement is a document to read,
+ *    never one to finalise, which is exactly what this page shows for it;
  *  - PENALTIES / UNPAID_RENT / PREPAID_RENT / UTILITY_OVERPAYMENT are not
  *    offered at all (:737-761): all four are already inside
  *    `receivableBalance`, which the statement subtracts;
@@ -59,7 +63,18 @@ import {
  * status back afterwards instead of promising closure.
  */
 
-const SETTLEABLE: LeaseDetail["status"][] = ["TERMINATED", "EXPIRED", "CLOSED"];
+const SETTLEABLE: LeaseDetail["status"][] = ["TERMINATED", "EXPIRED", "RENEWED"];
+
+/**
+ * The sentence `requireOutstandingAcknowledged` (`SettlementService` :774)
+ * answers with. The client cannot always know `instrumentsOutstanding` — the
+ * field is optional on the statement — so when the refusal is *this* one, the
+ * checkbox that satisfies it is revealed rather than left off the screen, and
+ * the server's own message carries the amount.
+ */
+function refusedForAcknowledgement(message: string): boolean {
+    return /outstanding/i.test(message) && /acknowledge/i.test(message);
+}
 
 const th = "text-start px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider";
 const td = "px-3 py-2 text-xs align-top";
@@ -190,6 +205,8 @@ export default function SettlementPage() {
     const leaseId = params.id as string;
 
     const t = useTranslations("Settlement");
+    const tLeasing = useTranslations("Leasing");
+    const tCheques = useTranslations("Cheques");
     const tLedger = useTranslations("Ledger");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -208,6 +225,14 @@ export default function SettlementPage() {
     const [settlementDate, setSettlementDate] = useState<string | null>(null);
     const [refundBankAccountId, setRefundBankAccountId] = useState<string | null>(null);
     const [acknowledged, setAcknowledged] = useState(false);
+    /**
+     * Set when a finalise is refused for the acknowledgement the screen did not
+     * know to ask for — `instrumentsOutstanding` is optional on the statement,
+     * and a client that reads an absent value as 0 hides the checkbox, sends
+     * `acknowledgeOutstanding: false` and leaves the user with a refusal and no
+     * control on screen that could satisfy it.
+     */
+    const [ackDemanded, setAckDemanded] = useState(false);
 
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -335,7 +360,7 @@ export default function SettlementPage() {
     // Absent means 0 — the same thing the screen shows when the register really
     // is empty, and finalise re-checks it either way.
     const instrumentsOutstanding = statement?.instrumentsOutstanding ?? 0;
-    const needsAcknowledgement = refunds && instrumentsOutstanding > 0;
+    const needsAcknowledgement = refunds && (instrumentsOutstanding > 0 || ackDemanded);
 
     const canFinalize =
         editable
@@ -421,7 +446,15 @@ export default function SettlementPage() {
             if (detail) setLease(detail);
             setClosure(detail?.status === "CLOSED" ? "CLOSED" : "OPEN");
         } catch (e) {
-            setFinalizeError(e instanceof ApiError ? e.message : t("finalizeFailed"));
+            const message = e instanceof ApiError ? e.message : t("finalizeFailed");
+            setFinalizeError(message);
+            // The one refusal the screen can answer with a control rather than
+            // with an apology.
+            if (e instanceof ApiError && refusedForAcknowledgement(message)) {
+                setAckDemanded(true);
+                setAcknowledged(false);
+            }
+            setConfirmOpen(false);
         } finally {
             setFinalizing(false);
         }
@@ -484,6 +517,7 @@ export default function SettlementPage() {
                 <Link
                     href={`/dashboard/leases/${leaseId}`}
                     data-testid="settlement-back"
+                    aria-label={t("backToLease")}
                     className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground"
                 >
                     <ArrowLeft size={18} />
@@ -532,7 +566,8 @@ export default function SettlementPage() {
                     data-testid="settlement-not-settleable"
                     className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-sm flex flex-wrap items-center gap-2"
                 >
-                    <span>{t("notSettleable", { status: lease.status })}</span>
+                    {/* The label, not the Java enum (`Leasing.leaseStatus.*`). */}
+                    <span>{t("notSettleable", { status: tLeasing(`leaseStatus.${lease.status}`) })}</span>
                     {canTerminate && (
                         <Link
                             href={`/dashboard/leases/${leaseId}/terminate`}
@@ -601,13 +636,34 @@ export default function SettlementPage() {
                         hint={t("penaltiesHint")}
                         testId="settlement-penalties"
                     />
-                    <Figure
-                        label={t("instrumentsOutstanding")}
-                        value={fmtAmount(instrumentsOutstanding)}
-                        hint={t("instrumentsHint")}
-                        testId="settlement-instruments"
-                        tone={instrumentsOutstanding > 0 ? "warning" : "default"}
-                    />
+                    {/*
+                      Every other figure on a FINALIZED settlement comes from the
+                      stored snapshot. This one has no column to come from
+                      (`SettlementResponseDTO` carries no acknowledged figure —
+                      issue #291), and left reading the live statement it drifts:
+                      a cheque that clears after finalising silently changes one
+                      tile of a document that is supposed to be frozen. So after
+                      FINALIZED it is not shown as a figure at all.
+                    */}
+                    {finalized ? (
+                        <div
+                            className="bg-surface border border-border rounded-xl px-4 py-3"
+                            data-testid="settlement-instruments-frozen"
+                        >
+                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+                                {t("instrumentsOutstanding")}
+                            </p>
+                            <p className="text-[11px] text-muted mt-1">{t("instrumentsFrozen")}</p>
+                        </div>
+                    ) : (
+                        <Figure
+                            label={t("instrumentsOutstanding")}
+                            value={fmtAmount(instrumentsOutstanding)}
+                            hint={t("instrumentsHint")}
+                            testId="settlement-instruments"
+                            tone={instrumentsOutstanding > 0 ? "warning" : "default"}
+                        />
+                    )}
                 </div>
             )}
 
@@ -634,7 +690,10 @@ export default function SettlementPage() {
                                     <tr key={i.id} data-testid={`settlement-outstanding-${i.id}`} className="border-t border-border">
                                         <td className={`${td} tabular-nums`}>{i.seqNo}</td>
                                         <td className={td}>
-                                            {i.chequeNumber || i.mode}
+                                            {/* `mode` and `status` are Java enums; every
+                                                other screen renders them through
+                                                `Leasing.mode.*` / `Cheques.status.*`. */}
+                                            {i.chequeNumber || tLeasing(`mode.${i.mode}`)}
                                             {i.penaltyCollection && (
                                                 <span className="ms-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-warning/10 text-warning uppercase">
                                                     {t("penaltyRow")}
@@ -643,7 +702,7 @@ export default function SettlementPage() {
                                         </td>
                                         <td className={td}>{fmtIsoDate(i.chequeDate, locale)}</td>
                                         <td className={`${td} text-end tabular-nums`}>{fmtAmount(i.amount)}</td>
-                                        <td className={`${td} text-muted`}>{i.status}</td>
+                                        <td className={`${td} text-muted`}>{tCheques(`status.${i.status}`)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -804,7 +863,16 @@ export default function SettlementPage() {
                                 className="mt-0.5"
                             />
                             <span>
-                                {t("acknowledgeOutstanding", { amount: fmtAmount(instrumentsOutstanding) })}
+                                {/*
+                                  When the statement carried the figure, name it.
+                                  When it did not and the server had to say so,
+                                  the server's own sentence is on screen just
+                                  above (`settlement-finalize-error`), so this
+                                  asks without inventing an amount.
+                                */}
+                                {instrumentsOutstanding > 0
+                                    ? t("acknowledgeOutstanding", { amount: fmtAmount(instrumentsOutstanding) })
+                                    : t("acknowledgeOutstandingUnknown")}
                                 {!acknowledged && (
                                     <span id="settlement-acknowledge-required" className="block mt-0.5">
                                         {t("acknowledgeRequired")}

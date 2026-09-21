@@ -400,6 +400,18 @@ export type TerminationPreview = {
   earnedRentThroughDate: number;
   recognisedSoFar: number;
   unearnedRent: number;
+  /**
+   * The VAT charged on that unearned rent, which the same `TCR` credits back as
+   * a credit note (`Dr OUTPUT_VAT / Cr RENT_RECEIVABLE`). **Zero on a
+   * residential tenancy**, and zero for a deposit line whatever its flag says.
+   *
+   * Optional here and only here: a backend that has not shipped the field must
+   * not make the screen read `NaN` — an absent value is 0, which is what a
+   * residential tenancy's is anyway. `receivableAfter` below already has it
+   * netted in (`LeaseTerminationService` :155, :414-422), so the client's
+   * flip arithmetic never adds it a second time.
+   */
+  unearnedVat?: number;
   /** Uncleared rows dated after T — the default "hand the paper back". */
   chequesToReturn: Cheque[];
   /** Uncleared rows dated on or before T — the money was already due. */

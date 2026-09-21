@@ -354,7 +354,9 @@ describe("Settlement statement", () => {
         api.lease.mockResolvedValue({ ...LEASE, status: "ACTIVE", terminatedOn: null });
         renderPage();
 
-        expect(await screen.findByTestId("settlement-not-settleable")).toHaveTextContent("this one is ACTIVE");
+        // The label, not the Java enum: in Arabic this sentence read
+        // "هذا العقد ACTIVE." with the only Latin token in the banner.
+        expect(await screen.findByTestId("settlement-not-settleable")).toHaveTextContent("this one is Active");
         expect(screen.queryByTestId("settlement-finalize")).toBeNull();
         expect(screen.getByTestId("settlement-terminate-link")).toHaveAttribute(
             "href",
@@ -434,5 +436,134 @@ describe("Settlement statement", () => {
         api.statement.mockRejectedValue(new ApiError(500, "boom"));
         renderPage();
         expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    });
+
+    it("names the back arrow, which was icon-only", async () => {
+        renderPage();
+        expect(await screen.findByTestId("settlement-back")).toHaveAccessibleName("Back to contract");
+    });
+
+    it("translates the outstanding instruments' mode and status", async () => {
+        api.statement.mockResolvedValue(
+            statement({
+                instrumentsOutstanding: 12750,
+                outstandingInstruments: [{
+                    id: "c5", seqNo: 5, mode: "PDC", chequeNumber: null,
+                    chequeDate: "2026-08-01", amount: 12750, status: "DEPOSITED", penaltyCollection: false,
+                }],
+            }),
+        );
+        renderPage();
+        const row = await screen.findByTestId("settlement-outstanding-c5");
+        expect(row).toHaveTextContent("Post-Dated Cheque");
+        expect(row).toHaveTextContent("Deposited");
+        expect(row).not.toHaveTextContent("DEPOSITED");
+    });
+});
+
+/**
+ * `SettlementService.SETTLEABLE` (:144-145) is now {TERMINATED, EXPIRED,
+ * RENEWED}: a predecessor that settles instead of carrying its deposit forward
+ * is settled like any other (spec §6.6), and CLOSED was withdrawn — closure
+ * already requires a FINALIZED settlement, so a CLOSED lease is a statement to
+ * read, never one to finalise.
+ */
+describe("Which contracts may be settled", () => {
+    it("settles a RENEWED predecessor", async () => {
+        api.lease.mockResolvedValue({ ...LEASE, status: "RENEWED" });
+        renderPage();
+        await screen.findByTestId("settlement-earned-rent");
+        expect(screen.queryByTestId("settlement-not-settleable")).toBeNull();
+        expect(screen.getByTestId("settlement-finalize")).toBeInTheDocument();
+    });
+
+    it("reads a CLOSED contract's statement without offering to finalise it", async () => {
+        api.lease.mockResolvedValue({ ...LEASE, status: "CLOSED" });
+        renderPage();
+        expect(await screen.findByTestId("settlement-not-settleable")).toHaveTextContent("this one is Closed");
+        expect(screen.queryByTestId("settlement-finalize")).toBeNull();
+    });
+});
+
+/**
+ * M-6 / M-7 — the two edges of `instrumentsOutstanding`.
+ */
+describe("The instruments-outstanding tile", () => {
+    it("is hidden after FINALIZED rather than drifting away from the document", async () => {
+        api.statement.mockResolvedValue(statement({ instrumentsOutstanding: 12750 }));
+        api.get.mockResolvedValue(
+            stored({
+                status: "FINALIZED", settledAt: "2026-07-05T09:00:00Z", settledByName: "Aisha",
+                settlementDate: "2026-07-05", journalId: "j9", journalNumber: "STL/2026/0004",
+            }),
+        );
+        renderPage();
+
+        await screen.findByTestId("settlement-read-only");
+        // Every other figure switched to the stored snapshot; this one had
+        // nowhere to switch to, so it kept reading the live statement and a
+        // cheque clearing afterwards silently changed a frozen document.
+        expect(screen.queryByTestId("settlement-instruments")).toBeNull();
+        expect(screen.getByTestId("settlement-instruments-frozen")).toBeInTheDocument();
+    });
+
+    it("is shown as of today while the settlement is still a draft", async () => {
+        api.statement.mockResolvedValue(statement({ instrumentsOutstanding: 12750 }));
+        renderPage();
+        expect(await screen.findByTestId("settlement-instruments")).toHaveTextContent("12,750.00");
+        expect(screen.queryByTestId("settlement-instruments-frozen")).toBeNull();
+    });
+});
+
+describe("An acknowledgement the screen could not know about", () => {
+    it("reveals the checkbox with the server's own amount when finalise is refused for it", async () => {
+        // The statement does not carry the field at all — an older backend, or
+        // a shape the client must not read as "nothing outstanding".
+        const withoutField = statement();
+        delete withoutField.instrumentsOutstanding;
+        api.statement.mockResolvedValue(withoutField);
+        api.finalize.mockRejectedValue(
+            new ApiError(400, "AED 12,750.00 is still outstanding on the cheque register; acknowledge it to refund the deposit anyway"),
+        );
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        // Nothing to acknowledge as far as the screen knows.
+        expect(screen.queryByTestId("settlement-acknowledge")).toBeNull();
+
+        fireEvent.click(screen.getByTestId("settlement-finalize"));
+        fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
+
+        // The refusal now comes with the control that satisfies it, carrying
+        // the server's own sentence rather than a guessed figure.
+        const ack = await screen.findByTestId("settlement-acknowledge");
+        expect(screen.getByTestId("settlement-finalize-error")).toHaveTextContent("AED 12,750.00 is still outstanding");
+        expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
+
+        fireEvent.click(ack);
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
+
+        api.finalize.mockResolvedValue(
+            stored({ status: "FINALIZED", settlementDate: "2026-07-05", journalNumber: "STL/2026/0004" }),
+        );
+        fireEvent.click(screen.getByTestId("settlement-finalize"));
+        fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
+        await waitFor(() =>
+            expect(api.finalize).toHaveBeenLastCalledWith("lease-1", expect.objectContaining({
+                acknowledgeOutstanding: true,
+            })),
+        );
+    });
+
+    it("leaves an unrelated refusal alone — no checkbox for a locked period", async () => {
+        api.finalize.mockRejectedValue(new ApiError(400, "Books are locked through 2026-07-31."));
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        fireEvent.click(screen.getByTestId("settlement-finalize"));
+        fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
+
+        await screen.findByTestId("settlement-finalize-error");
+        expect(screen.queryByTestId("settlement-acknowledge")).toBeNull();
     });
 });

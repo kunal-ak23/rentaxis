@@ -88,6 +88,7 @@ const PREVIEW: TerminationPreview = {
     earnedRentThroughDate: 59835.62,
     recognisedSoFar: 49863.01,
     unearnedRent: 60164.38,
+    unearnedVat: 0,
     chequesToKeep: [cheque({ id: "c2", seqNo: 2, amount: 30000, chequeDate: "2026-04-01" })],
     chequesToReturn: [
         cheque({ id: "c3", seqNo: 3, amount: 30000, chequeDate: "2026-07-01" }),
@@ -179,7 +180,9 @@ describe("Termination page", () => {
         api.get.mockResolvedValue({ ...LEASE, status: "TERMINATED" });
         renderPage();
 
-        expect(await screen.findByTestId("terminate-not-terminable")).toHaveTextContent("This one is TERMINATED.");
+        // The status reaches the reader as its label, not as the Java enum —
+        // in Arabic the raw token was the only Latin text in the sentence.
+        expect(await screen.findByTestId("terminate-not-terminable")).toHaveTextContent("This one is Terminated.");
         expect(screen.queryByTestId("terminate-submit")).toBeNull();
         expect(api.preview).not.toHaveBeenCalled();
     });
@@ -189,5 +192,48 @@ describe("Termination page", () => {
         const date = await screen.findByTestId("terminate-date");
         expect(date).toHaveAttribute("min", "2026-01-01");
         expect(date).toHaveAttribute("max", "2026-12-31");
+    });
+
+    it("names the back arrow, which was icon-only", async () => {
+        renderPage();
+        expect(await screen.findByTestId("terminate-back")).toHaveAccessibleName("Back to contract");
+    });
+
+    it("translates the instrument's mode rather than printing the enum", async () => {
+        renderPage();
+        const row = await screen.findByTestId("terminate-row-c2");
+        expect(row).toHaveTextContent("Post-Dated Cheque");
+        expect(row).not.toHaveTextContent("PDC");
+    });
+});
+
+/**
+ * `TerminationPreviewDTO.unearnedVat` — the VAT on the unearned rent, which the
+ * same TCR credits back as a credit note (Dr OUTPUT_VAT / Cr RENT_RECEIVABLE).
+ * Zero on a residential tenancy, so it earns a card only when there is one.
+ * `receivableAfter` already has it netted in (`LeaseTerminationService` :155,
+ * :414-422), which is why the flip arithmetic does not touch it.
+ */
+describe("Unearned VAT", () => {
+    it("gets its own card on a commercial tenancy", async () => {
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        renderPage();
+        expect(await screen.findByTestId("terminate-unearned-vat")).toHaveTextContent("3,008.22");
+    });
+
+    it("is not shown at all when it is zero", async () => {
+        renderPage();
+        await screen.findByTestId("terminate-unearned");
+        expect(screen.queryByTestId("terminate-unearned-vat")).toBeNull();
+    });
+
+    it("is absent from an older server's answer and read as zero, not as NaN", async () => {
+        const withoutVat: TerminationPreview = { ...PREVIEW };
+        delete withoutVat.unearnedVat;
+        api.preview.mockResolvedValue(withoutVat);
+        renderPage();
+        await screen.findByTestId("terminate-unearned");
+        expect(screen.queryByTestId("terminate-unearned-vat")).toBeNull();
+        expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("5,000.00");
     });
 });

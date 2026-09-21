@@ -19,6 +19,24 @@ import { fmtIsoDate } from "./leaseMath";
  * only what the ledger has seen so far could never answer it. The footer does
  * the addition, and says whether the answer is the contract's rent.
  *
+ * **What the footer adds is the LIVE plan.** `RecognitionService.scheduleFor`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/recognition/RecognitionService.java:169-171)
+ * returns every entry the lease has ever had, in every status.
+ * `rebuildAfterAmend` (:238-259) marks the superseded POSTED rows REVERSED and
+ * the superseded PLANNED ones CANCELLED, **keeps their amounts**, and then lays
+ * a complete new schedule down beside them; `truncateForTermination` reverses
+ * the entry containing T and inserts a new, shorter row next to it. So Σ over
+ * every returned row is the sum of every version of the schedule that has ever
+ * existed — 111,000 on a 51,000 contract amended to 60,000 — which is not a
+ * figure about this contract at all. The retired rows stay on screen, struck and
+ * subtotalled separately, because an accountant reading a rebuilt schedule needs
+ * to see what it replaced.
+ *
+ * **After a termination there is no equality to check.** The plan stops at T, so
+ * it is deliberately shorter than the contract's rent, and "differs by" would be
+ * a false alarm on every terminated lease. The footer reports what has been
+ * recognised against what is planned instead.
+ *
  * `GET /leases/{id}/recognition` is one role wider than the month-end close
  * (`RecognitionController#schedule`, :110-111, admits PROPERTY_MANAGER): a
  * lease's schedule is part of the contract they manage. There is no action on
@@ -40,6 +58,21 @@ const STATUS_CLASS: Record<RecognitionStatus, string> = {
     CANCELLED: "bg-input text-muted/70 border-border line-through",
 };
 
+/**
+ * The rows that are still the plan. PLANNED is what the close will post;
+ * POSTED is what it already has. REVERSED and CANCELLED are the two ways
+ * `rebuildAfterAmend` and `truncateForTermination` retire a row they replaced.
+ */
+const LIVE: RecognitionStatus[] = ["PLANNED", "POSTED"];
+
+function isLive(r: RecognitionEntry): boolean {
+    return LIVE.includes(r.status);
+}
+
+function sum(rows: RecognitionEntry[]): number {
+    return Math.round(rows.reduce((s, r) => s + (r.amount ?? 0), 0) * 100) / 100;
+}
+
 type Props = {
     leaseId: string;
     /**
@@ -47,9 +80,15 @@ type Props = {
      * without it, and the caller is the only thing that knows the figure.
      */
     contractRent?: number | null;
+    /**
+     * Whether this contract was terminated (`LeaseDTO.terminatedOn != null`).
+     * A truncated schedule is meant to be short, so the footer reports progress
+     * rather than claiming a match it can never have.
+     */
+    terminated?: boolean;
 };
 
-export default function RecognitionScheduleTab({ leaseId, contractRent }: Props) {
+export default function RecognitionScheduleTab({ leaseId, contractRent, terminated }: Props) {
     const t = useTranslations("Recognition");
     const locale = useLocale();
 
@@ -74,13 +113,14 @@ export default function RecognitionScheduleTab({ leaseId, contractRent }: Props)
     }, [load]);
 
     /**
-     * Σ over the whole schedule, cancelled rows included: a cancelled slice is
-     * still a slice of the term the contract was signed for, and dropping it
-     * would make an amended lease look short by exactly the amount that was
-     * amended away. What the footer compares is the schedule against the rent,
-     * not the ledger against the rent — that is the Journals tab's question.
+     * Σ over the live plan; the retired rows get their own subtotal. What the
+     * footer compares is the schedule against the rent, not the ledger against
+     * the rent — that is the Journals tab's question.
      */
-    const total = useMemo(() => rows.reduce((s, r) => s + (r.amount ?? 0), 0), [rows]);
+    const total = useMemo(() => sum(rows.filter(isLive)), [rows]);
+    const supersededTotal = useMemo(() => sum(rows.filter(r => !isLive(r))), [rows]);
+    const supersededCount = useMemo(() => rows.filter(r => !isLive(r)).length, [rows]);
+    const recognised = useMemo(() => sum(rows.filter(r => r.status === "POSTED")), [rows]);
     const difference = contractRent == null ? null : Math.round((total - contractRent) * 100) / 100;
 
     if (loading) {
@@ -123,9 +163,13 @@ export default function RecognitionScheduleTab({ leaseId, contractRent }: Props)
                                 </td>
                                 <td className={`${td} text-end tabular-nums`}>{r.days}</td>
                                 <td
+                                    data-testid={`recognition-amount-${i}`}
                                     className={cn(
                                         `${td} text-end tabular-nums`,
-                                        r.status === "CANCELLED" && "line-through text-muted",
+                                        // Both ways a row is retired read the
+                                        // same: struck and muted, so the eye
+                                        // never adds them into the plan.
+                                        !isLive(r) && "line-through text-muted",
                                     )}
                                 >
                                     {fmtAmount(r.amount)}
@@ -164,6 +208,22 @@ export default function RecognitionScheduleTab({ leaseId, contractRent }: Props)
                     </tbody>
                     {rows.length > 0 && (
                         <tfoot>
+                            {supersededCount > 0 && (
+                                <tr className="border-t border-border">
+                                    <td className={`${td} text-muted`} colSpan={2}>
+                                        {t("scheduleSuperseded", { count: supersededCount })}
+                                    </td>
+                                    <td
+                                        className={`${td} text-end tabular-nums text-muted line-through`}
+                                        data-testid="recognition-schedule-superseded"
+                                    >
+                                        {fmtAmount(supersededTotal)}
+                                    </td>
+                                    <td className={`${td} text-[11px] text-muted`} colSpan={2}>
+                                        {t("scheduleSupersededHint")}
+                                    </td>
+                                </tr>
+                            )}
                             <tr className="border-t-2 border-border bg-input/30">
                                 <td className={`${td} font-semibold`} colSpan={2}>
                                     {t("scheduleTotal")}
@@ -175,18 +235,27 @@ export default function RecognitionScheduleTab({ leaseId, contractRent }: Props)
                                     {fmtAmount(total)}
                                 </td>
                                 <td className={td} colSpan={2}>
-                                    {difference !== null && (
-                                        <span
-                                            data-testid="recognition-schedule-check"
-                                            className={cn(
-                                                "text-[11px]",
-                                                difference === 0 ? "text-success" : "text-warning",
-                                            )}
-                                        >
-                                            {difference === 0
-                                                ? t("scheduleMatches")
-                                                : t("scheduleDiffers", { amount: fmtAmount(Math.abs(difference)) })}
+                                    {terminated ? (
+                                        <span data-testid="recognition-schedule-check" className="text-[11px] text-muted">
+                                            {t("scheduleRecognisedOfPlanned", {
+                                                recognised: fmtAmount(recognised),
+                                                planned: fmtAmount(total),
+                                            })}
                                         </span>
+                                    ) : (
+                                        difference !== null && (
+                                            <span
+                                                data-testid="recognition-schedule-check"
+                                                className={cn(
+                                                    "text-[11px]",
+                                                    difference === 0 ? "text-success" : "text-warning",
+                                                )}
+                                            >
+                                                {difference === 0
+                                                    ? t("scheduleMatches")
+                                                    : t("scheduleDiffers", { amount: fmtAmount(Math.abs(difference)) })}
+                                            </span>
+                                        )
                                     )}
                                 </td>
                             </tr>

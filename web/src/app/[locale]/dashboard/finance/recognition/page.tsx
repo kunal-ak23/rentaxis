@@ -299,12 +299,38 @@ export default function RecognitionPage() {
                         <p className="text-xs text-muted" data-testid="recognition-nothing">{t("nothingToPost")}</p>
                     )}
                     {result.skippedLocked > 0 && (
-                        <p className="text-xs text-warning" data-testid="recognition-skipped">
-                            {t("skippedLockedNote", {
-                                count: result.skippedLocked,
-                                date: fmtIsoDate(result.booksLockedThrough, locale),
-                            })}
-                        </p>
+                        <>
+                            <p className="text-xs text-warning" data-testid="recognition-skipped">
+                                {t("skippedLockedNote", {
+                                    count: result.skippedLocked,
+                                    date: fmtIsoDate(result.booksLockedThrough, locale),
+                                })}
+                            </p>
+                            {/*
+                              The count alone is not something an accountant can
+                              act on — reopening a period means knowing WHICH
+                              contracts and WHICH months are behind the lock, and
+                              the backend sends the rows for exactly that.
+                            */}
+                            {result.skippedLockedEntries.length > 0 && (
+                                <ul
+                                    className="list-disc ps-5 space-y-0.5"
+                                    aria-label={t("skippedLocked")}
+                                    data-testid="recognition-skipped-entries"
+                                >
+                                    {result.skippedLockedEntries.map(e => (
+                                        <li key={e.id} className="text-[11px] text-muted">
+                                            {fmtIsoDate(e.periodStart, locale)} – {fmtIsoDate(e.periodEnd, locale)}
+                                            {" · "}
+                                            {t("unit")} {e.unitName ?? "—"}
+                                            {e.propertyName ? ` · ${e.propertyName}` : ""}
+                                            {" · "}
+                                            {fmtAmount(e.amount)}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </>
                     )}
                     {result.errors.length > 0 && (
                         <ul className="list-disc ps-5 space-y-1" data-testid="recognition-errors">

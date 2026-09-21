@@ -1,4 +1,4 @@
-import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
+import type { ChequeMode, ChequeStatus, LeaseStatus } from "@/lib/api/leasing";
 
 /**
  * What a cheque row offers, by the state and the instrument it is in.
@@ -45,11 +45,96 @@ export type RegisterAction =
     | "receipt"
     | "releaseOnline";
 
+/**
+ * A lease whose EXISTING register rows may still move — the client mirror of
+ * `ChequeService.COLLECTABLE`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/cheque/ChequeService.java:145-147),
+ * which `requireCollectable` (:1232) enforces on **every** transition:
+ * `deposit`, `clear`, `receive`, `bounce`, `replace`, `cancel`,
+ * `returnToTenant` and `releaseOnline`.
+ *
+ * TERMINATED is in: §9.1's keep list leaves uncleared instruments dated on or
+ * before T on the register precisely so they can still be banked, and §9.2
+ * raises a CASH balance-due row on that same lease.
+ *
+ * **CLOSED is deliberately absent**, and that is the whole point of this set: a
+ * closed contract has a finalised settlement and nothing outstanding, so a
+ * transition on it would be a movement after the books on that tenancy were
+ * shut. DRAFT and PENDING_SIGNATURE are absent too — their rows are a proposal,
+ * and the grid types them in place rather than moving them through the register.
+ */
+export const COLLECTABLE_LEASE_STATUSES: LeaseStatus[] = [
+    "ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED", "TERMINATED",
+];
+
+/**
+ * A lease that is on the books **and still running** — the narrower set that may
+ * take a NEW row typed by a user: `ChequeService.POSTED` (:123-124), enforced by
+ * `addRowToPostedLease` (:649) behind `POST /cheques/lease/{id}/cash-receipt`.
+ *
+ * This is also the set that shapes a grid: generate, save rows, amend and extend
+ * all add or re-cut instalments on a contract that is still running.
+ *
+ * **EXPIRED was withdrawn from this set** (ChequeService's own note, review I2):
+ * a tenancy that has ended does not grow new instalments — what the renter still
+ * owes is collected through the settlement, which has its own internal door in
+ * `addCollectionRow`. A screen that still offers EXPIRED gets
+ * *"This lease is EXPIRED; use the cheque grid to add rows until it is posted."*
+ */
+export const POSTED_LEASE_STATUSES: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "RENEWED"];
+
+/** {@link COLLECTABLE_LEASE_STATUSES}, read strictly: an unknown status is not in it. */
+export function leaseIsCollectable(status: LeaseStatus | null | undefined): boolean {
+    return status != null && COLLECTABLE_LEASE_STATUSES.includes(status);
+}
+
+/** {@link POSTED_LEASE_STATUSES}, read strictly: an unknown status is not in it. */
+export function leaseTakesNewRows(status: LeaseStatus | null | undefined): boolean {
+    return status != null && POSTED_LEASE_STATUSES.includes(status);
+}
+
+/**
+ * What the caller knows about the row's contract.
+ *
+ * Optional as a whole because one caller genuinely cannot know: the finance
+ * register pages `ChequeDTO`, which carries no lease status and no settlement
+ * state. Omitting it keeps that screen exactly as it was rather than guessing —
+ * see the gap noted in the plan 3 fix report.
+ */
+export type RowLeaseContext = {
+    status?: LeaseStatus | null;
+    /**
+     * Whether this lease's settlement has been FINALIZED
+     * (`SettlementStatus.FINALIZED`, read from `GET /leases/{id}/settlement`).
+     */
+    settlementFinalized?: boolean | null;
+};
+
 export function registerActionsFor(
     status: ChequeStatus,
     mode: ChequeMode,
     canCancel: boolean,
+    lease?: RowLeaseContext,
 ): RegisterAction[] {
+    // A lease status the caller DID supply and that `requireCollectable` refuses
+    // closes the row completely: every verb below is a transition, and `details`
+    // and `receipt` are withheld with them so a finished contract reads as
+    // finished rather than as one button that happens to work.
+    if (lease?.status != null && !leaseIsCollectable(lease.status)) return [];
+
+    /**
+     * `requireSettlementUndisturbed` (ChequeService.java:1093) refuses a `cancel`
+     * or a `returnToTenant` that would put money back onto a contract the
+     * statement already balanced — *"The settlement was finalised counting on
+     * this cheque — replace it instead"*. The server's test is what the
+     * receivable would read after the reversal, which no client can compute, so
+     * the mirror is the verb: once a settlement is FINALIZED this table stops
+     * offering the reversal and leaves `replace`, which is the sentence's own
+     * advice and which `requireNotAlreadySettled` (:1062) refuses only in the
+     * narrower case where the settlement really did pay the debt off.
+     */
+    const cancellable = canCancel && lease?.settlementFinalized !== true;
+
     switch (status) {
         case "REGISTERED": {
             const actions: RegisterAction[] = [];
@@ -59,7 +144,7 @@ export function registerActionsFor(
             if (mode === "PDC") actions.push("deposit");
             else if (mode === "CASH" || mode === "TRANSFER") actions.push("receive");
             actions.push("details");
-            if (canCancel) actions.push("cancel");
+            if (cancellable) actions.push("cancel");
             return actions;
         }
         case "DEPOSITED":

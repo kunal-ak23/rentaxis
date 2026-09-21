@@ -208,6 +208,15 @@ describe("Month-end recognition page", () => {
         await waitFor(() => expect(screen.getByTestId("recognition-skipped")).toBeInTheDocument());
         expect(screen.getByTestId("recognition-skipped")).toHaveTextContent("2 entries fall in a period that is closed");
         expect(screen.getByTestId("recognition-errors")).toHaveTextContent("no RENT_INCOME account is mapped");
+
+        // The backend sends the rows, not just the count — "2 entries were
+        // skipped" is not something an accountant can act on, and the point of
+        // the locked-vs-failed split was to say WHICH.
+        const list = screen.getByTestId("recognition-skipped-entries");
+        expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+        expect(list).toHaveTextContent("512");
+        expect(list).toHaveTextContent("204");
+        expect(list).toHaveTextContent("01/08/2026 – 31/08/2026");
     });
 
     it("counts a single skipped row in the singular", async () => {

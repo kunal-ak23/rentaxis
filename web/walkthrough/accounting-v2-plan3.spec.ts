@@ -893,8 +893,15 @@ test('05 amending the lines rebuilds the schedule — the old rows are reversed,
             round2(fresh.reduce((s, r) => s + r.amount, 0)),
             'the new schedule is cut from the new rent',
         ).toBe(55_000);
+        // The footer adds the LIVE plan, not every version the lease has ever
+        // had: Σ over `after` is 111,000-style arithmetic across two schedules,
+        // which is not a figure about this contract. The retired rows get their
+        // own struck subtotal beside it.
         await expect(page.getByTestId('recognition-schedule-total')).toHaveText(
-            money(round2(after.reduce((s, r) => s + r.amount, 0))),
+            money(round2(fresh.reduce((s, r) => s + r.amount, 0))),
+        );
+        await expect(page.getByTestId('recognition-schedule-superseded')).toHaveText(
+            money(round2(old.reduce((s, r) => s + r.amount, 0))),
         );
 
         await assertTrialBalanceBalances('05');

@@ -41,6 +41,10 @@ const EXPECTED: Record<string, UserRole[]> = {
     canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
     // LeaseController#previewTermination
     canPreviewTermination: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#giveNotice (LeaseController.java:250-251) — one role wider
+    // than canTerminateLeases on purpose: taking a renter's notice writes no
+    // journal and hands nothing back, so it is the building manager's job.
+    canGiveNotice: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
     // LeaseController#getSettlementStatement / #getSettlement
     canViewSettlement: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
     // LeaseController#saveSettlementDraft / #finalizeSettlement — PM removed
