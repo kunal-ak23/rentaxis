@@ -179,3 +179,5 @@ databaseChangeLog:
       file: db/changelog/changesets/85-recognition-termination-settlement.yaml
   - include:
       file: db/changelog/changesets/86-rent-segment-lease-line-no-fk.yaml
+  - include:
+      file: db/changelog/changesets/87-vouchers.yaml

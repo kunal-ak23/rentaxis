@@ -1,0 +1,140 @@
+databaseChangeLog:
+  # Purchase/Service Invoice (PISR) and Bank/Cash Payment Voucher (BPV) — spec §10.1, §10.2.
+  #
+  # ONE TABLE FOR ALL VOUCHER TYPES. The spec makes `vouchers` shared for
+  # PISR/BPV/RCP because all three are the same shape: a dated header with a
+  # counterparty, a set of amount lines, and exactly one journal. Splitting them
+  # would give three near-identical tables and three list queries. The
+  # type-specific columns (payment_account_id / cheque_number / cheque_date for
+  # BPV, vendor_id / invoice_number for PISR) are nullable here and made
+  # required by VoucherService per doc_type, where the rule is readable.
+  #
+  # RCP is in the doc_type check constraint but unused until accounting v2
+  # plan 2 wires the rent receipt path (spec §9.3). Leaving it out would force
+  # a second changeset later for a one-word change.
+  #
+  # journal_id is NOT a foreign key with ON DELETE CASCADE, and vouchers are
+  # never deleted after posting: journal entries are immutable (changeset 81)
+  # and a posted voucher's journal must outlive any edit to the voucher.
+  # Amending posts a reversal and creates a NEW voucher row pointing back via
+  # amended_from_id, so the audit trail is a chain, not an overwrite.
+  - changeSet:
+      id: 87-vouchers
+      author: claude
+      comment: Voucher header/line/attachment tables for PISR and BPV
+      changes:
+        - createTable:
+            tableName: vouchers
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: doc_type, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: doc_date, type: date, constraints: { nullable: false } }
+              - column: { name: vendor_id, type: uuid }
+              - column: { name: invoice_number, type: varchar(60) }
+              - column: { name: narration, type: text }
+              - column: { name: property_id, type: uuid }
+              - column: { name: unit_id, type: uuid }
+              - column: { name: payment_account_id, type: uuid }
+              - column: { name: cheque_number, type: varchar(50) }
+              - column: { name: cheque_date, type: date }
+              - column: { name: status, type: varchar(10), defaultValue: DRAFT, constraints: { nullable: false } }
+              - column: { name: journal_id, type: uuid }
+              - column: { name: voucher_number, type: varchar(40) }
+              - column: { name: amended_from_id, type: uuid }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz }
+        - addForeignKeyConstraint:
+            baseTableName: vouchers
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_vouchers_tenant
+        - addForeignKeyConstraint:
+            baseTableName: vouchers
+            baseColumnNames: vendor_id
+            referencedTableName: vendors
+            referencedColumnNames: id
+            constraintName: fk_vouchers_vendor
+        - addForeignKeyConstraint:
+            baseTableName: vouchers
+            baseColumnNames: payment_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_vouchers_payment_account
+        - sql:
+            comment: doc_type and status are closed sets; a CHECK keeps a typo out of the ledger
+            sql: >-
+              ALTER TABLE vouchers
+                ADD CONSTRAINT ck_vouchers_doc_type CHECK (doc_type IN ('PISR','BPV','RCP')),
+                ADD CONSTRAINT ck_vouchers_status   CHECK (status IN ('DRAFT','POSTED','REVERSED'))
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_tenant_type_date, columns: [ { column: { name: tenant_id } }, { column: { name: doc_type } }, { column: { name: doc_date } } ] }
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_vendor, columns: [ { column: { name: vendor_id } } ] }
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_journal, columns: [ { column: { name: journal_id } } ] }
+
+        - createTable:
+            tableName: voucher_lines
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: voucher_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: line_no, type: int, constraints: { nullable: false } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: description, type: text }
+              - column: { name: amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: vat_rate, type: "decimal(5,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: vat_amount, type: "decimal(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid }
+              - column: { name: unit_id, type: uuid }
+        - addForeignKeyConstraint:
+            baseTableName: voucher_lines
+            baseColumnNames: voucher_id
+            referencedTableName: vouchers
+            referencedColumnNames: id
+            constraintName: fk_voucher_lines_voucher
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: voucher_lines
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_voucher_lines_account
+        - sql:
+            comment: >-
+              A zero or negative line would post a zero-amount or sign-flipped journal line.
+              PostingService rejects it too, but a draft should never be able to hold one.
+            sql: >-
+              ALTER TABLE voucher_lines
+                ADD CONSTRAINT ck_voucher_lines_amount_positive CHECK (amount > 0),
+                ADD CONSTRAINT ck_voucher_lines_vat_non_negative CHECK (vat_rate >= 0 AND vat_amount >= 0)
+        - sql:
+            comment: Line numbers are what the UI renders and what the journal narration cites
+            sql: >-
+              CREATE UNIQUE INDEX ux_voucher_lines_voucher_line_no ON voucher_lines (voucher_id, line_no)
+        - createIndex: { tableName: voucher_lines, indexName: idx_voucher_lines_account, columns: [ { column: { name: account_id } } ] }
+
+        - createTable:
+            tableName: voucher_attachments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: voucher_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: name, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: file_url, type: varchar(1024), constraints: { nullable: false } }
+              - column: { name: file_type, type: varchar(100) }
+              - column: { name: file_size, type: bigint }
+              - column: { name: uploaded_at, type: timestamptz, defaultValueComputed: now() }
+        - addForeignKeyConstraint:
+            baseTableName: voucher_attachments
+            baseColumnNames: voucher_id
+            referencedTableName: vouchers
+            referencedColumnNames: id
+            constraintName: fk_voucher_attachments_voucher
+            onDelete: CASCADE
+        - createIndex: { tableName: voucher_attachments, indexName: idx_voucher_attachments_voucher, columns: [ { column: { name: voucher_id } } ] }
+      rollback:
+        - dropTable: { tableName: voucher_attachments }
+        - dropTable: { tableName: voucher_lines }
+        - dropTable: { tableName: vouchers }
