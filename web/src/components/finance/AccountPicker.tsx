@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ledgerApi, type Account, type AccountSubType } from "@/lib/api/ledger";
+import { ledgerApi, type Account, type AccountSubType, type AccountType } from "@/lib/api/ledger";
 
 /**
  * The chart of accounts is small (hundreds of rows), tenant-wide and changes
@@ -32,6 +32,15 @@ type Props = {
     onChange: (id: string) => void;
     accountType?: string;
     /**
+     * Several types, where one is not enough. A purchase-invoice line is the
+     * case that needs it: `VoucherService.validate` accepts an EXPENSE **or** an
+     * ASSET leaf and refuses everything else, so a picker limited to one of the
+     * two would hide half the legal accounts and an unfiltered one would offer
+     * income and liability leaves the server always refuses. Ignored when
+     * `accountType` is also given.
+     */
+    accountTypes?: AccountType[];
+    /**
      * Narrow further than `accountType` — the sub-types a field can actually
      * hold. A cheque's debit account is the case that needs it: the server
      * accepts only BANK or CASH (see {@link SettlementAccountPicker}).
@@ -52,6 +61,7 @@ export default function AccountPicker({
     value,
     onChange,
     accountType,
+    accountTypes,
     accountSubTypes,
     leafOnly = true,
     groupOnly = false,
@@ -73,11 +83,12 @@ export default function AccountPicker({
                 .filter(a => (groupOnly ? a.group : !leafOnly || !a.group))
                 .filter(a => a.active)
                 .filter(a => !accountType || a.accountType === accountType)
+                .filter(a => accountType || !accountTypes || accountTypes.includes(a.accountType))
                 .filter(a => !accountSubTypes || (a.accountSubType !== null && accountSubTypes.includes(a.accountSubType)))
                 .filter(a => !propertyId || a.propertyId === null || a.propertyId === propertyId)
                 .filter(a => !q || `${a.code} ${a.name} ${a.alias ?? ""}`.toLowerCase().includes(q.toLowerCase()))
                 .slice(0, 50),
-        [accounts, q, accountType, accountSubTypes, leafOnly, groupOnly, propertyId],
+        [accounts, q, accountType, accountTypes, accountSubTypes, leafOnly, groupOnly, propertyId],
     );
 
     const selected = accounts.find(a => a.id === value);
