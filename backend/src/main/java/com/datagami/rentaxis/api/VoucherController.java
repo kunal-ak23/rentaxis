@@ -137,11 +137,34 @@ public class VoucherController {
         requireTenantSelected();
         VoucherAttachmentDTO meta = attachments.get(attachmentId);
         String contentType = meta.fileType() == null ? "application/octet-stream" : meta.fileType();
-        String safeName = meta.name().replaceAll("[\"\\r\\n\\\\/:*?<>|]", "_");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(meta.name()))
                 .contentType(MediaType.parseMediaType(contentType))
                 .body(new InputStreamResource(attachments.download(attachmentId)));
+    }
+
+    /**
+     * A safe {@code Content-Disposition} for an attachment's display name, which is
+     * free text a clerk typed and never trusted verbatim: an unescaped {@code "} or
+     * a raw CR/LF could inject extra header fields or corrupt the response line.
+     * Two filename params, per RFC 6266/5987 — {@code filename} is an ASCII-safe
+     * fallback (control characters and filesystem/header-special characters
+     * stripped) for a client that ignores {@code filename*}; {@code filename*} is
+     * percent-encoded UTF-8 of the real name, so a non-ASCII invoice name (Arabic,
+     * accented Latin) round-trips correctly in a client that honours it.
+     */
+    private static String contentDisposition(String rawName) {
+        String name = rawName == null ? "attachment" : rawName;
+        // An HTTP header value has to be US-ASCII (RFC 7230); a raw non-ASCII
+        // character surviving into this fallback param does not throw here, but
+        // silently produces a header the server or client drops entirely — which
+        // is how this shipped with a null Content-Disposition on any non-ASCII
+        // name before this fix (Task 5 fix round 1). Everything outside printable
+        // ASCII is replaced, on top of the filesystem/header-special characters.
+        String asciiSafe = name.replaceAll("[\"\\r\\n\\\\/:*?<>|]", "_").replaceAll("[^\\x20-\\x7E]", "_");
+        String encoded = java.net.URLEncoder.encode(name, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return "attachment; filename=\"" + asciiSafe + "\"; filename*=UTF-8''" + encoded;
     }
 
     @DeleteMapping("/attachments/{attachmentId}")

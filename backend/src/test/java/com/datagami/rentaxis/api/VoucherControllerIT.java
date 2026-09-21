@@ -25,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -59,6 +60,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
+// server.tomcat.max-swallow-size defaults to 2MB: after Tomcat aborts an
+// oversized multipart request and writes its error response, it only reads
+// ("swallows") up to this much of whatever the client is still sending before
+// giving up and resetting the connection. anOversizedUploadIsRejectedWithA400
+// sends an 11MB body, ~9MB more than the default swallow allowance, so without
+// this override the client's write races the server's reset and fails with a
+// misleading client-side "Broken pipe" instead of ever seeing the clean 400 the
+// test means to observe. Unlimited swallowing has no effect on any other test:
+// it only changes what happens to bytes still in flight after an error.
+@TestPropertySource(properties = "server.tomcat.max-swallow-size=-1")
 class VoucherControllerIT {
 
     @Container @ServiceConnection
@@ -73,6 +84,14 @@ class VoucherControllerIT {
     @Autowired TenantDefaultAccountMappingRepository defaults;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
+    @Autowired VoucherAttachmentRepository attachmentRepo;
+
+    /** A real "%PDF-" magic number, matching what {@link #pdfPart} already builds. */
+    private static final byte[] REAL_PDF_BYTES = "%PDF-1.4 fake".getBytes();
+    private static final byte[] REAL_PNG_BYTES = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 0};
+    private static final byte[] REAL_JPEG_BYTES = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0, 0, 0, 0};
+    /** Not any of the three accepted formats' magic number, whatever it is declared as. */
+    private static final byte[] NOT_REALLY_A_DOCUMENT = "MZ this is an executable, not a PDF".getBytes();
 
     UUID tenantId;
     Account expense;
@@ -162,6 +181,21 @@ class VoucherControllerIT {
                 .header("X-User-Tenant-Id", caller.getTenantId().toString());
         return spec.contentType(MediaType.MULTIPART_FORM_DATA).body(parts).retrieve()
                 .onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
+    }
+
+    /** Same shape as {@link #callWithoutTenant}, for the one multipart endpoint. */
+    private ResponseEntity<String> multipartCallWithoutTenant(String path, User caller,
+                                                               MultiValueMap<String, HttpEntity<?>> parts) {
+        RestClient.RequestBodySpec spec = client().method(HttpMethod.POST).uri(path)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
+        return spec.contentType(MediaType.MULTIPART_FORM_DATA).body(parts).retrieve()
+                .onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
+    }
+
+    /** No {@code X-User-*} headers at all — what an anonymous internet caller sends. */
+    private ResponseEntity<String> unauthenticatedGet(String path) {
+        return client().get().uri(path).retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
     }
 
     private JsonNode json(ResponseEntity<String> res) {
@@ -343,6 +377,13 @@ class VoucherControllerIT {
                 caller, null).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(call(HttpMethod.DELETE, "/api/v1/finance/vouchers/attachments/" + UUID.randomUUID(),
                 caller, null).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        String amendBody = json.writeValueAsString(Map.of(
+                "reversalDate", "2026-10-15", "reason", "x",
+                "replacement", json.readValue(pisrBody(vendor.getId(), expense.getId(), "10.00", "0"), Map.class)));
+        assertThat(call(HttpMethod.POST, "/api/v1/finance/vouchers/" + id + "/amend", caller, amendBody).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", caller,
+                pdfPart("invoice.pdf", "nope")).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
         // The refusal is really the role, not a broken fixture: the same calls succeed for an accountant.
         assertThat(call(HttpMethod.GET, "/api/v1/finance/vouchers", accountant, null).getStatusCode())
@@ -388,6 +429,11 @@ class VoucherControllerIT {
                 "reversalDate", "2026-10-15", "reason", "x",
                 "replacement", json.readValue(pisrBody(vendor.getId(), expense.getId(), "10.00", "0"), Map.class)));
         assertRefusedForNoTenant(HttpMethod.POST, "/api/v1/finance/vouchers/" + id + "/amend", amendBody);
+
+        ResponseEntity<String> uploadRes = multipartCallWithoutTenant(
+                "/api/v1/finance/vouchers/" + id + "/attachments", superAdmin, pdfPart("invoice.pdf", "x"));
+        assertThat(uploadRes.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(json(uploadRes).get("message").asText()).contains("Select an organisation first");
 
         // The refusal is the missing organisation, not the role: the same admin with one chosen succeeds.
         assertThat(call(HttpMethod.GET, "/api/v1/finance/vouchers", superAdmin, null).getStatusCode())
@@ -509,6 +555,151 @@ class VoucherControllerIT {
 
         ResponseEntity<String> res = multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant, b.build());
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * The declared {@code Content-Type} header is trivially spoofed: an honestly
+     * labelled {@code application/x-sh} is caught by the type allowlist alone (see
+     * {@link #anExecutableUploadIsRejected}), but that proves nothing about a file
+     * that lies and claims to be a PDF. This uploads bytes that are not really any
+     * of the three accepted formats, declared as {@code application/pdf}, and only
+     * the file-signature check can catch it.
+     */
+    @Test
+    void anExecutableLabelledAsAPdfIsRejectedBySignature() throws Exception {
+        JsonNode created = createPisr(accountant);
+        String id = created.get("id").asText();
+
+        MultipartBodyBuilder b = new MultipartBodyBuilder();
+        b.part("name", "nope");
+        b.part("file", new ByteArrayResource(NOT_REALLY_A_DOCUMENT) {
+            @Override public String getFilename() { return "invoice.pdf"; }
+        }).contentType(MediaType.APPLICATION_PDF);
+
+        ResponseEntity<String> res = multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant, b.build());
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * The inverse case: a file that really is one of the three accepted formats
+     * but is mislabelled. This is accepted — mislabelling is not spoofing, the
+     * bytes are still a real, harmless image — and the response stores the
+     * DETECTED type, not the declared one, per the security ruling's decision.
+     */
+    @Test
+    void aRealPngMislabelledAsJpegIsAcceptedAndStoredAsPng() throws Exception {
+        JsonNode created = createPisr(accountant);
+        String id = created.get("id").asText();
+
+        MultipartBodyBuilder b = new MultipartBodyBuilder();
+        b.part("name", "Mislabelled scan");
+        b.part("file", new ByteArrayResource(REAL_PNG_BYTES) {
+            @Override public String getFilename() { return "scan.jpg"; }
+        }).contentType(MediaType.IMAGE_JPEG);
+
+        ResponseEntity<String> res = multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant, b.build());
+        assertThat(res.getStatusCode()).as("upload failed: %s", res.getBody()).isEqualTo(HttpStatus.CREATED);
+        assertThat(json(res).get("fileType").asText()).isEqualTo("image/png");
+    }
+
+    /**
+     * A real JPEG is also accepted under its own declared type, proving the
+     * signature check is not PDF-only.
+     */
+    @Test
+    void aRealJpegIsAccepted() throws Exception {
+        JsonNode created = createPisr(accountant);
+        String id = created.get("id").asText();
+
+        MultipartBodyBuilder b = new MultipartBodyBuilder();
+        b.part("name", "Photo of the invoice");
+        b.part("file", new ByteArrayResource(REAL_JPEG_BYTES) {
+            @Override public String getFilename() { return "photo.jpg"; }
+        }).contentType(MediaType.IMAGE_JPEG);
+
+        ResponseEntity<String> res = multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant, b.build());
+        assertThat(res.getStatusCode()).as("upload failed: %s", res.getBody()).isEqualTo(HttpStatus.CREATED);
+        assertThat(json(res).get("fileType").asText()).isEqualTo("image/jpeg");
+    }
+
+    /**
+     * The service's own 10MB ceiling is now aligned with the global
+     * {@code spring.servlet.multipart.max-file-size}, so an oversized upload is
+     * rejected by the servlet layer before the controller runs, as a
+     * {@code MaxUploadSizeExceededException} — this proves {@code
+     * GlobalExceptionHandler} turns that into the app's usual 400 shape rather
+     * than letting it fall through to a raw 500.
+     */
+    @Test
+    void anOversizedUploadIsRejectedWithA400() throws Exception {
+        JsonNode created = createPisr(accountant);
+        String id = created.get("id").asText();
+
+        byte[] big = new byte[11 * 1024 * 1024];
+        System.arraycopy(REAL_PDF_BYTES, 0, big, 0, REAL_PDF_BYTES.length);
+        MultipartBodyBuilder b = new MultipartBodyBuilder();
+        b.part("name", "Huge scan");
+        b.part("file", new ByteArrayResource(big) {
+            @Override public String getFilename() { return "huge.pdf"; }
+        }).contentType(MediaType.APPLICATION_PDF);
+
+        ResponseEntity<String> res = multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant, b.build());
+        assertThat(res.getStatusCode()).as("body: %s", res.getBody()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(json(res).get("message").asText()).contains("larger than 10 MB");
+    }
+
+    /**
+     * The Critical fix: a voucher attachment's storage key must not be fetchable
+     * through the unauthenticated {@code /api/v1/assets/serve/**} endpoint, even
+     * though {@code SecurityConfig} {@code permitAll()}s that whole path. The DTO
+     * no longer exposes the key at all (see {@code VoucherAttachmentDTO}), so this
+     * reads it directly off the entity — the same key an attacker would have to
+     * obtain some other way (a log, a referrer, a screenshot) to try this attack.
+     */
+    @Test
+    void aVoucherAttachmentsStorageKeyIsNotPubliclyServable() throws Exception {
+        JsonNode created = createPisr(accountant);
+        String id = created.get("id").asText();
+        JsonNode uploaded = json(multipartCall("/api/v1/finance/vouchers/" + id + "/attachments", accountant,
+                pdfPart("invoice.pdf", "Vendor invoice — تقرير")));
+        String attachmentId = uploaded.get("id").asText();
+        assertThat(uploaded.has("fileUrl")).as("the DTO must never expose the storage key").isFalse();
+
+        VoucherAttachment entity = attachmentRepo.findById(UUID.fromString(attachmentId)).orElseThrow();
+        String storageKey = entity.getFileUrl();
+        assertThat(storageKey).contains("/private/");
+
+        ResponseEntity<String> raw = unauthenticatedGet(storageKey);
+        assertThat(raw.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        // The authenticated path still works, with a safe Content-Disposition:
+        // no raw CR/LF or quotes, and an RFC 5987 filename* for the non-ASCII name.
+        ResponseEntity<String> download = call(HttpMethod.GET,
+                "/api/v1/finance/vouchers/attachments/" + attachmentId + "/download", accountant, null);
+        assertThat(download.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(download.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+        String disposition = download.getHeaders().getFirst("Content-Disposition");
+        assertThat(disposition).doesNotContain("\r").doesNotContain("\n").contains("filename*=UTF-8''");
+    }
+
+    /**
+     * The prefix guard must not swallow ordinary public assets (logos, listing
+     * photos) — only the ones deliberately stored under {@code private/}.
+     */
+    @Test
+    void aNormalPublicAssetStillServesUnauthenticated() throws Exception {
+        MultipartBodyBuilder b = new MultipartBodyBuilder();
+        b.part("file", new ByteArrayResource(REAL_PNG_BYTES) {
+            @Override public String getFilename() { return "logo.png"; }
+        }).contentType(MediaType.IMAGE_PNG);
+
+        ResponseEntity<String> uploadRes = multipartCall("/api/v1/assets/upload", tenantAdmin, b.build());
+        assertThat(uploadRes.getStatusCode()).as("asset upload failed: %s", uploadRes.getBody()).isEqualTo(HttpStatus.OK);
+        String url = json(uploadRes).get("url").asText();
+        assertThat(url).doesNotContain("/private/");
+
+        ResponseEntity<String> served = unauthenticatedGet(url);
+        assertThat(served.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     /** Tenant isolation, not role: a 404, never a 403 that would confirm the attachment exists. */

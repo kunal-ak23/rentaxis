@@ -20,8 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -37,6 +39,10 @@ import java.util.UUID;
  *
  * <p>The allowed type list is narrower than the deduction one on purpose: a voucher
  * attachment is paperwork (a PDF or a photo of an invoice), never a video walkthrough.
+ * PDF/PNG/JPEG only (security ruling, Task 5 fix round 1) — HEIC/HEIF/WEBP were
+ * dropped along with the client-header-only trust: this class no longer has a
+ * signature to check them against, and the web only ever offers these three
+ * ({@code voucherRules.ts#ATTACHMENT_ACCEPT}).
  */
 @Service
 @RequiredArgsConstructor
@@ -47,9 +53,26 @@ public class VoucherAttachmentService {
     private final VoucherRepository vouchers;
 
     private static final int MAX_ATTACHMENTS_PER_VOUCHER = 10;
-    private static final long MAX_FILE_SIZE = 25L * 1024 * 1024;   // 25MB — an invoice scan, not a video
+    // Aligned to spring.servlet.multipart.max-file-size (application.yml): the
+    // global Tomcat/servlet limit wins regardless of what this constant says, so a
+    // higher value here was dead code that could never be exercised, and an upload
+    // between this value and the real one used to reach Tomcat's layer and surface
+    // as an unhandled MaxUploadSizeExceededException -> raw 500 (security ruling).
+    private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;   // 10MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
-            "application/pdf", "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp");
+            "application/pdf", "image/jpeg", "image/png");
+
+    /** Storage-key prefix {@code AssetController.serveAsset} refuses to serve unauthenticated. */
+    static final String PRIVATE_PREFIX = "private";
+
+    // File-signature ("magic number") prefixes for the three accepted formats. The
+    // client's declared Content-Type header is trivially spoofed -- an executable
+    // renamed invoice.pdf with Content-Type: application/pdf sails through a
+    // header-only check -- so the first bytes of the actual file are matched
+    // against these instead (security ruling, Task 5 fix round 1).
+    private static final byte[] PDF_SIGNATURE = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    private static final byte[] JPEG_SIGNATURE = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -75,11 +98,24 @@ public class VoucherAttachmentService {
                     "Maximum " + MAX_ATTACHMENTS_PER_VOUCHER + " attachments per voucher");
         }
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BusinessRuleViolationException("File size exceeds maximum of 25MB");
+            throw new BusinessRuleViolationException("File size exceeds maximum of 10MB");
         }
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
-            throw new BusinessRuleViolationException("File type not allowed. Accepted: PDF, JPEG, PNG, HEIC, WEBP");
+        String declaredType = file.getContentType();
+        if (declaredType == null || !ALLOWED_CONTENT_TYPES.contains(declaredType.toLowerCase())) {
+            throw new BusinessRuleViolationException("File type not allowed. Accepted: PDF, JPEG, PNG");
+        }
+
+        // Read fully into memory (bounded above by MAX_FILE_SIZE, itself aligned to
+        // the global 10MB multipart limit) so the same bytes can be sniffed for a
+        // signature and then written, without needing MultipartFile's InputStream to
+        // support being opened twice.
+        byte[] bytes = file.getBytes();
+        String detectedType = detectContentType(bytes);
+        if (detectedType == null) {
+            // Declared type passed, but the bytes are not really any of the three
+            // accepted formats -- an executable, a script, or anything else wearing
+            // a PDF/PNG/JPEG label.
+            throw new BusinessRuleViolationException("File type not allowed. Accepted: PDF, JPEG, PNG");
         }
 
         // The storage key is a fresh UUID, never the client-supplied filename or any
@@ -87,17 +123,37 @@ public class VoucherAttachmentService {
         // path segment) is taken from what the client sent.
         String fileName = UUID.randomUUID() + extension(file.getOriginalFilename());
         String fileUrl = (azureConnectionString != null && !azureConnectionString.isBlank())
-                ? uploadToAzure(v.getId(), fileName, file.getInputStream(), file.getSize())
-                : saveToLocal(v.getId(), fileName, file.getInputStream());
+                ? uploadToAzure(v.getId(), fileName, new ByteArrayInputStream(bytes), bytes.length)
+                : saveToLocal(v.getId(), fileName, new ByteArrayInputStream(bytes));
 
         VoucherAttachment a = new VoucherAttachment();
         a.setVoucherId(voucherId);
         a.setName(docName);
         a.setFileUrl(fileUrl);
-        a.setFileType(contentType);
+        // The DETECTED type is stored, not the declared one: a real PNG mislabeled
+        // image/jpeg is accepted (both are allowed formats, and the bytes are what
+        // they are), but what gets served back as Content-Type is what the bytes
+        // actually decode as, not what the uploader's browser happened to send.
+        a.setFileType(detectedType);
         a.setFileSize(file.getSize());
         a.setUploadedAt(Instant.now());
         return VoucherAttachmentDTO.of(attachments.save(a));
+    }
+
+    /** {@code null} if {@code bytes} does not start with any of the three accepted formats' magic number. */
+    private static String detectContentType(byte[] bytes) {
+        if (startsWith(bytes, PDF_SIGNATURE)) return "application/pdf";
+        if (startsWith(bytes, PNG_SIGNATURE)) return "image/png";
+        if (startsWith(bytes, JPEG_SIGNATURE)) return "image/jpeg";
+        return null;
+    }
+
+    private static boolean startsWith(byte[] data, byte[] prefix) {
+        if (data == null || data.length < prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) {
+            if (data[i] != prefix[i]) return false;
+        }
+        return true;
     }
 
     @Transactional(readOnly = true)
@@ -161,7 +217,11 @@ public class VoucherAttachmentService {
         BlobServiceClient svc = new BlobServiceClientBuilder().connectionString(azureConnectionString).buildClient();
         BlobContainerClient container = svc.getBlobContainerClient(containerName);
         if (!container.exists()) container.create();
-        String blobPath = "vouchers/" + voucherId + "/" + fileName;
+        // Azure blob containers default to PublicAccessType.NONE, so a bare blob URL
+        // is not fetchable there regardless — the "private/" prefix is added anyway
+        // to keep the key shape identical to local-disk mode and not rely on that
+        // default surviving future container-config changes.
+        String blobPath = PRIVATE_PREFIX + "/vouchers/" + voucherId + "/" + fileName;
         container.getBlobClient(blobPath).upload(in, size, true);
         return svc.getAccountUrl() + "/" + containerName + "/" + blobPath;
     }
@@ -177,10 +237,14 @@ public class VoucherAttachmentService {
     }
 
     private String saveToLocal(UUID voucherId, String fileName, InputStream in) throws IOException {
-        Path dir = Path.of(localStoragePath, "vouchers", voucherId.toString());
+        // The "private/" segment is load-bearing: AssetController.serveAsset refuses
+        // (404) any storage key whose first path segment is "private", so this file
+        // can only ever be reached through VoucherController's authenticated
+        // download endpoint (security ruling, Task 5 fix round 1).
+        Path dir = Path.of(localStoragePath, PRIVATE_PREFIX, "vouchers", voucherId.toString());
         Files.createDirectories(dir);
         Files.copy(in, dir.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        return "/api/v1/assets/serve/vouchers/" + voucherId + "/" + fileName;
+        return "/api/v1/assets/serve/" + PRIVATE_PREFIX + "/vouchers/" + voucherId + "/" + fileName;
     }
 
     private String extension(String filename) {
