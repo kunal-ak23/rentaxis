@@ -81,12 +81,25 @@ public final class ProrationEngine {
 
     /**
      * Drops slices after {@code lastDay} and truncates the slice that
-     * contains it. {@code dayRate} is the segment's own stored 6-dp rate
-     * (not recomputed here, so the earlier, unaffected slices are returned
-     * unchanged — same object, same amount). The truncated slice's amount is
-     * {@code earnedThrough(...) - sum(previous slices)}, so the returned
-     * list always sums to the segment's earned-to-date amount, never to
-     * {@code round(dayRate * daysInThatSlice, 2)} computed in isolation.
+     * contains it (inclusive of that slice's own {@code periodEnd} — a
+     * termination effective on a calendar month-end is an ordinary input,
+     * not an edge case). {@code dayRate} is the segment's own stored 6-dp
+     * rate (not recomputed here, so the slices strictly before the cut are
+     * returned unchanged — same object, same amount). The slice containing
+     * {@code lastDay} — including when {@code lastDay} lands exactly on
+     * that slice's original {@code periodEnd} — always has its amount
+     * recomputed as {@code earnedThrough(...) - sum(previous slices)}; this
+     * usually equals the original {@code round(dayRate * days, 2)} for that
+     * slice, but is not guaranteed to (accumulated rounding across the
+     * earlier slices can drift it by a cent), so the returned list's sum is
+     * always exactly {@code earnedThrough(amount, from, to, lastDay)}, never
+     * a value computed for that one slice in isolation.
+     *
+     * <p>{@code lastDay} before the segment's own start returns an empty
+     * list: a termination before the term even began has earned nothing.
+     * {@code lastDay} at or after the segment's own end returns the
+     * original slices unchanged (same list contents): there is nothing to
+     * truncate.
      */
     public static List<Slice> truncate(List<Slice> slices, BigDecimal dayRate, LocalDate lastDay) {
         if (slices.isEmpty()) {
@@ -99,14 +112,17 @@ public final class ProrationEngine {
             return new ArrayList<>(slices);
         }
         if (lastDay.isBefore(from)) {
+            // Terminated before the term began: nothing earned.
             return List.of();
         }
 
         List<Slice> result = new ArrayList<>();
         BigDecimal runningTotal = BigDecimal.ZERO;
         for (Slice s : slices) {
-            if (lastDay.isBefore(s.periodEnd())) {
-                // This is the slice containing lastDay: truncate it.
+            // Inclusive of s.periodEnd(): lastDay landing exactly on a
+            // slice's own last day still means that slice is "the one
+            // containing lastDay", not the next one.
+            if (!lastDay.isAfter(s.periodEnd())) {
                 int days = daysInclusive(s.periodStart(), lastDay);
                 BigDecimal earnedTotal = dayRate.multiply(BigDecimal.valueOf(daysInclusive(from, lastDay)))
                         .setScale(AMOUNT_SCALE, RoundingMode.HALF_UP);
