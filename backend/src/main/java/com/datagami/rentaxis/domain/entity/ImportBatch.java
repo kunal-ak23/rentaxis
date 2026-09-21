@@ -42,7 +42,7 @@ public class ImportBatch extends BaseTenantEntity {
     @Column(nullable = false, length = 10)
     private ImportBatchStatus status = ImportBatchStatus.DRAFT;
 
-    /** What an accountant calls this run on the batches list — "Al Ashram cut-over". */
+    /** What an accountant calls this run on the batches list — "September cut-over". */
     @Column(length = 120) private String label;
 
     /** The {@code import_jobs} row the spreadsheet was uploaded as, when there was one. */

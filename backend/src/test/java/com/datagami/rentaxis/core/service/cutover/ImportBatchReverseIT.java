@@ -158,7 +158,7 @@ class ImportBatchReverseIT {
 
     @Test
     void reversingABatchReversesEveryJournalAndReturnsEveryLeaseToDraft() {
-        ImportBatch b = batches.create(null, "Al Ashram cut-over");
+        ImportBatch b = batches.create(null, "September cut-over");
         UUID leaseA = UUID.randomUUID(), leaseB = UUID.randomUUID();
         batches.linkLease(b.getId(), leaseA);
         batches.linkLease(b.getId(), leaseB);

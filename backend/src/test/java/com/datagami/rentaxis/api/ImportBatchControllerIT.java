@@ -153,7 +153,7 @@ class ImportBatchControllerIT {
 
     /** A batch with one lease and one posted journal, ready to be reversed. */
     private ImportBatch postedBatch(UUID leaseId) {
-        ImportBatch b = batches.create(null, "Al Ashram cut-over");
+        ImportBatch b = batches.create(null, "September cut-over");
         batches.linkLease(b.getId(), leaseId);
         posting.post(new PostingRequest(
                 JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Imported contract",
@@ -180,7 +180,7 @@ class ImportBatchControllerIT {
         assertThat(list).hasSize(1);
         assertThat(list.get(0).get("id").asText()).isEqualTo(b.getId().toString());
         assertThat(list.get(0).get("status").asText()).isEqualTo("POSTED");
-        assertThat(list.get(0).get("label").asText()).isEqualTo("Al Ashram cut-over");
+        assertThat(list.get(0).get("label").asText()).isEqualTo("September cut-over");
         assertThat(list.get(0).get("kind").asText()).isEqualTo("CONTRACT_IMPORT");
         assertThat(list.get(0).get("leasesImported").asInt()).isEqualTo(1);
         assertThat(list.get(0).get("journalsPosted").asInt()).isEqualTo(1);

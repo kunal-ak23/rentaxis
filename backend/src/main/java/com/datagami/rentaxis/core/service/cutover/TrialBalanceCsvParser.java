@@ -118,7 +118,7 @@ public final class TrialBalanceCsvParser {
                     continue;
                 }
                 if (parts.length < 4) {
-                    // The banner above the table ("Al Ashram Real Estate", then the
+                    // The banner above the table (the organisation name, then the
                     // report title) is a short row with nothing numeric on it. A short
                     // row that DOES carry a figure is real data in the wrong shape and
                     // has to be reported, or a column the accountant dropped while

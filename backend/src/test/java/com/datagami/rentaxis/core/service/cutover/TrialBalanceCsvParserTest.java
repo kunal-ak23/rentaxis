@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The shapes below are not invented: the client's real exports (a General
  * Ledger and a Chart of Accounts pulled from PACT) carry a banner block above the
- * table ("Al Ashram Real Estate", then the report name), thousands separators,
+ * table ("the organisation", then the report name), thousands separators,
  * {@code Dr}/{@code Cr} suffixes on amounts, and {@code Sub Total} / {@code Grand
  * Total} rows in the body as well as at the foot. An accountant saving the trial
  * balance as CSV gets the same furniture, so every one of those has a test here —
@@ -129,7 +129,7 @@ class TrialBalanceCsvParserTest {
     @Test
     void theReportBannerAboveTheTableIsNotAnError() {
         var r = parse("""
-                Al Ashram Real Estate
+                the organisation
                 Trial Balance as at 30-09-2026
 
                 Account Code,Account Name,Debit,Credit

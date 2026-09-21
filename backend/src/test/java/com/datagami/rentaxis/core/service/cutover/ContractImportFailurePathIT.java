@@ -66,12 +66,12 @@ class ContractImportFailurePathIT {
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
         propertyAccounts.seedDefaultTemplateAndDefaults();
-        accounts.createLeaf("Rental Income Tulip 7", accounts.getAccountByCode("C-01-01"), null);
-        accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), null);
-        accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), null);
-        accounts.createLeaf("Emirates Islamic - Tulip 7", accounts.getAccountByCode("A-02-02"), null);
-        accounts.createLeaf("PDC Receivable Tulip 7", accounts.getAccountByCode("A-02-03"), null);
-        accounts.createLeaf("Security Deposit Tulip 7", accounts.getAccountByCode("B-01-02"), null);
+        accounts.createLeaf("Rental Income ST1", accounts.getAccountByCode("C-01-01"), null);
+        accounts.createLeaf("Rent Receivable - ST1", accounts.getAccountByCode("A-02-01"), null);
+        accounts.createLeaf("Advance Rent - ST1", accounts.getAccountByCode("B-01-01"), null);
+        accounts.createLeaf("Sample Bank - ST1", accounts.getAccountByCode("A-02-02"), null);
+        accounts.createLeaf("PDC Receivable ST1", accounts.getAccountByCode("A-02-03"), null);
+        accounts.createLeaf("Security Deposit ST1", accounts.getAccountByCode("B-01-02"), null);
     }
 
     @AfterEach void clear() { TenantContextHolder.clear(); }
