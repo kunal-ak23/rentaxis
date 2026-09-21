@@ -3,14 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
-import { Download, Layers, ShieldCheck, Undo2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Info, Layers, Loader2, ShieldCheck, Undo2, Upload } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
+import { Link } from "@/i18n/routing";
 import { cutoverApi, type ImportBatch, type ImportBatchStatus } from "@/lib/api/cutover";
-import { canDownloadImportTemplate, canReverseBatch, isBatchFinal } from "@/lib/cutoverRules";
+import {
+    CONTRACT_IMPORT_ACCEPT, canDownloadImportTemplate, canReverseBatch, contractImportRefusal, isBatchFinal,
+} from "@/lib/cutoverRules";
+import { useImportJobPolling } from "@/hooks/useImportJobPolling";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /**
@@ -44,6 +48,9 @@ const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const fieldLabel = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
+/** Twenty-five problems is a screenful; the rest are a page away, never dropped. */
+const ERRORS_PER_PAGE = 25;
+
 const STATUS_CLASS: Record<ImportBatchStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
@@ -70,6 +77,9 @@ export default function ImportBatchesPage() {
     const [reverseError, setReverseError] = useState<string | null>(null);
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(25);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [errorPage, setErrorPage] = useState(0);
+    const importJob = useImportJobPolling();
 
     const load = useCallback(() => {
         setLoading(true);
@@ -95,6 +105,32 @@ export default function ImportBatchesPage() {
         }
         load();
     }, [userRole, allowed, load]);
+
+    /**
+     * A finished import wrote a new DRAFT batch, so the table has to be re-read —
+     * the row it created is the whole point of the upload. Keyed on the batch id
+     * so it runs once per import rather than once per poll.
+     */
+    const importedBatchId = importJob.job?.importBatchId ?? null;
+    useEffect(() => {
+        if (!importedBatchId) return;
+        load();
+    }, [importedBatchId, load]);
+
+    const onWorkbook = (file: File) => {
+        const refused = contractImportRefusal(file);
+        if (refused) {
+            // Checked here rather than after a 10MB upload that can only fail.
+            setUploadError(t(refused));
+            return;
+        }
+        setUploadError(null);
+        setErrorPage(0);
+        cutoverApi.contractImport
+            .upload(file)
+            .then(({ jobId }) => importJob.start(jobId))
+            .catch(e => setUploadError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
 
     if (!userRole) {
         return <div data-testid="import-batches-loading" className="bg-input rounded-xl h-14 animate-pulse" />;
@@ -154,24 +190,45 @@ export default function ImportBatchesPage() {
                  * is SA/TA and would 403 an accountant on click.
                  */}
                 {canDownloadImportTemplate(userRole) && (
-                    /*
-                     * A plain <a>, not next/link: this is a file download from the
-                     * API proxy, not a route. next/link would client-side navigate
-                     * to a path with no page behind it. No `download` attribute
-                     * either — PortfolioImportController sends
-                     * `Content-Disposition: attachment; filename=portfolio-import-template.xlsx`,
-                     * and `download` would override that with the URL's last
-                     * segment, saving the file as "template".
-                     */
-                    // eslint-disable-next-line @next/next/no-html-link-for-pages
-                    <a
-                        href="/api/proxy/v1/import/portfolio/template"
-                        data-testid="download-template"
-                        className="border border-border px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer text-foreground"
-                    >
-                        <Download size={14} />
-                        {t("downloadTemplate")}
-                    </a>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/*
+                         * A plain <a>, not next/link: this is a file download from
+                         * the API proxy, not a route. next/link would client-side
+                         * navigate to a path with no page behind it. No `download`
+                         * attribute either — the controller sends
+                         * `Content-Disposition: attachment; filename=contract-import-template.xlsx`,
+                         * and `download` would override that with the URL's last
+                         * segment, saving the file as "template".
+                         *
+                         * The CUT-OVER template, not the v1 one: different route,
+                         * different role gate, and this is the workbook this page
+                         * accepts.
+                         */}
+                        <a
+                            href={cutoverApi.contractImport.templateUrl()}
+                            data-testid="download-template"
+                            className="border border-border px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer text-foreground"
+                        >
+                            <Download size={14} />
+                            {t("downloadCutoverTemplate")}
+                        </a>
+                        <label className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer">
+                            {importJob.polling ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            {t("uploadCutoverWorkbook")}
+                            <input
+                                type="file"
+                                data-testid="upload-cutover"
+                                aria-label={t("uploadCutoverWorkbook")}
+                                className="hidden"
+                                accept={CONTRACT_IMPORT_ACCEPT}
+                                disabled={importJob.polling}
+                                onChange={e => {
+                                    const f = e.target.files?.[0];
+                                    if (f) onWorkbook(f);
+                                }}
+                            />
+                        </label>
+                    </div>
                 )}
             </div>
 
@@ -184,6 +241,177 @@ export default function ImportBatchesPage() {
                     {banner}
                 </div>
             )}
+
+            {uploadError && (
+                <p role="alert" data-testid="import-upload-error" className="mb-4 text-xs font-semibold text-error">
+                    {uploadError}
+                </p>
+            )}
+
+            {importJob.error && (
+                <p role="alert" data-testid="import-job-error" className="mb-4 text-xs font-semibold text-error">
+                    {t("importJobLost")}
+                </p>
+            )}
+
+            {importJob.timedOut && (
+                <p data-testid="import-timed-out" className="mb-4 text-xs font-semibold text-warning">
+                    {t("importTimedOut")}
+                </p>
+            )}
+
+            {importJob.job && (
+                <div
+                    data-testid="import-job-status"
+                    data-status={importJob.job.status}
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    {(importJob.job.status === "VALIDATING" || importJob.job.status === "PERSISTING") && (
+                        <p className="text-xs font-semibold text-muted flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin" />
+                            {importJob.job.status === "VALIDATING" ? t("importRunning") : t("importPersisting")}
+                        </p>
+                    )}
+
+                    {importJob.job.status === "COMPLETED" && (
+                        <div className="space-y-2">
+                            <p
+                                data-testid="import-success"
+                                className="text-xs font-semibold text-success flex items-center gap-2"
+                            >
+                                <CheckCircle2 size={14} className="shrink-0" />
+                                {t("importCompleted")}
+                            </p>
+                            <p data-testid="import-counts" className="text-xs text-muted tabular-nums">
+                                {t("importCounts", {
+                                    properties: importJob.job.propertiesCreated,
+                                    units: importJob.job.unitsCreated,
+                                    renters: importJob.job.rentersCreated,
+                                    leases: importJob.job.leasesCreated,
+                                    cheques: importJob.job.chequesCreated,
+                                })}
+                            </p>
+                            {importJob.job.importBatchId && (
+                                <Link
+                                    href={`/dashboard/finance/import-batches#${importJob.job.importBatchId}`}
+                                    data-testid="import-view-batch"
+                                    className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                                >
+                                    {t("viewImportedBatch")}
+                                </Link>
+                            )}
+                        </div>
+                    )}
+
+                    {importJob.job.status === "FAILED" && (
+                        <p
+                            data-testid="import-failed"
+                            className="text-xs font-semibold text-error flex items-center gap-2"
+                        >
+                            <AlertTriangle size={14} className="shrink-0" />
+                            {t("importFailed")}
+                        </p>
+                    )}
+
+                    {/*
+                     * ContractImportPersistService writes the whole workbook in one
+                     * transaction, so a validation failure leaves NOTHING behind.
+                     * Said out loud, or the accountant goes hunting for
+                     * half-imported properties that do not exist.
+                     */}
+                    {importJob.job.status === "VALIDATION_FAILED" && (
+                        <p
+                            data-testid="import-validation-failed"
+                            className="text-xs font-semibold text-error flex items-start gap-2"
+                        >
+                            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                            {t("importValidationFailed")}
+                        </p>
+                    )}
+
+                    {importJob.job.errors.length > 0 && (
+                        <div className="mt-4">
+                            <p data-testid="import-errors-title" className="text-xs font-bold text-foreground mb-2">
+                                {t("importErrorsTitle", { n: importJob.job.errors.length })}
+                            </p>
+                            <div className="overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="import-errors-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("sheet")}</th>
+                                            <th className={`${th} text-end`}>{t("row")}</th>
+                                            <th className={th}>{t("column")}</th>
+                                            <th className={th}>{t("problem")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {importJob.job.errors
+                                            .slice(errorPage * ERRORS_PER_PAGE, errorPage * ERRORS_PER_PAGE + ERRORS_PER_PAGE)
+                                            .map((err, i) => {
+                                                const index = errorPage * ERRORS_PER_PAGE + i;
+                                                return (
+                                                    <tr key={index} data-testid={`import-error-${index}`}>
+                                                        <td className={td}>{err.sheet}</td>
+                                                        <td className={`${td} text-end tabular-nums`}>{err.row || "—"}</td>
+                                                        <td className={`${td} font-mono text-muted`}>{err.field || "—"}</td>
+                                                        <td className={td}>{err.message}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {importJob.job.errors.length > ERRORS_PER_PAGE && (
+                                <Pagination
+                                    currentPage={errorPage + 1}
+                                    totalItems={importJob.job.errors.length}
+                                    itemsPerPage={ERRORS_PER_PAGE}
+                                    onPageChange={p => setErrorPage(p - 1)}
+                                />
+                            )}
+                        </div>
+                    )}
+
+                    {!importJob.polling && (
+                        <button
+                            type="button"
+                            data-testid="import-dismiss"
+                            onClick={importJob.reset}
+                            className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                        >
+                            {t("dismissImportResult")}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* The implementer's notes, where they are needed: before the upload. */}
+            {!importJob.job && (
+                <div
+                    data-testid="cutover-help"
+                    className="mb-6 bg-input border border-border text-muted rounded-xl px-5 py-4 text-xs"
+                >
+                    <p className="font-bold text-foreground mb-2 flex items-center gap-2">
+                        <Info size={14} className="shrink-0" />
+                        {t("cutoverHelpTitle")}
+                    </p>
+                    <ul className="list-disc ms-5 space-y-1">
+                        <li>{t("cutoverHelpNewProperties")}</li>
+                        <li>{t("cutoverHelpAccounts")}</li>
+                        <li>{t("cutoverHelpCreditAccount")}</li>
+                        <li>{t("cutoverHelpEjari")}</li>
+                    </ul>
+                </div>
+            )}
+
+            {/*
+             * Task 11 has not landed: there is no bulk-post route, so a DRAFT batch
+             * has no post action. Said plainly rather than leaving a gap where a
+             * button obviously belongs.
+             */}
+            <p data-testid="bulk-post-unavailable" className="mb-4 text-xs text-muted">
+                {t("bulkPostNotAvailable")}
+            </p>
 
             {loading && (
                 <div className="space-y-3 animate-pulse">
@@ -226,7 +454,12 @@ export default function ImportBatchesPage() {
                                     <tr
                                         key={b.id}
                                         data-testid={`batch-row-${b.id}`}
-                                        className="hover:bg-input/30 transition-colors"
+                                        data-imported={b.id === importedBatchId ? "true" : "false"}
+                                        className={
+                                            b.id === importedBatchId
+                                                ? "bg-success/5 ring-1 ring-inset ring-success/30"
+                                                : "hover:bg-input/30 transition-colors"
+                                        }
                                     >
                                         <td className={`${td} font-medium`}>{b.label ?? b.id.slice(0, 8)}</td>
                                         <td className={`${td} text-muted`}>{t(b.kind)}</td>

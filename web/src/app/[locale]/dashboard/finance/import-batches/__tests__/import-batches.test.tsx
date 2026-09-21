@@ -31,14 +31,44 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 
-const api = vi.hoisted(() => ({ list: vi.fn(), reverse: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), reverse: vi.fn(), upload: vi.fn(), status: vi.fn() }));
 vi.mock("@/lib/api/cutover", async orig => {
     const m = await orig<typeof import("@/lib/api/cutover")>();
-    return { ...m, cutoverApi: { batches: { ...m.cutoverApi.batches, list: api.list, reverse: api.reverse } } };
+    return {
+        ...m,
+        cutoverApi: {
+            ...m.cutoverApi,
+            batches: { ...m.cutoverApi.batches, list: api.list, reverse: api.reverse },
+            contractImport: { ...m.cutoverApi.contractImport, upload: api.upload, status: api.status },
+        },
+    };
 });
 
 import ImportBatchesPage from "../page";
 import { ApiError } from "@/lib/api/facilities";
+import type { ContractImportResult } from "@/lib/api/cutover";
+
+function jobResult(over: Partial<ContractImportResult> = {}): ContractImportResult {
+    return {
+        jobId: "job-1", status: "COMPLETED",
+        propertiesCreated: 3, buildingsCreated: 1, unitsCreated: 40, rentersCreated: 38,
+        leasesCreated: 38, chequesCreated: 152, chequesFromSheet: 152, bookingDepositsCreated: 0,
+        importBatchId: "b-new", contractsCreated: 38, mappingsCreated: 9,
+        errors: [], warnings: [],
+        ...over,
+    };
+}
+
+/** Pick a file on the workbook input. */
+function pickWorkbook(name = "cutover.xlsx", size?: number) {
+    const input = screen.getByTestId("upload-cutover") as HTMLInputElement;
+    const file = new File(["PK"], name, { type: "" });
+    if (size !== undefined) Object.defineProperty(file, "size", { value: size, configurable: true });
+    // configurable: a test that picks twice redefines this.
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+    return file;
+}
 
 function batch(over: Partial<ImportBatch> & { id: string }): ImportBatch {
     return {
@@ -76,9 +106,12 @@ function renderPage() {
 }
 
 beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     role = "ACCOUNTANT";
     api.list.mockResolvedValue(ROWS);
+    api.upload.mockResolvedValue({ jobId: "job-1" });
+    api.status.mockResolvedValue(jobResult());
+    window.sessionStorage.clear();
 });
 afterEach(cleanup);
 
@@ -218,24 +251,200 @@ describe("import batches list", () => {
     });
 
     /**
-     * PortfolioImportController#template is SA/TA — one role narrower than this
-     * page. An accountant offered that link gets a 403 on click.
+     * The CUT-OVER template is its own route with its own gate
+     * (PortfolioImportController CUTOVER_ROLES, :109) and admits ACCOUNTANT —
+     * unlike the v1 `/template`, which this page used to link and which would
+     * have 403'd them.
      */
     it.each([
         ["SUPER_ADMIN", true],
         ["TENANT_ADMIN", true],
-        ["ACCOUNTANT", false],
-    ])("offers the template download to %s: %s", async (r, offered) => {
+        ["ACCOUNTANT", true],
+        ["PROPERTY_MANAGER", false],
+    ])("offers the cut-over template download to %s: %s", async (r, offered) => {
         role = r;
         renderPage();
-        await screen.findByTestId("batch-row-b-draft");
-        if (offered) {
-            expect(screen.getByTestId("download-template")).toHaveAttribute(
-                "href",
-                "/api/proxy/v1/import/portfolio/template",
-            );
-        } else {
-            expect(screen.queryByTestId("download-template")).not.toBeInTheDocument();
+        if (!offered) {
+            expect(await screen.findByTestId("import-batches-access-denied")).toBeInTheDocument();
+            return;
         }
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.getByTestId("download-template")).toHaveAttribute(
+            "href",
+            "/api/proxy/v1/import/portfolio/cutover/template",
+        );
+    });
+});
+
+describe("cut-over contract import", () => {
+    it("refuses a non-xlsx and an oversize workbook before they travel", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+
+        pickWorkbook("cutover.csv");
+        await waitFor(() =>
+            expect(screen.getByTestId("import-upload-error")).toHaveTextContent(en.Cutover.workbookWrongType),
+        );
+        expect(api.upload).not.toHaveBeenCalled();
+
+        pickWorkbook("cutover.xlsx", 11 * 1024 * 1024);
+        await waitFor(() =>
+            expect(screen.getByTestId("import-upload-error")).toHaveTextContent(en.Cutover.workbookTooBig),
+        );
+        expect(api.upload).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Split from the completion case on purpose: the hook's backoff means the
+     * second poll is a second away, and the timing of that is already covered by
+     * `useImportJobPolling.test.tsx` under fake timers. What this page owes is
+     * the right thing on screen for each state.
+     */
+    it("shows the job as running while it validates", async () => {
+        api.status.mockResolvedValue(jobResult({ status: "VALIDATING", importBatchId: null }));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+
+        const file = pickWorkbook();
+        await waitFor(() => expect(api.upload).toHaveBeenCalledWith(file));
+        expect(await screen.findByTestId("import-job-status")).toHaveAttribute("data-status", "VALIDATING");
+        expect(screen.getByTestId("import-job-status")).toHaveTextContent(en.Cutover.importRunning);
+        expect(screen.queryByTestId("import-success")).not.toBeInTheDocument();
+    });
+
+    it("uploads the workbook and reports completion", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+
+        const file = pickWorkbook();
+        await waitFor(() => expect(api.upload).toHaveBeenCalledWith(file));
+        await waitFor(() =>
+            expect(screen.getByTestId("import-job-status")).toHaveAttribute("data-status", "COMPLETED"),
+        );
+        expect(screen.getByTestId("import-success")).toHaveTextContent(en.Cutover.importCompleted);
+    });
+
+    it("shows the counts the DTO gives and links to the new batch", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        const summary = await screen.findByTestId("import-counts");
+        for (const n of ["3", "40", "38", "152"]) expect(summary).toHaveTextContent(n);
+        expect(screen.getByTestId("import-view-batch")).toBeInTheDocument();
+    });
+
+    /** The batch the import just made is highlighted, so it is not a hunt. */
+    it("highlights the newly imported batch in the table", async () => {
+        api.list.mockResolvedValue([...ROWS, batch({ id: "b-new", label: "Cut-over" })]);
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        await waitFor(() => expect(screen.getByTestId("batch-row-b-new")).toHaveAttribute("data-imported", "true"));
+        expect(screen.getByTestId("batch-row-b-draft")).toHaveAttribute("data-imported", "false");
+        // And the list reloads so the new batch is actually there.
+        expect(api.list.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    /**
+     * ContractImportPersistService runs in one transaction and a validation
+     * failure writes nothing — the copy has to say so, or the accountant goes
+     * looking for half-imported properties.
+     */
+    it("lists every validation error with sheet, row and column, and says nothing was saved", async () => {
+        api.status.mockResolvedValue(
+            jobResult({
+                status: "VALIDATION_FAILED", importBatchId: null,
+                propertiesCreated: 0, unitsCreated: 0, rentersCreated: 0, leasesCreated: 0, chequesCreated: 0,
+                errors: [
+                    { sheet: "Contracts", row: 7, field: "DebitAccount", message: "No account named 'Rent Recievable'" },
+                    { sheet: "Contracts", row: 9, field: "EjariNumber", message: "Required" },
+                    { sheet: "Cheques", row: 22, field: "ChequeNumber", message: "Duplicate cheque number 000431" },
+                ],
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        expect(await screen.findByTestId("import-validation-failed")).toHaveTextContent(
+            en.Cutover.importValidationFailed,
+        );
+        const table = screen.getByTestId("import-errors-table");
+        expect(within(table).getByTestId("import-error-0")).toHaveTextContent("Contracts");
+        expect(within(table).getByTestId("import-error-0")).toHaveTextContent("7");
+        expect(within(table).getByTestId("import-error-0")).toHaveTextContent("DebitAccount");
+        expect(within(table).getByTestId("import-error-2")).toHaveTextContent("Duplicate cheque number 000431");
+        expect(screen.queryByTestId("import-view-batch")).not.toBeInTheDocument();
+    });
+
+    it("pages a long error list rather than dropping any of it", async () => {
+        api.status.mockResolvedValue(
+            jobResult({
+                status: "VALIDATION_FAILED", importBatchId: null,
+                errors: Array.from({ length: 45 }, (_, i) => ({
+                    sheet: "Contracts", row: i + 2, field: "Rent", message: `Problem ${i + 1}`,
+                })),
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        await screen.findByTestId("import-errors-table");
+        expect(screen.getByTestId("import-error-0")).toHaveTextContent("Problem 1");
+        expect(screen.queryByTestId("import-error-25")).not.toBeInTheDocument();
+        expect(screen.getByTestId("import-errors-title")).toHaveTextContent("45 problems");
+    });
+
+    it("reports a failed import as saving nothing", async () => {
+        api.status.mockResolvedValue(jobResult({ status: "FAILED", importBatchId: null, errors: [] }));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+        expect(await screen.findByTestId("import-failed")).toHaveTextContent(en.Cutover.importFailed);
+    });
+
+    it("surfaces the server's refusal when the upload itself is rejected", async () => {
+        api.upload.mockRejectedValue(new ApiError(400, "Only .xlsx workbooks are supported; this file is not one"));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+        expect(await screen.findByTestId("import-upload-error")).toHaveTextContent("not one");
+    });
+
+    it("can be dismissed once it is done", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+        await screen.findByTestId("import-success");
+        fireEvent.click(screen.getByTestId("import-dismiss"));
+        await waitFor(() => expect(screen.queryByTestId("import-success")).not.toBeInTheDocument());
+    });
+
+    /** The implementer's notes, surfaced where they are needed. */
+    it("shows the workbook help before anything is uploaded", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        const help = screen.getByTestId("cutover-help");
+        expect(help).toHaveTextContent(en.Cutover.cutoverHelpNewProperties);
+        expect(help).toHaveTextContent(en.Cutover.cutoverHelpAccounts);
+        expect(help).toHaveTextContent(en.Cutover.cutoverHelpCreditAccount);
+        expect(help).toHaveTextContent(en.Cutover.cutoverHelpEjari);
+    });
+
+    /** Task 11 has not landed; the page says so rather than leaving a gap. */
+    it("says posting a batch is not available yet", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.getByTestId("bulk-post-unavailable")).toHaveTextContent(en.Cutover.bulkPostNotAvailable);
+    });
+
+    it("offers no upload control to a role the controller refuses", async () => {
+        role = "PROPERTY_MANAGER";
+        renderPage();
+        await screen.findByTestId("import-batches-access-denied");
+        expect(screen.queryByTestId("upload-cutover")).not.toBeInTheDocument();
     });
 });

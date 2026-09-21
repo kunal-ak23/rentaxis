@@ -15,9 +15,10 @@ const BASE = "/api/proxy/v1";
  * that is not there is the 404 this project refuses to ship.
  *
  * Opening balances and the reconciliation report were added in task 15 against
- * `api/OpeningBalanceController.java` and `api/dto/cutover/*`. The contract-import
- * upload, the cut-over template and the bulk post are still deliberately absent —
- * those routes do not exist yet.
+ * `api/OpeningBalanceController.java` and `api/dto/cutover/*`; the contract import
+ * against `api/PortfolioImportController.java`'s three `/cutover` handlers. The
+ * BULK POST is still deliberately absent — that route does not exist yet, so a
+ * DRAFT batch has no post action and the page says why.
  */
 
 // ---- enums (domain/entity/enums/ImportBatchKind.java, ImportBatchStatus.java) ----
@@ -186,6 +187,58 @@ export type ReconciliationRow = {
 
 // ---- the client ----
 
+// ---- the cut-over contract import (api/PortfolioImportController.java) ----
+
+/**
+ * `ImportJob.status`, as `PortfolioImportService` sets it (`:630-662`).
+ *
+ * `VALIDATING` and `PERSISTING` are in-flight; the other three are terminal and
+ * stop the poll. There is no cancel.
+ */
+export type ImportJobStatus = "VALIDATING" | "PERSISTING" | "COMPLETED" | "VALIDATION_FAILED" | "FAILED";
+
+/**
+ * `api/dto/ImportErrorDTO`. `field` is the workbook COLUMN — the DTO's own name
+ * for it — and `row` is the 1-based row within `sheet`.
+ */
+export type ImportError = {
+    sheet: string;
+    row: number;
+    field: string;
+    message: string;
+};
+
+/**
+ * `api/dto/PortfolioImportResultDTO`, the body of the cut-over status poll.
+ *
+ * `importBatchId` is the whole point of the cut-over shape: it is how the screen
+ * goes from "my upload finished" to the batch that can be posted or reversed,
+ * without guessing which one is its own. It is null for a v1 import and for a
+ * cut-over job that never reached the persist phase — including one whose
+ * persist rolled back, whose batch id and counters the controller clears
+ * deliberately so the web is never sent after a batch that no longer exists.
+ *
+ * `chequesCreated` is the job's `schedules_created` column reused; the wire name
+ * follows what it now holds.
+ */
+export type ContractImportResult = {
+    jobId: string;
+    status: ImportJobStatus;
+    propertiesCreated: number;
+    buildingsCreated: number;
+    unitsCreated: number;
+    rentersCreated: number;
+    leasesCreated: number;
+    chequesCreated: number;
+    chequesFromSheet: number;
+    bookingDepositsCreated: number;
+    importBatchId: string | null;
+    contractsCreated: number;
+    mappingsCreated: number;
+    errors: ImportError[];
+    warnings: ImportError[];
+};
+
 export const cutoverApi = {
     batches: {
         /** `GET /finance/import-batches` — a plain list, oldest first (`findAllByOrderByCreatedAtAsc`). */
@@ -227,5 +280,36 @@ export const cutoverApi = {
             apiSend<PostedJournal>("POST", "/finance/opening-balances/reverse", body),
     },
     reconciliation: () => apiGet<ReconciliationRow[]>("/finance/reconciliation"),
+    contractImport: {
+        /**
+         * The CUT-OVER template, not the v1 one at `/import/portfolio/template`.
+         * Separate routes with separate role gates: this one admits ACCOUNTANT,
+         * "because the person who assembles a cut-over workbook out of a PACT
+         * export is the accountant, and a template they must ask an admin to
+         * fetch is a template they will rebuild by hand".
+         *
+         * A URL rather than a fetch: the browser downloads it through the proxy
+         * with the filename the server sends in `Content-Disposition`.
+         */
+        templateUrl: () => `${BASE}/import/portfolio/cutover/template`,
+
+        /**
+         * `POST /import/portfolio/cutover`, multipart with one `file` part.
+         * Answers `{ jobId }` at once and validates on the import executor — a
+         * six-hundred-contract workbook is not a request to hold a connection
+         * open for. No `Content-Type` header: the browser writes the boundary.
+         */
+        upload: async (file: File) => {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`${BASE}/import/portfolio/cutover`, { method: "POST", body: fd });
+            await throwIfNotOk(res);
+            return res.json() as Promise<{ jobId: string }>;
+        },
+
+        /** The poll. 404 for another organisation's job, deliberately. */
+        status: (jobId: string) => apiGet<ContractImportResult>(`/import/portfolio/cutover/${jobId}/status`),
+    },
 };
+
 

@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cutoverApi } from "@/lib/api/cutover";
 import {
     SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, canDownloadImportTemplate, canEditOpeningBalanceRow,
-    canPostOpeningBalances, canReplaceOpeningBalances, gridDeclaresComputed, isBatchFinal,
-    isReconciled, canReverseBatch, snapshotRefusal,
+    CONTRACT_IMPORT_ACCEPT, CONTRACT_IMPORT_MAX_BYTES, canPostOpeningBalances,
+    canReplaceOpeningBalances, contractImportRefusal, gridDeclaresComputed, isBatchFinal,
+    isImportJobTerminal, isReconciled, canReverseBatch, snapshotRefusal,
 } from "@/lib/cutoverRules";
 import type { OpeningBalanceGrid, OpeningBalanceRow } from "@/lib/api/cutover";
 import { hasPermission } from "@/lib/rbac";
@@ -265,9 +266,97 @@ describe("cutoverApi.openingBalances", () => {
         expect(Object.keys(cutoverApi.openingBalances).sort()).toEqual([
             "grid", "post", "repost", "reverse", "setRow", "uploadSnapshot",
         ]);
-        // No contract-import upload, cut-over template or bulk post: those routes
-        // are being written now and are a later dispatch.
-        expect(Object.keys(cutoverApi).sort()).toEqual(["batches", "openingBalances", "reconciliation"]);
+        // No bulk post: that route does not exist yet (task 11).
+        expect(Object.keys(cutoverApi).sort()).toEqual([
+            "batches", "contractImport", "openingBalances", "reconciliation",
+        ]);
+    });
+});
+
+describe("cutoverApi.contractImport", () => {
+    beforeEach(() => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(
+                async () =>
+                    new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+            ),
+        );
+    });
+
+    /** Its own route, not the v1 `/template` — and a different role gate. */
+    it("points at the cut-over template, not the v1 one", () => {
+        expect(cutoverApi.contractImport.templateUrl()).toBe(
+            "/api/proxy/v1/import/portfolio/cutover/template",
+        );
+    });
+
+    it("uploads the workbook as multipart without a JSON content-type", async () => {
+        const file = new File(["PK\u0003\u0004"], "cutover.xlsx", {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        await cutoverApi.contractImport.upload(file);
+        const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+        expect(url).toBe("/api/proxy/v1/import/portfolio/cutover");
+        expect((init as RequestInit).body).toBeInstanceOf(FormData);
+        expect((init as RequestInit).headers).toBeUndefined();
+    });
+
+    it("polls the cut-over status path", async () => {
+        await cutoverApi.contractImport.status("job-1");
+        expect(fetch).toHaveBeenCalledWith(
+            "/api/proxy/v1/import/portfolio/cutover/job-1/status",
+            expect.anything(),
+        );
+    });
+
+    it("exposes nothing the controller does not", () => {
+        expect(Object.keys(cutoverApi.contractImport).sort()).toEqual(["status", "templateUrl", "upload"]);
+        expect(Object.keys(cutoverApi).sort()).toEqual([
+            "batches", "contractImport", "openingBalances", "reconciliation",
+        ]);
+    });
+});
+
+describe("contract-import rules", () => {
+    /**
+     * PortfolioImportController's CUTOVER_ROLES (:109) is
+     * hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT') — every cut-over
+     * control, the template included. The v1 `/template` keeps its SA/TA gate,
+     * which is why the page now links the cut-over route instead.
+     */
+    it("admits an accountant to the cut-over template, unlike the v1 one", () => {
+        expect(canDownloadImportTemplate("ACCOUNTANT")).toBe(true);
+        expect(canDownloadImportTemplate("SUPER_ADMIN")).toBe(true);
+        expect(canDownloadImportTemplate("TENANT_ADMIN")).toBe(true);
+        expect(canDownloadImportTemplate("PROPERTY_MANAGER")).toBe(false);
+        expect(canDownloadImportTemplate(undefined)).toBe(false);
+    });
+
+    /** PortfolioImportController:112 MAX_UPLOAD_BYTES and the .xlsx signature check. */
+    it("refuses an oversize or non-xlsx workbook before it travels", () => {
+        expect(CONTRACT_IMPORT_MAX_BYTES).toBe(10 * 1024 * 1024);
+        expect(CONTRACT_IMPORT_ACCEPT).toContain(".xlsx");
+
+        const big = new File(["x"], "cutover.xlsx", { type: "" });
+        Object.defineProperty(big, "size", { value: CONTRACT_IMPORT_MAX_BYTES + 1 });
+        expect(contractImportRefusal(big)).toBe("workbookTooBig");
+
+        expect(contractImportRefusal(new File(["x"], "cutover.csv", { type: "text/csv" }))).toBe(
+            "workbookWrongType",
+        );
+        expect(contractImportRefusal(new File(["x"], "cutover.xls", { type: "" }))).toBe("workbookWrongType");
+        expect(contractImportRefusal(new File(["x"], "cutover.xlsx", { type: "" }))).toBeNull();
+        expect(contractImportRefusal(new File(["x"], "CUTOVER.XLSX", { type: "" }))).toBeNull();
+    });
+
+    /** PortfolioImportService sets exactly these five (:630-662). */
+    it("knows which job states are terminal", () => {
+        expect(isImportJobTerminal("COMPLETED")).toBe(true);
+        expect(isImportJobTerminal("VALIDATION_FAILED")).toBe(true);
+        expect(isImportJobTerminal("FAILED")).toBe(true);
+        expect(isImportJobTerminal("VALIDATING")).toBe(false);
+        expect(isImportJobTerminal("PERSISTING")).toBe(false);
     });
 });
 
@@ -304,19 +393,5 @@ describe("cutover rules", () => {
         for (const role of ["PROPERTY_MANAGER", "TENANT_USER", "RENTER"] as const) {
             expect(hasPermission(role, "canManageOpeningBalances")).toBe(false);
         }
-    });
-
-    /**
-     * PortfolioImportController#template (:78-79) is
-     * hasAnyRole('SUPER_ADMIN','TENANT_ADMIN') — it does NOT admit ACCOUNTANT,
-     * unlike every other control on this page. Offering an accountant a download
-     * that 403s is exactly the pattern this module exists to prevent.
-     */
-    it("offers the import template only to the roles that endpoint admits", () => {
-        expect(canDownloadImportTemplate("SUPER_ADMIN")).toBe(true);
-        expect(canDownloadImportTemplate("TENANT_ADMIN")).toBe(true);
-        expect(canDownloadImportTemplate("ACCOUNTANT")).toBe(false);
-        expect(canDownloadImportTemplate("PROPERTY_MANAGER")).toBe(false);
-        expect(canDownloadImportTemplate(undefined)).toBe(false);
     });
 });

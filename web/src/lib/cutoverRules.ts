@@ -1,4 +1,6 @@
-import type { ImportBatchStatus, OpeningBalanceGrid, OpeningBalanceRow, ReconciliationRow } from "@/lib/api/cutover";
+import type {
+    ImportBatchStatus, ImportJobStatus, OpeningBalanceGrid, OpeningBalanceRow, ReconciliationRow,
+} from "@/lib/api/cutover";
 import { isZeroAmount } from "@/lib/money";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -34,19 +36,66 @@ export function isBatchFinal(status: ImportBatchStatus): boolean {
 }
 
 /**
- * The contract-import template download.
+ * The CUT-OVER template download, and every other cut-over control.
  *
- * `api/PortfolioImportController#template` (:78-79) is
- * `@PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')")` — it does **not**
- * admit ACCOUNTANT, unlike `ImportBatchController` and every other control on
- * this page. So the link is gated one role narrower than the page it sits on,
- * rather than handing an accountant a download that 403s on click.
+ * `api/PortfolioImportController`'s `CUTOVER_ROLES` (:109) is
+ * `hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')`, and the controller
+ * says why in as many words: "the person who assembles a cut-over workbook out
+ * of a PACT export is the accountant, and a template they must ask an admin to
+ * fetch is a template they will rebuild by hand".
  *
- * `canAccessFinanceOps` is exactly that pair and already mirrors the
- * SA/TA-only controllers, so it is reused instead of a near-duplicate key.
+ * This used to return `canAccessFinanceOps` (SA/TA), mirroring the **v1**
+ * `/import/portfolio/template` handler, which keeps its narrower gate. The
+ * cut-over template is a different route with a different annotation, so the
+ * page links that one and this widens to match it. Same set as
+ * `canManageImportBatches`, and deliberately so — they are now the same
+ * controller-level decision about who runs a cut-over.
  */
 export function canDownloadImportTemplate(role: UserRole | undefined): boolean {
-    return hasPermission(role, "canAccessFinanceOps");
+    return hasPermission(role, "canManageImportBatches");
+}
+
+// ---- the cut-over contract import ----
+
+/**
+ * `PortfolioImportController.MAX_UPLOAD_BYTES` (:112) — the ordinary multipart
+ * ceiling, which the global handler turns into a 400 rather than a raw 500.
+ */
+export const CONTRACT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * `.xlsx` and nothing else. The server checks the file's SIGNATURE — the
+ * `PK\x03\x04` zip header (`ZIP_MAGIC`, :115, `looksLikeXlsx`) — not its name
+ * or its declared type, because "a renamed executable with an .xlsx extension
+ * would otherwise reach the parser".
+ *
+ * The client cannot read the magic bytes without loading the file, so it matches
+ * on the extension: enough to catch the ordinary mistake of picking a .csv,
+ * while the signature check is what actually protects the parser.
+ */
+export const CONTRACT_IMPORT_ACCEPT =
+    ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+export type ContractImportRefusal = "workbookTooBig" | "workbookWrongType";
+
+/** What the server would say, before a 10MB workbook travels to learn it. */
+export function contractImportRefusal(file: File): ContractImportRefusal | null {
+    if (file.size > CONTRACT_IMPORT_MAX_BYTES) return "workbookTooBig";
+    if (!file.name.toLowerCase().endsWith(".xlsx")) return "workbookWrongType";
+    return null;
+}
+
+/**
+ * Has the job stopped moving?
+ *
+ * `PortfolioImportService` sets exactly five statuses (`:630-662`):
+ * `VALIDATING` → `VALIDATION_FAILED`, or `VALIDATING` → `PERSISTING` →
+ * `COMPLETED` / `FAILED`. The first two are in flight; the last three are where
+ * it stops, and where the poll must stop with it — a poll that keeps running
+ * after a terminal state is a request every two seconds, forever.
+ */
+export function isImportJobTerminal(status: ImportJobStatus): boolean {
+    return status === "COMPLETED" || status === "VALIDATION_FAILED" || status === "FAILED";
 }
 
 /**
