@@ -1,0 +1,84 @@
+databaseChangeLog:
+  # Accounting v2 plan 3 (spec §8-§9). Rent is recognised per day: one
+  # rent_segment per RENT lease line (day rate = amount / actual days), sliced
+  # into calendar-month recognition_entries that are posted as CIL journals
+  # (Dr Advance Rent / Cr Rental Income) dated period_end. Termination
+  # truncates segments and reverses unearned rent; settlement becomes a
+  # ledger-derived statement whose finalisation posts one STL journal.
+  - changeSet:
+      id: 85-recognition-termination-settlement
+      author: claude
+      changes:
+        - createTable:
+            tableName: rent_segments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rs_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: lease_line_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rs_line, referencedTableName: lease_lines, referencedColumnNames: id } }
+              - column: { name: from_date, type: date, constraints: { nullable: false } }
+              - column: { name: to_date, type: date, constraints: { nullable: false } }
+              - column: { name: amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: days, type: int, constraints: { nullable: false } }
+              - column: { name: day_rate, type: "decimal(18,6)", constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false }, defaultValue: ACTIVE }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: rent_segments, indexName: idx_rs_lease, columns: [ { column: { name: lease_id } } ] }
+        - sql:
+            sql: ALTER TABLE rent_segments ADD CONSTRAINT ck_rs_dates CHECK (to_date >= from_date AND days = (to_date - from_date) + 1)
+
+        - createTable:
+            tableName: recognition_entries
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_re_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: segment_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_re_segment, referencedTableName: rent_segments, referencedColumnNames: id } }
+              - column: { name: period_start, type: date, constraints: { nullable: false } }
+              - column: { name: period_end, type: date, constraints: { nullable: false } }
+              - column: { name: days, type: int, constraints: { nullable: false } }
+              - column: { name: amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false }, defaultValue: PLANNED }
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_re_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: posted_at, type: timestamptz }
+        # Composite columnNames must be quoted: inside a YAML flow mapping an unquoted
+        # comma ends the entry, so an unquoted "segment_id, period_start" parses as
+        # columnNames: segment_id plus a stray key — which would build the unique
+        # constraint on segment_id alone (see changeset 81's note on this same trap).
+        - addUniqueConstraint: { tableName: recognition_entries, columnNames: "segment_id, period_start", constraintName: uq_re_segment_period }
+        - createIndex: { tableName: recognition_entries, indexName: idx_re_tenant_status_end, columns: [ { column: { name: tenant_id } }, { column: { name: status } }, { column: { name: period_end } } ] }
+        - createIndex: { tableName: recognition_entries, indexName: idx_re_lease, columns: [ { column: { name: lease_id } } ] }
+        - sql:
+            sql: ALTER TABLE recognition_entries ADD CONSTRAINT ck_recognition_days_positive CHECK (days > 0 AND period_end >= period_start)
+
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: terminated_on, type: date }
+              - column: { name: termination_journal_id, type: uuid, constraints: { foreignKeyName: fk_leases_termination_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: termination_notes, type: text }
+
+        - addColumn:
+            tableName: lease_settlements
+            columns:
+              - column: { name: settlement_date, type: date }
+              - column: { name: earned_rent, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: received_total, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: receivable_balance, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: deposits_held, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: penalties_outstanding, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: balance_due, type: "decimal(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: refund_bank_account_id, type: uuid, constraints: { foreignKeyName: fk_ls_refund_bank, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_ls_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: collection_cheque_id, type: uuid, constraints: { foreignKeyName: fk_ls_collection_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+        - addColumn:
+            tableName: lease_settlement_deductions
+            columns:
+              - column: { name: account_id, type: uuid, constraints: { foreignKeyName: fk_lsd_account, referencedTableName: accounts, referencedColumnNames: id } }
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE lease_settlement_deductions DROP COLUMN IF EXISTS account_id;
+              ALTER TABLE lease_settlements DROP COLUMN IF EXISTS settlement_date, DROP COLUMN IF EXISTS earned_rent, DROP COLUMN IF EXISTS received_total, DROP COLUMN IF EXISTS receivable_balance, DROP COLUMN IF EXISTS deposits_held, DROP COLUMN IF EXISTS penalties_outstanding, DROP COLUMN IF EXISTS balance_due, DROP COLUMN IF EXISTS refund_bank_account_id, DROP COLUMN IF EXISTS journal_id, DROP COLUMN IF EXISTS collection_cheque_id;
+              ALTER TABLE leases DROP COLUMN IF EXISTS terminated_on, DROP COLUMN IF EXISTS termination_journal_id, DROP COLUMN IF EXISTS termination_notes;
+              DROP TABLE IF EXISTS recognition_entries, rent_segments;

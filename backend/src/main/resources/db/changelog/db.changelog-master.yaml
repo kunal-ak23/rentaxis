@@ -175,3 +175,5 @@ databaseChangeLog:
       file: db/changelog/changesets/83-lease-posting-and-cheques.yaml
   - include:
       file: db/changelog/changesets/84-drop-v1-schedules.yaml
+  - include:
+      file: db/changelog/changesets/85-recognition-termination-settlement.yaml
