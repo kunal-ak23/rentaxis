@@ -368,13 +368,31 @@ public class VoucherService {
             if (in.paymentAccountId() == null) {
                 throw new BusinessRuleViolationException("A payment voucher needs a payment account (bank or cash)");
             }
-            requireLeaf(in.paymentAccountId(), "Payment account");
+            // Controller ruling (Task 5): this used to be checked only at post() —
+            // requirePostable, below — which let a clerk save a draft the server
+            // would always refuse later. Same predicate as
+            // ChequeService.isSettlementAccount, re-asserted at post for a row
+            // reached some other way (SQL, a restored backup).
+            Account pay = requireLeaf(in.paymentAccountId(), "Payment account");
+            if (!ChequeService.isSettlementAccount(pay)) {
+                throw new BusinessRuleViolationException("Payment account " + pay.getCode() + " " + pay.getName()
+                        + " must be a bank or cash account");
+            }
         }
         for (VoucherLineInput l : in.lines()) {
             if (l.accountId() == null) throw new BusinessRuleViolationException("Every line needs an account");
-            requireLeaf(l.accountId(), "Line account");
+            Account lineAccount = requireLeaf(l.accountId(), "Line account");
             if (l.amount() == null || l.amount().signum() <= 0) {
                 throw new BusinessRuleViolationException("Every line needs an amount greater than zero");
+            }
+            // Controller ruling (Task 5): moved from post()'s requirePostable — a
+            // purchase invoice buys an expense or an asset, never income; re-checked
+            // at post below for the same reason as the payment-account rule above.
+            if (in.docType() == VoucherType.PISR && lineAccount.getAccountType() != AccountType.EXPENSE
+                    && lineAccount.getAccountType() != AccountType.ASSET) {
+                throw new BusinessRuleViolationException("Line account " + lineAccount.getCode() + " "
+                        + lineAccount.getName() + " is " + lineAccount.getAccountType()
+                        + "; a purchase invoice line must be an expense or asset account");
             }
             BigDecimal rate = l.vatRate() == null ? BigDecimal.ZERO : l.vatRate();
             // Controller ruling (Plan 4): a BPV line carries no VAT — VAT belongs to the
@@ -388,7 +406,7 @@ public class VoucherService {
         }
     }
 
-    private void requireLeaf(UUID accountId, String label) {
+    private Account requireLeaf(UUID accountId, String label) {
         Account a = accounts.findById(accountId)
                 .orElseThrow(() -> new NotFoundException(label + " not found: " + accountId));
         if (a.isGroup()) {
@@ -398,6 +416,7 @@ public class VoucherService {
         if (!a.isActive()) {
             throw new BusinessRuleViolationException(label + " " + a.getCode() + " is inactive");
         }
+        return a;
     }
 
     private void apply(Voucher v, VoucherInput in) {

@@ -290,6 +290,13 @@ class PurchaseInvoicePostingIT {
      * A purchase invoice buys an expense or an asset. Crediting income through the
      * PISR path would read as a sale with the signs inverted, and the entry would
      * still balance, so only an explicit account-type check catches it.
+     *
+     * <p>Task 5 moved this check into {@code validate()} as well (see
+     * {@code VoucherDraftIT#aPisrLineOnAnIncomeAccountIsRejectedAtDraftTime}), so an
+     * income line can no longer reach {@code post()} through the service —
+     * {@code createDraft} would now refuse it. This test plants the invalid account
+     * directly on the saved line instead, to prove {@code requirePostable} still
+     * catches a row that reached this state some other way.
      */
     @Test
     void aPisrLineOnAnIncomeAccountIsRefusedAtPost() {
@@ -297,8 +304,9 @@ class PurchaseInvoicePostingIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), null, "Wrong account",
                 propertyId, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(income.getId(), null,
+                List.of(new VoucherService.VoucherLineInput(pestControl.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
+        jdbc.update("update voucher_lines set account_id = ? where voucher_id = ?", income.getId(), v.getId());
         assertThatThrownBy(() -> vouchers.post(v.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("expense or asset");

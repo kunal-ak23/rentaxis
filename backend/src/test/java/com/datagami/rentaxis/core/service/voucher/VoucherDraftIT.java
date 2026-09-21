@@ -222,4 +222,79 @@ class VoucherDraftIT {
         TenantContextHolder.setTenantId(tenantId);
         assertThat(vouchers.get(voucherId).getStatus()).isEqualTo(VoucherStatus.DRAFT);
     }
+
+    // ------------------------------------------------------------------
+    // Controller ruling (Task 5): two rules that used to be enforced only at
+    // post() must also refuse a DRAFT — a clerk should not be able to save a
+    // document the server will always reject later. Both are re-asserted at
+    // post() too (PurchaseInvoicePostingIT / PaymentVoucherPostingIT).
+    // ------------------------------------------------------------------
+
+    /** Same predicate as {@code ChequeService.isSettlementAccount}: bank or cash, not a receivable. */
+    @Test
+    void aBpvPaymentAccountThatIsNotBankOrCashIsRejectedAtDraftTime() {
+        Account receivable = accounts.createLeaf("Rental Receivable - Test",
+                accounts.getAccountByCode("A-02-01"), null);
+        VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
+                receivable.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                        new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+        assertThatThrownBy(() -> vouchers.createDraft(bad))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(receivable.getCode())
+                .hasMessageContaining("must be a bank or cash account");
+    }
+
+    /** Same refusal on updateDraft — an edit path must not reopen the hole. */
+    @Test
+    void aBpvPaymentAccountThatIsNotBankOrCashIsRejectedOnUpdateEither() {
+        Account bank = accounts.createLeaf("Emirates NBD - Test", accounts.getAccountByCode("A-02-02"), null);
+        Account receivable = accounts.createLeaf("Rental Receivable - Test2",
+                accounts.getAccountByCode("A-02-01"), null);
+        VoucherService.VoucherInput clean = new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
+                bank.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                        new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+        Voucher v = vouchers.createDraft(clean);
+        VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
+                receivable.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                        new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+        assertThatThrownBy(() -> vouchers.updateDraft(v.getId(), bad))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(receivable.getCode())
+                .hasMessageContaining("must be a bank or cash account");
+    }
+
+    /** A purchase invoice buys an expense or an asset, never income — same rule as at post. */
+    @Test
+    void aPisrLineOnAnIncomeAccountIsRejectedAtDraftTime() {
+        Account income = accounts.createLeaf("Other Income - Test", accounts.getAccountByCode("C-01-02"), null);
+        VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
+                VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), null, "x", null, null, null, null, null,
+                List.of(new VoucherService.VoucherLineInput(income.getId(), null,
+                        new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+        assertThatThrownBy(() -> vouchers.createDraft(bad))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(income.getCode())
+                .hasMessageContaining("expense or asset");
+    }
+
+    /** Same refusal on updateDraft — an edit path must not reopen the hole. */
+    @Test
+    void aPisrLineOnAnIncomeAccountIsRejectedOnUpdateEither() {
+        Account income = accounts.createLeaf("Other Income - Test2", accounts.getAccountByCode("C-01-02"), null);
+        Voucher v = vouchers.createDraft(pisr(new BigDecimal("100.00"), BigDecimal.ZERO));
+        VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
+                VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), null, "x", null, null, null, null, null,
+                List.of(new VoucherService.VoucherLineInput(income.getId(), null,
+                        new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+        assertThatThrownBy(() -> vouchers.updateDraft(v.getId(), bad))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(income.getCode())
+                .hasMessageContaining("expense or asset");
+    }
 }

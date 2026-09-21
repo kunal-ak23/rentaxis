@@ -202,8 +202,16 @@ class PaymentVoucherPostingIT {
     /**
      * Money leaves from a bank or cash leaf, never from a receivable: the same rule
      * {@code ChequeService.requireSettlementAccount} applies to a cheque's debit
-     * account. A receivable leaf is an active asset leaf, so the draft accepts it
-     * and only posting can catch it.
+     * account.
+     *
+     * <p>Task 5 moved this check into {@code validate()} as well (a clerk should
+     * not be able to save a draft the server will always refuse later — see
+     * {@code VoucherDraftIT#aBpvPaymentAccountThatIsNotBankOrCashIsRejectedAtDraftTime}),
+     * so a receivable leaf can no longer reach {@code post()} through the service —
+     * {@code createDraft} itself would now refuse it. This test plants the invalid
+     * account directly in the row instead, to prove {@code requirePostable} still
+     * catches a draft that reached this state some other way (SQL, a restored
+     * backup, a future code path that skips {@code validate()}).
      */
     @Test
     void aPaymentAccountThatIsNotBankOrCashIsRefusedAtPost() {
@@ -211,9 +219,10 @@ class PaymentVoucherPostingIT {
                 accounts.getAccountByCode("A-02-01"), null);
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
-                receivable.getId(), null, null,
+                bank.getId(), null, null,
                 List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
+        jdbc.update("update vouchers set payment_account_id = ? where id = ?", receivable.getId(), v.getId());
         assertThatThrownBy(() -> vouchers.post(v.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("must be a bank or cash account");
