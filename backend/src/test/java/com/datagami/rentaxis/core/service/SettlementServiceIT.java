@@ -75,6 +75,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -171,6 +175,13 @@ class SettlementServiceIT {
     private static final LocalDate T = LocalDate.of(2027, 2, 15);
     /** …and the day finance actually settles, five days later. */
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
+
+    /**
+     * The day a renewed predecessor is settled: after its own term ran out, which
+     * is the floor {@code requireUsableDate} applies to a lease that was never cut
+     * short.
+     */
+    private static final LocalDate RENEWAL_SETTLED_ON = END.plusDays(3);
 
     /**
      * A second termination date, chosen so the 2 Jan cheque is uncleared and dated
@@ -320,6 +331,18 @@ class SettlementServiceIT {
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
         recognition.runTo(T, false);
+        return leaseId;
+    }
+
+    /**
+     * The same lease with every instrument collected, so its register is empty and
+     * the only thing left on its books is the deposit. What a tenancy that simply
+     * ran its course looks like on the day it is settled.
+     */
+    private UUID galahFullyCollected() {
+        UUID leaseId = galah();
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_3));
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_4));
         return leaseId;
     }
 
@@ -869,6 +892,75 @@ class SettlementServiceIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * Save takes the same lease-row lock finalise takes, so a draft cannot be
+     * written over a settlement that was finalised while the form was open
+     * (review I-4).
+     *
+     * <p>Without the lock the two are not serialised at all: finalise claims the
+     * lease row, save claims nothing, and a save that read a DRAFT before finalise
+     * committed writes the whole row back afterwards — {@code status=DRAFT},
+     * {@code journal_id=NULL}, {@code settlement_date=NULL} — with the {@code STL}
+     * already posted and the refund already paid. The settlement can then be
+     * finalised a second time, releasing the same deposit and re-charging the same
+     * deductions.</p>
+     *
+     * <p>Sequenced rather than raced: a second transaction holds the lease row for
+     * exactly as long as this test needs it to, which is what finalise would be
+     * holding it for. The lock is NOWAIT, so the save fails immediately with the
+     * register's "try again" rather than parking a connection.</p>
+     */
+    @Test
+    void aSaveWhileTheLeaseRowIsHeldIsRefusedRatherThanOverwritingTheSettlement() throws Exception {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        UUID bank = leaf(AccountRole.BANK).getId();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    tx.executeWithoutResult(s -> {
+                        leaseRepo.findByIdForUpdate(leaseId).orElseThrow();
+                        held.countDown();
+                        try {
+                            release.await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            assertThat(held.await(30, TimeUnit.SECONDS)).isTrue();
+
+            assertThatThrownBy(() -> saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "4000")))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("This lease is being updated by another request");
+        } finally {
+            release.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+        }
+
+        // Nothing of the refused save survived, and the settlement finalises once.
+        assertThat(settlement.statement(leaseId).deductions()).as("the refused line").isEmpty();
+        finalize(leaseId, bank);
+        assertThat(stlCount()).as("one STL").isEqualTo(1L);
+        assertThatThrownBy(() -> saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "4000")))
+                .as("the late save")
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Settlement is already finalized");
+        assertThat(tx.execute(s -> settlement.buildSettlementResponse(leaseId)).getStatus())
+                .isEqualTo(SettlementStatus.FINALIZED.name());
+        assertTrialBalanceBalances();
+    }
+
     // ------------------------------------------------------------------
     // the guards around finalise
     // ------------------------------------------------------------------
@@ -1013,6 +1105,94 @@ class SettlementServiceIT {
         assertThat(lease(predecessor).getStatus()).isEqualTo(LeaseStatus.RENEWED);
         assertThat(settlement.statement(predecessor).depositsHeld()).isEqualByComparingTo("0.00");
         assertThat(settlement.statement(successor.getId()).depositsHeld()).isEqualByComparingTo("3000.00");
+    }
+
+    // ------------------------------------------------------------------
+    // a renewed predecessor is settled, never terminated (review I-1)
+    // ------------------------------------------------------------------
+
+    /**
+     * Spec §6.6 makes the deposit the accountant's choice: carry it forward
+     * <em>or</em> settle the old lease. Choosing not to carry it leaves 3,000 on
+     * the predecessor's dimension, and that contract has to be settleable or the
+     * liability is stranded for ever (review I-1).
+     *
+     * <p>A renewed predecessor is <b>settled, not terminated</b> — nothing was cut
+     * short, so there is no unearned rent and no paper to hand back — which is why
+     * {@code terminate} goes on refusing it and {@code finalizeSettlement} no longer
+     * does. The statement is the ordinary one drawn from the ledger, and the closure
+     * rule finishes the contract off exactly as it does an expired one.</p>
+     */
+    @Test
+    void aRenewedPredecessorWhoseDepositStayedBehindIsSettledAndClosed() {
+        UUID predecessor = galahFullyCollected();
+        LeaseDTO successor = renewal.renew(predecessor, new RenewLeaseRequest(
+                END.minusDays(14), END.plusDays(1), END.plusYears(1), null, false));
+        fixtures.generateGrid(successor.getId(), 4, END.plusDays(1));
+        posting.post(successor.getId());
+        assertThat(lease(predecessor).getStatus()).isEqualTo(LeaseStatus.RENEWED);
+
+        // Terminating it is still the wrong verb and is still refused.
+        assertThatThrownBy(() -> termination.terminate(predecessor,
+                new TerminateLeaseRequest(END, null, null, null), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only an ACTIVE or NOTICE_GIVEN lease can be terminated");
+
+        SettlementStatementDTO statement = settlement.statement(predecessor);
+        assertThat(statement.depositsHeld()).as("nothing carried it forward")
+                .isEqualByComparingTo("3000.00");
+        assertThat(statement.receivableBalance()).as("a full term, fully collected")
+                .isEqualByComparingTo("0.00");
+        assertThat(statement.netRefund()).isEqualByComparingTo("3000.00");
+
+        saveDraft(predecessor);
+        UUID bank = leaf(AccountRole.BANK).getId();
+        SettlementResponseDTO response = settlement.finalizeSettlement(predecessor,
+                new FinalizeSettlementRequest(RENEWAL_SETTLED_ON, bank, false), null);
+
+        assertThat(response.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(response.getRefundAmount()).isEqualByComparingTo("3000.00");
+        JournalEntry stl = stlOf(predecessor);
+        assertThat(debitOn(stl, leaf(AccountRole.SECURITY_DEPOSIT).getId())).isEqualByComparingTo("3000.00");
+        assertThat(creditOn(stl, bank)).isEqualByComparingTo("3000.00");
+
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, predecessor)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, predecessor)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, predecessor)).isEqualByComparingTo("0.00");
+        assertThat(lease(predecessor).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        // The successor is untouched: it charged and collected a deposit of its own.
+        assertThat(settlement.statement(successor.getId()).depositsHeld()).isEqualByComparingTo("3000.00");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * …and the carried-forward half of the same choice settles to nothing and closes
+     * just as cleanly: no deposit left, no receivable, no journal to post.
+     */
+    @Test
+    void aCarriedForwardPredecessorSettlesToZeroAndCloses() {
+        UUID predecessor = galahFullyCollected();
+        LeaseDTO successor = renewal.renew(predecessor, new RenewLeaseRequest(
+                END.minusDays(14), END.plusDays(1), END.plusYears(1), null, true));
+        fixtures.generateGrid(successor.getId(), 4, END.plusDays(1));
+        posting.post(successor.getId());
+
+        SettlementStatementDTO statement = settlement.statement(predecessor);
+        assertThat(statement.depositsHeld()).as("the JV moved it onto the successor")
+                .isEqualByComparingTo("0.00");
+        assertThat(statement.netRefund()).isEqualByComparingTo("0.00");
+
+        saveDraft(predecessor);
+        SettlementResponseDTO response = settlement.finalizeSettlement(predecessor,
+                new FinalizeSettlementRequest(RENEWAL_SETTLED_ON, null, false), null);
+
+        assertThat(response.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(response.getRefundAmount()).isEqualByComparingTo("0.00");
+        assertThat(response.getJournalId()).as("an entry for nothing is not a document").isNull();
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, predecessor)).isEqualByComparingTo("0.00");
+        assertThat(lease(predecessor).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        assertThat(settlement.statement(successor.getId()).depositsHeld()).isEqualByComparingTo("3000.00");
+        assertTrialBalanceBalances();
     }
 
     // ------------------------------------------------------------------

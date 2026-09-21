@@ -123,9 +123,26 @@ public class SettlementService {
      * its course is settled by the same statement without §9.1's steps 1–2
      * (spec §9.2, last sentence) — there is no unearned rent to reverse and no
      * paper to hand back, but the deposit still has to come off the books.</p>
+     *
+     * <p><b>RENEWED is here too</b> (review I-1). Spec §6.6 makes the deposit the
+     * accountant's choice: carry it forward "or a settlement on the old lease".
+     * With {@code carryDepositForward=false} the successor charges its own deposit
+     * line and the predecessor's stays on the predecessor's dimension — and that
+     * lease can never be terminated (it was not cut short, and
+     * {@code LeaseTerminationService} rightly refuses it), so without this the money
+     * was stranded: finalise answered "terminate it first" and terminate answered
+     * "settle it instead". The statement is the ordinary one; there is simply no
+     * unearned rent and no paper to hand back, exactly as for an expiry.</p>
+     *
+     * <p><b>CLOSED is not here</b> (review M-3). Closure already requires a
+     * FINALIZED settlement, so CLOSED-and-still-settleable is unreachable outside
+     * legacy data; if it were reached with a balance due it would raise a
+     * collection row on a contract whose register refuses every transition — money
+     * nobody could ever take. The already-FINALIZED check below is what refuses a
+     * second settlement, and it is unaffected.</p>
      */
     private static final Set<LeaseStatus> SETTLEABLE =
-            EnumSet.of(LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.CLOSED);
+            EnumSet.of(LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
 
     /**
      * Where a deduction's money goes when the line does not say (spec §9.2).
@@ -360,17 +377,30 @@ public class SettlementService {
      * <p>A draft stays editable until it is FINALIZED, and the snapshot columns are
      * refreshed on every save so {@code GET /settlement} and the live statement
      * cannot disagree the moment somebody presses Save.</p>
+     *
+     * <p><b>Under the lease's own row lock — the same one finalise takes</b>
+     * (review I-4). Without it the two are not serialised at all: finalise claims
+     * the lease row, save claimed nothing, and a save that had read a DRAFT before
+     * finalise committed wrote the whole row back afterwards — {@code status=DRAFT},
+     * {@code journal_id=NULL}, {@code settlement_date=NULL}, possibly different
+     * lines — with the {@code STL} posted and the refund already paid out. The
+     * settlement could then be finalised a second time, releasing the same deposit
+     * and re-charging the same deductions. The lock is what makes the FINALIZED
+     * check below reliable rather than advisory; {@code LeaseSettlement}'s
+     * {@code @Version} is the second line of defence behind it.</p>
      */
     @Transactional
     public LeaseSettlement saveDraft(UUID leaseId, SaveSettlementDTO dto, UUID userId) {
-        leaseAccessPolicy.requireManageable(leaseRepository.findById(leaseId).orElse(null));
-        Lease lease = findLeaseWithTenantCheck(leaseId);
+        Lease lease = lockLease(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
         UUID propertyId = propertyIdOf(lease);
 
         Optional<LeaseSettlement> existingOpt = leaseSettlementRepository.findByLeaseId(leaseId);
         LeaseSettlement settlement;
         if (existingOpt.isPresent()) {
             settlement = existingOpt.get();
+            // Read under the lease's row lock, so this is the settled fact and not a
+            // value a concurrent finalise is about to overtake.
             if (settlement.getStatus() == SettlementStatus.FINALIZED) {
                 throw new BusinessRuleViolationException("Settlement is already finalized");
             }
@@ -481,14 +511,24 @@ public class SettlementService {
         // STLs releasing the same deposit.
         Lease lease = lockLease(leaseId);
         leaseAccessPolicy.requireManageable(lease);
-        requireSettleable(lease);
-        requireUsableDate(lease, settlementDate);
 
-        LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
-                .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
-        if (settlement.getStatus() == SettlementStatus.FINALIZED) {
+        // "Already finalised" is asked first, and of the row rather than the lease's
+        // status, because the two guards answer different questions and the second
+        // press of the button is the commonest way to meet either. Dropping CLOSED
+        // from SETTLEABLE (review M-3) put the status guard in front of this one, so
+        // a second finalise on a contract the first one closed started answering
+        // "terminate the lease before settling it; this one is CLOSED" — true, and
+        // the wrong sentence: nothing needs terminating, the settlement is done.
+        LeaseSettlement existing = leaseSettlementRepository.findByLeaseId(leaseId).orElse(null);
+        if (existing != null && existing.getStatus() == SettlementStatus.FINALIZED) {
             throw new BusinessRuleViolationException("Settlement is already finalized");
         }
+        requireSettleable(lease);
+        requireUsableDate(lease, settlementDate);
+        if (existing == null) {
+            throw new NotFoundException("No settlement found for this lease");
+        }
+        LeaseSettlement settlement = existing;
 
         UUID propertyId = propertyIdOf(lease);
         List<LeaseSettlementDeduction> lines = storedLines(leaseId);

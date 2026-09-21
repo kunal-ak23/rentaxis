@@ -109,6 +109,19 @@ public class LeaseSettlement extends BaseTenantEntity {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    /**
+     * Optimistic lock behind {@code SettlementService}'s row lock (review I-4).
+     *
+     * <p>The lease-row lock is what serialises save against finalise; this is the
+     * backstop for any future path that writes a settlement without taking it. The
+     * failure it prevents is silent and expensive — a stale save putting a
+     * FINALIZED row back to DRAFT with {@code journal_id} blanked, over an
+     * {@code STL} that is already posted and a refund that has already been paid.
+     * {@code Lease} and {@code Cheque} carry the same guard for the same reason.</p>
+     */
+    @Version
+    private Long version;
+
     @PrePersist
     @Override
     public void onPrePersist() {

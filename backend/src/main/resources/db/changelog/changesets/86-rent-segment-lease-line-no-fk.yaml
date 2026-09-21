@@ -114,6 +114,19 @@ databaseChangeLog:
             columns:
               - column: { name: original_amount, type: "decimal(14,2)" }
               - column: { name: original_to_date, type: date }
+        # An optimistic lock on the settlement row.
+        #
+        # SettlementService.saveDraft now takes the lease's row lock, which is what
+        # actually serialises a save against a finalise. This is the backstop behind
+        # it, for any future path that writes a settlement without taking that lock:
+        # the failure is silent and expensive — a stale save puts a FINALIZED row
+        # back to DRAFT with journal_id blanked, over an STL that is posted and a
+        # refund that has been paid, and the settlement can then be finalised twice.
+        # Nullable with a default of 0, the same shape Lease and Cheque use (83).
+        - addColumn:
+            tableName: lease_settlements
+            columns:
+              - column: { name: version, type: bigint, defaultValueNumeric: 0 }
       rollback:
         # Non-destructive on purpose. The rows this changeset exists to protect are
         # retired segments whose line is gone, and re-adding a validating FK would
@@ -135,6 +148,7 @@ databaseChangeLog:
                 ADD CONSTRAINT fk_rs_line FOREIGN KEY (lease_line_id) REFERENCES lease_lines (id) NOT VALID;
               ALTER TABLE rent_segments
                 DROP COLUMN IF EXISTS original_amount, DROP COLUMN IF EXISTS original_to_date;
+              ALTER TABLE lease_settlements DROP COLUMN IF EXISTS version;
               DROP INDEX IF EXISTS ux_leases_one_active_per_unit;
               CREATE UNIQUE INDEX ux_leases_one_active_per_unit
                 ON leases (unit_id) WHERE status = 'ACTIVE';
