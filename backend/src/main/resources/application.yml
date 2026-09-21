@@ -58,6 +58,15 @@ rentaxis:
     key: ${RENTAXIS_ENCRYPTION_KEY:}
   listings:
     max-media-size-bytes: ${RENTAXIS_LISTINGS_MAX_MEDIA_SIZE_BYTES:10485760}
+  recognition:
+    job:
+      # Kill switch for the 00:30 per-day rent recognition pass, the one job that
+      # writes journals unattended. Default true: recognition is not a feature
+      # being rolled out, and a deployment that forgets this must still close its
+      # months. Set false to stop the nightly trigger without cutting a release;
+      # RevenueRecognitionJob.runFor(...) — the manual close and the cut-over
+      # catch-up — keeps working either way.
+      enabled: ${RENTAXIS_RECOGNITION_JOB_ENABLED:true}
 
 azure:
   storage:

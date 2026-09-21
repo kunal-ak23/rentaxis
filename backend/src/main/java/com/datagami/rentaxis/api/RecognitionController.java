@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.recognition.RecognitionRunResultDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -44,6 +45,9 @@ public class RecognitionController {
     /** Spec §8.4's refusal, worded once. */
     static final String FUTURE_PERIOD = "Cannot recognise income for periods that have not ended";
 
+    /** The other refusal: a close has to be a close of <em>something</em>. */
+    static final String NO_TENANT = "Select an organisation first";
+
     private static final String FINANCE_ROLES = "hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')";
 
     private final RecognitionService recognition;
@@ -72,6 +76,7 @@ public class RecognitionController {
     @PreAuthorize(FINANCE_ROLES)
     public ResponseEntity<List<RecognitionEntryDTO>> pending(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        requireTenantSelected();
         return ResponseEntity.ok(recognition.pending(notInTheFuture(to)));
     }
 
@@ -90,6 +95,7 @@ public class RecognitionController {
     public ResponseEntity<RecognitionRunResultDTO> run(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "false") boolean preview) {
+        requireTenantSelected();
         return ResponseEntity.ok(RecognitionRunResultDTO.from(recognition.runTo(notInTheFuture(to), preview)));
     }
 
@@ -108,6 +114,32 @@ public class RecognitionController {
     public ResponseEntity<List<RecognitionEntryDTO>> schedule(@PathVariable UUID id) {
         leaseService.requireReadableLease(id);
         return ResponseEntity.ok(recognition.scheduleFor(id));
+    }
+
+    /**
+     * A close needs an organisation to close.
+     *
+     * <p>{@code ApiSecurityFilter} authorises a SUPER_ADMIN unconditionally but only
+     * populates {@code TenantContextHolder} {@code if (requestedTenantId != null)},
+     * so a platform admin who has not picked an organisation in the switcher reaches
+     * these two endpoints with an empty context. That is fail-<em>safe</em> — there
+     * is no ambient tenant to post into, and the Hibernate filter stays off over a
+     * query that carries its tenant id explicitly — but it reached
+     * {@code RecognitionService.requireTenant()} and came back as an opaque 500 on a
+     * finance endpoint. The service's refusal stays exactly as loud as it was; this
+     * is the boundary saying the same thing in a sentence the caller can act on.</p>
+     *
+     * <p>Only these two. The lease schedule takes an id, which already resolves to
+     * exactly one organisation, and a tenant-less SUPER_ADMIN reading it is the same
+     * platform-wide read {@code LeaseController} already allows.</p>
+     *
+     * <p>The wording and the exception follow {@code PromotionAdminController.requireTenant()},
+     * which is the same guard for the same reason.</p>
+     */
+    private void requireTenantSelected() {
+        if (TenantContextHolder.getTenantId() == null) {
+            throw new BusinessRuleViolationException(NO_TENANT);
+        }
     }
 
     /**

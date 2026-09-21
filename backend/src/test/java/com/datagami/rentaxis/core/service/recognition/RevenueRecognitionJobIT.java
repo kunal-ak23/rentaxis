@@ -310,6 +310,62 @@ class RevenueRecognitionJobIT {
     }
 
     /**
+     * A pass asked to stop does not start, and leaves the flag for its caller.
+     *
+     * <p>A sweep over every organisation is minutes of work. A shutdown that
+     * interrupts the thread must not have to wait for the fortieth tenant, and —
+     * the textbook half of this — the flag must survive: {@code runTenant}'s
+     * {@code catch (Exception)} would otherwise swallow an {@code InterruptedException}
+     * whole, clearing the one signal the loop reads to decide whether to carry on.</p>
+     *
+     * <p>The flag is read-and-cleared the moment {@code runFor} returns, before any
+     * assertion touches the database: leaving it set would poison every later test
+     * on this worker thread, and a connection wait is exactly what notices it.</p>
+     */
+    @Test
+    void anInterruptedPassDoesNotStartAndKeepsTheFlag() {
+        boolean flagSurvived;
+        Thread.currentThread().interrupt();
+        try {
+            job.runFor(TODAY);
+        } finally {
+            flagSurvived = Thread.interrupted();
+        }
+
+        assertThat(flagSurvived).as("the interrupt is left for the caller to act on").isTrue();
+        assertThat(as(alpha.tenantId(), () -> recognition.scheduleFor(alphaLease)))
+                .allSatisfy(r -> assertThat(r.status()).isEqualTo(RecognitionStatus.PLANNED));
+        assertThat(cilNumbersOf(alpha.tenantId())).isEmpty();
+        assertThat(cilNumbersOf(beta.tenantId())).isEmpty();
+    }
+
+    /**
+     * The cause chain, not just the outer type — which is the whole reason the
+     * helper exists.
+     *
+     * <p>Nothing on the posting path declares {@code InterruptedException}, so when
+     * a pass really is interrupted it arrives wrapped: Hikari's connection wait and
+     * Hibernate both surface it inside a {@code RuntimeException}. A check on the
+     * outer type alone would be the same bug as no check at all.</p>
+     */
+    @Test
+    void aWrappedInterruptIsStillAnInterrupt() {
+        assertThat(RevenueRecognitionJob.wasInterrupted(new InterruptedException())).isTrue();
+        assertThat(RevenueRecognitionJob.wasInterrupted(
+                new RuntimeException("closing", new IllegalStateException("pool", new InterruptedException()))))
+                .as("the shape a real interrupt arrives in").isTrue();
+        assertThat(RevenueRecognitionJob.wasInterrupted(new RuntimeException("no advance-rent mapping")))
+                .as("an ordinary tenant failure is not a shutdown").isFalse();
+
+        // A cyclic cause chain must answer, not spin. (initCause refuses `this`, so
+        // the cycle needs two.)
+        RuntimeException a = new RuntimeException("a");
+        RuntimeException b = new RuntimeException("b", a);
+        a.initCause(b);
+        assertThat(RevenueRecognitionJob.wasInterrupted(a)).isFalse();
+    }
+
+    /**
      * {@code runFor} is the same pass on an explicit date — what a cut-over
      * catch-up uses. A date past the whole term closes the whole term.
      */

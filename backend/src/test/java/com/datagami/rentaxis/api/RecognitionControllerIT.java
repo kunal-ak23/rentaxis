@@ -119,6 +119,7 @@ class RecognitionControllerIT {
     private User accountant;
     private User admin;
     private User manager;
+    private User superAdmin;
 
     @BeforeEach
     void setUp() {
@@ -142,6 +143,7 @@ class RecognitionControllerIT {
         accountant = user(UserRole.ACCOUNTANT, fixtures.tenantId());
         admin = user(UserRole.TENANT_ADMIN, fixtures.tenantId());
         manager = user(UserRole.PROPERTY_MANAGER, fixtures.tenantId());
+        superAdmin = user(UserRole.SUPER_ADMIN, fixtures.tenantId());
 
         // Marina only. Without an assignment a PROPERTY_MANAGER is scoped to no
         // property at all, which is a different answer from "scoped to one".
@@ -189,6 +191,17 @@ class RecognitionControllerIT {
                 .header("X-User-Role", caller.getRole().name())
                 .header("X-Tenant-Id", caller.getTenantId().toString())
                 .header("X-User-Tenant-Id", caller.getTenantId().toString());
+    }
+
+    /**
+     * Identity but no organisation — what the proxy sends for a SUPER_ADMIN who
+     * has not picked one in the switcher. {@code ApiSecurityFilter} authorises this
+     * caller and leaves {@code TenantContextHolder} empty.
+     */
+    private static RestClient.RequestHeadersSpec<?> authWithoutTenant(
+            RestClient.RequestHeadersSpec<?> spec, User caller) {
+        return spec.header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
     }
 
     @SuppressWarnings("unchecked")
@@ -462,6 +475,41 @@ class RecognitionControllerIT {
                 .isInstanceOf(HttpClientErrorException.NotFound.class);
 
         // And this landlord's own rows are untouched by the outsider's run.
+        assertThat(pending(accountant, NOV_END.toString())).hasSize(6);
+    }
+
+    /**
+     * A platform admin who has not chosen an organisation is told so, in a 400 they
+     * can act on.
+     *
+     * <p>{@code ApiSecurityFilter} authorises a header-asserted SUPER_ADMIN
+     * unconditionally but only sets {@code TenantContextHolder}
+     * {@code if (requestedTenantId != null)} — so this caller arrives with no tenant
+     * at all. It is fail-safe (there is no ambient organisation to post into) but it
+     * used to reach {@code RecognitionService.requireTenant()} and come back as an
+     * opaque 500 "An internal error occurred" on a finance endpoint, which tells the
+     * operator nothing about the header they forgot.</p>
+     */
+    @Test
+    void aSuperAdminWithNoOrganisationSelectedIsRefusedCleanly() {
+        assertThatThrownBy(() -> authWithoutTenant(
+                client().post().uri("/api/v1/finance/recognition/run?to=" + NOV_END), superAdmin)
+                .retrieve().body(Map.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("Select an organisation first");
+
+        assertThatThrownBy(() -> authWithoutTenant(
+                client().get().uri("/api/v1/finance/recognition/pending?to=" + NOV_END), superAdmin)
+                .retrieve().body(List.class))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("Select an organisation first");
+
+        // The refusal is the missing organisation, not the role: the same admin with
+        // one chosen runs the close.
+        assertThat(run(superAdmin, "?to=" + NOV_END + "&preview=true").get("wouldPost")).isEqualTo(6);
+        assertThat(pending(superAdmin, NOV_END.toString())).hasSize(6);
+
+        // And the two refused calls wrote nothing.
         assertThat(pending(accountant, NOV_END.toString())).hasSize(6);
     }
 
