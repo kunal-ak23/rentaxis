@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { CheckCircle, FileText, Loader2, Paperclip, Plus, Trash2, Upload } from "lucide-react";
 import { Link } from "@/i18n/routing";
-import AccountPicker from "@/components/finance/AccountPicker";
+import AccountPicker, { loadAccounts } from "@/components/finance/AccountPicker";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
-import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
+import { fmtAmount, ledgerApi, type Account } from "@/lib/api/ledger";
 import {
     grossTotalOf, netTotalOf, vatOf, vatTotalOf, voucherApi,
     type EditableVoucherType, type VoucherAttachment, type VoucherDetail,
@@ -19,7 +19,7 @@ import {
 import {
     ALLOWED_VAT_RATES, ATTACHMENT_ACCEPT, attachmentRefusal, canAmendVoucher,
     canEditVoucher, canManageAttachments, draftRefusal, isDateLocked, lineAccountTypes,
-    vatAllowedOn, type DraftRefusal,
+    vatAllowedOn, type DraftRefusalResult,
 } from "@/lib/voucherRules";
 
 /**
@@ -36,10 +36,20 @@ import {
  * field whose only legal value is zero is not a field.
  *
  * **What it refuses to offer.** Every gate here comes from `lib/voucherRules.ts`,
- * which names the Java it mirrors. Post is disabled — with the reason on screen,
- * not hidden in a tooltip — whenever `draftRefusal` or the period lock says the
- * server would refuse. A posted voucher is read-only with an Amend button; a
- * reversed one is read-only with nothing.
+ * which names the Java it mirrors. Post is disabled — with the reason on screen
+ * and announced through `aria-describedby`, not hidden in a tooltip — whenever
+ * `draftRefusal` or the period lock says the server would refuse.
+ *
+ * **Amend mode.** A posted voucher opens read-only, but Amend does not merely
+ * ask for a date and a reason: it puts the document back into an editable state
+ * with the draft-time gates and the live VAT preview intact, because
+ * `VoucherService.amend` exists to "post a fresh voucher carrying the CORRECTED
+ * figures". Without that, the replacement submitted would be byte-for-byte the
+ * original and the screen would report success — the worst of both. Post
+ * amendment stays disabled until something has actually changed, Cancel
+ * amendment restores the posted values, and the reversal date is checked against
+ * the period lock inside the dialog that collects it. A reversed voucher is
+ * read-only with nothing.
  *
  * **One load.** The voucher, the vendors, the properties and the fiscal
  * settings are fetched once on mount. The plan 3 walkthrough lost an
@@ -92,6 +102,9 @@ const fieldLabel = "block text-[10px] font-semibold text-muted uppercase trackin
 const th = "text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider";
 const td = "px-4 py-2 text-xs";
 
+/** One stable id so the disabled Post button can point `aria-describedby` at its reason. */
+const BLOCKER_ID = "voucher-blocker-reason";
+
 const STATUS_CLASS: Record<VoucherStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
@@ -102,11 +115,18 @@ export default function VoucherForm({
     type,
     voucherId,
     onPosted,
+    onDeleted,
 }: {
     type: EditableVoucherType;
     /** An existing voucher to open: a draft to finish, or a posted one to read and amend. */
     voucherId?: string;
     onPosted?: (v: VoucherDetail) => void;
+    /**
+     * Its own callback rather than `onPosted(null as VoucherDetail)`: a deleted
+     * draft is not a posted voucher, and force-casting an empty object through
+     * `VoucherDetail` hands any future consumer garbage with no type error.
+     */
+    onDeleted?: () => void;
 }) {
     const t = useTranslations("Vouchers");
     const tLedger = useTranslations("Ledger");
@@ -128,6 +148,8 @@ export default function VoucherForm({
     const [attachments, setAttachments] = useState<VoucherAttachment[]>([]);
 
     const [savedId, setSavedId] = useState<string | undefined>(voucherId);
+    const [amendedFromId, setAmendedFromId] = useState<string | null>(null);
+    const [amendedFromNumber, setAmendedFromNumber] = useState<string | null>(null);
     const [status, setStatus] = useState<VoucherStatus>("DRAFT");
     const [voucherNumber, setVoucherNumber] = useState<string | null>(null);
     const [journalId, setJournalId] = useState<string | null>(null);
@@ -141,6 +163,12 @@ export default function VoucherForm({
     const [confirm, setConfirm] = useState<"post" | "delete" | "amend" | null>(null);
     const [amendDate, setAmendDate] = useState(todayIso);
     const [amendReason, setAmendReason] = useState("");
+    /** True from the moment Amend is clicked until it is posted or cancelled. */
+    const [amending, setAmending] = useState(false);
+    /** The posted document as loaded, so Cancel amendment can put it back verbatim. */
+    const [posted, setPosted] = useState<VoucherDetail | null>(null);
+    /** The chart by id — the second layer behind the pickers' own filters. */
+    const [accounts, setAccounts] = useState<Record<string, Account>>({});
 
     /**
      * The id this form has already loaded. A ref, not state: it must be written
@@ -164,6 +192,10 @@ export default function VoucherForm({
             .get()
             .then(f => alive && setBooksLockedThrough(f.booksLockedThrough))
             .catch(() => {});
+        // Shares AccountPicker's module-level cache, so this costs no extra GET.
+        loadAccounts()
+            .then(rows => alive && setAccounts(Object.fromEntries(rows.map(a => [a.id, a]))))
+            .catch(() => {});
         return () => {
             alive = false;
         };
@@ -183,6 +215,8 @@ export default function VoucherForm({
         setVoucherNumber(v.voucherNumber);
         setJournalId(v.journalId);
         setSavedId(v.id);
+        setAmendedFromId(v.amendedFromId ?? null);
+        setPosted(v);
         setLines(
             v.lines.length
                 ? v.lines.map(l => ({
@@ -204,6 +238,24 @@ export default function VoucherForm({
             .then(applyDetail)
             .catch(e => setLoadError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
     }, [voucherId, applyDetail, tCommon]);
+
+    /**
+     * The amended original's document number. It carries only its id on the
+     * replacement, and the link has to read as a document number — the same
+     * reason and the same shape as the journal page's reversal-pair lookup. A
+     * failed fetch falls back to a short id rather than blanking the link.
+     */
+    useEffect(() => {
+        if (!amendedFromId) return;
+        let alive = true;
+        voucherApi
+            .get(amendedFromId)
+            .then(v => alive && setAmendedFromNumber(v.voucherNumber ?? amendedFromId.slice(0, 8)))
+            .catch(() => alive && setAmendedFromNumber(amendedFromId.slice(0, 8)));
+        return () => {
+            alive = false;
+        };
+    }, [amendedFromId]);
 
     // ---- derived ----
 
@@ -228,10 +280,14 @@ export default function VoucherForm({
         [numericLines],
     );
 
-    const editable = canEditVoucher(status);
+    // Amend mode re-opens the fields of a POSTED document; everything downstream
+    // (the gates, the VAT preview, Add line) keys off this one flag, exactly as
+    // it does for a draft.
+    const editable = canEditVoucher(status) || amending;
     const locked = isDateLocked(docDate, booksLockedThrough);
+    const amendDateLocked = isDateLocked(amendDate, booksLockedThrough);
 
-    const refusal: DraftRefusal | null = useMemo(
+    const refusal: DraftRefusalResult | null = useMemo(
         () =>
             draftRefusal({
                 type,
@@ -243,22 +299,10 @@ export default function VoucherForm({
                     vatRate: numericLines[i].vatRate,
                 })),
                 payableOwners: vendors.length ? payableOwners : undefined,
+                accounts: Object.keys(accounts).length ? accounts : undefined,
             }),
-        [type, vendorId, paymentAccountId, lines, numericLines, payableOwners, vendors.length],
+        [type, vendorId, paymentAccountId, lines, numericLines, payableOwners, vendors.length, accounts],
     );
-
-    /**
-     * The single sentence under the buttons naming what the server would refuse.
-     * On screen rather than in a `title`, because a disabled button with a hidden
-     * reason is the same dead end as a 400 — it just arrives earlier.
-     */
-    const blocker = refusal
-        ? t(refusal)
-        : locked
-          ? t("periodLocked", { date: booksLockedThrough ?? "" })
-          : null;
-
-    const canPost = editable && !blocker && !busy;
 
     // ---- requests ----
 
@@ -287,6 +331,51 @@ export default function VoucherForm({
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
          chequeNumber, chequeDate, lines, numericLines, withVat],
     );
+
+    /**
+     * Has the amendment changed anything? Compared on the request body rather
+     * than on the individual fields, so it answers the only question that
+     * matters: would the replacement differ from what is already posted?
+     */
+    const dirty = useMemo(() => {
+        if (!posted) return true;
+        const current = body();
+        const original: VoucherInput = {
+            docType: type,
+            docDate: posted.docDate,
+            vendorId: posted.vendorId ?? null,
+            invoiceNumber: type === "PISR" ? posted.invoiceNumber ?? null : null,
+            narration: posted.narration ?? null,
+            propertyId: posted.propertyId ?? null,
+            paymentAccountId: type === "BPV" ? posted.paymentAccountId : null,
+            chequeNumber: type === "BPV" ? posted.chequeNumber ?? null : null,
+            chequeDate: type === "BPV" ? posted.chequeDate ?? null : null,
+            lines: posted.lines.map<VoucherLineInput>(l => ({
+                accountId: l.accountId,
+                description: l.description || null,
+                amount: l.amount,
+                vatRate: withVat ? l.vatRate ?? 0 : 0,
+                propertyId: posted.propertyId ?? null,
+            })),
+        };
+        return JSON.stringify(current) !== JSON.stringify(original);
+    }, [posted, body, type, withVat]);
+
+    /**
+     * The single sentence under the buttons naming what the server would refuse.
+     * On screen and wired to the button through `aria-describedby`, because a
+     * disabled button with a hidden reason is the same dead end as a 400 — it
+     * just arrives earlier, silently.
+     */
+    const blocker = refusal
+        ? t(refusal.key, { line: refusal.line ?? 1 })
+        : locked
+          ? t("periodLocked", { date: booksLockedThrough ?? "" })
+          : amending && !dirty
+            ? t("amendNoChanges")
+            : null;
+
+    const canPost = editable && !blocker && !busy;
 
     const run = async (fn: () => Promise<void>) => {
         setBusy(true);
@@ -326,21 +415,44 @@ export default function VoucherForm({
         run(async () => {
             if (savedId) await voucherApi.remove(savedId);
             setConfirm(null);
-            onPosted?.({ ...({} as VoucherDetail), id: savedId ?? "", status: "DRAFT" } as VoucherDetail);
+            onDeleted?.();
         });
+
+    /** Enter amend mode. The fields re-open; nothing is sent until Post amendment. */
+    const startAmend = () => {
+        setAmendDate(todayIso());
+        setAmendReason("");
+        setFormError(null);
+        setPostedNumber(null);
+        setAmending(true);
+    };
+
+    /** Leave amend mode, putting the posted document back exactly as it was. */
+    const cancelAmend = () => {
+        setAmending(false);
+        setFormError(null);
+        if (posted) applyDetail(posted);
+    };
 
     const amend = () =>
         run(async () => {
             if (!savedId) return;
+            // One transaction on the server: the original's journal is reversed and
+            // the replacement is posted, so a reversal cannot survive a failed
+            // replacement. What comes back is the NEW voucher, already POSTED.
             const fresh = await voucherApi.amend(savedId, {
                 reversalDate: amendDate,
                 reason: amendReason,
                 replacement: body(),
             });
+            setAmending(false);
             applyDetail(fresh);
             setPostedNumber(fresh.voucherNumber);
             setConfirm(null);
-            onPosted?.(fresh);
+            // Deliberately NOT onPosted: that navigates to the list, and an
+            // amendment's whole result is the replacement — its new number, and
+            // the link back to the original now marked REVERSED. The accountant
+            // stays on it.
         });
 
     const uploadAttachment = (file: File) => {
@@ -381,6 +493,16 @@ export default function VoucherForm({
                 >
                     <CheckCircle size={16} className="shrink-0" />
                     <span className="text-sm font-medium">{t("voucherPosted", { number: postedNumber })}</span>
+                </div>
+            )}
+
+            {amending && (
+                <div
+                    data-testid="amend-banner"
+                    className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3"
+                >
+                    <p className="text-sm font-bold">{t("amendMode", { number: voucherNumber ?? "" })}</p>
+                    <p className="text-xs mt-1">{t("amendModeHint")}</p>
                 </div>
             )}
 
@@ -790,13 +912,23 @@ export default function VoucherForm({
                     </Link>
                 )}
 
+                {amendedFromId && (
+                    <Link
+                        href={`/dashboard/finance/vouchers/${type === "BPV" ? "payment" : "purchase-invoice"}?id=${amendedFromId}`}
+                        data-testid="amended-from"
+                        className="text-xs font-semibold text-primary hover:underline cursor-pointer me-auto"
+                    >
+                        {t("amendedFrom", { number: amendedFromNumber ?? "…" })}
+                    </Link>
+                )}
+
                 {blocker && editable && (
-                    <p data-testid="voucher-blocker" className="text-xs font-medium text-warning me-auto">
+                    <p id={BLOCKER_ID} data-testid="voucher-blocker" className="text-xs font-medium text-warning me-auto">
                         {blocker}
                     </p>
                 )}
 
-                {editable && savedId && (
+                {canEditVoucher(status) && savedId && (
                     <button
                         type="button"
                         data-testid="delete-draft"
@@ -808,7 +940,7 @@ export default function VoucherForm({
                     </button>
                 )}
 
-                {editable && (
+                {canEditVoucher(status) && (
                     <button
                         type="button"
                         data-testid="save-draft"
@@ -820,11 +952,12 @@ export default function VoucherForm({
                     </button>
                 )}
 
-                {editable && (
+                {canEditVoucher(status) && (
                     <button
                         type="button"
                         data-testid="post-voucher"
                         disabled={!canPost}
+                        aria-describedby={blocker ? BLOCKER_ID : undefined}
                         onClick={() => setConfirm("post")}
                         className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -832,19 +965,39 @@ export default function VoucherForm({
                     </button>
                 )}
 
+                {amending && (
+                    <>
+                        <button
+                            type="button"
+                            data-testid="cancel-amendment"
+                            disabled={busy}
+                            onClick={cancelAmend}
+                            className="px-5 py-2.5 rounded-lg text-xs font-semibold border border-border text-foreground cursor-pointer disabled:opacity-50"
+                        >
+                            {t("cancelAmendment")}
+                        </button>
+                        <button
+                            type="button"
+                            data-testid="post-amendment"
+                            disabled={!canPost}
+                            aria-describedby={blocker ? BLOCKER_ID : undefined}
+                            onClick={() => setConfirm("amend")}
+                            className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {busy ? t("posting") : t("postAmendment")}
+                        </button>
+                    </>
+                )}
+
                 {/* A posted voucher is corrected by reversal, never edited: journal
                     entries are immutable, so an "edit" would put the document and
                     the ledger permanently out of step (VoucherService.amend). */}
-                {canAmendVoucher(status) && (
+                {canAmendVoucher(status) && !amending && (
                     <button
                         type="button"
                         data-testid="amend-voucher"
                         disabled={busy}
-                        onClick={() => {
-                            setAmendDate(todayIso());
-                            setAmendReason("");
-                            setConfirm("amend");
-                        }}
+                        onClick={startAmend}
                         className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50"
                     >
                         {t("amend")}
@@ -882,11 +1035,15 @@ export default function VoucherForm({
                 onClose={() => setConfirm(null)}
                 onConfirm={amend}
                 isLoading={busy}
-                title={t("amend")}
+                title={t("postAmendment")}
                 description={t("confirmAmend", { number: voucherNumber ?? "" })}
-                confirmText={t("amend")}
+                confirmText={t("postAmendment")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-amend"
+                // VoucherService.amend calls fiscal.assertOpen(reversalDate) before
+                // it writes anything, so the refusal belongs beside the field that
+                // causes it rather than after the round trip.
+                confirmDisabled={amendDateLocked}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
                 <div>
@@ -914,6 +1071,11 @@ export default function VoucherForm({
                         onChange={e => setAmendReason(e.target.value)}
                     />
                 </div>
+                {amendDateLocked && (
+                    <p role="alert" data-testid="amend-blocker" className="text-xs font-semibold text-warning">
+                        {t("amendReversalLocked", { date: booksLockedThrough ?? "" })}
+                    </p>
+                )}
                 {vendorId && <p className="sr-only">{vendorName(vendorId)}</p>}
             </ConfirmDialog>
         </div>

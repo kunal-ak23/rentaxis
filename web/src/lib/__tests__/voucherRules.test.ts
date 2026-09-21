@@ -111,36 +111,36 @@ describe("draftRefusal", () => {
     // VoucherService.validate :371-379
     it("refuses a purchase invoice with no vendor", () => {
         expect(
-            draftRefusal({ type: "PISR", vendorId: "", paymentAccountId: null, lines: [expenseLine] }),
+            draftRefusal({ type: "PISR", vendorId: "", paymentAccountId: null, lines: [expenseLine] })?.key,
         ).toBe("vendorRequired");
     });
 
     // VoucherService.validate :380-383
     it("refuses a payment voucher with no payment account", () => {
         expect(
-            draftRefusal({ type: "BPV", vendorId: "", paymentAccountId: null, lines: [{ ...expenseLine, vatRate: 0 }] }),
+            draftRefusal({ type: "BPV", vendorId: "", paymentAccountId: null, lines: [{ ...expenseLine, vatRate: 0 }] })?.key,
         ).toBe("paymentAccountRequired");
     });
 
     // VoucherLineInputDTO's @NotNull @Positive amount, and validate :398-400
     it("refuses a line with no account or a non-positive amount", () => {
         expect(
-            draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [{ accountId: "", amount: 100, vatRate: 5 }] }),
+            draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [{ accountId: "", amount: 100, vatRate: 5 }] })?.key,
         ).toBe("lineAccountRequired");
         expect(
-            draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [{ accountId: "a1", amount: 0, vatRate: 5 }] }),
+            draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [{ accountId: "a1", amount: 0, vatRate: 5 }] })?.key,
         ).toBe("lineAmountRequired");
     });
 
     // VoucherInputDTO's @NotEmpty lines
     it("refuses a voucher with no lines", () => {
-        expect(draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [] })).toBe("noLines");
+        expect(draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [] })?.key).toBe("noLines");
     });
 
     // VoucherService.BPV_VAT_REFUSAL — mirrored so the BPV form can never send one.
     it("refuses VAT on a payment-voucher line", () => {
         expect(
-            draftRefusal({ type: "BPV", vendorId: "", paymentAccountId: "p1", lines: [{ accountId: "a1", amount: 100, vatRate: 5 }] }),
+            draftRefusal({ type: "BPV", vendorId: "", paymentAccountId: "p1", lines: [{ accountId: "a1", amount: 100, vatRate: 5 }] })?.key,
         ).toBe("bpvNoVat");
     });
 
@@ -156,13 +156,13 @@ describe("draftRefusal", () => {
             draftRefusal({
                 type: "BPV", vendorId: "v1", paymentAccountId: "p1",
                 lines: [{ accountId: "pay-v2", amount: 100, vatRate: 0 }], payableOwners,
-            }),
+            })?.key,
         ).toBe("otherVendorPayable");
         expect(
             draftRefusal({
                 type: "BPV", vendorId: "", paymentAccountId: "p1",
                 lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }], payableOwners,
-            }),
+            })?.key,
         ).toBe("payableNeedsVendor");
         expect(
             draftRefusal({
@@ -170,6 +170,93 @@ describe("draftRefusal", () => {
                 lines: [{ accountId: "pay-v1", amount: 100, vatRate: 0 }], payableOwners,
             }),
         ).toBeNull();
+    });
+
+    /**
+     * The Java scopes it to BPV twice over: `validate` guards the call with
+     * `if (in.docType() == VoucherType.BPV)` and `requirePostable` calls it only
+     * from the BPV arm of its switch. A PISR line can never structurally hold a
+     * payable today (the picker is EXPENSE/ASSET, payables are LIABILITY), but
+     * that is an invariant in a different file — this function states its own.
+     */
+    it("leaves a purchase invoice alone, whatever its lines sit on", () => {
+        const payableOwners = { "pay-v1": "v1", "pay-v2": "v2" };
+        expect(
+            draftRefusal({
+                type: "PISR", vendorId: "v1", paymentAccountId: null,
+                lines: [{ accountId: "pay-v2", amount: 100, vatRate: 5 }], payableOwners,
+            }),
+        ).toBeNull();
+        expect(
+            draftRefusal({
+                type: "PISR", vendorId: "v2", paymentAccountId: null,
+                lines: [{ accountId: "pay-v1", amount: 100, vatRate: 5 }], payableOwners,
+            }),
+        ).toBeNull();
+    });
+
+    /**
+     * Second layer, behind the picker filters: a line loaded from a saved
+     * voucher whose account was reclassified or deactivated afterwards. The
+     * picker never offered it — it was already on the row — so only this check
+     * stands between the accountant and a 400 on submit.
+     * VoucherService.validate:404-409 / requireLeaf:422-433.
+     */
+    it("refuses a line account that is no longer one the server accepts", () => {
+        const good = account({ id: "a1", accountType: "EXPENSE" });
+        const reclassified = account({ id: "a1", accountType: "INCOME" });
+        const deactivated = account({ id: "a1", active: false });
+        const grouped = account({ id: "a1", group: true });
+
+        const shape = (a: Account) => ({
+            type: "PISR" as const, vendorId: "v1", paymentAccountId: null,
+            lines: [{ accountId: "a1", amount: 100, vatRate: 5 }],
+            accounts: { a1: a },
+        });
+
+        expect(draftRefusal(shape(good))).toBeNull();
+        expect(draftRefusal(shape(reclassified))?.key).toBe("lineAccountNotAllowed");
+        expect(draftRefusal(shape(deactivated))?.key).toBe("lineAccountNotAllowed");
+        expect(draftRefusal(shape(grouped))?.key).toBe("lineAccountNotAllowed");
+        // And it names the line, because an invoice has more than one.
+        expect(draftRefusal(shape(reclassified))?.line).toBe(1);
+    });
+
+    it("refuses a payment account that is no longer a bank or cash leaf", () => {
+        const shape = (a: Account) => ({
+            type: "BPV" as const, vendorId: "", paymentAccountId: "p1",
+            lines: [{ accountId: "a1", amount: 100, vatRate: 0 }],
+            accounts: { p1: a, a1: account({ id: "a1" }) },
+        });
+        expect(draftRefusal(shape(account({ id: "p1", accountType: "ASSET", accountSubType: "BANK" })))).toBeNull();
+        expect(
+            draftRefusal(shape(account({ id: "p1", accountType: "ASSET", accountSubType: "RECEIVABLE" })))?.key,
+        ).toBe("paymentAccountNotAllowed");
+        expect(
+            draftRefusal(shape(account({ id: "p1", accountType: "ASSET", accountSubType: "BANK", active: false })))?.key,
+        ).toBe("paymentAccountNotAllowed");
+    });
+
+    /** No chart loaded is not a refusal — the server still has the last word. */
+    it("does not block when the chart has not loaded", () => {
+        expect(
+            draftRefusal({
+                type: "PISR", vendorId: "v1", paymentAccountId: null,
+                lines: [{ accountId: "a1", amount: 100, vatRate: 5 }],
+            }),
+        ).toBeNull();
+    });
+
+    it("names the line on every line-scoped refusal", () => {
+        const r = draftRefusal({
+            type: "PISR", vendorId: "v1", paymentAccountId: null,
+            lines: [
+                { accountId: "a1", amount: 100, vatRate: 5 },
+                { accountId: "a2", amount: 0, vatRate: 5 },
+            ],
+        });
+        expect(r?.key).toBe("lineAmountRequired");
+        expect(r?.line).toBe(2);
     });
 });
 
@@ -209,16 +296,24 @@ describe("period lock", () => {
 describe("attachments", () => {
     // VoucherAttachmentService :49-52, :73-83
     it("refuses an oversized file and an unlisted type before uploading it", () => {
-        expect(ATTACHMENT_MAX_BYTES).toBe(25 * 1024 * 1024);
-        expect(ATTACHMENT_ACCEPT).toContain("application/pdf");
+        // The security ruling landing in the backend: 10MB, and only the three
+        // types a file signature can be checked for. HEIC and WEBP are out.
+        expect(ATTACHMENT_MAX_BYTES).toBe(10 * 1024 * 1024);
+        expect(ATTACHMENT_ACCEPT).toBe("application/pdf,image/png,image/jpeg");
+        expect(ATTACHMENT_ACCEPT).not.toContain("heic");
+        expect(ATTACHMENT_ACCEPT).not.toContain("webp");
         expect(ATTACHMENT_ACCEPT).not.toContain("video/mp4");
 
         const big = new File([""], "scan.pdf", { type: "application/pdf" });
         Object.defineProperty(big, "size", { value: ATTACHMENT_MAX_BYTES + 1 });
         expect(attachmentRefusal(big, 0)).toBe("attachmentTooBig");
 
-        const wrong = new File(["x"], "clip.mp4", { type: "video/mp4" });
-        expect(attachmentRefusal(wrong, 0)).toBe("attachmentWrongType");
+        for (const [name, type] of [["clip.mp4", "video/mp4"], ["photo.heic", "image/heic"], ["shot.webp", "image/webp"]]) {
+            expect(attachmentRefusal(new File(["x"], name, { type }), 0)).toBe("attachmentWrongType");
+        }
+        for (const type of ["application/pdf", "image/png", "image/jpeg"]) {
+            expect(attachmentRefusal(new File(["x"], "f", { type }), 0)).toBeNull();
+        }
 
         const ok = new File(["x"], "scan.pdf", { type: "application/pdf" });
         expect(attachmentRefusal(ok, 0)).toBeNull();

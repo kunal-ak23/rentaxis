@@ -105,6 +105,7 @@ function VoucherDocument({
                 type={type}
                 voucherId={params.get("id") ?? undefined}
                 onPosted={() => router.push("/dashboard/finance/vouchers")}
+                onDeleted={() => router.push("/dashboard/finance/vouchers")}
             />
         </div>
     );

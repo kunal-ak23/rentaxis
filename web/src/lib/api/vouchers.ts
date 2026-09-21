@@ -44,12 +44,22 @@ export type VoucherLine = {
     unitId: string | null;
 };
 
-/** `VoucherAttachmentDTO`. `uploadedAt` is an ISO-8601 instant. */
+/**
+ * `VoucherAttachmentDTO`. `uploadedAt` is an ISO-8601 instant.
+ *
+ * **`fileUrl` is deliberately absent.** A voucher attachment is a private
+ * document — a supplier invoice with a TRN and bank details on it — and a
+ * storage URL on the wire is a URL that can be forwarded, logged or guessed.
+ * The server is dropping the field for that reason; leaving it out of this type
+ * means any code that reaches for it fails to compile rather than quietly
+ * shipping the link. Downloads go through
+ * {@link voucherApi.attachments.downloadUrl} — the authenticated streaming
+ * endpoint, which also sends the filename in `Content-Disposition`.
+ */
 export type VoucherAttachment = {
     id: string;
     voucherId: string;
     name: string;
-    fileUrl: string;
     fileType: string | null;
     fileSize: number | null;
     uploadedAt: string;

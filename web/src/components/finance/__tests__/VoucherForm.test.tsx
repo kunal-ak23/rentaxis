@@ -22,6 +22,11 @@ import type { VoucherDetail, VoucherStatus } from "@/lib/api/vouchers";
 /** What the next picker click selects. One mock covers both pickers: SettlementAccountPicker wraps AccountPicker. */
 const picked = vi.hoisted(() => ({ id: "acct-1" }));
 
+/** The chart the form loads for its second-layer account checks. */
+const chart = vi.hoisted(() => ({
+    rows: [] as { id: string; accountType: string; accountSubType: string | null; group: boolean; active: boolean }[],
+}));
+
 vi.mock("@/components/finance/AccountPicker", () => ({
     __esModule: true,
     default: ({
@@ -44,7 +49,7 @@ vi.mock("@/components/finance/AccountPicker", () => ({
             {value ?? "pick"}
         </button>
     ),
-    loadAccounts: async () => [],
+    loadAccounts: async () => chart.rows,
     invalidateAccounts: () => {},
 }));
 
@@ -177,6 +182,7 @@ function fillLine(i: number, amount: string, rate?: string, accountId = "acct-1"
 beforeEach(() => {
     vi.clearAllMocks();
     picked.id = "acct-1";
+    chart.rows = [];
     api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
     api.create.mockResolvedValue(detail({ id: "v-new", lines: [], netTotal: 0, vatTotal: 0, grossTotal: 0 }));
     api.update.mockResolvedValue(detail());
@@ -318,7 +324,9 @@ describe("VoucherForm — Post gating", () => {
         pickLineAccount(0, "pay-2");
 
         await waitFor(() =>
-            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.otherVendorPayable),
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(
+                en.Vouchers.otherVendorPayable.replace("{line}", "1"),
+            ),
         );
         expect(screen.getByTestId("post-voucher")).toBeDisabled();
 
@@ -336,7 +344,9 @@ describe("VoucherForm — Post gating", () => {
         pickLineAccount(0, "pay-1");
 
         await waitFor(() =>
-            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.payableNeedsVendor),
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(
+                en.Vouchers.payableNeedsVendor.replace("{line}", "1"),
+            ),
         );
     });
 });
@@ -395,6 +405,140 @@ describe("VoucherForm — status", () => {
     });
 });
 
+describe("VoucherForm — amend actually amends", () => {
+    /**
+     * `VoucherService.amend` exists to "post a fresh voucher carrying the
+     * CORRECTED figures". Before fix round 1 the form was fully disabled the
+     * moment a voucher was POSTED, so the replacement it submitted was always
+     * byte-for-byte the original — and it reported success, which is worse than
+     * failing.
+     */
+    const posted = () =>
+        detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" });
+
+    async function enterAmendMode() {
+        api.get.mockResolvedValue(posted());
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("amend-voucher"));
+        return screen.findByTestId("amend-banner");
+    }
+
+    it("re-enables the figures and swaps the action row", async () => {
+        await enterAmendMode();
+        expect(screen.getByTestId("line-amount-0")).not.toBeDisabled();
+        expect(screen.getByTestId("doc-date")).not.toBeDisabled();
+        expect(screen.getByTestId("add-line")).toBeInTheDocument();
+        expect(screen.getByTestId("post-amendment")).toBeInTheDocument();
+        expect(screen.getByTestId("cancel-amendment")).toBeInTheDocument();
+        // The draft actions are not what an amendment does.
+        expect(screen.queryByTestId("save-draft")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("post-voucher")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("delete-draft")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("amend-voucher")).not.toBeInTheDocument();
+    });
+
+    it("keeps Post amendment disabled until something actually changed", async () => {
+        await enterAmendMode();
+        expect(screen.getByTestId("post-amendment")).toBeDisabled();
+        expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.amendNoChanges);
+
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+
+        // Typing it back makes it unchanged again.
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1000" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeDisabled());
+    });
+
+    it("sends the EDITED figures as the replacement", async () => {
+        api.amend.mockResolvedValue(
+            detail({ id: "v2", status: "POSTED", voucherNumber: "PISR/2026/0008", journalId: "j2", amendedFromId: "v1" }),
+        );
+        await enterAmendMode();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        fireEvent.change(screen.getByTestId("line-description-0"), { target: { value: "Chillers, corrected" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        fireEvent.change(await screen.findByTestId("amend-date"), { target: { value: "2026-09-30" } });
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "wrong amount" } });
+        fireEvent.click(screen.getByTestId("confirm-amend"));
+
+        await waitFor(() => expect(api.amend).toHaveBeenCalled());
+        const [id, body] = api.amend.mock.calls.at(-1)!;
+        expect(id).toBe("v1");
+        expect(body.reversalDate).toBe("2026-09-30");
+        expect(body.reason).toBe("wrong amount");
+        // The whole point: the replacement carries the corrected figures.
+        expect(body.replacement.lines[0].amount).toBe(1200);
+        expect(body.replacement.lines[0].description).toBe("Chillers, corrected");
+    });
+
+    it("lands on the replacement and links back to the original", async () => {
+        api.amend.mockResolvedValue(
+            detail({ id: "v2", status: "POSTED", voucherNumber: "PISR/2026/0008", journalId: "j2", amendedFromId: "v1" }),
+        );
+        await enterAmendMode();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        fireEvent.click(await screen.findByTestId("confirm-amend"));
+
+        expect(await screen.findByTestId("voucher-posted")).toHaveTextContent("PISR/2026/0008");
+        expect(screen.getByTestId("voucher-number")).toHaveTextContent("PISR/2026/0008");
+        expect(screen.getByTestId("amended-from")).toHaveAttribute(
+            "href",
+            "/dashboard/finance/vouchers/purchase-invoice?id=v1",
+        );
+        // And it is read-only again.
+        expect(screen.getByTestId("line-amount-0")).toBeDisabled();
+    });
+
+    it("restores the posted values on Cancel amendment", async () => {
+        await enterAmendMode();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "9999" } });
+        fireEvent.change(screen.getByTestId("narration"), { target: { value: "scribbled" } });
+        await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("9999"));
+
+        fireEvent.click(screen.getByTestId("cancel-amendment"));
+        await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("1000"));
+        expect(screen.getByTestId("narration")).toHaveValue("September maintenance");
+        expect(screen.getByTestId("line-amount-0")).toBeDisabled();
+        expect(screen.getByTestId("amend-voucher")).toBeInTheDocument();
+        expect(api.amend).not.toHaveBeenCalled();
+    });
+
+    /** VoucherService.amend calls fiscal.assertOpen(reversalDate) before it writes anything. */
+    it("refuses a reversal date inside a locked period, with the reason", async () => {
+        api.fiscal.mockResolvedValue({
+            fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-09-30",
+        });
+        await enterAmendMode();
+        // The replacement's own doc date is posted too, so move it clear of the
+        // lock first — otherwise that is what blocks, and this test would pass
+        // for the wrong reason.
+        fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-10-05" } });
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+
+        fireEvent.change(await screen.findByTestId("amend-date"), { target: { value: "2026-09-30" } });
+        await waitFor(() => expect(screen.getByTestId("confirm-amend")).toBeDisabled());
+        expect(screen.getByTestId("amend-blocker")).toHaveTextContent("2026-09-30");
+
+        fireEvent.change(screen.getByTestId("amend-date"), { target: { value: "2026-10-01" } });
+        await waitFor(() => expect(screen.getByTestId("confirm-amend")).toBeEnabled());
+    });
+
+    it.each<VoucherStatus>(["DRAFT", "REVERSED"])("never offers Amend on a %s voucher", async status => {
+        api.get.mockResolvedValue(detail({ status, voucherNumber: status === "DRAFT" ? null : "PISR/1" }));
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("voucher-status")).toHaveAttribute("data-status", status));
+        expect(screen.queryByTestId("amend-voucher")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("post-amendment")).not.toBeInTheDocument();
+    });
+});
+
 describe("VoucherForm — posting", () => {
     it("saves then posts, and reports the number the server assigned", async () => {
         renderForm();
@@ -421,6 +565,67 @@ describe("VoucherForm — posting", () => {
     });
 });
 
+describe("VoucherForm — the chart is the second layer behind the pickers", () => {
+    /**
+     * A line loaded from a saved draft was never offered by a picker — it was
+     * already on the row. If its account has since been reclassified, only this
+     * check stands between the accountant and a 400 on submit.
+     * VoucherService.validate:404-409.
+     */
+    it("blocks Post when a saved line's account was reclassified, naming the line", async () => {
+        chart.rows = [
+            { id: "acct-1", accountType: "INCOME", accountSubType: "OTHER_INCOME", group: false, active: true },
+        ];
+        api.get.mockResolvedValue(detail({ status: "DRAFT" }));
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() =>
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(
+                en.Vouchers.lineAccountNotAllowed.replace("{line}", "1"),
+            ),
+        );
+        expect(screen.getByTestId("post-voucher")).toBeDisabled();
+    });
+
+    it("lets the same line through once the account is an expense again", async () => {
+        chart.rows = [
+            { id: "acct-1", accountType: "EXPENSE", accountSubType: "DIRECT_EXPENSE", group: false, active: true },
+        ];
+        api.get.mockResolvedValue(detail({ status: "DRAFT" }));
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        expect(screen.queryByTestId("voucher-blocker")).not.toBeInTheDocument();
+    });
+});
+
+describe("VoucherForm — deleting a draft", () => {
+    it("deletes behind the confirmation and calls the API with the voucher id", async () => {
+        api.get.mockResolvedValue(detail({ status: "DRAFT" }));
+        api.remove.mockResolvedValue(undefined);
+        const onDeleted = vi.fn();
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <VoucherForm type="PISR" voucherId="v1" onDeleted={onDeleted} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(await screen.findByTestId("delete-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-delete"));
+        await waitFor(() => expect(api.remove).toHaveBeenCalledWith("v1"));
+        expect(onDeleted).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("VoucherForm — the disabled reason is announced", () => {
+    /** A disabled button whose reason is only visually adjacent tells a screen reader nothing. */
+    it("associates the blocker with the Post button", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fillLine(0, "2000", "5");
+        const blocker = await screen.findByTestId("voucher-blocker");
+        expect(screen.getByTestId("post-voucher")).toHaveAttribute("aria-describedby", blocker.id);
+        expect(blocker.id).toBeTruthy();
+    });
+});
+
 describe("VoucherForm — attachments", () => {
     it("refuses an oversized file before it is uploaded", async () => {
         api.get.mockResolvedValue(detail({ status: "DRAFT" }));
@@ -428,7 +633,7 @@ describe("VoucherForm — attachments", () => {
         const input = (await screen.findByTestId("attachment-input")) as HTMLInputElement;
 
         const big = new File(["x"], "scan.pdf", { type: "application/pdf" });
-        Object.defineProperty(big, "size", { value: 26 * 1024 * 1024 });
+        Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
         Object.defineProperty(input, "files", { value: [big] });
         fireEvent.change(input);
 
@@ -442,7 +647,7 @@ describe("VoucherForm — attachments", () => {
         api.get.mockResolvedValue(detail({ status: "DRAFT" }));
         api.attachUpload.mockResolvedValue({
             id: "att-1", voucherId: "v1", name: "scan.pdf",
-            fileUrl: "/x", fileType: "application/pdf", fileSize: 12, uploadedAt: "2026-09-20T10:00:00Z",
+            fileType: "application/pdf", fileSize: 12, uploadedAt: "2026-09-20T10:00:00Z",
         });
         renderForm("PISR", { voucherId: "v1" });
         const input = (await screen.findByTestId("attachment-input")) as HTMLInputElement;

@@ -100,6 +100,18 @@ export type DraftShape = {
      * has not loaded, which relaxes only the payable rules below.
      */
     payableOwners?: Record<string, string>;
+    /**
+     * The chart of accounts by id, when it has loaded.
+     *
+     * The pickers already refuse to OFFER an account the server would reject, so
+     * this is the second layer — and it is not redundant. A line loaded from a
+     * saved voucher was never offered by a picker: it was already on the row. If
+     * that account has since been reclassified (an expense turned into income) or
+     * deactivated, the picker has no say and only this check stands between the
+     * accountant and a 400 on submit. Omitted before the chart loads, which
+     * relaxes these two checks only.
+     */
+    accounts?: Record<string, Account>;
 };
 
 /**
@@ -113,44 +125,74 @@ export type DraftRefusal =
     | "noLines"
     | "vendorRequired"
     | "paymentAccountRequired"
+    | "paymentAccountNotAllowed"
     | "lineAccountRequired"
+    | "lineAccountNotAllowed"
     | "lineAmountRequired"
     | "bpvNoVat"
     | "payableNeedsVendor"
     | "otherVendorPayable";
 
-export function draftRefusal(d: DraftShape): DraftRefusal | null {
+/**
+ * A refusal, plus the 1-based line it is about where the rule is per-line. An
+ * invoice has more than one row, and "Every line needs an amount" on a six-line
+ * document is a hunt rather than an answer.
+ */
+export type DraftRefusalResult = { key: DraftRefusal; line?: number };
+
+export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
     // VoucherInputDTO's @NotEmpty lines / VoucherService.validate:368-370.
-    if (d.lines.length === 0) return "noLines";
+    if (d.lines.length === 0) return { key: "noLines" };
     // validate:371-379 — and the vendor must have a payable account, which the
     // server checks; the form only offers vendors, so that half is server-side.
-    if (d.type === "PISR" && !d.vendorId) return "vendorRequired";
+    if (d.type === "PISR" && !d.vendorId) return { key: "vendorRequired" };
     // validate:380-383.
-    if (d.type === "BPV" && !d.paymentAccountId) return "paymentAccountRequired";
+    if (d.type === "BPV") {
+        if (!d.paymentAccountId) return { key: "paymentAccountRequired" };
+        const pay = d.accounts?.[d.paymentAccountId];
+        // Second layer behind SettlementAccountPicker — see `accounts` above.
+        if (pay && !isPaymentAccountAllowed(pay)) return { key: "paymentAccountNotAllowed" };
+    }
 
-    for (const l of d.lines) {
+    for (let i = 0; i < d.lines.length; i++) {
+        const l = d.lines[i];
+        const line = i + 1;
         // validate:396 and VoucherLineInputDTO's @NotNull accountId.
-        if (!l.accountId) return "lineAccountRequired";
+        if (!l.accountId) return { key: "lineAccountRequired", line };
+        // Second layer behind the picker's accountTypes filter — see `accounts`.
+        const account = d.accounts?.[l.accountId];
+        if (account && !isLineAccountAllowed(d.type, account)) {
+            return { key: "lineAccountNotAllowed", line };
+        }
         // validate:398-400 and VoucherLineInputDTO's @NotNull @Positive amount.
-        if (!(l.amount > 0)) return "lineAmountRequired";
+        if (!(l.amount > 0)) return { key: "lineAmountRequired", line };
         // BPV_VAT_REFUSAL.
-        if (d.type === "BPV" && l.vatRate !== 0) return "bpvNoVat";
+        if (d.type === "BPV" && l.vatRate !== 0) return { key: "bpvNoVat", line };
 
         /*
-         * Landing in the backend alongside this screen: a BPV line that settles a
-         * vendor payable must settle THIS voucher's vendor. Paying vendor A out of
-         * vendor B's payable balance leaves both ledgers wrong in a way the
-         * balanced journal will not reveal.
+         * A BPV line that settles a vendor payable must settle THIS voucher's
+         * vendor. Paying vendor A out of vendor B's payable moves B's balance and
+         * leaves A's untouched — the journal balances, the payments list says one
+         * thing and the vendor ledger another, and nothing afterwards says which
+         * is wrong. A payable line with no vendor on the header is the same
+         * mistake in a different hat.
          *
-         * Mirrored ahead of the server rather than after it, because the form is
-         * where the mistake is made. With no vendor list loaded `payableOwners` is
-         * absent and these two checks simply do not fire — the server still has
-         * the last word.
+         * BPV only, and explicitly so: `VoucherService.validate` guards its call
+         * with `if (in.docType() == VoucherType.BPV)` and `requirePostable` calls
+         * it from the BPV arm of its switch alone. A PISR line cannot structurally
+         * hold a payable today — the picker is EXPENSE/ASSET and payables are
+         * LIABILITY — but that is an invariant in a different file, and the two
+         * should not be free to decouple silently.
+         *
+         * With no vendor list loaded `payableOwners` is absent and these two
+         * checks do not fire; the server still has the last word.
          */
-        const owner = d.payableOwners?.[l.accountId];
-        if (owner) {
-            if (!d.vendorId) return "payableNeedsVendor";
-            if (owner !== d.vendorId) return "otherVendorPayable";
+        if (d.type === "BPV") {
+            const owner = d.payableOwners?.[l.accountId];
+            if (owner) {
+                if (!d.vendorId) return { key: "payableNeedsVendor", line };
+                if (owner !== d.vendorId) return { key: "otherVendorPayable", line };
+            }
         }
     }
     return null;
@@ -192,12 +234,23 @@ export function isDateLocked(docDate: string, booksLockedThrough: string | null 
 
 // ---- attachments ----
 
-/** `VoucherAttachmentService:50` — an invoice scan, not a video. */
-export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+/**
+ * 10MB, per the security ruling landing in `VoucherAttachmentService`: an
+ * invoice scan, not a photo library. An oversize upload is a clean 400 there;
+ * this constant is what stops it travelling first.
+ */
+export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
-/** `VoucherAttachmentService:51-52`, verbatim, for the file input's `accept`. */
-export const ATTACHMENT_ACCEPT =
-    "application/pdf,image/jpeg,image/png,image/heic,image/heif,image/webp";
+/**
+ * PDF, PNG and JPEG — the three the server can verify by FILE SIGNATURE rather
+ * than by the client-declared Content-Type, which is why HEIC and WEBP came off
+ * the list. Used verbatim as the file input's `accept`.
+ *
+ * `accept` is a convenience, never the check: a user can always choose "all
+ * files", so `attachmentRefusal` re-reads the type and the server reads the
+ * bytes.
+ */
+export const ATTACHMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
 
 /** `VoucherAttachmentService:49` / `:73-76`. */
 export const MAX_ATTACHMENTS_PER_VOUCHER = 10;
