@@ -45,6 +45,16 @@ public final class LeaseVat {
     }
 
     /**
+     * Whether this line is taxed at all: VAT-applicable, and not a DEPOSIT (see the
+     * class note). The single definition every method here and every caller
+     * outside it agrees on.
+     */
+    private static boolean carriesVat(LeaseLine line) {
+        if (line == null || !line.isVatApplicable()) return false;
+        return line.getChargeType() == null || line.getChargeType().getBehaviour() != ChargeBehaviour.DEPOSIT;
+    }
+
+    /**
      * VAT the line carries: zero when the line is not VAT-applicable, and zero for
      * a DEPOSIT-behaviour line whatever its flag says (see the class note).
      *
@@ -53,11 +63,33 @@ public final class LeaseVat {
      * own copy of the deposit rule.</p>
      */
     public static BigDecimal vatOf(LeaseLine line) {
-        if (line == null || !line.isVatApplicable()) return BigDecimal.ZERO;
-        if (line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT) {
-            return BigDecimal.ZERO;
-        }
-        return vatOf(line.getNetAmount());
+        return carriesVat(line) ? vatOf(line.getNetAmount()) : BigDecimal.ZERO;
+    }
+
+    /**
+     * VAT on <em>part</em> of a line's net amount — what a termination credits back
+     * for the rent it un-earns (spec §9.1, review I-5).
+     *
+     * <p>The {@code TCO} debits the receivable with the rent <em>and</em> the tax on
+     * it. Cutting the term short un-earns some of that rent, and the tax on a supply
+     * that never happened is neither the landlord's to keep nor the Authority's to
+     * be paid: the {@code TCR} hands it back on the same journal, as a credit note.
+     * Without it the receivable carries 5% of rent the renter never used and the
+     * settlement collects it.</p>
+     *
+     * <p><b>Whether</b> there is any VAT is decided by exactly the same rule as
+     * {@link #vatOf(LeaseLine)} — only the base changes, from the whole line to the
+     * unearned slice — so the credit note and the original charge cannot be computed
+     * two different ways. Rounded once, on the portion, for the same per-line reason
+     * the class note gives.</p>
+     *
+     * <p>A null line (an amendment deleted it out from under a retired segment; see
+     * changeset 86) carries no VAT, which is also what a null line's original charge
+     * would compute to.</p>
+     */
+    public static BigDecimal vatOnPortion(LeaseLine line, BigDecimal portion) {
+        if (!carriesVat(line) || portion == null || portion.signum() <= 0) return BigDecimal.ZERO;
+        return vatOf(portion);
     }
 
     /** What the line is actually collected for: net plus its own VAT. */

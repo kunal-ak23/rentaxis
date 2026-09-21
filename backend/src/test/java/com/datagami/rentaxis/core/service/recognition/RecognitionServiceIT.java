@@ -88,6 +88,7 @@ class RecognitionServiceIT {
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired RecognitionService recognition;
+    @Autowired RecognitionPoster poster;
     @Autowired LeasePostingService posting;
     @Autowired LeaseRenewalService renewal;
     @Autowired ChequeGenerationService cheques;
@@ -177,6 +178,45 @@ class RecognitionServiceIT {
     private BigDecimal balanceOf(UUID accountId, UUID leaseId) {
         return tx.execute(s -> ledger.accountLedger(accountId,
                 new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null)).closingBalance());
+    }
+
+    private RecognitionEntryDTO rowStarting(UUID leaseId, LocalDate periodStart) {
+        List<RecognitionEntryDTO> found = schedule(leaseId).stream()
+                .filter(r -> r.periodStart().equals(periodStart)).toList();
+        assertThat(found).as("rows starting " + periodStart).hasSize(1);
+        return found.get(0);
+    }
+
+    /**
+     * Live recognition journals whose row is no longer POSTED — the shape a lost
+     * update leaves behind. Asked of the <em>journal</em> side on purpose:
+     * Hibernate rewrites every column on a dirty update, so the losing write also
+     * blanks {@code journal_id} and the orphan cannot be found from the schedule.
+     */
+    private long orphanedRecognitionJournals() {
+        return jdbc.queryForObject(
+                "select count(*) from journal_entries je where je.tenant_id = ?"
+                        + " and je.source_type = 'RECOGNITION' and je.status = 'POSTED'"
+                        + " and not exists (select 1 from recognition_entries re"
+                        + "                 where re.id = je.source_id and re.status = 'POSTED')",
+                Long.class, fixtures.tenantId());
+    }
+
+    /** Wait until some backend is actually parked on a row lock, rather than sleeping and hoping. */
+    private void awaitABlockedBackend() {
+        for (int i = 0; i < 300; i++) {
+            Long waiting = jdbc.queryForObject(
+                    "select count(*) from pg_stat_activity"
+                            + " where datname = current_database() and wait_event_type = 'Lock'", Long.class);
+            if (waiting != null && waiting > 0) return;
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        throw new AssertionError("No backend ever blocked on the row lock");
     }
 
     private long cilCount() {
@@ -465,6 +505,79 @@ class RecognitionServiceIT {
 
         // ---- the income the reversal took back ---------------------------
         assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("0");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * The nightly close posts a row while an amendment is deciding what to do with
+     * it: the row must end REVERSED, never CANCELLED with a live {@code CIL} behind
+     * it (review I-3).
+     *
+     * <p>Exactly the race Task 5 fixed for {@code truncateForTermination}, on the
+     * method the fix was never carried back to. The amendment takes the lease's row
+     * lock and the poster takes none, so the two are not serialised by it: a row
+     * read PLANNED while the run is posting it is set CANCELLED, the UPDATE waits
+     * for the poster's commit and then overwrites the whole row — status CANCELLED,
+     * {@code journal_id} blanked — leaving a POSTED {@code CIL} nobody will ever
+     * reverse while {@code build()} plans the same month again. Income recognised
+     * twice, advance rent over-released, trial balance still balancing.</p>
+     *
+     * <p><b>September rather than a later month.</b> Nothing is posted before the
+     * race starts, so the amendment reaches the contended row without having taken
+     * the {@code CIL} sequence lock on the way — which the poster wants next. That
+     * pair is issue #290 and it is not this test's subject; sequencing around it
+     * keeps this test about the lost update.</p>
+     */
+    @Test
+    void aRowPostedMidAmendIsReversedNotCancelled() throws Exception {
+        UUID leaseId = galah();
+        setChequeTotalTo(leaseId, "62000");
+        UUID september = rowStarting(leaseId, START).id();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch rowLocked = new CountDownLatch(1);
+        try {
+            Future<?> amending = pool.submit(() -> {
+                assertThat(rowLocked.await(30, TimeUnit.SECONDS)).isTrue();
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    return posting.amendLines(leaseId,
+                            List.of(line("RENT", "60000"), line("ADMIN_FEE", "2000")), "Rent corrected");
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+
+            tx.executeWithoutResult(s -> {
+                entriesRepo.lockById(september).orElseThrow();
+                rowLocked.countDown();
+                awaitABlockedBackend();
+                poster.postJoining(september);
+            });
+
+            amending.get(60, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        RecognitionEntry raced = tx.execute(s -> entriesRepo.findById(september).orElseThrow());
+        assertThat(raced.getStatus()).as("posted under the amendment's nose")
+                .isEqualTo(RecognitionStatus.REVERSED);
+        assertThat(raced.getJournalId()).as("still pointing at the CIL it explains").isNotNull();
+        assertThat(journal(raced.getJournalId()).getStatus()).isEqualTo(JournalStatus.REVERSED);
+
+        assertThat(orphanedRecognitionJournals()).as("live CILs with no POSTED row").isZero();
+        // The month was recognised once and handed back once: nothing net in income,
+        // and the rebuilt schedule plans September again from the new contract value.
+        assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("0");
+        List<RecognitionEntryDTO> live = schedule(leaseId).stream()
+                .filter(r -> r.status() == RecognitionStatus.PLANNED).toList();
+        assertThat(live).hasSize(13);
+        assertThat(live.stream().map(RecognitionEntryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("60000.00");
         assertTrialBalanceBalances();
     }
 

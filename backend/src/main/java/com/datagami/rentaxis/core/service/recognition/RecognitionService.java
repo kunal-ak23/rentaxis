@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -233,13 +234,30 @@ public class RecognitionService {
      * extension's lines, whose own TCO it also reverses — so rebuilding only the
      * base term would leave the extension's rent charged in the ledger and never
      * recognised.</p>
+     *
+     * <p><b>Every decision is made under the row's own write lock</b>, exactly as
+     * {@link #truncateForTermination}'s is and for the same reason (review I-3). An
+     * amendment holds the <em>lease</em> row, and {@link RecognitionPoster} takes no
+     * lease lock at all, so the two are not serialised by it: a row read PLANNED
+     * while the nightly or a hand-run close is posting it would be set CANCELLED,
+     * its UPDATE would wait for the poster's commit and then overwrite the whole row
+     * — status CANCELLED, {@code journal_id} blanked — leaving a POSTED {@code CIL}
+     * with nothing pointing at it while {@code build()} plans the same month again.
+     * Income recognised twice, advance rent over-released, and a trial balance that
+     * still balances. Under the lock the same row reads POSTED and is reversed.</p>
      */
     @Transactional
     public void rebuildAfterAmend(UUID leaseId, LocalDate reversalDate) {
         Lease lease = lease(leaseId);
         LocalDate on = reversalDate == null ? LocalDate.now() : reversalDate;
 
-        for (RecognitionEntry entry : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
+        // Ids, not the instances just read: each row is re-read under its own write
+        // lock before it is touched, and the decision below is made on the status
+        // that read returns. See lock().
+        List<UUID> entryIds = entries.findByLease_IdOrderByPeriodStartAsc(leaseId).stream()
+                .map(RecognitionEntry::getId).toList();
+        for (UUID entryId : entryIds) {
+            RecognitionEntry entry = lock(entryId);
             if (entry.getStatus() == RecognitionStatus.POSTED && entry.getJournalId() != null) {
                 postingService.reverse(entry.getJournalId(), on, "Lease amended");
                 entry.setStatus(RecognitionStatus.REVERSED);
@@ -276,6 +294,14 @@ public class RecognitionService {
      *                        {@code earnedThrough}, which is the whole point
      * @param unearned        Σ {@code (segment.amount − earnedThrough)} — the
      *                        liability the {@code TCR} hands back
+     * @param unearnedVat     Σ over the same segments of the VAT their lease line
+     *                        charged on that unearned amount, through the shared
+     *                        {@code LeaseVat} helper. The {@code TCR} credits it
+     *                        back to the receivable as a credit note
+     *                        ({@code Dr OUTPUT_VAT}); zero on a residential tenancy.
+     *                        Computed per segment and summed, never 5% of the total,
+     *                        because a lease can mix a VAT-bearing rent line with
+     *                        one that is not
      * @param deferrals       the unearned amount split by the account the
      *                        {@code TCO} actually deferred into, one entry per
      *                        segment that has anything left. The debit has to face
@@ -289,7 +315,8 @@ public class RecognitionService {
      *                        starts writing
      */
     public record TerminationRecognition(BigDecimal earnedThrough, BigDecimal recognisedSoFar,
-                                         BigDecimal unearned, List<UnearnedDeferral> deferrals,
+                                         BigDecimal unearned, BigDecimal unearnedVat,
+                                         List<UnearnedDeferral> deferrals,
                                          LocalDate latestPostingDate) {
     }
 
@@ -381,6 +408,7 @@ public class RecognitionService {
     private TerminationRecognition summarise(Lease lease, List<RentSegment> live, LocalDate t) {
         BigDecimal earned = BigDecimal.ZERO;
         BigDecimal unearned = BigDecimal.ZERO;
+        BigDecimal unearnedVat = BigDecimal.ZERO;
         List<UnearnedDeferral> deferrals = new ArrayList<>();
         for (RentSegment segment : live) {
             BigDecimal segmentEarned = ProrationEngine.earnedThrough(
@@ -390,6 +418,11 @@ public class RecognitionService {
             unearned = unearned.add(segmentUnearned);
             if (segmentUnearned.signum() > 0) {
                 deferrals.add(new UnearnedDeferral(poster.deferralOf(segment, lease), segmentUnearned));
+                // The tax follows the supply: whatever this segment's line charged
+                // VAT on, the part of it the tenancy never used is handed back too.
+                // Asked of LeaseVat rather than multiplied here — one definition of
+                // which lines are taxed and at what rate (spec §6.2).
+                unearnedVat = unearnedVat.add(LeaseVat.vatOnPortion(lineOf(segment), segmentUnearned));
             }
         }
         List<RecognitionEntry> posted = entries
@@ -400,8 +433,25 @@ public class RecognitionService {
                 earned.setScale(2, RoundingMode.HALF_UP),
                 recognised.setScale(2, RoundingMode.HALF_UP),
                 unearned.setScale(2, RoundingMode.HALF_UP),
+                unearnedVat.setScale(2, RoundingMode.HALF_UP),
                 List.copyOf(deferrals),
                 latestPostingDate(posted, t));
+    }
+
+    /**
+     * The lease line a segment was cut from, or null when an amendment has since
+     * deleted it.
+     *
+     * <p>Null is a real answer here rather than a failure: changeset 86 dropped
+     * {@code fk_rs_line} precisely so a retired segment can outlive its line, and a
+     * line that no longer exists charges no VAT to hand back. A <em>live</em>
+     * segment always has its line — a rebuild cancels the old segments and cuts new
+     * ones from the new lines — so the null case cannot be reached from a
+     * termination on a lease that is still running.</p>
+     */
+    private LeaseLine lineOf(RentSegment segment) {
+        return segment.getLeaseLineId() == null ? null
+                : leaseLines.findById(segment.getLeaseLineId()).orElse(null);
     }
 
     /**
