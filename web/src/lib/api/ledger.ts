@@ -2,7 +2,15 @@ import { throwIfNotOk } from "@/lib/api/facilities";
 
 const BASE = "/api/proxy/v1";
 
-function qs(params: Record<string, string | number | string[] | undefined | null>): string {
+/**
+ * Query string from a params object, dropping undefined, null and "" so an
+ * untouched filter never reaches the server as an empty enum name.
+ *
+ * Exported (with `boolean` added to the value union) so the voucher client —
+ * and anything else under `lib/api` — reuses one definition instead of
+ * re-deriving this twenty-line convention per module.
+ */
+export function qs(params: Record<string, string | number | boolean | string[] | undefined | null>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
@@ -12,12 +20,14 @@ function qs(params: Record<string, string | number | string[] | undefined | null
   return s ? `?${s}` : "";
 }
 
-async function get<T>(path: string): Promise<T> {
+/** GET `/api/proxy/v1{path}`, throwing an `ApiError` carrying the server's own message. */
+export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: "GET" });
   await throwIfNotOk(res);
   return res.json();
 }
-async function send<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+/** POST/PUT/DELETE with a JSON body (or none), same error handling as {@link apiGet}. */
+export async function apiSend<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -68,6 +78,27 @@ export type JournalDocType =
   | "JV";
 
 export type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
+
+/**
+ * What wrote a journal entry. Mirrors the Java enum
+ * `domain/entity/enums/JournalSourceType.java` name for name.
+ *
+ * Only `MANUAL` is reversible through `POST /journals/{id}/reverse`: every other
+ * value means the entry belongs to a document (a voucher, a lease, a cheque, a
+ * recognition period, a settlement), and that document is reversed — or amended
+ * — through its own screen so the document and the ledger cannot drift apart.
+ */
+export type JournalSourceType =
+  | "LEASE"
+  | "CHEQUE"
+  | "RECOGNITION"
+  | "PENALTY"
+  | "SETTLEMENT"
+  | "VOUCHER"
+  | "OPENING_BALANCE"
+  | "IMPORT"
+  | "MANUAL"
+  | "REVERSAL";
 
 export type AccountSubType =
   | "FIXED_ASSET"
@@ -192,7 +223,7 @@ export type JournalEntry = {
   unitId: string | null;
   leaseId: string | null;
   renterId: string | null;
-  sourceType: string | null;
+  sourceType: JournalSourceType | null;
   sourceId: string | null;
   reversalOfId: string | null;
   reversedById: string | null;
@@ -273,14 +304,14 @@ export type ManualJournalBody = {
 
 export const ledgerApi = {
   accounts: {
-    list: () => get<Account[]>("/finance/accounts"),
-    tree: () => get<Account[]>("/finance/accounts/tree"),
-    children: (id: string) => get<Account[]>(`/finance/accounts/${id}/children`),
-    create: (body: CreateAccountBody) => send<Account>("POST", "/finance/accounts", body),
+    list: () => apiGet<Account[]>("/finance/accounts"),
+    tree: () => apiGet<Account[]>("/finance/accounts/tree"),
+    children: (id: string) => apiGet<Account[]>(`/finance/accounts/${id}/children`),
+    create: (body: CreateAccountBody) => apiSend<Account>("POST", "/finance/accounts", body),
     /** Seeds the default chart plus the property-account template and role defaults. */
-    seed: () => send<Account[]>("POST", "/finance/accounts/seed"),
-    update: (id: string, body: UpdateAccountBody) => send<Account>("PUT", `/finance/accounts/${id}`, body),
-    remove: (id: string) => send<void>("DELETE", `/finance/accounts/${id}`),
+    seed: () => apiSend<Account[]>("POST", "/finance/accounts/seed"),
+    update: (id: string, body: UpdateAccountBody) => apiSend<Account>("PUT", `/finance/accounts/${id}`, body),
+    remove: (id: string) => apiSend<void>("DELETE", `/finance/accounts/${id}`),
     import: async (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
@@ -290,40 +321,40 @@ export const ledgerApi = {
     },
   },
   propertyAccounts: {
-    get: (propertyId: string) => get<RoleMapping[]>(`/properties/${propertyId}/accounts`),
-    generate: (propertyId: string) => send<RoleMapping[]>("POST", `/properties/${propertyId}/accounts/generate`),
+    get: (propertyId: string) => apiGet<RoleMapping[]>(`/properties/${propertyId}/accounts`),
+    generate: (propertyId: string) => apiSend<RoleMapping[]>("POST", `/properties/${propertyId}/accounts/generate`),
     set: (propertyId: string, role: AccountRole, accountId: string) =>
-      send<RoleMapping>("PUT", `/properties/${propertyId}/accounts/${role}`, { accountId }),
-    clear: (propertyId: string, role: AccountRole) => send<void>("DELETE", `/properties/${propertyId}/accounts/${role}`),
+      apiSend<RoleMapping>("PUT", `/properties/${propertyId}/accounts/${role}`, { accountId }),
+    clear: (propertyId: string, role: AccountRole) => apiSend<void>("DELETE", `/properties/${propertyId}/accounts/${role}`),
   },
   template: {
-    get: () => get<TemplateRow[]>("/finance/account-template"),
-    save: (rows: TemplateRow[]) => send<TemplateRow[]>("PUT", "/finance/account-template", rows),
+    get: () => apiGet<TemplateRow[]>("/finance/account-template"),
+    save: (rows: TemplateRow[]) => apiSend<TemplateRow[]>("PUT", "/finance/account-template", rows),
   },
   defaults: {
-    get: () => get<RoleMapping[]>("/finance/default-accounts"),
-    set: (role: AccountRole, accountId: string) => send<RoleMapping>("PUT", `/finance/default-accounts/${role}`, { accountId }),
+    get: () => apiGet<RoleMapping[]>("/finance/default-accounts"),
+    set: (role: AccountRole, accountId: string) => apiSend<RoleMapping>("PUT", `/finance/default-accounts/${role}`, { accountId }),
   },
-  roles: () => get<{ role: AccountRole; propertyScoped: boolean }[]>("/finance/account-roles"),
+  roles: () => apiGet<{ role: AccountRole; propertyScoped: boolean }[]>("/finance/account-roles"),
   ledger: {
-    general: (q: LedgerQuery) => get<AccountLedger[]>(`/finance/ledger${qs(q)}`),
-    account: (id: string, q: LedgerQuery) => get<AccountLedger>(`/finance/ledger/account/${id}${qs(q)}`),
-    renter: (renterId: string, q: { from?: string; to?: string }) => get<AccountLedger[]>(`/finance/ledger/renter/${renterId}${qs(q)}`),
-    vendor: (vendorId: string, q: { from?: string; to?: string }) => get<AccountLedger>(`/finance/ledger/vendor/${vendorId}${qs(q)}`),
+    general: (q: LedgerQuery) => apiGet<AccountLedger[]>(`/finance/ledger${qs(q)}`),
+    account: (id: string, q: LedgerQuery) => apiGet<AccountLedger>(`/finance/ledger/account/${id}${qs(q)}`),
+    renter: (renterId: string, q: { from?: string; to?: string }) => apiGet<AccountLedger[]>(`/finance/ledger/renter/${renterId}${qs(q)}`),
+    vendor: (vendorId: string, q: { from?: string; to?: string }) => apiGet<AccountLedger>(`/finance/ledger/vendor/${vendorId}${qs(q)}`),
   },
-  trialBalance: (q: { asOf?: string; propertyId?: string }) => get<TrialBalanceRow[]>(`/finance/trial-balance${qs(q)}`),
+  trialBalance: (q: { asOf?: string; propertyId?: string }) => apiGet<TrialBalanceRow[]>(`/finance/trial-balance${qs(q)}`),
   journals: {
     list: (q: { docType?: JournalDocType | ""; from?: string; to?: string; propertyId?: string; leaseId?: string; page: number; size: number }) =>
-      get<Page<JournalEntry>>(`/finance/journals${qs(q)}`),
-    get: (id: string) => get<JournalEntry>(`/finance/journals/${id}`),
-    postManual: (body: ManualJournalBody) => send<JournalEntry>("POST", "/finance/journals", body),
-    reverse: (id: string, body: { date: string; reason: string }) => send<JournalEntry>("POST", `/finance/journals/${id}/reverse`, body),
-    docTypes: () => get<JournalDocType[]>("/finance/journals/doc-types"),
+      apiGet<Page<JournalEntry>>(`/finance/journals${qs(q)}`),
+    get: (id: string) => apiGet<JournalEntry>(`/finance/journals/${id}`),
+    postManual: (body: ManualJournalBody) => apiSend<JournalEntry>("POST", "/finance/journals", body),
+    reverse: (id: string, body: { date: string; reason: string }) => apiSend<JournalEntry>("POST", `/finance/journals/${id}/reverse`, body),
+    docTypes: () => apiGet<JournalDocType[]>("/finance/journals/doc-types"),
   },
   fiscal: {
-    get: () => get<FiscalSettings>("/finance/fiscal-settings"),
-    update: (body: { fiscalYearStartMonth?: number; booksStartDate?: string }) => send<FiscalSettings>("PUT", "/finance/fiscal-settings", body),
-    lock: (through: string) => send<FiscalSettings>("POST", "/finance/fiscal-settings/lock", { through }),
+    get: () => apiGet<FiscalSettings>("/finance/fiscal-settings"),
+    update: (body: { fiscalYearStartMonth?: number; booksStartDate?: string }) => apiSend<FiscalSettings>("PUT", "/finance/fiscal-settings", body),
+    lock: (through: string) => apiSend<FiscalSettings>("POST", "/finance/fiscal-settings/lock", { through }),
   },
 };
 
