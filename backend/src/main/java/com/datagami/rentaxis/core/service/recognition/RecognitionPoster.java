@@ -10,9 +10,11 @@ import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.RecognitionEntry;
 import com.datagami.rentaxis.domain.entity.RentSegment;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
@@ -144,7 +146,16 @@ public class RecognitionPoster {
         entry.setPostedAt(Instant.now());
         entries.save(entry);
 
+        // The building, for the month-end page's grouping (spec §11). Read off the
+        // lease this method already holds: one entry, one lease — the N+1 the batch
+        // lookup in RecognitionService exists to avoid is a *page* of rows, and
+        // there is no page here.
+        Unit unit = lease.getUnit();
+        Property property = unit == null ? null : unit.getProperty();
         return new RecognitionEntryDTO(entry.getId(), lease.getId(), segment.getId(),
+                property == null ? null : property.getId(),
+                property == null ? null : property.getNameEn(),
+                unit == null ? null : unit.getUnitNumber(),
                 entry.getPeriodStart(), entry.getPeriodEnd(), entry.getDays(), entry.getAmount(),
                 RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), entry.getPostedAt());
     }

@@ -127,6 +127,23 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     List<Lease> findByRenterId(UUID renterId);
 
+    /**
+     * Leases with their unit and property already loaded — one query for a page of
+     * rows that each need to say which building they belong to.
+     *
+     * <p>{@code join fetch}, not a projection, because the callers want the entity
+     * graph they already work with; and inner joins, because {@code leases.unit_id}
+     * is NOT NULL and a unit always has a property. The alternative is two lazy
+     * loads per row, which on the month-end page is hundreds of queries to render
+     * one grouped list.</p>
+     */
+    @Query("""
+        select l from Lease l
+        join fetch l.unit u
+        join fetch u.property p
+        where l.id in :ids
+        """)
+    List<Lease> findAllWithUnitAndPropertyByIdIn(@Param("ids") Collection<UUID> ids);
 
     /**
      * The nightly expiry sweep's candidates (spec §9): a running tenancy whose last

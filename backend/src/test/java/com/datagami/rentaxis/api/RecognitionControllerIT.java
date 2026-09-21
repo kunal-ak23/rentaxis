@@ -265,6 +265,51 @@ class RecognitionControllerIT {
                 .containsExactly(new BigDecimal("700.00"), new BigDecimal("3100.00"), new BigDecimal("3000.00"));
     }
 
+    /**
+     * Every row says which building and flat it is about (spec §11).
+     *
+     * <p>The month-end page groups what is pending <em>by property</em> — an
+     * accountant closes one building at a time — and a recognition entry carries no
+     * property of its own: it is the lease's, through the unit. So the three fields
+     * travel on the DTO, under exactly these JSON names, on all three views that
+     * produce it: the pending list, the run's result, and the lease's schedule.</p>
+     */
+    @Test
+    void everyRowSaysWhichBuildingAndFlatItBelongsTo() {
+        List<Map<String, Object>> all = pending(accountant, NOV_END.toString());
+
+        assertThat(all).allSatisfy(r -> assertThat(r)
+                .containsKeys("propertyId", "propertyName", "unitName"));
+        // Two buildings, three rows each, and the page can group them.
+        assertThat(all.stream().collect(java.util.stream.Collectors.groupingBy(
+                r -> String.valueOf(r.get("propertyName")), java.util.stream.Collectors.counting())))
+                .hasSize(2)
+                .containsValues(3L, 3L);
+        assertThat(all.stream().filter(r -> marinaLease.toString().equals(r.get("leaseId"))))
+                .allSatisfy(r -> {
+                    assertThat(r.get("propertyId")).isEqualTo(marina.getId().toString());
+                    assertThat(r.get("propertyName")).isEqualTo(marina.getNameEn());
+                    assertThat(r.get("unitName")).isEqualTo(fixtures.unit().getUnitNumber());
+                });
+        assertThat(all.stream().filter(r -> palmLease.toString().equals(r.get("leaseId"))))
+                .allSatisfy(r -> assertThat(r.get("unitName")).isEqualTo("901"));
+
+        // The run's own result rows carry them too — the page renders what it gets
+        // back from the close, not a second fetch.
+        assertThat(list(run(accountant, "?to=" + NOV_END), "entries"))
+                .isNotEmpty()
+                .allSatisfy(r -> {
+                    assertThat(r.get("propertyName")).isNotNull();
+                    assertThat(r.get("unitName")).isNotNull();
+                });
+
+        // …and so does the lease's own schedule tab, posted rows included.
+        assertThat(schedule(accountant, marinaLease)).allSatisfy(r -> {
+            assertThat(r.get("propertyId")).isEqualTo(marina.getId().toString());
+            assertThat(r.get("unitName")).isEqualTo(fixtures.unit().getUnitNumber());
+        });
+    }
+
     /** No {@code to} means today, which the fixed clock pins at 2026-12-01. */
     @Test
     void pendingDefaultsToToday() {

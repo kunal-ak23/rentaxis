@@ -10,7 +10,9 @@ import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.RecognitionEntry;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentSegment;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
@@ -806,14 +808,44 @@ public class RecognitionService {
             journals.findAllById(journalIds)
                     .forEach(j -> numbers.put(j.getId(), j.getEntryNumber()));
         }
-        return rows.stream().map(r -> toDto(r, r.getJournalId() == null ? null : numbers.get(r.getJournalId()))).toList();
+
+        // The building each row belongs to, in one query for the whole page. The
+        // entry has no property of its own — it is the lease's, through the unit —
+        // and the month-end list groups by it (spec §11), so reading it off the
+        // lazy association row by row would be two selects per line.
+        List<UUID> leaseIds = rows.stream()
+                .map(r -> idOf(r.getLease(), Lease::getId)).filter(Objects::nonNull).distinct().toList();
+        Map<UUID, Where> where = new HashMap<>();
+        if (!leaseIds.isEmpty()) {
+            leases.findAllWithUnitAndPropertyByIdIn(leaseIds).forEach(l -> where.put(l.getId(), whereOf(l)));
+        }
+
+        return rows.stream().map(r -> toDto(r,
+                r.getJournalId() == null ? null : numbers.get(r.getJournalId()),
+                where.getOrDefault(idOf(r.getLease(), Lease::getId), Where.UNKNOWN))).toList();
     }
 
-    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber) {
+    /** Which building and flat a row is about — resolved once per lease, not per row. */
+    private record Where(UUID propertyId, String propertyName, String unitName) {
+        static final Where UNKNOWN = new Where(null, null, null);
+    }
+
+    private static Where whereOf(Lease lease) {
+        Unit unit = lease.getUnit();
+        Property property = unit == null ? null : unit.getProperty();
+        return new Where(property == null ? null : property.getId(),
+                property == null ? null : property.getNameEn(),
+                unit == null ? null : unit.getUnitNumber());
+    }
+
+    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber, Where where) {
         return new RecognitionEntryDTO(
                 r.getId(),
                 idOf(r.getLease(), Lease::getId),
                 idOf(r.getSegment(), RentSegment::getId),
+                where.propertyId(),
+                where.propertyName(),
+                where.unitName(),
                 r.getPeriodStart(),
                 r.getPeriodEnd(),
                 r.getDays(),
