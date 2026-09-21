@@ -188,15 +188,17 @@ public final class WorkbookGuard {
             Sheet sheet = workbook.getSheetAt(i);
             int rows = sheet.getLastRowNum() + 1;
             if (rows > MAX_ROWS_PER_SHEET) {
+                // Worded for every importer that comes through this door — the
+                // chart of accounts and the v1 portfolio as well as the cut-over.
                 throw new BusinessRuleViolationException("Sheet '" + sheet.getSheetName() + "' has "
                         + rows + " rows, more than the " + MAX_ROWS_PER_SHEET
-                        + " this import accepts; split the cut-over into smaller workbooks");
+                        + " this import accepts; split it into smaller workbooks");
             }
             cells += (long) rows * Math.max(sheet.getRow(sheet.getFirstRowNum()) == null ? 0
                     : sheet.getRow(sheet.getFirstRowNum()).getLastCellNum(), 1);
             if (cells > MAX_TOTAL_CELLS) {
                 throw new BusinessRuleViolationException("This workbook holds more than "
-                        + MAX_TOTAL_CELLS + " cells; split the cut-over into smaller workbooks");
+                        + MAX_TOTAL_CELLS + " cells; split it into smaller workbooks");
             }
         }
     }

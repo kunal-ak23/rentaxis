@@ -286,12 +286,23 @@ public class ContractImportPersistService {
             Building building = null;
             if (!buildingName.isEmpty()) {
                 String bKey = (propertyName + "|" + buildingName).toLowerCase(Locale.ROOT);
-                building = buildingByKey.computeIfAbsent(bKey, k -> {
+                building = buildingByKey.get(bKey);
+                if (building == null) {
                     Building b = new Building();
                     b.setProperty(property);
                     b.setNameEn(buildingName);
-                    return buildingRepository.save(b);
-                });
+                    building = buildingRepository.save(b);
+                    buildingByKey.put(bKey, building);
+                    // Recorded the moment it is created, and only then. Every building
+                    // this loop makes is one this import made — a cut-over property is
+                    // always new (the validator refuses a name the organisation already
+                    // has), so it can own no pre-existing towers — but the second flat
+                    // in the same tower reuses the row above and must not claim to have
+                    // made it a second time. `linkEntity` is idempotent, so the
+                    // distinction costs nothing; it is here so the code says which case
+                    // it is in rather than relying on the primary key to forgive it.
+                    batches.linkEntity(batch.getId(), ImportedEntityType.BUILDING, building.getId());
+                }
             }
 
             Unit u = new Unit();

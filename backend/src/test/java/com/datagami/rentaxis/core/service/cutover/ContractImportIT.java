@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.repository.BuildingRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -79,6 +80,7 @@ class ContractImportIT {
     @Autowired LeaseLineRepository leaseLineRepo;
     @Autowired ChequeRepository chequeRepo;
     @Autowired PropertyRepository propertyRepo;
+    @Autowired BuildingRepository buildingRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired PropertyAccountMappingRepository mappings;
@@ -335,8 +337,45 @@ class ContractImportIT {
                 assertThat(created).filteredOn(e -> e.getEntityType() == ImportedEntityType.RENTER)
                         .extracting(e -> e.getEntityId())
                         .containsExactlyInAnyOrderElementsOf(renterIds);
-                // The template's sample has no building, so none is recorded.
+                // The template's sample has no building, so none is recorded. The
+                // workbook that DOES name one is the next test — a batch that
+                // recorded no buildings because the fixture had none proves nothing
+                // about a batch that makes them.
                 assertThat(created).noneMatch(e -> e.getEntityType() == ImportedEntityType.BUILDING);
+            });
+        }
+    }
+
+    /**
+     * A workbook that names a building: the row it creates is recorded like every
+     * other, because Task 11's discard has to delete exactly what the batch made
+     * and a tower left behind blocks the corrected workbook's unit numbers.
+     *
+     * <p>Both units share one building name, so this also pins that the second flat
+     * does not record a second building.</p>
+     */
+    @Test
+    void aBuildingTheImportCreatesIsRecordedOnTheBatchExactlyOnce() throws Exception {
+        try (Workbook wb = template()) {
+            set(wb, "Units", 1, 1, "Tower One");
+            set(wb, "Units", 2, 1, "Tower One");
+            set(wb, "Contracts", 1, 3, "Tower One");
+            set(wb, "Contracts", 3, 3, "Tower One");
+
+            assertThat(validate(wb)).isEmpty();
+            UUID batchId = contractPersist.persist(wb, newJob()).batchId();
+
+            tx.executeWithoutResult(s -> {
+                List<UUID> buildingIds = buildingRepo.findAll().stream().map(b -> b.getId()).toList();
+                assertThat(buildingIds).hasSize(1);
+                assertThat(batches.createdEntities(batchId))
+                        .filteredOn(e -> e.getEntityType() == ImportedEntityType.BUILDING)
+                        .extracting(e -> e.getEntityId())
+                        .containsExactlyInAnyOrderElementsOf(buildingIds);
+                // And the units really did land in it, so the link is not a record of
+                // a row nothing uses.
+                assertThat(unitRepo.findAll()).hasSize(2)
+                        .allSatisfy(u -> assertThat(u.getBuilding()).isNotNull());
             });
         }
     }
