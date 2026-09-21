@@ -24,6 +24,10 @@ import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.entity.enums.UnitType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
+import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
+import com.datagami.rentaxis.domain.repository.ImportBatchEntityRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -113,6 +117,9 @@ public class ContractImportValidator {
     private final RenterRepository renters;
     private final UnitRepository units;
     private final LeaseRepository leases;
+    private final ImportBatchLeaseRepository batchLeases;
+    private final ImportBatchEntityRepository batchEntities;
+    private final ImportBatchRepository batchRepository;
     private final PropertyAccountService propertyAccounts;
 
     /**
@@ -124,6 +131,9 @@ public class ContractImportValidator {
     public ContractImportValidator(ChargeTypeRepository chargeTypes, AccountRepository accounts,
                                    PropertyRepository properties, RenterRepository renters,
                                    UnitRepository units, LeaseRepository leases,
+                                   ImportBatchLeaseRepository batchLeases,
+                                   ImportBatchEntityRepository batchEntities,
+                                   ImportBatchRepository batchRepository,
                                    PropertyAccountService propertyAccounts) {
         this.chargeTypes = chargeTypes;
         this.accounts = accounts;
@@ -131,6 +141,9 @@ public class ContractImportValidator {
         this.renters = renters;
         this.units = units;
         this.leases = leases;
+        this.batchLeases = batchLeases;
+        this.batchEntities = batchEntities;
+        this.batchRepository = batchRepository;
         this.propertyAccounts = propertyAccounts;
     }
 
@@ -140,7 +153,7 @@ public class ContractImportValidator {
      * this way; {@link #validate(Workbook)} would dereference null repositories.
      */
     ContractImportValidator() {
-        this(null, null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null, null, null, null);
     }
 
     // ------------------------------------------------------------------
@@ -174,14 +187,33 @@ public class ContractImportValidator {
         /** The account type the tenant's template says this role must be, or null when it says nothing. */
         AccountType expectedTypeForRole(AccountRole role);
 
-        /** Whether this organisation already has a property with that English name. */
-        boolean propertyExists(String nameEn);
+        /**
+         * Where this organisation's existing property of that name came from,
+         * phrased for an error message — or null when it has none.
+         *
+         * <p>A sentence rather than a boolean because "it already exists" is not
+         * an instruction. A cut-over that has been reversed leaves its properties
+         * standing by design, and the accountant reloading a corrected workbook
+         * needs to be told which batch to discard, not merely that something is in
+         * the way.</p>
+         */
+        String existingProperty(String nameEn);
 
-        /** Whether this organisation already has a renter with that email. */
-        boolean renterExists(String email);
+        /** The same, for a renter's email. */
+        String existingRenter(String email);
 
         /** Who is already living there, phrased for an error message — or null when nobody is. */
         String liveLeaseOn(String propertyName, String buildingName, String unitNumber);
+
+        /**
+         * Where this organisation already holds a lease under that contract
+         * reference, phrased for an error message — or null when it does not.
+         *
+         * <p>A second lease under one reference is the cross-workbook half of the
+         * silent merge: nothing downstream can tell which of the two a payment,
+         * a renewal or an auditor's query means.</p>
+         */
+        String externalRefUsedBy(String contractNumber);
     }
 
     // ------------------------------------------------------------------
@@ -225,15 +257,17 @@ public class ContractImportValidator {
         Set<String> propertyNames = validateProperties(propertiesSheet, lk, errors, warnings);
         Set<String> unitKeys = validateUnits(unitsSheet, propertyNames, errors);
         Set<String> renterEmails = validateRenters(rentersSheet, lk, errors);
+        Set<String> brokenContracts = new LinkedHashSet<>();
         Map<String, ContractSummary> contracts =
-                validateContracts(contractsSheet, propertyNames, unitKeys, renterEmails, lk, errors);
-        validateCheques(chequesSheet, contracts, lk, errors, warnings);
+                validateContracts(contractsSheet, propertyNames, unitKeys, renterEmails, lk, errors,
+                        brokenContracts);
+        validateCheques(chequesSheet, contracts, brokenContracts, lk, errors, warnings);
 
         return new PortfolioImportService.ValidationOutcome(errors, warnings);
     }
 
     private static ImportErrorDTO missingSheet(String name) {
-        return new ImportErrorDTO(name, 1, "Sheet", "Sheet '" + name + "' is missing");
+        return ImportErrorDTO.file(name, "Sheet", "Sheet '" + name + "' is missing");
     }
 
     // ------------------------------------------------------------------
@@ -259,10 +293,14 @@ public class ContractImportValidator {
                 // in another tower's income account.
                 errors.add(new ImportErrorDTO("Properties", rowNum, "PropertyName",
                         "Property '" + name + "' is listed twice on this sheet"));
-            } else if (lk.propertyExists(name)) {
-                errors.add(new ImportErrorDTO("Properties", rowNum, "PropertyName",
-                        "A property named '" + name + "' already exists in this organisation. "
-                                + "Rename it on the sheet, or reverse the batch that created it and re-import."));
+            } else {
+                String existing = lk.existingProperty(name);
+                if (existing != null) {
+                    errors.add(new ImportErrorDTO("Properties", rowNum, "PropertyName",
+                            "A property named '" + name + "' already exists in this organisation ("
+                                    + existing + "). Discard that batch first, or correct its draft"
+                                    + " leases instead of re-importing."));
+                }
             }
 
             enumCell(SheetCells.getCellString(row, 2), Emirate.class, true,
@@ -404,11 +442,16 @@ public class ContractImportValidator {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Invalid email format: " + email));
             } else if (!emails.add(email.toLowerCase(Locale.ROOT))) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Duplicate email: " + email));
-            } else if (lk.renterExists(email)) {
+            } else {
                 // Same reason as the property rule: a second renter row for a person
                 // the organisation already has would split their history in two.
-                errors.add(new ImportErrorDTO("Renters", rowNum, "Email",
-                        "A renter with email '" + email + "' already exists in this organisation"));
+                String existing = lk.existingRenter(email);
+                if (existing != null) {
+                    errors.add(new ImportErrorDTO("Renters", rowNum, "Email",
+                            "A renter with email '" + email + "' already exists in this organisation ("
+                                    + existing + "). Discard that batch first, or correct its draft"
+                                    + " leases instead of re-importing."));
+                }
             }
         }
         return emails;
@@ -428,15 +471,41 @@ public class ContractImportValidator {
     record ContractSummary(String number, String propertyName, String buildingName, String unitNumber,
                            BigDecimal grossTotal, int firstRowNum) {}
 
+    /**
+     * The columns that describe the CONTRACT rather than the line.
+     *
+     * <p>They are read from a contract's first row and every later row of that
+     * contract must either repeat them exactly or leave them blank. Before this
+     * rule, a later row's header cells were simply skipped — so two genuinely
+     * different contracts typed with one number silently became ONE lease, on the
+     * first one's unit, carrying both contracts' lines. The second renter was never
+     * leased, their unit was never claimed, and the cheque-total guard passed
+     * because both sides accumulated under the same key. It is the same "never a
+     * silent merge" rule the properties and renters already had (review C1/R10),
+     * applied to the one place that still merged.</p>
+     */
+    static final List<String> HEADER_COLUMNS = List.of(
+            "EjariNumber", "PropertyName", "BuildingName", "UnitNumber", "RenterEmail",
+            "ContractDate", "StartDate", "EndDate", "GracePeriodDays");
+
     private Map<String, ContractSummary> validateContracts(Sheet sheet, Set<String> propertyNames,
                                                            Set<String> unitKeys, Set<String> renterEmails,
-                                                           Lookups lk, List<ImportErrorDTO> errors) {
+                                                           Lookups lk, List<ImportErrorDTO> errors,
+                                                           Set<String> brokenContracts) {
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
         Map<String, ContractSummary> byNumber = new LinkedHashMap<>();
         Map<String, BigDecimal> grossByNumber = new LinkedHashMap<>();
         Map<String, Set<Integer>> lineNos = new HashMap<>();
         /** unit key -> the first contract that claimed it. */
         Map<String, String> claimedUnits = new HashMap<>();
+        /** contract -> the header cells its first row carried, for later rows to match. */
+        Map<String, Map<String, String>> headerByNumber = new LinkedHashMap<>();
+        /**
+         * Contracts whose shape is already wrong. Their line totals are unreliable,
+         * so the Sigma check is suppressed for them rather than fired as a second,
+         * misleading error about money (review M7).
+         */
+        Set<String> structurallyBroken = new LinkedHashSet<>();
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
@@ -450,9 +519,13 @@ public class ContractImportValidator {
                 continue;
             }
             if (number.length() > MAX_CONTRACT_REF) {
-                errors.add(new ImportErrorDTO("Contracts", rowNum, "ContractNumber",
-                        "ContractNumber is longer than " + MAX_CONTRACT_REF + " characters"));
-                continue;
+                // Recorded, not skipped: skipping the row used to leave the
+                // contract's total short and fire a second, misleading cheque
+                // mismatch about money on a row whose real problem is its name.
+                if (structurallyBroken.add(number)) {
+                    errors.add(new ImportErrorDTO("Contracts", rowNum, "ContractNumber",
+                            "ContractNumber is longer than " + MAX_CONTRACT_REF + " characters"));
+                }
             }
 
             // ---- the line, which every row carries ----
@@ -529,7 +602,23 @@ public class ContractImportValidator {
             }
 
             // ---- the header, read from the contract's FIRST row only ----
-            if (byNumber.containsKey(number)) continue;
+            if (byNumber.containsKey(number)) {
+                // ...but a later row may not CONTRADICT it. See HEADER_COLUMNS.
+                Map<String, String> first = headerByNumber.get(number);
+                int firstRowNum = byNumber.get(number).firstRowNum();
+                for (String column : HEADER_COLUMNS) {
+                    String here = SheetCells.cell(row, hi, column).trim();
+                    if (here.isEmpty()) continue;           // a blank continuation row is the normal shape
+                    String there = first.getOrDefault(column, "");
+                    if (here.equalsIgnoreCase(there)) continue;
+                    structurallyBroken.add(number);
+                    errors.add(new ImportErrorDTO("Contracts", rowNum, column,
+                            "ContractNumber " + number + " is already used by the contract on row "
+                                    + firstRowNum + ", whose " + column + " is '" + there + "' — not '"
+                                    + here + "'. A second contract needs its own number."));
+                }
+                continue;
+            }
 
             String propertyName = SheetCells.cell(row, hi, "PropertyName");
             String buildingName = SheetCells.cell(row, hi, "BuildingName");
@@ -587,6 +676,20 @@ public class ContractImportValidator {
                 }
             }
 
+            String usedBy = lk.externalRefUsedBy(number);
+            if (usedBy != null) {
+                structurallyBroken.add(number);
+                errors.add(new ImportErrorDTO("Contracts", rowNum, "ContractNumber",
+                        "This organisation already has a lease under contract " + number
+                                + " (" + usedBy + "). Discard that batch first, or give this contract"
+                                + " its own number."));
+            }
+
+            Map<String, String> header = new LinkedHashMap<>();
+            for (String column : HEADER_COLUMNS) {
+                header.put(column, SheetCells.cell(row, hi, column).trim());
+            }
+            headerByNumber.put(number, header);
             byNumber.put(number,
                     new ContractSummary(number, propertyName, buildingName, unitNumber, BigDecimal.ZERO, rowNum));
         }
@@ -597,6 +700,7 @@ public class ContractImportValidator {
         byNumber.forEach((number, s) -> out.put(number, new ContractSummary(s.number(), s.propertyName(),
                 s.buildingName(), s.unitNumber(),
                 grossByNumber.getOrDefault(number, BigDecimal.ZERO), s.firstRowNum())));
+        brokenContracts.addAll(structurallyBroken);
         return out;
     }
 
@@ -604,7 +708,8 @@ public class ContractImportValidator {
     // Cheques
     // ------------------------------------------------------------------
 
-    private void validateCheques(Sheet sheet, Map<String, ContractSummary> contracts, Lookups lk,
+    private void validateCheques(Sheet sheet, Map<String, ContractSummary> contracts,
+                                 Set<String> brokenContracts, Lookups lk,
                                  List<ImportErrorDTO> errors, List<ImportErrorDTO> warnings) {
         Map<String, BigDecimal> sumByContract = new LinkedHashMap<>();
         Set<String> withCheques = new LinkedHashSet<>();
@@ -662,6 +767,9 @@ public class ContractImportValidator {
         // to the spreadsheet to work out which side is wrong.
         for (Map.Entry<String, ContractSummary> e : contracts.entrySet()) {
             ContractSummary c = e.getValue();
+            // A contract whose shape is already wrong has an unreliable total; a
+            // second error about money would send the accountant to the wrong cell.
+            if (brokenContracts.contains(e.getKey())) continue;
             if (!withCheques.contains(e.getKey())) {
                 warnings.add(new ImportErrorDTO("Cheques", c.firstRowNum(), "ContractNumber",
                         "Contract " + e.getKey() + " has no cheque rows; it will import but cannot be posted"));
@@ -672,7 +780,9 @@ public class ContractImportValidator {
                 errors.add(new ImportErrorDTO("Cheques", c.firstRowNum(), "Amount",
                         "Cheques for " + e.getKey() + " total " + money(sum)
                                 + " but the contract's lines come to " + money(c.grossTotal())
-                                + " including VAT"));
+                                + " including VAT. If the difference is a booking fee, a security"
+                                + " deposit or an admin charge, add it as a line on the Contracts"
+                                + " sheet — every instrument a contract collects is one of its lines."));
             }
         }
     }
@@ -743,8 +853,8 @@ public class ContractImportValidator {
                             + " — closed history stays in PACT (spec §14)"));
         }
 
-        boolean deposits = "DEPOSITED".equals(status) || "BOUNCED".equals(status)
-                || ("CLEARED".equals(status) && mode == ChequeMode.PDC);
+        boolean banked = mode == ChequeMode.PDC
+                && ("DEPOSITED".equals(status) || "CLEARED".equals(status) || "BOUNCED".equals(status));
         if (known && mode != null && mode != ChequeMode.PDC
                 && ("DEPOSITED".equals(status) || "BOUNCED".equals(status))) {
             errors.add(new ImportErrorDTO("Cheques", rowNum, "Status",
@@ -753,7 +863,12 @@ public class ContractImportValidator {
             return;
         }
 
-        LocalDate deposited = dateCell(SheetCells.cell(row, hi, "DepositedDate"), deposits,
+        // DepositedDate is required only where nothing can stand in for it — a row
+        // that got no further than the bank. See depositedOnFor: PACT's exports
+        // record a cheque's realisation, not the day it was handed to the bank, so
+        // demanding one would make most of a real cut-over unimportable.
+        boolean depositDateRequired = banked && "DEPOSITED".equals(status);
+        LocalDate deposited = dateCell(SheetCells.cell(row, hi, "DepositedDate"), depositDateRequired,
                 "Cheques", rowNum, "DepositedDate", errors);
         LocalDate cleared = dateCell(SheetCells.cell(row, hi, "ClearedDate"), "CLEARED".equals(status),
                 "Cheques", rowNum, "ClearedDate", errors);
@@ -765,7 +880,7 @@ public class ContractImportValidator {
         // A date the status does not account for is a row somebody edited halfway:
         // the replay would ignore it, and the register would then disagree with the
         // spreadsheet it came from about what happened to the money.
-        if (!deposits && deposited != null) {
+        if (!banked && deposited != null) {
             errors.add(outOfPlace(rowNum, "DepositedDate", status));
         }
         if (!"CLEARED".equals(status) && !"BOUNCED".equals(status) && cleared != null) {
@@ -775,20 +890,60 @@ public class ContractImportValidator {
             errors.add(outOfPlace(rowNum, "BouncedDate", status));
         }
 
-        if (chequeDate != null && deposited != null && deposited.isBefore(chequeDate)) {
+        // The EFFECTIVE deposit date, so a row that leaves DepositedDate blank is
+        // checked against the same ordering ck_cheques_imported_dates will apply to
+        // the value this import is about to write for it.
+        LocalDate bankedOn = mode == null ? deposited
+                : depositedOnFor(mode, ChequeStatus.valueOf(status), deposited, cleared, bounced);
+
+        if (chequeDate != null && bankedOn != null && bankedOn.isBefore(chequeDate)) {
             errors.add(new ImportErrorDTO("Cheques", rowNum, "DepositedDate",
-                    "DepositedDate " + deposited + " is before ChequeDate " + chequeDate));
+                    (deposited != null ? "DepositedDate " : "The date this cheque was banked, ")
+                            + bankedOn + ", is before ChequeDate " + chequeDate));
         }
-        if (deposited != null && cleared != null && cleared.isBefore(deposited)) {
+        if (bankedOn != null && cleared != null && cleared.isBefore(bankedOn)) {
             errors.add(new ImportErrorDTO("Cheques", rowNum, "ClearedDate",
-                    "ClearedDate " + cleared + " is before DepositedDate " + deposited));
+                    "ClearedDate " + cleared + " is before DepositedDate " + bankedOn));
         }
-        LocalDate before = cleared != null ? cleared : deposited;
+        LocalDate before = cleared != null ? cleared : bankedOn;
         if (before != null && bounced != null && bounced.isBefore(before)) {
             errors.add(new ImportErrorDTO("Cheques", rowNum, "BouncedDate",
                     "BouncedDate " + bounced + " is before " + (cleared != null ? "ClearedDate" : "DepositedDate")
                             + " " + before));
         }
+    }
+
+    /**
+     * The day an imported cheque went to the bank — the sheet's own
+     * {@code DepositedDate}, or the best available stand-in.
+     *
+     * <p>The stand-in exists because of what the client's PACT exports actually
+     * contain. Their General Ledger records a post-dated receipt and then the
+     * realisation (a {@code CRT}) or the return (a {@code CBR}); the day the paper
+     * was physically handed to the bank is not a ledger event and is not exported.
+     * Requiring it would make most of a real cut-over unimportable over a date
+     * nobody has, so a row that says only "this cleared on the 25th" is taken to
+     * have been banked on the 25th.</p>
+     *
+     * <p>That is a stated approximation, not a guess at unknown truth: it is the
+     * latest day the cheque can have been deposited, the resulting {@code PDR} →
+     * {@code CRT} pair nets to the same position, and the bank's own date — the one
+     * that matters to the ledger — is the real one throughout.</p>
+     *
+     * <p>Public and shared: the validator decides whether a row is acceptable with
+     * it, and {@code ContractImportPersistService} writes the column with it. Two
+     * copies would mean a workbook that validates and then writes a date the
+     * database constraint refuses.</p>
+     */
+    public static LocalDate depositedOnFor(ChequeMode mode, ChequeStatus status, LocalDate deposited,
+                                           LocalDate cleared, LocalDate bounced) {
+        if (mode != ChequeMode.PDC || status == null) return null;
+        return switch (status) {
+            case DEPOSITED -> deposited;
+            case CLEARED -> deposited != null ? deposited : cleared;
+            case BOUNCED -> deposited != null ? deposited : (cleared != null ? cleared : bounced);
+            default -> null;
+        };
     }
 
     private static ImportErrorDTO outOfPlace(int rowNum, String field, String status) {
@@ -937,12 +1092,46 @@ public class ContractImportValidator {
             return propertyAccounts.expectedAccountTypeFor(role);
         }
 
-        @Override public boolean propertyExists(String nameEn) {
-            return !properties.findByTenantIdAndNameEnIn(tenantId, List.of(nameEn)).isEmpty();
+        @Override public String existingProperty(String nameEn) {
+            List<Property> held = properties.findByTenantIdAndNameEnIn(tenantId, List.of(nameEn));
+            if (held.isEmpty()) return null;
+            return madeBy(ImportedEntityType.PROPERTY, held.get(0).getId(), "created outside any import");
         }
 
-        @Override public boolean renterExists(String email) {
-            return !renters.findByTenantIdAndEmailIn(tenantId, List.of(email)).isEmpty();
+        @Override public String existingRenter(String email) {
+            var held = renters.findByTenantIdAndEmailIn(tenantId, List.of(email));
+            if (held.isEmpty()) return null;
+            return madeBy(ImportedEntityType.RENTER, held.get(0).getId(), "created outside any import");
+        }
+
+        /** Which batch made this row, phrased for the accountant, or {@code otherwise}. */
+        private String madeBy(ImportedEntityType type, UUID entityId, String otherwise) {
+            return batchEntities.findByEntityTypeAndEntityId(type, entityId).stream()
+                    .map(link -> batchRepository.findById(link.getBatchId()).orElse(null))
+                    .filter(b -> b != null && tenantId.equals(b.getTenantId()))
+                    .findFirst()
+                    .map(b -> "import batch '" + b.getLabel() + "', " + b.getStatus())
+                    .orElse(otherwise);
+        }
+
+        @Override public String externalRefUsedBy(String contractNumber) {
+            List<Lease> held = leases.findByTenantIdAndExternalContractRef(tenantId, contractNumber);
+            if (held.isEmpty()) return null;
+            Lease lease = held.get(0);
+            String batch = batchLabelFor(lease.getId());
+            return batch == null
+                    ? "lease " + lease.getId() + ", " + lease.getStatus()
+                    : batch;
+        }
+
+        /** Which import batch created this lease, phrased for the accountant, or null. */
+        private String batchLabelFor(UUID leaseId) {
+            return batchLeases.findByLeaseId(leaseId).stream()
+                    .map(link -> batchRepository.findById(link.getBatchId()).orElse(null))
+                    .filter(b -> b != null && tenantId.equals(b.getTenantId()))
+                    .findFirst()
+                    .map(b -> "import batch '" + b.getLabel() + "' (" + b.getStatus() + ")")
+                    .orElse(null);
         }
 
         @Override public String liveLeaseOn(String propertyName, String buildingName, String unitNumber) {

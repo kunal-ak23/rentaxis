@@ -5,6 +5,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.ImportBatchLease;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
+import com.datagami.rentaxis.domain.repository.ImportBatchEntityRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -43,6 +44,7 @@ class ImportBatchServiceNoLeaseModuleTest {
 
     private final ImportBatchRepository batches = mock(ImportBatchRepository.class);
     private final ImportBatchLeaseRepository links = mock(ImportBatchLeaseRepository.class);
+    private final ImportBatchEntityRepository entityLinks = mock(ImportBatchEntityRepository.class);
     private final JournalEntryRepository journals = mock(JournalEntryRepository.class);
     private final PostingService posting = mock(PostingService.class);
     private final EntityManager entityManager = mock(EntityManager.class);
@@ -51,7 +53,7 @@ class ImportBatchServiceNoLeaseModuleTest {
     private final ObjectProvider<LeaseReverter> noReverter = mock(ObjectProvider.class);
 
     private final ImportBatchService service =
-            new ImportBatchService(batches, links, journals, posting, entityManager, noReverter);
+            new ImportBatchService(batches, links, entityLinks, journals, posting, entityManager, noReverter);
 
     private ImportBatch postedBatch(UUID id) {
         ImportBatch b = new ImportBatch();

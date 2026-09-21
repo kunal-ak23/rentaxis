@@ -39,6 +39,10 @@ class CutoverSchemaIT {
 
     @Autowired JdbcTemplate jdbc;
 
+    static final LocalDate DEP = LocalDate.of(2026, 9, 24);
+    static final LocalDate CLR = LocalDate.of(2026, 9, 25);
+    static final LocalDate BNC = LocalDate.of(2026, 9, 26);
+
     /**
      * {@code landlord_org.slug} is NOT NULL (changeset 37a, added long after this
      * brief was written) — the brief's two-column insert fails with "null value in
@@ -54,7 +58,7 @@ class CutoverSchemaIT {
     private UUID batch(UUID tenant, String status) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO import_batches (id, tenant_id, kind, status, label, created_at) "
-                + "VALUES (?,?,'CONTRACT_IMPORT',?,'Al Ashram cut-over',now())", id, tenant, status);
+                + "VALUES (?,?,'CONTRACT_IMPORT',?,'September cut-over',now())", id, tenant, status);
         return id;
     }
 
@@ -172,7 +176,7 @@ class CutoverSchemaIT {
 
     private void snapshot(UUID tenant, String code, String debit) {
         jdbc.update("INSERT INTO opening_balance_snapshots (id, tenant_id, account_code, account_name, debit, credit, uploaded_at) "
-                + "VALUES (?,?,?,'Rent Receivable - Tulip 7',?,0,now())", UUID.randomUUID(), tenant, code, new BigDecimal(debit));
+                + "VALUES (?,?,?,'Rent Receivable - ST1',?,0,now())", UUID.randomUUID(), tenant, code, new BigDecimal(debit));
     }
 
     /** A trial-balance row is a debit or a credit, never both — PACT exports one side per code. */
@@ -206,29 +210,30 @@ class CutoverSchemaIT {
     // ---- controller rulings -------------------------------------------------
 
     /**
-     * PACT's contract number is alphanumeric ("TLP7/681"); {@code leases.contract_number}
+     * PACT's contract number is alphanumeric ("SAMPLE-0001"); {@code leases.contract_number}
      * is our own {@code bigint} sequence and cannot hold it, so the imported reference
      * gets a column of its own.
      */
     @Test
     void aLeaseCarriesPactsAlphanumericContractReference() {
         UUID t = tenant();
-        UUID leaseId = lease(t, "TLP7/681");
+        UUID leaseId = lease(t, "SAMPLE-0001");
         assertThat(jdbc.queryForObject("SELECT external_contract_ref FROM leases WHERE id = ?", String.class, leaseId))
-                .isEqualTo("TLP7/681");
-        // Two properties in one cut-over may legitimately reuse a reference the other
-        // system scoped per building, and a re-import is looked up by it — so it is
-        // indexed, not unique.
-        assertThatCode(() -> lease(t, "TLP7/681")).doesNotThrowAnyException();
+                .isEqualTo("SAMPLE-0001");
+        // One reference, one lease: see aContractReferenceIsUniqueWithinAnOrganisation
+        // for the rule and ux_leases_tenant_external_ref for why it is partial.
+        assertThatThrownBy(() -> lease(t, "SAMPLE-0001"))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    /** The lookup index covers BOTH columns, or a re-import scans every tenant's leases. */
+    /** The index covers BOTH columns, is UNIQUE, and is partial over the non-null rows. */
     @Test
-    void theExternalContractReferenceIsIndexedPerTenant() {
+    void theExternalContractReferenceIsUniquePerTenant() {
         String def = jdbc.queryForObject(
-                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_leases_tenant_external_ref'",
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ux_leases_tenant_external_ref'",
                 String.class);
-        assertThat(def).contains("tenant_id").contains("external_contract_ref");
+        assertThat(def).contains("tenant_id").contains("external_contract_ref")
+                .contains("UNIQUE").contains("WHERE");
     }
 
     /**
@@ -239,53 +244,169 @@ class CutoverSchemaIT {
     @Test
     void anImportedChequeStatusIsOneOfFourValues() {
         UUID t = tenant();
-        UUID leaseId = lease(t, "TLP7/682");
-        for (String ok : new String[] { "REGISTERED", "DEPOSITED", "CLEARED", "BOUNCED" }) {
-            assertThatCode(() -> cheque(t, leaseId, ok)).doesNotThrowAnyException();
-        }
+        UUID leaseId = lease(t, "SAMPLE-0002");
+        // Each with the dates ck_cheques_imported_dates requires of it; the pairing
+        // itself is theImportedDatesMatchTheImportedStatus's subject.
+        assertThatCode(() -> dated(t, leaseId, "PDC", "REGISTERED", null, null, null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> dated(t, leaseId, "PDC", "DEPOSITED", DEP, null, null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> dated(t, leaseId, "PDC", "CLEARED", DEP, CLR, null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> dated(t, leaseId, "PDC", "BOUNCED", DEP, null, BNC))
+                .doesNotThrowAnyException();
         // Null is the ordinary, non-imported cheque.
         assertThatCode(() -> cheque(t, leaseId, null)).doesNotThrowAnyException();
 
+        // Refused, and the message names one of the two constraints that now both
+        // enumerate the vocabulary: ck_cheques_imported_dates lists a branch per
+        // status, so a status outside the four fails it as well. Which one Postgres
+        // reports first is not a rule, so the assertion is on the shared prefix.
         assertThatThrownBy(() -> cheque(t, leaseId, "REPLACED"))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("ck_cheques_imported_status");
+                .hasMessageContaining("ck_cheques_imported_");
     }
 
     /**
-     * The imported dates travel with the imported status, and only with it: a row
-     * that is not an imported row has nowhere to hide a replay instruction.
+     * One contract reference, one lease, per organisation — the database backstop
+     * under the validator's two checks (review C1).
      */
     @Test
-    void theImportedDatesBelongToAnImportedCheque() {
-        UUID t = tenant();
-        UUID leaseId = lease(t, "TLP7/683");
+    void aContractReferenceIsUniqueWithinAnOrganisation() {
+        UUID a = tenant();
+        UUID b = tenant();
 
-        assertThatCode(() -> chequeWithDates(t, leaseId, "CLEARED",
-                LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 25), null))
-                .doesNotThrowAnyException();
-        assertThatCode(() -> chequeWithDates(t, leaseId, "BOUNCED",
-                LocalDate.of(2026, 9, 24), null, LocalDate.of(2026, 9, 26)))
-                .doesNotThrowAnyException();
-        assertThatCode(() -> chequeWithDates(t, leaseId, null, null, null, null))
-                .doesNotThrowAnyException();
+        lease(a, "SAMPLE-0001");
+        // Another organisation numbering its contracts the same way is normal.
+        assertThatCode(() -> lease(b, "SAMPLE-0001")).doesNotThrowAnyException();
+        // A different reference in the same organisation is normal.
+        assertThatCode(() -> lease(a, "SAMPLE-0002")).doesNotThrowAnyException();
+        // Every lease that was not imported carries NULL, and they must all coexist —
+        // which is why the index is partial.
+        assertThatCode(() -> lease(a, null)).doesNotThrowAnyException();
+        assertThatCode(() -> lease(a, null)).doesNotThrowAnyException();
 
-        assertThatThrownBy(() -> chequeWithDates(t, leaseId, null, LocalDate.of(2026, 9, 24), null, null))
+        assertThatThrownBy(() -> lease(a, "SAMPLE-0001"))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("ck_cheques_imported_dates");
+                .hasMessageContaining("ux_leases_tenant_external_ref");
     }
 
-    private void chequeWithDates(UUID tenant, UUID leaseId, String importedStatus,
-                                 LocalDate deposited, LocalDate cleared, LocalDate bounced) {
+    /** A batch records the properties, units and renters it created, for Task 11's discard. */
+    @Test
+    void aBatchRecordsTheEntitiesItCreated() {
+        UUID t = tenant();
+        UUID batchId = batch(t, "DRAFT");
+        UUID propertyId = UUID.randomUUID();
+
+        jdbc.update("INSERT INTO import_batch_entities (batch_id, entity_type, entity_id) VALUES (?,?,?)",
+                batchId, "PROPERTY", propertyId);
+        // The same id under another type, and another id under the same type, are
+        // both distinct rows — the key is all three columns, not the first one.
+        assertThatCode(() -> jdbc.update(
+                "INSERT INTO import_batch_entities (batch_id, entity_type, entity_id) VALUES (?,?,?)",
+                batchId, "UNIT", propertyId)).doesNotThrowAnyException();
+        assertThatCode(() -> jdbc.update(
+                "INSERT INTO import_batch_entities (batch_id, entity_type, entity_id) VALUES (?,?,?)",
+                batchId, "PROPERTY", UUID.randomUUID())).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO import_batch_entities (batch_id, entity_type, entity_id) VALUES (?,?,?)",
+                batchId, "PROPERTY", propertyId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("import_batch_entities_pkey");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO import_batch_entities (batch_id, entity_type, entity_id) VALUES (?,?,?)",
+                batchId, "JOURNAL", UUID.randomUUID()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_import_batch_entities_type");
+
+        // The batch owns its links outright.
+        jdbc.update("DELETE FROM import_batches WHERE id = ?", batchId);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM import_batch_entities WHERE batch_id = ?", Integer.class, batchId))
+                .isZero();
+    }
+
+    /**
+     * Which status requires which date (review I3). Task 11's replay files a DATED
+     * journal per transition, so a CLEARED row with no cleared date would post a CRT
+     * on the one day the cheque certainly did not clear.
+     */
+    @Test
+    void theImportedDatesMatchTheImportedStatus() {
+        UUID t = tenant();
+        UUID leaseId = lease(t, "SAMPLE-0004");
+        LocalDate dep = LocalDate.of(2026, 9, 24);
+        LocalDate clr = LocalDate.of(2026, 9, 25);
+        LocalDate bnc = LocalDate.of(2026, 9, 26);
+
+        // A row that is not an imported row has nowhere to hide a replay instruction.
+        // NULL is not false in SQL, so this is the case a careless constraint lets
+        // through: see the coalesce() note on ck_cheques_imported_dates.
+        assertThatCode(() -> dated(t, leaseId, "PDC", null, null, null, null))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", null, dep, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_cheques_imported_dates");
+
+        // REGISTERED carries no dates at all.
+        assertThatCode(() -> dated(t, leaseId, "PDC", "REGISTERED", null, null, null))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "REGISTERED", dep, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_cheques_imported_dates");
+
+        // DEPOSITED needs its deposit date and nothing else.
+        assertThatCode(() -> dated(t, leaseId, "PDC", "DEPOSITED", dep, null, null))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "DEPOSITED", null, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // Only a cheque is banked; a cash receipt cannot be DEPOSITED at all.
+        assertThatThrownBy(() -> dated(t, leaseId, "CASH", "DEPOSITED", dep, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // CLEARED: a cheque was banked first, a cash receipt never was.
+        assertThatCode(() -> dated(t, leaseId, "PDC", "CLEARED", dep, clr, null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> dated(t, leaseId, "CASH", "CLEARED", null, clr, null))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "CLEARED", dep, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "CLEARED", null, clr, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> dated(t, leaseId, "CASH", "CLEARED", dep, clr, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // and it cannot have cleared before it was banked.
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "CLEARED", clr, dep, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // BOUNCED: deposited and bounced, with the clear date optional because a
+        // cheque that cleared and was later returned credits the bank, not the PDC.
+        assertThatCode(() -> dated(t, leaseId, "PDC", "BOUNCED", dep, null, bnc))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> dated(t, leaseId, "PDC", "BOUNCED", dep, clr, bnc))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "BOUNCED", dep, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "BOUNCED", null, null, bnc))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> dated(t, leaseId, "PDC", "BOUNCED", dep, bnc, clr))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private void dated(UUID tenant, UUID leaseId, String mode, String importedStatus,
+                       LocalDate deposited, LocalDate cleared, LocalDate bounced) {
         UUID propertyId = jdbc.queryForObject("SELECT u.property_id FROM leases l JOIN units u ON u.id = l.unit_id WHERE l.id = ?",
                 UUID.class, leaseId);
         UUID renterId = jdbc.queryForObject("SELECT renter_id FROM leases WHERE id = ?", UUID.class, leaseId);
         jdbc.update("INSERT INTO cheques (id, tenant_id, lease_id, property_id, renter_id, seq_no, posting_date,"
                         + " cheque_date, amount, mode, status, imported_status,"
                         + " imported_deposited_on, imported_cleared_on, imported_bounced_on, created_at)"
-                        + " VALUES (?,?,?,?,?,?,?,?,?, 'PDC', 'DRAFT', ?, ?, ?, ?, now())",
+                        + " VALUES (?,?,?,?,?,?,?,?,?, ?, 'DRAFT', ?, ?, ?, ?, now())",
                 UUID.randomUUID(), tenant, leaseId, propertyId, renterId, 1,
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 1), new BigDecimal("5000.00"),
-                importedStatus, deposited, cleared, bounced);
+                mode, importedStatus, deposited, cleared, bounced);
     }
 
     private void cheque(UUID tenant, UUID leaseId, String importedStatus) {

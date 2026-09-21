@@ -16,6 +16,7 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
+import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
@@ -114,12 +115,12 @@ class ContractImportIT {
     private void seedChartAndTheClientsSixLeaves() {
         accounts.seedDefaultAccounts();
         propertyAccounts.seedDefaultTemplateAndDefaults();
-        leaf("Rental Income Tulip 7", "C-01-01");
-        leaf("Rent Receivable - Tulip 7", "A-02-01");
-        leaf("Advance Rent - Tulip 7", "B-01-01");
-        leaf("Emirates Islamic - Tulip 7", "A-02-02");
-        leaf("PDC Receivable Tulip 7", "A-02-03");
-        leaf("Security Deposit Tulip 7", "B-01-02");
+        leaf("Rental Income ST1", "C-01-01");
+        leaf("Rent Receivable - ST1", "A-02-01");
+        leaf("Advance Rent - ST1", "B-01-01");
+        leaf("Sample Bank - ST1", "A-02-02");
+        leaf("PDC Receivable ST1", "A-02-03");
+        leaf("Security Deposit ST1", "B-01-02");
     }
 
     private Account leaf(String name, String parentCode) {
@@ -141,6 +142,14 @@ class ContractImportIT {
         Row r = wb.getSheet(sheet).getRow(row);
         if (r.getCell(col) == null) r.createCell(col);
         r.getCell(col).setCellValue(value);
+    }
+
+    /** By the reference the sheet gave it, never by position in a list. */
+    private Lease leaseOf(String externalContractRef) {
+        return leaseRepo.findAll().stream()
+                .filter(l -> externalContractRef.equals(l.getExternalContractRef()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No lease with externalContractRef " + externalContractRef));
     }
 
     private List<ImportErrorDTO> validate(Workbook wb) {
@@ -184,20 +193,20 @@ class ContractImportIT {
             ContractImportPersistService.ContractImportSummary summary = contractPersist.persist(wb, job);
 
             assertThat(summary.propertiesCreated()).isEqualTo(1);
-            assertThat(summary.unitsCreated()).isEqualTo(1);
-            assertThat(summary.rentersCreated()).isEqualTo(1);
-            assertThat(summary.contractsCreated()).isEqualTo(1);
-            assertThat(summary.chequesCreated()).isEqualTo(2);
+            assertThat(summary.unitsCreated()).isEqualTo(2);
+            assertThat(summary.rentersCreated()).isEqualTo(2);
+            assertThat(summary.contractsCreated()).isEqualTo(2);
+            assertThat(summary.chequesCreated()).isEqualTo(3);
             assertThat(summary.mappingsCreated()).isEqualTo(6);
 
             List<UUID> leaseIds = batches.leaseIds(summary.batchId());
-            assertThat(leaseIds).hasSize(1);
+            assertThat(leaseIds).hasSize(2);
 
             tx.executeWithoutResult(s -> {
-                Lease lease = leaseRepo.findById(leaseIds.get(0)).orElseThrow();
+                Lease lease = leaseOf("SAMPLE-0001");
                 assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
-                assertThat(lease.getExternalContractRef()).isEqualTo("TLP7/681");
-                assertThat(lease.getEjariNumber()).isEqualTo("EJ-2026-0681");
+                assertThat(lease.getExternalContractRef()).isEqualTo("SAMPLE-0001");
+                assertThat(lease.getEjariNumber()).isEqualTo("EJ-2026-0001");
                 assertThat(lease.getContractDate()).isEqualTo(LocalDate.of(2026, 9, 11));
                 assertThat(lease.getStartDate()).isEqualTo(LocalDate.of(2026, 9, 24));
                 assertThat(lease.getEndDate()).isEqualTo(LocalDate.of(2027, 9, 23));
@@ -214,15 +223,15 @@ class ContractImportIT {
                         .anySatisfy(l -> {
                             assertThat(l.getChargeType().getCode()).isEqualTo("RENT");
                             assertThat(l.getNetAmount()).isEqualByComparingTo("51000.00");
-                            assertThat(l.getCreditAccount().getName()).isEqualTo("Advance Rent - Tulip 7");
+                            assertThat(l.getCreditAccount().getName()).isEqualTo("Advance Rent - ST1");
                         });
             });
 
             // The unit stays VACANT: a DRAFT lease reserves nothing, and the batch
             // post is what makes the tenancy real.
             tx.executeWithoutResult(s ->
-                    assertThat(unitRepo.findAll()).singleElement()
-                            .satisfies(u -> assertThat(u.getStatus()).isEqualTo(UnitStatus.VACANT)));
+                    assertThat(unitRepo.findAll()).hasSize(2)
+                            .allSatisfy(u -> assertThat(u.getStatus()).isEqualTo(UnitStatus.VACANT)));
 
             // Nothing posted. This is the whole contract with Task 11.
             assertThat(entries.findByImportBatchIdOrderByCreatedAtAsc(summary.batchId())).isEmpty();
@@ -238,8 +247,8 @@ class ContractImportIT {
     void everyChequeIsADraftRowCarryingTheStatusAndDatesTheSheetAsked() throws Exception {
         try (Workbook wb = template()) {
             ImportJob job = newJob();
-            UUID batchId = contractPersist.persist(wb, job).batchId();
-            UUID leaseId = batches.leaseIds(batchId).get(0);
+            contractPersist.persist(wb, job);
+            UUID leaseId = tx.execute(s -> leaseOf("SAMPLE-0001").getId());
 
             tx.executeWithoutResult(s -> {
                 List<Cheque> rows = chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId);
@@ -255,17 +264,19 @@ class ContractImportIT {
                 });
 
                 Cheque first = rows.get(0);
-                assertThat(first.getChequeNumber()).isEqualTo("000101");
+                assertThat(first.getChequeNumber()).isEqualTo("100001");
                 assertThat(first.getAmount()).isEqualByComparingTo("31000.00");
                 assertThat(first.getChequeDate()).isEqualTo(LocalDate.of(2026, 9, 24));
                 assertThat(first.getPostingDate()).isEqualTo(LocalDate.of(2026, 9, 11));
                 assertThat(first.getImportedStatus()).isEqualTo(ChequeStatus.CLEARED);
-                assertThat(first.getImportedDepositedOn()).isEqualTo(LocalDate.of(2026, 9, 24));
+                // The sheet gives only a cleared date — PACT does not export the day
+                // paper reached the bank — so it is banked on the day it cleared.
+                assertThat(first.getImportedDepositedOn()).isEqualTo(LocalDate.of(2026, 9, 25));
                 assertThat(first.getImportedClearedOn()).isEqualTo(LocalDate.of(2026, 9, 25));
                 assertThat(first.getImportedBouncedOn()).isNull();
                 // Where the cleared funds will land: the property's BANK mapping,
                 // which came from the sheet's BankAccount column.
-                assertThat(first.getDebitAccount().getName()).isEqualTo("Emirates Islamic - Tulip 7");
+                assertThat(first.getDebitAccount().getName()).isEqualTo("Sample Bank - ST1");
 
                 Cheque second = rows.get(1);
                 assertThat(second.getImportedStatus()).isEqualTo(ChequeStatus.REGISTERED);
@@ -283,14 +294,14 @@ class ContractImportIT {
 
             tx.executeWithoutResult(s -> {
                 Property p = propertyRepo.findAll().get(0);
-                assertThat(name(p.getId(), AccountRole.RENTAL_INCOME)).isEqualTo("Rental Income Tulip 7");
-                assertThat(name(p.getId(), AccountRole.RENT_RECEIVABLE)).isEqualTo("Rent Receivable - Tulip 7");
-                assertThat(name(p.getId(), AccountRole.ADVANCE_RENT)).isEqualTo("Advance Rent - Tulip 7");
-                assertThat(name(p.getId(), AccountRole.BANK)).isEqualTo("Emirates Islamic - Tulip 7");
-                assertThat(name(p.getId(), AccountRole.PDC_RECEIVABLE)).isEqualTo("PDC Receivable Tulip 7");
-                assertThat(name(p.getId(), AccountRole.SECURITY_DEPOSIT)).isEqualTo("Security Deposit Tulip 7");
+                assertThat(name(p.getId(), AccountRole.RENTAL_INCOME)).isEqualTo("Rental Income ST1");
+                assertThat(name(p.getId(), AccountRole.RENT_RECEIVABLE)).isEqualTo("Rent Receivable - ST1");
+                assertThat(name(p.getId(), AccountRole.ADVANCE_RENT)).isEqualTo("Advance Rent - ST1");
+                assertThat(name(p.getId(), AccountRole.BANK)).isEqualTo("Sample Bank - ST1");
+                assertThat(name(p.getId(), AccountRole.PDC_RECEIVABLE)).isEqualTo("PDC Receivable ST1");
+                assertThat(name(p.getId(), AccountRole.SECURITY_DEPOSIT)).isEqualTo("Security Deposit ST1");
                 // ADMIN_FEE is not one of the six columns, so it came from the template.
-                assertThat(name(p.getId(), AccountRole.ADMIN_FEE)).isEqualTo("Admin Fee - Tulip Oasis 7");
+                assertThat(name(p.getId(), AccountRole.ADMIN_FEE)).isEqualTo("Admin Fee - Sample Tower");
             });
         }
     }
@@ -299,6 +310,61 @@ class ContractImportIT {
         return mappings.findByPropertyIdAndRole(propertyId, role)
                 .map(m -> m.getAccount().getName())
                 .orElse(null);
+    }
+
+    /**
+     * What the batch created, beside its leases — the record Task 11's discard
+     * needs to undo an import exactly rather than approximately (review I4).
+     */
+    @Test
+    void theBatchRecordsThePropertiesUnitsAndRentersItCreated() throws Exception {
+        try (Workbook wb = template()) {
+            UUID batchId = contractPersist.persist(wb, newJob()).batchId();
+
+            tx.executeWithoutResult(s -> {
+                UUID propertyId = propertyRepo.findAll().get(0).getId();
+                List<UUID> unitIds = unitRepo.findAll().stream().map(u -> u.getId()).toList();
+                List<UUID> renterIds = renterRepo.findAll().stream().map(r -> r.getId()).toList();
+
+                var created = batches.createdEntities(batchId);
+                assertThat(created).extracting(e -> e.getEntityType(), e -> e.getEntityId())
+                        .contains(org.assertj.core.groups.Tuple.tuple(ImportedEntityType.PROPERTY, propertyId));
+                assertThat(created).filteredOn(e -> e.getEntityType() == ImportedEntityType.UNIT)
+                        .extracting(e -> e.getEntityId())
+                        .containsExactlyInAnyOrderElementsOf(unitIds);
+                assertThat(created).filteredOn(e -> e.getEntityType() == ImportedEntityType.RENTER)
+                        .extracting(e -> e.getEntityId())
+                        .containsExactlyInAnyOrderElementsOf(renterIds);
+                // The template's sample has no building, so none is recorded.
+                assertThat(created).noneMatch(e -> e.getEntityType() == ImportedEntityType.BUILDING);
+            });
+        }
+    }
+
+    /**
+     * The VAT-bearing contract, persisted rather than only stubbed (review M5): the
+     * figure LeaseVat computed at import is the figure LeasePostingService will
+     * compare the grid against at post, and this is where the two meet on real rows.
+     */
+    @Test
+    void aVatBearingContractPersistsItsGrossAsTheChequeTotal() throws Exception {
+        try (Workbook wb = template()) {
+            assertThat(validate(wb)).isEmpty();
+            contractPersist.persist(wb, newJob());
+
+            tx.executeWithoutResult(s -> {
+                Lease vatLease = leaseOf("SAMPLE-0002");
+                assertThat(leaseLineRepo.findByLease_IdOrderBySeqNoAsc(vatLease.getId()))
+                        .singleElement()
+                        .satisfies(l -> {
+                            assertThat(l.isVatApplicable()).isTrue();
+                            assertThat(l.getNetAmount()).isEqualByComparingTo("21000.00");
+                        });
+                assertThat(chequeRepo.findByLease_IdOrderBySeqNoAsc(vatLease.getId()))
+                        .singleElement()
+                        .satisfies(c -> assertThat(c.getAmount()).isEqualByComparingTo("22050.00"));
+            });
+        }
     }
 
     /** A role the sheet leaves blank is reported, never guessed (spec §10.3). */
@@ -360,11 +426,11 @@ class ContractImportIT {
         ImportJob after = awaitTerminal(job.getId());
         assertThat(after.getStatus()).isEqualTo("COMPLETED");
         assertThat(after.getImportBatchId()).isNotNull();
-        assertThat(after.getLeasesCreated()).isEqualTo(1);
+        assertThat(after.getLeasesCreated()).isEqualTo(2);
         assertThat(after.getPropertiesCreated()).isEqualTo(1);
-        assertThat(after.getSchedulesCreated()).isEqualTo(2);
+        assertThat(after.getSchedulesCreated()).isEqualTo(3);
         assertThat(after.getErrors()).contains("contractsCreated");
-        assertThat(batches.leaseIds(after.getImportBatchId())).hasSize(1);
+        assertThat(batches.leaseIds(after.getImportBatchId())).hasSize(2);
     }
 
     // ------------------------------------------------------------------
@@ -383,12 +449,12 @@ class ContractImportIT {
         TenantContextHolder.setTenantId(otherTenant);
         seedChartAndTheClientsSixLeaves();
         Property theirs = new Property();
-        theirs.setNameEn("Tulip Oasis 7");
+        theirs.setNameEn("Sample Tower");
         theirs.setEmirate(Emirate.DUBAI);
         UUID theirPropertyId = propertyRepo.save(theirs).getId();
         Renter theirRenter = new Renter();
-        theirRenter.setNameEn("Islam Mamanov");
-        theirRenter.setEmail("islam@example.com");
+        theirRenter.setNameEn("Sample Renter One");
+        theirRenter.setEmail("sample.renter.one@example.com");
         UUID theirRenterId = renterRepo.save(theirRenter).getId();
         TenantContextHolder.clear();
 
@@ -410,10 +476,17 @@ class ContractImportIT {
                     .singleElement()
                     .satisfies(p -> assertThat(p.getId()).isNotEqualTo(theirPropertyId));
             assertThat(renterRepo.findAll())
-                    .singleElement()
-                    .satisfies(r -> assertThat(r.getId()).isNotEqualTo(theirRenterId));
-            assertThat(leaseRepo.findAll()).singleElement()
-                    .satisfies(l -> assertThat(l.getTenantId()).isEqualTo(tenantId));
+                    .hasSize(2)
+                    .allSatisfy(r -> assertThat(r.getId()).isNotEqualTo(theirRenterId));
+            assertThat(leaseRepo.findAll()).hasSize(2)
+                    .allSatisfy(l -> assertThat(l.getTenantId()).isEqualTo(tenantId));
+            // Both organisations were seeded with identically NAMED accounts, so a
+            // leak through accountRepository.findAll() would still have resolved and
+            // still produced a valid-looking mapping. The ids are what tell them apart.
+            UUID propertyId = propertyRepo.findAll().get(0).getId();
+            assertThat(mappings.findByPropertyId(propertyId))
+                    .isNotEmpty()
+                    .allSatisfy(m -> assertThat(m.getAccount().getTenantId()).isEqualTo(tenantId));
         });
 
         // And the other organisation is untouched.
@@ -432,7 +505,7 @@ class ContractImportIT {
     @Test
     void aPropertyTheOrganisationAlreadyHasIsAValidationError() throws Exception {
         Property existing = new Property();
-        existing.setNameEn("Tulip Oasis 7");
+        existing.setNameEn("Sample Tower");
         existing.setEmirate(Emirate.DUBAI);
         propertyRepo.save(existing);
 

@@ -22,6 +22,7 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
@@ -133,9 +134,9 @@ public class ContractImportPersistService {
         ImportBatch batch = batches.create(job.getId(), batchLabel(job));
         Map<String, Account> accountsByName = chartByName();
 
-        Properties properties = writeProperties(wb, accountsByName, warnings);
-        Units units = writeUnits(wb, properties.byName());
-        Map<String, Renter> rentersByEmail = writeRenters(wb);
+        Properties properties = writeProperties(wb, accountsByName, warnings, batch);
+        Units units = writeUnits(wb, properties.byName(), batch);
+        Map<String, Renter> rentersByEmail = writeRenters(wb, batch);
         Contracts contracts = writeContracts(wb, properties.byName(), units.byKey(), rentersByEmail,
                 accountsByName, batch);
         int chequesCreated = writeCheques(wb, contracts, accountsByName);
@@ -209,7 +210,7 @@ public class ContractImportPersistService {
     private record Properties(Map<String, Property> byName, int mappingsCreated) {}
 
     private Properties writeProperties(Workbook wb, Map<String, Account> accountsByName,
-                                       List<ImportErrorDTO> warnings) {
+                                       List<ImportErrorDTO> warnings, ImportBatch batch) {
         Sheet sheet = wb.getSheet("Properties");
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
         Map<String, Property> byName = new LinkedHashMap<>();
@@ -229,6 +230,9 @@ public class ContractImportPersistService {
             p.setMakaniNumber(blankToNull(SheetCells.getCellString(row, 5)));
             Property saved = propertyRepository.save(p);
             byName.put(saved.getNameEn().toLowerCase(Locale.ROOT), saved);
+            // Written down now, because only this code knows it made this row. A
+            // discard reconstructed later from timestamps would take somebody else's.
+            batches.linkEntity(batch.getId(), ImportedEntityType.PROPERTY, saved.getId());
 
             // The sheet's names are written FIRST and the template fills the rest
             // afterwards, which is the only order that means what it says:
@@ -262,7 +266,7 @@ public class ContractImportPersistService {
 
     private record Units(Map<String, Unit> byKey, int buildings) {}
 
-    private Units writeUnits(Workbook wb, Map<String, Property> propertyByName) {
+    private Units writeUnits(Workbook wb, Map<String, Property> propertyByName, ImportBatch batch) {
         Sheet sheet = wb.getSheet("Units");
         Map<String, Building> buildingByKey = new LinkedHashMap<>();
         Map<String, Unit> byKey = new LinkedHashMap<>();
@@ -301,8 +305,9 @@ public class ContractImportPersistService {
             if (!sizeSqft.isEmpty()) u.setSizeSqft(new BigDecimal(sizeSqft));
             if (!expectedRent.isEmpty()) u.setExpectedRent(new BigDecimal(expectedRent));
 
-            byKey.put(ContractImportValidator.unitKey(propertyName, buildingName, unitNumber),
-                    unitRepository.save(u));
+            Unit savedUnit = unitRepository.save(u);
+            batches.linkEntity(batch.getId(), ImportedEntityType.UNIT, savedUnit.getId());
+            byKey.put(ContractImportValidator.unitKey(propertyName, buildingName, unitNumber), savedUnit);
         }
         return new Units(byKey, buildingByKey.size());
     }
@@ -311,7 +316,7 @@ public class ContractImportPersistService {
     // 3. Renters
     // ------------------------------------------------------------------
 
-    private Map<String, Renter> writeRenters(Workbook wb) {
+    private Map<String, Renter> writeRenters(Workbook wb, ImportBatch batch) {
         Sheet sheet = wb.getSheet("Renters");
         Map<String, Renter> byEmail = new LinkedHashMap<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -323,6 +328,7 @@ public class ContractImportPersistService {
             r.setEmail(SheetCells.getCellString(row, 2));
             r.setPhone(blankToNull(SheetCells.getCellString(row, 3)));
             Renter saved = renterRepository.save(r);
+            batches.linkEntity(batch.getId(), ImportedEntityType.RENTER, saved.getId());
             byEmail.put(saved.getEmail().toLowerCase(Locale.ROOT), saved);
         }
         return byEmail;
@@ -493,9 +499,15 @@ public class ContractImportPersistService {
                     blankToNull(SheetCells.cell(row, hi, "Narration")),
                     mode);
 
+            LocalDate cleared = date(row, hi, "ClearedDate");
+            LocalDate bounced = date(row, hi, "BouncedDate");
             byContract.computeIfAbsent(number, k -> new ArrayList<>()).add(new SheetRow(
                     Integer.parseInt(SheetCells.cell(row, hi, "SeqNo").trim()), input, imported,
-                    date(row, hi, "DepositedDate"), date(row, hi, "ClearedDate"), date(row, hi, "BouncedDate")));
+                    // Through the validator's own helper, so the date this writes is
+                    // the date the validator accepted and the constraint expects.
+                    ContractImportValidator.depositedOnFor(
+                            mode, imported, date(row, hi, "DepositedDate"), cleared, bounced),
+                    cleared, bounced));
         }
 
         int created = 0;
@@ -518,7 +530,8 @@ public class ContractImportPersistService {
             // By position, because that is what the writer just assigned and the only
             // thing that ties a stored row back to the sheet row it came from.
             List<Cheque> stored = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
-            for (int i = 0; i < stored.size() && i < rows.size(); i++) {
+            requireWholeGrid(e.getKey(), rows.size(), stored.size());
+            for (int i = 0; i < stored.size(); i++) {
                 Cheque c = stored.get(i);
                 SheetRow r = rows.get(i);
                 c.setImportedStatus(r.importedStatus());
@@ -530,6 +543,30 @@ public class ContractImportPersistService {
             created += stored.size();
         }
         return created;
+    }
+
+    /**
+     * The grid that came back must be the grid that went in.
+     *
+     * <p>The loop that follows stamps each stored row with the replay instruction
+     * from the sheet row at the same position. If the two ever differ in length,
+     * iterating the shorter of them would leave some cheques with no imported
+     * status and no dates — and a batch that posts half its cheques on the days
+     * they really moved and the rest on the day somebody clicked Post. Inside this
+     * transaction, refusing loses the workbook, which is the correct outcome and a
+     * loud one.</p>
+     *
+     * <p>A named method rather than an inline {@code if} so the invariant can be
+     * exercised directly: nothing a test can do to a real
+     * {@code ChequeGenerationService} makes the counts disagree, which is precisely
+     * why the guard is worth having and why it needs its own door.</p>
+     */
+    static void requireWholeGrid(String contractNumber, int handed, int stored) {
+        if (handed != stored) {
+            throw new IllegalStateException("Contract " + contractNumber + " was handed " + handed
+                    + " cheque rows but its grid holds " + stored
+                    + "; refusing to stamp a partial grid");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -558,13 +595,13 @@ public class ContractImportPersistService {
                     .collect(java.util.stream.Collectors.toCollection(() -> EnumSet.noneOf(AccountRole.class)));
             for (AccountRole role : needed) {
                 if (mapped.contains(role)) continue;
-                warnings.add(new ImportErrorDTO("Properties", 0, role.name(),
+                warnings.add(ImportErrorDTO.file("Properties", role.name(),
                         "'" + p.getNameEn() + "' has no account for " + role
                                 + "; its contracts will import but cannot be posted until it does"));
             }
         }
         if (contracts.anyVat()) {
-            warnings.add(new ImportErrorDTO("Contracts", 0, "VatApplicable",
+            warnings.add(ImportErrorDTO.file("Contracts", "VatApplicable",
                     "Some contracts charge VAT; the organisation needs an OUTPUT_VAT account"
                             + " mapped before they can be posted"));
         }

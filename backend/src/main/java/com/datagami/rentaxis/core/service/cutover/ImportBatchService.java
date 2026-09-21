@@ -6,10 +6,13 @@ import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
+import com.datagami.rentaxis.domain.entity.ImportBatchEntity;
 import com.datagami.rentaxis.domain.entity.ImportBatchLease;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
+import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
+import com.datagami.rentaxis.domain.repository.ImportBatchEntityRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -60,6 +63,7 @@ public class ImportBatchService {
 
     private final ImportBatchRepository batches;
     private final ImportBatchLeaseRepository links;
+    private final ImportBatchEntityRepository entityLinks;
     private final JournalEntryRepository journals;
     private final PostingService posting;
     private final EntityManager entityManager;
@@ -93,6 +97,34 @@ public class ImportBatchService {
         links.save(new ImportBatchLease(batchId, leaseId));
         b.setLeasesImported(links.findByBatchIdOrderByLeaseIdAsc(batchId).size());
         batches.save(b);
+    }
+
+    /**
+     * Record that this batch created a property, building, unit or renter.
+     *
+     * <p>Idempotent for the same reason {@link #linkLease} is: the primary key is
+     * all three columns. It does not touch {@code leasesImported} — that counter
+     * means leases, and a batch's headline number should not move because it also
+     * made a building.</p>
+     *
+     * <p>Why record it at all: see {@code ImportBatchEntity}. A batch that is
+     * reversed and then discarded has to delete exactly the rows it made, and
+     * nothing else.</p>
+     */
+    @Transactional
+    public void linkEntity(UUID batchId, ImportedEntityType type, UUID entityId) {
+        get(batchId);
+        if (type == null || entityId == null) {
+            throw new BusinessRuleViolationException("A batch link needs an entity type and id");
+        }
+        entityLinks.save(new ImportBatchEntity(batchId, type, entityId));
+    }
+
+    /** What this batch created, beside its leases. Resolves the batch first. */
+    @Transactional(readOnly = true)
+    public List<ImportBatchEntity> createdEntities(UUID batchId) {
+        get(batchId);
+        return entityLinks.findByBatchIdOrderByEntityTypeAscEntityIdAsc(batchId);
     }
 
     /** The leases this batch created. Resolves the batch first, so another tenant's id is "not found". */

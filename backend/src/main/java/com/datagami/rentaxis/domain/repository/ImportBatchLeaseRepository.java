@@ -16,4 +16,13 @@ import java.util.UUID;
 public interface ImportBatchLeaseRepository extends JpaRepository<ImportBatchLease, ImportBatchLease.Key> {
 
     List<ImportBatchLease> findByBatchIdOrderByLeaseIdAsc(UUID batchId);
+
+    /**
+     * The other direction: which batch (or batches) created this lease.
+     *
+     * <p>Used to tell an accountant which import a clashing contract reference came
+     * from. Unfiltered like everything here, so the caller compares the batch's own
+     * tenant before quoting it.</p>
+     */
+    List<ImportBatchLease> findByLeaseId(UUID leaseId);
 }
