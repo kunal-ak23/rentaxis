@@ -43,6 +43,7 @@ public class SettlementResponseDTO {
     /** Debit-positive: +ve the renter owes, −ve the landlord does. */
     private BigDecimal receivableBalance;
     private BigDecimal depositsHeld;
+    /** APPROVED assessments not yet collected. They sit on the register, not in {@link #receivableBalance}. */
     private BigDecimal penaltiesOutstanding;
     /** What the renter still owes — {@code max(-netRefund, 0)}. */
     private BigDecimal balanceDue;

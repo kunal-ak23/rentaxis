@@ -13,6 +13,7 @@ import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.dto.settlement.AdditionLineDTO;
 import com.datagami.rentaxis.api.dto.settlement.DeductionLineDTO;
 import com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest;
+import com.datagami.rentaxis.api.dto.settlement.OutstandingInstrumentDTO;
 import com.datagami.rentaxis.api.dto.settlement.SettlementStatementDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -53,6 +54,7 @@ import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -77,6 +79,7 @@ import java.util.UUID;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * The move-out statement and the {@code STL} that closes it (spec §9.2), against
@@ -139,6 +142,7 @@ class SettlementServiceIT {
     @Autowired ChequeRepository chequeRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired LeaseSettlementRepository settlementRepo;
+    @Autowired LeaseEventRepository leaseEvents;
     @Autowired JournalEntryRepository journals;
     @Autowired JournalLineRepository journalLines;
     @Autowired LandlordOrgRepository orgRepo;
@@ -155,6 +159,7 @@ class SettlementServiceIT {
 
     private static final LocalDate ADMIN_CHEQUE = LocalDate.of(2026, 9, 11);
     private static final LocalDate DEPOSIT_CHEQUE = LocalDate.of(2026, 9, 12);
+    private static final LocalDate PARKING_CHEQUE = LocalDate.of(2026, 9, 13);
     private static final LocalDate RENT_1 = LocalDate.of(2026, 10, 2);
     private static final LocalDate RENT_2 = LocalDate.of(2027, 1, 2);
     private static final LocalDate RENT_3 = LocalDate.of(2027, 4, 2);
@@ -166,6 +171,15 @@ class SettlementServiceIT {
     private static final LocalDate T = LocalDate.of(2027, 2, 15);
     /** …and the day finance actually settles, five days later. */
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
+
+    /**
+     * A second termination date, chosen so the 2 Jan cheque is uncleared and dated
+     * <em>before</em> it — which is what §9.1's keep list is for, and the only way
+     * to get an instrument the settlement can still be waiting on.
+     */
+    private static final LocalDate KEPT_T = LocalDate.of(2027, 1, 20);
+    private static final LocalDate KEPT_PENALTY_ON = LocalDate.of(2027, 1, 5);
+    private static final LocalDate KEPT_SETTLED_ON = LocalDate.of(2027, 1, 25);
 
     @BeforeEach
     void setUp() {
@@ -223,6 +237,99 @@ class SettlementServiceIT {
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
         recognition.runTo(T, false);
+        return leaseId;
+    }
+
+    /**
+     * The same lease with the January cheque left <em>uncleared</em>, terminated on
+     * 20 Jan so §9.1 keeps it for collection.
+     *
+     * <p>Recognition is deliberately not run: this fixture is about the register,
+     * and the receivable it leaves ({@code 25,500 handed back − 34,372.60 unearned
+     * = −8,872.60}) is the same whichever way round that is.</p>
+     */
+    private UUID galahWithAKeptCheque() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
+                        line("SECURITY_DEPOSIT", "3000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("100040", ADMIN_CHEQUE, ADMIN_CHEQUE, "2000"),
+                row("100045", DEPOSIT_CHEQUE, DEPOSIT_CHEQUE, "3000"),
+                row("100041", CONTRACT_DATE, RENT_1, "12750"),
+                row("100042", CONTRACT_DATE, RENT_2, "12750"),
+                row("100043", CONTRACT_DATE, RENT_3, "12750"),
+                row("100044", CONTRACT_DATE, RENT_4, "12750")));
+        posting.post(leaseId);
+        clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, DEPOSIT_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
+        termination.terminate(leaseId, new TerminateLeaseRequest(KEPT_T, null, null, "Early exit"), null);
+        return leaseId;
+    }
+
+    /**
+     * …and with a 500 fine approved before the termination, so its CASH collection
+     * row is dated before {@code T} and is kept too.
+     *
+     * <p>Approved <em>before</em> the termination because {@code approve} raises the
+     * collection row through the user-facing door, which refuses a lease that has
+     * ended — which is itself the reason a fine has to be settled through the
+     * register rather than added as a deduction.</p>
+     */
+    private UUID galahKeptAndFined() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
+                        line("SECURITY_DEPOSIT", "3000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("100040", ADMIN_CHEQUE, ADMIN_CHEQUE, "2000"),
+                row("100045", DEPOSIT_CHEQUE, DEPOSIT_CHEQUE, "3000"),
+                row("100041", CONTRACT_DATE, RENT_1, "12750"),
+                row("100042", CONTRACT_DATE, RENT_2, "12750"),
+                row("100043", CONTRACT_DATE, RENT_3, "12750"),
+                row("100044", CONTRACT_DATE, RENT_4, "12750")));
+        posting.post(leaseId);
+        clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, DEPOSIT_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        penalties.approve(proposed.id(), KEPT_PENALTY_ON);
+        termination.terminate(leaseId, new TerminateLeaseRequest(KEPT_T, null, null, "Early exit"), null);
+        return leaseId;
+    }
+
+    /** The Galah lease with a 1,500 parking deposit on its own leaf, then terminated. */
+    private UUID galahWithParkingDeposit() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
+                        line("SECURITY_DEPOSIT", "3000"), line("PARKING_DEPOSIT", "1500")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("100040", ADMIN_CHEQUE, ADMIN_CHEQUE, "2000"),
+                row("100045", DEPOSIT_CHEQUE, DEPOSIT_CHEQUE, "3000"),
+                row("100046", PARKING_CHEQUE, PARKING_CHEQUE, "1500"),
+                row("100041", CONTRACT_DATE, RENT_1, "12750"),
+                row("100042", CONTRACT_DATE, RENT_2, "12750"),
+                row("100043", CONTRACT_DATE, RENT_3, "12750"),
+                row("100044", CONTRACT_DATE, RENT_4, "12750")));
+        posting.post(leaseId);
+        clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, DEPOSIT_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, PARKING_CHEQUE));
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
+        recognition.runTo(RECOGNISED_TO, false);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+        recognition.runTo(T, false);
+        return leaseId;
+    }
+
+    /**
+     * A tenancy that simply ran out: the same lease, marked EXPIRED the day after
+     * its term ended, with no termination and therefore no returned paper.
+     */
+    private UUID expiredGalah() {
+        UUID leaseId = galah();
+        leaseService.markExpired(leaseId, END.plusDays(1));
         return leaseId;
     }
 
@@ -349,7 +456,7 @@ class SettlementServiceIT {
 
     private SettlementResponseDTO finalize(UUID leaseId, UUID bankAccountId) {
         return settlement.finalizeSettlement(leaseId,
-                new FinalizeSettlementRequest(SETTLED_ON, bankAccountId), null);
+                new FinalizeSettlementRequest(SETTLED_ON, bankAccountId, false), null);
     }
 
     // ------------------------------------------------------------------
@@ -598,12 +705,13 @@ class SettlementServiceIT {
 
         assertThatThrownBy(() -> saveDraft(leaseId, deduction(DeductionCategory.PENALTIES, "500")))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Penalties are already in the receivable balance")
-                .hasMessageContaining("EARLY_TERMINATION_FEE or OTHER");
+                .hasMessage("Approved penalties are collected through their own register row;"
+                        + " add a post-termination charge as EARLY_TERMINATION_FEE or OTHER");
 
         assertThatThrownBy(() -> saveDraft(leaseId, deduction(DeductionCategory.UNPAID_RENT, "500")))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Unpaid rent is already in the receivable balance");
+                .hasMessageContaining("Unpaid rent is already accounted for")
+                .hasMessageContaining("what was kept for collection is on the cheque register");
 
         assertThatThrownBy(() -> saveDraft(leaseId, addition(AdditionCategory.PREPAID_RENT, "500")))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -799,12 +907,12 @@ class SettlementServiceIT {
         UUID bank = leaf(AccountRole.BANK).getId();
 
         assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
-                new FinalizeSettlementRequest(null, bank), null))
+                new FinalizeSettlementRequest(null, bank, false), null))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("A settlement needs a settlement date");
 
         assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
-                new FinalizeSettlementRequest(T.minusDays(1), bank), null))
+                new FinalizeSettlementRequest(T.minusDays(1), bank, false), null))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("The settlement date 2027-02-14 is before the lease was terminated (2027-02-15).");
 
@@ -818,7 +926,7 @@ class SettlementServiceIT {
 
         // The first open day settles.
         SettlementResponseDTO done = settlement.finalizeSettlement(leaseId,
-                new FinalizeSettlementRequest(LocalDate.of(2027, 3, 1), bank), null);
+                new FinalizeSettlementRequest(LocalDate.of(2027, 3, 1), bank, false), null);
         assertThat(done.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
         assertThat(done.getSettlementDate()).isEqualTo(LocalDate.of(2027, 3, 1));
     }
@@ -853,6 +961,14 @@ class SettlementServiceIT {
         TenantContextHolder.clear();
 
         assertThatThrownBy(() -> settlement.statement(leaseId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No tenant in context");
+        // The same guard on both write paths: saveDraft reaches it through
+        // findLeaseWithTenantCheck and finalise through lockLease.
+        assertThatThrownBy(() -> saveDraft(leaseId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No tenant in context");
+        assertThatThrownBy(() -> finalize(leaseId, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No tenant in context");
     }
@@ -923,13 +1039,255 @@ class SettlementServiceIT {
         SettlementStatementDTO after = settlement.statement(leaseId);
         assertThat(after.penaltiesOutstanding()).isEqualByComparingTo("500.00");
         assertThat(after.totalDeductions()).as("shown, not charged again").isEqualByComparingTo("0.00");
-        // The approval put the fine on the receivable and its collection row took
-        // it straight off again, so the net movement is nil — but it is the
-        // *receivable* that says so, which is what stops the double charge.
+        // The approval debited the receivable and its collection row's PDR credited
+        // it straight back, so the fine's net movement THERE is nil — it is not "in
+        // the receivable balance", it is on the register. That is why it must not
+        // also be a deduction, and why it shows up as an outstanding instrument.
         assertThat(after.receivableBalance()).isEqualByComparingTo(receivableBefore);
+        // The fine is in PDC receivable, with the two rent cheques that have not
+        // fallen due yet — 12,750 + 12,750 + 500 on a lease that is still running.
+        assertThat(after.instrumentsOutstanding())
+                .as("the fine lives in PDC receivable").isEqualByComparingTo("26000.00");
+        assertThat(after.outstandingInstruments())
+                .filteredOn(OutstandingInstrumentDTO::penaltyCollection).singleElement()
+                .extracting(OutstandingInstrumentDTO::amount, OutstandingInstrumentDTO::mode)
+                .containsExactly(new BigDecimal("500.00"), ChequeMode.CASH);
 
         chequeService.receive(approved.collectionChequeId(), ChequeActionRequest.on(LocalDate.of(2027, 1, 5)));
-        assertThat(settlement.statement(leaseId).penaltiesOutstanding()).isEqualByComparingTo("0.00");
+        SettlementStatementDTO collected = settlement.statement(leaseId);
+        assertThat(collected.penaltiesOutstanding()).isEqualByComparingTo("0.00");
+        assertThat(collected.instrumentsOutstanding())
+                .as("collecting it takes exactly its 500 off the register")
+                .isEqualByComparingTo(after.instrumentsOutstanding().subtract(new BigDecimal("500.00")));
+        assertThat(collected.outstandingInstruments())
+                .noneMatch(OutstandingInstrumentDTO::penaltyCollection);
+    }
+
+    // ------------------------------------------------------------------
+    // what the register is still holding (review I1)
+    // ------------------------------------------------------------------
+
+    /**
+     * A kept cheque and an unpaid fine are money the landlord is still owed, and
+     * neither is in the receivable the statement nets.
+     *
+     * <p>§9.1 keeps every uncleared instrument dated on or before {@code T} for
+     * collection: its {@code PDR} stands, so its money is in {@code PDC_RECEIVABLE}.
+     * An approved penalty is the same shape — the {@code PEN} debits the receivable
+     * and the collection row's {@code PDR} credits it back. So the statement can
+     * show a healthy refund while 13,250 of paper is still outstanding, and paying
+     * that refund out is a decision somebody has to take deliberately.</p>
+     *
+     * <p>The fixture terminates on <b>2027-01-20</b> rather than 15 Feb so the
+     * 2 Jan cheque is <em>uncleared and dated before T</em>, which is exactly what
+     * the keep list is for. 2 Oct clears, 2 Jan is kept, 2 Apr and 2 Jul go back.</p>
+     */
+    @Test
+    void statementListsWhatTheRegisterIsStillHolding() {
+        UUID leaseId = galahKeptAndFined();
+
+        SettlementStatementDTO statement = settlement.statement(leaseId);
+
+        assertThat(statement.penaltiesOutstanding()).isEqualByComparingTo("500.00");
+        assertThat(statement.instrumentsOutstanding())
+                .as("12,750 kept + 500 fine").isEqualByComparingTo("13250.00");
+        assertThat(statement.outstandingInstruments())
+                .extracting(OutstandingInstrumentDTO::amount, OutstandingInstrumentDTO::chequeDate,
+                        OutstandingInstrumentDTO::mode, OutstandingInstrumentDTO::status,
+                        OutstandingInstrumentDTO::penaltyCollection)
+                .containsExactly(
+                        tuple(new BigDecimal("12750.00"), RENT_2, ChequeMode.PDC,
+                                ChequeStatus.REGISTERED, false),
+                        tuple(new BigDecimal("500.00"), KEPT_PENALTY_ON, ChequeMode.CASH,
+                                ChequeStatus.REGISTERED, true));
+        assertThat(statement.outstandingInstruments().get(0).seqNo())
+                .as("the register's own numbering travels with the row").isPositive();
+        // And none of it moved netRefund: an uncleared instrument is collected
+        // through the register, never netted silently against a deposit.
+        assertThat(statement.netRefund()).isEqualByComparingTo(
+                statement.depositsHeld().subtract(statement.receivableBalance()));
+    }
+
+    /**
+     * Refunding a deposit while the register is still holding something has to be
+     * acknowledged; collecting a balance never does.
+     */
+    @Test
+    void aRefundWhileInstrumentsAreOutstandingNeedsAcknowledgement() {
+        UUID leaseId = galahKeptAndFined();
+        saveDraft(leaseId);
+        UUID bank = leaf(AccountRole.BANK).getId();
+
+        assertThat(settlement.statement(leaseId).netRefund()).isPositive();
+
+        assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(KEPT_SETTLED_ON, bank, false), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("AED 13,250.00 is still outstanding on the cheque register;"
+                        + " acknowledge it to refund the deposit anyway");
+        assertThat(tx.execute(s -> settlement.buildSettlementResponse(leaseId)).getStatus())
+                .isEqualTo(SettlementStatus.DRAFT.name());
+
+        SettlementResponseDTO done = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(KEPT_SETTLED_ON, bank, true), null);
+
+        assertThat(done.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(done.getRefundAmount()).isPositive();
+        // Task 7's rule: the kept cheque and the fine are still outstanding, so the
+        // contract is not finished with however healthy the refund was.
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.TERMINATED);
+        // …and the acknowledgement is on the lease's trail, since no column fits it.
+        assertThat(leaseEventNotes(leaseId))
+                .anyMatch(n -> n.contains("13,250.00") && n.contains("acknowledged"));
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A settlement the renter owes money on needs no acknowledgement: nothing is
+     * being handed back, so there is nothing to decide.
+     */
+    @Test
+    void aBalanceDueNeedsNoAcknowledgement() {
+        UUID leaseId = galahWithAKeptCheque();
+        saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "40000"));
+        assertThat(settlement.statement(leaseId).netRefund()).isNegative();
+        assertThat(settlement.statement(leaseId).instrumentsOutstanding()).isPositive();
+
+        SettlementResponseDTO done = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(KEPT_SETTLED_ON, null, false), null);
+
+        assertThat(done.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(done.getBalanceDue()).isPositive();
+        assertThat(done.getCollectionChequeId()).isNotNull();
+        assertTrialBalanceBalances();
+    }
+
+    // ------------------------------------------------------------------
+    // the cases the review found untested (I2)
+    // ------------------------------------------------------------------
+
+    /**
+     * Two deposits on two accounts: each leaf is debited for <em>its own</em>
+     * balance, and a deposit account holding nothing produces no line at all.
+     *
+     * <p>This is the one place where the posted lines and {@code depositsHeld}
+     * could silently diverge — they are both read off
+     * {@code LeaseDepositLedger.heldByAccount}, so the assertion that the statement
+     * figure equals the sum of the journal's deposit debits is what pins them
+     * together.</p>
+     */
+    @Test
+    void twoDepositAccountsAreEachDebitedForTheirOwnBalance() {
+        UUID leaseId = galahWithParkingDeposit();
+        saveDraft(leaseId);
+        UUID security = leaf(AccountRole.SECURITY_DEPOSIT).getId();
+        UUID parking = leaf(AccountRole.PARKING_DEPOSIT).getId();
+        UUID maintenance = leaf(AccountRole.MAINTENANCE_CHARGES).getId();
+        assertThat(parking).isNotEqualTo(security);
+
+        SettlementStatementDTO statement = settlement.statement(leaseId);
+        assertThat(statement.depositsHeld()).as("3,000 + 1,500").isEqualByComparingTo("4500.00");
+
+        finalize(leaseId, leaf(AccountRole.BANK).getId());
+
+        JournalEntry stl = stlOf(leaseId);
+        assertThat(debitOn(stl, security)).isEqualByComparingTo("3000.00");
+        assertThat(debitOn(stl, parking)).isEqualByComparingTo("1500.00");
+        assertThat(debitOn(stl, security).add(debitOn(stl, parking)))
+                .as("depositsHeld is exactly the sum of the posted deposit lines")
+                .isEqualByComparingTo(statement.depositsHeld());
+        // A deposit account this lease holds nothing in is not a zero line.
+        assertThat(debitOn(stl, maintenance)).isEqualByComparingTo("0.00");
+        assertThat(linesOf(stl.getId())).hasSize(4);
+
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, leaseId)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.PARKING_DEPOSIT, leaseId)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A tenancy that simply ran out is settled by the same statement, without
+     * §9.1's steps 1–2 (spec §9.2, last sentence).
+     *
+     * <p>Nothing was handed back and nothing unearned was reversed, so the renter's
+     * receivable is whatever their uncleared paper left — and the deposit still has
+     * to come off the books.</p>
+     */
+    @Test
+    void anExpiredLeaseIsSettledByTheSameStatement() {
+        UUID leaseId = expiredGalah();
+        saveDraft(leaseId);
+        UUID bank = leaf(AccountRole.BANK).getId();
+        UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
+
+        SettlementStatementDTO statement = settlement.statement(leaseId);
+        assertThat(statement.depositsHeld()).isEqualByComparingTo("3000.00");
+        assertThat(statement.netRefund()).isEqualByComparingTo(
+                statement.depositsHeld().subtract(statement.receivableBalance()));
+
+        SettlementResponseDTO done = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(END.plusDays(5), bank, true), null);
+
+        assertThat(done.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(done.getSettlementDate()).isEqualTo(END.plusDays(5));
+        assertThat(debitOn(stlOf(leaseId), deposit)).isEqualByComparingTo("3000.00");
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, leaseId)).isEqualByComparingTo("0.00");
+        assertTrialBalanceBalances();
+    }
+
+    /** …and it is refused on a date before the tenancy actually ended. */
+    @Test
+    void anExpiredLeaseCannotBeSettledBeforeItEnded() {
+        UUID leaseId = expiredGalah();
+        saveDraft(leaseId);
+
+        assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(END.minusDays(1), leaf(AccountRole.BANK).getId(), true), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The settlement date 2027-09-22 is before the lease ended (2027-09-23).");
+    }
+
+    /**
+     * A settlement that owes nothing either way: no bank line, no collection row,
+     * and an {@code STL} that still balances.
+     *
+     * <p>Reached by a deduction sized to the refund exactly. There <em>is</em> a
+     * journal — the deposit still has to come off the books and the receivable
+     * still has to flatten — it simply has no cash leg.</p>
+     */
+    @Test
+    void aSettlementThatNetsToZeroPostsNoBankLineAndCollectsNothing() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "8239.73"));
+        UUID bank = leaf(AccountRole.BANK).getId();
+        UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
+        UUID receivable = leaf(AccountRole.RENT_RECEIVABLE).getId();
+        UUID maintenance = leaf(AccountRole.MAINTENANCE_CHARGES).getId();
+
+        assertThat(settlement.statement(leaseId).netRefund()).isEqualByComparingTo("0.00");
+
+        // No bank account is named and none is needed.
+        SettlementResponseDTO done = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(SETTLED_ON, null, false), null);
+
+        assertThat(done.getRefundAmount()).isEqualByComparingTo("0.00");
+        assertThat(done.getBalanceDue()).isEqualByComparingTo("0.00");
+        assertThat(done.getCollectionChequeId()).isNull();
+        assertThat(done.getRefundBankAccountId()).isNull();
+
+        JournalEntry stl = stlOf(leaseId);
+        assertThat(linesOf(stl.getId())).hasSize(3);
+        assertThat(debitOn(stl, deposit)).isEqualByComparingTo("3000.00");
+        assertThat(debitOn(stl, receivable)).isEqualByComparingTo("5239.73");
+        assertThat(creditOn(stl, maintenance)).isEqualByComparingTo("8239.73");
+        assertThat(creditOn(stl, bank)).as("nothing is paid out").isEqualByComparingTo("0.00");
+
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, leaseId)).isEqualByComparingTo("0.00");
+        // Nothing outstanding and the settlement is finalised, so Task 7's rule closes it.
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        assertTrialBalanceBalances();
     }
 
     // ------------------------------------------------------------------
@@ -978,6 +1336,13 @@ class SettlementServiceIT {
                             PostingRequest.dr(deposit.getId(), value).withDims(dims),
                             PostingRequest.cr(bank.getId(), value).withDims(dims)))));
         });
+    }
+
+    /** The lease's audit trail, newest first — where the acknowledgement is recorded. */
+    private List<String> leaseEventNotes(UUID leaseId) {
+        return tx.execute(s -> leaseEvents.findByLeaseIdOrderByCreatedAtDesc(leaseId).stream()
+                .map(com.datagami.rentaxis.domain.entity.LeaseEvent::getNotes)
+                .filter(n -> n != null).toList());
     }
 
     /** Retires a leaf, so "inactive" is a real state of a real account. */

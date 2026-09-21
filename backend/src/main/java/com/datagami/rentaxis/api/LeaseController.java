@@ -361,7 +361,7 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<SettlementResponseDTO> finalizeSettlement(
             @PathVariable UUID id,
-            @RequestBody FinalizeSettlementRequest body,
+            @RequestBody(required = false) FinalizeSettlementRequest body,
             HttpServletRequest request) {
         String userIdStr = request.getHeader("X-User-Id");
         UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;

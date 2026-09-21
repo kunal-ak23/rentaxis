@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
 import com.datagami.rentaxis.api.dto.settlement.AdditionLineDTO;
 import com.datagami.rentaxis.api.dto.settlement.DeductionLineDTO;
 import com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest;
+import com.datagami.rentaxis.api.dto.settlement.OutstandingInstrumentDTO;
 import com.datagami.rentaxis.api.dto.settlement.SettlementStatementDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -26,9 +27,11 @@ import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
+import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
@@ -44,10 +47,12 @@ import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementDeductionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,13 +60,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -122,11 +130,24 @@ public class SettlementService {
     /**
      * Where a deduction's money goes when the line does not say (spec §9.2).
      *
-     * <p>{@code UNPAID_RENT} and {@code PENALTIES} are deliberately absent, and
-     * are refused rather than defaulted: both are <em>already</em> in
-     * {@code receivableBalance}, so a line for either would take the renter's
-     * deposit for the same debt twice — once through the receivable the statement
-     * nets off and once as a charge. The refusals say so.</p>
+     * <p>{@code UNPAID_RENT} and {@code PENALTIES} are deliberately absent and are
+     * refused rather than defaulted, because both are <em>already charged</em> —
+     * though not, as an earlier version of this note claimed, both in
+     * {@code receivableBalance}:</p>
+     * <ul>
+     *   <li>an approved <b>penalty</b> posts {@code Dr RENT_RECEIVABLE / Cr penalty
+     *       income} and immediately raises a CASH collection row whose {@code PDR}
+     *       credits the receivable straight back. Its net movement there is nil and
+     *       the money is in {@code PDC_RECEIVABLE} — it is on the register, which is
+     *       where it gets collected, and {@code instrumentsOutstanding} reports it;</li>
+     *   <li><b>unpaid rent</b> splits: what a termination handed back is on the
+     *       receivable (the reversed {@code PDR} re-debited it) and is netted by
+     *       {@code receivableBalance}; what §9.1's keep list left for collection
+     *       kept its {@code PDR} and is on the register with the penalties.</li>
+     * </ul>
+     *
+     * <p>Either way a deduction line for one of them charges it a second time. The
+     * refusals say which of the two homes the money is actually in.</p>
      */
     private static final Map<DeductionCategory, AccountRole> DEDUCTION_ROLES =
             new EnumMap<>(Map.of(
@@ -157,6 +178,8 @@ public class SettlementService {
     private final ChequeRepository chequeRepository;
     private final AccountRepository accountRepository;
     private final JournalEntryRepository journalEntryRepository;
+    private final LeaseEventRepository leaseEventRepository;
+    private final UserRepository userRepository;
     private final TenantFiscalSettingsRepository fiscalSettings;
     private final LeaseDepositLedger depositLedger;
     private final PenaltyAssessmentService penaltyAssessmentService;
@@ -176,6 +199,8 @@ public class SettlementService {
                              ChequeRepository chequeRepository,
                              AccountRepository accountRepository,
                              JournalEntryRepository journalEntryRepository,
+                             LeaseEventRepository leaseEventRepository,
+                             UserRepository userRepository,
                              TenantFiscalSettingsRepository fiscalSettings,
                              LeaseDepositLedger depositLedger,
                              PenaltyAssessmentService penaltyAssessmentService,
@@ -194,6 +219,8 @@ public class SettlementService {
         this.chequeRepository = chequeRepository;
         this.accountRepository = accountRepository;
         this.journalEntryRepository = journalEntryRepository;
+        this.leaseEventRepository = leaseEventRepository;
+        this.userRepository = userRepository;
         this.fiscalSettings = fiscalSettings;
         this.depositLedger = depositLedger;
         this.penaltyAssessmentService = penaltyAssessmentService;
@@ -248,11 +275,32 @@ public class SettlementService {
         int unrecognised = (int) schedule.stream()
                 .filter(r -> r.status() == RecognitionStatus.PLANNED).count();
 
-        BigDecimal receivedTotal = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+        // The register once: what it has collected and what it is still holding are
+        // two questions about the same rows, and a second query is a second chance
+        // to disagree.
+        List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        BigDecimal receivedTotal = register.stream()
                 .filter(c -> c.getStatus() == ChequeStatus.CLEARED)
                 .map(Cheque::getAmount)
                 .filter(a -> a != null)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // What the landlord is still owed on paper. This is PDC receivable, NOT the
+        // rent receivable below: a PDR moves an instrument's money off the
+        // receivable the moment the row is registered, so §9.1's keep list and every
+        // approved penalty's collection row are invisible to `receivableBalance`.
+        // Reported, never netted — an uncleared instrument is collected through the
+        // register, and silently deducting it from a deposit would settle a debt the
+        // renter is still expected to pay.
+        BigDecimal instrumentsOutstanding = ledgerQueryService.accountLedger(
+                        accountResolver.resolve(AccountRole.PDC_RECEIVABLE, propertyId).getId(),
+                        new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null))
+                .closingBalance();
+        List<OutstandingInstrumentDTO> outstandingInstruments = register.stream()
+                .filter(c -> c.getStatus().isUncleared())
+                .map(SettlementService::outstanding)
+                .sorted(OUTSTANDING_ORDER)
+                .toList();
 
         BigDecimal receivableBalance = ledgerQueryService.accountLedger(receivableAccountOf(lease),
                         new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null))
@@ -296,6 +344,7 @@ public class SettlementService {
                 LocalDate.now(clock),
                 money(earnedRent), money(receivedTotal), money(receivableBalance),
                 money(depositsHeld), money(penalties),
+                money(instrumentsOutstanding), outstandingInstruments,
                 List.copyOf(deductions), List.copyOf(additions),
                 money(totalDeductions), money(totalAdditions), money(netRefund),
                 unrecognised);
@@ -336,6 +385,11 @@ public class SettlementService {
             settlement.setTotalAdditions(BigDecimal.ZERO);
             settlement.setRefundAmount(BigDecimal.ZERO);
         }
+        // The header is saved before the lines are validated, so a refused payload
+        // leaves nothing behind because this method is @Transactional and rolls
+        // back — not because of the ordering. Validating first would not make the
+        // write safe on its own; the transaction is what does.
+
         settlement.setNotes(dto.getNotes());
         LeaseSettlement saved = leaseSettlementRepository.save(settlement);
 
@@ -451,6 +505,7 @@ public class SettlementService {
         Account refundBank = netRefund.signum() > 0
                 ? requireRefundBank(request.refundBankAccountId())
                 : null;
+        boolean acknowledged = requireOutstandingAcknowledged(statement, request);
 
         UUID journalId = postSettlement(lease, statement, settlementDate, refundBank);
         UUID collectionChequeId = netRefund.signum() < 0
@@ -476,6 +531,10 @@ public class SettlementService {
         // be banked at all, because a CLOSED lease refuses every transition.
         // LeaseClosureService owns the rule; ChequeService asks it again each time a
         // row clears.
+        if (acknowledged) {
+            recordAcknowledgement(lease, statement);
+        }
+
         closure.closeIfFullyCollected(lease, "the settlement was finalised");
 
         return buildSettlementResponse(leaseId);
@@ -602,6 +661,11 @@ public class SettlementService {
         response.setNotes(settlement.getNotes());
         response.setStatus(settlement.getStatus().name());
         response.setSettledBy(settlement.getSettledBy());
+        // Filled rather than left blank: the field has existed since v1 and the
+        // settlement screen renders it, so an id with no name beside it is a gap
+        // the reader has to go and look up.
+        response.setSettledByName(settlement.getSettledBy() == null ? null
+                : userRepository.findById(settlement.getSettledBy()).map(User::getName).orElse(null));
         response.setSettledAt(settlement.getSettledAt());
         response.setCreatedAt(settlement.getCreatedAt());
 
@@ -668,15 +732,77 @@ public class SettlementService {
      */
     private void requireUsableDate(Lease lease, LocalDate settlementDate) {
         LocalDate terminatedOn = lease.getTerminatedOn();
-        if (terminatedOn != null && settlementDate.isBefore(terminatedOn)) {
+        if (terminatedOn != null) {
+            if (settlementDate.isBefore(terminatedOn)) {
+                throw new BusinessRuleViolationException("The settlement date " + settlementDate
+                        + " is before the lease was terminated (" + terminatedOn + ").");
+            }
+        } else if (lease.getEndDate() != null && settlementDate.isBefore(lease.getEndDate())) {
+            // An EXPIRED lease has no terminatedOn — it was never cut short — so the
+            // floor is the day its term actually ran out. Without this the only guard
+            // on the date is the period lock, and a natural expiry could be settled
+            // months before the tenant moved out.
             throw new BusinessRuleViolationException("The settlement date " + settlementDate
-                    + " is before the lease was terminated (" + terminatedOn + ").");
+                    + " is before the lease ended (" + lease.getEndDate() + ").");
         }
         LocalDate locked = booksLockedThrough();
         if (locked != null && !settlementDate.isAfter(locked)) {
             throw new BusinessRuleViolationException("Cannot settle on " + settlementDate
                     + ": books are locked through " + locked + ".");
         }
+    }
+
+    /**
+     * Paying a refund out while the register is still holding paper is a decision,
+     * not a default.
+     *
+     * <p>The two figures are independent: {@code netRefund} is drawn from the
+     * receivable and the deposit, and {@code instrumentsOutstanding} sits in PDC
+     * receivable, which neither of them touches. So a statement can honestly offer
+     * a healthy refund on a tenancy whose kept cheque or unpaid fine is still
+     * outstanding — and handing the deposit back in that state is exactly what a
+     * landlord would want to have chosen on purpose. The alternative, netting it
+     * off silently, would settle a debt the renter is still expected to pay and
+     * leave an instrument on the register with nothing behind it.</p>
+     *
+     * <p>Only a refund asks: a balance-due settlement is already collecting, and a
+     * zero one hands over nothing.</p>
+     *
+     * @return whether an acknowledgement was actually needed and given — which is
+     *         what gets written to the lease's trail.
+     */
+    private static boolean requireOutstandingAcknowledged(SettlementStatementDTO statement,
+                                                          FinalizeSettlementRequest request) {
+        if (statement.netRefund().signum() <= 0 || statement.instrumentsOutstanding().signum() <= 0) {
+            return false;
+        }
+        if (!request.acknowledged()) {
+            throw new BusinessRuleViolationException("AED " + formatMoney(statement.instrumentsOutstanding())
+                    + " is still outstanding on the cheque register;"
+                    + " acknowledge it to refund the deposit anyway");
+        }
+        return true;
+    }
+
+    /**
+     * The acknowledged figure, on the lease's own trail.
+     *
+     * <p>Changeset 85's settlement columns are all spoken for and this task adds no
+     * schema, so the record of "a refund was paid out over AED X of outstanding
+     * paper, by this user, on this date" goes where the rest of a lease's history
+     * already lives. {@code LeaseClosureService} writes its closure the same way.</p>
+     */
+    private void recordAcknowledgement(Lease lease, SettlementStatementDTO statement) {
+        LeaseEvent event = new LeaseEvent();
+        event.setLease(lease);
+        event.setTenantId(lease.getTenantId());
+        event.setPreviousState(lease.getStatus());
+        event.setNewState(lease.getStatus());
+        event.setNotes("Settlement finalised with AED " + formatMoney(statement.instrumentsOutstanding())
+                + " still outstanding on the cheque register, acknowledged;"
+                + " refund of AED " + formatMoney(statement.netRefund()) + " paid out");
+        event.setCreatedAt(Instant.now());
+        leaseEventRepository.save(event);
     }
 
     private LocalDate booksLockedThrough() {
@@ -737,12 +863,14 @@ public class SettlementService {
     private static void requireAllowed(DeductionCategory category) {
         if (category == DeductionCategory.PENALTIES) {
             throw new BusinessRuleViolationException(
-                    "Penalties are already in the receivable balance, so a penalty cannot also be a deduction."
-                            + " Post a charge raised after the termination as EARLY_TERMINATION_FEE or OTHER.");
+                    "Approved penalties are collected through their own register row;"
+                            + " add a post-termination charge as EARLY_TERMINATION_FEE or OTHER");
         }
         if (category == DeductionCategory.UNPAID_RENT) {
             throw new BusinessRuleViolationException(
-                    "Unpaid rent is already in the receivable balance, so it cannot also be a deduction.");
+                    "Unpaid rent is already accounted for: what the termination handed back is in the"
+                            + " receivable balance, and what was kept for collection is on the cheque register."
+                            + " It cannot also be a deduction.");
         }
         if (!DEDUCTION_ROLES.containsKey(category)) {
             throw new BusinessRuleViolationException(category + " is not a settlement deduction.");
@@ -751,6 +879,9 @@ public class SettlementService {
 
     private static void requireAllowed(AdditionCategory category) {
         if (category == AdditionCategory.PREPAID_RENT || category == AdditionCategory.UTILITY_OVERPAYMENT) {
+            // These two really are receivable credits — rent paid ahead and a
+            // utility overpayment are money the renter has handed over against the
+            // contract, and the statement already subtracts the receivable.
             throw new BusinessRuleViolationException(
                     category + " is already a credit on the receivable balance, so it cannot also be an addition.");
         }
@@ -823,6 +954,24 @@ public class SettlementService {
                 .orElseGet(List::of);
     }
 
+    /**
+     * Oldest instrument first. By the date on the paper, then by the row's position
+     * on the register — two cheques written for the same day are still the third and
+     * the fourth instalment, and the register's own numbering is what the clerk
+     * reads them off.
+     */
+    private static final Comparator<OutstandingInstrumentDTO> OUTSTANDING_ORDER =
+            Comparator.comparing(OutstandingInstrumentDTO::chequeDate,
+                            Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparingInt(OutstandingInstrumentDTO::seqNo);
+
+    private static OutstandingInstrumentDTO outstanding(Cheque cheque) {
+        return new OutstandingInstrumentDTO(
+                cheque.getId(), cheque.getSeqNo(), cheque.getMode(), cheque.getChequeNumber(),
+                cheque.getChequeDate(), money(cheque.getAmount()), cheque.getStatus(),
+                cheque.getPenaltyAssessmentId() != null);
+    }
+
     /** The leaf a line posts to: its own override, else the leaf its category resolves to. */
     private Account accountOfLine(LeaseSettlementDeduction line, UUID propertyId) {
         if (line.getAccountId() != null) {
@@ -888,6 +1037,14 @@ public class SettlementService {
     private static UUID propertyIdOf(Lease lease) {
         return lease.getUnit() != null && lease.getUnit().getProperty() != null
                 ? lease.getUnit().getProperty().getId() : null;
+    }
+
+    /**
+     * The same figure as {@link #money}, grouped for a sentence a human reads —
+     * "AED 13,250.00". The register's own refusals format money this way.
+     */
+    private static String formatMoney(BigDecimal value) {
+        return String.format(Locale.ROOT, "%,.2f", money(value));
     }
 
     private static BigDecimal money(BigDecimal value) {

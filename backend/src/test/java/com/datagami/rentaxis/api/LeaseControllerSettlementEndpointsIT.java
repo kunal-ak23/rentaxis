@@ -223,8 +223,20 @@ class LeaseControllerSettlementEndpointsIT {
                 "description", "End-of-tenancy clean", "amount", 500)));
     }
 
+    /**
+     * The shape the settlement screen posts. {@code acknowledgeOutstanding} is here
+     * because this lease is terminated with its kept paper still on the register,
+     * which is the ordinary case — see {@link #theFinanceRolesMaySeeAndSettle}.
+     */
     private Map<String, Object> finalizeBody() {
-        return Map.of("settlementDate", SETTLED_ON.toString(), "refundBankAccountId", bankAccountId.toString());
+        return Map.of("settlementDate", SETTLED_ON.toString(),
+                "refundBankAccountId", bankAccountId.toString(),
+                "acknowledgeOutstanding", true);
+    }
+
+    private Map<String, Object> finalizeBodyWithoutAcknowledgement() {
+        return Map.of("settlementDate", SETTLED_ON.toString(),
+                "refundBankAccountId", bankAccountId.toString());
     }
 
     private void terminate() {
@@ -255,7 +267,9 @@ class LeaseControllerSettlementEndpointsIT {
 
         ResponseEntity<Map> statement = body(accountant, HttpMethod.GET, statementPath(leaseId), null);
         assertThat(statement.getBody()).containsKeys("asOf", "earnedRent", "receivedTotal",
-                "receivableBalance", "depositsHeld", "penaltiesOutstanding", "deductions", "additions",
+                "receivableBalance", "depositsHeld", "penaltiesOutstanding",
+                "instrumentsOutstanding", "outstandingInstruments",
+                "deductions", "additions",
                 "totalDeductions", "totalAdditions", "netRefund", "unrecognisedEntries");
         assertThat(number(statement.getBody().get("depositsHeld"))).isEqualByComparingTo("3000.00");
         // Nothing cleared and nothing recognised, so the receivable is the whole
@@ -277,6 +291,17 @@ class LeaseControllerSettlementEndpointsIT {
         assertThat((String) tooEarly.getBody().get("message")).contains("Terminate the lease before settling it");
 
         terminate();
+
+        // The termination kept three uncleared rows for collection, so refunding the
+        // deposit now is a decision the accountant has to take on purpose. An
+        // omitted flag is a plain 400 with the figure in it, not a parse error.
+        ResponseEntity<Map> unacknowledged = body(accountant, HttpMethod.POST, finalizePath(leaseId),
+                finalizeBodyWithoutAcknowledgement());
+        assertThat(unacknowledged.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) unacknowledged.getBody().get("message"))
+                .contains("is still outstanding on the cheque register")
+                .contains("acknowledge it to refund the deposit anyway");
+
         ResponseEntity<Map> finalized = body(accountant, HttpMethod.POST, finalizePath(leaseId), finalizeBody());
 
         assertThat(finalized.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -327,6 +352,15 @@ class LeaseControllerSettlementEndpointsIT {
         // Nothing was written by any of that.
         assertThat(status(accountant, HttpMethod.GET, settlementPath(leaseId), null))
                 .isEqualTo(HttpStatus.NOT_FOUND);
+
+        // …and once a row exists, the manager may read it — the read gate admits
+        // them, which is a different question from whether they may write one.
+        body(accountant, HttpMethod.POST, draftPath(leaseId), draftBody());
+        ResponseEntity<Map> row = body(propertyManager, HttpMethod.GET, settlementPath(leaseId), null);
+        assertThat(row.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(row.getBody().get("status")).isEqualTo("DRAFT");
+        assertThat(status(propertyManager, HttpMethod.GET, settlementPath(foreignLeaseId), null))
+                .as("still nothing outside their buildings").isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     /** A renter may not look at, save or finalise the settlement of their own contract. */
@@ -350,7 +384,7 @@ class LeaseControllerSettlementEndpointsIT {
                         "type", "DEDUCTION", "category", "PENALTIES", "amount", 500))));
         assertThat(penalties.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((String) penalties.getBody().get("message"))
-                .contains("already in the receivable balance")
+                .contains("Approved penalties are collected through their own register row")
                 .contains("EARLY_TERMINATION_FEE or OTHER");
 
         body(accountant, HttpMethod.POST, draftPath(leaseId), draftBody());

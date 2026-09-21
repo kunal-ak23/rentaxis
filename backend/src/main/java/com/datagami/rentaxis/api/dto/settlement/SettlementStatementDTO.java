@@ -37,9 +37,27 @@ import java.util.List;
  *                             deposit forward is zero however much the contract
  *                             charged.
  * @param penaltiesOutstanding APPROVED assessments whose collection row has not
- *                             cleared. Shown, never added: the approval already put
- *                             the fine on the receivable, and adding it again would
- *                             charge the renter's deposit twice.
+ *                             cleared. <b>Shown, never added</b> — and not because
+ *                             the fine is in {@link #receivableBalance}: it is not.
+ *                             Approving a penalty posts {@code Dr RENT_RECEIVABLE /
+ *                             Cr penalty income} and immediately raises a CASH
+ *                             collection row whose {@code PDR} credits the
+ *                             receivable straight back, so the fine's net movement
+ *                             there is nil and the money sits in
+ *                             {@code PDC_RECEIVABLE}. It is charged already, on the
+ *                             register, and a deduction line for it would charge it
+ *                             a second time. It is part of
+ *                             {@link #instrumentsOutstanding}.
+ * @param instrumentsOutstanding the lease-dimension balance of {@code PDC_RECEIVABLE}:
+ *                             what the register is still holding against this
+ *                             renter — kept cheques, penalty collection rows,
+ *                             anything banked but not cleared. <b>Not netted into
+ *                             {@link #netRefund}</b>: an uncleared instrument is
+ *                             collected through the register, never silently
+ *                             deducted from a deposit. Finalising a refund while
+ *                             this is positive needs
+ *                             {@code acknowledgeOutstanding}.
+ * @param outstandingInstruments the rows behind that figure, oldest first.
  * @param netRefund            {@code depositsHeld − receivableBalance −
  *                             totalDeductions + totalAdditions}. <b>&gt;0 the
  *                             landlord pays out, &lt;0 the renter still owes.</b>
@@ -54,6 +72,8 @@ public record SettlementStatementDTO(
         BigDecimal receivableBalance,
         BigDecimal depositsHeld,
         BigDecimal penaltiesOutstanding,
+        BigDecimal instrumentsOutstanding,
+        List<OutstandingInstrumentDTO> outstandingInstruments,
         List<DeductionLineDTO> deductions,
         List<AdditionLineDTO> additions,
         BigDecimal totalDeductions,

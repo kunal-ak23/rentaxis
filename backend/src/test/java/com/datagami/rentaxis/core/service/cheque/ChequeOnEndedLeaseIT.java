@@ -281,8 +281,11 @@ class ChequeOnEndedLeaseIT {
         SaveSettlementDTO draft = new SaveSettlementDTO();
         draft.setDeductions(List.of(lines));
         settlement.saveDraft(leaseId, draft, null);
+        // acknowledgeOutstanding: every lease in this class is finalised with paper
+        // still on its register — that is the whole subject — and a refund in that
+        // state now needs the accountant to say so on purpose (review I1).
         return settlement.finalizeSettlement(leaseId,
-                new FinalizeSettlementRequest(SETTLED_ON, bankAccountId), null);
+                new FinalizeSettlementRequest(SETTLED_ON, bankAccountId, true), null);
     }
 
     private static SaveSettlementDTO.DeductionItemDTO deduction(DeductionCategory category, String amount) {
