@@ -115,6 +115,25 @@ public class Cheque extends BaseTenantEntity {
     @Column(nullable = false, length = 16)
     private ChequeStatus status = ChequeStatus.DRAFT;
 
+    /**
+     * What this row should become when its import batch is bulk-posted (spec §10.3,
+     * changeset 88). The cut-over contract import writes every cheque as
+     * {@code DRAFT} and parks the spreadsheet's status here; bulk post then
+     * <em>replays</em> the transitions through {@code ChequeService} so each one
+     * writes its own PDR/CRT/CBR, instead of stamping {@link #status} and leaving
+     * the ledger with no journal to explain it.
+     *
+     * <p>Null on every cheque that was not imported. The database narrows it to
+     * REGISTERED / DEPOSITED / CLEARED / BOUNCED ({@code ck_cheques_imported_status})
+     * — the states the replay knows how to reach from DRAFT; a REPLACED or
+     * CANCELLED parked here would be a row bulk post silently skipped. It is typed
+     * {@link ChequeStatus} rather than given an enum of its own because it holds
+     * exactly that vocabulary and is compared against {@link #status}.</p>
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "imported_status", length = 16)
+    private ChequeStatus importedStatus;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "failure_reason", length = 30)
     private ChequeFailureReason failureReason;

@@ -181,3 +181,5 @@ databaseChangeLog:
       file: db/changelog/changesets/86-rent-segment-lease-line-no-fk.yaml
   - include:
       file: db/changelog/changesets/87-vouchers.yaml
+  - include:
+      file: db/changelog/changesets/88-cutover.yaml

@@ -1,0 +1,233 @@
+databaseChangeLog:
+  # Cut-over: import batches, opening-balance snapshot and the OB posting marker.
+  # Spec §10.3.
+  #
+  # WHY import_batch_leases HAS NO FOREIGN KEY ON lease_id: a batch link is a
+  # historical record of what one import created, and `leases` rows are deletable
+  # (LeaseService deletes a DRAFT lease). A FK would either block that delete or
+  # cascade the link away; a dangling row here is harmless instead —
+  # ImportBatchService hands the id to the LeaseReverter, whose contract is that a
+  # lease id which no longer resolves is ignored. The batch_id side IS a FK with
+  # ON DELETE CASCADE because a batch owns its links outright.
+  #
+  # WHY opening_balance_postings EXISTS AT ALL rather than deriving "has the tenant
+  # opened its books?" from the journal: the reconciliation screen has to compare
+  # PACT's figures against balances DERIVED FROM THE CONTRACT IMPORT ONLY, which
+  # means subtracting the OB journal's own lines from the trial balance as at D-1.
+  # Finding that journal by scanning for doc_type = 'OB' would also match a
+  # reversal, so the id is recorded explicitly. The unique index on tenant_id is
+  # the "books open once" rule in the place that can actually enforce it.
+  #
+  # YAML NOTE. Every composite key below is written either as raw SQL or with its
+  # `columnNames` QUOTED. An unquoted `columnNames: a, b` inside a `{ }` flow
+  # mapping parses as the scalar "a" plus a stray mapping and silently truncates
+  # the key to its first column — a constraint that reads correctly in the
+  # changelog and enforces half the rule in the database. CutoverSchemaIT asserts
+  # both halves of every key here for that reason.
+  - changeSet:
+      id: 88-cutover
+      author: claude
+      comment: Import batches, opening-balance snapshot rows and the one-per-tenant OB posting marker
+      changes:
+        - createTable:
+            tableName: import_batches
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: kind, type: varchar(30), defaultValue: CONTRACT_IMPORT, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(10), defaultValue: DRAFT, constraints: { nullable: false } }
+              - column: { name: label, type: varchar(120) }
+              - column: { name: import_job_id, type: uuid }
+              - column: { name: leases_imported, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: journals_posted, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: reversed_at, type: timestamptz }
+              - column: { name: reversed_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: import_batches
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_import_batches_tenant
+        - addForeignKeyConstraint:
+            baseTableName: import_batches
+            baseColumnNames: import_job_id
+            referencedTableName: import_jobs
+            referencedColumnNames: id
+            constraintName: fk_import_batches_job
+        - sql:
+            sql: >-
+              ALTER TABLE import_batches
+                ADD CONSTRAINT ck_import_batches_kind   CHECK (kind IN ('CONTRACT_IMPORT')),
+                ADD CONSTRAINT ck_import_batches_status CHECK (status IN ('DRAFT','POSTED','REVERSED'))
+        - createIndex: { tableName: import_batches, indexName: idx_import_batches_tenant, columns: [ { column: { name: tenant_id } } ] }
+
+        - createTable:
+            tableName: import_batch_leases
+            columns:
+              - column: { name: batch_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false } }
+        - addPrimaryKey:
+            tableName: import_batch_leases
+            columnNames: "batch_id, lease_id"
+            constraintName: import_batch_leases_pkey
+        - addForeignKeyConstraint:
+            baseTableName: import_batch_leases
+            baseColumnNames: batch_id
+            referencedTableName: import_batches
+            referencedColumnNames: id
+            constraintName: fk_import_batch_leases_batch
+            onDelete: CASCADE
+
+        - addColumn:
+            tableName: import_jobs
+            columns:
+              - column: { name: import_batch_id, type: uuid }
+
+        - createTable:
+            tableName: opening_balance_snapshots
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: account_code, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: account_name, type: varchar(255) }
+              - column: { name: debit, type: "decimal(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: credit, type: "decimal(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: uploaded_at, type: timestamptz, defaultValueComputed: now() }
+              - column: { name: uploaded_by, type: uuid }
+        - addForeignKeyConstraint:
+            baseTableName: opening_balance_snapshots
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_ob_snapshots_tenant
+        - sql:
+            comment: >-
+              Keyed by CODE, not account_id, so a PACT trial balance can be uploaded before
+              every account exists in our chart. Unmatched codes are reported on the
+              reconciliation screen rather than silently dropped on import.
+            sql: >-
+              CREATE UNIQUE INDEX ux_opening_balance_snapshots_tenant_code
+              ON opening_balance_snapshots (tenant_id, account_code)
+        - sql:
+            sql: >-
+              ALTER TABLE opening_balance_snapshots
+                ADD CONSTRAINT ck_ob_snapshots_one_side CHECK (debit = 0 OR credit = 0)
+
+        - createTable:
+            tableName: opening_balance_postings
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: as_of, type: date, constraints: { nullable: false } }
+              - column: { name: journal_id, type: uuid }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: opening_balance_postings
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_ob_postings_tenant
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX ux_opening_balance_postings_tenant ON opening_balance_postings (tenant_id)
+
+        # ---- controller rulings folded into 88 ------------------------------
+        #
+        # PACT'S CONTRACT NUMBER. The client's contracts are identified by strings
+        # like "TLP7/681". `leases.contract_number` is a bigint — our own per-tenant
+        # sequence, rendered as "<property code>/<number>" for display — and cannot
+        # hold one, and overloading it would put a foreign identifier into the
+        # column that generates our next contract number. So the imported reference
+        # gets a column of its own, and the sequence keeps meaning what it means.
+        #
+        # The index is NOT unique. Two buildings in one cut-over may legitimately
+        # carry the same reference (PACT scopes it per property in places), and a
+        # re-import after a batch reverse has to be able to find the earlier lease
+        # by it — a lookup index, not a rule.
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: external_contract_ref, type: varchar(64) }
+        - sql:
+            sql: >-
+              CREATE INDEX idx_leases_tenant_external_ref ON leases (tenant_id, external_contract_ref)
+
+        # THE IMPORTED CHEQUE STATUS. The contract import writes every cheque row as
+        # DRAFT and parks the status the spreadsheet asked for here. Bulk post then
+        # REPLAYS the transitions through ChequeService so each one writes its
+        # PDR/CRT/CBR, instead of stamping a status into `cheques.status` and leaving
+        # the ledger without the journals that explain it.
+        #
+        # Four values, checked: those are the ones the replay knows how to reach from
+        # DRAFT. A REPLACED or CANCELLED parked here would be a row bulk post silently
+        # skipped. NULL is the ordinary, non-imported cheque. varchar(16) matches
+        # `cheques.status`, which holds the same vocabulary.
+        #
+        # This is one changeset with the tables above, not a preconditioned one of its
+        # own: the brief guarded it with `tableExists: cheques` because tasks 6-9 were
+        # expected to ship BEFORE accounting v2 plan 2 created that table. Plan 2 has
+        # landed (changeset 83), so 88 always runs after `cheques` exists and the
+        # precondition would only be a permanently-true check.
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: imported_status, type: varchar(16) }
+        - sql:
+            sql: >-
+              ALTER TABLE cheques ADD CONSTRAINT ck_cheques_imported_status
+                CHECK (imported_status IS NULL OR imported_status IN ('REGISTERED','DEPOSITED','CLEARED','BOUNCED'))
+
+        # ONE LIVE JOURNAL PER VOUCHER. Same shape, and the same argument, as
+        # `uq_je_recognition_source` in changeset 86.
+        #
+        # SAFETY ANALYSIS — every path that writes a VOUCHER-sourced journal was
+        # walked before this was added, because a unique index that a legitimate flow
+        # trips is an outage, not a guard:
+        #
+        #   * VoucherService.post is the ONLY writer of source_type = 'VOUCHER'
+        #     (PostingService.post, called with JournalSourceType.VOUCHER and the
+        #     voucher's own id as source_id). It refuses anything but a DRAFT and sets
+        #     the row POSTED in the same transaction, so a voucher cannot post twice.
+        #   * PostingService.reverse writes source_type = 'REVERSAL' with the ORIGINAL
+        #     JOURNAL's id as source_id — outside this predicate, and a different id
+        #     besides.
+        #   * VoucherService.amend reverses the original's journal and creates a NEW
+        #     voucher row (createDraft) before posting it, so the replacement's journal
+        #     carries a new source_id. An amendment chain is one journal per link.
+        #   * No other caller passes JournalSourceType.VOUCHER, and nothing writes
+        #     journal_entries except PostingService.
+        #
+        # So no legitimate flow produces two VOUCHER journals under one source id, and
+        # what the index closes is the gap a row lock cannot: a row edited by SQL, a
+        # restored backup, or a future writer that skips lockForWrite. It is the
+        # structural close on the double-post the two-thread posting test guards
+        # against with a lock alone.
+        #
+        # This CREATE can fail outright on a database that already holds two VOUCHER
+        # journals for one source_id. That failure is the index doing its job:
+        #   SELECT source_id, count(*) FROM journal_entries
+        #    WHERE source_type = 'VOUCHER' GROUP BY source_id HAVING count(*) > 1;
+        # and reverse the later journal before re-running. Changeset 87 is unreleased,
+        # so no production database can hold one.
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX uq_je_voucher_source ON journal_entries (source_id)
+              WHERE source_type = 'VOUCHER'
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS uq_je_voucher_source;
+              ALTER TABLE cheques DROP CONSTRAINT IF EXISTS ck_cheques_imported_status;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS imported_status;
+              DROP INDEX IF EXISTS idx_leases_tenant_external_ref;
+              ALTER TABLE leases DROP COLUMN IF EXISTS external_contract_ref;
+        - dropTable: { tableName: opening_balance_postings }
+        - dropTable: { tableName: opening_balance_snapshots }
+        - dropColumn: { tableName: import_jobs, columnName: import_batch_id }
+        - dropTable: { tableName: import_batch_leases }
+        - dropTable: { tableName: import_batches }

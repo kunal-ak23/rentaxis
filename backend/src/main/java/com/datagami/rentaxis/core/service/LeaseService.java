@@ -1303,6 +1303,7 @@ public class LeaseService {
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
         dto.setContractNumber(lease.getContractNumber());
         dto.setDisplayContractNumber(displayContractNumber(property.getCode(), lease.getContractNumber()));
+        dto.setExternalContractRef(lease.getExternalContractRef());
         dto.setAgreementDate(lease.getAgreementDate());
         dto.setRentVatApplicable(lease.isRentVatApplicable());
 

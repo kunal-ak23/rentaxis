@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -419,6 +420,44 @@ class PurchaseInvoicePostingIT {
         assertThat(outcomes).filteredOn(o -> !(o instanceof Voucher)).as("losers")
                 .allMatch(BusinessRuleViolationException.class::isInstance);
         assertThat(voucherJournals(voucherId)).as("journals for the voucher").hasSize(1);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * The structural close behind {@link #twoSimultaneousPostsWriteOneJournal}:
+     * {@code uq_je_voucher_source} (changeset 88) makes "one live journal per
+     * voucher" a <em>database</em> guarantee rather than something the row lock
+     * alone has to hold.
+     *
+     * <p>The row lock is a guard only while every writer takes it. The status is put
+     * back to DRAFT with SQL here precisely because no service path can produce that
+     * state — which is the point: a row edited by hand, a restored backup, or a
+     * future writer that skips {@code lockForWrite} would otherwise post a second
+     * PISR journal for one invoice, doubling the vendor's payable with two
+     * individually-balanced entries and nothing in the books saying which is the
+     * duplicate. An implementer once reported two winners from the race above and
+     * could never reproduce it; this is the close that does not depend on
+     * reproducing it.</p>
+     *
+     * <p>The refusal is a {@code DataIntegrityViolationException} at commit, not a
+     * business rule — by the time it fires, the application's own rules have all
+     * been satisfied. What matters is that the journal is not there afterwards.</p>
+     */
+    @Test
+    void aForcedSecondPostOfTheSameVoucherIsRefusedByTheDatabase() {
+        UUID voucherId = vouchers.post(draftTwoLineInvoice().getId()).getId();
+        assertThat(voucherJournals(voucherId)).hasSize(1);
+        UUID firstJournalId = voucherJournals(voucherId).get(0).getId();
+
+        // No service path can do this — that is what makes it worth testing.
+        jdbc.update("update vouchers set status = 'DRAFT', journal_id = null where id = ?", voucherId);
+
+        assertThatThrownBy(() -> vouchers.post(voucherId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_je_voucher_source");
+
+        assertThat(voucherJournals(voucherId)).as("journals after the refused second post")
+                .extracting(JournalEntry::getId).containsExactly(firstJournalId);
         assertTrialBalanceBalances();
     }
 }
