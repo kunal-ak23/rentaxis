@@ -624,7 +624,7 @@ public class SettlementService {
      * onto PDC receivable exactly as any other instrument's would.</p>
      */
     private UUID collectBalanceDue(Lease lease, BigDecimal amount, LocalDate date) {
-        return chequeService.addSettlementCollectionRow(lease.getId(), new ChequeRowInput(
+        return chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
                 null, null, date, null, date, null, null, null,
                 money(amount), "Settlement balance due", ChequeMode.CASH)).id();
     }

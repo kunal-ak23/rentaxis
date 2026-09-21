@@ -9,6 +9,8 @@ import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
+import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
+import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
@@ -19,6 +21,7 @@ import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseTerminationService;
+import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
@@ -33,6 +36,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.DeductionCategory;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -45,6 +49,8 @@ import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -57,6 +63,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,6 +121,7 @@ class ChequeOnEndedLeaseIT {
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeaseTerminationService termination;
     @Autowired SettlementService settlement;
+    @Autowired PenaltyAssessmentService penalties;
     @Autowired RecognitionService recognition;
     @Autowired LeasePostingService posting;
     @Autowired LeaseService leaseService;
@@ -151,6 +159,8 @@ class ChequeOnEndedLeaseIT {
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
     /** The day the kept paper is finally banked, a fortnight after the move-out. */
     private static final LocalDate BANKED_ON = LocalDate.of(2027, 3, 1);
+    /** A fine approved before T, so its collection row is kept rather than handed back. */
+    private static final LocalDate PENALTY_ON = LocalDate.of(2027, 1, 20);
 
     @BeforeEach
     void setUp() {
@@ -378,6 +388,98 @@ class ChequeOnEndedLeaseIT {
     }
 
     // ------------------------------------------------------------------
+    // every way the last outstanding row can leave the set
+    // ------------------------------------------------------------------
+
+    /**
+     * The close rule is evaluated by every transition that takes a row <em>out</em>
+     * of the outstanding set, not only by the ones that clear it.
+     *
+     * <p>Review I1: `returnToTenant` and `cancel` also end the landlord's claim on
+     * an instrument — finance handing the paper back, or withdrawing a row it will
+     * not collect — and a lease whose last outstanding row left that way used to be
+     * stuck TERMINATED forever, because no later clearance could ever ask the
+     * question again. Each case below is the same lease, the same finalised
+     * settlement and the same single outstanding cheque; only the verb differs.</p>
+     *
+     * <p>{@code receive} is the fifth way and has its own test — it needs a CASH
+     * row, which is what §9.2's balance due raises — see
+     * {@link #theSettlementBalanceDueRowIsReceivedAndClosesTheLease}.</p>
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("waysTheLastRowLeavesTheOutstandingSet")
+    void anyTransitionThatEmptiesTheRegisterClosesTheLease(
+            String name, BiConsumer<ChequeOnEndedLeaseIT, UUID> transition, ChequeStatus expected) {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
+        assertThat(statusOfLease(leaseId)).as("one instrument still outstanding")
+                .isEqualTo(LeaseStatus.TERMINATED);
+
+        transition.accept(this, kept);
+
+        assertThat(statusOf(kept)).as("the row after " + name).isEqualTo(expected);
+        assertThat(statusOfLease(leaseId)).as("nothing outstanding is nothing outstanding")
+                .isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertTrialBalanceBalances();
+    }
+
+    private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
+            waysTheLastRowLeavesTheOutstandingSet() {
+        return java.util.stream.Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of("cleared at the bank",
+                        (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) -> {
+                            it.cheques.deposit(id, ChequeActionRequest.on(BANKED_ON));
+                            it.cheques.clear(id, ChequeActionRequest.on(BANKED_ON));
+                        }, ChequeStatus.CLEARED),
+                org.junit.jupiter.params.provider.Arguments.of("handed back to the tenant",
+                        (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) ->
+                                it.cheques.returnToTenant(id, BANKED_ON, "Renter collected the cheque"),
+                        ChequeStatus.RETURNED),
+                org.junit.jupiter.params.provider.Arguments.of("cancelled by finance",
+                        (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) ->
+                                it.cheques.cancel(id, new ChequeActionRequest(
+                                        BANKED_ON, "Written off at settlement", null, null)),
+                        ChequeStatus.CANCELLED));
+    }
+
+    /**
+     * Reversing an approved penalty cancels its collection row — and that row can be
+     * the last thing the contract was waiting on.
+     *
+     * <p>The penalty module reaches the register through {@code ChequeService.cancel}
+     * (`PenaltyAssessmentService.reverse`), so the hook on that transition is what
+     * closes the lease here. It is the path review I1 named as reachable from a
+     * screen: finance reverses a fine on a settled tenancy and the contract should
+     * finish, not sit open forever waiting for a row nobody will ever collect.</p>
+     */
+    @Test
+    void reversingAPenaltyCancelsItsCollectionRowAndClosesTheLease() {
+        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
+        // Approved while the contract is still running — the penalty module refuses
+        // to charge a lease that has ended — and dated before T so §9.1's default
+        // split keeps its collection row rather than handing it back.
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.OTHER, new BigDecimal("400"), "Lost key"), null);
+        penalties.approve(proposed.id(), PENALTY_ON);
+        recognition.runTo(RECOGNISED_TO, false);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+        recognition.runTo(T, false);
+
+        finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
+        assertThat(statusOfLease(leaseId)).as("the collection row is outstanding")
+                .isEqualTo(LeaseStatus.TERMINATED);
+
+        penalties.reverse(proposed.id(), SETTLED_ON, "Charged in error");
+
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertTrialBalanceBalances();
+    }
+
+    // ------------------------------------------------------------------
     // (b) the settlement's balance-due row is collectable
     // ------------------------------------------------------------------
 
@@ -527,13 +629,16 @@ class ChequeOnEndedLeaseIT {
     // ------------------------------------------------------------------
 
     /**
-     * A terminated contract does not grow new instalments — the settlement's own
-     * door is the single exception, and it is not this one.
+     * A contract that has ended does not grow new instalments — neither terminated
+     * nor expired. The settlement's own door is the single exception, and it is not
+     * this one.
      *
-     * <p>An EXPIRED lease is deliberately <em>not</em> in the same boat: its grid
-     * has always been open (a tenancy that simply ran out still takes a counter
-     * receipt for the last month, and an approved penalty on it raises its
-     * collection row through this very method). Nothing here changes that.</p>
+     * <p>EXPIRED was left open when this task first landed, on the grounds that
+     * approving a penalty raised its collection row through this very method.
+     * Review I2 withdrew that: the penalty path now uses the same internal door the
+     * settlement's balance-due row uses, and the public grid is a live lease's
+     * privilege on both endings. {@code PenaltyAssessmentServiceIT} holds both
+     * halves of that pair.</p>
      */
     @Test
     void aTerminatedLeaseTakesNoNewGridRows() {
@@ -552,6 +657,31 @@ class ChequeOnEndedLeaseIT {
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThat(register(leaseId)).as("six rows, as the contract had").hasSize(6);
+    }
+
+    /** …and the same is true of a tenancy that simply ran out (review I2). */
+    @Test
+    void anExpiredLeaseTakesNoNewGridRowsEither() {
+        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        leaseService.markExpired(leaseId, END.plusDays(1));
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.EXPIRED);
+
+        assertThatThrownBy(() -> cheques.addRowToPostedLease(leaseId, row(null, BANKED_ON, BANKED_ON, "500")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This lease is EXPIRED");
+        assertThatThrownBy(() -> cheques.cashReceipt(leaseId,
+                new ChequeRowInput(null, null, BANKED_ON, null, BANKED_ON, null, null, null,
+                        new BigDecimal("500"), "Cash at the counter", ChequeMode.CASH)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This lease is EXPIRED");
+
+        // The register is untouched and its kept instrument is still collectable:
+        // an expired lease is still collecting, it is just not growing.
+        assertThat(register(leaseId)).hasSize(6);
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.clear(kept, ChequeActionRequest.on(BANKED_ON));
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.CLEARED);
     }
 
     // ------------------------------------------------------------------

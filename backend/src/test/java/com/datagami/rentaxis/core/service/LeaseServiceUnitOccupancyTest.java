@@ -39,6 +39,15 @@ import static org.mockito.ArgumentMatchers.eq;
 
 class LeaseServiceUnitOccupancyTest {
 
+    /**
+     * What "living on this unit" must mean (review I3), written out rather than
+     * read off {@code LeaseService.LIVE}: a stub keyed on the constant matches
+     * whatever the constant happens to be, and would go on passing if somebody
+     * narrowed it back to ACTIVE alone.
+     */
+    private static final java.util.Set<LeaseStatus> LIVE_STATUSES =
+            java.util.EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
+
     private LeaseRepository leaseRepository;
     private UnitRepository unitRepository;
     private RenterRepository renterRepository;
@@ -95,6 +104,9 @@ class LeaseServiceUnitOccupancyTest {
         when(unitRepository.save(any(Unit.class))).thenAnswer(inv -> inv.getArgument(0));
         // No other lease holds any unit unless a test says so.
         when(leaseRepository.findByUnitIdAndStatus(any(), any())).thenReturn(List.of());
+        // The occupancy rules ask "who is living on this unit" — ACTIVE *and*
+        // NOTICE_GIVEN (LIVE_STATUSES), review I3.
+        when(leaseRepository.findByUnitIdAndStatusIn(any(), any())).thenReturn(List.of());
     }
 
     /** Makes findByIdForUpdate resolve to this lease's unit. */
@@ -211,7 +223,7 @@ class LeaseServiceUnitOccupancyTest {
     void markActiveOnPosting_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
         Lease lease = lease(LeaseStatus.DRAFT);
         lockableUnit(lease);
-        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+        when(leaseRepository.findByUnitIdAndStatusIn(lease.getUnit().getId(), LIVE_STATUSES))
                 .thenReturn(List.of(otherActiveLeaseOn(lease)));
 
         // Before the fix both leases activated and both renters were invoiced
@@ -261,7 +273,7 @@ class LeaseServiceUnitOccupancyTest {
         Lease lease = lease(LeaseStatus.DRAFT);
         lockableUnit(lease);
         // The lease being posted must not count as "another" holder.
-        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+        when(leaseRepository.findByUnitIdAndStatusIn(lease.getUnit().getId(), LIVE_STATUSES))
                 .thenReturn(List.of(lease));
 
         service.markActiveOnPosting(lease, "Lease posted TCO-26/1");
@@ -277,7 +289,7 @@ class LeaseServiceUnitOccupancyTest {
         lease.getUnit().setCurrentTenantName("Sitting Renter");
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
-        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+        when(leaseRepository.findByUnitIdAndStatusIn(lease.getUnit().getId(), LIVE_STATUSES))
                 .thenReturn(List.of(lease, otherActiveLeaseOn(lease)));
 
         // terminateLease is gone: a termination is now returning the uncleared
@@ -291,6 +303,46 @@ class LeaseServiceUnitOccupancyTest {
         assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
         assertThat(lease.getUnit().getCurrentTenantName()).isEqualTo("Sitting Renter");
         assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
+    }
+
+    /**
+     * A renter who has given notice is still in the flat (review I3).
+     *
+     * <p>Both halves of the rule, on the same neighbour: the unit cannot be claimed
+     * by another lease's post, and ending an overlapping lease does not vacate it.
+     * Before {@code LIVE} the occupancy rules asked only about ACTIVE, so recording
+     * a notice — which this task made reachable for the first time — quietly made a
+     * unit lettable while somebody lived in it.</p>
+     */
+    @Test
+    void aTenancyOnNoticeStillHoldsItsUnit() {
+        Lease posting = lease(LeaseStatus.DRAFT);
+        lockableUnit(posting);
+        Lease neighbourOnNotice = otherActiveLeaseOn(posting);
+        neighbourOnNotice.setStatus(LeaseStatus.NOTICE_GIVEN);
+        when(leaseRepository.findByUnitIdAndStatusIn(posting.getUnit().getId(), LIVE_STATUSES))
+                .thenReturn(List.of(neighbourOnNotice));
+
+        assertThatThrownBy(() -> service.markActiveOnPosting(posting, "Lease posted TCO-26/1"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already has an active lease");
+
+        Lease ending = lease(LeaseStatus.ACTIVE);
+        ending.getUnit().setStatus(UnitStatus.OCCUPIED);
+        ending.getUnit().setCurrentTenantName("Renter On Notice");
+        ending.getUnit().setActualRent(new BigDecimal("72000"));
+        when(leaseRepository.findById(ending.getId())).thenReturn(Optional.of(ending));
+        lockableUnit(ending);
+        Lease sameUnitOnNotice = otherActiveLeaseOn(ending);
+        sameUnitOnNotice.setStatus(LeaseStatus.NOTICE_GIVEN);
+        when(leaseRepository.findByUnitIdAndStatusIn(ending.getUnit().getId(), LIVE_STATUSES))
+                .thenReturn(List.of(ending, sameUnitOnNotice));
+
+        service.markTerminated(ending.getId(), LocalDate.of(2026, 6, 30), "Move out complete", null, null);
+
+        assertThat(ending.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        assertThat(ending.getUnit().getCurrentTenantName()).isEqualTo("Renter On Notice");
+        assertThat(ending.getUnit().getActualRent()).isEqualByComparingTo("72000");
     }
 
     // ---- draft deletion releases lease_interactions (#200) ------------------

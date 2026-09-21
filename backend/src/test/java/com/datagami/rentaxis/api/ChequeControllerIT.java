@@ -16,6 +16,7 @@ import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
@@ -411,6 +412,36 @@ class ChequeControllerIT {
 
         assertThat(registerSize()).isEqualTo(rowsBefore);
         assertThat(journalEntryCount()).isEqualTo(entriesBefore);
+    }
+
+    /**
+     * A contract whose term has run out takes no counter receipt.
+     *
+     * <p>Review I2: this endpoint is the one user-facing door into
+     * {@code addRowToPostedLease}, and until now it admitted an EXPIRED lease — so a
+     * finance user could raise a CASH row, and a {@code PDR} with it, against a
+     * tenancy that had ended. Money owed on an expired lease is collected through
+     * its settlement (spec §9.2), which has its own internal door; approving a
+     * penalty on one still works and goes through that same door.</p>
+     */
+    @Test
+    void cashReceiptIsRefusedOnAnExpiredLease() {
+        long rowsBefore = registerSize();
+        long entriesBefore = journalEntryCount();
+        // The real path, not a status poke: the term ends 31 Jan 2027, so the
+        // nightly sweep run on 1 Feb expires it.
+        tx.executeWithoutResult(s -> leaseService.markExpired(leaseId, END.plusDays(1)));
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.EXPIRED);
+
+        ResponseEntity<Map> refused = map(accountant, HttpMethod.POST,
+                "/api/v1/cheques/lease/" + leaseId + "/cash-receipt",
+                Map.of("amount", 1500, "chequeDate", "2027-02-02", "mode", "CASH",
+                        "narration", "Last month, over the counter"));
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) refused.getBody().get("message")).contains("This lease is EXPIRED");
+        assertThat(registerSize()).as("no row").isEqualTo(rowsBefore);
+        assertThat(journalEntryCount()).as("and no PDR").isEqualTo(entriesBefore);
     }
 
     /** A PDC is paper to be banked, not something that arrives over the counter. */

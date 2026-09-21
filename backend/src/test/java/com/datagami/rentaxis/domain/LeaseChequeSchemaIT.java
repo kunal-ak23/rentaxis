@@ -93,6 +93,78 @@ class LeaseChequeSchemaIT {
                 .contains("'PDC'");
     }
 
+    /**
+     * One <em>live</em> tenancy per unit — ACTIVE or NOTICE_GIVEN (review I3).
+     *
+     * <p>Changeset 80 wrote this index over {@code status = 'ACTIVE'} alone, which
+     * was the whole truth while nothing could set NOTICE_GIVEN. Now that
+     * {@code POST /leases/{id}/notice} can, the narrower predicate would let a
+     * second tenancy be posted onto a unit the day a notice was recorded — the
+     * double-let the index exists to prevent. Changeset 86 widens it.</p>
+     */
+    @Test
+    void oneLiveLeasePerUnit() {
+        String def = jdbc.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+                        + " AND indexname = 'ux_leases_one_active_per_unit'",
+                String.class);
+        assertThat(def)
+                .contains("UNIQUE")
+                .contains("unit_id")
+                .contains("'ACTIVE'")
+                .contains("'NOTICE_GIVEN'");
+    }
+
+    /**
+     * …and the database enforces it, not only the service.
+     *
+     * <p>A second tenancy on a unit whose renter has given notice is refused at the
+     * row, whatever path tried to write it — which is what makes
+     * {@code LeaseService.LIVE} a rule rather than a convention. The pair this
+     * refuses is exactly the pair changeset 80's narrower predicate allowed.</p>
+     */
+    @Test
+    void theDatabaseRefusesASecondLiveLeaseOnAUnitOnNotice() {
+        UUID tenant = tenant();
+        UUID property = property(tenant, "LIVE-" + UUID.randomUUID().toString().substring(0, 4));
+        UUID unit = unit(tenant, property);
+        UUID renter = renter(tenant);
+        insertLease(tenant, unit, renter, "NOTICE_GIVEN");
+
+        assertThatThrownBy(() -> insertLease(tenant, unit, renter, "ACTIVE"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // An ended tenancy never claimed the slot, so the next one may have it.
+        jdbc.update("UPDATE leases SET status = 'TERMINATED' WHERE unit_id = ?", unit);
+        insertLease(tenant, unit, renter, "ACTIVE");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM leases WHERE unit_id = ? AND status IN ('ACTIVE','NOTICE_GIVEN')",
+                Integer.class, unit)).isEqualTo(1);
+    }
+
+    private UUID unit(UUID tenant, UUID property) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO units (id, tenant_id, property_id, unit_number) VALUES (?,?,?,?)",
+                id, tenant, property, "U-" + id);
+        return id;
+    }
+
+    private UUID renter(UUID tenant) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO renters (id, tenant_id, name_en) VALUES (?,?,?)", id, tenant, "R-" + id);
+        return id;
+    }
+
+    private UUID insertLease(UUID tenant, UUID unit, UUID renter, String status) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO leases (id, tenant_id, unit_id, renter_id, start_date, end_date,"
+                        + " status, rent_amount, deposit_amount) VALUES (?,?,?,?,?,?,?,?,?)",
+                id, tenant, unit, renter, java.time.LocalDate.of(2026, 1, 1),
+                java.time.LocalDate.of(2026, 12, 31), status,
+                new java.math.BigDecimal("1200.00"), new java.math.BigDecimal("0.00"));
+        return id;
+    }
+
     @Test
     void leaseCarriesTheV2PostingColumns() {
         assertThat(columns("leases",

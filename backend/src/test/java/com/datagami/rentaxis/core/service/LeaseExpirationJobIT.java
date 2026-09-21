@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
@@ -14,6 +15,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
+import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -55,6 +57,7 @@ import java.util.function.Supplier;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The nightly expiry sweep: a tenancy whose end date has passed becomes EXPIRED
@@ -294,6 +297,13 @@ class LeaseExpirationJobIT {
                 .as("and it has no expiry event")
                 .noneSatisfy(e -> assertThat(e.getNewState()).isEqualTo(LeaseStatus.EXPIRED));
         assertThat(TenantContextHolder.getTenantId()).isNull();
+
+        // Leave no residue. There is no per-test truncation here and `runFor` sweeps
+        // every organisation in the database, so a beta lease left ACTIVE with a
+        // past end date would inflate a sibling test's expired() count and make this
+        // class order-dependent (review M5).
+        job.runTenant(beta.tenantId(), TODAY);
+        assertThat(statusOf(betaLease)).isEqualTo(LeaseStatus.EXPIRED);
     }
 
     /**
@@ -385,6 +395,61 @@ class LeaseExpirationJobIT {
         Timestamp lockUntil = (Timestamp) lock.get("lock_until");
         assertThat(lockUntil).as("lockAtLeastFor keeps the next replica out")
                 .isAfterOrEqualTo(Timestamp.from(lockedAt.toInstant().plusSeconds(60)));
+    }
+
+    /**
+     * A renter who has given notice is still in the flat, and the unit is not
+     * lettable until they are out (review I3).
+     *
+     * <p>The race the occupancy check exists for, with a notice in the middle of
+     * it: two drafts are cut while the unit is vacant — which is the only moment a
+     * draft can be created on it — one is posted, its renter gives notice, and the
+     * other is then posted. Until {@code LeaseService.LIVE} existed the check asked
+     * about ACTIVE alone, so recording the notice made the second post succeed and
+     * left two tenancies invoicing one flat.</p>
+     *
+     * <p>The sweep is the other half of the same rule, and it is asserted here
+     * because this is where the sweep lives: a notice does not stop a term from
+     * running out, and expiry releases the unit once nobody is living there.</p>
+     */
+    @Test
+    void aUnitWhoseTenancyIsOnNoticeIsNeitherReLetNorVacated() {
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        TenantContextHolder.setTenantId(alpha.tenantId());
+        Unit spare = alpha.createUnit(alpha.property(), "301");
+        Renter sitting = alpha.createRenter("Sitting Renter");
+        Renter waiting = alpha.createRenter("Waiting Renter");
+
+        // Both drafts are cut while the unit is vacant: a draft cannot be created on
+        // an occupied unit at all, so this is the only shape in which two contracts
+        // ever reach the posting check for one flat.
+        UUID sittingLease = alpha.draftLease(spare, sitting, CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000")));
+        UUID waitingLease = alpha.draftLease(spare, waiting, CONTRACT_DATE, START, END,
+                List.of(line("RENT", "36500")));
+        alpha.generateGrid(sittingLease, 4, START);
+        alpha.generateGrid(waitingLease, 4, START);
+        posting.post(sittingLease);
+
+        leaseService.giveNotice(sittingLease, "Leaving at the end of the term", null);
+        assertThat(statusOf(sittingLease)).isEqualTo(LeaseStatus.NOTICE_GIVEN);
+
+        assertThatThrownBy(() -> posting.post(waitingLease))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already has an active lease");
+
+        assertThat(statusOf(waitingLease)).as("still a draft").isEqualTo(LeaseStatus.DRAFT);
+        assertThat(unitOf(sittingLease).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        assertThat(unitOf(sittingLease).getCurrentTenantName()).isEqualTo("Sitting Renter");
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+
+        // …and a notice does not stop the term from running out.
+        job.runFor(TODAY);
+
+        assertThat(statusOf(sittingLease)).isEqualTo(LeaseStatus.EXPIRED);
+        assertThat(unitOf(sittingLease).getStatus()).as("now that nobody is living there")
+                .isEqualTo(UnitStatus.VACANT);
     }
 
     /** A second sweep on the same night finds nothing left to do. */

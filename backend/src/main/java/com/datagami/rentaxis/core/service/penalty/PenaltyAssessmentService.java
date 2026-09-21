@@ -259,7 +259,14 @@ public class PenaltyAssessmentService {
         // Through ChequeService, not by hand: the row has to be validated, numbered
         // and registered by exactly the code every other row goes through, or the
         // register grows a row with no PDR behind it.
-        ChequeDTO row = chequeService.addRowToPostedLease(lease.getId(), new ChequeRowInput(
+        //
+        // The *internal* door, not the public grid one. CHARGEABLE admits EXPIRED —
+        // a tenancy that simply ran out is still owed its fines — while shaping the
+        // grid of an ended contract is a live lease's privilege (review I2). This is
+        // the same door the settlement's balance-due row uses, and for the same
+        // reason: the amount is not the caller's to choose, the debt it collects was
+        // raised in the ledger a line above, and no user typed it.
+        ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
                 null, null, on, null, on, null, null, null, amount,
                 "Penalty - " + a.getReason().label(), ChequeMode.CASH));
 
@@ -459,10 +466,14 @@ public class PenaltyAssessmentService {
      * The lease is still one a charge can be raised on.
      *
      * <p>Checked <em>before</em> anything posts, not left to
-     * {@code addRowToPostedLease} half way through the approval: by the time the
-     * register refuses the collection row the {@code PEN} has already been written
-     * and numbered, and the rollback that follows burns an entry number for a
-     * charge nobody made.</p>
+     * {@code ChequeService.addCollectionRow} half way through the approval: by the
+     * time the register refuses the collection row the {@code PEN} has already been
+     * written and numbered, and the rollback that follows burns an entry number for
+     * a charge nobody made.</p>
+     *
+     * <p>This set is also the <em>narrower</em> of the two rules that gate the
+     * collection row: the register's own door admits every status a settlement may
+     * touch, and this is what keeps a penalty off a TERMINATED lease.</p>
      */
     private static void requireChargeable(Lease lease) {
         if (!CHARGEABLE.contains(lease.getStatus())) {

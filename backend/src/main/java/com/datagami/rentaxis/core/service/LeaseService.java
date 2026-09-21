@@ -38,13 +38,34 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class LeaseService {
+
+    /**
+     * A tenancy that is <em>living on</em> a unit, for every occupancy rule in this
+     * class (review I3).
+     *
+     * <p>ACTIVE and NOTICE_GIVEN, defined once. A lease on notice is a lease: the
+     * renter is still in the unit, still owes the remaining months, and its
+     * instruments are still banked — {@code ChequeService.COLLECTABLE},
+     * {@code LeaseTerminationService.TERMINABLE} and {@code NotificationScheduler}
+     * all treat it as running. Occupancy was the outlier, asking only about ACTIVE,
+     * and the two consequences were symmetrical and both bad: a second lease could
+     * be posted on a unit whose renter had given notice, and ending any overlapping
+     * lease vacated a unit somebody was still living in.</p>
+     *
+     * <p>Deliberately <em>not</em> a set of "statuses that mean the contract has not
+     * finished": RENEWED and EXPIRED leases are over as tenancies even though their
+     * money may still be moving. This set answers one question — who is in the flat.</p>
+     */
+    static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
 
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;
@@ -216,7 +237,7 @@ public class LeaseService {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
 
-        boolean heldByAnother = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        boolean heldByAnother = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .anyMatch(other -> !other.getId().equals(lease.getId()));
         if (heldByAnother) {
             throw new BusinessRuleViolationException(
@@ -242,10 +263,10 @@ public class LeaseService {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());
 
-        List<Lease> stillActive = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        List<Lease> stillLive = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .filter(other -> !other.getId().equals(lease.getId()))
                 .toList();
-        if (!stillActive.isEmpty()) {
+        if (!stillLive.isEmpty()) {
             // Leave the unit as it is: another lease is live on it. Its own
             // termination will vacate the unit.
             return;
@@ -274,8 +295,27 @@ public class LeaseService {
                 || !predecessor.getUnit().getId().equals(unit.getId())) {
             return false;
         }
-        return leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        return leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .allMatch(other -> other.getId().equals(predecessor.getId()));
+    }
+
+    /**
+     * The lease row, locked FOR UPDATE and tenant-checked — what a status
+     * transition reads.
+     *
+     * <p>{@code findByIdForUpdate} is NOWAIT, so a contended row fails immediately
+     * with "try again" rather than parking a connection behind another clerk's open
+     * tab; the tenant check repeats {@link #findLeaseWithTenantCheck}'s because a
+     * locking query is JPQL and must not be trusted to have been scoped for us.</p>
+     */
+    private Lease lockLeaseForTransition(UUID leaseId) {
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
     }
 
     private Lease findLeaseWithTenantCheck(UUID id) {
@@ -896,9 +936,16 @@ public class LeaseService {
             throw new BusinessRuleViolationException(
                     "Only a DRAFT or PENDING_SIGNATURE lease can become ACTIVE; this one is " + previousStatus);
         }
-        lease.setStatus(LeaseStatus.ACTIVE);
-
+        // The unit is claimed BEFORE the status flip, not after. Setting ACTIVE first
+        // leaves the lease dirty, and the very next query — the unit's own
+        // `findByIdForUpdate` inside claimUnitForLease — auto-flushes it: the UPDATE
+        // reaches `ux_leases_one_active_per_unit` (changeset 80, widened in 86) and
+        // the double-let is refused by the database as a DataIntegrityViolation
+        // before this method's own check can refuse it as a clean 400. Same outcome,
+        // far worse message, and only visible once a unit could be held by a lease
+        // that is not ACTIVE — see LIVE.
         claimUnitForLease(lease);
+        lease.setStatus(LeaseStatus.ACTIVE);
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, notes);
@@ -943,7 +990,11 @@ public class LeaseService {
      */
     @Transactional
     public LeaseDTO giveNotice(UUID leaseId, String notes, UUID byUser) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
+        // Locked, like every sibling transition (markExpired, markTerminated,
+        // finalizeSettlement, terminate). Without it a notice racing a termination
+        // is caught only by @Version, which surfaces as a 500-shaped optimistic-lock
+        // failure rather than the clean refusal below.
+        Lease lease = lockLeaseForTransition(leaseId);
         leaseAccessPolicy.requireManageable(lease);
         if (lease.getStatus() != LeaseStatus.ACTIVE) {
             throw new BusinessRuleViolationException(
@@ -1004,12 +1055,7 @@ public class LeaseService {
     public boolean markExpired(UUID leaseId, LocalDate today) {
         // Locked, because the sweep read its candidates in an earlier transaction
         // and a clerk may have terminated or renewed this contract since.
-        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
-            throw new NotFoundException("Lease not found");
-        }
+        Lease lease = lockLeaseForTransition(leaseId);
         if (lease.getStatus() != LeaseStatus.ACTIVE && lease.getStatus() != LeaseStatus.NOTICE_GIVEN) {
             // Not an error: the row was a candidate a moment ago and is not one now.
             // A RENEWED predecessor in particular must never become EXPIRED — both

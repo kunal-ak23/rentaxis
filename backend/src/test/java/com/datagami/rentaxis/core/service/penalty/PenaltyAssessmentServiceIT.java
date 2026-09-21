@@ -1050,6 +1050,73 @@ class PenaltyAssessmentServiceIT {
         assertThat(registerSize(leaseId)).isEqualTo(chequesBefore);
     }
 
+    /**
+     * A tenancy that simply ran out is still chargeable, and its collection row is
+     * raised through the internal door rather than the public grid.
+     *
+     * <p>Review I2: shaping the grid of an ended contract is a live lease's
+     * privilege, so {@code addRowToPostedLease} stopped admitting EXPIRED — and
+     * approving a penalty on an expired lease must go on working, because
+     * {@code CHARGEABLE} contains EXPIRED and always has. The same door Task 6
+     * opened for the settlement's balance-due row serves this: a row raised by the
+     * system against a contract that has ended, never one a user typed.</p>
+     *
+     * <p>The row is ordinary in every other way, which is the half that matters —
+     * the renter can pay the fine.</p>
+     */
+    @Test
+    void approvingAgainstAnExpiredLeaseRaisesACollectionRowThatCanBeCollected() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        PenaltyAssessmentDTO proposed = proposal(leaseId, null, PenaltyReason.CHEQUE_RETURN, "500");
+        leaseStatus(leaseId, LeaseStatus.EXPIRED);
+        long chequesBefore = registerSize(leaseId);
+
+        PenaltyAssessmentDTO approved = service.approve(proposed.id(), APPROVE_DATE);
+
+        assertThat(approved.status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+        assertThat(registerSize(leaseId)).as("one collection row").isEqualTo(chequesBefore + 1);
+        // Read inside a transaction: collectionCheque is a lazy association.
+        Cheque collection = tx.execute(s -> {
+            PenaltyAssessment saved = assessments.findById(proposed.id()).orElseThrow();
+            assertThat(saved.getJournalId()).as("the PEN").isNotNull();
+            Cheque row = saved.getCollectionCheque();
+            assertThat(row).isNotNull();
+            assertThat(row.getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+            assertThat(row.getMode()).isEqualTo(ChequeMode.CASH);
+            assertThat(row.getPdrJournalId()).as("registered like any other row").isNotNull();
+            return row;
+        });
+
+        // …and the fine is actually collectable on the expired lease.
+        ChequeDTO received = chequeService.receive(collection.getId(),
+                ChequeActionRequest.on(APPROVE_DATE));
+        assertThat(received.status()).isEqualTo(ChequeStatus.CLEARED);
+    }
+
+    /**
+     * The public grid door is shut on the same lease, which is the other half of
+     * review I2: a finance user may not type a new instalment onto a contract whose
+     * term has run out. Money owed on an expired tenancy is collected through its
+     * settlement (spec §9.2), which has its own door.
+     */
+    @Test
+    void anExpiredLeaseTakesNoTypedGridRow() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        leaseStatus(leaseId, LeaseStatus.EXPIRED);
+        long chequesBefore = registerSize(leaseId);
+
+        assertThatThrownBy(() -> chequeService.addRowToPostedLease(leaseId, new ChequeRowInput(
+                null, null, APPROVE_DATE, null, APPROVE_DATE, null, null, null,
+                new BigDecimal("500"), "Typed in", ChequeMode.CASH)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This lease is EXPIRED")
+                .hasMessageContaining("cheque grid");
+
+        assertThat(registerSize(leaseId)).isEqualTo(chequesBefore);
+    }
+
     /** And there is no raising a fresh one against it either. */
     @Test
     void proposingAgainstATerminatedLeaseIsRefused() {

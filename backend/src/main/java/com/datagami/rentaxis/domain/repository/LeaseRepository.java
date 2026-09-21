@@ -113,7 +113,20 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     List<Lease> findByUnitIdAndStatus(UUID unitId, LeaseStatus status);
 
+    /**
+     * The leases that are <em>living on</em> a unit — the question every occupancy
+     * rule asks (see {@code LeaseService.LIVE}).
+     *
+     * <p>A tenancy on notice is still a tenancy: the renter is still there, still
+     * owes the remaining months and still has instruments on the register. Asking
+     * this by a single status was the bug review I3 found — a unit could be let
+     * twice, or vacated under a sitting renter, the day somebody recorded a
+     * notice.</p>
+     */
+    List<Lease> findByUnitIdAndStatusIn(UUID unitId, Collection<LeaseStatus> statuses);
+
     List<Lease> findByRenterId(UUID renterId);
+
 
     /**
      * The nightly expiry sweep's candidates (spec §9): a running tenancy whose last
