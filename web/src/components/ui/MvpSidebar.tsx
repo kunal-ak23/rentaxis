@@ -10,6 +10,7 @@ import {
     BookOpen,
     Receipt,
     ReceiptText,
+    Layers,
     Home,
     FileText,
     Contact,
@@ -61,6 +62,7 @@ export default function MvpSidebar() {
     const tLedger = useTranslations("Ledger");
     const tRecognition = useTranslations("Recognition");
     const tVouchers = useTranslations("Vouchers");
+    const tCutover = useTranslations("Cutover");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -153,6 +155,19 @@ export default function MvpSidebar() {
         // silently a widening of the voucher screens'.
         ...(hasPermission(userRole, 'canManageVouchers') ? [
             { name: tVouchers("vouchers"), href: "/dashboard/finance/vouchers", icon: ReceiptText, tourId: 'sidebar-vouchers' },
+        ] : []),
+        // The cut-over. ImportBatchController is SA/TA/ACCOUNTANT — the same set
+        // as canAccessFinance, so it belongs in this branch and not in the
+        // SA/TA-only one below; its own key all the same, mirroring that one
+        // annotation. The template download ON the page is narrower still (SA/TA)
+        // and is gated there, not here.
+        //
+        // TODO(plan 4 task 15): add Opening Balances and Reconciliation here when
+        // their pages exist. The brief lists them now, but their endpoints are
+        // still being written and a nav item pointing at a 404 is precisely the
+        // class of bug this sidebar's role gating exists to prevent.
+        ...(hasPermission(userRole, 'canManageImportBatches') ? [
+            { name: tCutover("importBatches"), href: "/dashboard/finance/import-batches", icon: Layers, tourId: 'sidebar-import-batches' },
         ] : []),
         // The month-end close. Its own gate rather than canAccessFinance because
         // the two endpoints behind the page (RecognitionController's

@@ -2198,5 +2198,26 @@
     "periodLocked": "Books are locked through {date}. Pick a document date after it to post.",
     "postedReadOnly": "This voucher is {status} and can no longer be edited. Amend it instead.",
     "notAllowed": "You do not have permission to work with vouchers."
+  },
+  "Cutover": {
+    "importBatches": "Import Batches",
+    "importBatchesDesc": "Each cut-over import is one batch. Reversing a batch reverses every journal it wrote, newest first, and returns its contracts to draft.",
+    "batchLabel": "Batch",
+    "kind": "Kind",
+    "CONTRACT_IMPORT": "Contract import",
+    "leasesImported": "Contracts",
+    "journalsPosted": "Journals",
+    "imported": "Imported",
+    "draft": "Draft",
+    "reverseBatch": "Reverse batch",
+    "confirmReverseBatch": "Reverse this batch? {journals} journals are reversed, newest first, and {leases} contracts go back to draft.",
+    "reverseBatchHint": "A reversed batch is history — it can never be re-posted. To correct the data, import the fixed spreadsheet as a new batch.",
+    "batchReversed": "Batch reversed. Import the corrected spreadsheet as a new batch.",
+    "draftNothingToReverse": "Nothing posted yet",
+    "reversedBatchFinal": "Reversed — import a new batch to correct it",
+    "downloadTemplate": "Download the import template",
+    "noBatches": "No import batches yet",
+    "noBatchesDesc": "A cut-over import creates one batch here, with everything it wrote held together so the whole run can be taken back in one step.",
+    "notAllowed": "You do not have permission to view import batches."
   }
 }

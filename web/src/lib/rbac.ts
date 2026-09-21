@@ -183,6 +183,18 @@ export const PERMISSIONS = {
     // sidebar shows a manager no voucher link, and the pages show an
     // access-denied panel rather than a screen that 403s on its first fetch.
     canManageVouchers: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // The cut-over import batches screen: the list and the one Reverse button.
+    // Mirrors ImportBatchController's class-level @PreAuthorize
+    // (ImportBatchController.java:44), which covers every handler in the file:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    //
+    // Reversing a cut-over unposts every contract it created, so it sits with
+    // finance rather than with property management — PROPERTY_MANAGER is absent
+    // because the controller refuses it. Its own key, not a reuse of
+    // canManageVouchers: same set today, different annotation on a different
+    // controller. NOTE the template download on that same page is narrower
+    // still (SA/TA) — see cutoverRules.canDownloadImportTemplate.
+    canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
