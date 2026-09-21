@@ -566,10 +566,20 @@ export const api = {
       {},
     ),
   getAccounts: (pctx: ProdContext) =>
-    getJson<Array<{ id: string; code: string; nameEn: string; accountType: string }>>(
-      pctx,
-      '/v1/finance/accounts',
-    ),
+    getJson<
+      Array<{
+        id: string;
+        code: string;
+        nameEn: string;
+        /** `AccountDTO.name` — `nameEn` above is the older alias some callers read. */
+        name?: string;
+        accountType: string;
+        /** BANK / CASH / … — a refund may only be paid from an active asset leaf. */
+        accountSubType?: string | null;
+        group?: boolean;
+        active?: boolean;
+      }>
+    >(pctx, '/v1/finance/accounts'),
 
   createListing: (
     pctx: ProdContext,
@@ -1359,12 +1369,67 @@ export const api = {
       lines: [{ chargeTypeCode: 'RENT', grossAmount: lineGrossAmount }],
       cheques: [{ amount: chequeAmount, mode: 'PDC', postingDate: newEndDate }],
     }),
+  /**
+   * accounting-v2 plan 3 — ending a contract on a date. The preview writes
+   * nothing; `terminateLease` hands back the cheques the preview listed,
+   * truncates the recognition schedule at `terminationDate` and reverses the
+   * unearned rent. Both lists must account for EVERY uncleared row, which is
+   * why the caller passes the preview's own ids rather than a filter.
+   */
+  previewTermination: (pctx: ProdContext, leaseId: string, date: string) =>
+    getJson<{
+      terminationDate: string;
+      earnedRentThroughDate: number;
+      recognisedSoFar: number;
+      unearnedRent: number;
+      chequesToReturn: Array<{ id: string; amount: number }>;
+      chequesToKeep: Array<{ id: string; amount: number }>;
+      bouncedOutstanding: Array<{ id: string; amount: number }>;
+      receivableAfter: number;
+    }>(pctx, `/v1/leases/${leaseId}/terminate/preview?date=${date}`),
+  terminateLease: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: { terminationDate: string; returnChequeIds?: string[]; keepChequeIds?: string[]; notes?: string },
+  ) =>
+    postJson<{ id: string; status: string; terminatedOn: string; terminationJournalId: string | null }>(
+      pctx,
+      `/v1/leases/${leaseId}/terminate`,
+      body,
+    ),
+  /** The month-end close. `to` later than today is a 400; `preview` writes nothing. */
+  runRecognition: (pctx: ProdContext, to: string, preview = false) =>
+    postJson<{
+      preview: boolean;
+      posted: number;
+      wouldPost: number;
+      amount: number;
+      skippedLocked: number;
+      booksLockedThrough: string | null;
+      failed: number;
+      errors: string[];
+    }>(pctx, `/v1/finance/recognition/run?to=${to}&preview=${preview}`, {}),
+  /**
+   * The move-out statement, recomputed from the ledger on every read. The old
+   * shape (`depositAmount` / `unpaidRentTotal` / `penaltyTotal` /
+   * `suggestedRefund`) was deleted with `SettlementPreviewDTO` in plan 3;
+   * unpaid rent and penalties now live INSIDE `receivableBalance`, which is why
+   * they are no longer separate figures and cannot be settlement lines either.
+   */
   getSettlementPreview: (pctx: ProdContext, leaseId: string) =>
     getJson<{
-      depositAmount: number;
-      unpaidRentTotal: number;
-      penaltyTotal: number;
-      suggestedRefund: number;
+      asOf: string;
+      earnedRent: number;
+      receivedTotal: number;
+      receivableBalance: number;
+      depositsHeld: number;
+      penaltiesOutstanding: number;
+      instrumentsOutstanding: number;
+      outstandingInstruments: Array<{ id: string; amount: number; status: string }>;
+      totalDeductions: number;
+      totalAdditions: number;
+      netRefund: number;
+      unrecognisedEntries: number;
     }>(pctx, `/v1/leases/${leaseId}/settlement/preview`),
   saveSettlementDraft: (
     pctx: ProdContext,
@@ -1398,9 +1463,27 @@ export const api = {
       totalDeductions: number;
       totalAdditions: number;
       refundAmount: number;
+      balanceDue: number;
+      journalNumber: string | null;
+      collectionChequeId: string | null;
     }>(pctx, `/v1/leases/${leaseId}/settlement`),
-  finalizeSettlement: (pctx: ProdContext, leaseId: string) =>
-    postJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/settlement/finalize`, {}),
+  /**
+   * Finalise now takes a body and answers with the SETTLEMENT, not the lease —
+   * and it no longer terminates anything: `LeaseClosureService` closes the
+   * contract only once the register holds nothing. `refundBankAccountId` is
+   * required exactly when `netRefund > 0`, and `acknowledgeOutstanding` exactly
+   * when it refunds over instruments that are still out.
+   */
+  finalizeSettlement: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: { settlementDate: string; refundBankAccountId?: string | null; acknowledgeOutstanding?: boolean },
+  ) =>
+    postJson<{ id: string; status: string; refundAmount: number; balanceDue: number; journalNumber: string | null }>(
+      pctx,
+      `/v1/leases/${leaseId}/settlement/finalize`,
+      body,
+    ),
   getLeaseEvents: (pctx: ProdContext, leaseId: string) =>
     getJson<
       Array<{

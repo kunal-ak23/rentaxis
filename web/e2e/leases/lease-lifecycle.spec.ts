@@ -129,7 +129,7 @@ test.describe('Lease Lifecycle', () => {
     await expect(page.getByTestId('lease-ledger')).toBeVisible();
   });
 
-  test('terminate routes an ACTIVE lease to its settlement', async ({ page, testContext }, testInfo) => {
+  test('terminate routes an ACTIVE lease to the priced termination screen', async ({ page, testContext }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
 
     const suffix = `${testInfo.project.name}-term-${Date.now().toString(36)}`;
@@ -143,15 +143,23 @@ test.describe('Lease Lifecycle', () => {
     });
     await draftLineAndPost(page, { unitNumber: unit.unitNumber, renterName: `Wizard Renter ${suffix}`, rentAmount: '9000' });
 
-    // Terminate is a link to the settlement flow now, not an in-place status
-    // change — accounting-v2 plan 2's settlement still runs off register
-    // `due` rows (handed to plan 3), but the entry point is unchanged.
+    // accounting-v2 plan 3 split the move-out in two: Terminate opens the
+    // PRICED termination screen (`/terminate`), which ends the contract on a
+    // date, and the deposit is settled afterwards from the receivable that
+    // leaves behind. It used to land on `/settlement`.
+    //
+    // Asserted rather than probed: both roles this test runs under
+    // (super-admin, tenant-admin) are in `canPreviewTermination`, so a missing
+    // button is a regression, not a role.
     const terminateLink = page.getByTestId('lease-terminate');
-    if (await terminateLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await terminateLink.click();
-      await page.waitForURL(/\/settlement$/, { timeout: 10_000 });
-      await expect(page.getByRole('heading', { level: 1, name: 'Settlement' })).toBeVisible();
-    }
+    await expect(terminateLink).toBeVisible({ timeout: 10_000 });
+    await terminateLink.click();
+    await page.waitForURL(/\/terminate$/, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Terminate contract' })).toBeVisible();
+    // The screen prices the move-out before it offers to perform it.
+    await expect(page.getByTestId('terminate-date')).toBeVisible();
+    await expect(page.getByTestId('terminate-earned')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('terminate-receivable-after')).toBeVisible();
   });
 
   test('board view reflects status columns', async ({ page }, testInfo) => {

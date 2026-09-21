@@ -35,6 +35,33 @@ async function tenantLedgerBalance(page: Page, renterId: string): Promise<number
   return ledgers.reduce((sum, l) => sum + (l.closingBalance || 0), 0);
 }
 
+/** Anything on the v1 API, through the proxy this browser session is signed in to. */
+async function proxy<T>(page: Page, method: 'get' | 'post' | 'put', path: string, body?: unknown): Promise<T> {
+  const res = await page.request[method](`/api/proxy/v1${path}`, body === undefined ? {} : { data: body });
+  expect(res.ok(), `${method.toUpperCase()} ${path} failed (${res.status()}): ${await res.text().catch(() => '')}`).toBeTruthy();
+  return (await res.json()) as T;
+}
+
+/**
+ * The invariant every accounting-v2 scenario ends on: whatever was posted, the
+ * books still balance. Read through the API rather than off the trial-balance
+ * page — the claim is about the ledger, not about a table.
+ */
+async function expectTrialBalanceBalances(page: Page, label: string) {
+  const rows = await proxy<Array<{ debit: number; credit: number }>>(
+    page,
+    'get',
+    `/finance/trial-balance?asOf=${new Date().toISOString().slice(0, 10)}`,
+  );
+  const debit = rows.reduce((s, r) => s + (r.debit || 0), 0);
+  const credit = rows.reduce((s, r) => s + (r.credit || 0), 0);
+  expect(debit, `${label}: the trial balance must not be empty`).toBeGreaterThan(0);
+  expect(debit, `${label}: the trial balance must balance`).toBeCloseTo(credit, 2);
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
 test.describe('Cheque register lifecycle', () => {
   test.beforeEach(async ({}, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) {
@@ -160,5 +187,151 @@ test.describe('Cheque register lifecycle', () => {
     // not receipt it), so the net change from the late return is -12,750
     // (paid) + 500 (the fine still owed) relative to the late-return figure.
     expect(balanceAfterCashReceipt - balanceAfterLateReturn, 'the cash receipt pays the reopened rent, leaving only the fine outstanding').toBeCloseTo(-12_750, 2);
+  });
+
+  /**
+   * accounting-v2 plan 3, the move-out end to end: a contract whose term began
+   * in the past is closed month by month, the CILs reach the tenant ledger,
+   * the contract is terminated at a date and the deposit is settled — and the
+   * books balance at the end of it.
+   *
+   * The term STARTS IN THE PAST on purpose. Recognition only posts periods
+   * whose `period_end` has already passed (`RecognitionController
+   * #notInTheFuture`), so a lease that starts today has nothing to close and
+   * the whole plan is invisible.
+   *
+   * One installment, cleared before the termination, and a deposit cheque
+   * dated the contract date — so §9.1's default split hands the deposit row
+   * back and KEEPS nothing. That leaves the register empty behind the
+   * settlement, which is what lets `LeaseClosureService` close the contract
+   * the moment the STL is posted, and what keeps this test off the
+   * acknowledgement path (its own case lives in the plan 3 walkthrough).
+   */
+  test('month-end close, the CILs on the tenant ledger, termination and a finalised settlement', async ({ page, testContext }, testInfo) => {
+    if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
+
+    const suffix = `${testInfo.project.name}-mv-${Date.now().toString(36)}`;
+    const { adminId, adminRole, testTenantId, propertyId } = testContext;
+
+    const unit = await createUnit(adminId, adminRole, testTenantId, {
+      propertyId,
+      unitNumber: `MV-${suffix}`,
+    });
+    const renter = await createRenter(adminId, adminRole, testTenantId, {
+      nameEn: `Move-out Renter ${suffix}`,
+      email: `mv-${suffix}@test.com`,
+    });
+
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const startDate = isoOf(start);
+    const endDate = isoOf(new Date(start.getFullYear() + 1, start.getMonth(), 0));
+    const lastMonthEnd = isoOf(new Date(now.getFullYear(), now.getMonth(), 0));
+    const today = isoOf(now);
+    const terminationDate = isoOf(new Date(now.getFullYear(), now.getMonth(), 15));
+
+    const draft = await createLease(adminId, adminRole, testTenantId, {
+      unitId: unit.id,
+      renterId: renter.id,
+      startDate,
+      endDate,
+      rentAmount: 24_000,
+      depositAmount: 3_000,
+      paymentTerms: 1,
+    });
+    // `foldDepositsAndFeesIntoFirst` defaults to TRUE; without turning it off
+    // the deposit rides inside cheque 1 and there is no deposit row to return.
+    await generateCheques(adminId, adminRole, testTenantId, draft.id, {
+      installments: 1,
+      foldDepositsAndFeesIntoFirst: false,
+    });
+    const posted = await postLease(adminId, adminRole, testTenantId, draft.id);
+    expect(posted.lease.status).toBe('ACTIVE');
+
+    const cheques = await getLeaseCheques(adminId, adminRole, testTenantId, draft.id);
+    const rentCheque = cheques.find(c => c.amount === 24_000)!;
+    expect(rentCheque, 'the rent instalment is a row of its own').toBeTruthy();
+    await proxy(page, 'put', `/cheques/${rentCheque.id}/deposit`, {});
+    await proxy(page, 'put', `/cheques/${rentCheque.id}/clear`, {});
+
+    // ── the month-end close ────────────────────────────────────────────────
+    await page.goto('/en/dashboard/finance/recognition');
+    await page.getByTestId('recognition-to-date').fill(lastMonthEnd);
+    await expect(page.getByTestId('recognition-run')).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId('recognition-run').click();
+    await page.getByTestId('recognition-run-confirm').click();
+    await expect(page.getByTestId('recognition-result-title')).toContainText('Recognition run', { timeout: 30_000 });
+
+    type Entry = { periodEnd: string; status: string; journalId: string | null; journalNumber: string | null };
+    const schedule = await proxy<Entry[]>(page, 'get', `/leases/${draft.id}/recognition`);
+    const closed = schedule.filter(e => e.status === 'POSTED');
+    expect(closed.length, 'every month of this term that has ended is now posted').toBeGreaterThan(0);
+    expect(closed.every(e => e.periodEnd <= lastMonthEnd && e.journalNumber?.startsWith('CIL'))).toBeTruthy();
+
+    // ── the CILs on the tenant ledger ──────────────────────────────────────
+    // `defaultLedgerRange` opens the report on the current month, and these
+    // entries are dated the month-ends that have already passed — so the From
+    // box has to be moved back before they are in range.
+    await page.goto(`/en/dashboard/finance/tenant-ledger?renterId=${renter.id}&leaseId=${draft.id}`);
+    await page.locator('#ledger-from').fill(startDate);
+    await page.getByRole('button', { name: 'Apply' }).click();
+    const ledger = page.locator('body');
+    await expect(ledger).toContainText('Advance Rent', { timeout: 15_000 });
+    await expect(ledger).toContainText('Rental Income');
+    for (const e of closed) {
+      await expect(ledger, `the ledger must carry ${e.journalNumber}`).toContainText(e.journalNumber!);
+    }
+
+    // ── termination at a date ──────────────────────────────────────────────
+    await page.goto(`/en/dashboard/leases/${draft.id}/terminate`);
+    await page.getByTestId('terminate-date').fill(terminationDate);
+    await expect(page.getByTestId('terminate-receivable-after')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('terminate-submit').click();
+    await page.getByTestId('terminate-confirm').click();
+    await page.waitForURL(/\/settlement$/, { timeout: 30_000 });
+
+    const terminated = await proxy<{ status: string; terminatedOn: string }>(page, 'get', `/leases/${draft.id}`);
+    expect(terminated.status).toBe('TERMINATED');
+    expect(terminated.terminatedOn).toBe(terminationDate);
+
+    // The truncated slice ends on the termination date and still has to post.
+    await proxy(page, 'post', `/finance/recognition/run?to=${today}&preview=false`, {});
+    await expectTrialBalanceBalances(page, 'after termination');
+
+    // ── the settlement ─────────────────────────────────────────────────────
+    await page.reload();
+    const statement = await proxy<{ netRefund: number; instrumentsOutstanding: number; unrecognisedEntries: number }>(
+      page,
+      'get',
+      `/leases/${draft.id}/settlement/preview`,
+    );
+    expect(statement.unrecognisedEntries, 'the close has caught up with the termination').toBe(0);
+    expect(statement.instrumentsOutstanding, 'nothing was kept, so nothing is outstanding').toBe(0);
+    expect(statement.netRefund, 'the deposit comes back, less nothing').toBeGreaterThan(0);
+
+    await expect(page.getByTestId('settlement-net-refund')).toBeVisible({ timeout: 15_000 });
+    // A refund needs an asset leaf to pay from. Which leaves exist depends on
+    // the seeded chart, so the account is looked up rather than typed from
+    // memory, and matched by its code, which is unique.
+    type Account = { id: string; code: string; name: string; accountType: string; accountSubType: string | null; group: boolean; active: boolean };
+    const accounts = await proxy<Account[]>(page, 'get', '/finance/accounts');
+    const bank = accounts.find(
+      a => a.accountType === 'ASSET' && !a.group && a.active && (a.accountSubType === 'BANK' || a.accountSubType === 'CASH'),
+    );
+    expect(bank, 'the seeded chart must offer a bank or cash leaf to refund from').toBeTruthy();
+    await page.getByLabel('Refund paid from').fill(bank!.code);
+    await page.getByRole('button', { name: new RegExp(bank!.code) }).first().click();
+
+    await expect(page.getByTestId('settlement-finalize')).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId('settlement-finalize').click();
+    await page.getByTestId('settlement-finalize-confirm').click();
+    await expect(page.getByTestId('settlement-status')).toHaveText('Finalized', { timeout: 30_000 });
+    await expect(page.getByTestId('settlement-journal')).toContainText('STL');
+
+    // Nothing is left on the register, so `LeaseClosureService` closes it.
+    const closedLease = await proxy<{ status: string }>(page, 'get', `/leases/${draft.id}`);
+    expect(closedLease.status, 'an empty register and a finalised settlement close the contract').toBe('CLOSED');
+
+    await expectTrialBalanceBalances(page, 'after settlement');
   });
 });
