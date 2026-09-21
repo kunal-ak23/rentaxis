@@ -210,6 +210,26 @@ describe("Month-end recognition page", () => {
         expect(screen.getByTestId("recognition-errors")).toHaveTextContent("no RENT_INCOME account is mapped");
     });
 
+    it("counts a single skipped row in the singular", async () => {
+        // A close that catches exactly one row inside a shut period is the
+        // ordinary case — one contract, one month — and "1 entries fall in a
+        // period that is closed" is the sentence an accountant reads while
+        // deciding whether to reopen it.
+        api.run.mockResolvedValue({
+            ...RUN, posted: 2, wouldPost: 2, amount: 5000,
+            skippedLocked: 1, skippedLockedEntries: [PENDING[0]], booksLockedThrough: "2026-06-30",
+        });
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("recognition-run"));
+        fireEvent.click(screen.getByTestId("recognition-run-confirm"));
+
+        await waitFor(() => expect(screen.getByTestId("recognition-skipped")).toBeInTheDocument());
+        expect(screen.getByTestId("recognition-skipped")).toHaveTextContent(
+            "1 entry falls in a period that is closed",
+        );
+    });
+
     it("is closed to a PROPERTY_MANAGER, who may read a lease's schedule but not run a close", async () => {
         role = "PROPERTY_MANAGER";
         renderPage();

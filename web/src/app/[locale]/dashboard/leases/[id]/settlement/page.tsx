@@ -269,7 +269,14 @@ export default function SettlementPage() {
     }, [leaseId, rowsOf, t]);
 
     useEffect(() => {
-        if (!canView && userRole) {
+        // Nothing until NextAuth has answered. Loading before the role is known
+        // means loading AGAIN when it arrives, and `load` resets the grid, the
+        // notes and the refund bank from the stored settlement — so that second
+        // load lands on a screen whose Save and Finalize controls are already
+        // live (they need `canSettle`, which needs the role) and empties
+        // whatever has been typed into it. Found by the plan 3 walkthrough.
+        if (!userRole) return;
+        if (!canView) {
             setLoading(false);
             return;
         }
@@ -768,6 +775,15 @@ export default function SettlementPage() {
                                     value={refundBankAccountId}
                                     onChange={setRefundBankAccountId}
                                     propertyId={lease?.propertyId ?? null}
+                                    // AccountPicker's search box takes its
+                                    // aria-label from `placeholder`. Without one
+                                    // this combobox has no accessible name at
+                                    // all — the heading above it is a <span>,
+                                    // not a <label>. The three line-grid
+                                    // controls were named in task 8b; this is
+                                    // the same rule, and the field a refund is
+                                    // paid from is not the one to leave silent.
+                                    placeholder={t("refundBank")}
                                 />
                                 {!refundBankAccountId && (
                                     <span id="settlement-refund-bank-required" className="text-[10px] text-warning">

@@ -31,7 +31,9 @@ vi.mock("@/i18n/routing", () => ({
         <a href={href} {...rest}>{children}</a>
     ),
 }));
-vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role } } }) }));
+// `data` is null until NextAuth has resolved the session, which is the state
+// the page has to survive without fetching — see "waits for the session".
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: role ? { user: { role } } : null }) }));
 vi.mock("@/components/finance/AccountPicker", () => ({
     default: ({ value, onChange }: { value: string | null; onChange: (id: string) => void }) => (
         <button type="button" data-testid="account-picker" data-value={value ?? ""} onClick={() => onChange("acc-9")}>
@@ -40,8 +42,17 @@ vi.mock("@/components/finance/AccountPicker", () => ({
     ),
 }));
 vi.mock("@/components/finance/SettlementAccountPicker", () => ({
-    default: ({ value, onChange }: { value: string | null; onChange: (id: string) => void }) => (
-        <button type="button" data-testid="refund-bank-picker" data-value={value ?? ""} onClick={() => onChange("bank-1")}>
+    // `placeholder` is what AccountPicker turns into the search box's
+    // aria-label, so it is the refund bank's only accessible name — the mock
+    // surfaces it rather than swallowing it.
+    default: ({ value, onChange, placeholder }: { value: string | null; onChange: (id: string) => void; placeholder?: string }) => (
+        <button
+            type="button"
+            data-testid="refund-bank-picker"
+            data-value={value ?? ""}
+            data-placeholder={placeholder ?? ""}
+            onClick={() => onChange("bank-1")}
+        >
             pick bank
         </button>
     ),
@@ -169,6 +180,44 @@ describe("Settlement statement", () => {
         await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
     });
 
+    it("waits for the session before it loads, so a second load cannot discard an edit", async () => {
+        // Found by the plan 3 walkthrough. The page used to fetch on mount with
+        // no role yet, and then fetch AGAIN when NextAuth resolved — and the
+        // second load resets `rows`, `notes` and `refundBankAccountId` from the
+        // stored settlement. By then the Save/Finalize controls are on screen
+        // (they need `canSettle`, which needs the role), so an accountant can
+        // have typed a deduction into a grid that an in-flight reload is about
+        // to empty. One load, once the role is known.
+        role = "";
+        const { rerender } = renderPage();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(api.statement, "nothing is fetched before the session resolves").not.toHaveBeenCalled();
+        expect(api.lease).not.toHaveBeenCalled();
+
+        role = "ACCOUNTANT";
+        rerender(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <SettlementPage />
+            </NextIntlClientProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByTestId("settlement-earned-rent")).toBeInTheDocument());
+        expect(api.statement, "and exactly once afterwards").toHaveBeenCalledTimes(1);
+    });
+
+    it("gives the refund bank an accessible name", async () => {
+        renderPage();
+        // AccountPicker's search box takes its aria-label from `placeholder`
+        // (web/src/components/finance/AccountPicker.tsx:90), so a picker
+        // rendered without one is a combobox a screen reader announces as
+        // nothing at all. Every other control on this grid was given a name in
+        // task 8b; this one is the same rule.
+        expect(await screen.findByTestId("refund-bank-picker")).toHaveAttribute(
+            "data-placeholder",
+            "Refund paid from",
+        );
+    });
+
     it("will not finalize figures that are not the ones on screen", async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId("settlement-date")).not.toHaveValue(""));
@@ -288,6 +337,17 @@ describe("Settlement statement", () => {
         const banner = await screen.findByTestId("settlement-unrecognised");
         expect(banner).toHaveTextContent("3 periods of rent have not been recognised");
         expect(within(banner).getByRole("link")).toHaveAttribute("href", "/dashboard/finance/recognition");
+    });
+
+    it("counts a single unrecognised period in the singular", async () => {
+        // The commonest shape by far: a termination truncates the month it
+        // falls in, so exactly one period is left waiting for the close.
+        api.statement.mockResolvedValue(statement({ unrecognisedEntries: 1 }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-unrecognised")).toHaveTextContent(
+            "1 period of rent has not been recognised",
+        );
     });
 
     it("refuses to settle a contract that is still running, and points at termination", async () => {
