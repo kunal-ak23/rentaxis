@@ -80,7 +80,6 @@ class LeaseServiceUnitOccupancyTest {
                 // to the property's rent-collection policy, and there is none here.
                 mock(com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository.class),
                 mock(com.datagami.rentaxis.core.service.ledger.AccountResolver.class),
-                mock(SettlementService.class),
                 mock(UnitListingService.class),
                 mock(ApplicationEventPublisher.class),
                 leaseAccessPolicy);
@@ -160,7 +159,11 @@ class LeaseServiceUnitOccupancyTest {
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
 
-        service.terminateLease(lease.getId(), "Move out complete");
+        // terminateLease is gone: a termination is now returning the uncleared
+        // paper, truncating recognition and reversing the unearned rent
+        // (LeaseTerminationService). markTerminated is the lease-side step that
+        // kept this occupancy rule, which is what these two tests are about.
+        service.markTerminated(lease.getId(), LocalDate.of(2026, 6, 30), "Move out complete", null, null);
 
         assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(lease.getUnit().getActualRent()).isZero();
@@ -277,7 +280,11 @@ class LeaseServiceUnitOccupancyTest {
         when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
                 .thenReturn(List.of(lease, otherActiveLeaseOn(lease)));
 
-        service.terminateLease(lease.getId(), "Move out complete");
+        // terminateLease is gone: a termination is now returning the uncleared
+        // paper, truncating recognition and reversing the unearned rent
+        // (LeaseTerminationService). markTerminated is the lease-side step that
+        // kept this occupancy rule, which is what these two tests are about.
+        service.markTerminated(lease.getId(), LocalDate.of(2026, 6, 30), "Move out complete", null, null);
 
         // Terminating the older of two overlapping leases used to wipe the
         // occupancy of the one still running, freeing a unit someone lives in.

@@ -19,11 +19,42 @@ databaseChangeLog:
   # is read back through LeaseLineRepository, which answers empty for a line an
   # amendment deleted, and RecognitionPoster treats that the same way it treats a
   # line with no credit account.
+  #
+  # The same changeset also makes room for a *truncated replacement* recognition
+  # entry, which is what a termination at T writes when the month containing T has
+  # already been posted (spec §8.5). The replacement is a NEW recognition_entries
+  # row: the original stays REVERSED, pointing at the CIL an auditor can still see,
+  # and the replacement gets a CIL of its own. Two consequences, both handled here:
+  #
+  #   * uq_re_segment_period (segment_id, period_start) would refuse the
+  #     replacement, because it shares both with the row it replaces. It becomes a
+  #     *partial* unique index over the live statuses only — at most one PLANNED or
+  #     POSTED row per segment and period, which is the invariant that was actually
+  #     meant; a REVERSED or CANCELLED row is history and no longer claims the slot.
+  #
+  #   * A new row per repost means a CIL's source_id is now immutable per journal,
+  #     which is the missing piece Task 3's C-1 flagged: with it, "at most one CIL
+  #     per recognition entry" can finally be a database guarantee and not only a
+  #     row lock. A reversal carries source_type = 'REVERSAL' and the *journal's*
+  #     id as its source (PostingService.reverse), so it sits outside the predicate
+  #     and the index cannot mistake it for a second recognition posting.
   - changeSet:
       id: 86-rent-segment-lease-line-no-fk
       author: claude
       changes:
         - dropForeignKeyConstraint: { baseTableName: rent_segments, constraintName: fk_rs_line }
+        - sql:
+            # Raw SQL rather than dropUniqueConstraint + createIndex: a partial
+            # unique index has no Liquibase YAML form, and the pair has to be
+            # atomic — between the two there would be no uniqueness at all.
+            sql: |
+              ALTER TABLE recognition_entries DROP CONSTRAINT uq_re_segment_period;
+              CREATE UNIQUE INDEX uq_re_segment_period ON recognition_entries (segment_id, period_start)
+                WHERE status IN ('PLANNED', 'POSTED');
+        - sql:
+            sql: |
+              CREATE UNIQUE INDEX uq_je_recognition_source ON journal_entries (source_id)
+                WHERE source_type = 'RECOGNITION';
       rollback:
         # Non-destructive on purpose. The rows this changeset exists to protect are
         # retired segments whose line is gone, and re-adding a validating FK would
@@ -32,7 +63,18 @@ databaseChangeLog:
         # un-reversed CIL in the ledger. NOT VALID re-establishes the constraint for
         # every future row and leaves the existing ones alone; an operator who wants
         # them checked can VALIDATE CONSTRAINT once the data is reconciled.
+        #
+        # The two indexes go the other way: they are dropped and the original
+        # whole-table unique constraint is put back. That restore is deliberately
+        # allowed to *fail* on a database where a termination has already written a
+        # truncated replacement — the alternative would be deleting one of the two
+        # rows, and one of them explains a POSTED CIL. A refused rollback is the
+        # safe direction.
         - sql:
             sql: |
               ALTER TABLE rent_segments
                 ADD CONSTRAINT fk_rs_line FOREIGN KEY (lease_line_id) REFERENCES lease_lines (id) NOT VALID;
+              DROP INDEX IF EXISTS uq_je_recognition_source;
+              DROP INDEX IF EXISTS uq_re_segment_period;
+              ALTER TABLE recognition_entries
+                ADD CONSTRAINT uq_re_segment_period UNIQUE (segment_id, period_start);

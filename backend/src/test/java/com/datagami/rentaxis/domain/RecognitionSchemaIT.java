@@ -281,6 +281,100 @@ class RecognitionSchemaIT {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * Changeset 86: {@code uq_re_segment_period} is partial over the live statuses.
+     *
+     * <p>A termination at {@code T} inside an already-posted month reverses that
+     * month's row and posts a <em>new</em> one for the shortened period — same
+     * segment, same {@code period_start}. The whole-table unique constraint would
+     * have refused it, and re-using the row instead would have meant a second
+     * {@code CIL} hanging off an id that already explains a first. So the
+     * constraint narrows to what it was always meant to say: at most one
+     * {@code PLANNED} or {@code POSTED} row per segment and period. A
+     * {@code REVERSED} or {@code CANCELLED} row is history and stops claiming the
+     * slot.</p>
+     */
+    @Test
+    void onlyLiveRowsClaimASegmentsPeriod() {
+        UUID t = tenant();
+        UUID l = lease(t, unit(t, property(t)), renter(t));
+        UUID seg = rentSegment(t, l, leaseLine(t, l, chargeType(t)),
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+        UUID first = UUID.randomUUID();
+        jdbc.update("INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount, status)"
+                        + " VALUES (?,?,?,?,?,?,?,?,'POSTED')",
+                first, t, l, seg, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), 31, new BigDecimal("100.00"));
+
+        // While it is POSTED the slot is taken — the guarantee is not weakened.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount, status)"
+                        + " VALUES (?,?,?,?,?,?,?,?,'PLANNED')",
+                UUID.randomUUID(), t, l, seg, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 20), 20, new BigDecimal("60.00")))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_re_segment_period");
+
+        jdbc.update("UPDATE recognition_entries SET status = 'REVERSED' WHERE id = ?", first);
+
+        // Reversed, so the truncated replacement may take the period.
+        UUID replacement = UUID.randomUUID();
+        assertThatCode(() -> jdbc.update(
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount, status)"
+                        + " VALUES (?,?,?,?,?,?,?,?,'POSTED')",
+                replacement, t, l, seg, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 20), 20, new BigDecimal("60.00")))
+                .doesNotThrowAnyException();
+
+        // ...and only one replacement. Two live rows for one period is still refused.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount, status)"
+                        + " VALUES (?,?,?,?,?,?,?,?,'PLANNED')",
+                UUID.randomUUID(), t, l, seg, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 15), 15, new BigDecimal("45.00")))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_re_segment_period");
+    }
+
+    /**
+     * Changeset 86: at most one {@code CIL} per recognition entry, in the database.
+     *
+     * <p>Task 3 could only enforce this with a row lock, because a truncated repost
+     * was going to re-use the entry and there was no immutable predicate to index.
+     * A termination writes a new row instead, so {@code source_id} is now
+     * insert-time immutable for a recognition journal — and the {@code journal_entries}
+     * immutability trigger forbids ever updating {@code source_type}/{@code source_id},
+     * which is what makes the predicate safe.</p>
+     *
+     * <p>The reversal of a {@code CIL} carries {@code source_type = 'REVERSAL'} and
+     * the <em>journal's</em> id, so it falls outside the predicate entirely; the
+     * last case here is what would break if that ever changed.</p>
+     */
+    @Test
+    void atMostOneRecognitionJournalPerEntry() {
+        UUID t = tenant();
+        UUID entry = UUID.randomUUID();
+
+        assertThatCode(() -> journalEntry(t, "CIL-26/1", "RECOGNITION", entry)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> journalEntry(t, "CIL-26/2", "RECOGNITION", entry))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_je_recognition_source");
+
+        // A different entry is a different journal.
+        assertThatCode(() -> journalEntry(t, "CIL-26/3", "RECOGNITION", UUID.randomUUID()))
+                .doesNotThrowAnyException();
+        // A reversal names the same id under a different source type and is not caught.
+        assertThatCode(() -> journalEntry(t, "CIL-26/4", "REVERSAL", entry)).doesNotThrowAnyException();
+        // ...and the index does not stray onto other document families.
+        UUID cheque = UUID.randomUUID();
+        assertThatCode(() -> journalEntry(t, "PDR-26/1", "CHEQUE", cheque)).doesNotThrowAnyException();
+        assertThatCode(() -> journalEntry(t, "CRT-26/1", "CHEQUE", cheque)).doesNotThrowAnyException();
+    }
+
+    /** A bare journal header — enough columns to satisfy NOT NULL, nothing more. */
+    private void journalEntry(UUID tenant, String number, String sourceType, UUID sourceId) {
+        jdbc.update("INSERT INTO journal_entries (id, tenant_id, entry_number, doc_type, entry_date, source_type, source_id)"
+                        + " VALUES (?,?,?,?,?,?,?)",
+                UUID.randomUUID(), tenant, number, number.substring(0, number.indexOf('-')),
+                LocalDate.of(2026, 1, 31), sourceType, sourceId);
+    }
+
     @Test
     void foreignKeysRejectDanglingIds() {
         UUID t = tenant();

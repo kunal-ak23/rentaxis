@@ -65,6 +65,16 @@ public class LeaseDTO {
     private UUID postingJournalId;
     private Instant postedAt;
 
+    // ---- termination (spec §9.1) ----
+    /**
+     * The date the contract was terminated at, not the day it was recorded — the
+     * day rent stopped being earned and every termination journal is dated.
+     */
+    private LocalDate terminatedOn;
+    /** The {@code TCR} that reversed the unearned rent, when there was any. */
+    private UUID terminationJournalId;
+    private String terminationNotes;
+
     /** Σ of every line's net — what the contract is worth in total. */
     private BigDecimal contractValue;
 

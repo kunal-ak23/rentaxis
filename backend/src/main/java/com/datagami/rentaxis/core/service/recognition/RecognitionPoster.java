@@ -90,6 +90,25 @@ public class RecognitionPoster {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public RecognitionEntryDTO post(UUID entryId) {
+        // Through `this`, so the body runs in the REQUIRES_NEW transaction this
+        // method just opened rather than opening a third one.
+        return postJoining(entryId);
+    }
+
+    /**
+     * The same posting, in the <em>caller's</em> transaction.
+     *
+     * <p>Exists for exactly one caller: a termination, which reverses the {@code
+     * CIL} for the month containing {@code T} and reposts a truncated replacement
+     * (spec §8.5). A termination is all-or-nothing — if the unearned-rent {@code
+     * TCR} that follows is refused, no cheque may stay RETURNED and no replacement
+     * {@code CIL} may stay in the ledger — and {@link #post}'s {@code REQUIRES_NEW}
+     * would have committed that replacement independently of the transaction that
+     * then rolled back. A month-end run wants the opposite guarantee, so both
+     * exist and each names which one it is.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public RecognitionEntryDTO postJoining(UUID entryId) {
         RecognitionEntry entry = entries.lockById(entryId)
                 .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
         // Checked under the lock, which is the whole point: the loser of a race
@@ -135,8 +154,13 @@ public class RecognitionPoster {
      * lease's lines, and changeset 86 lets the retired segment keep pointing at
      * one. A cancelled segment has no entries left to post, so this is
      * belt-and-braces rather than a live path.</p>
+     *
+     * <p>Public because a termination's unearned-rent {@code TCR} has to debit the
+     * very same leaf this releases from, and answering that question twice in two
+     * places is how the two halves of one contract end up in different ledgers.
+     * Call it inside a transaction — it reads the line and resolves the role.</p>
      */
-    private PostingRequest.AccountRef deferralOf(RentSegment segment, Lease lease) {
+    public PostingRequest.AccountRef deferralOf(RentSegment segment, Lease lease) {
         Account lineAccount = leaseLines.findById(segment.getLeaseLineId())
                 .map(LeaseLine::getCreditAccount).orElse(null);
         if (lineAccount == null) {

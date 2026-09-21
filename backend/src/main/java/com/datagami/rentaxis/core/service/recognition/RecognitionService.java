@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.recognition;
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -247,6 +248,230 @@ public class RecognitionService {
             }
         }
         build(lease, leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId));
+    }
+
+    // ------------------------------------------------------------------
+    // termination (spec §8.5, §9.1)
+    // ------------------------------------------------------------------
+
+    /**
+     * What a termination at {@code t} does — or would do — to a lease's rent
+     * recognition.
+     *
+     * @param earnedThrough   Σ over the lease's live RENT segments of
+     *                        {@code ProrationEngine.earnedThrough(t)} — the single
+     *                        source of truth for what the tenancy is worth up to
+     *                        and including {@code t}
+     * @param recognisedSoFar Σ of the lease's {@code POSTED} entries as they stand.
+     *                        Before a termination it is what the ledger has already
+     *                        taken to income; after one it equals
+     *                        {@code earnedThrough}, which is the whole point
+     * @param unearned        Σ {@code (segment.amount − earnedThrough)} — the
+     *                        liability the {@code TCR} hands back
+     * @param deferrals       the unearned amount split by the account the
+     *                        {@code TCO} actually deferred into, one entry per
+     *                        segment that has anything left. The debit has to face
+     *                        the same leaf the credit went to; see
+     *                        {@code RecognitionPoster}'s class note
+     */
+    public record TerminationRecognition(BigDecimal earnedThrough, BigDecimal recognisedSoFar,
+                                         BigDecimal unearned, List<UnearnedDeferral> deferrals) {
+    }
+
+    /** One segment's worth of unearned rent, and the liability leaf it sits in. */
+    public record UnearnedDeferral(PostingRequest.AccountRef account, BigDecimal amount) {
+    }
+
+    /**
+     * The same arithmetic {@link #truncateForTermination} performs, with nothing
+     * written — what the termination screen shows before the accountant commits.
+     */
+    @Transactional(readOnly = true)
+    public TerminationRecognition previewTermination(UUID leaseId, LocalDate t) {
+        Lease lease = lease(leaseId);
+        return summarise(lease, liveSegments(leaseId), t);
+    }
+
+    /**
+     * Cut the lease's recognition off at {@code t} (spec §8.5, last bullet).
+     *
+     * <p>Per ACTIVE segment, and in this order:</p>
+     * <ul>
+     *   <li>a segment that starts after {@code t} never began: {@code CANCELLED},
+     *       with every planned row cancelled and every posted row reversed;</li>
+     *   <li>a segment that already ended by {@code t} is untouched — there is
+     *       nothing to truncate and nothing unearned;</li>
+     *   <li>otherwise rows after {@code t} are cancelled or reversed, the row
+     *       <em>containing</em> {@code t} is re-cut to end on it, and the segment
+     *       becomes {@code TRUNCATED} with {@code to_date = t}.</li>
+     * </ul>
+     *
+     * <p><b>The row containing {@code t} is compared on amount, not only on
+     * date.</b> A termination effective on a calendar month-end looks like it
+     * should leave that month alone — and usually it does — but the cut amount is
+     * {@code earnedThrough(t) − Σ earlier rows}, and accumulated rounding across
+     * the earlier rows can put it one fil away from the row that was posted (the
+     * client's own fixture does exactly this at 2027-01-31: 4,331.50 against a
+     * posted 4,331.51). Leaving the row because its dates match would leave the
+     * lease's recognised total one fil away from what it earned, permanently. So a
+     * POSTED row is reversed and replaced whenever <em>either</em> its period or
+     * its amount differs, and left alone only when both are identical.</p>
+     *
+     * <p><b>A replacement is a new row, not a re-used one.</b> The original stays
+     * {@code REVERSED} pointing at the {@code CIL} an auditor can still see, and
+     * the replacement gets a {@code CIL} of its own — which is what lets changeset
+     * 86 make "at most one CIL per recognition entry" a unique index rather than
+     * only a row lock. The two share {@code (segment_id, period_start)}, so the old
+     * row's {@code REVERSED} update is flushed before the new row is inserted:
+     * Hibernate orders all inserts before all updates within one flush, and the
+     * partial unique index would see two live rows for the period.</p>
+     *
+     * <p><b>The replacement posts in this transaction</b>
+     * ({@code RecognitionPoster.postJoining}, not {@code post}). A termination is
+     * all-or-nothing: a {@code REQUIRES_NEW} repost would commit a {@code CIL} that
+     * survives the caller rolling the rest of the termination back.</p>
+     *
+     * @return the same summary {@link #previewTermination} gives, computed
+     *         <em>before</em> anything is mutated — the unearned figure is
+     *         {@code segment.amount − earnedThrough(t)} over the segment's original
+     *         window, which truncating it would erase.
+     */
+    @Transactional
+    public TerminationRecognition truncateForTermination(UUID leaseId, LocalDate t) {
+        Lease lease = lease(leaseId);
+        List<RentSegment> live = liveSegments(leaseId);
+        TerminationRecognition summary = summarise(lease, live, t);
+
+        for (RentSegment segment : live) {
+            if (segment.getFromDate().isAfter(t)) {
+                cancelWholeSegment(segment, t);
+            } else if (!segment.getToDate().isAfter(t)) {
+                // The segment ran its course before the termination took effect.
+                // Nothing to re-slice, nothing unearned, no status change: it is not
+                // "truncated", it simply finished.
+                log.debug("Segment {} ended {} on or before termination date {}; left as is",
+                        segment.getId(), segment.getToDate(), t);
+            } else {
+                truncateSegment(segment, t);
+            }
+        }
+        return summary;
+    }
+
+    /** Only ACTIVE: a TRUNCATED segment has already been cut, and a CANCELLED one is history. */
+    private List<RentSegment> liveSegments(UUID leaseId) {
+        return segments.findByLease_IdAndStatusInOrderByFromDateAsc(leaseId, EnumSet.of(SegmentStatus.ACTIVE));
+    }
+
+    private TerminationRecognition summarise(Lease lease, List<RentSegment> live, LocalDate t) {
+        BigDecimal earned = BigDecimal.ZERO;
+        BigDecimal unearned = BigDecimal.ZERO;
+        List<UnearnedDeferral> deferrals = new ArrayList<>();
+        for (RentSegment segment : live) {
+            BigDecimal segmentEarned = ProrationEngine.earnedThrough(
+                    segment.getAmount(), segment.getFromDate(), segment.getToDate(), t);
+            BigDecimal segmentUnearned = segment.getAmount().subtract(segmentEarned);
+            earned = earned.add(segmentEarned);
+            unearned = unearned.add(segmentUnearned);
+            if (segmentUnearned.signum() > 0) {
+                deferrals.add(new UnearnedDeferral(poster.deferralOf(segment, lease), segmentUnearned));
+            }
+        }
+        BigDecimal recognised = entries
+                .findByLease_IdAndStatusInOrderByPeriodStartAsc(lease.getId(), EnumSet.of(RecognitionStatus.POSTED))
+                .stream().map(RecognitionEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new TerminationRecognition(
+                earned.setScale(2, RoundingMode.HALF_UP),
+                recognised.setScale(2, RoundingMode.HALF_UP),
+                unearned.setScale(2, RoundingMode.HALF_UP),
+                List.copyOf(deferrals));
+    }
+
+    private void cancelWholeSegment(RentSegment segment, LocalDate t) {
+        for (RecognitionEntry entry : entries.findBySegment_IdOrderByPeriodStartAsc(segment.getId())) {
+            retire(entry, t);
+        }
+        segment.setStatus(SegmentStatus.CANCELLED);
+        segments.save(segment);
+    }
+
+    private void truncateSegment(RentSegment segment, LocalDate t) {
+        // Built from the rows that are actually on the schedule rather than
+        // re-sliced from the segment: these are the amounts the ledger has seen, and
+        // the cut amount is defined against them.
+        List<RecognitionEntry> live = entries.findBySegment_IdOrderByPeriodStartAsc(segment.getId()).stream()
+                .filter(e -> e.getStatus() == RecognitionStatus.PLANNED || e.getStatus() == RecognitionStatus.POSTED)
+                .toList();
+        if (live.isEmpty()) return;
+
+        List<ProrationEngine.Slice> slices = live.stream()
+                .map(e -> new ProrationEngine.Slice(e.getPeriodStart(), e.getPeriodEnd(), e.getDays(), e.getAmount()))
+                .toList();
+        List<ProrationEngine.Slice> kept = ProrationEngine.truncate(slices, segment.getDayRate(), t);
+        int cutIndex = kept.size() - 1;
+
+        for (int i = cutIndex + 1; i < live.size(); i++) {
+            retire(live.get(i), t);
+        }
+        recut(live.get(cutIndex), kept.get(cutIndex), segment, t);
+
+        segment.setStatus(SegmentStatus.TRUNCATED);
+        segment.setToDate(t);
+        segment.setDays(ProrationEngine.daysInclusive(segment.getFromDate(), t));
+        // amount and day_rate are left alone on purpose. The rate is what the
+        // earlier months were worth and re-deriving it from the shortened window
+        // would restate them; the amount is the contract value the unearned
+        // reversal was computed against, and Σ the segment's live POSTED rows is
+        // the earned half of exactly that number.
+        segments.save(segment);
+    }
+
+    /** A row wholly after {@code t}: cancelled if it was only planned, reversed if the ledger saw it. */
+    private void retire(RecognitionEntry entry, LocalDate t) {
+        if (entry.getStatus() == RecognitionStatus.POSTED && entry.getJournalId() != null) {
+            postingService.reverse(entry.getJournalId(), t, "Lease terminated " + t);
+            entry.setStatus(RecognitionStatus.REVERSED);
+            entries.save(entry);
+        } else if (entry.getStatus() == RecognitionStatus.PLANNED) {
+            entry.setStatus(RecognitionStatus.CANCELLED);
+            entries.save(entry);
+        }
+    }
+
+    /** The row containing {@code t}, re-cut to end on it. See the method note on {@link #truncateForTermination}. */
+    private void recut(RecognitionEntry entry, ProrationEngine.Slice cut, RentSegment segment, LocalDate t) {
+        if (entry.getStatus() == RecognitionStatus.PLANNED) {
+            entry.setPeriodEnd(cut.periodEnd());
+            entry.setDays(cut.days());
+            entry.setAmount(cut.amount());
+            entries.save(entry);
+            return;
+        }
+        boolean unchanged = entry.getPeriodEnd().isEqual(cut.periodEnd())
+                && entry.getAmount().compareTo(cut.amount()) == 0;
+        if (unchanged) {
+            return;
+        }
+        postingService.reverse(entry.getJournalId(), t, "Lease terminated " + t);
+        entry.setStatus(RecognitionStatus.REVERSED);
+        entries.save(entry);
+        // Flushed before the replacement is inserted: they share
+        // (segment_id, period_start), and within one flush Hibernate runs every
+        // insert before every update, so the partial unique index would see the
+        // replacement arrive while this row was still POSTED.
+        entries.flush();
+
+        RecognitionEntry replacement = new RecognitionEntry();
+        replacement.setTenantId(entry.getTenantId());
+        replacement.setLease(entry.getLease());
+        replacement.setSegment(segment);
+        replacement.setPeriodStart(cut.periodStart());
+        replacement.setPeriodEnd(cut.periodEnd());
+        replacement.setDays(cut.days());
+        replacement.setAmount(cut.amount());
+        replacement.setStatus(RecognitionStatus.PLANNED);
+        replacement = entries.saveAndFlush(replacement);
+        poster.postJoining(replacement.getId());
     }
 
     // ------------------------------------------------------------------

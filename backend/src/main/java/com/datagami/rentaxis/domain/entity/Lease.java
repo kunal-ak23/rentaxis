@@ -174,6 +174,28 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "posted_by")
     private UUID postedBy;
 
+    // ---- termination (spec §9.1) --------------------------------------------
+
+    /**
+     * The effective date of the termination — {@code T}.
+     *
+     * <p>Not "when somebody pressed the button": every journal the termination
+     * writes is dated this day, the rent is earned up to and including it, and the
+     * settlement statement is drawn as of it. It can be back-dated (the renter
+     * moved out on the 15th and finance got to it on the 20th) and it can be
+     * forward-dated within the term, which is why it is a date the caller supplies
+     * rather than a timestamp taken here.</p>
+     */
+    @Column(name = "terminated_on")
+    private LocalDate terminatedOn;
+
+    /** The {@code TCR} that reversed the unearned rent, or null when nothing was unearned. */
+    @Column(name = "termination_journal_id")
+    private UUID terminationJournalId;
+
+    @Column(name = "termination_notes")
+    private String terminationNotes;
+
     @Version
     private Long version;
 }

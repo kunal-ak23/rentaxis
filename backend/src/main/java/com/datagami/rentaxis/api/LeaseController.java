@@ -13,11 +13,14 @@ import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
+import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
+import com.datagami.rentaxis.api.dto.lease.TerminationPreviewDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.cheque.ChequeDetailsService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
+import com.datagami.rentaxis.core.service.lease.LeaseTerminationService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.SettlementService;
@@ -32,6 +35,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -41,6 +45,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +64,7 @@ public class LeaseController {
     private final ChequeDetailsService chequeDetailsService;
     private final LeasePostingService leasePostingService;
     private final LeaseRenewalService leaseRenewalService;
+    private final LeaseTerminationService leaseTerminationService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -223,15 +229,43 @@ public class LeaseController {
         return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows));
     }
 
+    // --- Termination (spec §9.1) -------------------------------------------
+
+    /**
+     * What ending the contract on {@code date} would do, with nothing written: the
+     * rent earned through that day, what has already been recognised, the advance
+     * rent to be handed back, the default return/keep split of the uncleared
+     * register rows, and the receivable the renter would be left with.
+     *
+     * <p>Open to PROPERTY_MANAGER as well as the finance roles, scoped by
+     * {@code LeaseAccessPolicy} to the buildings they are assigned. Looking at the
+     * consequences of a move-out is the building manager's job; posting the
+     * journals that end a contract is the accountant's, which is why
+     * {@link #terminateLease} is one role narrower.</p>
+     */
+    @GetMapping("/{id}/terminate/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<TerminationPreviewDTO> previewTermination(
+            @PathVariable UUID id,
+            @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(leaseTerminationService.preview(id, date));
+    }
+
+    /**
+     * End the contract on {@code terminationDate}: the chosen uncleared cheques go
+     * back with their {@code PDR}s reversed, recognition is truncated, the unearned
+     * rent comes back as one {@code TCR}, and the lease goes TERMINATED. One
+     * transaction — see {@code LeaseTerminationService}.
+     */
     @PostMapping("/{id}/terminate")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<LeaseDTO> terminateLease(
             @PathVariable UUID id,
-            @RequestBody(required = false) TerminateWithSettlementDTO dto,
-            HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
-        return ResponseEntity.ok(leaseService.terminateWithSettlement(id, dto, settledBy));
+            @Valid @RequestBody TerminateLeaseRequest request,
+            HttpServletRequest httpRequest) {
+        String userIdStr = httpRequest.getHeader("X-User-Id");
+        UUID byUser = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        return ResponseEntity.ok(leaseTerminationService.terminate(id, request, byUser));
     }
 
     @GetMapping("/{id}/settlement/preview")
@@ -262,6 +296,18 @@ public class LeaseController {
         return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
     }
 
+    /**
+     * Finalise the settlement.
+     *
+     * <p><b>It no longer terminates the lease.</b> Termination is its own act with
+     * its own date, its own cheque decisions and its own journals
+     * ({@code POST /{id}/terminate}), and it happens <em>first</em>: the statement
+     * this finalises is drawn from the receivable that termination leaves behind.
+     * Folding the two together meant finalising a settlement silently flipped a
+     * contract to TERMINATED with today's date, no cheques returned and next
+     * September's rent still scheduled to be earned. Task 6 rewrites what finalise
+     * posts; this call now returns the lease unchanged apart from the settlement.</p>
+     */
     @PostMapping("/{id}/settlement/finalize")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     @Transactional
@@ -271,7 +317,7 @@ public class LeaseController {
         String userIdStr = request.getHeader("X-User-Id");
         UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
         settlementService.finalizeSettlement(id, settledBy);
-        return ResponseEntity.ok(leaseService.terminateLease(id, null));
+        return ResponseEntity.ok(leaseService.getLeaseById(id));
     }
 
     // --- Renewal chain and extension (spec §6.6, §6.7) ---------------------

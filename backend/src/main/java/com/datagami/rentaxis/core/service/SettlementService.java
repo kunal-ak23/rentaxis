@@ -3,7 +3,6 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.SettlementResponseDTO;
-import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
@@ -109,51 +108,12 @@ public class SettlementService {
         return preview;
     }
 
-    @Transactional
-    public LeaseSettlement createSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
-        Lease lease = findLeaseWithTenantCheck(leaseId);
-
-        BigDecimal depositAmount = depositHeld(lease);
-
-        LeaseSettlement settlement = new LeaseSettlement();
-        settlement.setLeaseId(leaseId);
-        settlement.setDepositAmount(depositAmount);
-        settlement.setNotes(dto.getNotes());
-        settlement.setSettledBy(settledBy);
-        settlement.setSettledAt(LocalDateTime.now());
-        settlement.setStatus(SettlementStatus.FINALIZED);
-
-        // Calculate total deductions from provided items
-        BigDecimal totalDeductions = BigDecimal.ZERO;
-        if (dto.getDeductions() != null) {
-            totalDeductions = dto.getDeductions().stream()
-                    .map(TerminateWithSettlementDTO.DeductionItemDTO::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-        }
-        settlement.setTotalDeductions(totalDeductions);
-        settlement.setTotalAdditions(BigDecimal.ZERO);
-        // Legacy direct-terminate path: all items treated as DEDUCTIONS. Use saveDraft + finalizeSettlement for additions support.
-        settlement.setRefundAmount(depositAmount.subtract(totalDeductions));
-
-        LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
-
-        // Create deduction records
-        if (dto.getDeductions() != null) {
-            for (TerminateWithSettlementDTO.DeductionItemDTO item : dto.getDeductions()) {
-                LeaseSettlementDeduction deduction = new LeaseSettlementDeduction();
-                deduction.setSettlementId(savedSettlement.getId());
-                deduction.setCategory(item.getCategory());
-                deduction.setDescription(item.getDescription());
-                deduction.setAmount(item.getAmount());
-                deduction.setAutoCalculated(false);
-                leaseSettlementDeductionRepository.save(deduction);
-            }
-        }
-
-        // Ledger posting moves to PostingService in accounting v2 plan 2/3 (see spec §7/§9).
-
-        return savedSettlement;
-    }
+    // createSettlement is gone with LeaseService.terminateWithSettlement. It built a
+    // FINALIZED settlement out of a free-text deduction list handed in with the
+    // termination request, posted nothing, and left the refund as a number on a row.
+    // Spec §9.2 makes the settlement a statement drawn from the ledger after the
+    // termination, finalised by one STL journal; saveDraft/finalizeSettlement are the
+    // path, and Task 6 rewrites them.
 
     @Transactional
     public LeaseSettlement saveDraft(UUID leaseId, SaveSettlementDTO dto, UUID userId) {

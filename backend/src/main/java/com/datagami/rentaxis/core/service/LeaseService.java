@@ -4,7 +4,6 @@ import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
-import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
@@ -60,7 +59,6 @@ public class LeaseService {
     private final ChequeRepository chequeRepository;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final AccountResolver accountResolver;
-    private final SettlementService settlementService;
     private final UnitListingService unitListingService;
     private final ApplicationEventPublisher events;
     private final LeaseAccessPolicy leaseAccessPolicy;
@@ -78,7 +76,6 @@ public class LeaseService {
                         ChequeRepository chequeRepository,
                         RentCollectionSettingsRepository rentCollectionSettingsRepository,
                         AccountResolver accountResolver,
-                        SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
                         ApplicationEventPublisher events,
                         LeaseAccessPolicy leaseAccessPolicy) {
@@ -95,7 +92,6 @@ public class LeaseService {
         this.chequeRepository = chequeRepository;
         this.rentCollectionSettingsRepository = rentCollectionSettingsRepository;
         this.accountResolver = accountResolver;
-        this.settlementService = settlementService;
         this.unitListingService = unitListingService;
         this.events = events;
         this.leaseAccessPolicy = leaseAccessPolicy;
@@ -929,8 +925,33 @@ public class LeaseService {
         recordEvent(lease, previous, next, notes);
     }
 
+    /**
+     * Flip the contract to TERMINATED — the <em>last</em> step of a termination,
+     * never the whole of one.
+     *
+     * <p><b>Call this through {@code LeaseTerminationService.terminate} and nowhere
+     * else.</b> A termination is returning the uncleared paper, truncating the
+     * recognition schedule and reversing the unearned rent (spec §9.1); this method
+     * is only the status, the unit and the notifications, and on its own it
+     * produces exactly the state the old {@code terminateLease} left behind — a
+     * contract marked ended with its cheques still on the register and next
+     * September's rent still scheduled to be earned. It stays a separate method
+     * because the unit-occupancy rule below is subtle and worth one home, and
+     * because the termination service lives in another package.</p>
+     *
+     * <p>The cheque register is deliberately untouched here: what happens to a
+     * terminated lease's instruments is decided by the caller, one row at a time,
+     * through {@code ChequeService} — cancelling them behind its back would reverse
+     * registrations it had chosen to keep.</p>
+     *
+     * @param terminatedOn           {@code T}: what every termination journal is
+     *                               dated and what the rent was earned through.
+     * @param terminationJournalId   the {@code TCR}, or null when nothing was unearned.
+     * @param byUser                 stamped on the lease event, so the trail says who.
+     */
     @Transactional
-    public LeaseDTO terminateLease(UUID leaseId, String notes) {
+    public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
+                                   UUID terminationJournalId, UUID byUser) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() == LeaseStatus.TERMINATED || lease.getStatus() == LeaseStatus.CLOSED) {
@@ -939,16 +960,18 @@ public class LeaseService {
 
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
+        lease.setTerminatedOn(terminatedOn);
+        lease.setTerminationNotes(notes);
+        lease.setTerminationJournalId(terminationJournalId);
 
         releaseUnitIfNoOtherActiveLease(lease);
 
-        // The cheque register is deliberately untouched. What happens to a
-        // terminated lease's uncleared instruments — handed back, banked, or held
-        // against a settlement — is the settlement flow's decision (spec §9.1),
-        // and cancelling them here would reverse registrations behind its back.
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
-                notes != null ? notes : "Lease terminated early");
+                notes != null && !notes.isBlank()
+                        ? "Terminated on " + terminatedOn + ": " + notes.trim()
+                        : "Terminated on " + terminatedOn,
+                byUser);
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_TERMINATED,
@@ -973,15 +996,12 @@ public class LeaseService {
     // for the new window, posts a further TCO and registers the cheques that pay
     // for it (spec §6.7).
 
-    @Transactional
-    public LeaseDTO terminateWithSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
-        // Create settlement first (within same transaction)
-        if (dto != null && dto.getDeductions() != null && !dto.getDeductions().isEmpty()) {
-            settlementService.createSettlement(leaseId, dto, settledBy);
-        }
-        // Then terminate
-        return terminateLease(leaseId, dto != null ? dto.getNotes() : null);
-    }
+    // terminateWithSettlement is gone. It created a settlement out of a free-text
+    // deduction list and then flipped the status, which is neither of the two
+    // things spec §9.1 and §9.2 describe: a termination is dated, returns the
+    // uncleared paper and reverses the unearned rent
+    // (LeaseTerminationService.terminate), and a settlement is a statement drawn
+    // from the ledger afterwards. They are two acts on two screens now.
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
@@ -1061,12 +1081,17 @@ public class LeaseService {
     }
 
     private void recordEvent(Lease lease, LeaseStatus prev, LeaseStatus next, String notes) {
+        recordEvent(lease, prev, next, notes, null);
+    }
+
+    private void recordEvent(Lease lease, LeaseStatus prev, LeaseStatus next, String notes, UUID createdBy) {
         LeaseEvent event = new LeaseEvent();
         event.setLease(lease);
         event.setPreviousState(prev);
         event.setNewState(next);
         event.setNotes(notes);
         event.setCreatedAt(Instant.now());
+        event.setCreatedBy(createdBy);
         leaseEventRepository.save(event);
     }
 
@@ -1109,6 +1134,9 @@ public class LeaseService {
         dto.setIncomeAccountId(lease.getIncomeAccountId());
         dto.setPostingJournalId(lease.getPostingJournalId());
         dto.setPostedAt(lease.getPostedAt());
+        dto.setTerminatedOn(lease.getTerminatedOn());
+        dto.setTerminationJournalId(lease.getTerminationJournalId());
+        dto.setTerminationNotes(lease.getTerminationNotes());
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
