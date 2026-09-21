@@ -78,10 +78,23 @@ public class VoucherService {
         return v;
     }
 
+    /** No document is dated before this, or after it — sentinels standing in for "no bound" (see VoucherRepository). */
+    private static final LocalDate EARLIEST_POSSIBLE_DATE = LocalDate.of(1900, 1, 1);
+    private static final LocalDate LATEST_POSSIBLE_DATE = LocalDate.of(9999, 12, 31);
+
     @Transactional(readOnly = true)
     public Page<Voucher> list(VoucherType docType, VoucherStatus status, UUID vendorId, UUID propertyId,
                               LocalDate from, LocalDate to, Pageable pageable) {
-        return vouchers.search(docType, status, vendorId, propertyId, from, to, pageable);
+        Page<Voucher> page = vouchers.search(docType, status, vendorId, propertyId,
+                from == null ? EARLIEST_POSSIBLE_DATE : from,
+                to == null ? LATEST_POSSIBLE_DATE : to,
+                pageable);
+        // VoucherDTO.of sums the lines for netTotal/vatTotal/grossTotal, and
+        // Voucher.lines is LAZY — initialise every row's collection before the
+        // session closes so the controller (Task 5) can map outside the
+        // transaction, same as get() does for a single voucher.
+        page.getContent().forEach(v -> v.getLines().size());
+        return page;
     }
 
     @Transactional
