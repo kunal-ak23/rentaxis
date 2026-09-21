@@ -57,19 +57,25 @@ public class RentSegment extends BaseTenantEntity {
     private Lease lease;
 
     /**
-     * The line this segment recognises. LAZY: the nightly run needs it only to
-     * find the account the deferral was credited to, and only for the handful of
-     * entries whose period has just ended.
+     * The line this segment recognises — <b>a plain id, not an association</b>
+     * (changeset 86).
      *
-     * <p><b>Nullable, and only ever null on a retired segment</b> (changeset 86).
-     * Amending a posted lease replaces its lines wholesale, so a segment that has
-     * just been CANCELLED loses the row it was cut from; the database nulls this
-     * on delete rather than taking the segment with it, because the segment is
-     * what explains the {@code CIL} journals already in the ledger.</p>
+     * <p>Amending a posted lease replaces its lines wholesale, and the segments cut
+     * from them have to survive: a POSTED recognition entry explains a {@code CIL}
+     * that is still in the ledger, and this segment is where that entry's
+     * arithmetic came from. So {@code fk_rs_line} is gone and the column stays
+     * required — a retired segment goes on recording which line it was cut from,
+     * which is the audit link an amendment should leave behind, and no segment can
+     * ever be line-less.</p>
+     *
+     * <p>The price is that the id may name a row that no longer exists. Nothing
+     * dereferences it blindly: {@code RecognitionPoster} reads it back through
+     * {@code LeaseLineRepository} and treats "gone" the same way it treats a line
+     * with no credit account. Mapping it as a {@code @ManyToOne} would have made
+     * every such read a {@code EntityNotFoundException} on first touch.</p>
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "lease_line_id")
-    private LeaseLine leaseLine;
+    @Column(name = "lease_line_id", nullable = false)
+    private UUID leaseLineId;
 
     @Column(name = "from_date", nullable = false)
     private LocalDate fromDate;

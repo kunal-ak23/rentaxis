@@ -23,5 +23,5 @@ public interface RentSegmentRepository extends JpaRepository<RentSegment, UUID> 
      * guard that makes {@code buildForLease} safe to call twice and makes
      * {@code rebuildAfterAmend} work by cancelling first and rebuilding after.
      */
-    boolean existsByLeaseLine_IdAndStatusIn(UUID leaseLineId, Collection<SegmentStatus> statuses);
+    boolean existsByLeaseLineIdAndStatusIn(UUID leaseLineId, Collection<SegmentStatus> statuses);
 }

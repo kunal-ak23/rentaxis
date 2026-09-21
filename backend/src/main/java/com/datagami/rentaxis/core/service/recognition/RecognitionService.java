@@ -1,10 +1,10 @@
 package com.datagami.rentaxis.core.service.recognition;
 
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.RecognitionEntry;
@@ -22,14 +22,19 @@ import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -56,11 +61,14 @@ import java.util.function.Function;
  * stores the rate the engine gave it, and truncation later reads that stored
  * rate rather than recomputing one.</p>
  *
- * <p><b>Transactions.</b> Every method is transactional, because
+ * <p><b>Transactions.</b> Every repository touch happens inside one, because
  * {@code TenantAspect} enables the Hibernate tenant filter only inside one and a
- * repository call made outside would see every tenant's rows. The one exception
- * to "one transaction" is {@link #runTo}, which deliberately posts each entry
- * through {@link RecognitionPoster} in a transaction of its own.</p>
+ * call made outside would see every tenant's rows. {@link #runTo} is the
+ * exception that proves it: the method itself is deliberately <em>not</em>
+ * transactional, and instead reads its candidates in one short read-only
+ * transaction and posts each entry through {@link RecognitionPoster} in a
+ * transaction of that entry's own — so at no point is a long-lived transaction
+ * holding a connection while a second one is taken out beside it.</p>
  */
 @Service
 public class RecognitionService {
@@ -79,6 +87,13 @@ public class RecognitionService {
     private final PostingService postingService;
     private final RecognitionPoster poster;
 
+    /**
+     * Short read-only transactions for the one method that must not hold a long
+     * one. Built here rather than injected so its read-only flag is this class's
+     * own choice and not whatever the shared bean happens to carry.
+     */
+    private final TransactionTemplate readTx;
+
     public RecognitionService(RentSegmentRepository segments,
                               RecognitionEntryRepository entries,
                               LeaseRepository leases,
@@ -86,7 +101,8 @@ public class RecognitionService {
                               JournalEntryRepository journals,
                               TenantFiscalSettingsRepository fiscalSettings,
                               PostingService postingService,
-                              RecognitionPoster poster) {
+                              RecognitionPoster poster,
+                              PlatformTransactionManager transactionManager) {
         this.segments = segments;
         this.entries = entries;
         this.leases = leases;
@@ -95,6 +111,8 @@ public class RecognitionService {
         this.fiscalSettings = fiscalSettings;
         this.postingService = postingService;
         this.poster = poster;
+        this.readTx = new TransactionTemplate(transactionManager);
+        this.readTx.setReadOnly(true);
     }
 
     /** What a run would do, or did: counts, the money, the rows, and what it could not post. */
@@ -217,41 +235,65 @@ public class RecognitionService {
      * month and nothing else — a whole night's recognition rolling back because
      * of a single mapping gap is how a month-end close turns into an incident.</p>
      *
+     * <p><b>No transaction is held across the loop.</b> The candidates are read in
+     * one short read-only transaction and the loop then works on detached rows,
+     * so the only transaction open at any moment is the one entry's own. Holding
+     * an outer transaction while each entry opens a {@code REQUIRES_NEW} one means
+     * <em>two</em> pooled connections per run for its whole duration — a tenant
+     * month-end with thousands of rows would keep a write transaction idle for
+     * minutes, and N concurrent tenant runs would each wait on an N+1th
+     * connection. Nothing in the loop needs the outer transaction: it writes
+     * nothing, and the poster re-enables the tenant filter in its own.</p>
+     *
      * @param preview answer what would happen and write nothing
      */
-    @Transactional
     public RecognitionRunResult runTo(LocalDate to, boolean preview) {
-        List<RecognitionEntry> candidates = plannedThrough(to);
-        LocalDate lockedThrough = booksLockedThrough();
+        Candidates plan = candidates(to);
 
         List<RecognitionEntryDTO> done = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
 
-        for (RecognitionEntry entry : candidates) {
-            if (lockedThrough != null && !entry.getPeriodEnd().isAfter(lockedThrough)) {
-                errors.add("Entry " + entry.getPeriodStart() + "–" + entry.getPeriodEnd()
-                        + " is in a locked period (books are locked through " + lockedThrough + ")");
+        for (RecognitionEntryDTO row : plan.rows()) {
+            if (plan.lockedThrough() != null && !row.periodEnd().isAfter(plan.lockedThrough())) {
+                errors.add("Entry " + row.periodStart() + "–" + row.periodEnd()
+                        + " is in a locked period (books are locked through " + plan.lockedThrough() + ")");
                 continue;
             }
             if (preview) {
-                done.add(toDto(entry, null));
-                total = total.add(entry.getAmount());
+                done.add(row);
+                total = total.add(row.amount());
                 continue;
             }
             try {
-                JournalEntry cil = poster.post(entry.getId());
-                done.add(posted(entry, cil));
-                total = total.add(entry.getAmount());
+                done.add(poster.post(row.id()));
+                total = total.add(row.amount());
             } catch (RuntimeException e) {
-                // The entry's own transaction rolled back; this one did not, which is
-                // the whole point of posting each row through a separate bean.
+                // The entry's own transaction rolled back; there is no other one to
+                // take down with it, which is the whole point of the separate bean.
                 log.warn("Recognition entry {} ({}–{}) could not be posted: {}",
-                        entry.getId(), entry.getPeriodStart(), entry.getPeriodEnd(), e.getMessage());
-                errors.add("Entry " + entry.getPeriodStart() + "–" + entry.getPeriodEnd() + ": " + e.getMessage());
+                        row.id(), row.periodStart(), row.periodEnd(), e.getMessage());
+                errors.add("Entry " + row.periodStart() + "–" + row.periodEnd() + ": " + e.getMessage());
             }
         }
-        return new RecognitionRunResult(done.size(), total.setScale(2, java.math.RoundingMode.HALF_UP), done, errors);
+        return new RecognitionRunResult(done.size(), total.setScale(2, RoundingMode.HALF_UP), done, errors);
+    }
+
+    /** What a run has to decide about, read once and detached. */
+    private record Candidates(List<RecognitionEntryDTO> rows, LocalDate lockedThrough) {
+    }
+
+    /**
+     * The candidate rows and the period lock, in one short read-only transaction.
+     *
+     * <p>A {@code TransactionTemplate} rather than a {@code @Transactional} method
+     * on this class: {@link #runTo} is deliberately <em>not</em> transactional, and
+     * calling a transactional sibling from it would go through the object rather
+     * than the proxy and run with no transaction at all — which is also no tenant
+     * filter, since {@code TenantAspect} only enables it inside one.</p>
+     */
+    private Candidates candidates(LocalDate to) {
+        return readTx.execute(status -> new Candidates(toDtos(plannedThrough(to)), booksLockedThrough()));
     }
 
     // ------------------------------------------------------------------
@@ -270,20 +312,23 @@ public class RecognitionService {
             if (line.getChargeType() == null || line.getChargeType().getBehaviour() != ChargeBehaviour.RENT) continue;
             BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
             if (net.signum() <= 0) continue;
-            if (segments.existsByLeaseLine_IdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
+            if (segments.existsByLeaseLineIdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
 
             LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
             LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            // Refused, not skipped. The listener's own contract is that a contract
+            // whose income cannot be scheduled is a refusal the accountant sees when
+            // they press Post; skipping would park the rent in ADVANCE_RENT forever
+            // with no schedule and nothing to show for it.
             if (from == null || to == null || to.isBefore(from)) {
-                log.warn("Lease {} line {} has no usable recognition window ({} – {}); skipped",
-                        lease.getId(), line.getId(), from, to);
-                continue;
+                throw new BusinessRuleViolationException("Line " + line.getSeqNo()
+                        + " charges rent but has no usable period to recognise it over (" + from + " – " + to + ").");
             }
 
             RentSegment segment = new RentSegment();
             segment.setTenantId(lease.getTenantId());
             segment.setLease(lease);
-            segment.setLeaseLine(line);
+            segment.setLeaseLineId(line.getId());
             segment.setFromDate(from);
             segment.setToDate(to);
             segment.setAmount(net);
@@ -308,10 +353,19 @@ public class RecognitionService {
     }
 
     private List<RecognitionEntry> plannedThrough(LocalDate to) {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null) return List.of();
         return entries.findByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
-                tenantId, RecognitionStatus.PLANNED, to);
+                requireTenant(), RecognitionStatus.PLANNED, to);
+    }
+
+    /**
+     * The tenant the run is for. A job that forgot to set the context must not get
+     * an empty candidate list and a cheerful "0 posted" — that is a whole night of
+     * recognition silently not happening.
+     */
+    private static UUID requireTenant() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) throw new IllegalStateException("No tenant in context");
+        return tenantId;
     }
 
     /**
@@ -320,8 +374,7 @@ public class RecognitionService {
      * on first access — a write this must not perform from a read-only path.
      */
     private LocalDate booksLockedThrough() {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        return tenantId == null ? null : fiscalSettings.findById(tenantId)
+        return fiscalSettings.findById(requireTenant())
                 .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
     }
 
@@ -343,31 +396,13 @@ public class RecognitionService {
      */
     private List<RecognitionEntryDTO> toDtos(List<RecognitionEntry> rows) {
         List<UUID> journalIds = rows.stream()
-                .map(RecognitionEntry::getJournalId).filter(java.util.Objects::nonNull).distinct().toList();
-        Map<UUID, String> numbers = new java.util.HashMap<>();
+                .map(RecognitionEntry::getJournalId).filter(Objects::nonNull).distinct().toList();
+        Map<UUID, String> numbers = new HashMap<>();
         if (!journalIds.isEmpty()) {
             journals.findAllById(journalIds)
                     .forEach(j -> numbers.put(j.getId(), j.getEntryNumber()));
         }
         return rows.stream().map(r -> toDto(r, r.getJournalId() == null ? null : numbers.get(r.getJournalId()))).toList();
-    }
-
-    /**
-     * The row as it now stands, built from the journal rather than re-read.
-     *
-     * <p>{@link RecognitionPoster} committed in a transaction of its own, so the
-     * copy of the entry this transaction is holding is <em>stale</em>: still
-     * PLANNED, still journal-less. Mapping it straight would answer a month-end
-     * run with a list of rows that claim they were not posted — and re-reading it
-     * would get the same instance back out of the first-level cache anyway.</p>
-     */
-    private static RecognitionEntryDTO posted(RecognitionEntry r, JournalEntry cil) {
-        return new RecognitionEntryDTO(
-                r.getId(),
-                idOf(r.getLease(), Lease::getId),
-                idOf(r.getSegment(), RentSegment::getId),
-                r.getPeriodStart(), r.getPeriodEnd(), r.getDays(), r.getAmount(),
-                RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), cil.getPostedAt());
     }
 
     private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber) {

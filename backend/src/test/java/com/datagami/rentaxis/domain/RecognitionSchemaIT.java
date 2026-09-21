@@ -243,6 +243,44 @@ class RecognitionSchemaIT {
      * referential integrity are different guarantees, and this proves both
      * still hold together.
      */
+    /**
+     * Changeset 86: {@code rent_segments.lease_line_id} is required but no longer a
+     * foreign key.
+     *
+     * <p>Amending a posted lease deletes its lines, and the segments cut from them
+     * have to survive — a POSTED recognition entry explains a {@code CIL} that is
+     * still in the ledger. Keeping the column NOT NULL means a retired segment
+     * still records <em>which</em> line it came from, and means no segment, live or
+     * retired, can ever be line-less; dropping the FK is what lets the line go.</p>
+     */
+    @Test
+    void retiredSegmentsKeepARequiredButUnconstrainedLineId() {
+        assertThat(jdbc.queryForObject(
+                "SELECT is_nullable FROM information_schema.columns"
+                        + " WHERE table_name = 'rent_segments' AND column_name = 'lease_line_id'",
+                String.class)).isEqualTo("NO");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM information_schema.table_constraints tc"
+                        + " JOIN information_schema.key_column_usage k ON k.constraint_name = tc.constraint_name"
+                        + " WHERE tc.table_name = 'rent_segments' AND tc.constraint_type = 'FOREIGN KEY'"
+                        + " AND k.column_name = 'lease_line_id'",
+                Long.class)).isZero();
+
+        UUID t = tenant();
+        UUID l = lease(t, unit(t, property(t)), renter(t));
+        // The line this segment was cut from is gone, exactly as an amendment leaves it.
+        assertThatCode(() -> rentSegment(t, l, UUID.randomUUID(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31)))
+                .doesNotThrowAnyException();
+        // ...but "no line at all" is still refused.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO rent_segments (id, tenant_id, lease_id, lease_line_id, from_date, to_date, amount, days, day_rate)"
+                        + " VALUES (?,?,?,NULL,?,?,?,?,?)",
+                UUID.randomUUID(), t, l, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
+                new BigDecimal("1200.00"), 31, new BigDecimal("38.709677")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     @Test
     void foreignKeysRejectDanglingIds() {
         UUID t = tenant();
@@ -262,13 +300,16 @@ class RecognitionSchemaIT {
                 UUID.randomUUID(), t, bogus, line, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
                 new BigDecimal("1200.00"), 31, new BigDecimal("38.709677")));
 
-        // rent_segments.lease_line_id — nullable since changeset 86, but a
-        // dangling (non-null) id must still be rejected.
+        // rent_segments.lease_line_id is deliberately NOT in this list: changeset 86
+        // drops fk_rs_line, so a dangling id is accepted there by design. See
+        // retiredSegmentsKeepARequiredButUnconstrainedLineId for what replaces it.
+
+        // recognition_entries.lease_id — denormalised off the segment so the lease's
+        // schedule is one query, which makes it a second place the lease can be wrong.
         assertRejectsDanglingForeignKey(() -> jdbc.update(
-                "INSERT INTO rent_segments (id, tenant_id, lease_id, lease_line_id, from_date, to_date, amount, days, day_rate)"
-                        + " VALUES (?,?,?,?,?,?,?,?,?)",
-                UUID.randomUUID(), t, l, bogus, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
-                new BigDecimal("1200.00"), 31, new BigDecimal("38.709677")));
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount)"
+                        + " VALUES (?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), t, bogus, seg, LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28), 28, new BigDecimal("100.00")));
 
         // recognition_entries.segment_id
         assertRejectsDanglingForeignKey(() -> jdbc.update(

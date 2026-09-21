@@ -1,9 +1,11 @@
 package com.datagami.rentaxis.core.service.recognition;
 
+import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
-import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
@@ -15,6 +17,7 @@ import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -40,6 +43,11 @@ import java.util.UUID;
  * roll back the whole night's work. Separating the bean is the cheapest way to
  * go through the proxy.</p>
  *
+ * <p><b>The row is locked, not merely re-read.</b> See
+ * {@code RecognitionEntryRepository.lockById}: the nightly job and a hand-run
+ * close are exactly the pair that would otherwise both see {@code PLANNED} and
+ * both post.</p>
+ *
  * <p><b>The debit follows the line, not the role.</b> The deferral was credited
  * when the {@code TCO} was posted, to whatever account that line named; the
  * release has to debit the very same leaf or the two halves of one contract sit
@@ -55,27 +63,40 @@ public class RecognitionPoster {
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH);
 
     private final RecognitionEntryRepository entries;
+    private final LeaseLineRepository leaseLines;
     private final PostingService postingService;
     private final AccountResolver accountResolver;
 
     public RecognitionPoster(RecognitionEntryRepository entries,
+                             LeaseLineRepository leaseLines,
                              PostingService postingService,
                              AccountResolver accountResolver) {
         this.entries = entries;
+        this.leaseLines = leaseLines;
         this.postingService = postingService;
         this.accountResolver = accountResolver;
     }
 
     /**
-     * Post this entry and mark it POSTED. Runs in its own transaction, so a
-     * failure here leaves the rest of the run — and the row itself — untouched.
+     * Claim this entry, post its {@code CIL} and mark it POSTED. Runs in its own
+     * transaction, so a failure here leaves the rest of the run — and the row
+     * itself — untouched.
+     *
+     * @return the row as it now stands. Built here rather than by the caller
+     *         because this transaction is the only one that can see the committed
+     *         truth: the caller's copy of the entry, if it has one, is stale the
+     *         moment this returns, and re-reading it hands back the same
+     *         first-level-cache instance.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public JournalEntry post(UUID entryId) {
-        RecognitionEntry entry = entries.findById(entryId)
+    public RecognitionEntryDTO post(UUID entryId) {
+        RecognitionEntry entry = entries.lockById(entryId)
                 .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        // Checked under the lock, which is the whole point: the loser of a race
+        // blocks on the SELECT above and re-reads the winner's committed status here.
         if (entry.getStatus() != RecognitionStatus.PLANNED) {
-            throw new IllegalStateException("Recognition entry " + entryId + " is " + entry.getStatus());
+            throw new BusinessRuleViolationException(
+                    "Recognition entry " + entryId + " is already " + entry.getStatus());
         }
         RentSegment segment = entry.getSegment();
         Lease lease = entry.getLease();
@@ -98,7 +119,10 @@ public class RecognitionPoster {
         entry.setJournalId(cil.getId());
         entry.setPostedAt(Instant.now());
         entries.save(entry);
-        return cil;
+
+        return new RecognitionEntryDTO(entry.getId(), lease.getId(), segment.getId(),
+                entry.getPeriodStart(), entry.getPeriodEnd(), entry.getDays(), entry.getAmount(),
+                RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), entry.getPostedAt());
     }
 
     /**
@@ -106,15 +130,19 @@ public class RecognitionPoster {
      * account when it differs from the property's {@code ADVANCE_RENT} mapping —
      * see the class note — and the role otherwise, so an unmapped property still
      * produces the ledger's own "map this role" refusal rather than a null.
+     *
+     * <p>The line is read by id and may be gone: an amendment deletes a posted
+     * lease's lines, and changeset 86 lets the retired segment keep pointing at
+     * one. A cancelled segment has no entries left to post, so this is
+     * belt-and-braces rather than a live path.</p>
      */
     private PostingRequest.AccountRef deferralOf(RentSegment segment, Lease lease) {
-        LeaseLine line = segment.getLeaseLine();
-        Account lineAccount = line == null ? null : line.getCreditAccount();
+        Account lineAccount = leaseLines.findById(segment.getLeaseLineId())
+                .map(LeaseLine::getCreditAccount).orElse(null);
         if (lineAccount == null) {
             return new PostingRequest.ByRole(AccountRole.ADVANCE_RENT);
         }
-        UUID propertyId = propertyIdOf(lease);
-        Account mapped = accountResolver.resolveOrNull(AccountRole.ADVANCE_RENT, propertyId);
+        Account mapped = accountResolver.resolveOrNull(AccountRole.ADVANCE_RENT, propertyIdOf(lease));
         return mapped != null && mapped.getId().equals(lineAccount.getId())
                 ? new PostingRequest.ByRole(AccountRole.ADVANCE_RENT)
                 : new PostingRequest.ById(lineAccount.getId());

@@ -1,0 +1,38 @@
+databaseChangeLog:
+  # A retired rent segment outlives the lease line it was cut from.
+  #
+  # Amending a posted lease replaces its lines wholesale — LeaseService.applyLines
+  # is delete-then-insert and it *flushes* the delete before the amendment's event
+  # is published — so by the time RecognitionService.rebuildAfterAmend runs, the
+  # rows its segments point at are already gone. The segments themselves must not
+  # go with them: a POSTED recognition entry explains a CIL journal an auditor can
+  # still see, and the segment is where that entry's arithmetic came from.
+  #
+  # So the foreign key goes and the column stays NOT NULL. A cancelled segment
+  # keeps saying which line it was cut from — the audit link an amendment should
+  # record — and no segment, live or retired, can ever have no line at all. The
+  # alternative considered first (nullable + ON DELETE SET NULL) preserved strictly
+  # less: it erased exactly that link, and it left an ON DELETE behaviour that
+  # could in principle blank a live segment.
+  #
+  # The id is therefore a plain UUID, not a mapped association: RentSegment.leaseLineId
+  # is read back through LeaseLineRepository, which answers empty for a line an
+  # amendment deleted, and RecognitionPoster treats that the same way it treats a
+  # line with no credit account.
+  - changeSet:
+      id: 86-rent-segment-lease-line-no-fk
+      author: claude
+      changes:
+        - dropForeignKeyConstraint: { baseTableName: rent_segments, constraintName: fk_rs_line }
+      rollback:
+        # Non-destructive on purpose. The rows this changeset exists to protect are
+        # retired segments whose line is gone, and re-adding a validating FK would
+        # either fail on them or — worse, if the rollback "helpfully" deleted them —
+        # shred POSTED recognition entries whose journal_id points at a real,
+        # un-reversed CIL in the ledger. NOT VALID re-establishes the constraint for
+        # every future row and leaves the existing ones alone; an operator who wants
+        # them checked can VALIDATE CONSTRAINT once the data is reconciled.
+        - sql:
+            sql: |
+              ALTER TABLE rent_segments
+                ADD CONSTRAINT fk_rs_line FOREIGN KEY (lease_line_id) REFERENCES lease_lines (id) NOT VALID;

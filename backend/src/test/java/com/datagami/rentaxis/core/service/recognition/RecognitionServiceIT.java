@@ -30,6 +30,8 @@ import com.datagami.rentaxis.domain.entity.enums.SegmentStatus;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
@@ -51,8 +53,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.chequeRow;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
@@ -88,6 +96,8 @@ class RecognitionServiceIT {
     @Autowired AccountService accountService;
     @Autowired TenantFiscalSettingsService fiscal;
     @Autowired LeaseRepository leaseRepo;
+    @Autowired LeaseLineRepository lineRepo;
+    @Autowired AccountRepository accounts;
     @Autowired RentSegmentRepository segments;
     @Autowired RecognitionEntryRepository entriesRepo;
     @Autowired JournalEntryRepository journals;
@@ -160,9 +170,18 @@ class RecognitionServiceIT {
 
     /** An account's closing balance on this lease alone — a credit balance is negative. */
     private BigDecimal balanceOf(AccountRole role, UUID leaseId) {
-        UUID accountId = leaf(role).getId();
+        return balanceOf(leaf(role).getId(), leaseId);
+    }
+
+    private BigDecimal balanceOf(UUID accountId, UUID leaseId) {
         return tx.execute(s -> ledger.accountLedger(accountId,
                 new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null)).closingBalance());
+    }
+
+    private long cilCount() {
+        return jdbc.queryForObject(
+                "select count(*) from journal_entries where tenant_id = ? and doc_type = 'CIL'",
+                Long.class, fixtures.tenantId());
     }
 
     /**
@@ -428,6 +447,50 @@ class RecognitionServiceIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * The same amendment, with the segment already <em>managed</em> when the lines
+     * are deleted out from under it.
+     *
+     * <p>{@code applyLines} deletes the lease's lines and flushes, and Hibernate
+     * orders updates before deletes within a flush — so a {@code RentSegment}
+     * loaded before the amend, then dirtied by the rebuild, would write its
+     * {@code lease_line_id} back at exactly the wrong moment. Changeset 86 makes
+     * that a non-event by dropping {@code fk_rs_line}: the id is now a plain UUID
+     * that is allowed to name a line that no longer exists. This pins the
+     * behaviour instead of reasoning about flush ordering.</p>
+     */
+    @Test
+    void amendIsSafeWithTheSegmentAlreadyInThePersistenceContext() {
+        UUID leaseId = galah();
+        recognition.runTo(LocalDate.of(2026, 10, 31), false);
+        UUID originalLineId = segmentsOf(leaseId).get(0).getLeaseLineId();
+
+        setChequeTotalTo(leaseId, "62000");
+        tx.executeWithoutResult(s -> {
+            // Managed, and holding the id of a line the very next call deletes.
+            List<RentSegment> managed = segments.findByLease_IdOrderByFromDateAsc(leaseId);
+            assertThat(managed).hasSize(1);
+            assertThat(managed.get(0).getLeaseLineId()).isEqualTo(originalLineId);
+            posting.amendLines(leaseId,
+                    List.of(line("RENT", "60000"), line("ADMIN_FEE", "2000")), "Rent corrected");
+        });
+
+        List<RentSegment> after = segmentsOf(leaseId);
+        assertThat(after).hasSize(2);
+        // The retired segment still says which line it came from, even though that
+        // line is gone — the audit link an amendment ought to leave behind.
+        assertThat(after.get(0).getStatus()).isEqualTo(SegmentStatus.CANCELLED);
+        assertThat(after.get(0).getLeaseLineId()).isEqualTo(originalLineId);
+        boolean lineStillExists = Boolean.TRUE.equals(tx.execute(s -> lineRepo.existsById(originalLineId)));
+        assertThat(lineStillExists).as("the amendment deleted the line the segment names").isFalse();
+
+        assertThat(after.get(1).getStatus()).isEqualTo(SegmentStatus.ACTIVE);
+        assertThat(after.get(1).getAmount()).isEqualByComparingTo("60000");
+        assertThat(after.get(1).getLeaseLineId()).isNotEqualTo(originalLineId);
+        assertThat(schedule(leaseId)).filteredOn(r -> r.status() == RecognitionStatus.REVERSED).hasSize(2);
+        assertTrialBalanceBalances();
+    }
+
     // ------------------------------------------------------------------
     // extension
     // ------------------------------------------------------------------
@@ -542,6 +605,155 @@ class RecognitionServiceIT {
         assertThat(lines.get(0).getAccountId()).isEqualTo(leaf(AccountRole.ADVANCE_RENT).getId());
         assertThat(lines.get(1).getAccountId()).isEqualTo(other.getId());
         assertThat(lines.get(1).getAccountId()).isNotEqualTo(leaf(AccountRole.RENTAL_INCOME).getId());
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * "The debit follows the line, not the role" — the rule that stops a deferral
+     * being credited to one leaf and released from another.
+     *
+     * <p>A RENT line may name its own liability leaf instead of taking the
+     * property's {@code ADVANCE_RENT} mapping. The {@code TCO} then credits that
+     * leaf, and every {@code CIL} has to debit the same one; resolving the role
+     * afresh would release rent from an account the money was never parked in and
+     * strand the liability permanently.</p>
+     */
+    @Test
+    void theCilDebitsTheLinesOwnDeferralAccountNotTheRole() {
+        Account mapped = leaf(AccountRole.ADVANCE_RENT);
+        Account override = tx.execute(s -> accountService.createLeaf("Advance Rent - Block B",
+                accounts.findById(mapped.getId()).orElseThrow().getParent(), fixtures.property().getId()));
+        assertThat(override.getId()).isNotEqualTo(mapped.getId());
+
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(LeaseTestFixtures.lineCreditedTo("RENT", "51000", override.getId()),
+                        line("ADMIN_FEE", "2000")), 4, null)
+                .lease().getId();
+
+        // The TCO deferred into the override, so that is where the rent is parked.
+        assertThat(balanceOf(override.getId(), leaseId)).isEqualByComparingTo("-51000");
+        assertThat(balanceOf(mapped.getId(), leaseId)).isEqualByComparingTo("0");
+
+        recognition.runTo(LocalDate.of(2026, 9, 30), false);
+
+        List<JournalLine> lines = linesOf(schedule(leaseId).get(0).journalId());
+        assertThat(lines.get(0).getAccountId())
+                .as("the CIL releases from the account the TCO deferred into")
+                .isEqualTo(override.getId());
+        assertThat(lines.get(0).getAccountId()).isNotEqualTo(mapped.getId());
+        assertThat(lines.get(1).getAccountId()).isEqualTo(leaf(AccountRole.RENTAL_INCOME).getId());
+
+        // And the liability really moved: 51,000 less the first week's 978.08.
+        assertThat(balanceOf(override.getId(), leaseId)).isEqualByComparingTo("-50021.92");
+        assertThat(balanceOf(mapped.getId(), leaseId)).isEqualByComparingTo("0");
+        assertTrialBalanceBalances();
+    }
+
+    // ------------------------------------------------------------------
+    // failure isolation and concurrency
+    // ------------------------------------------------------------------
+
+    /**
+     * One lease that cannot post must cost that lease its month and nothing else.
+     *
+     * <p>This is what the per-entry {@code REQUIRES_NEW} transaction buys. Without
+     * it — with the posts sharing one transaction spanning the loop — the first
+     * refusal marks that transaction rollback-only, the caught exception hides it,
+     * and the run reports a cheerful success whose commit then throws away every
+     * journal it wrote.</p>
+     */
+    @Test
+    void oneUnpostableEntryDoesNotStopTheRest() {
+        UUID good = galah();
+
+        // A second lease on its own unit, pointed at an income account that is then
+        // retired. PostingService refuses an inactive account by name, so the
+        // failure is deterministic and is *not* the locked-period pre-check — that
+        // one never reaches the poster at all.
+        Account retired = leaf(AccountRole.OTHER_INCOME);
+        UUID bad = fixtures.postedLease(fixtures.createUnit(fixtures.property(), "102"),
+                fixtures.createRenter("Second Renter"), CONTRACT_DATE, START, END,
+                List.of(line("RENT", "36500")), 4, null).lease().getId();
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(bad).orElseThrow();
+            lease.setIncomeAccountId(retired.getId());
+            leaseRepo.save(lease);
+        });
+        jdbc.update("update accounts set is_active = false where id = ?", retired.getId());
+
+        RecognitionService.RecognitionRunResult result = recognition.runTo(LocalDate.of(2026, 9, 30), false);
+
+        assertThat(result.posted()).isEqualTo(1);
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0)).contains("inactive account");
+        assertThat(result.entries()).singleElement()
+                .satisfies(r -> assertThat(r.leaseId()).isEqualTo(good));
+
+        assertThat(schedule(good).get(0).status()).isEqualTo(RecognitionStatus.POSTED);
+        assertThat(schedule(good).get(0).journalId()).isNotNull();
+        assertThat(schedule(bad).get(0).status()).isEqualTo(RecognitionStatus.PLANNED);
+        assertThat(schedule(bad).get(0).journalId()).isNull();
+
+        // Exactly one CIL exists, and it belongs to the lease that could post.
+        assertThat(cilCount()).isEqualTo(1L);
+        assertThat(balanceOf(AccountRole.RENTAL_INCOME, good)).isEqualByComparingTo("-978.08");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * Two runs over the same date post each entry exactly once.
+     *
+     * <p>The nightly job and a hand-run month-end close are the pair the spec
+     * describes, and under READ COMMITTED both would otherwise read the same row
+     * as {@code PLANNED} and both write a {@code CIL} — rent recognised twice,
+     * the liability over-released, one orphaned journal nothing points at, and a
+     * trial balance that still balances so nothing downstream notices. The
+     * {@code FOR UPDATE} in {@code lockById} is what serialises them.</p>
+     */
+    @Test
+    void concurrentRunsPostEachEntryExactlyOnce() throws Exception {
+        UUID leaseId = galah();
+        UUID tenantId = fixtures.tenantId();
+        LocalDate to = LocalDate.of(2027, 12, 31);   // every one of the 13 rows
+
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<RecognitionService.RecognitionRunResult>> runs = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                runs.add(pool.submit(() -> {
+                    // The tenant and the authentication are thread-locals; a worker
+                    // that inherits neither resolves to "sees nothing".
+                    TenantContextHolder.setTenantId(tenantId);
+                    LeaseTestFixtures.authenticateAsTenantAdmin();
+                    try {
+                        go.await();
+                        return recognition.runTo(to, false);
+                    } finally {
+                        TenantContextHolder.clear();
+                        LeaseTestFixtures.clearAuth();
+                    }
+                }));
+            }
+            go.countDown();
+
+            int posted = 0;
+            for (Future<RecognitionService.RecognitionRunResult> run : runs) {
+                posted += run.get(60, TimeUnit.SECONDS).posted();
+            }
+            // Between them the two runs did the work once, not twice.
+            assertThat(posted).isEqualTo(13);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(cilCount()).as("one CIL per entry, never two").isEqualTo(13L);
+        assertThat(jdbc.queryForObject(
+                "select count(distinct source_id) from journal_entries where tenant_id = ? and source_type = 'RECOGNITION'",
+                Long.class, tenantId)).isEqualTo(13L);
+        assertThat(schedule(leaseId)).allSatisfy(r ->
+                assertThat(r.status()).isEqualTo(RecognitionStatus.POSTED));
+        assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("-51000.00");
         assertTrialBalanceBalances();
     }
 
