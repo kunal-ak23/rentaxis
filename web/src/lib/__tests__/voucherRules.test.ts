@@ -56,7 +56,7 @@ describe("role gate", () => {
 });
 
 describe("line accounts", () => {
-    // VoucherService.validate :397-402 and requirePostable :294-298
+    // VoucherService.validate :404-409 and requirePostable :301-305
     it("allows only an active EXPENSE or ASSET leaf on a purchase-invoice line", () => {
         expect(isLineAccountAllowed("PISR", account({ accountType: "EXPENSE" }))).toBe(true);
         expect(isLineAccountAllowed("PISR", account({ accountType: "ASSET" }))).toBe(true);
@@ -66,7 +66,7 @@ describe("line accounts", () => {
         expect(isLineAccountAllowed("PISR", account({ active: false }))).toBe(false);
     });
 
-    // VoucherService.java:317-318 — "A BPV line may be any leaf".
+    // VoucherService.java:324-325 — "A BPV line may be any leaf".
     it("allows any active leaf on a payment-voucher line", () => {
         expect(isLineAccountAllowed("BPV", account({ accountType: "LIABILITY" }))).toBe(true);
         expect(isLineAccountAllowed("BPV", account({ group: true }))).toBe(false);
@@ -108,21 +108,21 @@ describe("draftRefusal", () => {
         ).toBeNull();
     });
 
-    // VoucherService.validate :364-372
+    // VoucherService.validate :371-379
     it("refuses a purchase invoice with no vendor", () => {
         expect(
             draftRefusal({ type: "PISR", vendorId: "", paymentAccountId: null, lines: [expenseLine] }),
         ).toBe("vendorRequired");
     });
 
-    // VoucherService.validate :373-376
+    // VoucherService.validate :380-383
     it("refuses a payment voucher with no payment account", () => {
         expect(
             draftRefusal({ type: "BPV", vendorId: "", paymentAccountId: null, lines: [{ ...expenseLine, vatRate: 0 }] }),
         ).toBe("paymentAccountRequired");
     });
 
-    // VoucherLineInputDTO's @NotNull @Positive amount, and validate :391-393
+    // VoucherLineInputDTO's @NotNull @Positive amount, and validate :398-400
     it("refuses a line with no account or a non-positive amount", () => {
         expect(
             draftRefusal({ type: "PISR", vendorId: "v1", paymentAccountId: null, lines: [{ accountId: "", amount: 100, vatRate: 5 }] }),
@@ -174,14 +174,14 @@ describe("draftRefusal", () => {
 });
 
 describe("status", () => {
-    // VoucherService.requireDraft :346-352
+    // VoucherService.requireDraft :353-359
     it("lets only a DRAFT be edited or deleted", () => {
         expect(canEditVoucher("DRAFT")).toBe(true);
         expect(canEditVoucher("POSTED")).toBe(false);
         expect(canEditVoucher("REVERSED")).toBe(false);
     });
 
-    // VoucherService.amend :213-216
+    // VoucherService.amend :220-223
     it("lets only a POSTED voucher be amended", () => {
         expect(canAmendVoucher("POSTED")).toBe(true);
         expect(canAmendVoucher("DRAFT")).toBe(false);

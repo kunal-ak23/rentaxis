@@ -9,6 +9,7 @@ import {
     ShieldCheck,
     BookOpen,
     Receipt,
+    ReceiptText,
     Home,
     FileText,
     Contact,
@@ -59,6 +60,7 @@ export default function MvpSidebar() {
     const tPromotions = useTranslations("Promotions");
     const tLedger = useTranslations("Ledger");
     const tRecognition = useTranslations("Recognition");
+    const tVouchers = useTranslations("Vouchers");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -141,6 +143,16 @@ export default function MvpSidebar() {
             { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
             { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
             { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
+        ] : []),
+        // Vouchers sit in this branch, not in canAccessFinanceOps, because
+        // VoucherController's single class-level @PreAuthorize is
+        // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT') — the same set
+        // canAccessFinance carries, and NOT the SA/TA-only set the operational
+        // pages below use. Its own gate all the same: canManageVouchers mirrors
+        // that one annotation, so a future widening of the ledger's roles is not
+        // silently a widening of the voucher screens'.
+        ...(hasPermission(userRole, 'canManageVouchers') ? [
+            { name: tVouchers("vouchers"), href: "/dashboard/finance/vouchers", icon: ReceiptText, tourId: 'sidebar-vouchers' },
         ] : []),
         // The month-end close. Its own gate rather than canAccessFinance because
         // the two endpoints behind the page (RecognitionController's

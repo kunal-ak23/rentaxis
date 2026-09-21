@@ -20,12 +20,12 @@ import type { EditableVoucherType, VoucherStatus } from "@/lib/api/vouchers";
 // ---- line accounts ----
 
 /**
- * `core/service/voucher/VoucherService.java:397-402` (draft) and `:294-298`
+ * `core/service/voucher/VoucherService.java:404-409` (draft) and `:301-305`
  * (post): a purchase-invoice line buys an expense or an asset — never income,
- * never a liability. A payment-voucher line may be any leaf (`:317-318`): a
+ * never a liability. A payment-voucher line may be any leaf (`:324-325`): a
  * vendor payable being settled, an expense paid without an invoice, a salary.
  *
- * Both are further narrowed by `requireLeaf` (`:415-426`) to an active, non-group
+ * Both are further narrowed by `requireLeaf` (`:422-433`) to an active, non-group
  * account.
  */
 const PISR_LINE_TYPES: AccountType[] = ["EXPENSE", "ASSET"];
@@ -44,7 +44,7 @@ export function isLineAccountAllowed(type: EditableVoucherType, a: Account | nul
 
 /**
  * `core/service/cheque/ChequeService.java:1437-1441`, re-asserted for vouchers at
- * `VoucherService.java:382-386` (draft) and `:319-328` (post): an active,
+ * `VoucherService.java:389-393` (draft) and `:326-335` (post): an active,
  * non-group ASSET leaf whose sub-type is BANK or CASH, and nothing else.
  *
  * `components/finance/SettlementAccountPicker.tsx` is the picker built on this
@@ -65,13 +65,13 @@ export function isPaymentAccountAllowed(a: Account | null | undefined): boolean 
 /**
  * `VoucherService.ALLOWED_VAT_RATES` (`:56-57`): the UAE standard rate is 5%;
  * zero-rated and exempt supplies are 0. Nothing else is legal today, and
- * `:409-411` refuses anything else.
+ * `:416-418` refuses anything else.
  */
 export const ALLOWED_VAT_RATES = [0, 5] as const;
 
 /**
- * `VoucherService.BPV_VAT_REFUSAL` (`:64-65`), checked at draft (`:406-408`) and
- * again at post (`:299-301`): a payment voucher's line carries no VAT — the VAT
+ * `VoucherService.BPV_VAT_REFUSAL` (`:64-65`), checked at draft (`:413-415`) and
+ * again at post (`:306-308`): a payment voucher's line carries no VAT — the VAT
  * belongs to the purchase invoice the payment settles.
  *
  * Which is why the BPV form renders no VAT column at all: a field whose only
@@ -120,18 +120,18 @@ export type DraftRefusal =
     | "otherVendorPayable";
 
 export function draftRefusal(d: DraftShape): DraftRefusal | null {
-    // VoucherInputDTO's @NotEmpty lines / VoucherService.validate:361-363.
+    // VoucherInputDTO's @NotEmpty lines / VoucherService.validate:368-370.
     if (d.lines.length === 0) return "noLines";
-    // validate:364-372 — and the vendor must have a payable account, which the
+    // validate:371-379 — and the vendor must have a payable account, which the
     // server checks; the form only offers vendors, so that half is server-side.
     if (d.type === "PISR" && !d.vendorId) return "vendorRequired";
-    // validate:373-376.
+    // validate:380-383.
     if (d.type === "BPV" && !d.paymentAccountId) return "paymentAccountRequired";
 
     for (const l of d.lines) {
-        // validate:389 and VoucherLineInputDTO's @NotNull accountId.
+        // validate:396 and VoucherLineInputDTO's @NotNull accountId.
         if (!l.accountId) return "lineAccountRequired";
-        // validate:391-393 and VoucherLineInputDTO's @NotNull @Positive amount.
+        // validate:398-400 and VoucherLineInputDTO's @NotNull @Positive amount.
         if (!(l.amount > 0)) return "lineAmountRequired";
         // BPV_VAT_REFUSAL.
         if (d.type === "BPV" && l.vatRate !== 0) return "bpvNoVat";
@@ -158,12 +158,12 @@ export function draftRefusal(d: DraftShape): DraftRefusal | null {
 
 // ---- status ----
 
-/** `VoucherService.requireDraft` (`:346-352`): only a DRAFT may be edited or deleted. */
+/** `VoucherService.requireDraft` (`:353-359`): only a DRAFT may be edited or deleted. */
 export function canEditVoucher(status: VoucherStatus): boolean {
     return status === "DRAFT";
 }
 
-/** `VoucherService.amend` (`:213-216`): "Only a POSTED voucher can be amended". */
+/** `VoucherService.amend` (`:220-223`): "Only a POSTED voucher can be amended". */
 export function canAmendVoucher(status: VoucherStatus): boolean {
     return status === "POSTED";
 }

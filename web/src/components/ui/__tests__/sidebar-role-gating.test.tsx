@@ -91,6 +91,9 @@ describe("sidebar finance gating", () => {
         expect(links).toEqual(expect.arrayContaining([
             "/dashboard/finance/accounts",
             "/dashboard/finance/journals",
+            // VoucherController is SA/TA/ACCOUNTANT, like the ledger pages —
+            // not SA/TA like Vendors and Bank Accounts below.
+            "/dashboard/finance/vouchers",
             "/dashboard/finance/general-ledger",
             "/dashboard/finance/tenant-ledger",
             "/dashboard/finance/trial-balance",
@@ -123,6 +126,7 @@ describe("sidebar finance gating", () => {
 
         expect(links).toEqual(expect.arrayContaining([
             "/dashboard/finance/accounts",
+            "/dashboard/finance/vouchers",
             "/dashboard/finance/cheques",
             "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",
