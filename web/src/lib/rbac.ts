@@ -195,6 +195,15 @@ export const PERMISSIONS = {
     // controller. NOTE the template download on that same page is narrower
     // still (SA/TA) — see cutoverRules.canDownloadImportTemplate.
     canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Opening balances and the reconciliation report. Mirrors
+    // OpeningBalanceController's class-level @PreAuthorize
+    // (OpeningBalanceController.java:57), which covers all six handlers:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    // Spec §11 puts "OB" in that list explicitly — opening the books writes a
+    // journal covering every account the organisation has, so PROPERTY_MANAGER
+    // is absent. Its own key for the same reason as the neighbours above: same
+    // set today, a different annotation on a different controller.
+    canManageOpeningBalances: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

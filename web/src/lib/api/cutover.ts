@@ -1,4 +1,8 @@
 import { apiGet, apiSend } from "@/lib/api/ledger";
+import { throwIfNotOk } from "@/lib/api/facilities";
+import type { AccountRole } from "@/lib/api/ledger";
+
+const BASE = "/api/proxy/v1";
 
 /**
  * The cut-over client (spec §10.3, §11).
@@ -10,8 +14,10 @@ import { apiGet, apiSend } from "@/lib/api/ledger";
  * `BulkPostResult`; neither exists in the backend, and a button wired to a route
  * that is not there is the 404 this project refuses to ship.
  *
- * Opening balances and reconciliation are deliberately absent: those endpoints
- * are being written right now and will be typed against the real Java in Task 15.
+ * Opening balances and the reconciliation report were added in task 15 against
+ * `api/OpeningBalanceController.java` and `api/dto/cutover/*`. The contract-import
+ * upload, the cut-over template and the bulk post are still deliberately absent —
+ * those routes do not exist yet.
  */
 
 // ---- enums (domain/entity/enums/ImportBatchKind.java, ImportBatchStatus.java) ----
@@ -50,6 +56,106 @@ export type ImportBatch = {
 /** `ImportBatchController.ReverseBatchDTO` — `date` is `@NotNull`, `reason` is free text. */
 export type ReverseBatchInput = { date: string; reason: string };
 
+// ---- opening balances (api/OpeningBalanceController.java) ----
+
+/**
+ * `OpeningBalanceRowDTO`. One account of the chart, with whatever figure the
+ * snapshot holds for it.
+ *
+ * `derived` means the contract import produces this account's balance, so the
+ * API refuses a hand-typed figure for it (`OpeningBalanceService.setRow:256-260`)
+ * — the screen shows it read-only and `derivedRole` is what to tell the
+ * accountant when they ask why.
+ */
+export type OpeningBalanceRow = {
+    accountId: string;
+    code: string;
+    name: string;
+    accountType: string;
+    propertyId: string | null;
+    derived: boolean;
+    derivedRole: AccountRole | null;
+    enteredDebit: number;
+    enteredCredit: number;
+};
+
+/**
+ * `OpeningBalanceGridDTO` — the whole screen in one response.
+ *
+ * `asOf` is the books start date minus one day, computed by the server
+ * (`OpeningBalanceService.asOf:503-510`) and never by this client. `posted` and
+ * `journalNumber` say whether a live OB journal exists, which is what decides
+ * between Post and Replace. `difference` is `totalDebit - totalCredit` over the
+ * entered figures and closes against OPENING_BALANCE_DIFFERENCE when the journal
+ * is written — a non-zero one is normal, not an error. `problems` are
+ * configuration faults that would make posting fail, listed so the screen can say
+ * so before anyone presses Post.
+ */
+export type OpeningBalanceGrid = {
+    asOf: string;
+    posted: boolean;
+    journalId: string | null;
+    journalNumber: string | null;
+    rows: OpeningBalanceRow[];
+    totalDebit: number;
+    totalCredit: number;
+    difference: number;
+    problems: string[];
+};
+
+/**
+ * `ManualOpeningBalanceDTO`. Both fields are boxed and optional: `{debit: 5000}`
+ * means "debit 5,000, credit nothing", and a body with neither clears the row.
+ */
+export type ManualOpeningBalanceInput = { debit: number | null; credit: number | null };
+
+/**
+ * `SnapshotUploadResultDTO`.
+ *
+ * `unmatchedCodes` are stored but unrecognised — PACT accounts our chart has no
+ * equivalent for. They are not an error: they appear on the reconciliation report
+ * so the accountant can decide whether to create the account or ignore the
+ * balance. `problems` are lines that could not be read at all, each carrying the
+ * file line number.
+ */
+export type SnapshotUploadResult = {
+    stored: number;
+    unmatchedCodes: string[];
+    problems: string[];
+};
+
+/** `OpeningBalanceController.PostedJournalDTO` — enough for a toast and a link to the GL. */
+export type PostedJournal = { id: string; entryNumber: string; entryDate: string };
+
+/** `OpeningBalanceController.RepostObDTO` — why the books are being opened again. */
+export type RepostInput = { reason: string };
+
+/**
+ * `OpeningBalanceController.ReverseObDTO`. `date` is optional and defaults to the
+ * cut-over date: the opening journal is dated the day before the books open and
+ * its mirror belongs on the same day.
+ */
+export type ReverseObInput = { date?: string | null; reason: string };
+
+/**
+ * `ReconciliationRowDTO`.
+ *
+ * Both balances are signed debit-positive, the same convention
+ * `TrialBalanceRowDTO.balance` uses, so a credit-balance account reads negative on
+ * both sides and `difference` still means `derivedBalance - pactBalance`.
+ * `accountId` is null for a PACT code our chart has no account for — the row is
+ * kept so nothing is silently lost.
+ */
+export type ReconciliationRow = {
+    accountId: string | null;
+    code: string;
+    name: string;
+    derived: boolean;
+    derivedBalance: number;
+    pactBalance: number;
+    difference: number;
+};
+
 // ---- the client ----
 
 export const cutoverApi = {
@@ -66,4 +172,32 @@ export const cutoverApi = {
         reverse: (id: string, body: ReverseBatchInput) =>
             apiSend<ImportBatch>("POST", `/finance/import-batches/${id}/reverse`, body),
     },
+    openingBalances: {
+        grid: () => apiGet<OpeningBalanceGrid>("/finance/opening-balances"),
+        /** `PUT /opening-balances/{accountId}` -> 204. Refused for a derived or group account. */
+        setRow: (accountId: string, body: ManualOpeningBalanceInput) =>
+            apiSend<void>("PUT", `/finance/opening-balances/${accountId}`, body),
+        /**
+         * Multipart with a single `file` part. No `Content-Type` header is set
+         * deliberately — only the browser can write the multipart boundary. The
+         * server replaces the stored snapshot wholesale: a re-upload is a
+         * correction of the whole file, not an addition to it.
+         */
+        uploadSnapshot: async (file: File) => {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`${BASE}/finance/opening-balances/snapshot`, { method: "POST", body: fd });
+            await throwIfNotOk(res);
+            return res.json() as Promise<SnapshotUploadResult>;
+        },
+        /** Opens the books. Refused when they are already open — `repost` is the way to replace. */
+        post: () => apiSend<PostedJournal>("POST", "/finance/opening-balances/post"),
+        /** Reverses the live OB journal and posts a corrected one, in one transaction. */
+        repost: (body: RepostInput) => apiSend<PostedJournal>("POST", "/finance/opening-balances/repost", body),
+        /** Takes the OB journal off the books, leaving the grid's figures in place. */
+        reverse: (body: ReverseObInput) =>
+            apiSend<PostedJournal>("POST", "/finance/opening-balances/reverse", body),
+    },
+    reconciliation: () => apiGet<ReconciliationRow[]>("/finance/reconciliation"),
 };
+

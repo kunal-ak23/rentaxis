@@ -11,6 +11,7 @@ import {
     Receipt,
     ReceiptText,
     Layers,
+    GitCompare,
     Home,
     FileText,
     Contact,
@@ -161,13 +162,16 @@ export default function MvpSidebar() {
         // SA/TA-only one below; its own key all the same, mirroring that one
         // annotation. The template download ON the page is narrower still (SA/TA)
         // and is gated there, not here.
-        //
-        // TODO(plan 4 task 15): add Opening Balances and Reconciliation here when
-        // their pages exist. The brief lists them now, but their endpoints are
-        // still being written and a nav item pointing at a 404 is precisely the
-        // class of bug this sidebar's role gating exists to prevent.
         ...(hasPermission(userRole, 'canManageImportBatches') ? [
             { name: tCutover("importBatches"), href: "/dashboard/finance/import-batches", icon: Layers, tourId: 'sidebar-import-batches' },
+        ] : []),
+        // OpeningBalanceController is SA/TA/ACCOUNTANT too, on its own annotation
+        // (OpeningBalanceController.java:57) — hence its own key rather than a
+        // reuse of the batches one. Both pages sit behind it: the reconciliation
+        // report is the same controller.
+        ...(hasPermission(userRole, 'canManageOpeningBalances') ? [
+            { name: tCutover("openingBalances"), href: "/dashboard/finance/opening-balances", icon: Scale, tourId: 'sidebar-opening-balances' },
+            { name: tCutover("reconciliation"), href: "/dashboard/finance/reconciliation", icon: GitCompare, tourId: 'sidebar-reconciliation' },
         ] : []),
         // The month-end close. Its own gate rather than canAccessFinance because
         // the two endpoints behind the page (RecognitionController's

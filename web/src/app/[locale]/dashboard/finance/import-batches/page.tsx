@@ -7,7 +7,7 @@ import { Download, Layers, ShieldCheck, Undo2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
-import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
 import { cutoverApi, type ImportBatch, type ImportBatchStatus } from "@/lib/api/cutover";
 import { canDownloadImportTemplate, canReverseBatch, isBatchFinal } from "@/lib/cutoverRules";
@@ -49,12 +49,6 @@ const STATUS_CLASS: Record<ImportBatchStatus, string> = {
     POSTED: "bg-success/10 text-success border-success/30",
     REVERSED: "bg-warning/10 text-warning border-warning/30",
 };
-
-const pad = (n: number) => String(n).padStart(2, "0");
-function todayIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export default function ImportBatchesPage() {
     const t = useTranslations("Cutover");
@@ -307,6 +301,9 @@ export default function ImportBatchesPage() {
                 confirmText={t("reverseBatch")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-reverse-batch"
+                // ReverseBatchDTO.date is @NotNull and ImportBatchService.reverse
+                // refuses a null one, so an emptied field must not travel.
+                confirmDisabled={!reverseDate}
             >
                 <p className="text-xs text-muted">{t("reverseBatchHint")}</p>
                 <div>
@@ -341,6 +338,11 @@ export default function ImportBatchesPage() {
                         onChange={e => setReason(e.target.value)}
                     />
                 </div>
+                {!reverseDate && (
+                    <p data-testid="batch-reverse-blocker" className="text-xs font-semibold text-warning">
+                        {t("reverseDateRequired")}
+                    </p>
+                )}
                 {reverseError && (
                     <p role="alert" data-testid="batch-reverse-error" className="text-xs font-semibold text-error">
                         {reverseError}

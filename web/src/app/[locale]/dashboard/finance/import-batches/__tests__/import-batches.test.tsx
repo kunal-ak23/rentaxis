@@ -146,6 +146,24 @@ describe("import batches list", () => {
         expect(screen.getByTestId("confirm-reverse-batch")).toBeEnabled();
     });
 
+    /**
+     * `ReverseBatchDTO.date` is `@NotNull` (ImportBatchController.java:52) and
+     * `ImportBatchService.reverse:181` refuses a null one — so an empty date
+     * field must not reach the server.
+     */
+    it("will not reverse without a date", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-posted");
+        fireEvent.click(screen.getByTestId("reverse-batch-b-posted"));
+
+        fireEvent.change(await screen.findByTestId("batch-reverse-date"), { target: { value: "" } });
+        await waitFor(() => expect(screen.getByTestId("confirm-reverse-batch")).toBeDisabled());
+        expect(screen.getByTestId("batch-reverse-blocker")).toHaveTextContent(en.Cutover.reverseDateRequired);
+
+        fireEvent.change(screen.getByTestId("batch-reverse-date"), { target: { value: "2026-09-30" } });
+        await waitFor(() => expect(screen.getByTestId("confirm-reverse-batch")).toBeEnabled());
+    });
+
     /** "This import batch is being reversed right now; try again" — RowLockedException. */
     it("surfaces the server's refusal when a reverse is rejected", async () => {
         api.reverse.mockRejectedValue(

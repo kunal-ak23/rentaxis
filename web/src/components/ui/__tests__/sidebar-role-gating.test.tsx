@@ -96,6 +96,9 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/vouchers",
             // ImportBatchController is SA/TA/ACCOUNTANT, like the ledger pages.
             "/dashboard/finance/import-batches",
+            // OpeningBalanceController is SA/TA/ACCOUNTANT on its own annotation.
+            "/dashboard/finance/opening-balances",
+            "/dashboard/finance/reconciliation",
             "/dashboard/finance/general-ledger",
             "/dashboard/finance/tenant-ledger",
             "/dashboard/finance/trial-balance",
@@ -113,9 +116,6 @@ describe("sidebar finance gating", () => {
         const links = hrefs(container);
 
         for (const href of [
-            // Not built yet — the sidebar must not point at a 404 (TODO in MvpSidebar).
-            "/dashboard/finance/opening-balances",
-            "/dashboard/finance/reconciliation",
             "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",
             "/dashboard/staff",
@@ -133,6 +133,8 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/accounts",
             "/dashboard/finance/vouchers",
             "/dashboard/finance/import-batches",
+            "/dashboard/finance/opening-balances",
+            "/dashboard/finance/reconciliation",
             "/dashboard/finance/cheques",
             "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",

@@ -1,6 +1,8 @@
 import { apiGet, apiSend, qs } from "@/lib/api/ledger";
 import { throwIfNotOk } from "@/lib/api/facilities";
 import type { Page } from "@/lib/api/ledger";
+// One definition of HALF_UP-to-2dp for the whole app; see lib/money.ts.
+import { round2 } from "@/lib/money";
 
 /**
  * Purchase/Service Invoices (PISR) and Bank/Cash Payment Vouchers (BPV) — spec
@@ -149,16 +151,6 @@ export type VoucherQuery = {
 };
 
 // ---- arithmetic that has to agree with the server, to the fil ----
-
-/** Two decimals, HALF_UP — the shape `BigDecimal.setScale(2, HALF_UP)` gives. */
-function round2(n: number): number {
-    // `Number.EPSILON * n` nudges a value that binary floating point has stored
-    // a hair BELOW its decimal .xx5 (100.10 * 5 / 100 is 5.00499999…) back onto
-    // the boundary, so Math.round takes it up exactly where HALF_UP does. The
-    // nudge is proportional, not absolute, so it stays negligible at invoice
-    // magnitudes and cannot move a value that is not already on the boundary.
-    return Math.round((n + Math.sign(n) * Math.abs(n) * Number.EPSILON) * 100) / 100;
-}
 
 /**
  * VAT on ONE line: `amount * rate/100`, HALF_UP to 2dp.
