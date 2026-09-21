@@ -209,6 +209,24 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     Optional<Lease> findByIdScopedToTenant(@Param("id") UUID id);
 
     /**
+     * The lease's status as the <em>database</em> has it, not as this transaction's
+     * first-level cache has it.
+     *
+     * <p>A scalar projection on purpose (review M-1). Loading the entity — however
+     * it is loaded, including through a locking finder — is answered from the
+     * persistence context when the row is already managed, so it hands back the
+     * status that was read the first time. {@code ChequeService}'s close hook is
+     * exactly that case: the lease arrives through {@code cheque.getLease()}, which
+     * may have been resolved before the transition began, and a lease read ACTIVE
+     * for a row that is now TERMINATED with its settlement finalised skips a close
+     * that should have happened. A scalar query is not resolved through the context,
+     * so this always sees the committed row, and it costs one cheap select instead
+     * of the row lock the hook only wants to take when the answer is interesting.</p>
+     */
+    @Query("SELECT l.status FROM Lease l WHERE l.id = :id")
+    Optional<LeaseStatus> findStatusById(@Param("id") UUID id);
+
+    /**
      * Pessimistic write lock on the lease row, taken before posting reads its
      * status. Two accountants hitting <em>Post</em> on the same contract at the
      * same moment both read {@code DRAFT}, both write a TCO and a full set of

@@ -40,6 +40,10 @@ import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.LockTimeoutException;
+import jakarta.persistence.PessimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -145,18 +149,34 @@ public class ChequeService {
 
     /**
      * A tenancy that has ended, and might therefore be finished with the moment its
-     * register empties — the cheap pre-check in {@link #closeIfThisWasTheLastOne}
-     * before {@link LeaseClosureService} is asked the real question.
+     * books go flat — the cheap pre-check in {@link #closeIfThisWasTheLastOne}
+     * before {@link LeaseClosureService} is asked the real question. It mirrors that
+     * class's own {@code ENDED} set, RENEWED included (spec §6.6).
      */
     private static final Set<LeaseStatus> COULD_CLOSE =
-            EnumSet.of(LeaseStatus.TERMINATED, LeaseStatus.EXPIRED);
+            EnumSet.of(LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
 
     /**
-     * A contract that has ended and is being settled. Its register is closed to
-     * everything but {@link #addCollectionRow}.
+     * A contract that has <b>ended</b> and may therefore still acquire the one row
+     * nobody typed: a settlement's balance due. Its register is closed to everything
+     * else.
+     *
+     * <p>Named for what it gates rather than for the settlement, because
+     * {@code SettlementService} has a set of the same old name with <em>different</em>
+     * members — RENEWED is settleable there (spec §6.6) and needs no entry here,
+     * since {@link #POSTED} already admits it. Two sets called SETTLEABLE that are
+     * not the same set is how a reader concludes they are.</p>
+     *
+     * <p><b>CLOSED is not here</b> (review M-3). Closure requires a FINALIZED
+     * settlement, so a CLOSED lease cannot be the one raising a balance-due row;
+     * and if it somehow were, the row it created could never be received — every
+     * transition on a closed contract is refused, which is a collection row nobody
+     * can collect. RENEWED needs no entry either: a predecessor settled instead of
+     * carrying its deposit forward (spec §6.6) can owe a balance like any other, and
+     * {@link #POSTED} already admits it.</p>
      */
-    private static final Set<LeaseStatus> SETTLEABLE = EnumSet.of(
-            LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.CLOSED);
+    private static final Set<LeaseStatus> ENDED_BUT_COLLECTABLE = EnumSet.of(
+            LeaseStatus.TERMINATED, LeaseStatus.EXPIRED);
 
     private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;
@@ -170,6 +190,7 @@ public class ChequeService {
     private final PenaltyAssessmentRepository penaltyAssessments;
     private final LeaseClosureService closure;
     private final ApplicationEventPublisher events;
+    private final EntityManager entityManager;
 
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
@@ -190,7 +211,8 @@ public class ChequeService {
                          @Lazy PenaltyRuleEngine penaltyRules,
                          PenaltyAssessmentRepository penaltyAssessments,
                          LeaseClosureService closure,
-                         ApplicationEventPublisher events) {
+                         ApplicationEventPublisher events,
+                         EntityManager entityManager) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseEventRepository = leaseEventRepository;
@@ -203,6 +225,7 @@ public class ChequeService {
         this.penaltyAssessments = penaltyAssessments;
         this.closure = closure;
         this.events = events;
+        this.entityManager = entityManager;
     }
 
     // ------------------------------------------------------------------
@@ -462,6 +485,7 @@ public class ChequeService {
         // read the same maximum and both claim the same position.
         lockLease(lease.getId());
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
+        requireNotAlreadySettled(lease, bounced);
 
         List<ChequeRowInput> rows = request.replacements();
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
@@ -540,6 +564,9 @@ public class ChequeService {
         Lease lease = requireCollectable(gatewayLeaseOf(bounced));
         lockLease(lease.getId());
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
+        // The renter's own portal offers this door, so it needs the same rule the
+        // clerk's does: a bounce the settlement absorbed must not be paid again.
+        requireNotAlreadySettled(lease, bounced);
 
         LocalDate on = date != null ? date : LocalDate.now();
         ChequeRowInput gatewayRow = new ChequeRowInput(
@@ -584,6 +611,7 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
+        requireSettlementUndisturbed(lease, cheque);
 
         reversePdr(cheque, r.dateOrToday(), reasonOr(r.notes(), "Cheque cancelled"));
         moveTo(cheque, ChequeStatus.CANCELLED, r.notes());
@@ -605,6 +633,7 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "return", ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED);
+        requireSettlementUndisturbed(lease, cheque);
 
         LocalDate on = date != null ? date : LocalDate.now();
         reversePdr(cheque, on, reasonOr(reason, "Cheque returned to tenant"));
@@ -667,12 +696,13 @@ public class ChequeService {
      * {@code PEN} debited it a line earlier. Neither can be an invented instalment,
      * because neither amount is the caller's to choose.</p>
      *
-     * <p>Restricted to {@link #POSTED} ∪ {@link #SETTLEABLE} rather than "any
+     * <p>Restricted to {@link #POSTED} ∪ {@link #ENDED_BUT_COLLECTABLE} rather than "any
      * status", so it cannot become the back door either — a DRAFT lease is refused
      * here exactly as it is there. Its two callers,
      * {@code SettlementService.finalizeSettlement} and
      * {@code PenaltyAssessmentService.approve}, each run their own narrower rule
-     * first ({@code SETTLEABLE} and {@code CHARGEABLE} respectively).</p>
+     * first ({@code SettlementService.SETTLEABLE} and {@code CHARGEABLE}
+     * respectively) — the former being the set this one was renamed away from.</p>
      *
      * <p>The row is ordinary in every other way: the same {@code PDR}, the same
      * lifecycle, the same clearing rules — the renter pays a fine on an expired
@@ -682,7 +712,7 @@ public class ChequeService {
     public ChequeDTO addCollectionRow(UUID leaseId, ChequeRowInput row) {
         Lease lease = lockLease(leaseId);
         leaseAccessPolicy.requireManageable(lease);
-        if (!POSTED.contains(lease.getStatus()) && !SETTLEABLE.contains(lease.getStatus())) {
+        if (!POSTED.contains(lease.getStatus()) && !ENDED_BUT_COLLECTABLE.contains(lease.getStatus())) {
             throw new BusinessRuleViolationException(
                     "This lease is " + lease.getStatus() + "; a collection row needs a lease that is on the books.");
         }
@@ -715,12 +745,17 @@ public class ChequeService {
      * carried, which may have been loaded before this transaction took any lock.</p>
      */
     private void closeIfThisWasTheLastOne(Lease lease, String reason) {
-        if (!COULD_CLOSE.contains(lease.getStatus())) {
-            // The overwhelmingly common case — a running lease collecting its rent —
-            // and it must not cost a lock or a settlement lookup. A stale instance
-            // can only read *more* alive than the row is (nothing moves a lease back
-            // to ACTIVE), so this early return cannot skip a close that the locked
-            // re-read below would have made.
+        // Asked of the database, not of the instance the cheque carried (review
+        // M-1). The overwhelmingly common case — a running lease collecting its
+        // rent — must not cost a row lock or a ledger read, so this stays a cheap
+        // filter; but it cannot be a *stale* one. `lease` arrives through
+        // `cheque.getLease()` and may have been resolved before this transition
+        // began, and reading ACTIVE for a row that is now TERMINATED with its
+        // settlement finalised is precisely a skipped close — the opposite of what
+        // the old comment here claimed. A scalar query is not answered from the
+        // first-level cache, so it always sees the committed row.
+        LeaseStatus current = leaseRepository.findStatusById(lease.getId()).orElse(null);
+        if (current == null || !COULD_CLOSE.contains(current)) {
             return;
         }
         Lease locked = lockLease(lease.getId());
@@ -1016,6 +1051,70 @@ public class ChequeService {
             "This lease is being updated by another request. Please try again.";
 
     /**
+     * A cheque whose debt the settlement has already paid for cannot be collected a
+     * second time (review C-1).
+     *
+     * <p>Only reachable for a BOUNCED row, which is the only status either
+     * replacement door accepts. The {@code CBR} put that amount back on the rent
+     * receivable; if the statement was drawn <em>afterwards</em> it netted exactly
+     * that against the deposit and raised a CASH row for the rest, so by the time
+     * the {@code STL} is posted the debt has been settled in full and the
+     * receivable is flat. A replacement's {@code PDR} would credit it a second
+     * time, leaving the landlord paid twice over one failed cheque.</p>
+     *
+     * <p><b>The discriminator is the ledger, not the row's status.</b> A cheque the
+     * settlement kept and that bounces <em>after</em> finalise leaves a receivable
+     * genuinely in debit — that money really is owed, nobody has been paid for it,
+     * and {@code replace} is exactly the right answer. So the question asked here is
+     * "does this contract still show a debt", and the two cases separate
+     * themselves.</p>
+     */
+    private void requireNotAlreadySettled(Lease lease, Cheque bounced) {
+        if (!closure.isSettlementFinalized(lease.getId())) {
+            return;
+        }
+        if (closure.receivableBalance(lease).signum() > 0) {
+            return;
+        }
+        throw new BusinessRuleViolationException(
+                "This cheque was settled through the lease settlement; " + label(bounced)
+                        + " cannot be collected again.");
+    }
+
+    /**
+     * A reversal must not put money back onto a contract the settlement has already
+     * balanced (review I-2).
+     *
+     * <p>{@link #cancel} and {@link #returnToTenant} both reverse the row's
+     * {@code PDR}, which re-debits the rent receivable by the row's amount. On a
+     * running contract that is the point — the renter owes the instalment again. On
+     * a settled one it is not: the statement netted this instrument against the
+     * deposit and a refund was paid out on that basis, so handing the paper back
+     * leaves an ended, settled contract owing its full amount with no door left that
+     * could collect it. That was lifecycle row 12, and it ended CLOSED.</p>
+     *
+     * <p><b>Measured, not assumed.</b> The test is what the receivable would read
+     * <em>after</em> this reversal, which is why reversing an approved penalty still
+     * works: that path reverses the {@code PEN} first, so the collection row's own
+     * reversal takes the receivable back to nil rather than into debit. The rule is
+     * "a reversal may not leave a settled contract owing", not "these two verbs are
+     * banned", and the difference is exactly the pair of cases finance needs.</p>
+     */
+    private void requireSettlementUndisturbed(Lease lease, Cheque cheque) {
+        if (!closure.isSettlementFinalized(lease.getId())) {
+            return;
+        }
+        BigDecimal amount = cheque.getAmount() == null ? BigDecimal.ZERO : cheque.getAmount();
+        if (closure.receivableBalance(lease).add(amount).signum() <= 0) {
+            return;
+        }
+        throw new BusinessRuleViolationException(
+                "The settlement was finalised counting on this cheque — replace it instead:"
+                        + " reversing " + label(cheque) + " would put " + money(amount)
+                        + " AED back on a contract the ledger says is settled.");
+    }
+
+    /**
      * The row, locked, tenant-checked.
      *
      * <p>A NOWAIT conflict is a 400 that says "try again", not a 500: the other
@@ -1041,17 +1140,60 @@ public class ChequeService {
         }
     }
 
+    /** NOWAIT, the way {@code findByIdForUpdate} declares it, for the re-read below. */
+    private static final Map<String, Object> NOWAIT = Map.of("jakarta.persistence.lock.timeout", 0);
+
     /**
-     * The lease row, locked, tenant-checked — taken by every path that adds a row
-     * to the register, because a new row's position is computed as max+1 over the
-     * lease's existing rows.
+     * The lease row, locked, <em>re-read</em> and tenant-checked — taken by every
+     * path that adds a row to the register, because a new row's position is
+     * computed as max+1 over the lease's existing rows.
+     *
+     * <p><b>{@code refresh}, not a locking finder</b> (review M-1). Every caller
+     * here reaches the lease through {@code cheque.getLease()}, so the row is
+     * usually already managed by this transaction — and on an already-managed row
+     * a locking query does not do what its name suggests:</p>
+     *
+     * <ul>
+     *   <li>if the row has <em>not</em> moved, it is answered from the first-level
+     *       cache and hands back the stale state, which is the value the lock
+     *       exists to stop us acting on;</li>
+     *   <li>if it <em>has</em> moved, {@code Lease.@Version} makes Hibernate refuse
+     *       outright — "query result contains conflicting version of entity already
+     *       held in persistence context" — a 500-shaped optimistic-lock failure on
+     *       a path that is merely trying to read the truth.</li>
+     * </ul>
+     *
+     * <p>Neither is what the caller wants, and the second is not hypothetical: it
+     * is what {@code aCloseIsNotSkippedBecauseTheLeaseWasLoadedBeforeItEnded}
+     * produced the first time this method kept its locking finder. So the row is
+     * taken by key — a cache hit when it is already here — and then
+     * {@code refresh(…, PESSIMISTIC_WRITE)}, which is defined as "overwrite this
+     * instance from the database" and therefore both takes the lock and re-syncs
+     * the version. It costs one extra select the first time a transaction meets a
+     * lease, and it is the only form that is correct in both cases.</p>
+     *
+     * <p>{@code find} rather than {@code findByIdScopedToTenant} for the same
+     * reason: it is the one load that is answered from the context. The Hibernate
+     * tenant filter still applies to it ({@code BaseTenantEntity} sets
+     * {@code applyToLoadByKey = true}) and the explicit check below repeats it.</p>
      */
     private Lease lockLease(UUID leaseId) {
         Lease lease;
         try {
-            lease = leaseRepository.findByIdForUpdate(leaseId)
-                    .orElseThrow(() -> new NotFoundException("Lease not found"));
-        } catch (PessimisticLockingFailureException e) {
+            lease = entityManager.find(Lease.class, leaseId);
+            if (lease == null) {
+                throw new NotFoundException("Lease not found");
+            }
+            entityManager.refresh(lease, LockModeType.PESSIMISTIC_WRITE, NOWAIT);
+        } catch (PessimisticLockingFailureException | PessimisticLockException | LockTimeoutException e) {
+            // Three types for one event. The locking finder this used to call came
+            // back through Spring Data's exception translation, so a NOWAIT refusal
+            // arrived as Spring's PessimisticLockingFailureException; a direct
+            // EntityManager call is not translated and raises JPA's own
+            // LockTimeoutException instead. Missing that turned "another clerk has
+            // this lease, try again" back into a 500 — which is the very thing
+            // RowLockedException exists to prevent, and what
+            // ChequeServiceIT.concurrentAddsNeverDuplicateASequenceNumber caught.
             throw new RowLockedException(LEASE_BEING_UPDATED);
         }
         UUID tenantId = TenantContextHolder.getTenantId();

@@ -63,6 +63,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
@@ -277,6 +281,25 @@ class ChequeOnEndedLeaseIT {
                 .filter(e -> e.getNewState() == LeaseStatus.CLOSED).count());
     }
 
+    /**
+     * What CLOSED now <em>means</em>, asserted wherever a test claims it.
+     *
+     * <p>Closure is a question about the ledger, not about the register's statuses
+     * (review C-1/I-2): a contract is finished with when nothing is owed on it,
+     * nothing is still on paper, and no deposit is still being held. Every closure
+     * test in this class ends here, so a rule that closed a lease over a live
+     * balance would fail somewhere rather than only in the one test that thought to
+     * look.</p>
+     */
+    private void assertNothingLeftOnTheLease(UUID leaseId) {
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("rent receivable on a closed lease").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId))
+                .as("PDC receivable on a closed lease").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, leaseId))
+                .as("deposits held on a closed lease").isEqualByComparingTo("0.00");
+    }
+
     private void assertTrialBalanceBalances() {
         List<TrialBalanceRowDTO> rows = tx.execute(s -> ledger.trialBalance(LocalDate.of(2030, 1, 1), null));
         assertThat(rows).as("trial balance rows").isNotEmpty();
@@ -352,6 +375,7 @@ class ChequeOnEndedLeaseIT {
         assertThat(statusOfLease(leaseId)).as("the last clearance closes the contract")
                 .isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).as("one event, not two").isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 
@@ -384,6 +408,7 @@ class ChequeOnEndedLeaseIT {
         assertThat(statusOfLease(leaseId)).as("finalising is the last condition to arrive")
                 .isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 
@@ -392,56 +417,79 @@ class ChequeOnEndedLeaseIT {
     // ------------------------------------------------------------------
 
     /**
-     * The close rule is evaluated by every transition that takes a row <em>out</em>
-     * of the outstanding set, not only by the ones that clear it.
+     * A cheque the settlement was drawn counting on cannot be handed back or
+     * cancelled once that settlement is FINALIZED (review I-2).
      *
-     * <p>Review I1: `returnToTenant` and `cancel` also end the landlord's claim on
-     * an instrument — finance handing the paper back, or withdrawing a row it will
-     * not collect — and a lease whose last outstanding row left that way used to be
-     * stuck TERMINATED forever, because no later clearance could ever ask the
-     * question again. Each case below is the same lease, the same finalised
-     * settlement and the same single outstanding cheque; only the verb differs.</p>
+     * <p>Both verbs reverse the row's {@code PDR}, which re-debits the rent
+     * receivable. On a running contract that is right — the renter owes the money
+     * again. On a settled one it is not: the statement already netted this
+     * instrument's 12,750 against the deposit and paid a refund out on that basis,
+     * so putting it back leaves a CLOSED-eligible contract owing 12,750 that no
+     * door can collect — which is precisely how lifecycle row 12 used to end.</p>
      *
-     * <p>{@code receive} is the fifth way and has its own test — it needs a CASH
-     * row, which is what §9.2's balance due raises — see
-     * {@link #theSettlementBalanceDueRowIsReceivedAndClosesTheLease}.</p>
+     * <p>The refusal names the way out: {@code replace} is still allowed, because
+     * paper for paper leaves the receivable exactly where the settlement left
+     * it — see {@link #aKeptChequeThatBouncesAfterFinaliseIsReplacedAndClosesTheLease}.</p>
      */
     @ParameterizedTest(name = "{0}")
-    @MethodSource("waysTheLastRowLeavesTheOutstandingSet")
-    void anyTransitionThatEmptiesTheRegisterClosesTheLease(
-            String name, BiConsumer<ChequeOnEndedLeaseIT, UUID> transition, ChequeStatus expected) {
+    @MethodSource("waysFinanceMightUndoAKeptCheque")
+    void aKeptChequeCannotBeUndoneOnceTheSettlementIsFinalised(
+            String name, BiConsumer<ChequeOnEndedLeaseIT, UUID> transition) {
         UUID leaseId = terminatedWithAKeptCheque();
         UUID kept = chequeOn(leaseId, RENT_2).getId();
         finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
         assertThat(statusOfLease(leaseId)).as("one instrument still outstanding")
                 .isEqualTo(LeaseStatus.TERMINATED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the STL flattened the receivable").isEqualByComparingTo("0.00");
 
-        transition.accept(this, kept);
+        assertThatThrownBy(() -> transition.accept(this, kept))
+                .as(name)
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("The settlement was finalised counting on this cheque");
 
-        assertThat(statusOf(kept)).as("the row after " + name).isEqualTo(expected);
-        assertThat(statusOfLease(leaseId)).as("nothing outstanding is nothing outstanding")
-                .isEqualTo(LeaseStatus.CLOSED);
-        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertThat(statusOf(kept)).as("the row after a refused " + name).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("nothing was put back on a settled receivable").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("12750.00");
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.TERMINATED);
+        assertThat(closedEvents(leaseId)).isZero();
         assertTrialBalanceBalances();
     }
 
     private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
-            waysTheLastRowLeavesTheOutstandingSet() {
+            waysFinanceMightUndoAKeptCheque() {
         return java.util.stream.Stream.of(
-                org.junit.jupiter.params.provider.Arguments.of("cleared at the bank",
-                        (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) -> {
-                            it.cheques.deposit(id, ChequeActionRequest.on(BANKED_ON));
-                            it.cheques.clear(id, ChequeActionRequest.on(BANKED_ON));
-                        }, ChequeStatus.CLEARED),
                 org.junit.jupiter.params.provider.Arguments.of("handed back to the tenant",
                         (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) ->
-                                it.cheques.returnToTenant(id, BANKED_ON, "Renter collected the cheque"),
-                        ChequeStatus.RETURNED),
+                                it.cheques.returnToTenant(id, BANKED_ON, "Renter collected the cheque")),
                 org.junit.jupiter.params.provider.Arguments.of("cancelled by finance",
                         (BiConsumer<ChequeOnEndedLeaseIT, UUID>) (it, id) ->
                                 it.cheques.cancel(id, new ChequeActionRequest(
-                                        BANKED_ON, "Written off at settlement", null, null)),
-                        ChequeStatus.CANCELLED));
+                                        BANKED_ON, "Written off at settlement", null, null))));
+    }
+
+    /**
+     * …and the same two verbs are untouched before the settlement is finalised: the
+     * refusal is about a statement that has already been drawn, not about the
+     * register on a terminated lease.
+     */
+    @Test
+    void aKeptChequeIsStillHandedBackFreelyWhileTheSettlementIsOnlyADraft() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        SaveSettlementDTO draft = new SaveSettlementDTO();
+        draft.setDeductions(List.of());
+        settlement.saveDraft(leaseId, draft, null);
+
+        cheques.returnToTenant(kept, BANKED_ON, "Renter collected the cheque");
+
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.RETURNED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the reversal put the instalment back on the renter's account")
+                .isEqualByComparingTo("7510.27");
+        assertThat(statusOfLease(leaseId)).as("nothing is settled yet").isEqualTo(LeaseStatus.TERMINATED);
+        assertTrialBalanceBalances();
     }
 
     /**
@@ -476,6 +524,11 @@ class ChequeOnEndedLeaseIT {
 
         assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).isEqualTo(1);
+        // The reversal is a *pair*: the PEN is reversed and then the collection row
+        // is cancelled, so the receivable ends where it started. That is why the
+        // ledger guard on cancel lets this through and refuses a kept cheque — the
+        // difference is whether the reversal leaves money owed, not which verb ran.
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 
@@ -509,23 +562,32 @@ class ChequeOnEndedLeaseIT {
         assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
         assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 
     // ------------------------------------------------------------------
-    // (c) a bounced row is money owed, and it blocks the close
+    // (c) a bounce the settlement absorbed, and a bounce that happens after it
     // ------------------------------------------------------------------
 
     /**
-     * A cheque that failed is not "resolved" — it is the debt the renter most
-     * urgently owes — so a BOUNCED row that nothing has replaced keeps the contract
-     * open however much else has been collected.
+     * A cheque that bounced <em>before</em> the settlement was drawn has already
+     * been paid for by it, and the contract closes without collecting it again
+     * (review C-1, lifecycle row 14).
      *
      * <p>The sequence is the real one: the kept January cheque is banked and comes
-     * back, the settlement is finalised against the receivable that leaves, the
-     * balance due is collected in cash — and the lease is <em>still</em> TERMINATED,
-     * because 12,750 of returned paper is still outstanding. Only once the renter
-     * replaces it and the replacement clears does the contract close.</p>
+     * back, so its {@code CBR} puts 12,750 onto the rent receivable (−5,239.73 +
+     * 12,750 = 7,510.27). The settlement then nets exactly that against the 3,000
+     * deposit and raises a CASH row for the 4,510.27 remainder; receiving it takes
+     * the receivable to zero. <b>The bounced debt has now been paid in full</b> —
+     * once through the deposit and once in cash — and the register's BOUNCED row is
+     * history rather than an open claim.</p>
+     *
+     * <p>So the register's own statuses cannot be what decides closure: the old
+     * rule counted BOUNCED as outstanding, left the lease TERMINATED, and offered
+     * {@code replace} as the only exit — whose {@code PDR} credits the receivable a
+     * second time and leaves the landlord 12,750 up on a CLOSED contract. Both
+     * replacement doors are refused instead, and closure asks the ledger.</p>
      *
      * <p>It is also the proof that the penalty hooks survive a terminated lease:
      * {@code bounce} calls {@code PenaltyRuleEngine.onBounce} inside its own
@@ -533,7 +595,7 @@ class ChequeOnEndedLeaseIT {
      * roll the bounce back with it.</p>
      */
     @Test
-    void aBouncedRowNothingHasReplacedKeepsTheLeaseOpen() {
+    void aBounceTheSettlementAbsorbedClosesTheLeaseAndCannotBeCollectedTwice() {
         UUID leaseId = terminatedWithAKeptCheque();
         UUID kept = chequeOn(leaseId, RENT_2).getId();
 
@@ -548,15 +610,63 @@ class ChequeOnEndedLeaseIT {
         assertThat(settled.getBalanceDue()).as("7,510.27 owed − 3,000 held").isEqualByComparingTo("4510.27");
         UUID collection = settled.getCollectionChequeId();
         assertThat(collection).isNotNull();
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the STL and the collection row between them settled it").isEqualByComparingTo("0.00");
+
+        // Neither replacement door will collect it a second time.
+        assertThatThrownBy(() -> cheques.replace(kept, new ReplaceChequeRequest(
+                List.of(row("100055", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid by new cheque")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        assertThatThrownBy(() -> cheques.replaceForOnlinePayment(kept, BANKED_ON))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        // Six contract rows plus the settlement's own CASH row, and nothing else:
+        // neither refusal registered a replacement.
+        assertThat(register(leaseId)).as("no replacement row was registered").hasSize(7);
 
         cheques.receive(collection, ChequeActionRequest.on(SETTLED_ON));
+
+        assertThat(statusOf(kept)).as("it stays on the register as the thing that failed")
+                .isEqualTo(ChequeStatus.BOUNCED);
         assertThat(statusOfLease(leaseId))
-                .as("a bounced cheque nobody has replaced is money owed")
-                .isEqualTo(LeaseStatus.TERMINATED);
+                .as("the ledger says the tenancy is settled, so it is finished with")
+                .isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A cheque that bounces <em>after</em> the settlement is finalised is a real
+     * debt, and {@code replace} is exactly the right answer to it (lifecycle 13).
+     *
+     * <p>The mirror of the test above, and the reason the refusal there is ledger-
+     * based rather than "this row is BOUNCED on a settled lease": here the
+     * {@code CBR} leaves 12,750 genuinely owed, the renter hands over paper for
+     * paper, and the replacement's clearance is what closes the contract.</p>
+     */
+    @Test
+    void aKeptChequeThatBouncesAfterFinaliseIsReplacedAndClosesTheLease() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
+
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the settlement was drawn counting on this cheque, and it failed")
+                .isEqualByComparingTo("12750.00");
 
         List<ChequeDTO> replacements = cheques.replace(kept, new ReplaceChequeRequest(
                 List.of(row("100055", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid by new cheque"));
         assertThat(statusOf(kept)).isEqualTo(ChequeStatus.REPLACED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("paper for paper: the new PDR puts it back on the register")
+                .isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId))
+                .as("and the register is holding it").isEqualByComparingTo("12750.00");
         assertThat(statusOfLease(leaseId)).as("the replacement is itself outstanding")
                 .isEqualTo(LeaseStatus.TERMINATED);
 
@@ -566,7 +676,149 @@ class ChequeOnEndedLeaseIT {
 
         assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).isEqualTo(1);
-        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
+        assertNothingLeftOnTheLease(leaseId);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * …and a replacement that covers only part of the failed cheque leaves the rest
+     * owed, so the contract stays open and visibly owing.
+     *
+     * <p>This is what "closure asks the ledger" buys. The register is empty — the
+     * bounced row is REPLACED, the replacement CLEARED, nothing is outstanding by
+     * any status test — and the lease is still TERMINATED, because 7,750 of the
+     * 12,750 the settlement counted on never arrived. Under the old rule it would
+     * have closed here, with a debt and no door left to collect it through
+     * (review I-2).</p>
+     *
+     * <p>What finance does with that residue — a second collection row, a write-off
+     * journal that re-evaluates closure — is a product question on #291. Until it is
+     * answered, "TERMINATED and owing 7,750" is the honest state.</p>
+     */
+    @Test
+    void aPartialReplacementLeavesTheContractOpenAndVisiblyOwing() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+
+        List<ChequeDTO> replacements = cheques.replace(kept, new ReplaceChequeRequest(
+                List.of(row("100055", BANKED_ON, BANKED_ON, "5000")), BANKED_ON, "Part payment"));
+        UUID replacement = replacements.get(0).id();
+        cheques.deposit(replacement, ChequeActionRequest.on(BANKED_ON));
+        cheques.clear(replacement, ChequeActionRequest.on(BANKED_ON));
+
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.REPLACED);
+        assertThat(statusOf(replacement)).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId))
+                .as("the register is empty").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, leaseId)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("12,750 counted on, 5,000 paid").isEqualByComparingTo("7750.00");
+        assertThat(statusOfLease(leaseId)).as("a contract that is still owed money is not finished with")
+                .isEqualTo(LeaseStatus.TERMINATED);
+        assertThat(closedEvents(leaseId)).isZero();
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * There is no "write the bounce off with nothing" branch: a replacement with an
+     * empty list is refused before anything moves.
+     *
+     * <p>Worth pinning because the review assumed the branch existed and was the
+     * only non-double-collecting exit from a settled bounce. It does not exist —
+     * {@code ChequeRowRules.validateNewRows} refuses an empty list — and the exit is
+     * the ledger-based closure above rather than a superseding row.</p>
+     */
+    @Test
+    void aReplacementWithNoRowsIsRefused() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+
+        assertThatThrownBy(() -> cheques.replace(kept,
+                new ReplaceChequeRequest(List.of(), BANKED_ON, "Written off")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("At least one replacement is required");
+        assertThatThrownBy(() -> cheques.replace(kept,
+                new ReplaceChequeRequest(null, BANKED_ON, "Written off")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("At least one replacement is required");
+
+        assertThat(statusOf(kept)).as("nothing superseded it").isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(register(leaseId)).hasSize(6);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("7510.27");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * The close is decided on the lease <em>row</em>, not on whatever instance the
+     * cheque happened to be carrying (review M-1).
+     *
+     * <p>A transition reaches the lease through {@code cheque.getLease()}, which may
+     * have been resolved before the transition began — and if that read said ACTIVE
+     * while the row has since gone TERMINATED with its settlement finalised, the
+     * cheap pre-check would return early and the contract would never close. No
+     * later clearance could ask again: this <em>was</em> the last instrument.</p>
+     *
+     * <p>Staged rather than raced: one transaction loads the lease while it is still
+     * running, a second ends and settles it, and the kept cheque is then banked
+     * inside the first — whose first-level cache still says ACTIVE. The status query
+     * behind the pre-check is a scalar projection, so it is not answered from that
+     * cache, and {@code lockLease} refreshes the instance under the lock before
+     * anything is decided on it.</p>
+     */
+    @Test
+    void aCloseIsNotSkippedBecauseTheLeaseWasLoadedBeforeItEnded() throws Exception {
+        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        UUID tenantId = fixtures.tenantId();
+        UUID bank = leaf(AccountRole.BANK).getId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            tx.executeWithoutResult(s -> {
+                // This transaction meets the lease while it is still running.
+                assertThat(leaseRepo.findById(leaseId).orElseThrow().getStatus())
+                        .isEqualTo(LeaseStatus.ACTIVE);
+
+                // Somebody else ends and settles it in the meantime.
+                Future<?> ending = pool.submit(() -> {
+                    TenantContextHolder.setTenantId(tenantId);
+                    LeaseTestFixtures.authenticateAsTenantAdmin();
+                    try {
+                        recognition.runTo(RECOGNISED_TO, false);
+                        termination.terminate(leaseId,
+                                new TerminateLeaseRequest(T, null, null, null), null);
+                        recognition.runTo(T, false);
+                        return finalizeSettlement(leaseId, bank);
+                    } finally {
+                        TenantContextHolder.clear();
+                        LeaseTestFixtures.clearAuth();
+                    }
+                });
+                try {
+                    ending.get(120, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    throw new AssertionError("the other transaction could not end the lease", e);
+                }
+
+                // ...and the last kept instrument is banked in *this* one, whose
+                // cached lease still reads ACTIVE.
+                cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+                cheques.clear(kept, ChequeActionRequest.on(BANKED_ON));
+            });
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(statusOfLease(leaseId)).as("the row said TERMINATED, so the close happened")
+                .isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 
@@ -721,6 +973,37 @@ class ChequeOnEndedLeaseIT {
         ChequeDTO retry = cheques.clearOnline(online.id(), BANKED_ON, null);
         assertThat(retry.status()).as("the webhook's retry is still idempotent").isEqualTo(ChequeStatus.CLEARED);
         assertThat(closedEvents(leaseId)).as("and it does not close the lease a second time").isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A checkout the gateway has not captured keeps the contract open, and the
+     * capture closes it.
+     *
+     * <p>Two rules say so and they agree: an {@code ONLINE_PENDING} row still
+     * carries its own {@code PDR}, so PDC receivable is non-zero, and closure names
+     * the state outright as well. The second is deliberate belt-and-braces —
+     * {@code registerOnlinePending} posts nothing, so the moment some future path
+     * moved the balance first, a lease could close underneath a renter who is
+     * halfway through paying, and the capture would then meet a CLOSED lease with
+     * the money already taken.</p>
+     */
+    @Test
+    void aCheckoutInFlightKeepsTheContractOpenUntilItCaptures() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.registerOnlinePending(kept);
+        finalizeSettlement(leaseId, leaf(AccountRole.BANK).getId());
+
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(statusOfLease(leaseId)).as("a checkout in flight is not nothing")
+                .isEqualTo(LeaseStatus.TERMINATED);
+
+        cheques.clearOnline(kept, BANKED_ON, null);
+
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
+        assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
     }
 }
