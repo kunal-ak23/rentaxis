@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
@@ -98,6 +99,7 @@ public class OpeningBalanceService {
     private final JournalEntryRepository journals;
     private final JournalLineRepository journalLines;
     private final PostingService posting;
+    private final LedgerQueryService ledger;
     private final AccountResolver resolver;
     private final TenantFiscalSettingsService fiscal;
     private final EntityManager entityManager;
@@ -132,6 +134,15 @@ public class OpeningBalanceService {
                                      List<String> problems) {}
 
     public record SnapshotUploadResult(int stored, List<String> unmatchedCodes, List<String> problems) {}
+
+    /**
+     * One line of the reconciliation report. Balances are signed debit-positive,
+     * matching {@code TrialBalanceRowDTO.balance}, so a credit-balance account reads
+     * negative; {@code difference = derivedBalance − pactBalance}. {@code accountId}
+     * is null on a PACT code our chart has no account for.
+     */
+    public record ReconciliationRow(UUID accountId, String code, String name, boolean derived,
+                                    BigDecimal derivedBalance, BigDecimal pactBalance, BigDecimal difference) {}
 
     /** accountId → derived role, plus the mappings that point at nothing postable. */
     record DerivedRoles(Map<UUID, AccountRole> byAccount, List<String> problems) {}
@@ -384,6 +395,85 @@ public class OpeningBalanceService {
         log.info("Opening balances posted as {} ({} lines, difference {})",
                 entry.getEntryNumber(), lines.size(), gap);
         return entry;
+    }
+
+    // ------------------------------------------------------------------
+    // reconciliation (spec §10.3)
+    // ------------------------------------------------------------------
+
+    /**
+     * Per account: the balance our books derive from the contract import, PACT's
+     * figure from the uploaded trial balance, and the gap (spec §10.3).
+     *
+     * <p><b>Read-only, and it posts nothing.</b> It is the report an accountant
+     * refreshes while chasing a difference, not a step in the cut-over.</p>
+     *
+     * <p><b>Why the opening journal is subtracted.</b> It is dated the same day as
+     * this report, so a raw trial balance would count it in the "derived" column and
+     * every manually entered account would trivially reconcile against itself. Its
+     * own lines are therefore taken back out. Once it has been reversed the original
+     * and its mirror already net to zero, so nothing is subtracted — which is why
+     * only a LIVE posting is considered.</p>
+     *
+     * <p><b>Both halves of the question.</b> The report walks the uploaded snapshot
+     * <em>and</em> the accounts we have a balance on, so a contract left out of the
+     * import and a contract imported that PACT never had both produce a row. A row
+     * that appeared on one side only would hide exactly one of the two mistakes a
+     * cut-over makes.</p>
+     *
+     * <p><b>No paging.</b> The row count is bounded by the tenant's own chart of
+     * accounts plus the codes in one uploaded file — hundreds, the same order the
+     * accounts screen already renders whole. The ledger's {@code MAX_ROWS} exists
+     * because its rows scale with transactions; these do not.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<ReconciliationRow> reconcile() {
+        LocalDate asOf = asOf();
+        Map<UUID, AccountRole> derived = derived().byAccount();
+
+        Map<UUID, BigDecimal> derivedBalances = new HashMap<>();
+        Map<UUID, String[]> identity = new HashMap<>();                       // accountId -> {code, name}
+        for (var row : ledger.trialBalance(asOf, null)) {
+            derivedBalances.merge(row.accountId(), row.balance(), BigDecimal::add);
+            identity.put(row.accountId(), new String[]{row.code(), row.name()});
+        }
+        for (JournalLine l : openingJournalLines()) {
+            // trialBalance is debit-positive, so removing this line's contribution
+            // means ADDING the negation of (debit − credit). Written out rather than
+            // as a subtract so the sign convention is visible at the call site.
+            derivedBalances.merge(l.getAccount().getId(),
+                    l.getDebit().subtract(l.getCredit()).negate(), BigDecimal::add);
+        }
+
+        Map<String, Account> byCode = new HashMap<>();
+        for (Account a : accounts.findAll()) {
+            byCode.put(a.getCode(), a);
+            identity.putIfAbsent(a.getId(), new String[]{a.getCode(), a.getName()});
+        }
+
+        List<ReconciliationRow> rows = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (OpeningBalanceSnapshotRow s : snapshots.findAllByOrderByAccountCodeAsc()) {
+            Account a = byCode.get(s.getAccountCode());
+            BigDecimal pact = s.getDebit().subtract(s.getCredit());
+            if (a == null) {
+                rows.add(new ReconciliationRow(null, s.getAccountCode(), s.getAccountName(), false,
+                        ZERO, pact, ZERO.subtract(pact)));
+                continue;
+            }
+            seen.add(a.getId());
+            BigDecimal d = derivedBalances.getOrDefault(a.getId(), ZERO);
+            rows.add(new ReconciliationRow(a.getId(), a.getCode(), a.getName(),
+                    derived.containsKey(a.getId()), d, pact, d.subtract(pact)));
+        }
+        for (Map.Entry<UUID, BigDecimal> e : derivedBalances.entrySet()) {
+            if (seen.contains(e.getKey()) || e.getValue().signum() == 0) continue;
+            String[] id = identity.getOrDefault(e.getKey(), new String[]{null, null});
+            rows.add(new ReconciliationRow(e.getKey(), id[0], id[1],
+                    derived.containsKey(e.getKey()), e.getValue(), ZERO, e.getValue()));
+        }
+        rows.sort(Comparator.comparing(ReconciliationRow::code, Comparator.nullsLast(String::compareTo)));
+        return rows;
     }
 
     // ------------------------------------------------------------------
