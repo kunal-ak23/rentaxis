@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
@@ -27,6 +28,7 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -307,10 +309,25 @@ public class LeaseService {
      * with "try again" rather than parking a connection behind another clerk's open
      * tab; the tenant check repeats {@link #findLeaseWithTenantCheck}'s because a
      * locking query is JPQL and must not be trusted to have been scoped for us.</p>
+     *
+     * <p><b>"Try again" has to be a 400, not a 500</b> (review M-6). NOWAIT raises a
+     * {@code PessimisticLockingFailureException}, nothing handles that type, and
+     * {@code giveNotice} therefore promised a clean refusal in its own comment while
+     * delivering a server error — the very failure the lock was added to replace.
+     * {@code RowLockedException} is the register's convention for exactly this and
+     * is a {@code BusinessRuleViolationException}, so the HTTP answer is the 400 the
+     * clerk can act on; its distinct type is what lets a webhook tell a transient
+     * refusal from a deterministic one.</p>
      */
     private Lease lockLeaseForTransition(UUID leaseId) {
-        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        Lease lease;
+        try {
+            lease = leaseRepository.findByIdForUpdate(leaseId)
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+        } catch (PessimisticLockingFailureException e) {
+            throw new RowLockedException(
+                    "This lease is being updated by another request. Please try again.");
+        }
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
             throw new NotFoundException("Lease not found");

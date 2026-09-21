@@ -12,6 +12,7 @@ import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
@@ -230,6 +231,26 @@ class LeaseTerminationServiceIT {
                 List.of(new LeaseLineInput(null, "RENT", new BigDecimal("15000"), BigDecimal.ZERO,
                         null, null, creditAccountId, null, null)),
                 List.of(LeaseTestFixtures.chequeRow("15000", LocalDate.of(2027, 10, 2)))));
+        return leaseId;
+    }
+
+    /**
+     * A commercial tenancy: the same 51,000 of rent, VAT-applicable, so the
+     * {@code TCO} charges 53,550 and credits 2,550 to {@code OUTPUT_VAT}. Four
+     * instruments of 13,387.50 on the same quarterly dates, none of them cleared.
+     *
+     * <p>One line only, because VAT is what this fixture is about and an admin fee
+     * would put a second, un-recognised charge into every figure below.</p>
+     */
+    private UUID commercialGalah() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
+                List.of(LeaseTestFixtures.vatLine("RENT", "51000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("200041", CONTRACT_DATE, RENT_1, "13387.50"),
+                row("200042", CONTRACT_DATE, RENT_2, "13387.50"),
+                row("200043", CONTRACT_DATE, RENT_3, "13387.50"),
+                row("200044", CONTRACT_DATE, RENT_4, "13387.50")));
+        posting.post(leaseId);
         return leaseId;
     }
 
@@ -486,6 +507,8 @@ class LeaseTerminationServiceIT {
         // 25,500 the returns put back on the renter's account, less the 30,739.73 of
         // advance rent handed over: the landlord ends up owing 5,239.73.
         assertThat(preview.receivableAfter()).isEqualByComparingTo("-5239.73");
+        // A residential tenancy charges no VAT, so there is none to credit back.
+        assertThat(preview.unearnedVat()).isEqualByComparingTo("0.00");
 
         // ...and it wrote nothing.
         assertThat(register(leaseId)).extracting(Cheque::getStatus)
@@ -589,6 +612,85 @@ class LeaseTerminationServiceIT {
         assertThat(result.getTerminationNotes()).isEqualTo("Renter relocating");
         assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(unit(fixtures.unit().getId()).getCurrentTenantName()).isNull();
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A commercial tenancy hands back the VAT on the rent it hands back, as a
+     * credit note on the same journal (review I-5).
+     *
+     * <p>The {@code TCO} charged 51,000 of rent and 2,550 of VAT on it, both debited
+     * to the receivable. Cutting the term at 15 Feb un-earns 30,739.73 of that rent,
+     * and the tax on rent the renter never used is not the landlord's to keep or the
+     * Authority's to be paid: the {@code TCR} debits {@code OUTPUT_VAT} for
+     * 1,536.99 alongside the advance rent, and credits the receivable with both.</p>
+     *
+     * <p>Two invariants come out of it and both are asserted from the ledger:
+     * {@code OUTPUT_VAT} on this lease ends at 5% of the rent that was
+     * <em>earned</em> (1,013.01 on 20,260.27), and spec §9.1's "receivable = earned
+     * − received" holds again — on the gross figures, which is what the renter
+     * actually owes. Without the VAT pair the receivable carried 1,536.99 of tax on
+     * rent nobody supplied, and the settlement collected it.</p>
+     */
+    @Test
+    void terminatingAVatBearingLeaseCreditsTheVatOnTheUnearnedRent() {
+        UUID leaseId = commercialGalah();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        assertThat(balanceOf(outputVat, leaseId)).as("VAT charged on the whole contract")
+                .isEqualByComparingTo("-2550.00");
+
+        TerminationPreviewDTO preview = termination.preview(leaseId, T);
+        assertThat(preview.unearnedRent()).isEqualByComparingTo("30739.73");
+        // 5% of 30,739.73 = 1,536.9865, to the fils.
+        assertThat(preview.unearnedVat()).isEqualByComparingTo("1536.99");
+        // 26,775 of paper handed back, less 30,739.73 of rent and 1,536.99 of VAT.
+        assertThat(preview.receivableAfter()).isEqualByComparingTo("-5501.72");
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+        recognition.runTo(T, false);
+
+        JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
+        assertThat(linesOf(tcr.getId())).as("two pairs: the rent and the tax on it").hasSize(4);
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("30739.73");
+        assertThat(debitOn(tcr, outputVat)).isEqualByComparingTo("1536.99");
+        assertThat(creditOn(tcr, AccountRole.RENT_RECEIVABLE)).isEqualByComparingTo("32276.72");
+
+        // VAT on EARNED rent only: 5% of 20,260.27 = 1,013.0135.
+        assertThat(balanceOf(outputVat, leaseId)).as("output VAT after the credit note")
+                .isEqualByComparingTo("-1013.01");
+        // 21,273.28 earned gross (20,260.27 + 1,013.01) against the 26,775 of kept
+        // paper the register is still holding.
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("-5501.72");
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("26775.00");
+        assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("-20260.27");
+        assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("0.00");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * Terminating on the last day of a VAT-bearing term reverses nothing at all —
+     * no advance rent, and therefore no VAT either, and no {@code TCR}.
+     *
+     * <p>The boundary matters because the VAT pair is computed from the same
+     * unearned figure the rent pair is, and a helper that rounded 5% of zero into a
+     * fils would post a one-sided credit note against a tenancy that ran its full
+     * course.</p>
+     */
+    @Test
+    void aVatBearingLeaseTerminatedOnItsLastDayCreditsNoVat() {
+        UUID leaseId = commercialGalah();
+
+        TerminationPreviewDTO preview = termination.preview(leaseId, END);
+        assertThat(preview.unearnedRent()).isEqualByComparingTo("0.00");
+        assertThat(preview.unearnedVat()).isEqualByComparingTo("0.00");
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(END, null, null, null), null);
+
+        assertThat(lease(leaseId).getTerminationJournalId()).as("nothing to hand back").isNull();
+        assertThat(journalCount(JournalDocType.TCR)).isZero();
+        assertThat(balanceOf(leaf(AccountRole.OUTPUT_VAT).getId(), leaseId))
+                .as("the whole contract was supplied, so the whole 2,550 is due")
+                .isEqualByComparingTo("-2550.00");
         assertTrialBalanceBalances();
     }
 
@@ -1251,6 +1353,57 @@ class LeaseTerminationServiceIT {
         LeaseTestFixtures.authenticateAsTenantAdmin();
         assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
         assertThat(lease(leaseId).getTerminatedOn()).isNull();
+    }
+
+    /**
+     * Contention on the lease row is a "try again", not a 500 (review M-6).
+     *
+     * <p>{@code giveNotice} promises a clean refusal in its own comment — it locks
+     * "like every sibling transition … without it a notice racing a termination is
+     * caught only by {@code @Version}, which surfaces as a 500-shaped optimistic-lock
+     * failure rather than the clean refusal below" — but the lock it takes is NOWAIT
+     * and its {@code PessimisticLockingFailureException} was let out untranslated,
+     * so the thing it was added to prevent happened anyway. The register's three
+     * other copies of this method already translate it; this one now does too, and
+     * the type is what makes it a 400 rather than an accident of wording.</p>
+     */
+    @Test
+    void aNoticeThatMeetsALockedLeaseIsAskedToTryAgain() throws Exception {
+        UUID leaseId = galah();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    tx.executeWithoutResult(s -> {
+                        leaseRepo.findByIdForUpdate(leaseId).orElseThrow();
+                        held.countDown();
+                        try {
+                            release.await(30, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            assertThat(held.await(30, TimeUnit.SECONDS)).isTrue();
+
+            assertThatThrownBy(() -> leaseService.giveNotice(leaseId, "Leaving", null))
+                    .isInstanceOf(RowLockedException.class)
+                    .hasMessageContaining("Please try again");
+        } finally {
+            release.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(lease(leaseId).getStatus()).as("nothing moved").isEqualTo(LeaseStatus.ACTIVE);
     }
 
     /** Another landlord cannot see this contract, let alone end it. */

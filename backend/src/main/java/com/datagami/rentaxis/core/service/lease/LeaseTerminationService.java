@@ -55,7 +55,9 @@ import java.util.UUID;
  *   <li><b>The schedule is cut.</b> Recognition is truncated at {@code T}
  *       ({@code RecognitionService.truncateForTermination}) and the advance rent
  *       that will never be earned is handed back as one {@code TCR}:
- *       {@code Dr Advance Rent / Cr Rent Receivable}.</li>
+ *       {@code Dr Advance Rent / Cr Rent Receivable}, plus
+ *       {@code Dr Output VAT / Cr Rent Receivable} for the tax that rent was
+ *       charged at, where the line was VAT-bearing.</li>
  *   <li><b>The contract closes.</b> TERMINATED, dated {@code T}, and the unit is
  *       released unless another lease still holds it.</li>
  * </ol>
@@ -146,10 +148,11 @@ public class LeaseTerminationService {
                 plan.earnedThrough(),
                 plan.recognisedSoFar(),
                 plan.unearned(),
+                plan.unearnedVat(),
                 dtos(split.toReturn(), lease),
                 dtos(split.toKeep(), lease),
                 dtos(split.bounced(), lease),
-                receivableAfter(lease, split.toReturn(), plan.unearned()));
+                receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())));
     }
 
     // ------------------------------------------------------------------
@@ -193,16 +196,28 @@ public class LeaseTerminationService {
     }
 
     /**
-     * One {@code TCR} handing the unearned advance rent back to the receivable.
+     * One {@code TCR} handing the unearned advance rent — and the VAT charged on
+     * it — back to the receivable.
      *
      * <p>One pair per segment that has anything left, each debiting the leaf that
      * segment's {@code TCO} actually deferred into — a line with a manual account
      * override is exactly the case where "resolve {@code ADVANCE_RENT} again"
      * strands a liability in one leaf while releasing from another.</p>
      *
+     * <p><b>Plus one credit-note pair for the tax</b> when any of those lines was
+     * VAT-bearing (review I-5). The {@code TCO} debited the receivable with the rent
+     * <em>and</em> 5% on top of it; cutting the term short means part of that supply
+     * never happened, so {@code Dr OUTPUT_VAT / Cr RENT_RECEIVABLE} for the VAT on
+     * the unearned amount. Without it the receivable keeps tax on rent the renter
+     * never used, spec §9.1's "receivable = earned − received" stops holding for a
+     * commercial lease, and the settlement collects 5% of nothing. Residential
+     * tenancies charge no VAT, so the figure is zero and no pair is added — which
+     * is why every existing fixture is unchanged to the fil.</p>
+     *
      * @return the journal's id, or null when nothing was unearned — a termination
      *         on the last day of the term posts no {@code TCR} at all, and an entry
-     *         for zero is not a document.
+     *         for zero is not a document. The VAT follows the rent: there is never
+     *         VAT to credit back where there is no unearned rent to credit it on.
      */
     private UUID postUnearnedReversal(Lease lease, RecognitionService.TerminationRecognition plan, LocalDate t) {
         if (plan.unearned().signum() <= 0) {
@@ -219,10 +234,21 @@ public class LeaseTerminationService {
         for (RecognitionService.UnearnedDeferral d : plan.deferrals()) {
             byAccount.merge(d.account(), d.amount(), BigDecimal::add);
         }
-        List<PostingRequest.Pair> pairs = new ArrayList<>(byAccount.size());
+        List<PostingRequest.Pair> pairs = new ArrayList<>(byAccount.size() + 1);
         byAccount.forEach((account, amount) -> pairs.add(PostingRequest.pair(
                 new PostingRequest.Line(account, PostingRequest.Side.DR, amount, null, narration),
                 LeaseChequeRegistrar.crReceivable(lease, amount).withNarration(narration))));
+        // The credit note, as its own pair: OUTPUT_VAT is a tenant-level role, it
+        // faces the receivable and not the deferral leaf, and a bookkeeper reading
+        // the entry should see the tax as a line of its own rather than folded into
+        // the rent.
+        BigDecimal unearnedVat = plan.unearnedVat();
+        if (unearnedVat != null && unearnedVat.signum() > 0) {
+            String vatNarration = "VAT on unearned rent reversed on termination";
+            pairs.add(PostingRequest.pair(
+                    PostingRequest.dr(AccountRole.OUTPUT_VAT, unearnedVat).withNarration(vatNarration),
+                    LeaseChequeRegistrar.crReceivable(lease, unearnedVat).withNarration(vatNarration)));
+        }
         JournalEntry tcr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.TCR,
                 t,
@@ -374,12 +400,16 @@ public class LeaseTerminationService {
 
     /**
      * The receivable the renter will be left with: what it reads now, plus the
-     * returns putting their instalments back on the renter's account, less the
-     * advance rent the {@code TCR} hands over.
+     * returns putting their instalments back on the renter's account, less
+     * everything the {@code TCR} hands over — the unearned advance rent and, on a
+     * VAT-bearing line, the tax that was charged on it.
      *
      * <p>Derived rather than read back after the fact, because a preview has
-     * written nothing — and derived from the same two numbers the termination will
-     * actually post, so the page's figure and the ledger's cannot drift.</p>
+     * written nothing — and derived from the same numbers the termination will
+     * actually post, so the page's figure and the ledger's cannot drift. That is
+     * also why the VAT belongs here: leaving it out made the screen's
+     * {@code receivableAfter} disagree with the ledger by 5% of the unearned rent
+     * on every commercial lease.</p>
      */
     private BigDecimal receivableAfter(Lease lease, List<Cheque> toReturn, BigDecimal unearned) {
         BigDecimal current = ledgerQueryService.accountLedger(receivableAccountOf(lease),

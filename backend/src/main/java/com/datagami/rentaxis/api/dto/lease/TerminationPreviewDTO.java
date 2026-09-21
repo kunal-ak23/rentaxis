@@ -28,6 +28,12 @@ import java.util.List;
  *                              already been recognised.
  * @param unearnedRent          Σ {@code (segment.amount − earned)} — the advance
  *                              rent the {@code TCR} hands back.
+ * @param unearnedVat           the VAT charged on that unearned rent, which the
+ *                              same {@code TCR} credits back as a credit note
+ *                              ({@code Dr OUTPUT_VAT / Cr RENT_RECEIVABLE}). Zero
+ *                              on a residential tenancy, and zero for a deposit
+ *                              line whatever its flag says — one definition, in
+ *                              {@code LeaseVat}.
  * @param chequesToReturn       uncleared rows dated after {@code T}: the default
  *                              "give the paper back".
  * @param chequesToKeep         uncleared rows dated on or before {@code T}: the
@@ -45,6 +51,7 @@ public record TerminationPreviewDTO(LocalDate terminationDate,
                                     BigDecimal earnedRentThroughDate,
                                     BigDecimal recognisedSoFar,
                                     BigDecimal unearnedRent,
+                                    BigDecimal unearnedVat,
                                     List<ChequeDTO> chequesToReturn,
                                     List<ChequeDTO> chequesToKeep,
                                     List<ChequeDTO> bouncedOutstanding,
