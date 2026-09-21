@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.ledger.ManualJournalRequest;
 import com.datagami.rentaxis.api.dto.ledger.ReverseRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.JournalLine;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -137,6 +138,16 @@ public class JournalService {
     @Transactional
     public JournalEntryDTO reverse(UUID id, ReverseRequest r) {
         JournalEntry entry = entries.findById(id).orElseThrow(() -> new NotFoundException("Journal entry not found"));
+        // Scoped twice on purpose. The Hibernate filter already answers this read
+        // for one tenant (TenantAspect covers inherited repository methods too —
+        // TenantAspectIT pins that), but the refusal below names the *kind* of
+        // document an entry belongs to, so a read that ever ran unfiltered would
+        // answer a stranger's probe with both the entry's existence and its
+        // category. A foreign id is "not found", full stop.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(entry.getTenantId())) {
+            throw new NotFoundException("Journal entry not found");
+        }
         requireManual(entry);
         ReverseRequest req = r == null ? new ReverseRequest(null, null) : r;
         LocalDate date = req.date() == null ? LocalDate.now() : req.date();

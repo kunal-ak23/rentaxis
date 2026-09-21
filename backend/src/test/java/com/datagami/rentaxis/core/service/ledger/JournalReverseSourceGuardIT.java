@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.ledger;
 
 import com.datagami.rentaxis.api.dto.ledger.ReverseRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -158,6 +159,32 @@ class JournalReverseSourceGuardIT {
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThat(statusOf(mirror.getId())).isEqualTo(JournalStatus.POSTED);
+    }
+
+    /**
+     * A foreign id is "not found", never "this belongs to a cheque".
+     *
+     * <p>The guard added in fix round 1 reads the entry before it decides, and the
+     * refusal names the document category — so an unscoped read here would answer a
+     * stranger's probe with both the existence of the entry and what kind of
+     * document it belongs to. The filter already scopes that read (see
+     * {@code TenantAspectIT}); the explicit comparison in {@code reverse} is the
+     * second layer, and this test is what says which answer the caller gets.</p>
+     */
+    @Test
+    void anotherTenantsJournalIsNotFoundRatherThanRefused() {
+        JournalEntry mine = entryFrom(JournalSourceType.CHEQUE);
+
+        LandlordOrg orgB = new LandlordOrg();
+        orgB.setName("JRG-B-" + UUID.randomUUID());
+        TenantContextHolder.setTenantId(orgRepo.save(orgB).getId());
+
+        assertThatThrownBy(() -> journals.reverse(mine.getId(), new ReverseRequest(LocalDate.of(2026, 10, 6), "x")))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Journal entry not found");
+
+        TenantContextHolder.setTenantId(tenantId);
+        assertThat(statusOf(mine.getId())).isEqualTo(JournalStatus.POSTED);
     }
 
     /** The second half of the immutability rule, enforced by PostingService itself. */

@@ -613,8 +613,34 @@ public class RecognitionService {
     private RecognitionEntry lock(UUID entryId) {
         RecognitionEntry entry = entries.findById(entryId)
                 .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        requireOwnTenant(entry);
         entityManager.refresh(entry, LockModeType.PESSIMISTIC_WRITE);
         return entry;
+    }
+
+    /**
+     * The row this transaction is about to lock and post belongs to the tenant in
+     * context, and there <em>is</em> one.
+     *
+     * <p>The Hibernate filter already scopes the read above ({@code TenantAspect}
+     * covers inherited repository methods — {@code TenantAspectIT} pins it), so
+     * this is the second layer rather than the first. It earns its place by being
+     * local: the entry id arrives from a caller, and what happens next writes a
+     * {@code CIL} into the ledger of whoever is in context, under that tenant's
+     * entry number. An empty context fails closed here rather than several calls
+     * later — the nightly close sets the context per organisation
+     * ({@code RevenueRecognitionJob}), so nothing legitimate reaches this without
+     * one, and a posting path is the wrong place to discover that by accident.</p>
+     */
+    private static void requireOwnTenant(RecognitionEntry entry) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException(
+                    "No tenant in context; recognition entry " + entry.getId() + " cannot be posted");
+        }
+        if (!tenantId.equals(entry.getTenantId())) {
+            throw new NotFoundException("Recognition entry not found");
+        }
     }
 
     /**
