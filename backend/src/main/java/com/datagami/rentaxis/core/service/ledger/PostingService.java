@@ -119,7 +119,12 @@ public class PostingService {
         JournalEntry original = entries.lockById(entryId).orElseThrow(() -> new NotFoundException("Journal entry not found"));
         if (original.getReversalOfId() != null) throw new BusinessRuleViolationException("Cannot reverse a reversal entry");
         if (original.getStatus() == JournalStatus.REVERSED) throw new BusinessRuleViolationException("Entry " + original.getEntryNumber() + " is already reversed");
-        if (original.getImportBatchId() == null) fiscal.assertOpen(date);
+        // Same two exemptions post() grants, for the same reason and because an entry
+        // that could be posted into a closed period has to be removable from it.
+        // An OB journal is dated the day BEFORE the books open, which is locked by
+        // definition; without this, a wrong trial balance could be posted and never
+        // taken off. Import journals carry the batch id and were always exempt.
+        if (original.getDocType() != JournalDocType.OB && original.getImportBatchId() == null) fiscal.assertOpen(date);
 
         JournalEntry rev = new JournalEntry();
         rev.setDocType(original.getDocType() == JournalDocType.TCO ? JournalDocType.TCR : original.getDocType());

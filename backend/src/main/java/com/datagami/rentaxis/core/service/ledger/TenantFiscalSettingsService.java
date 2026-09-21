@@ -41,6 +41,23 @@ public class TenantFiscalSettingsService {
         });
     }
 
+    /**
+     * The date the tenant's books open, or null when nobody has set one.
+     *
+     * <p>Unlike {@link #get()} this never creates the settings row, which is what
+     * makes it safe from a genuinely read-only transaction: {@code get()} falls back
+     * to {@code insertDefaultIfAbsent}, and Postgres refuses an INSERT on a read-only
+     * connection. The cut-over screens (the opening-balance grid, the reconciliation
+     * report) are read-only and ask this question before anything has been
+     * configured, which is exactly the case that would otherwise fail.</p>
+     */
+    @Transactional(readOnly = true)
+    public LocalDate booksStartDate() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) throw new IllegalStateException("No tenant in context");
+        return repo.findById(tenantId).map(TenantFiscalSettings::getBooksStartDate).orElse(null);
+    }
+
     /** The fiscal year is labelled by the calendar year in which it starts. */
     @Transactional(readOnly = true)
     public int fiscalYearOf(LocalDate date) {
