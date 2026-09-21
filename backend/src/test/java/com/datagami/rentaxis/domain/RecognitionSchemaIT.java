@@ -136,6 +136,45 @@ class RecognitionSchemaIT {
         assertThat(tables).containsExactly("recognition_entries", "rent_segments");
     }
 
+    /**
+     * Changeset 86: a truncated segment records the contract it was cut from.
+     *
+     * <p>{@code amount}/{@code to_date}/{@code days} move to the termination date so
+     * the row goes on describing one consistent window — otherwise
+     * {@code ProrationEngine.earnedThrough} asked about it answers the contract
+     * value. These two columns are where the original figures go, and they are
+     * nullable because a segment that was never truncated has no "original" that
+     * differs from what it says.</p>
+     */
+    @Test
+    void aTruncatedSegmentCanRecordWhatItWasCutFrom() {
+        assertThat(columns("rent_segments", "original_amount", "original_to_date")).isEqualTo(2);
+        assertThat(jdbc.queryForList(
+                "SELECT is_nullable FROM information_schema.columns"
+                        + " WHERE table_name = 'rent_segments'"
+                        + " AND column_name IN ('original_amount','original_to_date')",
+                String.class)).containsExactly("YES", "YES");
+
+        UUID t = tenant();
+        UUID l = lease(t, unit(t, property(t)), renter(t));
+        UUID line = leaseLine(t, l, chargeType(t));
+        UUID seg = rentSegment(t, l, line, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+
+        // The shape a termination leaves: 145 of 365 days, earned amount, contract
+        // amount beside it — and ck_rs_dates still satisfied by the new window.
+        assertThatCode(() -> jdbc.update(
+                "UPDATE rent_segments SET status = 'TRUNCATED', amount = ?, to_date = ?, days = ?,"
+                        + " original_amount = ?, original_to_date = ? WHERE id = ?",
+                new BigDecimal("500.00"), LocalDate.of(2026, 6, 30), 181,
+                new BigDecimal("1200.00"), LocalDate.of(2026, 12, 31), seg))
+                .doesNotThrowAnyException();
+        // ...and a day count that disagrees with the shortened window is still refused.
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE rent_segments SET to_date = ?, days = ? WHERE id = ?",
+                LocalDate.of(2026, 5, 31), 181, seg))
+                .hasMessageContaining("ck_rs_dates");
+    }
+
     @Test
     void terminationAndSettlementColumnsExist() {
         assertThat(columns("leases", "terminated_on", "termination_journal_id", "termination_notes")).isEqualTo(3);

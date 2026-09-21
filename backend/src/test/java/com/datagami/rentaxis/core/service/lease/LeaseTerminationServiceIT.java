@@ -4,6 +4,8 @@ import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminationPreviewDTO;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
@@ -18,6 +20,8 @@ import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
+import com.datagami.rentaxis.core.service.recognition.ProrationEngine;
+import com.datagami.rentaxis.core.service.recognition.RecognitionPoster;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -28,6 +32,7 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.RentSegment;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
@@ -35,11 +40,13 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
 import com.datagami.rentaxis.domain.entity.enums.SegmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -52,6 +59,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -61,6 +71,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -118,7 +133,11 @@ class LeaseTerminationServiceIT {
     @Autowired LeaseRepository leaseRepo;
     @Autowired ChequeRepository chequeRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired LeaseRenewalService renewal;
+    @Autowired AccountRepository accounts;
     @Autowired RentSegmentRepository segments;
+    @Autowired RecognitionEntryRepository entriesRepo;
+    @Autowired RecognitionPoster poster;
     @Autowired JournalEntryRepository journals;
     @Autowired JournalLineRepository journalLines;
     @Autowired LandlordOrgRepository orgRepo;
@@ -141,6 +160,10 @@ class LeaseTerminationServiceIT {
 
     /** The termination date the plan's scenario uses: mid-month, mid-term. */
     private static final LocalDate T = LocalDate.of(2027, 2, 15);
+
+    /** The extension's window: the day after the base term, through the year end. */
+    private static final LocalDate EXTENSION_START = LocalDate.of(2027, 9, 24);
+    private static final LocalDate EXTENSION_END = LocalDate.of(2027, 12, 31);
 
     @BeforeEach
     void setUp() {
@@ -192,6 +215,24 @@ class LeaseTerminationServiceIT {
         return leaseId;
     }
 
+    /**
+     * The same lease, extended by 15,000 over 24 Sep → 31 Dec 2027 (99 days at
+     * 151.515152 a day), paid by one further cheque. Two RENT lines, two segments.
+     *
+     * @param creditAccountId the extension line's own deferral account, or null to
+     *                        let it resolve the property's {@code ADVANCE_RENT}.
+     */
+    private UUID galahExtended(UUID creditAccountId) {
+        UUID leaseId = galahWithThreeCleared();
+        renewal.extend(leaseId, new ExtendLeaseRequest(
+                EXTENSION_END,
+                LocalDate.of(2027, 9, 20),
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("15000"), BigDecimal.ZERO,
+                        null, null, creditAccountId, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("15000", LocalDate.of(2027, 10, 2)))));
+        return leaseId;
+    }
+
     private static ChequeRowInput row(String number, LocalDate postingDate, LocalDate chequeDate, String amount) {
         return new ChequeRowInput(null, null, postingDate, number, chequeDate, "Emirates NBD",
                 null, null, new BigDecimal(amount), null, null);
@@ -209,6 +250,17 @@ class LeaseTerminationServiceIT {
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    /**
+     * A PROPERTY_MANAGER assigned to nothing. {@code LeaseAccessPolicy} fails
+     * closed, so this caller reads and manages no lease at all — the shape a
+     * manager has for somebody else's building.
+     */
+    private void asUnassignedPropertyManager() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null,
+                        List.of(new SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+    }
 
     private List<Cheque> register(UUID leaseId) {
         return tx.execute(s -> chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId));
@@ -237,10 +289,23 @@ class LeaseTerminationServiceIT {
                 .map(RecognitionEntryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    private List<RentSegment> segmentsOf(UUID leaseId) {
+        return tx.execute(s -> segments.findByLease_IdOrderByFromDateAsc(leaseId));
+    }
+
     private RentSegment segment(UUID leaseId) {
-        List<RentSegment> all = tx.execute(s -> segments.findByLease_IdOrderByFromDateAsc(leaseId));
+        List<RentSegment> all = segmentsOf(leaseId);
         assertThat(all).hasSize(1);
         return all.get(0);
+    }
+
+    private List<RecognitionEntryDTO> entriesOfSegment(UUID segmentId) {
+        return schedule(leaseIdOfSegment(segmentId)).stream()
+                .filter(r -> segmentId.equals(r.segmentId())).toList();
+    }
+
+    private UUID leaseIdOfSegment(UUID segmentId) {
+        return tx.execute(s -> segments.findById(segmentId).orElseThrow().getLease().getId());
     }
 
     private Lease lease(UUID leaseId) {
@@ -263,15 +328,108 @@ class LeaseTerminationServiceIT {
         return tx.execute(s -> journalLines.findByEntry_IdOrderByLineNoAsc(entryId));
     }
 
+    /**
+     * The debit a journal carries against one account, found <em>by account</em>.
+     *
+     * <p>Not by line index: `lines.get(0)` only works while `PostingService` emits
+     * every pair debit-first, which is an implementation detail of the posting and
+     * not the thing being asserted. A multi-pair TCR has no meaningful line order
+     * at all.</p>
+     */
+    private BigDecimal debitOn(JournalEntry entry, AccountRole role) {
+        return debitOn(entry, leaf(role).getId());
+    }
+
+    private BigDecimal debitOn(JournalEntry entry, UUID accountId) {
+        return linesOf(entry.getId()).stream()
+                .filter(l -> accountId.equals(l.getAccountId()) && l.getDebit() != null)
+                .map(JournalLine::getDebit).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal creditOn(JournalEntry entry, AccountRole role) {
+        UUID accountId = leaf(role).getId();
+        return linesOf(entry.getId()).stream()
+                .filter(l -> accountId.equals(l.getAccountId()) && l.getCredit() != null)
+                .map(JournalLine::getCredit).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** The schedule's row for a period, found by the period rather than by its index. */
+    private RecognitionEntryDTO rowStarting(UUID leaseId, LocalDate periodStart) {
+        List<RecognitionEntryDTO> found = schedule(leaseId).stream()
+                .filter(r -> r.periodStart().equals(periodStart)).toList();
+        assertThat(found).as("rows starting " + periodStart).hasSize(1);
+        return found.get(0);
+    }
+
+    /** Σ of the lease's PLANNED rows — the earned tail a later run will still post. */
+    private BigDecimal plannedTotal(UUID leaseId) {
+        return withStatus(leaseId, RecognitionStatus.PLANNED).stream()
+                .map(RecognitionEntryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     /** An account's closing balance on this lease alone; a credit balance reads negative. */
     private BigDecimal balanceOf(AccountRole role, UUID leaseId) {
+        return balanceAsOf(role, leaseId, null);
+    }
+
+    /**
+     * The same, bounded to entries dated on or before {@code asOf}.
+     *
+     * <p>This is the view a settlement statement drawn at T takes, and the only
+     * one that can see a reversal dated before the entry it reverses — an all-time
+     * balance nets the pair out whatever dates they carry.</p>
+     */
+    private BigDecimal balanceAsOf(AccountRole role, UUID leaseId, LocalDate asOf) {
         return tx.execute(s -> ledger.accountLedger(leaf(role).getId(),
+                new LedgerQueryService.LedgerFilter(null, asOf, null, null, leaseId, null)).closingBalance());
+    }
+
+    /** …for a leaf named outright rather than through a role. */
+    private BigDecimal balanceOf(UUID accountId, UUID leaseId) {
+        return tx.execute(s -> ledger.accountLedger(accountId,
                 new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null)).closingBalance());
     }
 
     private long journalCount(JournalDocType docType) {
         return jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and doc_type = ?",
                 Long.class, fixtures.tenantId(), docType.name());
+    }
+
+    /**
+     * Live recognition journals whose entry is no longer POSTED — the shape a lost
+     * update leaves behind. Asked of the journal, not of the entry: a dirty update
+     * rewrites every column, so the losing write blanks {@code journal_id} and the
+     * orphan is invisible from the entry's side.
+     */
+    private long orphanedRecognitionJournals() {
+        return jdbc.queryForObject(
+                "select count(*) from journal_entries je where je.tenant_id = ?"
+                        + " and je.source_type = 'RECOGNITION' and je.status = 'POSTED'"
+                        + " and not exists (select 1 from recognition_entries re"
+                        + "                 where re.id = je.source_id and re.status = 'POSTED')",
+                Long.class, fixtures.tenantId());
+    }
+
+    /**
+     * Blocks until some backend is waiting on a lock, so the other thread has
+     * demonstrably reached the row we are holding. Polling {@code pg_stat_activity}
+     * rather than sleeping a guessed interval: a fixed sleep is either flaky or
+     * slow, and usually both.
+     */
+    private void awaitABlockedBackend() {
+        for (int i = 0; i < 300; i++) {
+            Long waiting = jdbc.queryForObject(
+                    "select count(*) from pg_stat_activity"
+                            + " where datname = current_database() and wait_event_type = 'Lock'", Long.class);
+            if (waiting != null && waiting > 0) return;
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        throw new AssertionError("No backend ever blocked on the row lock");
     }
 
     private long reversalCount() {
@@ -375,7 +533,7 @@ class LeaseTerminationServiceIT {
         // ---- the schedule --------------------------------------------------
         List<RecognitionEntryDTO> rows = schedule(leaseId);
         assertThat(rows).hasSize(13);
-        RecognitionEntryDTO february = rows.get(5);
+        RecognitionEntryDTO february = rowStarting(leaseId, LocalDate.of(2027, 2, 1));
         assertThat(february.status()).isEqualTo(RecognitionStatus.PLANNED);
         assertThat(february.periodStart()).isEqualTo(LocalDate.of(2027, 2, 1));
         assertThat(february.periodEnd()).isEqualTo(T);
@@ -383,17 +541,20 @@ class LeaseTerminationServiceIT {
         // 20,260.27 earned through 15 Feb, less the 18,164.39 already recognised.
         assertThat(february.amount()).isEqualByComparingTo("2095.88");
         assertThat(february.journalId()).isNull();
-        assertThat(rows.subList(6, 13)).allSatisfy(r ->
-                assertThat(r.status()).isEqualTo(RecognitionStatus.CANCELLED));
+        assertThat(schedule(leaseId).stream()
+                .filter(r -> r.periodStart().isAfter(LocalDate.of(2027, 2, 28))).toList())
+                .as("every period after the one containing T")
+                .hasSize(7)
+                .allSatisfy(r -> assertThat(r.status()).isEqualTo(RecognitionStatus.CANCELLED));
 
         RentSegment segment = segment(leaseId);
         assertThat(segment.getStatus()).isEqualTo(SegmentStatus.TRUNCATED);
         assertThat(segment.getToDate()).isEqualTo(T);
         assertThat(segment.getDays()).isEqualTo(145);
-        // The contract value and the rate the earlier months were worth are left
-        // alone: the unearned reversal was computed against the first and would be
-        // restated by re-deriving the second.
-        assertThat(segment.getAmount()).isEqualByComparingTo("51000");
+        // The window it actually ran, with the contract it was cut from preserved
+        // beside it — see aTruncatedSegmentDescribesTheTermItActuallyRan.
+        assertThat(segment.getAmount()).isEqualByComparingTo("20260.27");
+        assertThat(segment.getOriginalAmount()).isEqualByComparingTo("51000");
         assertThat(segment.getDayRate()).isEqualByComparingTo("139.726027");
 
         // ---- the TCR --------------------------------------------------------
@@ -404,18 +565,22 @@ class LeaseTerminationServiceIT {
         assertThat(tcr.getEntryDate()).isEqualTo(T);
         assertThat(tcr.getNarration()).isEqualTo("Unearned rent reversed on termination");
         assertThat(tcr.getLeaseId()).isEqualTo(leaseId);
-        List<JournalLine> tcrLines = linesOf(tcrId);
-        assertThat(tcrLines).hasSize(2);
-        assertThat(tcrLines.get(0).getAccountId()).isEqualTo(leaf(AccountRole.ADVANCE_RENT).getId());
-        assertThat(tcrLines.get(0).getDebit()).isEqualByComparingTo("30739.73");
-        assertThat(tcrLines.get(1).getAccountId()).isEqualTo(leaf(AccountRole.RENT_RECEIVABLE).getId());
-        assertThat(tcrLines.get(1).getCredit()).isEqualByComparingTo("30739.73");
+        assertThat(linesOf(tcrId)).hasSize(2);
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("30739.73");
+        assertThat(creditOn(tcr, AccountRole.RENT_RECEIVABLE)).isEqualByComparingTo("30739.73");
 
         // ---- what the renter is left owing ----------------------------------
         // 22,260.27 earned (20,260.27 of rent + the 2,000 admin fee) against 27,500
         // received: the landlord owes 5,239.73, and a rent receivable in credit is
         // exactly how that reads.
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("-5239.73");
+        // Every instrument is either collected or handed back, so nothing is left
+        // sitting in PDC receivable...
+        assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("0.00");
+        // ...and what is still deferred is exactly the 1–15 Feb row a later run
+        // will recognise: earned, not yet taken to income.
+        assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("-2095.88");
+        assertThat(plannedTotal(leaseId)).isEqualByComparingTo("2095.88");
 
         // ---- the contract ----------------------------------------------------
         assertThat(result.getStatus()).isEqualTo(LeaseStatus.TERMINATED);
@@ -476,6 +641,33 @@ class LeaseTerminationServiceIT {
         assertThat(recognised(leaseId).add(new BigDecimal("30739.73"))).isEqualByComparingTo("51000.00");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("-5239.73");
         assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("0.00");
+
+        // ---- and it is right at every date, not only at the end of time --------
+        //
+        // A reversal must never predate the entry it reverses. The Feb CIL is dated
+        // 2027-02-28 and the Mar one 2027-03-31, both after T, so their reversals
+        // carry those dates rather than T. Reading the books AS OF T — which is
+        // exactly what a settlement statement drawn at T does — the income is the
+        // 18,164.39 closed through January plus the 2,095.88 replacement dated T,
+        // and the months that were never earned have not been recognised yet at
+        // all. Dating the reversals T instead nets them in early and answers
+        // 12,016.43 income and −8,243.84 of advance rent on that date.
+        assertThat(balanceAsOf(AccountRole.RENTAL_INCOME, leaseId, T))
+                .as("rental income as of T").isEqualByComparingTo("-20260.27");
+        assertThat(balanceAsOf(AccountRole.ADVANCE_RENT, leaseId, T))
+                .as("advance rent as of T").isEqualByComparingTo("0.00");
+        // Each later month-end nets its own CIL against its own reversal.
+        for (LocalDate monthEnd : List.of(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 31),
+                LocalDate.of(2027, 9, 30))) {
+            assertThat(balanceAsOf(AccountRole.RENTAL_INCOME, leaseId, monthEnd))
+                    .as("rental income as of " + monthEnd).isEqualByComparingTo("-20260.27");
+            assertThat(balanceAsOf(AccountRole.ADVANCE_RENT, leaseId, monthEnd))
+                    .as("advance rent as of " + monthEnd).isEqualByComparingTo("0.00");
+        }
+        JournalEntry febReversal = journal(journal(reversed.journalId()).getReversedById());
+        assertThat(febReversal.getEntryDate()).isEqualTo(LocalDate.of(2027, 2, 28));
+        JournalEntry marReversal = journal(journal(march.journalId()).getReversedById());
+        assertThat(marReversal.getEntryDate()).isEqualTo(LocalDate.of(2027, 3, 31));
         assertTrialBalanceBalances();
     }
 
@@ -519,10 +711,81 @@ class LeaseTerminationServiceIT {
         assertThat(segment.getDays()).isEqualTo(130);
 
         JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
-        assertThat(linesOf(tcr.getId()).get(0).getDebit()).isEqualByComparingTo("32835.62");
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("32835.62");
         // 25,500 of returned paper against 32,835.62 handed back.
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("-7335.62");
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * A truncated segment describes the term the tenancy actually ran, so the
+     * module's own single-source-of-truth function answers correctly when it is
+     * asked about the row.
+     *
+     * <p>This is the trap. A settlement author reads "earned rent to T" and writes
+     * the obvious call — the one {@code summarise} itself makes,
+     * {@code earnedThrough(segment.amount, segment.fromDate, segment.toDate, T)}.
+     * If a truncated row kept the contract's 51,000 against a 145-day window, that
+     * call answers <b>51,000.00</b> instead of 20,260.27: a 30,739.73 error,
+     * silent, on the statement that decides what the renter is refunded. So
+     * {@code amount}, {@code to_date} and {@code days} move together, the contract
+     * figures move to {@code original_amount}/{@code original_to_date}, and the
+     * unearned rent the {@code TCR} reversed is exactly the difference between
+     * them.</p>
+     *
+     * <p>{@code day_rate} is the one field that does <em>not</em> move: it is what
+     * the months before the cut were worth.</p>
+     */
+    @Test
+    void aTruncatedSegmentDescribesTheTermItActuallyRan() {
+        UUID leaseId = galahWithThreeCleared();
+        recognition.runTo(LocalDate.of(2027, 1, 31), false);
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+
+        RentSegment seg = segment(leaseId);
+        assertThat(seg.getStatus()).isEqualTo(SegmentStatus.TRUNCATED);
+        assertThat(seg.getFromDate()).isEqualTo(START);
+        assertThat(seg.getToDate()).isEqualTo(T);
+        assertThat(seg.getDays()).isEqualTo(145);
+        assertThat(seg.getAmount()).isEqualByComparingTo("20260.27");
+        assertThat(seg.getOriginalAmount()).isEqualByComparingTo("51000");
+        assertThat(seg.getOriginalToDate()).isEqualTo(END);
+        assertThat(seg.getDayRate()).isEqualByComparingTo("139.726027");
+
+        // The obvious call, on the truncated row, at T and at any later date.
+        assertThat(ProrationEngine.earnedThrough(seg.getAmount(), seg.getFromDate(), seg.getToDate(), T))
+                .isEqualByComparingTo("20260.27");
+        assertThat(ProrationEngine.earnedThrough(seg.getAmount(), seg.getFromDate(), seg.getToDate(), END))
+                .isEqualByComparingTo("20260.27");
+
+        // unearned == original_amount − amount, and that is what the TCR reversed.
+        assertThat(seg.getOriginalAmount().subtract(seg.getAmount())).isEqualByComparingTo("30739.73");
+        assertThat(debitOn(journal(lease(leaseId).getTerminationJournalId()), AccountRole.ADVANCE_RENT))
+                .isEqualByComparingTo(seg.getOriginalAmount().subtract(seg.getAmount()));
+
+        // ...and Σ the rows the segment still owns is the amount it now claims.
+        assertThat(recognised(leaseId).add(plannedTotal(leaseId))).isEqualByComparingTo(seg.getAmount());
+    }
+
+    /**
+     * A terminated contract cannot be amended, which is what keeps a truncated
+     * segment safe from {@code rebuildAfterAmend} — the one path that reads live
+     * segments (ACTIVE <em>and</em> TRUNCATED) and would cut fresh ones from the
+     * lines.
+     */
+    @Test
+    void aTerminatedLeaseCannotBeAmended() {
+        UUID leaseId = galahWithThreeCleared();
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+
+        assertThatThrownBy(() -> posting.amendLines(leaseId,
+                List.of(line("RENT", "60000"), line("ADMIN_FEE", "2000")), "after the fact"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only an ACTIVE lease can have its lines amended");
+
+        assertThat(segment(leaseId).getStatus()).isEqualTo(SegmentStatus.TRUNCATED);
+        assertThat(segment(leaseId).getAmount()).isEqualByComparingTo("20260.27");
     }
 
     /** Finance overrules the default: one cheque is kept for collection, only the other goes back. */
@@ -668,8 +931,9 @@ class LeaseTerminationServiceIT {
         assertThat(rows).hasSize(13);
         assertThat(withStatus(leaseId, RecognitionStatus.CANCELLED)).isEmpty();
         assertThat(withStatus(leaseId, RecognitionStatus.REVERSED)).isEmpty();
-        assertThat(rows.get(5).periodEnd()).isEqualTo(LocalDate.of(2027, 2, 28));
-        assertThat(rows.get(5).amount()).isEqualByComparingTo("3912.33");
+        RecognitionEntryDTO february = rowStarting(leaseId, LocalDate.of(2027, 2, 1));
+        assertThat(february.periodEnd()).isEqualTo(LocalDate.of(2027, 2, 28));
+        assertThat(february.amount()).isEqualByComparingTo("3912.33");
         assertThat(recognised(leaseId)).isEqualByComparingTo("26408.23");
 
         Lease lease = lease(leaseId);
@@ -678,6 +942,315 @@ class LeaseTerminationServiceIT {
         assertThat(lease.getTerminationJournalId()).isNull();
         assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * The nightly close posts a row while the termination is deciding what to do
+     * with it: the row must end REVERSED, never CANCELLED with a live {@code CIL}
+     * behind it.
+     *
+     * <p>Sequenced rather than raced, so it means the same thing every run. The
+     * main thread takes the March row's write lock — exactly the lock
+     * {@code RecognitionPoster} takes — signals, waits until a backend is actually
+     * blocked on it, then posts March from inside that lock and commits. The
+     * termination running on the other thread therefore meets a row that was
+     * PLANNED when it planned and POSTED by the time it writes.</p>
+     *
+     * <p>Without the lock the termination reads PLANNED, decides "cancel", and its
+     * UPDATE lands after the poster's commit: a CANCELLED row over a {@code CIL}
+     * nobody will ever reverse — rent recognised for a period after the tenancy
+     * ended, advance rent over-released, and a trial balance that still balances so
+     * nobody notices. The assertions below are written against the ledger as well
+     * as the schedule for that reason: Hibernate rewrites every column on a dirty
+     * update, so the losing write also blanks {@code journal_id} and the orphaned
+     * journal can only be found from the journal's side.</p>
+     *
+     * <p>No deadlock: the termination holds the lease row and the PDR sequence
+     * counter, the poster holds one entry and wants the CIL counter, and neither
+     * wants what the other has. (That is not general — a poster reversing a CIL
+     * would contend on the CIL counter; see the report's Concerns.)</p>
+     */
+    @Test
+    void aRowPostedMidTerminationIsReversedNotCancelled() throws Exception {
+        UUID leaseId = galahWithThreeCleared();
+        recognition.runTo(LocalDate.of(2027, 1, 31), false);
+        UUID marchId = rowStarting(leaseId, LocalDate.of(2027, 3, 1)).id();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch rowLocked = new CountDownLatch(1);
+        try {
+            Future<LeaseDTO> terminating = pool.submit(() -> {
+                assertThat(rowLocked.await(30, TimeUnit.SECONDS)).isTrue();
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    return termination.terminate(leaseId,
+                            new TerminateLeaseRequest(T, null, null, null), null);
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+
+            tx.executeWithoutResult(s -> {
+                entriesRepo.lockById(marchId).orElseThrow();
+                rowLocked.countDown();
+                awaitABlockedBackend();
+                poster.postJoining(marchId);
+            });
+
+            assertThat(terminating.get(60, TimeUnit.SECONDS).getStatus()).isEqualTo(LeaseStatus.TERMINATED);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        RecognitionEntryDTO march = rowStarting(leaseId, LocalDate.of(2027, 3, 1));
+        assertThat(march.status()).isEqualTo(RecognitionStatus.REVERSED);
+        assertThat(march.journalId()).isNotNull();
+        assertThat(journal(march.journalId()).getStatus()).isEqualTo(JournalStatus.REVERSED);
+
+        // The invariant, stated from the ledger's side so a blanked journal_id
+        // cannot hide an orphan: every live recognition journal belongs to a row
+        // that is still POSTED.
+        assertThat(orphanedRecognitionJournals()).as("live CILs with no POSTED row").isZero();
+        // ...and the schedule and the ledger agree on what was recognised.
+        assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo(recognised(leaseId).negate());
+        // Σ POSTED-net + the earned tail still waiting == what the tenancy earned.
+        assertThat(recognised(leaseId).add(plannedTotal(leaseId))).isEqualByComparingTo("20260.27");
+        assertThat(segment(leaseId).getAmount()).isEqualByComparingTo("20260.27");
+        assertTrialBalanceBalances();
+    }
+
+    // ------------------------------------------------------------------
+    // two segments: a lease that was extended
+    // ------------------------------------------------------------------
+
+    /**
+     * Terminate inside the original term of an extended lease: the base segment is
+     * cut, the extension — which never began — is cancelled outright, and one
+     * {@code TCR} hands back both.
+     *
+     * <p>Both lines defer into the property's own advance-rent leaf, so the
+     * reversal is <b>one</b> debit of the two amounts together and not two debits
+     * of the same account in one journal. A bookkeeper reading the ledger should
+     * not have to ask why the same account appears twice on one entry.</p>
+     */
+    @Test
+    void terminatingInsideTheOriginalTermCancelsTheExtensionUnstarted() {
+        UUID leaseId = galahExtended(null);
+        recognition.runTo(LocalDate.of(2027, 1, 31), false);
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+
+        List<RentSegment> segs = segmentsOf(leaseId);
+        assertThat(segs).hasSize(2);
+        RentSegment base = segs.get(0);
+        RentSegment extension = segs.get(1);
+
+        assertThat(base.getStatus()).isEqualTo(SegmentStatus.TRUNCATED);
+        assertThat(base.getAmount()).isEqualByComparingTo("20260.27");
+        assertThat(base.getOriginalAmount()).isEqualByComparingTo("51000");
+
+        // It starts after T, so there was never a day of it to earn.
+        assertThat(extension.getFromDate()).isEqualTo(EXTENSION_START);
+        assertThat(extension.getStatus()).isEqualTo(SegmentStatus.CANCELLED);
+        assertThat(extension.getAmount()).isEqualByComparingTo("15000");
+        assertThat(entriesOfSegment(extension.getId())).allSatisfy(r ->
+                assertThat(r.status()).isEqualTo(RecognitionStatus.CANCELLED));
+
+        // 30,739.73 of the base term plus the whole 15,000 of the extension.
+        JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
+        assertThat(linesOf(tcr.getId())).as("one debit, one credit — not one pair per segment").hasSize(2);
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("45739.73");
+        assertThat(creditOn(tcr, AccountRole.RENT_RECEIVABLE)).isEqualByComparingTo("45739.73");
+
+        // Everything deferred is now either recognised, handed back, or the earned
+        // tail still waiting for a run — and that tail is all that is left.
+        assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId))
+                .isEqualByComparingTo(plannedTotal(leaseId).negate());
+        assertThat(plannedTotal(leaseId)).isEqualByComparingTo("2095.88");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * An extension whose rent line names its own deferral account is reversed
+     * <em>there</em>, not against the property's mapping.
+     *
+     * <p>Same subtlety the {@code CIL} has: the {@code TCO} credited whatever leaf
+     * the line named, and a reversal that re-resolves {@code ADVANCE_RENT} would
+     * release from one account what was parked in another — a liability stranded in
+     * the override for good, and the trial balance still balancing.</p>
+     */
+    @Test
+    void theUnearnedReversalDebitsEachLinesOwnDeferralAccount() {
+        Account mapped = leaf(AccountRole.ADVANCE_RENT);
+        Account override = tx.execute(s -> accountService.createLeaf("Advance Rent - extension",
+                accounts.findById(mapped.getId()).orElseThrow().getParent(), fixtures.property().getId()));
+        UUID leaseId = galahExtended(override.getId());
+        recognition.runTo(LocalDate.of(2027, 1, 31), false);
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+
+        JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
+        assertThat(linesOf(tcr.getId())).as("two accounts, two pairs").hasSize(4);
+        assertThat(debitOn(tcr, mapped.getId())).isEqualByComparingTo("30739.73");
+        assertThat(debitOn(tcr, override.getId())).isEqualByComparingTo("15000");
+        assertThat(creditOn(tcr, AccountRole.RENT_RECEIVABLE)).isEqualByComparingTo("45739.73");
+
+        // Each leaf is emptied of exactly what its own TCO parked there.
+        assertThat(balanceOf(override.getId(), leaseId)).isEqualByComparingTo("0.00");
+        // The property's own leaf keeps only the base term's earned-but-unrecognised
+        // tail: the 1–15 Feb row, still PLANNED.
+        assertThat(balanceOf(mapped.getId(), leaseId))
+                .isEqualByComparingTo(plannedTotal(leaseId).negate());
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * Terminate inside the <em>extension's</em> term: the base segment ran its
+     * course and is left exactly as it is — not "truncated", because nothing was
+     * cut off it.
+     */
+    @Test
+    void terminatingInsideTheExtensionLeavesTheFinishedSegmentAlone() {
+        UUID leaseId = galahExtended(null);
+        LocalDate late = LocalDate.of(2027, 11, 15);
+        recognition.runTo(LocalDate.of(2027, 10, 31), false);
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(late, null, null, null), null);
+
+        List<RentSegment> segs = segmentsOf(leaseId);
+        RentSegment base = segs.get(0);
+        RentSegment extension = segs.get(1);
+
+        assertThat(base.getStatus()).as("it finished; it was not cut short").isEqualTo(SegmentStatus.ACTIVE);
+        assertThat(base.getToDate()).isEqualTo(END);
+        assertThat(base.getAmount()).isEqualByComparingTo("51000");
+        assertThat(base.getOriginalAmount()).isNull();
+
+        // 24 Sep → 15 Nov inclusive is 53 of the extension's 99 days, at
+        // 15,000 / 99 = 151.515152 a day: 151.515152 × 53 = 8,030.30 earned.
+        assertThat(extension.getStatus()).isEqualTo(SegmentStatus.TRUNCATED);
+        assertThat(extension.getToDate()).isEqualTo(late);
+        assertThat(extension.getDays()).isEqualTo(53);
+        assertThat(extension.getAmount()).isEqualByComparingTo("8030.30");
+        assertThat(extension.getOriginalAmount()).isEqualByComparingTo("15000");
+        assertThat(extension.getOriginalToDate()).isEqualTo(EXTENSION_END);
+
+        JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("6969.70");
+        assertThat(recognised(leaseId).add(plannedTotal(leaseId)))
+                .as("the whole base term plus the part of the extension that ran")
+                .isEqualByComparingTo("59030.30");
+        assertTrialBalanceBalances();
+    }
+
+    // ------------------------------------------------------------------
+    // the rest of the register
+    // ------------------------------------------------------------------
+
+    /**
+     * A renter with a checkout open when the contract ends.
+     *
+     * <p>An authorisation is not money — nothing has posted, the instalment is
+     * exactly as unpaid as it was — so the row is uncleared and belongs in one of
+     * the two lists like any other. Returning it means putting it back to
+     * REGISTERED first, which is the only status {@code returnToTenant} accepts and
+     * the one it came from. A row that is <em>kept</em> is left in
+     * ONLINE_PENDING: finishing or abandoning that checkout is the renter's, and
+     * cancelling it from here could race a capture mid-flight.</p>
+     *
+     * <p>The preview does none of this — it is asserted first, twice, for exactly
+     * that reason.</p>
+     */
+    @Test
+    void anOnlineCheckoutIsRevertedBeforeItIsHandedBack() {
+        UUID leaseId = galahWithThreeCleared();
+        UUID april = chequeOn(leaseId, RENT_3).getId();
+        UUID july = chequeOn(leaseId, RENT_4).getId();
+        chequeService.registerOnlinePending(april);
+        chequeService.registerOnlinePending(july);
+        assertThat(statusOf(leaseId, RENT_3)).isEqualTo(ChequeStatus.ONLINE_PENDING);
+
+        // Preview: both rows are uncleared, both default to being returned, and
+        // neither is touched.
+        TerminationPreviewDTO preview = termination.preview(leaseId, T);
+        assertThat(preview.chequesToReturn()).extracting(ChequeDTO::chequeDate)
+                .containsExactly(RENT_3, RENT_4);
+        assertThat(statusOf(leaseId, RENT_3)).isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(statusOf(leaseId, RENT_4)).isEqualTo(ChequeStatus.ONLINE_PENDING);
+
+        termination.terminate(leaseId,
+                new TerminateLeaseRequest(T, List.of(july), List.of(april), null), null);
+
+        assertThat(statusOf(leaseId, RENT_4)).as("handed back").isEqualTo(ChequeStatus.RETURNED);
+        assertThat(journal(chequeOn(leaseId, RENT_4).getPdrJournalId()).getStatus())
+                .isEqualTo(JournalStatus.REVERSED);
+        assertThat(statusOf(leaseId, RENT_3)).as("kept: the checkout is the renter's")
+                .isEqualTo(ChequeStatus.ONLINE_PENDING);
+        assertThat(journal(chequeOn(leaseId, RENT_3).getPdrJournalId()).getStatus())
+                .isEqualTo(JournalStatus.POSTED);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A cheque that already bounced is neither handed back nor kept for collection
+     * — there is nothing to hand back and nothing to bank — and the money is still
+     * owed. It is the preview's third list for that reason, and it is deliberately
+     * outside the "every uncleared row in exactly one list" rule, so a caller can
+     * echo the preview's own lists back verbatim.
+     */
+    @Test
+    void aBouncedRowIsOwedRatherThanReturnedOrKept() {
+        UUID leaseId = galahWithThreeCleared();
+        UUID april = chequeOn(leaseId, RENT_3).getId();
+        chequeService.deposit(april, ChequeActionRequest.on(RENT_3));
+        chequeService.bounce(april, new ChequeActionRequest(RENT_3, null, ChequeFailureReason.BOUNCE, null));
+        assertThat(statusOf(leaseId, RENT_3)).isEqualTo(ChequeStatus.BOUNCED);
+
+        TerminationPreviewDTO preview = termination.preview(leaseId, T);
+        assertThat(preview.bouncedOutstanding()).extracting(ChequeDTO::chequeDate).containsExactly(RENT_3);
+        assertThat(preview.chequesToReturn()).extracting(ChequeDTO::chequeDate).containsExactly(RENT_4);
+        assertThat(preview.chequesToKeep()).isEmpty();
+
+        // The July row alone is the whole answer about the uncleared rows; naming
+        // the bounced one would be refused.
+        termination.terminate(leaseId,
+                new TerminateLeaseRequest(T, List.of(chequeOn(leaseId, RENT_4).getId()), List.of(), null), null);
+
+        assertThat(statusOf(leaseId, RENT_3)).as("still bounced, still owed").isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(statusOf(leaseId, RENT_4)).isEqualTo(ChequeStatus.RETURNED);
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.TERMINATED);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * A manager with no buildings sees no leases — asserted at the service, below
+     * the role gate.
+     *
+     * <p>The HTTP gate already keeps a PROPERTY_MANAGER off {@code POST
+     * /terminate} ({@code LeaseControllerTerminateEndpointsIT}), so this is
+     * defence in depth rather than the live path. It is worth having because
+     * {@code LeaseService.markTerminated} is public and a future caller —
+     * a settlement screen, an import, an ops endpoint — would reach these methods
+     * without passing that gate. All three refuse with "not found" rather than
+     * "forbidden": a 403 on a lease id confirms the lease exists.</p>
+     */
+    @Test
+    void aManagerWithNoBuildingsCanNeitherPreviewNorTerminate() {
+        UUID leaseId = galahWithThreeCleared();
+        asUnassignedPropertyManager();
+
+        assertThatThrownBy(() -> termination.preview(leaseId, T)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> termination.terminate(leaseId,
+                new TerminateLeaseRequest(T, null, null, null), null)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> leaseService.markTerminated(leaseId, T, null, null, null))
+                .isInstanceOf(NotFoundException.class);
+
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(lease(leaseId).getTerminatedOn()).isNull();
     }
 
     /** Another landlord cannot see this contract, let alone end it. */

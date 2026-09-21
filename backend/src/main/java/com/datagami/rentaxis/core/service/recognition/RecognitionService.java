@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.RecognitionEntry;
@@ -20,6 +21,8 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -87,6 +90,7 @@ public class RecognitionService {
     private final TenantFiscalSettingsRepository fiscalSettings;
     private final PostingService postingService;
     private final RecognitionPoster poster;
+    private final EntityManager entityManager;
 
     /**
      * Short read-only transactions for the one method that must not hold a long
@@ -103,6 +107,7 @@ public class RecognitionService {
                               TenantFiscalSettingsRepository fiscalSettings,
                               PostingService postingService,
                               RecognitionPoster poster,
+                              EntityManager entityManager,
                               PlatformTransactionManager transactionManager) {
         this.segments = segments;
         this.entries = entries;
@@ -112,6 +117,7 @@ public class RecognitionService {
         this.fiscalSettings = fiscalSettings;
         this.postingService = postingService;
         this.poster = poster;
+        this.entityManager = entityManager;
         this.readTx = new TransactionTemplate(transactionManager);
         this.readTx.setReadOnly(true);
     }
@@ -273,9 +279,16 @@ public class RecognitionService {
      *                        segment that has anything left. The debit has to face
      *                        the same leaf the credit went to; see
      *                        {@code RecognitionPoster}'s class note
+     * @param latestPostingDate the latest date this termination will write a
+     *                        journal on: {@code t} itself, or the entry date of the
+     *                        newest {@code CIL} it has to reverse — a reversal is
+     *                        never dated before the entry it reverses. The caller
+     *                        checks it against the period lock <em>before</em> it
+     *                        starts writing
      */
     public record TerminationRecognition(BigDecimal earnedThrough, BigDecimal recognisedSoFar,
-                                         BigDecimal unearned, List<UnearnedDeferral> deferrals) {
+                                         BigDecimal unearned, List<UnearnedDeferral> deferrals,
+                                         LocalDate latestPostingDate) {
     }
 
     /** One segment's worth of unearned rent, and the liability leaf it sits in. */
@@ -377,19 +390,46 @@ public class RecognitionService {
                 deferrals.add(new UnearnedDeferral(poster.deferralOf(segment, lease), segmentUnearned));
             }
         }
-        BigDecimal recognised = entries
-                .findByLease_IdAndStatusInOrderByPeriodStartAsc(lease.getId(), EnumSet.of(RecognitionStatus.POSTED))
-                .stream().map(RecognitionEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<RecognitionEntry> posted = entries
+                .findByLease_IdAndStatusInOrderByPeriodStartAsc(lease.getId(), EnumSet.of(RecognitionStatus.POSTED));
+        BigDecimal recognised = posted.stream()
+                .map(RecognitionEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new TerminationRecognition(
                 earned.setScale(2, RoundingMode.HALF_UP),
                 recognised.setScale(2, RoundingMode.HALF_UP),
                 unearned.setScale(2, RoundingMode.HALF_UP),
-                List.copyOf(deferrals));
+                List.copyOf(deferrals),
+                latestPostingDate(posted, t));
+    }
+
+    /**
+     * The newest date this termination would write on.
+     *
+     * <p>Every row whose period ends on or after {@code t} is a candidate for
+     * reversal, and a reversal carries the later of {@code t} and the entry's own
+     * date, so the answer is the newest of those. Read off the journals rather
+     * than off {@code periodEnd}, which is what {@code RecognitionPoster} happens
+     * to stamp: one of those two is the ledger's own record and the other is an
+     * assumption about it.</p>
+     */
+    private LocalDate latestPostingDate(List<RecognitionEntry> posted, LocalDate t) {
+        List<UUID> journalIds = posted.stream()
+                .filter(e -> !e.getPeriodEnd().isBefore(t))
+                .map(RecognitionEntry::getJournalId).filter(Objects::nonNull).toList();
+        LocalDate latest = t;
+        if (!journalIds.isEmpty()) {
+            for (JournalEntry journal : journals.findAllById(journalIds)) {
+                if (journal.getEntryDate() != null && journal.getEntryDate().isAfter(latest)) {
+                    latest = journal.getEntryDate();
+                }
+            }
+        }
+        return latest;
     }
 
     private void cancelWholeSegment(RentSegment segment, LocalDate t) {
         for (RecognitionEntry entry : entries.findBySegment_IdOrderByPeriodStartAsc(segment.getId())) {
-            retire(entry, t);
+            retire(entry.getId(), t);
         }
         segment.setStatus(SegmentStatus.CANCELLED);
         segments.save(segment);
@@ -410,26 +450,72 @@ public class RecognitionService {
         List<ProrationEngine.Slice> kept = ProrationEngine.truncate(slices, segment.getDayRate(), t);
         int cutIndex = kept.size() - 1;
 
+        // Ids, not the instances just read. Each row is re-read under its own write
+        // lock before it is touched, and every decision below is made on the status
+        // that read returns — see retire/recut. Periods and amounts are immutable
+        // once a row exists, so the arithmetic above is safe to compute from the
+        // unlocked read; only the status can have moved under us, and that is
+        // exactly what changes cancel into reverse.
         for (int i = cutIndex + 1; i < live.size(); i++) {
-            retire(live.get(i), t);
+            retire(live.get(i).getId(), t);
         }
-        recut(live.get(cutIndex), kept.get(cutIndex), segment, t);
+        recut(live.get(cutIndex).getId(), kept.get(cutIndex), segment, t);
 
+        // Read before anything moves: earnedThrough is defined over the segment's
+        // ORIGINAL window, and the next four lines are about to shorten it.
+        BigDecimal earned = ProrationEngine.earnedThrough(
+                segment.getAmount(), segment.getFromDate(), segment.getToDate(), t);
+        segment.setOriginalAmount(segment.getAmount());
+        segment.setOriginalToDate(segment.getToDate());
         segment.setStatus(SegmentStatus.TRUNCATED);
+        segment.setAmount(earned);
         segment.setToDate(t);
         segment.setDays(ProrationEngine.daysInclusive(segment.getFromDate(), t));
-        // amount and day_rate are left alone on purpose. The rate is what the
-        // earlier months were worth and re-deriving it from the shortened window
-        // would restate them; the amount is the contract value the unearned
-        // reversal was computed against, and Σ the segment's live POSTED rows is
-        // the earned half of exactly that number.
+        // amount, to_date and days move together so the row goes on describing one
+        // consistent window. It has to: the obvious question a settlement asks is
+        // earnedThrough(amount, fromDate, toDate, T), and a row that kept the
+        // contract's 51,000 against a 145-day window answers it with 51,000 — a
+        // 30,739.73 error, silently, on the statement that decides the refund. The
+        // contract figures are not lost, they move to original_amount /
+        // original_to_date, and the unearned rent this termination reverses is
+        // exactly the difference.
+        //
+        // day_rate is the one field that stays: it is what the months before the
+        // cut were worth, it is what ProrationEngine.truncate was handed to compute
+        // the cut, and re-deriving it from the shortened window would restate them.
         segments.save(segment);
     }
 
-    /** A row wholly after {@code t}: cancelled if it was only planned, reversed if the ledger saw it. */
-    private void retire(RecognitionEntry entry, LocalDate t) {
-        if (entry.getStatus() == RecognitionStatus.POSTED && entry.getJournalId() != null) {
-            postingService.reverse(entry.getJournalId(), t, "Lease terminated " + t);
+    /**
+     * A row wholly after {@code t}: cancelled if it was only planned, reversed if
+     * the ledger saw it — decided <em>under the row's write lock</em>.
+     *
+     * <p>{@code RecognitionPoster} claims a row with {@code lockById} before it
+     * posts, precisely because the nightly job and a hand-run close would otherwise
+     * both see PLANNED. A termination is the third writer and needs the same claim
+     * for a sharper reason: the poster's race costs a duplicate journal, this one
+     * costs a <em>lost update</em>. Read without the lock, a row the nightly close
+     * posted a moment ago still looks PLANNED, gets CANCELLED, and its {@code CIL}
+     * is left POSTED with nothing pointing at it — income recognised for a period
+     * after the tenancy ended, advance rent over-released, and a trial balance that
+     * still balances. Under the lock the same row reads POSTED and is reversed.</p>
+     *
+     * <p>Lock order is lease → entry, everywhere: a termination takes the lease row
+     * first and the poster takes no lease lock at all, so the two cannot cycle.</p>
+     */
+    private void retire(UUID entryId, LocalDate t) {
+        RecognitionEntry entry = lock(entryId);
+        if (entry.getStatus() == RecognitionStatus.POSTED) {
+            if (entry.getJournalId() == null) {
+                // Unreachable: RecognitionPoster sets status and journal together in
+                // one transaction. Refused rather than skipped, because skipping
+                // leaves recognised income past the end of the tenancy and says
+                // nothing about it.
+                throw new IllegalStateException(
+                        "Recognition entry " + entryId + " is POSTED with no journal to reverse");
+            }
+            postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t),
+                    "Lease terminated " + t);
             entry.setStatus(RecognitionStatus.REVERSED);
             entries.save(entry);
         } else if (entry.getStatus() == RecognitionStatus.PLANNED) {
@@ -438,8 +524,61 @@ public class RecognitionService {
         }
     }
 
-    /** The row containing {@code t}, re-cut to end on it. See the method note on {@link #truncateForTermination}. */
-    private void recut(RecognitionEntry entry, ProrationEngine.Slice cut, RentSegment segment, LocalDate t) {
+    /**
+     * When a recognition reversal files: {@code max(t, the original's own date)}.
+     *
+     * <p><b>A reversal must never precede the entry it reverses.</b> A month closed
+     * after {@code t} — the tenancy ended on the 15th, the close for that month had
+     * already run — carries its own month-end date, and cancelling it on {@code t}
+     * would make the books wrong <em>between</em> the two dates: read as of
+     * {@code t}, the income would be short by every month that had run ahead and
+     * advance rent would be in debit. All-time balances net out either way, which
+     * is exactly why this is easy to miss and why the settlement statement, which
+     * is drawn as of {@code t}, is the reader that would have been wrong.</p>
+     *
+     * <p>The later date is always open: {@code books_locked_through} is a single
+     * high-water mark, a termination is refused unless {@code t} is past it, and
+     * this date is at or after {@code t}. {@code LeaseTerminationService} checks it
+     * before writing anything all the same.</p>
+     */
+    private LocalDate reversalDate(UUID journalId, LocalDate t) {
+        LocalDate original = journals.findById(journalId).map(JournalEntry::getEntryDate).orElse(t);
+        return original.isAfter(t) ? original : t;
+    }
+
+    /**
+     * The row, claimed {@code FOR UPDATE} <em>and re-read</em>.
+     *
+     * <p>{@code refresh} rather than a locking finder, and the difference is the
+     * whole point of the lock here. A locking query still answers from the
+     * first-level cache when the transaction has already loaded that row — which
+     * this one has, a few lines earlier, to compute the arithmetic — so it would
+     * take the lock and hand back the <em>stale</em> status, which is exactly the
+     * value the lock exists to stop us acting on. {@code refresh(…,
+     * PESSIMISTIC_WRITE)} does both halves: {@code SELECT … FOR UPDATE}, then
+     * overwrite the instance from the row it just locked.</p>
+     */
+    private RecognitionEntry lock(UUID entryId) {
+        RecognitionEntry entry = entries.findById(entryId)
+                .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        entityManager.refresh(entry, LockModeType.PESSIMISTIC_WRITE);
+        return entry;
+    }
+
+    /**
+     * The row containing {@code t}, re-cut to end on it — under the row's own write
+     * lock, for the reason {@link #retire} explains.
+     *
+     * <p>The lost update is worse here than there: a row read as PLANNED and edited
+     * in place, that the nightly close posted in between, ends POSTED at 1–15 Feb
+     * for 2,095.88 while the {@code CIL} it names says 3,912.33 for the whole of
+     * February.</p>
+     *
+     * <p>See the method note on {@link #truncateForTermination} for why the
+     * comparison is on amount as well as period.</p>
+     */
+    private void recut(UUID entryId, ProrationEngine.Slice cut, RentSegment segment, LocalDate t) {
+        RecognitionEntry entry = lock(entryId);
         if (entry.getStatus() == RecognitionStatus.PLANNED) {
             entry.setPeriodEnd(cut.periodEnd());
             entry.setDays(cut.days());
@@ -447,12 +586,17 @@ public class RecognitionService {
             entries.save(entry);
             return;
         }
+        if (entry.getStatus() != RecognitionStatus.POSTED || entry.getJournalId() == null) {
+            throw new IllegalStateException("Recognition entry " + entryId + " is " + entry.getStatus()
+                    + " and cannot be re-cut");
+        }
         boolean unchanged = entry.getPeriodEnd().isEqual(cut.periodEnd())
                 && entry.getAmount().compareTo(cut.amount()) == 0;
         if (unchanged) {
             return;
         }
-        postingService.reverse(entry.getJournalId(), t, "Lease terminated " + t);
+        postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t),
+                "Lease terminated " + t);
         entry.setStatus(RecognitionStatus.REVERSED);
         entries.save(entry);
         // Flushed before the replacement is inserted: they share

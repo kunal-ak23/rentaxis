@@ -953,6 +953,11 @@ public class LeaseService {
     public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
                                    UUID terminationJournalId, UUID byUser) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
+        // Object-level authorisation of its own, even though the one production
+        // caller has already asked the same question. A public method that ends a
+        // contract should not depend on every future caller remembering to; the
+        // policy answers "Lease not found" rather than a 403, for the usual reason.
+        leaseAccessPolicy.requireManageable(lease);
 
         if (lease.getStatus() == LeaseStatus.TERMINATED || lease.getStatus() == LeaseStatus.CLOSED) {
             throw new BusinessRuleViolationException("Lease is already terminated or closed");

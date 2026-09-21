@@ -83,7 +83,18 @@ public class RentSegment extends BaseTenantEntity {
     @Column(name = "to_date", nullable = false)
     private LocalDate toDate;
 
-    /** The line's net — after discount, before VAT. VAT is never income. */
+    /**
+     * What this segment is worth over the window it actually covers.
+     *
+     * <p>On a live segment that is the line's net — after discount, before VAT,
+     * because VAT is never income. On a {@code TRUNCATED} one it is the rent
+     * <em>earned</em> up to the termination date, and {@link #originalAmount}
+     * holds the contract figure it was cut from. The four window fields
+     * ({@code amount}, {@code fromDate}, {@code toDate}, {@code days}) therefore
+     * always describe one consistent period, whatever the status — which is what
+     * lets {@code ProrationEngine.earnedThrough(amount, fromDate, toDate, …)}
+     * answer correctly for any row rather than only for a live one.</p>
+     */
     @Column(nullable = false)
     private BigDecimal amount = BigDecimal.ZERO;
 
@@ -91,8 +102,38 @@ public class RentSegment extends BaseTenantEntity {
     @Column(nullable = false)
     private int days;
 
+    /**
+     * The contract rate, and the authoritative one — <b>never re-derive a rate
+     * from a truncated row</b>.
+     *
+     * <p>{@code amount / days} equals this on a live segment. On a
+     * {@code TRUNCATED} one it does not, quite: {@code amount} is the earned total
+     * rounded once to two places, so dividing it back out drifts in the sixth
+     * decimal (20,260.27 / 145 = 139.726000 against the stored 139.726027).
+     * <em>This</em> field is what the months before the cut were worth, it is what
+     * {@code ProrationEngine.truncate} was given when the cut was computed, and
+     * re-deriving one from the shortened window would restate them.</p>
+     */
     @Column(name = "day_rate", nullable = false, precision = 18, scale = 6)
     private BigDecimal dayRate = BigDecimal.ZERO;
+
+    /**
+     * What the line charged before a termination cut this segment short — null on
+     * every segment that was never truncated.
+     *
+     * <p>The pair with {@link #originalToDate} is the contract record: the
+     * unearned rent a termination reverses is exactly
+     * {@code originalAmount − amount}, and without them a truncated row could no
+     * longer say what it was cut <em>from</em>. They are deliberately not used in
+     * any arithmetic about the earned half; nothing should have to know the
+     * difference between a truncated segment and a short one.</p>
+     */
+    @Column(name = "original_amount")
+    private BigDecimal originalAmount;
+
+    /** The line's own end date before truncation; null unless this segment was cut short. */
+    @Column(name = "original_to_date")
+    private LocalDate originalToDate;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)

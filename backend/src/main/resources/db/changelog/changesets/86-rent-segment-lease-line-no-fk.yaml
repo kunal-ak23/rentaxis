@@ -38,6 +38,22 @@ databaseChangeLog:
   #     row lock. A reversal carries source_type = 'REVERSAL' and the *journal's*
   #     id as its source (PostingService.reverse), so it sits outside the predicate
   #     and the index cannot mistake it for a second recognition posting.
+  #
+  # OPERATOR NOTE. This changeset was edited after it first shipped to this branch
+  # and carries no `validCheckSum`, so a database that already ran the earlier
+  # version fails Liquibase's checksum check on startup. It is unreleased — it
+  # exists only on the accounting-v2 plan-3 branch — so the intended recovery is to
+  # drop and re-migrate the local database rather than to pin a checksum that would
+  # then travel to production. If a real environment somehow has it, roll 86 back
+  # and re-run it.
+  #
+  # `CREATE UNIQUE INDEX uq_je_recognition_source` can also fail outright, on any
+  # database that already holds two RECOGNITION journals for one source_id — the
+  # duplicate Task 3's row lock was the only guard against. That failure is the
+  # index doing its job: find the pair with
+  #   SELECT source_id, count(*) FROM journal_entries
+  #    WHERE source_type = 'RECOGNITION' GROUP BY source_id HAVING count(*) > 1;
+  # and reverse the later journal before re-running.
   - changeSet:
       id: 86-rent-segment-lease-line-no-fk
       author: claude
@@ -55,6 +71,19 @@ databaseChangeLog:
             sql: |
               CREATE UNIQUE INDEX uq_je_recognition_source ON journal_entries (source_id)
                 WHERE source_type = 'RECOGNITION';
+        # A truncated segment describes the term the tenancy actually ran — amount,
+        # to_date and days all move to the termination date, so `amount / days`
+        # keeps meaning something and ProrationEngine.earnedThrough answers the
+        # earned figure rather than the contract value for anyone who asks it about
+        # the row. `day_rate` stays the ORIGINAL contract rate, because that is what
+        # the months before the cut were worth and re-deriving it would restate
+        # them. These two columns are where the contract record goes instead:
+        # null on every live segment, filled only by a termination.
+        - addColumn:
+            tableName: rent_segments
+            columns:
+              - column: { name: original_amount, type: "decimal(14,2)" }
+              - column: { name: original_to_date, type: date }
       rollback:
         # Non-destructive on purpose. The rows this changeset exists to protect are
         # retired segments whose line is gone, and re-adding a validating FK would
@@ -74,6 +103,8 @@ databaseChangeLog:
             sql: |
               ALTER TABLE rent_segments
                 ADD CONSTRAINT fk_rs_line FOREIGN KEY (lease_line_id) REFERENCES lease_lines (id) NOT VALID;
+              ALTER TABLE rent_segments
+                DROP COLUMN IF EXISTS original_amount, DROP COLUMN IF EXISTS original_to_date;
               DROP INDEX IF EXISTS uq_je_recognition_source;
               DROP INDEX IF EXISTS uq_re_segment_period;
               ALTER TABLE recognition_entries

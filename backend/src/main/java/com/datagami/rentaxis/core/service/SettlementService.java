@@ -3,8 +3,10 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.SettlementResponseDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.core.service.lease.LeaseDepositLedger;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +39,17 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class SettlementService {
+
+    /**
+     * A contract whose settlement may be closed: one that has ended.
+     *
+     * <p>EXPIRED is here as well as TERMINATED because a tenancy that simply ran
+     * its course is settled by the same statement without §9.1's steps 1–2
+     * (spec §9.2, last sentence) — there is no unearned rent to reverse and no
+     * paper to hand back, but the deposit still has to come off the books.</p>
+     */
+    private static final Set<LeaseStatus> SETTLEABLE =
+            EnumSet.of(LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.CLOSED);
 
     private final LeaseSettlementRepository leaseSettlementRepository;
     private final LeaseSettlementDeductionRepository leaseSettlementDeductionRepository;
@@ -235,7 +249,21 @@ public class SettlementService {
         // gate allows PROPERTY_MANAGER, so without this a manager could read
         // and write settlements for properties they were never assigned.
         leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
-        findLeaseWithTenantCheck(leaseId);
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        // Finalising used to terminate the lease as a side effect. It no longer
+        // does — termination is its own act, with its own effective date, its own
+        // decision about every uncleared instrument and its own journals
+        // (spec §9.1) — and the statement this finalises is drawn from the
+        // receivable that termination leaves behind (§9.2). So the order is a
+        // precondition, not a convention: without it the reachable state is a
+        // FINALIZED settlement with the deposit deemed released, on a contract
+        // that is still running, whose unit is still occupied, whose uncleared
+        // cheques are still on the register and whose rent is still being
+        // recognised every night.
+        if (!SETTLEABLE.contains(lease.getStatus())) {
+            throw new BusinessRuleViolationException(
+                    "Terminate the lease before settling it; this one is " + lease.getStatus() + ".");
+        }
         LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
                 .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
 

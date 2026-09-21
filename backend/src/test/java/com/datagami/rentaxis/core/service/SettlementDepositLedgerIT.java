@@ -61,6 +61,12 @@ import java.util.UUID;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
+import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.lease.LeaseTerminationService;
+import com.datagami.rentaxis.domain.entity.LeaseSettlement;
+import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 
 /**
  * What the settlement preview says the landlord is holding and what the renter
@@ -86,6 +92,7 @@ class SettlementDepositLedgerIT {
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired SettlementService settlement;
+    @Autowired LeaseTerminationService termination;
     @Autowired PenaltyAssessmentService penalties;
     @Autowired ChequeService chequeService;
     @Autowired LeaseRenewalService renewal;
@@ -410,6 +417,45 @@ class SettlementDepositLedgerIT {
         assertThatThrownBy(() -> settlement.getSettlementPreview(leaseId))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No tenant in context");
+    }
+
+    /**
+     * A settlement cannot be finalised on a contract that is still running.
+     *
+     * <p>Finalising used to terminate the lease as a side effect. It no longer does
+     * — termination is its own act with its own date, its own cheque decisions and
+     * its own journals (spec §9.1), and the statement this finalises is drawn from
+     * the receivable that termination leaves behind (§9.2). Without this guard the
+     * two simply came apart: a FINALIZED settlement with the deposit deemed
+     * released, on an ACTIVE lease whose unit is still occupied, whose uncleared
+     * cheques are still on the register and whose rent the nightly job is still
+     * recognising. The web screen even tells the operator the lease was
+     * terminated.</p>
+     */
+    @Test
+    void aSettlementCannotBeFinalisedWhileTheLeaseIsStillRunning() {
+        UUID leaseId = postedWithDeposit();
+        settlement.saveDraft(leaseId, new SaveSettlementDTO(), null);
+
+        assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId, null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Terminate the lease before settling it; this one is ACTIVE.");
+
+        assertThat(settlement.buildSettlementResponse(leaseId).getStatus())
+                .isEqualTo(SettlementStatus.DRAFT.name());
+    }
+
+    /** ...and once it has been terminated, the same call goes through. */
+    @Test
+    void aSettlementOnATerminatedLeaseIsFinalised() {
+        UUID leaseId = postedWithDeposit();
+        settlement.saveDraft(leaseId, new SaveSettlementDTO(), null);
+        termination.terminate(leaseId, new TerminateLeaseRequest(
+                LocalDate.now(), null, null, "Renter moved out"), null);
+
+        LeaseSettlement finalized = settlement.finalizeSettlement(leaseId, null);
+
+        assertThat(finalized.getStatus()).isEqualTo(SettlementStatus.FINALIZED);
     }
 
     // ------------------------------------------------------------------

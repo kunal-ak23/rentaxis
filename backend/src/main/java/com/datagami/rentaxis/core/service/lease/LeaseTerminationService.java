@@ -36,8 +36,10 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -168,6 +170,11 @@ public class LeaseTerminationService {
 
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> toReturn = chosenReturns(register, r, t);
+        // Everything this is about to write, priced before the first write. A
+        // recognition reversal carries the later of T and the entry's own date
+        // (see RecognitionService.reversalDate), so a month closed after T files
+        // on its own month-end, and that date has to be open too.
+        requireOpenPeriod(recognitionService.previewTermination(leaseId, t).latestPostingDate(), t);
 
         for (Cheque cheque : toReturn) {
             // An abandoned checkout is not money and the contract it belonged to is
@@ -202,12 +209,20 @@ public class LeaseTerminationService {
             return null;
         }
         String narration = "Unearned rent reversed on termination";
-        List<PostingRequest.Pair> pairs = new ArrayList<>(plan.deferrals().size());
+        // Merged by account, not one pair per segment. An extended lease has two
+        // RENT lines and both normally defer into the same leaf; a pair each would
+        // put the same account on two debit lines of one journal, which is legal,
+        // balanced, and a question a bookkeeper has to stop and ask. A line that
+        // names its own deferral account still gets its own pair, which is the
+        // distinction that actually matters.
+        Map<PostingRequest.AccountRef, BigDecimal> byAccount = new LinkedHashMap<>();
         for (RecognitionService.UnearnedDeferral d : plan.deferrals()) {
-            pairs.add(PostingRequest.pair(
-                    new PostingRequest.Line(d.account(), PostingRequest.Side.DR, d.amount(), null, narration),
-                    LeaseChequeRegistrar.crReceivable(lease, d.amount()).withNarration(narration)));
+            byAccount.merge(d.account(), d.amount(), BigDecimal::add);
         }
+        List<PostingRequest.Pair> pairs = new ArrayList<>(byAccount.size());
+        byAccount.forEach((account, amount) -> pairs.add(PostingRequest.pair(
+                new PostingRequest.Line(account, PostingRequest.Side.DR, amount, null, narration),
+                LeaseChequeRegistrar.crReceivable(lease, amount).withNarration(narration))));
         JournalEntry tcr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.TCR,
                 t,
@@ -327,6 +342,27 @@ public class LeaseTerminationService {
             // to move rather than the fourth journal that happened to hit it.
             throw new BusinessRuleViolationException(
                     "Cannot terminate on " + t + ": books are locked through " + locked + ".");
+        }
+    }
+
+    /**
+     * A date this termination will post on has to be open too.
+     *
+     * <p>Today this can only ever pass: {@code books_locked_through} is one
+     * monotone high-water mark, {@link #validate} already refuses a {@code t} at or
+     * before it, and every date here is at or after {@code t}. It is written
+     * anyway, and it is written <em>before</em> the first cheque is handed back,
+     * because "the lock is a single date" is a property of the fiscal settings and
+     * not of this method — a per-period lock, or a second lock date, would make it
+     * reachable, and the failure mode without it is a termination that rolls back
+     * after the accountant has watched it half-happen.</p>
+     */
+    private void requireOpenPeriod(LocalDate date, LocalDate t) {
+        LocalDate locked = booksLockedThrough();
+        if (locked != null && date != null && !date.isAfter(locked)) {
+            throw new BusinessRuleViolationException("Cannot terminate on " + t
+                    + ": reversing the income posted on " + date
+                    + " would fall in a locked period (books are locked through " + locked + ").");
         }
     }
 
