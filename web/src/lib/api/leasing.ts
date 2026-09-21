@@ -350,6 +350,17 @@ export type RecognitionEntry = {
   id: string;
   leaseId: string;
   segmentId: string;
+  /**
+   * The lease's property, through its unit, denormalised onto the row so the
+   * month-end page can group by building without two lazy loads per line.
+   *
+   * Nullable on the wire, and typed that way here although the schema does not
+   * allow a lease without a unit: a null is exactly the row the close would
+   * still post, so the page buckets it rather than dropping it.
+   */
+  propertyId: string | null;
+  propertyName: string | null;
+  unitName: string | null;
   periodStart: string;
   periodEnd: string;
   days: number;

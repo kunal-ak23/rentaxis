@@ -338,6 +338,21 @@ export default function SettlementPage() {
         && (!refunds || !!refundBankAccountId)
         && (!needsAcknowledgement || acknowledged);
 
+    /**
+     * The ids of whichever reasons are currently on screen, for the disabled
+     * button's `aria-describedby`.
+     *
+     * Each reason already renders as visible text beside the control it belongs
+     * to — the point of the association is that a screen-reader user who tabs
+     * straight to a disabled Finalize is told why, rather than having to go
+     * hunting for a sentence somewhere above it.
+     */
+    const finalizeReasons = [
+        refunds && !refundBankAccountId ? "settlement-refund-bank-required" : null,
+        needsAcknowledgement && !acknowledged ? "settlement-acknowledge-required" : null,
+        dirty ? "settlement-unsaved" : null,
+    ].filter(Boolean) as string[];
+
     const patchRow = (key: number, patch: Partial<SettlementRow>) => {
         setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
         setDirty(true);
@@ -600,11 +615,11 @@ export default function SettlementPage() {
                         <table className="w-full min-w-[520px]">
                             <thead>
                                 <tr className="bg-input/50">
-                                    <th className={th}>#</th>
-                                    <th className={th}>{tLedger("chequeNo")}</th>
-                                    <th className={th}>{tLedger("docDate")}</th>
-                                    <th className={`${th} text-end`}>{t("amount")}</th>
-                                    <th className={th}>{tLedger("status")}</th>
+                                    <th scope="col" className={th}>#</th>
+                                    <th scope="col" className={th}>{tLedger("chequeNo")}</th>
+                                    <th scope="col" className={th}>{tLedger("docDate")}</th>
+                                    <th scope="col" className={`${th} text-end`}>{t("amount")}</th>
+                                    <th scope="col" className={th}>{tLedger("status")}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -755,7 +770,9 @@ export default function SettlementPage() {
                                     propertyId={lease?.propertyId ?? null}
                                 />
                                 {!refundBankAccountId && (
-                                    <span className="text-[10px] text-warning">{t("refundBankRequired")}</span>
+                                    <span id="settlement-refund-bank-required" className="text-[10px] text-warning">
+                                        {t("refundBankRequired")}
+                                    </span>
                                 )}
                             </div>
                         )}
@@ -770,13 +787,24 @@ export default function SettlementPage() {
                                 onChange={e => setAcknowledged(e.target.checked)}
                                 className="mt-0.5"
                             />
-                            <span>{t("acknowledgeOutstanding", { amount: fmtAmount(instrumentsOutstanding) })}</span>
+                            <span>
+                                {t("acknowledgeOutstanding", { amount: fmtAmount(instrumentsOutstanding) })}
+                                {!acknowledged && (
+                                    <span id="settlement-acknowledge-required" className="block mt-0.5">
+                                        {t("acknowledgeRequired")}
+                                    </span>
+                                )}
+                            </span>
                         </label>
                     )}
 
                     {saveError && <p className="text-xs text-error" data-testid="settlement-save-error">{saveError}</p>}
                     {finalizeError && <p className="text-xs text-error" data-testid="settlement-finalize-error">{finalizeError}</p>}
-                    {dirty && <p className="text-[11px] text-warning" data-testid="settlement-unsaved">{t("unsavedChanges")}</p>}
+                    {dirty && (
+                        <p id="settlement-unsaved" className="text-[11px] text-warning" data-testid="settlement-unsaved">
+                            {t("unsavedChanges")}
+                        </p>
+                    )}
 
                     <div className="flex items-center justify-end gap-3">
                         <button
@@ -795,6 +823,7 @@ export default function SettlementPage() {
                                 data-testid="settlement-finalize"
                                 onClick={() => setConfirmOpen(true)}
                                 disabled={!canFinalize || finalizing}
+                                aria-describedby={finalizeReasons.length ? finalizeReasons.join(" ") : undefined}
                                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {finalizing && <Loader2 size={12} className="animate-spin" />}
@@ -873,12 +902,12 @@ function LineTable({
             <table className="w-full min-w-[720px]">
                 <thead>
                     <tr className="bg-input/50">
-                        <th className={th}>{t("category")}</th>
-                        <th className={th}>{t("description")}</th>
-                        <th className={`${th} text-end`}>{t("amount")}</th>
-                        <th className={th}>{t("account")}</th>
-                        <th className={th}>{t("attachments")}</th>
-                        {editable && <th className={th} />}
+                        <th scope="col" className={th}>{t("category")}</th>
+                        <th scope="col" className={th}>{t("description")}</th>
+                        <th scope="col" className={`${th} text-end`}>{t("amount")}</th>
+                        <th scope="col" className={th}>{t("account")}</th>
+                        <th scope="col" className={th}>{t("attachments")}</th>
+                        {editable && <th scope="col" className={th} />}
                     </tr>
                 </thead>
                 <tbody>
@@ -890,6 +919,7 @@ function LineTable({
                                     {editable ? (
                                         <select
                                             data-testid={`settlement-category-${index}`}
+                                            aria-label={t("category")}
                                             value={r.category}
                                             onChange={e => onPatch(r.key, { category: e.target.value as DeductionCategory })}
                                             className="w-full border border-border rounded-lg bg-surface px-2 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
@@ -907,6 +937,7 @@ function LineTable({
                                         <input
                                             type="text"
                                             data-testid={`settlement-description-${index}`}
+                                            aria-label={t("description")}
                                             value={r.description}
                                             placeholder={t("descriptionPlaceholder")}
                                             onChange={e => onPatch(r.key, { description: e.target.value })}
@@ -923,6 +954,7 @@ function LineTable({
                                             min={0}
                                             step={0.01}
                                             data-testid={`settlement-amount-${index}`}
+                                            aria-label={t("amount")}
                                             onChange={v => onPatch(r.key, { amount: v })}
                                             className="w-28 border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground text-end tabular-nums focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                         />

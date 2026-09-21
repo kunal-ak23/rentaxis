@@ -236,6 +236,36 @@ describe("Settlement statement", () => {
         expect(screen.queryByTestId("settlement-acknowledge")).toBeNull();
     });
 
+    it("gives every line-grid control an accessible name", async () => {
+        renderPage();
+        fireEvent.click(await screen.findByTestId("settlement-add-deduction"));
+
+        // A screen reader reaching these gets "Category"/"Description"/"Amount",
+        // not three unlabelled controls in a row of a table.
+        expect(screen.getByTestId("settlement-category-0")).toHaveAccessibleName("Category");
+        expect(screen.getByTestId("settlement-description-0")).toHaveAccessibleName("Description");
+        expect(screen.getByTestId("settlement-amount-0")).toHaveAccessibleName("Amount");
+        for (const header of screen.getAllByRole("columnheader")) {
+            expect(header).toHaveAttribute("scope", "col");
+        }
+    });
+
+    it("tells a screen reader why Finalize is disabled", async () => {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("settlement-date")).not.toHaveValue(""));
+
+        const finalize = screen.getByTestId("settlement-finalize");
+        expect(finalize).toBeDisabled();
+        expect(finalize).toHaveAccessibleDescription(
+            "A settlement that refunds needs a bank or cash account to pay from.",
+        );
+
+        fireEvent.click(screen.getByTestId("settlement-add-deduction"));
+        expect(screen.getByTestId("settlement-finalize")).toHaveAccessibleDescription(
+            /needs a bank or cash account[\s\S]*save the draft/i,
+        );
+    });
+
     it("never offers a category the server refuses as a line", async () => {
         renderPage();
         fireEvent.click(await screen.findByTestId("settlement-add-deduction"));

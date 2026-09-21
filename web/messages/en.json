@@ -1959,7 +1959,7 @@
     "status": "Status",
     "journal": "Journal",
     "total": "Total",
-    "groupTotal": "Contract total",
+    "groupTotal": "Property total",
     "statusPLANNED": "Planned",
     "statusPOSTED": "Posted",
     "statusREVERSED": "Reversed",
@@ -1981,7 +1981,11 @@
     "scheduleTotal": "Σ schedule",
     "contractValue": "Contract rent",
     "scheduleMatches": "Matches the contract rent.",
-    "scheduleDiffers": "Does not match the contract rent — difference {amount}."
+    "scheduleDiffers": "Does not match the contract rent — difference {amount}.",
+    "unit": "Unit",
+    "unassigned": "No property",
+    "openLeaseFor": "Open the contract for {unit}",
+    "grandTotal": "Grand total"
   },
   "Termination": {
     "title": "Terminate contract",

@@ -42,6 +42,7 @@ function schedule(): RecognitionEntry[] {
     ) =>
         rows.push({
             id: `e${rows.length + 1}`, leaseId: "lease-1", segmentId: "seg-1",
+            propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
             periodStart, periodEnd, days, amount, status,
             journalId: journalNumber ? `j${rows.length + 1}` : null,
             journalNumber,

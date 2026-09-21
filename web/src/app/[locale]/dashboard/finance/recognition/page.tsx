@@ -33,8 +33,10 @@ import {
  * date. So a future value disables both buttons and stops the fetch rather
  * than rendering the server's refusal.
  *
- * Grouped by contract, not by property: `RecognitionEntryDTO` carries
- * `leaseId` and no property — see the report's Decisions.
+ * Grouped by property (spec §11): an accountant closing a month works one
+ * building at a time, and a flat list of every lease's rows is not a worklist.
+ * `RecognitionEntryDTO` carries `propertyId`/`propertyName`/`unitName` for
+ * exactly this.
  */
 
 const th = "text-start px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider";
@@ -48,22 +50,50 @@ function lastDayOfPreviousMonth(): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-type Group = { leaseId: string; rows: RecognitionEntry[]; total: number };
+/** The bucket a row with no property falls into — last, and still counted. */
+export const UNASSIGNED = "unassigned";
 
-/** By contract, each contract's rows oldest period first, contracts by their own oldest. */
-function groupByLease(rows: RecognitionEntry[]): Group[] {
-    const byLease = new Map<string, RecognitionEntry[]>();
+export type PropertyGroup = {
+    /** `propertyId`, or {@link UNASSIGNED}. Also the group's data-testid suffix. */
+    key: string;
+    propertyName: string | null;
+    rows: RecognitionEntry[];
+    subtotal: number;
+};
+
+/**
+ * By property, groups in property-name order with the unplaceable ones last;
+ * inside a group, by unit then by period.
+ *
+ * A row whose `propertyId` is null is bucketed rather than dropped. The schema
+ * does not allow a lease without a unit, so this should be unreachable — but the
+ * page it feeds is a close worklist, and a row that quietly vanished from the
+ * list is a row the accountant does not know the run is about to post.
+ */
+export function groupByProperty(rows: RecognitionEntry[]): PropertyGroup[] {
+    const byProperty = new Map<string, RecognitionEntry[]>();
     for (const r of rows) {
-        const list = byLease.get(r.leaseId) ?? [];
+        const key = r.propertyId ?? UNASSIGNED;
+        const list = byProperty.get(key) ?? [];
         list.push(r);
-        byLease.set(r.leaseId, list);
+        byProperty.set(key, list);
     }
-    return [...byLease.entries()]
-        .map(([leaseId, list]) => {
-            const sorted = [...list].sort((a, b) => a.periodStart.localeCompare(b.periodStart));
-            return { leaseId, rows: sorted, total: sorted.reduce((s, r) => s + (r.amount ?? 0), 0) };
-        })
-        .sort((a, b) => a.rows[0].periodStart.localeCompare(b.rows[0].periodStart));
+    return [...byProperty.entries()]
+        .map(([key, list]) => ({
+            key,
+            propertyName: list[0].propertyName,
+            rows: [...list].sort(
+                (a, b) =>
+                    (a.unitName ?? "").localeCompare(b.unitName ?? "")
+                    || a.periodStart.localeCompare(b.periodStart),
+            ),
+            subtotal: list.reduce((s, r) => s + (r.amount ?? 0), 0),
+        }))
+        .sort((a, b) => {
+            if (a.key === UNASSIGNED) return 1;
+            if (b.key === UNASSIGNED) return -1;
+            return (a.propertyName ?? "").localeCompare(b.propertyName ?? "");
+        });
 }
 
 export default function RecognitionPage() {
@@ -128,8 +158,10 @@ export default function RecognitionPage() {
         setPage(1);
     }, [to, pending.length]);
 
-    const groups = useMemo(() => groupByLease(pending), [pending]);
-    const pendingTotal = useMemo(() => pending.reduce((s, r) => s + (r.amount ?? 0), 0), [pending]);
+    const groups = useMemo(() => groupByProperty(pending), [pending]);
+    // Σ over the groups, not over `pending`: the grand total and the subtotals
+    // are read together and have to be the same addition.
+    const pendingTotal = useMemo(() => groups.reduce((s, g) => s + g.subtotal, 0), [groups]);
     const pagedGroups = groups.slice((page - 1) * pageSize, page * pageSize);
 
     const execute = async (preview: boolean) => {
@@ -290,7 +322,7 @@ export default function RecognitionPage() {
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                     <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">{t("pending")}</h2>
                     <span className="text-[11px] text-muted" data-testid="recognition-pending-total">
-                        {t("pendingCount", { count: pending.length })} · {fmtAmount(pendingTotal)}
+                        {t("pendingCount", { count: pending.length })} · {t("grandTotal")}: {fmtAmount(pendingTotal)}
                     </span>
                 </div>
 
@@ -305,26 +337,28 @@ export default function RecognitionPage() {
                 ) : (
                     <div className="divide-y divide-border">
                         {pagedGroups.map(g => (
-                            <div key={g.leaseId} data-testid={`recognition-group-${g.leaseId}`}>
-                                <div className="px-4 py-2 bg-input/30 flex items-center justify-between">
-                                    <Link
-                                        href={`/${locale}/dashboard/leases/${g.leaseId}`}
-                                        className="text-[11px] font-semibold text-primary hover:underline"
+                            <div key={g.key} data-testid={`recognition-group-${g.key}`}>
+                                <div className="px-4 py-2 bg-input/30 flex items-center justify-between gap-3">
+                                    <span className="text-[11px] font-semibold text-foreground">
+                                        {g.propertyName ?? t("unassigned")}
+                                    </span>
+                                    <span
+                                        className="text-[11px] text-muted tabular-nums"
+                                        data-testid={`recognition-group-total-${g.key}`}
                                     >
-                                        {t("openLease")}
-                                    </Link>
-                                    <span className="text-[11px] text-muted tabular-nums">
-                                        {t("groupTotal")}: {fmtAmount(g.total)}
+                                        {t("groupTotal")}: {fmtAmount(g.subtotal)}
                                     </span>
                                 </div>
                                 <div className="overflow-x-auto">
-                                    <table className="w-full min-w-[520px]">
+                                    <table className="w-full min-w-[640px]">
                                         <thead>
                                             <tr>
-                                                <th className={th}>{t("period")}</th>
-                                                <th className={`${th} text-end`}>{t("days")}</th>
-                                                <th className={`${th} text-end`}>{t("amount")}</th>
-                                                <th className={th}>{t("status")}</th>
+                                                <th scope="col" className={th}>{t("unit")}</th>
+                                                <th scope="col" className={th}>{t("lease")}</th>
+                                                <th scope="col" className={th}>{t("period")}</th>
+                                                <th scope="col" className={`${th} text-end`}>{t("days")}</th>
+                                                <th scope="col" className={`${th} text-end`}>{t("amount")}</th>
+                                                <th scope="col" className={th}>{t("status")}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -334,6 +368,21 @@ export default function RecognitionPage() {
                                                     data-testid={`recognition-pending-row-${r.id}`}
                                                     className="border-t border-border"
                                                 >
+                                                    <td className={td} data-testid={`recognition-row-unit-${r.id}`}>
+                                                        {r.unitName ?? "—"}
+                                                    </td>
+                                                    <td className={td}>
+                                                        <Link
+                                                            href={`/${locale}/dashboard/leases/${r.leaseId}`}
+                                                            // Thirteen links reading "Open contract" are thirteen
+                                                            // identical stops for a screen reader; the unit is the
+                                                            // only thing that tells them apart.
+                                                            aria-label={t("openLeaseFor", { unit: r.unitName ?? "—" })}
+                                                            className="text-primary hover:underline"
+                                                        >
+                                                            {t("openLease")}
+                                                        </Link>
+                                                    </td>
                                                     <td className={td}>
                                                         {fmtIsoDate(r.periodStart, locale)} – {fmtIsoDate(r.periodEnd, locale)}
                                                     </td>

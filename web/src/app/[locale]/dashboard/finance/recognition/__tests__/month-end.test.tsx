@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
@@ -21,8 +21,12 @@ import type { RecognitionEntry, RecognitionRunResult } from "@/lib/api/leasing";
 let role = "ACCOUNTANT";
 
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role } } }) }));
+// `...rest` matters: the contract links carry an aria-label, and a mock that
+// swallowed it would make the accessible-name assertion untestable.
 vi.mock("next/link", () => ({
-    default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
+    default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+        <a href={href} {...rest}>{children}</a>
+    ),
 }));
 
 const api = vi.hoisted(() => ({ pending: vi.fn(), run: vi.fn(), fiscal: vi.fn() }));
@@ -42,16 +46,21 @@ import { ApiError } from "@/lib/api/leasing";
 function entry(over: Partial<RecognitionEntry> & { id: string }): RecognitionEntry {
     return {
         leaseId: "lease-1", segmentId: "seg-1",
+        propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
         periodStart: "2026-08-01", periodEnd: "2026-08-31", days: 31, amount: 10191.78,
         status: "PLANNED", journalId: null, journalNumber: null, postedAt: null,
         ...over,
     };
 }
 
+/**
+ * Deliberately out of order on every axis the page has to sort: Marina before
+ * L'Olivier, unit 512 before 101, August before July.
+ */
 const PENDING: RecognitionEntry[] = [
-    entry({ id: "e1", leaseId: "lease-1", periodStart: "2026-07-01", periodEnd: "2026-07-31" }),
-    entry({ id: "e2", leaseId: "lease-1" }),
-    entry({ id: "e3", leaseId: "lease-2", amount: 5000 }),
+    entry({ id: "e3", leaseId: "lease-2", propertyId: "prop-mar", propertyName: "Marina Heights", unitName: "512", amount: 5000 }),
+    entry({ id: "e2", leaseId: "lease-1", unitName: "204" }),
+    entry({ id: "e1", leaseId: "lease-1", unitName: "204", periodStart: "2026-07-01", periodEnd: "2026-07-31" }),
 ];
 
 const RUN: RecognitionRunResult = {
@@ -82,13 +91,60 @@ afterEach(() => {
 });
 
 describe("Month-end recognition page", () => {
-    it("lists the pending entries grouped by contract, oldest period first", async () => {
+    it("groups the pending entries by property, each with its own subtotal", async () => {
         renderPage();
-        await waitFor(() => expect(screen.getByTestId("recognition-group-lease-1")).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-olv")).toBeInTheDocument());
 
-        expect(screen.getByTestId("recognition-group-lease-2")).toBeInTheDocument();
+        expect(screen.getByTestId("recognition-group-prop-mar")).toBeInTheDocument();
         expect(screen.getAllByTestId(/^recognition-pending-row-/)).toHaveLength(3);
+
+        // 10,191.78 × 2 against L'Olivier, 5,000 against Marina — and the grand
+        // total is the sum of the subtotals, not of one of them.
+        expect(screen.getByTestId("recognition-group-total-prop-olv")).toHaveTextContent("20,383.56");
+        expect(screen.getByTestId("recognition-group-total-prop-mar")).toHaveTextContent("5,000.00");
         expect(screen.getByTestId("recognition-pending-total")).toHaveTextContent("25,383.56");
+    });
+
+    it("sorts the groups by property name, and the rows inside one by unit then period", async () => {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-olv")).toBeInTheDocument());
+
+        const groups = screen.getAllByTestId(/^recognition-group-(?!total)/).map(g => g.getAttribute("data-testid"));
+        expect(groups).toEqual(["recognition-group-prop-olv", "recognition-group-prop-mar"]);
+
+        const rows = screen.getAllByTestId(/^recognition-pending-row-/).map(r => r.getAttribute("data-testid"));
+        // e1 (July) before e2 (August), both on unit 204, then Marina's row.
+        expect(rows).toEqual([
+            "recognition-pending-row-e1",
+            "recognition-pending-row-e2",
+            "recognition-pending-row-e3",
+        ]);
+    });
+
+    it("shows the unit and a link to the contract inside a group", async () => {
+        renderPage();
+        const row = await screen.findByTestId("recognition-pending-row-e1");
+        expect(within(row).getByTestId("recognition-row-unit-e1")).toHaveTextContent("204");
+        expect(within(row).getByRole("link", { name: "Open the contract for 204" })).toHaveAttribute(
+            "href",
+            "/en/dashboard/leases/lease-1",
+        );
+    });
+
+    it("keeps an entry whose property is missing rather than dropping it", async () => {
+        api.pending.mockResolvedValue([
+            ...PENDING,
+            entry({ id: "e4", leaseId: "lease-9", propertyId: null, propertyName: null, unitName: null, amount: 1000 }),
+        ]);
+        renderPage();
+
+        // Last, and still counted: a row the page cannot place is a row the
+        // close would post anyway.
+        await waitFor(() => expect(screen.getByTestId("recognition-group-unassigned")).toBeInTheDocument());
+        const groups = screen.getAllByTestId(/^recognition-group-(?!total)/).map(g => g.getAttribute("data-testid"));
+        expect(groups[groups.length - 1]).toBe("recognition-group-unassigned");
+        expect(screen.getByTestId("recognition-pending-row-e4")).toBeInTheDocument();
+        expect(screen.getByTestId("recognition-pending-total")).toHaveTextContent("26,383.56");
     });
 
     it("shows the lock date the books carry", async () => {

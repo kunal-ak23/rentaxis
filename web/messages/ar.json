@@ -1959,7 +1959,7 @@
     "status": "الحالة",
     "journal": "القيد",
     "total": "الإجمالي",
-    "groupTotal": "إجمالي العقد",
+    "groupTotal": "إجمالي العقار",
     "statusPLANNED": "مخطّط",
     "statusPOSTED": "مُقيَّد",
     "statusREVERSED": "معكوس",
@@ -1981,7 +1981,11 @@
     "scheduleTotal": "مجموع الجدول",
     "contractValue": "إيجار العقد",
     "scheduleMatches": "مطابق لإيجار العقد.",
-    "scheduleDiffers": "غير مطابق لإيجار العقد — الفرق {amount}."
+    "scheduleDiffers": "غير مطابق لإيجار العقد — الفرق {amount}.",
+    "unit": "الوحدة",
+    "unassigned": "بدون عقار",
+    "openLeaseFor": "فتح عقد الوحدة {unit}",
+    "grandTotal": "الإجمالي الكلي"
   },
   "Termination": {
     "title": "إنهاء العقد",
