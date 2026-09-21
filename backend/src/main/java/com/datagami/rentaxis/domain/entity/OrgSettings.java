@@ -15,6 +15,21 @@ public class OrgSettings extends BaseTenantEntity {
     @JoinColumn(name = "landlord_org_id", insertable = false, updatable = false)
     private LandlordOrg landlordOrg;
 
+    /**
+     * The same column as {@link #landlordOrg}, writable.
+     *
+     * <p>{@code landlord_org_id} is NOT NULL (changeset 01) and the association
+     * above is {@code insertable = false}, so nothing in this entity could supply
+     * it: {@code repo.save(new OrgSettings())} INSERTed a null and came back a 409.
+     * That is why the PUT below could only ever edit a row somebody else had
+     * created — the create branch it appeared to have never worked. Mapping the
+     * FK as a plain value alongside the read-only association is the standard way
+     * to have both, and it is a column write, not a schema change: nothing is
+     * added to the table, so no changeset is needed in a hotfix.</p>
+     */
+    @Column(name = "landlord_org_id", nullable = false)
+    private UUID landlordOrgId;
+
     @Column(name = "default_currency")
     private String defaultCurrency = "AED";
 
@@ -45,6 +60,14 @@ public class OrgSettings extends BaseTenantEntity {
 
     public void setLandlordOrg(LandlordOrg landlordOrg) {
         this.landlordOrg = landlordOrg;
+    }
+
+    public UUID getLandlordOrgId() {
+        return landlordOrgId;
+    }
+
+    public void setLandlordOrgId(UUID landlordOrgId) {
+        this.landlordOrgId = landlordOrgId;
     }
 
     public String getDefaultCurrency() {
