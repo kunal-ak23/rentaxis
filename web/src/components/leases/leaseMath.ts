@@ -206,3 +206,36 @@ export function todayIso(): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+/**
+ * The day after an ISO date, as an ISO date.
+ *
+ * `books_locked_through` is inclusive on the server — both
+ * `LeaseTerminationService.validate` (:355-363) and
+ * `SettlementService.requireUsableDate` (:669-679) refuse a date that is *not
+ * after* it — so the earliest date a picker may offer is the day after, not the
+ * lock itself. Built in UTC because a `yyyy-MM-dd` has no time zone and adding
+ * a day through local midnight would land on the same date across a DST
+ * boundary.
+ */
+export function isoDayAfter(iso: string | null | undefined): string | null {
+    if (!iso) return null;
+    const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+}
+
+/** The later of two ISO dates; either may be absent. `yyyy-MM-dd` sorts lexically. */
+export function maxIso(a: string | null | undefined, b: string | null | undefined): string | undefined {
+    if (!a) return b ?? undefined;
+    if (!b) return a;
+    return a > b ? a : b;
+}
+
+/** `iso`, pulled inside `[min, max]`. Either bound may be absent. */
+export function clampIso(iso: string, min?: string | null, max?: string | null): string {
+    if (min && iso < min) return min;
+    if (max && iso > max) return max;
+    return iso;
+}

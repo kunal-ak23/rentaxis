@@ -58,6 +58,7 @@ export default function MvpSidebar() {
     const tBookings = useTranslations("Bookings");
     const tPromotions = useTranslations("Promotions");
     const tLedger = useTranslations("Ledger");
+    const tRecognition = useTranslations("Recognition");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -140,6 +141,13 @@ export default function MvpSidebar() {
             { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
             { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
             { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
+        ] : []),
+        // The month-end close. Its own gate rather than canAccessFinance because
+        // the two endpoints behind the page (RecognitionController's
+        // /finance/recognition/pending and /run) are SA/TA/ACCOUNTANT — the same
+        // set today, but the rule the link mirrors is that one, not the ledger's.
+        ...(hasPermission(userRole, 'canRunRecognition') ? [
+            { name: tRecognition("title"), href: "/dashboard/finance/recognition", icon: CalendarCheck, tourId: 'sidebar-recognition' },
         ] : []),
         ...(hasPermission(userRole, 'canManageCheques') ? [
             { name: tCheques("register"), href: "/dashboard/finance/cheques", icon: CreditCard, tourId: 'sidebar-cheques-register' },

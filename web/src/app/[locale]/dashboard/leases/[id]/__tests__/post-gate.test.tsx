@@ -43,6 +43,7 @@ const DRAFT: LeaseDetail = {
     gracePeriodDays: 5, firstDueDate: "2026-01-01", renterAcceptedAt: null,
     renewedFromLeaseId: null, chainId: "chain-1", receivableAccountId: null, incomeAccountId: null,
     postingJournalId: null, postedAt: null, contractValue: 60000,
+    terminatedOn: null, terminationJournalId: null, terminationNotes: null,
     lines: [{
         id: "ln1", seqNo: 1, chargeTypeId: "ct-rent", chargeTypeCode: "RENT", chargeTypeName: "Rent",
         behaviour: "RENT", creditAccountId: "acc-1", creditAccountCode: "210100", creditAccountName: "Advance Rent",

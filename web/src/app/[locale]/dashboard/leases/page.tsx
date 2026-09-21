@@ -293,34 +293,18 @@ export default function LeasesPage() {
 
     const router = useRouter();
 
+    /**
+     * Termination is a priced decision now, not a confirm dialog (spec §9.1):
+     * `POST /leases/{id}/terminate` takes a date and a complete return/keep
+     * answer for every uncleared instrument, so there is nothing a list row can
+     * usefully send. It opens the termination page instead.
+     *
+     * What used to be here — `{notes: "…"}` posted straight at `/terminate`,
+     * unreachable behind an early `return` — was already dead, and its body is
+     * now a 400 ("A termination needs a date").
+     */
     const handleTerminate = (id: string) => {
-        // Redirect to lease detail page where the full settlement modal is available
-        router.push(`/dashboard/leases/${id}?action=terminate`);
-        return;
-        // Legacy direct terminate (kept for reference)
-        setConfirmConfig({
-            title: t("terminateLease"),
-            description: t("confirmTerminate"),
-            confirmText: t("terminate"),
-            isDestructive: true,
-            onConfirm: async () => {
-                setActionLoading('terminate');
-                try {
-                    const res = await fetch(`/api/proxy/v1/leases/${id}/terminate`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ notes: t("quickTerminationNote") }),
-                    });
-                    if (res.ok) fetchLeases();
-                } catch (err) {
-                    console.error(err);
-                } finally {
-                    setActionLoading(null);
-                    setConfirmOpen(false);
-                }
-            }
-        });
-        setConfirmOpen(true);
+        router.push(`/dashboard/leases/${id}/terminate`);
     };
 
     const handleGenerateContract = async (id: string) => {

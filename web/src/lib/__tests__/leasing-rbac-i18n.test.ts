@@ -27,12 +27,28 @@ const EXPECTED: Record<string, UserRole[]> = {
     canProposePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
     // PenaltyAssessmentController#approve / #waive / #reverse
     canApprovePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
-    // LeaseController's four settlement endpoints, which is what "Terminate"
-    // opens. PROPERTY_MANAGER is in and ACCOUNTANT is out — the mirror image of
-    // canPostLeases, and the reason this cannot share canManageLeases.
-    canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"],
     // ChargeTypeController's method-level @PreAuthorize on POST / PUT
     canManageChargeTypes: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+
+    // ---- plan 3: recognition, termination, settlement ----
+    //
+    // canTerminateLeases used to read [SA, TA, PROPERTY_MANAGER], because
+    // "Terminate" opened the settlement flow and all four settlement endpoints
+    // admitted a manager. Plan 3 made termination its own act — it hands
+    // cheques back, truncates recognition and posts a TCR — and
+    // LeaseController#terminateLease is SA/TA/ACCOUNTANT. A manager keeps the
+    // read half through canPreviewTermination and canViewSettlement.
+    canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // LeaseController#previewTermination
+    canPreviewTermination: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#getSettlementStatement / #getSettlement
+    canViewSettlement: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#saveSettlementDraft / #finalizeSettlement — PM removed
+    canSettleLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // RecognitionController.FINANCE_ROLES on /finance/recognition/pending + /run
+    canRunRecognition: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // RecognitionController#schedule on GET /leases/{id}/recognition
+    canViewRecognitionSchedule: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
 };
 
 describe("accounting-v2 plan-2 permission roles", () => {
@@ -74,7 +90,7 @@ function flatten(obj: unknown, prefix = ""): Record<string, string> {
 }
 
 describe("Leasing/Cheques i18n parity", () => {
-    for (const ns of ["Leasing", "Cheques"] as const) {
+    for (const ns of ["Leasing", "Cheques", "Recognition", "Termination", "Settlement"] as const) {
         it(`${ns}: every en.json key has a distinct ar.json translation`, () => {
             const enNs = flatten((en as Record<string, unknown>)[ns]);
             const arNs = flatten((ar as Record<string, unknown>)[ns]);
