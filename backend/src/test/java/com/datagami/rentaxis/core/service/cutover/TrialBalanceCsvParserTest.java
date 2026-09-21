@@ -202,6 +202,56 @@ class TrialBalanceCsvParserTest {
         assertThat(r.rows().get(1).credit()).isEqualByComparingTo("100.00");
     }
 
+    // ------------------------------------------------------------------
+    // fix round 1 — a file wider than four columns
+    // ------------------------------------------------------------------
+
+    /**
+     * Review minor 1. PACT can be asked for a trial balance with opening and closing
+     * columns. Fixing debit/credit at positions 2 and 3 read *Opening* as Debit and
+     * *Debit* as Credit, silently — the exact misread the short-row branch exists to
+     * prevent. When a header row is there, the columns are found by name.
+     */
+    @Test
+    void aWiderFileWithAHeaderIsReadByColumnName() {
+        var r = parse("""
+                Account Code,Account Name,Opening,Debit,Credit,Closing
+                166269,Rent Receivable,1000.00,15000.00,0.00,16000.00
+                145661,Rental Income,0.00,0.00,61000.00,61000.00
+                """);
+        assertThat(r.problems()).isEmpty();
+        assertThat(r.rows().get(0).debit()).isEqualByComparingTo("15000.00");
+        assertThat(r.rows().get(0).credit()).isEqualByComparingTo("0.00");
+        assertThat(r.rows().get(1).credit()).isEqualByComparingTo("61000.00");
+    }
+
+    /** With no header there is nothing to go on, so the extra columns are reported once. */
+    @Test
+    void aWiderFileWithNoHeaderIsReportedOnceRatherThanMisread() {
+        var r = parse("""
+                166269,Rent Receivable,1000.00,15000.00,0.00,16000.00
+                145661,Rental Income,0.00,0.00,61000.00,61000.00
+                """);
+        assertThat(r.problems()).singleElement().asString()
+                .contains("6 columns").contains("code, name, debit, credit");
+        assertThat(r.rows()).hasSize(2);
+    }
+
+    /** A header naming the columns in another order is still read correctly. */
+    @Test
+    void theDebitAndCreditColumnsAreFoundWhereverTheHeaderPutsThem() {
+        var r = parse("""
+                Account Name,Credit,Account Code,Debit
+                Rent Receivable,0.00,166269,15000.00
+                """);
+        assertThat(r.problems()).isEmpty();
+        assertThat(r.rows()).singleElement().satisfies(row -> {
+            assertThat(row.code()).isEqualTo("166269");
+            assertThat(row.name()).isEqualTo("Rent Receivable");
+            assertThat(row.debit()).isEqualByComparingTo("15000.00");
+        });
+    }
+
     /** Amounts land at the scale the ledger stores, so the journal lines need no rounding pass. */
     @Test
     void amountsAreRoundedToTwoDecimalsHalfUp() {

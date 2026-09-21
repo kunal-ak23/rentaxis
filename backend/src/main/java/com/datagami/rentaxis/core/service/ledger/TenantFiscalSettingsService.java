@@ -2,7 +2,11 @@ package com.datagami.rentaxis.core.service.ledger;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.OpeningBalancePosting;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
+import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
+import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +24,26 @@ public class TenantFiscalSettingsService {
 
     private final TenantFiscalSettingsRepository repo;
 
-    public TenantFiscalSettingsService(TenantFiscalSettingsRepository repo) { this.repo = repo; }
+    /**
+     * The opening-balance marker and the journals it points at, read directly rather
+     * than through {@code OpeningBalanceService}.
+     *
+     * <p>The invariant belongs here — the books start date cannot move while the
+     * books are open as at the day before it — but depending on the cut-over service
+     * from the ledger's own calendar would be a dependency cycle
+     * ({@code OpeningBalanceService} needs this one to answer {@code asOf()}). Two
+     * repositories cost nothing and point the right way.</p>
+     */
+    private final OpeningBalancePostingRepository openingBalances;
+    private final JournalEntryRepository journals;
+
+    public TenantFiscalSettingsService(TenantFiscalSettingsRepository repo,
+                                       OpeningBalancePostingRepository openingBalances,
+                                       JournalEntryRepository journals) {
+        this.repo = repo;
+        this.openingBalances = openingBalances;
+        this.journals = journals;
+    }
 
     /** Settings for the current tenant; a default row is created on first access. */
     @Transactional
@@ -85,12 +108,45 @@ public class TenantFiscalSettingsService {
         return repo.save(s);
     }
 
+    /**
+     * Moves the day the books open.
+     *
+     * <p><b>Refused while an opening-balance journal is live.</b> The OB entry is
+     * dated {@code booksStartDate − 1}, and {@code OpeningBalanceService} derives that
+     * date from this field every time it is asked. Move the field and the derived date
+     * no longer matches the entry that is actually on the books: a reversal or a
+     * re-post would then write its mirror on a different day from the entry it
+     * mirrors, leaving the whole opening balance standing at the old date while the
+     * screen says the books are not open. That is the same defect as a
+     * caller-supplied reversal date, arriving with no caller input at all — so this is
+     * the second half of that fix, and {@code reverse}/{@code repost} pinning the
+     * mirror to {@code live.getEntryDate()} is the first.</p>
+     *
+     * <p>Setting it to the value it already holds is not a change and is allowed, so a
+     * settings screen that PUTs the whole form back is not punished for it.</p>
+     */
     @Transactional
     public TenantFiscalSettings setBooksStartDate(LocalDate date) {
         TenantFiscalSettings s = get();
+        boolean changing = date == null ? s.getBooksStartDate() != null : !date.equals(s.getBooksStartDate());
+        if (changing && hasLiveOpeningBalance()) {
+            throw new BusinessRuleViolationException(
+                    "Reverse or replace the opening balances before changing the books start date: "
+                            + "the opening-balance journal is dated the day before it.");
+        }
         s.setBooksStartDate(date);
-        if (s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));
+        if (date != null && s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));
         return repo.save(s);
+    }
+
+    /** True when this tenant has an opening-balance journal that has not been reversed. */
+    @Transactional(readOnly = true)
+    public boolean hasLiveOpeningBalance() {
+        return openingBalances.findFirstByOrderByCreatedAtAsc()
+                .map(OpeningBalancePosting::getJournalId)
+                .flatMap(journals::findById)
+                .filter(e -> e.getStatus() == JournalStatus.POSTED)
+                .isPresent();
     }
 
     @Transactional

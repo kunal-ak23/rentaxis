@@ -3,6 +3,8 @@ package com.datagami.rentaxis.core.service.ledger;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
+import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +22,15 @@ import static org.mockito.Mockito.*;
 class TenantFiscalSettingsServiceTest {
 
     TenantFiscalSettingsRepository repo = mock(TenantFiscalSettingsRepository.class);
-    TenantFiscalSettingsService service = new TenantFiscalSettingsService(repo);
+    /**
+     * The books start date cannot move while an opening-balance journal is live, so
+     * the calendar reads the cut-over marker directly (a dependency on
+     * {@code OpeningBalanceService} would be a cycle). Both mocks answer "nothing
+     * posted", which is this unit's world.
+     */
+    OpeningBalancePostingRepository openingBalances = mock(OpeningBalancePostingRepository.class);
+    JournalEntryRepository journals = mock(JournalEntryRepository.class);
+    TenantFiscalSettingsService service = new TenantFiscalSettingsService(repo, openingBalances, journals);
     UUID tenant = UUID.randomUUID();
 
     @BeforeEach void ctx() { TenantContextHolder.setTenantId(tenant); when(repo.save(any())).thenAnswer(i -> i.getArgument(0)); }

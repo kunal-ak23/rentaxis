@@ -355,6 +355,91 @@ class OpeningBalanceControllerIT {
     }
 
     // ------------------------------------------------------------------
+    // fix round 1 — the JSON the web is typed from
+    // ------------------------------------------------------------------
+
+    /** `computed` on the difference account's row, so the page needs no second lookup. */
+    @Test
+    void theGridMarksTheDifferenceAccountComputed() {
+        JsonNode g = json(call(HttpMethod.GET, "/api/v1/finance/opening-balances", accountant, null));
+        assertThat(g.get("changedSincePosted").asBoolean()).isFalse();
+
+        JsonNode computed = null, cash = null;
+        for (JsonNode row : g.get("rows")) {
+            if (row.get("computed").asBoolean()) computed = row;
+            if (cashInHand.getId().toString().equals(row.get("accountId").asText())) cash = row;
+        }
+        assertThat(computed).isNotNull();
+        assertThat(computed.get("code").asText()).isEqualTo("F-02");
+        assertThat(computed.get("derived").asBoolean()).isFalse();
+        assertThat(cash).isNotNull();
+        assertThat(cash.get("computed").asBoolean()).isFalse();
+    }
+
+    @Test
+    void theUploadResponseCarriesTheFilesTotalsAndWhetherItBalances() {
+        JsonNode body = json(uploadCsv(accountant, csv()));
+        assertThat(body.get("totalDebit").decimalValue()).isEqualByComparingTo("50000.00");
+        assertThat(body.get("totalCredit").decimalValue()).isEqualByComparingTo("12000.00");
+        assertThat(body.get("balanced").asBoolean()).isFalse();
+    }
+
+    @Test
+    void theGridFlagsUnpostedChangesAfterTheSnapshotIsEdited() {
+        uploadCsv(accountant, csv());
+        call(HttpMethod.POST, "/api/v1/finance/opening-balances/post", accountant, null);
+        assertThat(json(call(HttpMethod.GET, "/api/v1/finance/opening-balances", accountant, null))
+                .get("changedSincePosted").asBoolean()).isFalse();
+
+        call(HttpMethod.PUT, "/api/v1/finance/opening-balances/" + cashInHand.getId(),
+                accountant, Map.of("debit", "60000.00"));
+        assertThat(json(call(HttpMethod.GET, "/api/v1/finance/opening-balances", accountant, null))
+                .get("changedSincePosted").asBoolean()).isTrue();
+    }
+
+    @Test
+    void aFigureAgainstTheComputedDifferenceAccountIsRefused() {
+        Account difference = resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);
+        ResponseEntity<String> res = call(HttpMethod.PUT,
+                "/api/v1/finance/opening-balances/" + difference.getId(), accountant, Map.of("credit", "5000"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).contains("F-02").contains("recomputed");
+    }
+
+    /**
+     * The reverse body no longer carries a date, and a client that still sends one is
+     * ignored rather than obeyed — which is the whole of C1 seen from the wire: a
+     * later-dated mirror would leave the opening balances standing at the cut-over
+     * date while the grid said the books were closed.
+     */
+    @Test
+    void aDateSentToTheReverseEndpointIsIgnoredAndTheMirrorFollowsTheEntry() {
+        uploadCsv(accountant, csv());
+        JsonNode posted = json(call(HttpMethod.POST, "/api/v1/finance/opening-balances/post", accountant, null));
+
+        JsonNode mirror = json(call(HttpMethod.POST, "/api/v1/finance/opening-balances/reverse",
+                accountant, Map.of("date", "2026-11-15", "reason", "wrong file")));
+        assertThat(mirror.get("entryDate").asText())
+                .isEqualTo(posted.get("entryDate").asText())
+                .isEqualTo("2026-09-30");
+
+        JsonNode grid = json(call(HttpMethod.GET, "/api/v1/finance/opening-balances", accountant, null));
+        assertThat(grid.get("posted").asBoolean()).isFalse();
+    }
+
+    /** The calendar refuses to move out from under a posted opening balance. */
+    @Test
+    void theBooksStartDateCannotBeChangedOverHttpWhileTheBooksAreOpen() {
+        uploadCsv(accountant, csv());
+        call(HttpMethod.POST, "/api/v1/finance/opening-balances/post", accountant, null);
+
+        ResponseEntity<String> res = call(HttpMethod.PUT, "/api/v1/finance/fiscal-settings",
+                tenantAdmin, Map.of("booksStartDate", "2026-11-01"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).contains("Reverse or replace the opening balances");
+    }
+
+    // ------------------------------------------------------------------
     // the gates
     // ------------------------------------------------------------------
 

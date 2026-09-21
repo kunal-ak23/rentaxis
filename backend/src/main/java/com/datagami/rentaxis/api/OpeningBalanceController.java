@@ -62,12 +62,20 @@ public class OpeningBalanceController {
     private final OpeningBalanceService service;
 
     /**
-     * {@code date} is optional and defaults to the cut-over date: the opening journal
-     * is dated the day before the books open, and its reversal belongs on the same
-     * day. Letting a caller date it elsewhere would leave the opening entry and its
-     * mirror in different periods.
+     * Why the books are being closed again. There is deliberately <b>no date</b>: the
+     * mirror is always written on the opening entry's own day.
+     *
+     * <p>This used to take one, and it was a live data-integrity defect rather than a
+     * convenience. {@code PostingService.reverse} does not apply the period lock to an
+     * {@code OB} entry, so any date was accepted, and
+     * {@code JournalLineRepository.balancesAsOf} has no status predicate — a REVERSED
+     * entry still counts at its own date. A mirror dated later therefore left the whole
+     * opening balance standing as at D − 1 under a screen that said the books were not
+     * open, and the next Post wrote a second one: doubled opening balances that still
+     * balance, so nothing catches them. The field is gone rather than validated,
+     * because there was never a second right answer.</p>
      */
-    public record ReverseObDTO(LocalDate date, String reason) {}
+    public record ReverseObDTO(String reason) {}
 
     /** Why the books are being opened again; shown on the reversal's narration. */
     public record RepostObDTO(String reason) {}
@@ -123,8 +131,7 @@ public class OpeningBalanceController {
     @PostMapping("/opening-balances/reverse")
     public ResponseEntity<PostedJournalDTO> reverse(@RequestBody(required = false) ReverseObDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(PostedJournalDTO.of(service.reverse(
-                body == null ? null : body.date(), body == null ? null : body.reason())));
+        return ResponseEntity.ok(PostedJournalDTO.of(service.reverse(body == null ? null : body.reason())));
     }
 
     @GetMapping("/reconciliation")

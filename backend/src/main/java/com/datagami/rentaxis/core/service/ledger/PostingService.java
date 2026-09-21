@@ -124,6 +124,24 @@ public class PostingService {
         // An OB journal is dated the day BEFORE the books open, which is locked by
         // definition; without this, a wrong trial balance could be posted and never
         // taken off. Import journals carry the batch id and were always exempt.
+        //
+        // IT KEYS ONLY ON THE ORIGINAL ENTRY'S docType, never on anything a caller
+        // supplies, and docType = OB is unreachable for anything but the cut-over:
+        //   1. OpeningBalanceService.postFresh is the only producer of an OB entry —
+        //      every other posting path hard-codes its own doc type and JournalService
+        //      hard-codes JV. No request body anywhere carries a docType.
+        //   2. The HTTP-facing JournalService.reverse calls requireManual and refuses
+        //      a source type of OPENING_BALANCE, so the journal API cannot reach one.
+        //   3. ImportBatchService.reverse only walks journals carrying its batch id,
+        //      which an OB entry never has.
+        // The mirror is itself docType = OB, but "cannot reverse a reversal" above
+        // means the exemption cannot be chained. What the exemption does NOT decide is
+        // the DATE: OpeningBalanceService pins that to the original entry's own day,
+        // because balancesAsOf has no status predicate and a mirror dated elsewhere
+        // would leave the reversed opening balance standing at D-1.
+        // PostingServiceIT.anOrdinaryEntryStillCannotBeReversedIntoALockedPeriod and
+        // .anOpeningBalanceOrImportEntryCanBeReversedInsideTheLockedPeriod hold both
+        // sides of this line.
         if (original.getDocType() != JournalDocType.OB && original.getImportBatchId() == null) fiscal.assertOpen(date);
 
         JournalEntry rev = new JournalEntry();

@@ -77,9 +77,27 @@ public final class TrialBalanceCsvParser {
     /** A magnitude plus, when the file said so outright, the side it belongs on. */
     private record Amount(BigDecimal magnitude, Side explicitSide) {}
 
+    /**
+     * Which column holds what. The default is PACT's four-column shape; a header row
+     * overrides it, because a trial balance asked for with opening and closing columns
+     * (`Code, Name, Opening, Debit, Credit, Closing`) would otherwise read *Opening* as
+     * Debit and *Debit* as Credit — silently, which is the one failure this parser is
+     * written to make impossible.
+     */
+    private record Columns(int code, int name, int debit, int credit, int width) {
+
+        static final Columns DEFAULT = new Columns(0, 1, 2, 3, 4);
+
+        boolean fits(String[] parts) {
+            return parts.length > Math.max(Math.max(code, name), Math.max(debit, credit));
+        }
+    }
+
     public static CsvParseResult parse(InputStream in) {
         List<CsvRow> rows = new ArrayList<>();
         List<String> problems = new ArrayList<>();
+        Columns columns = Columns.DEFAULT;
+        boolean widthReported = false;
         int lineNo = 0;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
@@ -89,11 +107,16 @@ public final class TrialBalanceCsvParser {
                 if (line.isBlank()) continue;
                 String[] parts = splitCsv(line);
 
-                String code = unquote(parts[0]);
+                String first = unquote(parts[0]);
                 // Checked before the column count: PACT's totals rows are not always
                 // four columns wide, and a totals row is furniture either way.
-                if (TOTAL_ROW.matcher(code).matches()) continue;
+                if (TOTAL_ROW.matcher(first).matches()) continue;
 
+                Columns named = headerColumns(parts);
+                if (named != null) {
+                    columns = named;                                       // a header row, wherever it sits
+                    continue;
+                }
                 if (parts.length < 4) {
                     // The banner above the table ("Al Ashram Real Estate", then the
                     // report title) is a short row with nothing numeric on it. A short
@@ -104,8 +127,21 @@ public final class TrialBalanceCsvParser {
                     problems.add("line " + lineNo + ": expected 4 columns (code, name, debit, credit), got " + parts.length);
                     continue;
                 }
+                if (!columns.fits(parts)) {
+                    problems.add("line " + lineNo + ": the header names a column this row does not have");
+                    continue;
+                }
+                // A wider file with no header to go on: which of the extra columns is
+                // the debit cannot be known, so say so once rather than guess per row.
+                if (parts.length > columns.width() && !widthReported) {
+                    problems.add("line " + lineNo + ": this file has " + parts.length
+                            + " columns and no header naming them; the first four were read as"
+                            + " code, name, debit, credit. Add a header row if that is wrong.");
+                    widthReported = true;
+                }
+
+                String code = unquote(parts[columns.code()]);
                 if (code.isEmpty()) continue;                              // nameless totals row
-                if (isHeader(code, parts[2], parts[3])) continue;          // header row, present or not
                 if (code.length() > MAX_CODE_LENGTH) {
                     problems.add("line " + lineNo + ": account code is longer than " + MAX_CODE_LENGTH + " characters");
                     continue;
@@ -113,8 +149,8 @@ public final class TrialBalanceCsvParser {
 
                 Amount debit, credit;
                 try {
-                    debit = amount(parts[2]);
-                    credit = amount(parts[3]);
+                    debit = amount(parts[columns.debit()]);
+                    credit = amount(parts[columns.credit()]);
                 } catch (NumberFormatException e) {
                     problems.add("line " + lineNo + ": '" + e.getMessage() + "' is not an amount");
                     continue;
@@ -124,7 +160,7 @@ public final class TrialBalanceCsvParser {
                 // named its own; both columns are then summed, which is also what nets
                 // a two-sided row down to the one side a journal line can carry.
                 BigDecimal net = signed(debit, Side.DR).add(signed(credit, Side.CR));
-                rows.add(new CsvRow(code, truncate(unquote(parts[1])),
+                rows.add(new CsvRow(code, truncate(unquote(parts[columns.name()])),
                         net.signum() > 0 ? net : ZERO,
                         net.signum() < 0 ? net.negate() : ZERO,
                         lineNo));
@@ -135,16 +171,37 @@ public final class TrialBalanceCsvParser {
         return new CsvParseResult(rows, problems);
     }
 
+    /**
+     * Reads a header row into column positions, or null when this is not one.
+     *
+     * <p>A row is a header when it names both money columns. "Code" and "Name" are
+     * located too but are allowed to be absent, defaulting to the first two columns —
+     * PACT labels them "Account  Code" (two spaces) and "Account Name", and a file
+     * hand-edited to "A/c" should still not cost the accountant their debits.</p>
+     */
+    private static Columns headerColumns(String[] parts) {
+        // A header has no figures on it. Without this, an account genuinely named
+        // "Debit and Credit Suspense" would be read as a header and its row dropped.
+        if (carriesAFigure(parts)) return null;
+        int code = -1, name = -1, debit = -1, credit = -1;
+        for (int i = 0; i < parts.length; i++) {
+            String cell = unquote(parts[i]).toLowerCase(java.util.Locale.ROOT);
+            if (cell.isEmpty()) continue;
+            if (debit < 0 && cell.contains("debit")) debit = i;
+            else if (credit < 0 && cell.contains("credit")) credit = i;
+            else if (code < 0 && cell.contains("code")) code = i;
+            else if (name < 0 && cell.contains("name")) name = i;
+        }
+        if (debit < 0 || credit < 0) return null;
+        if (code < 0) code = 0;
+        if (name < 0) name = code == 0 ? 1 : 0;
+        return new Columns(code, name, debit, credit, parts.length);
+    }
+
     /** The column's side unless the figure stated one of its own. */
     private static BigDecimal signed(Amount a, Side column) {
         Side side = a.explicitSide() == null ? column : a.explicitSide();
         return side == Side.DR ? a.magnitude() : a.magnitude().negate();
-    }
-
-    private static boolean isHeader(String code, String debit, String credit) {
-        String d = unquote(debit).toLowerCase();
-        String c = unquote(credit).toLowerCase();
-        return d.contains("debit") || c.contains("credit") || code.toLowerCase().contains("code");
     }
 
     /** True when any cell of a short row reads as a number — i.e. it is data, not a banner. */

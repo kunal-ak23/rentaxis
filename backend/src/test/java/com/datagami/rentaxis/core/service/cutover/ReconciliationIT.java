@@ -230,7 +230,7 @@ class ReconciliationIT {
 
         List<OpeningBalanceService.ReconciliationRow> before = ob.reconcile();
         ob.post();
-        ob.reverse(AS_OF, "wrong file");
+        ob.reverse("wrong file");
         List<OpeningBalanceService.ReconciliationRow> after = ob.reconcile();
 
         assertThat(after).filteredOn(r -> cashInHand.getId().equals(r.accountId()))

@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api.dto.cutover;
 
 import com.datagami.rentaxis.core.service.cutover.OpeningBalanceService;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -13,9 +14,11 @@ import java.util.List;
  * or ignore the balance. {@code problems} are lines that could not be read at all,
  * each carrying the file line number.</p>
  */
-public record SnapshotUploadResultDTO(int stored, List<String> unmatchedCodes, List<String> problems) {
+public record SnapshotUploadResultDTO(int stored, List<String> unmatchedCodes, List<String> problems,
+                                      BigDecimal totalDebit, BigDecimal totalCredit, boolean balanced) {
 
     public static SnapshotUploadResultDTO of(OpeningBalanceService.SnapshotUploadResult r) {
-        return new SnapshotUploadResultDTO(r.stored(), r.unmatchedCodes(), r.problems());
+        return new SnapshotUploadResultDTO(r.stored(), r.unmatchedCodes(), r.problems(),
+                r.totalDebit(), r.totalCredit(), r.balanced());
     }
 }
