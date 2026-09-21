@@ -166,9 +166,15 @@ public class VoucherService {
         switch (v.getDocType()) {
             case PISR -> {
                 if (vat.signum() > 0) {
-                    // INPUT_VAT is not property-scoped (AccountRole#isPropertyScoped), so the
-                    // resolver falls through to the tenant default. One line for the whole
-                    // invoice: the FTA return is filed per period, not per expense account.
+                    // One line for the whole invoice: the FTA return is filed per period,
+                    // not per expense account.
+                    //
+                    // Resolved against the header's property, like every other line here.
+                    // AccountRole.INPUT_VAT reports isPropertyScoped() == false, but that
+                    // flag is advisory — it steers the mapping UI, and AccountResolver
+                    // consults a property mapping for every role before the tenant default
+                    // (review M-3). So a tenant that has deliberately mapped INPUT_VAT on a
+                    // property gets that leaf, and everyone else gets the tenant default.
                     journalLines.add(PostingRequest.dr(AccountRole.INPUT_VAT, vat)
                             .withDims(headerDims)
                             .withNarration("Input VAT"));
@@ -184,6 +190,9 @@ public class VoucherService {
                     .withNarration(v.getChequeNumber() == null
                             ? v.getPaymentAccount().getName()
                             : "Cheque " + v.getChequeNumber()));
+            // Unreachable: requirePostable refuses RCP above, and validate() refuses it
+            // at draft time. The arm is here because the switch is exhaustive over
+            // VoucherType, and an RCP that ever did arrive should say where it belongs.
             case RCP -> throw new BusinessRuleViolationException(
                     "Cash Receipt Vouchers are posted from the lease receipt screen");
         }
@@ -259,9 +268,28 @@ public class VoucherService {
      * bug the lock exists to prevent. {@code refresh} is defined as "overwrite this
      * instance from the database", so it both takes the lock and re-reads.</p>
      *
-     * <p>The Hibernate tenant filter applies to {@code find} too
-     * ({@code BaseTenantEntity}, {@code applyToLoadByKey = true}); the explicit
-     * check repeats it rather than trusting one mechanism with a P0.</p>
+     * <p><b>The explicit tenant comparison below is the only guard on this path —
+     * do not delete it as redundant.</b> {@code BaseTenantEntity} does set
+     * {@code applyToLoadByKey = true}, but that only matters once the filter is
+     * <em>enabled</em>, and {@code TenantAspect} enables it {@code @Before}
+     * execution of {@code domain.repository..*} — nothing else. {@code post} and
+     * {@code amend} call this first, so no repository method has run in the
+     * transaction yet and the filter is off for the {@code find} and the
+     * {@code refresh} on the next two lines. {@code tenantBCannotPostTenantAsVoucher}
+     * and {@code tenantBCannotAmendTenantAsVoucher} are what hold the line.</p>
+     *
+     * <p><b>Lock ordering.</b> Every ledger write path takes its locks in the order
+     * <em>business row → journal entry row → sequence row</em>: {@code post} takes
+     * this row and then, inside {@code PostingService.post}, the entry-number
+     * sequence; {@code amend} takes this row, then the entry row
+     * ({@code JournalEntryRepository.lockById}), then the sequence. The one
+     * inversion is {@code amend}'s trailing {@code post(fresh)}, which takes a
+     * voucher row while already holding the sequence — but {@code fresh} was
+     * inserted by that same transaction, so no rival can hold it or block on it.
+     * There is therefore no transaction holding the sequence and waiting on a
+     * voucher row held by a sequence-waiter, and a blocking lock here cannot
+     * deadlock. Anyone adding a "lock a voucher row after posting" path is the one
+     * who would break that.</p>
      */
     private Voucher lockForWrite(UUID voucherId) {
         Voucher v = entityManager.find(Voucher.class, voucherId);
@@ -303,8 +331,23 @@ public class VoucherService {
                 throw new BusinessRuleViolationException("Line account " + a.getCode() + " " + a.getName()
                         + " is " + a.getAccountType() + "; a purchase invoice line must be an expense or asset account");
             }
-            if (v.getDocType() == VoucherType.BPV && l.getVatAmount() != null && l.getVatAmount().signum() != 0) {
+            if (v.getDocType() == VoucherType.BPV
+                    && (signum(l.getVatAmount()) != 0 || signum(l.getVatRate()) != 0)) {
+                // The rate as well as the amount (review M-2): a row carrying
+                // vat_rate = 5 with vat_amount = 0 posts a journal with no VAT while
+                // the document on screen says it charged some.
                 throw new BusinessRuleViolationException(BPV_VAT_REFUSAL);
+            }
+            // The stored VAT is the figure that becomes the INPUT_VAT line and the
+            // vendor's gross, so it is recomputed rather than trusted: this pass
+            // exists for rows that reached the table some other way, and a row whose
+            // vat_amount was edited would otherwise post a balanced-but-wrong entry
+            // (review M-2). apply() rounds per line HALF_UP, so the comparison is exact.
+            BigDecimal expectedVat = VoucherMath.vat(l.getAmount(), l.getVatRate());
+            if (expectedVat.compareTo(l.getVatAmount() == null ? VoucherMath.ZERO : l.getVatAmount()) != 0) {
+                throw new BusinessRuleViolationException("Line " + l.getLineNo() + " stores VAT "
+                        + l.getVatAmount() + ", but " + l.getVatRate() + "% of " + l.getAmount()
+                        + " is " + expectedVat + "; re-save the voucher");
             }
         }
 
@@ -333,11 +376,15 @@ public class VoucherService {
                     throw new BusinessRuleViolationException("Payment account " + pay.getCode() + " " + pay.getName()
                             + " must be a bank or cash account");
                 }
+                requirePayableLinesMatchTheVendor(v.getVendor() == null ? null : v.getVendor().getId(),
+                        v.getLines().stream().map(l -> l.getAccount().getId()).toList());
             }
             case RCP -> throw new BusinessRuleViolationException(
                     "Cash Receipt Vouchers are posted from the lease receipt screen");
         }
     }
+
+    private static int signum(BigDecimal b) { return b == null ? 0 : b.signum(); }
 
     private static void requirePostableLeaf(Account a, String label) {
         if (a == null) throw new BusinessRuleViolationException(label + " is missing");
@@ -415,6 +462,50 @@ public class VoucherService {
             }
             if (ALLOWED_VAT_RATES.stream().noneMatch(r -> r.compareTo(rate) == 0)) {
                 throw new BusinessRuleViolationException("VAT rate must be 0 or 5, got " + rate);
+            }
+        }
+        if (in.docType() == VoucherType.BPV) {
+            requirePayableLinesMatchTheVendor(in.vendorId(),
+                    in.lines().stream().map(VoucherLineInput::accountId).toList());
+        }
+    }
+
+    /**
+     * A payment voucher settles the vendor it names.
+     *
+     * <p>The journal only ever touches the <em>line</em> accounts, and
+     * {@code LedgerQueryService.vendorLedger} selects rows purely by the vendor's
+     * payable leaf — so a voucher headed "paid to Emrill" whose line debits Al
+     * Shirawi's payable moves Al Shirawi's balance and leaves Emrill's untouched.
+     * The entry balances, the payments list says one thing and the vendor ledger
+     * another, and nothing in the books afterwards says which is wrong. A payable
+     * line with no vendor on the header is the same mistake in a different hat.</p>
+     *
+     * <p>Spec §10.2 keeps BPV lines open to any leaf — an expense paid without an
+     * invoice, a salary — so it is only the payable ones that are tied down, and
+     * only by the header the clerk already filled in.</p>
+     */
+    private void requirePayableLinesMatchTheVendor(UUID namedVendorId, List<UUID> lineAccountIds) {
+        List<UUID> ids = lineAccountIds.stream().filter(java.util.Objects::nonNull).toList();
+        if (ids.isEmpty()) return;
+        // One query for the whole line set; empty for the ordinary voucher whose
+        // lines are expenses, which is the common case.
+        List<Vendor> owners = vendors.findByPayableAccount_IdIn(ids);
+        if (owners.isEmpty()) return;
+
+        Vendor named = namedVendorId == null ? null : vendors.findById(namedVendorId)
+                .orElseThrow(() -> new NotFoundException("Vendor not found"));
+        for (Vendor owner : owners) {
+            String account = owner.getPayableAccount() == null ? "" : owner.getPayableAccount().getCode() + " ";
+            if (named == null) {
+                throw new BusinessRuleViolationException("Line account " + account + "is "
+                        + owner.getNameEn() + "'s payable account; name " + owner.getNameEn()
+                        + " as this voucher's vendor, or change the line");
+            }
+            if (!owner.getId().equals(named.getId())) {
+                throw new BusinessRuleViolationException("Line account " + account + "is "
+                        + owner.getNameEn() + "'s payable account, but this voucher names " + named.getNameEn()
+                        + "; pay " + owner.getNameEn() + " from their own voucher, or change the line");
             }
         }
     }

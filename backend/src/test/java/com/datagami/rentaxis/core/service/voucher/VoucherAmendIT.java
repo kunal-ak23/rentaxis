@@ -1,11 +1,13 @@
 package com.datagami.rentaxis.core.service.voucher;
 
 import com.datagami.rentaxis.api.dto.ledger.AccountLedgerDTO;
+import com.datagami.rentaxis.api.dto.ledger.ReverseRequest;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.VendorService;
+import com.datagami.rentaxis.core.service.ledger.JournalService;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -50,6 +52,7 @@ class VoucherAmendIT {
     @Autowired VendorService vendorService;
     @Autowired TenantFiscalSettingsService fiscal;
     @Autowired LedgerQueryService ledger;
+    @Autowired JournalService journals;
     @Autowired JournalEntryRepository entries;
     @Autowired JournalLineRepository lines;
     @Autowired TenantDefaultAccountMappingRepository defaults;
@@ -104,6 +107,11 @@ class VoucherAmendIT {
         return tx.execute(s -> lines.findByEntry_IdOrderByLineNoAsc(entryId).stream()
                 .filter(l -> l.getAccount().getId().equals(accountId))
                 .map(JournalLine::getCredit).toList());
+    }
+
+    private long entryCount() {
+        Long n = tx.execute(s -> entries.count());
+        return n == null ? 0L : n;
     }
 
     private void assertTrialBalanceBalances() {
@@ -230,20 +238,60 @@ class VoucherAmendIT {
         assertTrialBalanceBalances();
     }
 
-    /** P0: amending is two writes into the ledger, so the tenant filter has to hold here too. */
+    /**
+     * The journal behind a posted voucher may not be reversed through the journal
+     * screen: that would leave the voucher reading POSTED with its vendor's payable
+     * gone, and `amend` would then dead-end on "already reversed". The correction
+     * for a voucher is Amend, and the refusal says so.
+     */
+    @Test
+    void aPostedVouchersJournalCannotBeReversedBehindItsBack() {
+        Voucher original = vouchers.post(vouchers.createDraft(invoice("4000.00")).getId());
+
+        assertThatThrownBy(() -> journals.reverse(original.getJournalId(),
+                new ReverseRequest(LocalDate.of(2026, 10, 18), "wrong amount")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("voucher");
+
+        assertThat(vouchers.get(original.getId()).getStatus()).isEqualTo(VoucherStatus.POSTED);
+        assertThat(tx.execute(s -> entries.findById(original.getJournalId()).orElseThrow()).getStatus())
+                .isEqualTo(JournalStatus.POSTED);
+        assertThat(vendorBalance()).isEqualByComparingTo("-4200.00");
+
+        // …and the door that is open still works.
+        Voucher replacement = vouchers.amend(original.getId(), LocalDate.of(2026, 10, 18), "wrong amount",
+                invoice("3600.00"));
+        assertThat(replacement.getStatus()).isEqualTo(VoucherStatus.POSTED);
+        assertThat(vendorBalance()).isEqualByComparingTo("-3780.00");
+    }
+
+    /**
+     * P0. Amending is two writes into the ledger, and {@code lockForWrite}'s
+     * {@code EntityManager.find} is outside {@code TenantAspect}'s reach (the aspect
+     * enables the Hibernate filter around {@code domain.repository..*} calls only,
+     * and none has run in this transaction yet) — so the explicit tenant comparison
+     * is the only guard here and is asserted rather than assumed.
+     */
     @Test
     void tenantBCannotAmendTenantAsVoucher() {
         Voucher original = vouchers.post(vouchers.createDraft(invoice("4000.00")).getId());
+        long entriesBefore = entryCount();
 
         LandlordOrg orgB = new LandlordOrg();
         orgB.setName("Amend-B-" + UUID.randomUUID());
         TenantContextHolder.setTenantId(orgRepo.save(orgB).getId());
+        // The message matters: with the tenant comparison gone the call still fails,
+        // but on "Journal entry not found" from the reversal's own repository lookup
+        // — an accident of ordering rather than the guard this test is about.
         assertThatThrownBy(() -> vouchers.amend(original.getId(), LocalDate.of(2026, 10, 18), "x", invoice("100.00")))
-                .isInstanceOf(NotFoundException.class);
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Voucher not found");
 
         TenantContextHolder.setTenantId(tenantId);
         assertThat(vouchers.get(original.getId()).getStatus()).isEqualTo(VoucherStatus.POSTED);
         assertThat(tx.execute(s -> entries.findById(original.getJournalId()).orElseThrow()).getStatus())
                 .isEqualTo(JournalStatus.POSTED);
+        assertThat(entryCount()).as("no reversal written").isEqualTo(entriesBefore);
+        assertThat(vendorBalance()).isEqualByComparingTo("-4200.00");
     }
 }

@@ -59,7 +59,7 @@ class PaymentVoucherPostingIT {
 
     UUID tenantId;
     Account bank, salaries, inputVat;
-    Vendor vendor;
+    Vendor vendor, otherVendor;
 
     /** One journal line, flattened inside the transaction that read it. */
     record Row(UUID accountId, BigDecimal debit, BigDecimal credit, String narration) {}
@@ -81,6 +81,9 @@ class PaymentVoucherPostingIT {
         Vendor v = new Vendor();
         v.setNameEn("Emrill Services LLC");
         vendor = vendorService.createVendor(v);
+        Vendor other = new Vendor();
+        other.setNameEn("Al Shirawi FM");
+        otherVendor = vendorService.createVendor(other);
         fiscal.setBooksStartDate(LocalDate.of(2026, 10, 1));
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));
     }
@@ -116,7 +119,7 @@ class PaymentVoucherPostingIT {
     @Test
     void postingDebitsEveryLineAndCreditsThePaymentAccount() {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null,
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), vendor.getId(), null,
                 "October payment run", null, null, bank.getId(), "000451", LocalDate.of(2026, 10, 22),
                 List.of(new VoucherService.VoucherLineInput(vendor.getPayableAccount().getId(),
                                 "Settle EMR-4471", new BigDecimal("5100.00"), BigDecimal.ZERO, null, null),
@@ -200,6 +203,26 @@ class PaymentVoucherPostingIT {
     }
 
     /**
+     * A rate with no amount behind it is the same refusal (review M-2): the journal
+     * would credit the bank with the net and charge no VAT at all, while the
+     * document on screen says it charged 5%.
+     */
+    @Test
+    void aPaymentVoucherCarryingOnlyAVatRateIsAlsoRefusedAtPost() {
+        Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
+                bank.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                        new BigDecimal("1000.00"), BigDecimal.ZERO, null, null))));
+        jdbc.update("update voucher_lines set vat_rate = 5.00 where voucher_id = ?", v.getId());
+
+        assertThatThrownBy(() -> vouchers.post(v.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("A payment voucher line cannot carry VAT — record the VAT on the purchase invoice");
+        assertThat(voucherJournals(v.getId())).isEmpty();
+    }
+
+    /**
      * Money leaves from a bank or cash leaf, never from a receivable: the same rule
      * {@code ChequeService.requireSettlementAccount} applies to a cheque's debit
      * account.
@@ -248,7 +271,7 @@ class PaymentVoucherPostingIT {
         assertThat(afterInvoice.closingBalance()).isEqualByComparingTo("-5250.00");
 
         vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "Settle EMR-4471", null, null,
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), vendor.getId(), null, "Settle EMR-4471", null, null,
                 bank.getId(), "000451", LocalDate.of(2026, 10, 20),
                 List.of(new VoucherService.VoucherLineInput(vendor.getPayableAccount().getId(), "EMR-4471",
                         new BigDecimal("5250.00"), BigDecimal.ZERO, null, null)))).getId());
@@ -256,6 +279,82 @@ class PaymentVoucherPostingIT {
         AccountLedgerDTO afterPayment = tx.execute(s -> ledger.vendorLedger(vendor.getId(), null, null));
         assertThat(afterPayment.rows()).hasSize(2);
         assertThat(afterPayment.closingBalance()).isEqualByComparingTo("0.00");
+
+        // The vendor who was not paid has not moved.
+        AccountLedgerDTO untouched = tx.execute(s -> ledger.vendorLedger(otherVendor.getId(), null, null));
+        assertThat(untouched.rows()).isEmpty();
+        assertThat(untouched.closingBalance()).isEqualByComparingTo("0.00");
         assertTrialBalanceBalances();
+    }
+
+    // ---- a payment voucher pays the vendor it names (review I-1) ----
+
+    private VoucherService.VoucherInput payment(UUID vendorId, UUID lineAccountId) {
+        return new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), vendorId, null, "Payment run", null, null,
+                bank.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(lineAccountId, "Settlement",
+                        new BigDecimal("1000.00"), BigDecimal.ZERO, null, null)));
+    }
+
+    /**
+     * A voucher headed "paid to Emrill" whose line debits Al Shirawi's payable moves
+     * Al Shirawi's ledger and leaves Emrill's untouched — the journal balances, the
+     * payments list says one thing and the vendor ledger another, and nothing in the
+     * ledger can ever reveal which of the two is lying. The refusal names both
+     * vendors because the clerk has to know which end to correct.
+     */
+    @Test
+    void aPaymentVoucherCannotSettleAnotherVendorsPayableAtDraftTime() {
+        assertThatThrownBy(() -> vouchers.createDraft(
+                payment(vendor.getId(), otherVendor.getPayableAccount().getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Al Shirawi FM")
+                .hasMessageContaining("Emrill Services LLC");
+    }
+
+    /** The edit path must not reopen the hole the create path closes. */
+    @Test
+    void theSameMismatchIsRefusedOnUpdateDraft() {
+        Voucher v = vouchers.createDraft(payment(vendor.getId(), salaries.getId()));
+        assertThatThrownBy(() -> vouchers.updateDraft(v.getId(),
+                payment(vendor.getId(), otherVendor.getPayableAccount().getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Al Shirawi FM");
+    }
+
+    /**
+     * A payable line with no vendor on the header is the same mistake wearing a
+     * different hat: the payments list would show no vendor at all while a vendor's
+     * balance moved.
+     */
+    @Test
+    void aPayableLineWithoutAVendorOnTheVoucherIsRefused() {
+        assertThatThrownBy(() -> vouchers.createDraft(payment(null, vendor.getPayableAccount().getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Emrill Services LLC");
+    }
+
+    /**
+     * Re-asserted at post for a row that reached the table another way — here the
+     * header vendor is swapped with SQL after a legitimate draft was saved.
+     */
+    @Test
+    void aMismatchedVendorIsRefusedAtPost() {
+        Voucher v = vouchers.createDraft(payment(vendor.getId(), vendor.getPayableAccount().getId()));
+        jdbc.update("update vouchers set vendor_id = ? where id = ?", otherVendor.getId(), v.getId());
+
+        assertThatThrownBy(() -> vouchers.post(v.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Emrill Services LLC");
+        assertThat(vouchers.get(v.getId()).getStatus()).isEqualTo(VoucherStatus.DRAFT);
+        assertThat(voucherJournals(v.getId())).isEmpty();
+    }
+
+    /** An expense line on a BPV is untouched by the rule — spec §10.2's "any leaf" still holds. */
+    @Test
+    void aPaymentWithNoPayableLineNeedsNoVendor() {
+        Voucher posted = vouchers.post(vouchers.createDraft(payment(null, salaries.getId())).getId());
+        assertThat(posted.getStatus()).isEqualTo(VoucherStatus.POSTED);
     }
 }

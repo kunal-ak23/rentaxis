@@ -216,12 +216,42 @@ class PurchaseInvoicePostingIT {
                 .noneMatch(r -> r.accountId().equals(inputVat.getId()));
     }
 
-    /** Lines carry their own property dimension so the property-filtered GL is right. */
+    /**
+     * Lines carry their <em>own</em> property dimension so the property-filtered GL
+     * is right.
+     *
+     * <p>The header deliberately carries no property and the two lines carry
+     * different ones (review M-1): with the same property on the header and on both
+     * lines, {@code PostingRequest.Dimensions.mergedOver} would produce the same
+     * answer with the line dimensions dropped entirely, and the assertion could not
+     * fail. The VAT and payable lines take header dims, so on this multi-property
+     * invoice they correctly carry no property at all — which is what
+     * {@code LedgerQueryService.trialBalance}'s own note says tenant-level rows
+     * should do.</p>
+     */
     @Test
-    void everyJournalLineCarriesThePropertyDimension() {
-        Voucher posted = vouchers.post(draftTwoLineInvoice().getId());
-        assertThat(journalRows(posted.getJournalId()))
-                .allSatisfy(r -> assertThat(r.propertyId()).isEqualTo(propertyId));
+    void everyJournalLineCarriesItsOwnPropertyDimension() {
+        Property second = new Property();
+        second.setNameEn("Marina Heights");
+        second.setEmirate(Emirate.DUBAI);
+        UUID otherPropertyId = propertyRepo.save(second).getId();
+
+        Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
+                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), "EMR-4473",
+                "Two buildings on one invoice", null, null, null, null, null,
+                List.of(new VoucherService.VoucherLineInput(pestControl.getId(), "Ocean",
+                                new BigDecimal("2000.00"), new BigDecimal("5"), propertyId, null),
+                        new VoucherService.VoucherLineInput(lifeguard.getId(), "Marina",
+                                new BigDecimal("3000.00"), BigDecimal.ZERO, otherPropertyId, null))));
+
+        List<Row> rows = journalRows(vouchers.post(v.getId()).getJournalId());
+        assertThat(rows).extracting(Row::accountId, Row::propertyId)
+                .containsExactly(
+                        tuple(pestControl.getId(), propertyId),
+                        tuple(lifeguard.getId(), otherPropertyId),
+                        tuple(inputVat.getId(), null),
+                        tuple(vendor.getPayableAccount().getId(), null));
+        assertTrialBalanceBalances();
     }
 
     @Test
@@ -287,6 +317,25 @@ class PurchaseInvoicePostingIT {
     }
 
     /**
+     * The stored VAT becomes the INPUT_VAT line and the vendor's gross, so posting
+     * recomputes it rather than trusting it (review M-2). Same threat model as the
+     * BPV-VAT re-assertion: a row edited outside the draft service would otherwise
+     * post a balanced-but-wrong journal — 2,000 at 5% claiming 900.00 of input VAT
+     * is a balanced entry and an FTA return that over-reclaims.
+     */
+    @Test
+    void aTamperedVatAmountIsRefusedAtPost() {
+        Voucher v = draftTwoLineInvoice();
+        jdbc.update("update voucher_lines set vat_amount = 900.00 where voucher_id = ? and line_no = 1", v.getId());
+
+        assertThatThrownBy(() -> vouchers.post(v.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("stores VAT");
+        assertThat(vouchers.get(v.getId()).getStatus()).isEqualTo(VoucherStatus.DRAFT);
+        assertThat(voucherJournals(v.getId())).isEmpty();
+    }
+
+    /**
      * A purchase invoice buys an expense or an asset. Crediting income through the
      * PISR path would read as a sale with the signs inverted, and the entry would
      * still balance, so only an explicit account-type check catches it.
@@ -312,7 +361,13 @@ class PurchaseInvoicePostingIT {
                 .hasMessageContaining("expense or asset");
     }
 
-    /** P0: posting is a write, so the tenant filter has to hold on the by-id load too. */
+    /**
+     * P0. {@code lockForWrite} loads the row with {@code EntityManager.find}, which
+     * {@code TenantAspect} does not cover — the aspect enables the Hibernate filter
+     * around {@code domain.repository..*} calls only, and none has run in this
+     * transaction yet. The explicit tenant comparison is therefore the only guard
+     * on this path, which is exactly why it is asserted here rather than assumed.
+     */
     @Test
     void tenantBCannotPostTenantAsVoucher() {
         UUID voucherId = draftTwoLineInvoice().getId();
@@ -324,6 +379,8 @@ class PurchaseInvoicePostingIT {
 
         TenantContextHolder.setTenantId(tenantId);
         assertThat(vouchers.get(voucherId).getStatus()).isEqualTo(VoucherStatus.DRAFT);
+        assertThat(vouchers.get(voucherId).getJournalId()).isNull();
+        assertThat(voucherJournals(voucherId)).as("no journal written for tenant A's voucher").isEmpty();
     }
 
     /**

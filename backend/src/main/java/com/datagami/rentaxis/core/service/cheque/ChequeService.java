@@ -1173,9 +1173,13 @@ public class ChequeService {
      * lease, and it is the only form that is correct in both cases.</p>
      *
      * <p>{@code find} rather than {@code findByIdScopedToTenant} for the same
-     * reason: it is the one load that is answered from the context. The Hibernate
-     * tenant filter still applies to it ({@code BaseTenantEntity} sets
-     * {@code applyToLoadByKey = true}) and the explicit check below repeats it.</p>
+     * reason: it is the one load that is answered from the context. <b>The explicit
+     * tenant check below is therefore the only guard here — not a repeat of the
+     * Hibernate filter.</b> {@code BaseTenantEntity} does set
+     * {@code applyToLoadByKey = true}, but that only takes effect once the filter is
+     * <em>enabled</em>, and {@code TenantAspect} enables it {@code @Before} execution
+     * of {@code domain.repository..*} only; whether one has run in this transaction
+     * before the {@code find} is not something this method can assume.</p>
      */
     private Lease lockLease(UUID leaseId) {
         Lease lease;
