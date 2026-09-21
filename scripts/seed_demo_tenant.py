@@ -1182,6 +1182,35 @@ def main():
     out["gatePassId"] = gate_pass["id"]
     log("gate policy, registered visitor, and active resident pass ready")
 
+    # ── Month-end recognition ────────────────────────────────────────────────
+    # Accounting v2 plan 3 recognises rent PER DAY, one CIL per calendar month,
+    # and only for periods that have already ENDED. A freshly seeded tenant is
+    # therefore all schedule and no income: every recognition entry is PLANNED,
+    # Rental Income is zero and the income reports the demo exists to show are
+    # empty. Run the close to the end of last month — the same date the
+    # month-end screen defaults to — so the seeded books look like a landlord's
+    # in the middle of a year rather than one on their first day.
+    last_month_end = TODAY.replace(day=1) - dt.timedelta(days=1)
+    recognition = api.post(
+        f"/api/v1/finance/recognition/run?to={iso(last_month_end)}&preview=false"
+    ) or {}
+    out["recognition"] = {
+        "to": iso(last_month_end),
+        "posted": recognition.get("posted", 0),
+        "amount": recognition.get("amount", 0),
+        "skippedLocked": recognition.get("skippedLocked", 0),
+        "failed": recognition.get("failed", 0),
+    }
+    log(
+        f"recognition run to {iso(last_month_end)}: "
+        f"{recognition.get('posted', 0)} entries posted, "
+        f"{recognition.get('amount', 0)} recognised"
+    )
+    if recognition.get("failed"):
+        # Not fatal — the rest of the demo data is still usable — but a silent
+        # partial close is how a demo ends up with books that do not add up.
+        log(f"  WARNING: {recognition['failed']} entries the ledger refused: {recognition.get('errors')}")
+
     # ── Done ─────────────────────────────────────────────────────────────────
     OUT_FILE.write_text(json.dumps(out, indent=2))
     print(f"\nDone. Credentials and IDs written to {OUT_FILE}")
