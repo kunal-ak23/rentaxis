@@ -146,7 +146,20 @@ public class MaintenanceTicketService {
      *        <p>It narrows the role scope, it does not bypass it: a renter
      *        passing someone else's unitId still sees only tickets they
      *        reported.</p>
+     *
+     * <p><b>{@code @Transactional} is load-bearing here (P0).</b> Nothing in this
+     * method names a tenant: the TENANT_ADMIN branch asks for {@code findAll()} and
+     * means "every ticket of <em>this</em> landlord", which is true only while the
+     * Hibernate tenant filter is on — and {@code TenantAspect} turns it on for the
+     * duration of a transaction. Without the annotation each repository call ran in
+     * its own short transaction with no filter enabled, and
+     * {@code GET /maintenance-tickets} answered a tenant admin with every
+     * landlord's tickets. The two-argument overload above was annotated and
+     * therefore safe; this one, which the controller actually calls, was not.
+     * {@code CrossTenantReadGuardIT#aTenantAdminSeesOnlyTheirOwnTenantsTickets}
+     * pins it.</p>
      */
+    @Transactional(readOnly = true)
     public List<MaintenanceTicketDTO> getTickets(UUID userId, String role, UUID unitId) {
         List<MaintenanceTicket> tickets;
 

@@ -138,6 +138,15 @@ public class DeductionAttachmentService {
         return mapToDTO(attachment);
     }
 
+    /**
+     * {@code @Transactional} like its siblings above, and not decoration: without a
+     * transaction {@code TenantAspect} leaves the Hibernate tenant filter off, so
+     * this read returns another landlord's attachment row and the explicit
+     * comparison below is the only thing standing between a caller and someone
+     * else's evidence file. Covered by
+     * {@code CrossTenantReadGuardIT#anotherTenantsDeductionAttachmentCannotBeDownloaded}.
+     */
+    @Transactional(readOnly = true)
     public InputStream downloadAttachmentStream(UUID attachmentId) throws IOException {
         SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
