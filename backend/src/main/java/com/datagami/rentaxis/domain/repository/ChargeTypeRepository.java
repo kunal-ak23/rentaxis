@@ -19,6 +19,17 @@ public interface ChargeTypeRepository extends JpaRepository<ChargeType, UUID> {
 
     Optional<ChargeType> findByCode(String code);
 
+    /**
+     * The same lookup, ignoring case — what a spreadsheet column needs (review R8).
+     *
+     * <p>A finder rather than {@code toUpperCase()} at the call sites: the codes are
+     * upper-case by convention and not by constraint, so an accountant who typed
+     * {@code rent} and a tenant who created {@code Cooling} both have to resolve, and
+     * doing that by normalising at each call site is how one of three call sites ends
+     * up not doing it.</p>
+     */
+    Optional<ChargeType> findByCodeIgnoreCase(String code);
+
     List<ChargeType> findAllByOrderByDisplayOrderAscCodeAsc();
 
     List<ChargeType> findByActiveTrueOrderByDisplayOrderAscCodeAsc();

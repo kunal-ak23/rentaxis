@@ -65,6 +65,17 @@ public class ImportJob extends BaseTenantEntity {
     @Column(columnDefinition = "jsonb")
     private String errors;
 
+    /**
+     * The {@code ImportBatch} this job created, or null for a v1 portfolio import.
+     *
+     * <p>The column has been there since changeset 88; this is the mapping. It is
+     * what takes the web from a finished import job to the batch screen that can
+     * post or reverse what the job wrote — the polling response carries it, so the
+     * client never has to guess which batch its own upload produced.</p>
+     */
+    @Column(name = "import_batch_id")
+    private UUID importBatchId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

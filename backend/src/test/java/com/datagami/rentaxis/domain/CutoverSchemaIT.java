@@ -251,6 +251,43 @@ class CutoverSchemaIT {
                 .hasMessageContaining("ck_cheques_imported_status");
     }
 
+    /**
+     * The imported dates travel with the imported status, and only with it: a row
+     * that is not an imported row has nowhere to hide a replay instruction.
+     */
+    @Test
+    void theImportedDatesBelongToAnImportedCheque() {
+        UUID t = tenant();
+        UUID leaseId = lease(t, "TLP7/683");
+
+        assertThatCode(() -> chequeWithDates(t, leaseId, "CLEARED",
+                LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 25), null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> chequeWithDates(t, leaseId, "BOUNCED",
+                LocalDate.of(2026, 9, 24), null, LocalDate.of(2026, 9, 26)))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> chequeWithDates(t, leaseId, null, null, null, null))
+                .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> chequeWithDates(t, leaseId, null, LocalDate.of(2026, 9, 24), null, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_cheques_imported_dates");
+    }
+
+    private void chequeWithDates(UUID tenant, UUID leaseId, String importedStatus,
+                                 LocalDate deposited, LocalDate cleared, LocalDate bounced) {
+        UUID propertyId = jdbc.queryForObject("SELECT u.property_id FROM leases l JOIN units u ON u.id = l.unit_id WHERE l.id = ?",
+                UUID.class, leaseId);
+        UUID renterId = jdbc.queryForObject("SELECT renter_id FROM leases WHERE id = ?", UUID.class, leaseId);
+        jdbc.update("INSERT INTO cheques (id, tenant_id, lease_id, property_id, renter_id, seq_no, posting_date,"
+                        + " cheque_date, amount, mode, status, imported_status,"
+                        + " imported_deposited_on, imported_cleared_on, imported_bounced_on, created_at)"
+                        + " VALUES (?,?,?,?,?,?,?,?,?, 'PDC', 'DRAFT', ?, ?, ?, ?, now())",
+                UUID.randomUUID(), tenant, leaseId, propertyId, renterId, 1,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 1), new BigDecimal("5000.00"),
+                importedStatus, deposited, cleared, bounced);
+    }
+
     private void cheque(UUID tenant, UUID leaseId, String importedStatus) {
         UUID propertyId = jdbc.queryForObject("SELECT u.property_id FROM leases l JOIN units u ON u.id = l.unit_id WHERE l.id = ?",
                 UUID.class, leaseId);

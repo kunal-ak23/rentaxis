@@ -66,8 +66,14 @@ public class LeaseService {
      * <p>Deliberately <em>not</em> a set of "statuses that mean the contract has not
      * finished": RENEWED and EXPIRED leases are over as tenancies even though their
      * money may still be moving. This set answers one question — who is in the flat.</p>
+     *
+     * <p>Public since the cut-over import (plan 4) asks the same question from
+     * another package: a workbook must not create a second tenancy on a unit that is
+     * already let, and it has to find that out at <em>validation</em> time, before
+     * anything is written. A copy of the set there would be the fourth definition
+     * this Javadoc exists to prevent.</p>
      */
-    static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
+    public static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
 
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;

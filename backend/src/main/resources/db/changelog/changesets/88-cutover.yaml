@@ -182,6 +182,40 @@ databaseChangeLog:
               ALTER TABLE cheques ADD CONSTRAINT ck_cheques_imported_status
                 CHECK (imported_status IS NULL OR imported_status IN ('REGISTERED','DEPOSITED','CLEARED','BOUNCED'))
 
+        # THE DATES THE IMPORTED STATUS HAPPENED ON. Three columns beside
+        # `imported_status`, and NOT the ordinary `deposited_at` / `cleared_at` /
+        # `bounced_at`, which is the whole point of them.
+        #
+        # Bulk post replays each imported row through ChequeService, and every
+        # transition writes a journal DATED: a CRT filed on the day the bank really
+        # paid, not on the day the import was run. Those dates have to survive two
+        # things the lifecycle columns cannot survive. First, they are known before
+        # the transition exists — a DRAFT cheque has not been deposited, and writing
+        # a deposited_at onto one would be the register claiming an event that has no
+        # journal behind it. Second, `LeaseReverter` clears every lifecycle column
+        # when a batch is reversed (review R12) precisely so a reverted row is not
+        # citing journals that no longer exist; if the spreadsheet's dates lived
+        # there they would be erased with them, and a reversed batch could be
+        # re-posted only by re-uploading the workbook. `imported_status` was already
+        # exempted from that erasure for exactly this reason, and a status without
+        # its dates is only half of what the replay needs.
+        #
+        # Nullable and unconstrained in shape, with one rule: a row that is not an
+        # imported row carries none of them. That keeps "these three columns belong
+        # to the import" enforceable rather than conventional.
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: imported_deposited_on, type: date }
+              - column: { name: imported_cleared_on, type: date }
+              - column: { name: imported_bounced_on, type: date }
+        - sql:
+            sql: >-
+              ALTER TABLE cheques ADD CONSTRAINT ck_cheques_imported_dates
+                CHECK (imported_status IS NOT NULL
+                       OR (imported_deposited_on IS NULL AND imported_cleared_on IS NULL
+                           AND imported_bounced_on IS NULL))
+
         # ONE LIVE JOURNAL PER VOUCHER. Same shape, and the same argument, as
         # `uq_je_recognition_source` in changeset 86.
         #
@@ -222,6 +256,10 @@ databaseChangeLog:
         - sql:
             sql: |
               DROP INDEX IF EXISTS uq_je_voucher_source;
+              ALTER TABLE cheques DROP CONSTRAINT IF EXISTS ck_cheques_imported_dates;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS imported_bounced_on;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS imported_cleared_on;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS imported_deposited_on;
               ALTER TABLE cheques DROP CONSTRAINT IF EXISTS ck_cheques_imported_status;
               ALTER TABLE cheques DROP COLUMN IF EXISTS imported_status;
               DROP INDEX IF EXISTS idx_leases_tenant_external_ref;

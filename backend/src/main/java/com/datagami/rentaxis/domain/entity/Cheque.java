@@ -134,6 +134,38 @@ public class Cheque extends BaseTenantEntity {
     @Column(name = "imported_status", length = 16)
     private ChequeStatus importedStatus;
 
+    /**
+     * The dates the spreadsheet says the imported status happened on, kept apart
+     * from {@link #depositedAt} / {@link #clearedAt} / {@link #bouncedAt} on purpose
+     * (changeset 88).
+     *
+     * <p>These are an <em>instruction</em> to the bulk post — "bank this on the 24th,
+     * clear it on the 25th" — while the lifecycle columns are the <em>record</em> of
+     * what the register did, written by {@code ChequeService} as each transition
+     * posts its journal. Keeping them in one pair of columns would mean a DRAFT row
+     * claiming a deposit that has no journal behind it, and would lose the
+     * spreadsheet's dates the first time the batch was reversed: reverting a lease
+     * to a clean DRAFT clears the lifecycle columns by design, which is why
+     * {@code importedStatus} is excluded from that erasure and why its dates have to
+     * be excluded with it. A reversed batch can then be re-posted, and the second
+     * post files the same journals on the same days as the first.</p>
+     *
+     * <p>{@code importedDepositedOn} is set for a post-dated cheque whose imported
+     * status is DEPOSITED, CLEARED or BOUNCED — all three pass through the bank —
+     * and left null for a cash or transfer receipt, which is received straight to
+     * CLEARED and never banked.</p>
+     */
+    @Column(name = "imported_deposited_on")
+    private LocalDate importedDepositedOn;
+
+    /** @see #importedDepositedOn */
+    @Column(name = "imported_cleared_on")
+    private LocalDate importedClearedOn;
+
+    /** @see #importedDepositedOn */
+    @Column(name = "imported_bounced_on")
+    private LocalDate importedBouncedOn;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "failure_reason", length = 30)
     private ChequeFailureReason failureReason;
