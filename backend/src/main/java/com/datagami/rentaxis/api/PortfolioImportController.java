@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportResultDTO;
 import com.datagami.rentaxis.core.service.PortfolioImportService;
 import com.datagami.rentaxis.core.service.PortfolioTemplateService;
+import com.datagami.rentaxis.core.service.WorkbookGuard;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
@@ -111,8 +112,8 @@ public class PortfolioImportController {
     /** The ordinary multipart ceiling; the global handler turns an over-size upload into a 400. */
     private static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
 
-    /** A .xlsx is a zip. {@code PK\03\04} is the local file header every one of them starts with. */
-    private static final byte[] ZIP_MAGIC = { 0x50, 0x4B, 0x03, 0x04 };
+    /** What the upload answers with. A record, so the shape is the contract. */
+    public record ImportJobStartedDTO(UUID jobId) {}
 
     @GetMapping("/cutover/template")
     @PreAuthorize(CUTOVER_ROLES)
@@ -163,7 +164,10 @@ public class PortfolioImportController {
             log.error("Failed to read the uploaded cut-over workbook", e);
             return ResponseEntity.badRequest().body(Map.of("error", "The uploaded file could not be read"));
         }
-        if (!looksLikeXlsx(fileBytes)) {
+        // By signature, never by the filename or the browser's Content-Type. The
+        // same check WorkbookGuard applies before it parses anything, done here so
+        // an obviously wrong file is a 400 rather than a job that fails a second later.
+        if (!WorkbookGuard.looksLikeXlsx(fileBytes)) {
             return ResponseEntity.badRequest().body(Map.of("error",
                     "Only .xlsx workbooks are supported; this file is not one"));
         }
@@ -177,7 +181,7 @@ public class PortfolioImportController {
         ImportJob savedJob = importJobRepository.save(job);
 
         importService.processImportAsync(fileBytes, savedJob, tenantId);
-        return ResponseEntity.ok(Map.of("jobId", savedJob.getId()));
+        return ResponseEntity.ok(new ImportJobStartedDTO(savedJob.getId()));
     }
 
     /**
@@ -194,14 +198,6 @@ public class PortfolioImportController {
                 .filter(job -> job.getTenantId().equals(TenantContextHolder.getTenantId()))
                 .<ResponseEntity<?>>map(job -> ResponseEntity.ok(mapToResult(job)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    static boolean looksLikeXlsx(byte[] bytes) {
-        if (bytes == null || bytes.length < ZIP_MAGIC.length) return false;
-        for (int i = 0; i < ZIP_MAGIC.length; i++) {
-            if (bytes[i] != ZIP_MAGIC[i]) return false;
-        }
-        return true;
     }
 
     /**
@@ -259,14 +255,14 @@ public class PortfolioImportController {
                     if (details.getMappingsCreated() != null) dto.setMappingsCreated(details.getMappingsCreated());
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
-                    dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
+                    dto.setErrors(List.of(ImportErrorDTO.file("General", "File", "Could not parse error details")));
                 }
             } else {
                 try {
                     dto.setErrors(objectMapper.readValue(raw, new TypeReference<List<ImportErrorDTO>>() {}));
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as legacy array: {}", job.getId(), e.toString());
-                    dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
+                    dto.setErrors(List.of(ImportErrorDTO.file("General", "File", "Could not parse error details")));
                 }
             }
         }

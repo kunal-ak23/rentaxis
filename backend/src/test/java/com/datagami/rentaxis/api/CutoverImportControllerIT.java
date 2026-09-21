@@ -89,12 +89,12 @@ class CutoverImportControllerIT {
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
         propertyAccounts.seedDefaultTemplateAndDefaults();
-        accounts.createLeaf("Rental Income Tulip 7", accounts.getAccountByCode("C-01-01"), null);
-        accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), null);
-        accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), null);
-        accounts.createLeaf("Emirates Islamic - Tulip 7", accounts.getAccountByCode("A-02-02"), null);
-        accounts.createLeaf("PDC Receivable Tulip 7", accounts.getAccountByCode("A-02-03"), null);
-        accounts.createLeaf("Security Deposit Tulip 7", accounts.getAccountByCode("B-01-02"), null);
+        accounts.createLeaf("Rental Income ST1", accounts.getAccountByCode("C-01-01"), null);
+        accounts.createLeaf("Rent Receivable - ST1", accounts.getAccountByCode("A-02-01"), null);
+        accounts.createLeaf("Advance Rent - ST1", accounts.getAccountByCode("B-01-01"), null);
+        accounts.createLeaf("Sample Bank - ST1", accounts.getAccountByCode("A-02-02"), null);
+        accounts.createLeaf("PDC Receivable ST1", accounts.getAccountByCode("A-02-03"), null);
+        accounts.createLeaf("Security Deposit ST1", accounts.getAccountByCode("B-01-02"), null);
 
         accountant = user(UserRole.ACCOUNTANT);
         tenantAdmin = user(UserRole.TENANT_ADMIN);
@@ -223,6 +223,16 @@ class CutoverImportControllerIT {
             default -> superAdmin;
         };
         assertThat(get(BASE + "/template", caller).getStatusCode()).isEqualTo(HttpStatus.OK);
+        // The upload and the poll carry their own @PreAuthorize. They share a
+        // constant today, but a future edit to one of them would otherwise pass.
+        try {
+            assertThat(upload(caller, templates.generateCutOverTemplate(), "c.xlsx", true).getStatusCode())
+                    .isEqualTo(HttpStatus.OK);
+        } catch (java.io.IOException e) {
+            throw new AssertionError(e);
+        }
+        assertThat(get(BASE + "/" + UUID.randomUUID() + "/status", caller).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);   // reached the handler; the job id is simply unknown
     }
 
     @Test
@@ -263,12 +273,12 @@ class CutoverImportControllerIT {
 
         JsonNode done = awaitTerminal(jobId, accountant);
         assertThat(done.get("status").asText()).isEqualTo("COMPLETED");
-        assertThat(done.get("contractsCreated").asInt()).isEqualTo(1);
-        assertThat(done.get("chequesCreated").asInt()).isEqualTo(2);
+        assertThat(done.get("contractsCreated").asInt()).isEqualTo(2);
+        assertThat(done.get("chequesCreated").asInt()).isEqualTo(3);
         assertThat(done.get("mappingsCreated").asInt()).isEqualTo(6);
         assertThat(done.get("propertiesCreated").asInt()).isEqualTo(1);
-        assertThat(done.get("unitsCreated").asInt()).isEqualTo(1);
-        assertThat(done.get("rentersCreated").asInt()).isEqualTo(1);
+        assertThat(done.get("unitsCreated").asInt()).isEqualTo(2);
+        assertThat(done.get("rentersCreated").asInt()).isEqualTo(2);
         assertThat(done.get("errors")).isEmpty();
         assertThat(done.get("importBatchId").isNull()).isFalse();
 
@@ -278,7 +288,7 @@ class CutoverImportControllerIT {
         assertThat(batch.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode dto = json(new String(batch.getBody(), StandardCharsets.UTF_8));
         assertThat(dto.get("status").asText()).isEqualTo("DRAFT");
-        assertThat(dto.get("leasesImported").asInt()).isEqualTo(1);
+        assertThat(dto.get("leasesImported").asInt()).isEqualTo(2);
         assertThat(dto.get("label").asText()).contains("al-ashram-cutover.xlsx");
     }
 
@@ -322,6 +332,34 @@ class CutoverImportControllerIT {
                 "cutover.xlsx", true);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).contains(".xlsx");
+    }
+
+    /**
+     * A file the signature check lets through but the parser must not be handed:
+     * it is refused on the executor, and comes back as a validation failure the
+     * screen already knows how to show rather than a FAILED job with a stack trace.
+     */
+    @Test
+    void aMacroEnabledWorkbookIsRefusedAsAValidationFailure() throws Exception {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try (var zip = new java.util.zip.ZipOutputStream(out)) {
+            zip.putNextEntry(new java.util.zip.ZipEntry("xl/vbaProject.bin"));
+            zip.write(new byte[]{0, 0, 1});
+            zip.closeEntry();
+        }
+        ResponseEntity<String> started = upload(accountant, out.toByteArray(), "macro.xlsx", true);
+        assertThat(started.getStatusCode()).isEqualTo(HttpStatus.OK);
+        UUID jobId = UUID.fromString(json(started.getBody()).get("jobId").asText());
+
+        JsonNode done = awaitTerminal(jobId, accountant);
+        assertThat(done.get("status").asText()).isEqualTo("VALIDATION_FAILED");
+        assertThat(done.get("importBatchId").isNull()).isTrue();
+        assertThat(done.get("errors")).hasSize(1);
+        JsonNode err = done.get("errors").get(0);
+        assertThat(err.get("message").asText()).contains(".xlsm");
+        // A statement about the FILE carries no row, and says so rather than
+        // claiming row 0 (contract change: ImportErrorDTO.row is nullable).
+        assertThat(err.get("row").isNull()).isTrue();
     }
 
     @Test

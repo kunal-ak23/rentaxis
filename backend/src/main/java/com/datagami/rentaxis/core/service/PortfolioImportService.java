@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPersistService;
 import com.datagami.rentaxis.core.service.cutover.ContractImportValidator;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -61,10 +62,10 @@ public class PortfolioImportService {
         Sheet rentersSheet = workbook.getSheet("Renters");
         Sheet leasesSheet = workbook.getSheet("Leases");
 
-        if (propertiesSheet == null) errors.add(new ImportErrorDTO("Properties", 0, "", "Sheet 'Properties' is missing"));
-        if (unitsSheet == null) errors.add(new ImportErrorDTO("Units", 0, "", "Sheet 'Units' is missing"));
-        if (rentersSheet == null) errors.add(new ImportErrorDTO("Renters", 0, "", "Sheet 'Renters' is missing"));
-        if (leasesSheet == null) errors.add(new ImportErrorDTO("Leases", 0, "", "Sheet 'Leases' is missing"));
+        if (propertiesSheet == null) errors.add(ImportErrorDTO.file("Properties", "Sheet", "Sheet 'Properties' is missing"));
+        if (unitsSheet == null) errors.add(ImportErrorDTO.file("Units", "Sheet", "Sheet 'Units' is missing"));
+        if (rentersSheet == null) errors.add(ImportErrorDTO.file("Renters", "Sheet", "Sheet 'Renters' is missing"));
+        if (leasesSheet == null) errors.add(ImportErrorDTO.file("Leases", "Sheet", "Sheet 'Leases' is missing"));
 
         if (!errors.isEmpty()) return new ValidationOutcome(errors, warnings);
 
@@ -565,7 +566,7 @@ public class PortfolioImportService {
             BigDecimal sum = sumByLease.getOrDefault(key, BigDecimal.ZERO);
             BigDecimal totalRent = leaseIndex.get(key).totalRent();
             if (sum.subtract(totalRent).abs().compareTo(tolerance) > 0) {
-                errors.add(new ImportErrorDTO("Cheques", 0, "Amount",
+                errors.add(ImportErrorDTO.file("Cheques", "Amount",
                         "Sum of cheques (" + sum + ") does not match lease total rent ("
                                 + totalRent + ") for " + key));
             }
@@ -600,7 +601,7 @@ public class PortfolioImportService {
                 // Wording updated: "in this tenant" is accurate; the old
                 // "in the system" was misleading regardless of which path
                 // produced it.
-                errors.add(new ImportErrorDTO("Properties", 0, "PropertyName", "Property '" + name + "' already exists in this tenant"));
+                errors.add(ImportErrorDTO.file("Properties", "PropertyName", "Property '" + name + "' already exists in this tenant"));
             }
         }
 
@@ -613,7 +614,7 @@ public class PortfolioImportService {
 
         for (String email : renterEmails) {
             if (existingEmails.contains(email.toLowerCase())) {
-                errors.add(new ImportErrorDTO("Renters", 0, "Email", "Renter with email '" + email + "' already exists in this tenant"));
+                errors.add(ImportErrorDTO.file("Renters", "Email", "Renter with email '" + email + "' already exists in this tenant"));
             }
         }
     }
@@ -624,7 +625,11 @@ public class PortfolioImportService {
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
         // Set tenant context for this async thread
         TenantContextHolder.setTenantId(tenantId);
-        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(fileBytes))) {
+        // Through WorkbookGuard, never `new XSSFWorkbook` directly: an uploaded
+        // spreadsheet is an untrusted file parsed in-process, and an OOM here would
+        // take the whole service down rather than fail the job. See that class for
+        // each limit and why it is set where it is.
+        try (Workbook workbook = WorkbookGuard.open(fileBytes)) {
 
             // Phase 1: Validate
             job.setStatus("VALIDATING");
@@ -657,6 +662,23 @@ public class PortfolioImportService {
             log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={}",
                     job.getId(), job.getPropertiesCreated(), job.getUnitsCreated(),
                     job.getLeasesCreated(), job.getSchedulesCreated());
+        } catch (BusinessRuleViolationException e) {
+            // A workbook this import will not accept at all — not an .xlsx, macro
+            // enabled, password protected, or past a size limit. It is a statement
+            // about the FILE, so it is reported the way every other statement about
+            // the file is: a validation failure the screen already knows how to
+            // show, rather than a FAILED job with a stack trace behind it.
+            log.warn("Portfolio import refused: jobId={}, reason={}", job.getId(), e.getMessage());
+            job.setStatus("VALIDATION_FAILED");
+            try {
+                job.setErrors(objectMapper.writeValueAsString(
+                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
+            } catch (Exception jsonEx) {
+                job.setErrors("[{\"sheet\":\"General\",\"row\":null,\"field\":\"File\","
+                        + "\"message\":\"This workbook was refused\"}]");
+            }
+            job.setCompletedAt(Instant.now());
+            importJobRepository.save(job);
         } catch (Exception e) {
             log.error("Portfolio import failed: jobId={}", job.getId(), e);
             job.setStatus("FAILED");
@@ -673,7 +695,7 @@ public class PortfolioImportService {
             job.setImportBatchId(null);
             try {
                 job.setErrors(objectMapper.writeValueAsString(
-                        List.of(new ImportErrorDTO("General", 0, "", e.getMessage()))));
+                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
             } catch (Exception jsonEx) {
                 job.setErrors("[{\"sheet\":\"General\",\"row\":0,\"field\":\"\",\"message\":\"Import failed\"}]");
             }
