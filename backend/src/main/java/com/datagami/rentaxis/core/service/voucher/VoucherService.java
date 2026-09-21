@@ -495,7 +495,17 @@ public class VoucherService {
 
         Vendor named = namedVendorId == null ? null : vendors.findById(namedVendorId)
                 .orElseThrow(() -> new NotFoundException("Vendor not found"));
+        // The question is "is this line my vendor's payable account?", not "is my
+        // vendor the only vendor who answers to it?". Nothing in the schema stops
+        // two vendors sharing one leaf (vendors.payable_account_id has no unique
+        // constraint, and updateVendor accepts a leaf already in use), and when they
+        // do, a voucher naming either of them is settling exactly the account its
+        // own vendor is settled through — so the comparison is on the account.
+        UUID namedPayable = named == null || named.getPayableAccount() == null
+                ? null : named.getPayableAccount().getId();
         for (Vendor owner : owners) {
+            UUID ownerPayable = owner.getPayableAccount() == null ? null : owner.getPayableAccount().getId();
+            if (ownerPayable != null && ownerPayable.equals(namedPayable)) continue;
             String account = owner.getPayableAccount() == null ? "" : owner.getPayableAccount().getCode() + " ";
             if (named == null) {
                 throw new BusinessRuleViolationException("Line account " + account + "is "

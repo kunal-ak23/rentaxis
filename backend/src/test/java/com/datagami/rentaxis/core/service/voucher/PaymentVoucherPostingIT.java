@@ -351,6 +351,28 @@ class PaymentVoucherPostingIT {
         assertThat(voucherJournals(v.getId())).isEmpty();
     }
 
+    /**
+     * Nothing in the schema stops two vendors pointing at one payable leaf
+     * (`vendors.payable_account_id` carries no unique constraint, and
+     * `VendorService.updateVendor` will accept a leaf another vendor already uses).
+     * When that happens, a voucher naming either co-owner is settling exactly the
+     * account its own vendor is settled through — the question the rule asks is
+     * "is this line my vendor's payable account?", not "is my vendor the only
+     * vendor who answers to it?".
+     */
+    @Test
+    void twoVendorsSharingOnePayableAccountMayStillBePaid() {
+        UUID shared = vendor.getPayableAccount().getId();
+        jdbc.update("update vendors set payable_account_id = ? where id = ?", shared, otherVendor.getId());
+
+        Voucher posted = vouchers.post(vouchers.createDraft(payment(vendor.getId(), shared)).getId());
+
+        assertThat(posted.getStatus()).isEqualTo(VoucherStatus.POSTED);
+        assertThat(journalRows(posted.getJournalId()))
+                .extracting(Row::accountId, Row::debit)
+                .contains(tuple(shared, new BigDecimal("1000.00")));
+    }
+
     /** An expense line on a BPV is untouched by the rule — spec §10.2's "any leaf" still holds. */
     @Test
     void aPaymentWithNoPayableLineNeedsNoVendor() {
