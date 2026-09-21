@@ -193,7 +193,27 @@ public class JournalService {
     @Transactional(readOnly = true)
     public Page<JournalEntryDTO> search(JournalDocType docType, LocalDate from, LocalDate to,
                                         UUID propertyId, UUID leaseId, Pageable pageable) {
-        return entries.search(docType, from, to, propertyId, leaseId, pageable).map(e -> toDto(e, false));
+        return search(docType, from, to, propertyId, leaseId, null, pageable);
+    }
+
+    /**
+     * The same search, narrowed to one cut-over import batch (spec §10.3).
+     *
+     * <p>This is the drill-through from the batches screen: "this batch wrote 1,431
+     * journals" is a number nobody can check, and the way to check it is to look at
+     * them. It is a filter on the ordinary journal list rather than a list of ids on
+     * the batch DTO, because the answer is a page of journals and the journal list
+     * already knows how to render, page and date-filter one.</p>
+     *
+     * <p>Its reversal mirrors come back too: {@code PostingService.reverse} copies
+     * the batch id onto them deliberately, and a drill-through that hid them would
+     * show a reversed batch as though its journals were still live.</p>
+     */
+    @Transactional(readOnly = true)
+    public Page<JournalEntryDTO> search(JournalDocType docType, LocalDate from, LocalDate to,
+                                        UUID propertyId, UUID leaseId, UUID importBatchId, Pageable pageable) {
+        return entries.search(docType, from, to, propertyId, leaseId, importBatchId, pageable)
+                .map(e -> toDto(e, false));
     }
 
     JournalEntryDTO toDto(JournalEntry e, boolean withLines) {

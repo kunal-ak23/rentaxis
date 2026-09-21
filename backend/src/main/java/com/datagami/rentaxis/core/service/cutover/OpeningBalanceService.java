@@ -204,6 +204,7 @@ public class OpeningBalanceService {
         LocalDate asOf = asOf();
         DerivedRoles derived = derived();
         Postable postable = postable(chartIndex(), derived.byAccount());
+        Map<UUID, BigDecimal> ourBooks = derivedBalances(asOf);
 
         List<OpeningBalanceRow> rows = new ArrayList<>();
         for (Account a : accounts.findAll()) {
@@ -211,9 +212,12 @@ public class OpeningBalanceService {
             AccountRole role = derived.byAccount().get(a.getId());
             boolean computed = postable.isDifferenceAccount(a.getId());
             BigDecimal net = postable.byAccount().getOrDefault(a.getId(), ZERO);
+            BigDecimal ours = ourBooks.getOrDefault(a.getId(), ZERO);
             rows.add(new OpeningBalanceRow(a.getId(), a.getCode(), a.getName(),
                     a.getAccountType() == null ? null : a.getAccountType().name(), a.getPropertyId(),
-                    role != null, role, computed, ZERO, ZERO,
+                    role != null, role, computed,
+                    ours.signum() > 0 ? ours : ZERO,
+                    ours.signum() < 0 ? ours.negate() : ZERO,
                     net.signum() > 0 ? net : ZERO,
                     net.signum() < 0 ? net.negate() : ZERO));
         }
@@ -495,18 +499,10 @@ public class OpeningBalanceService {
         Map<UUID, AccountRole> derived = derived().byAccount();
         ChartIndex index = chartIndex();
 
-        Map<UUID, BigDecimal> derivedBalances = new HashMap<>();
+        Map<UUID, BigDecimal> derivedBalances = derivedBalances(asOf);
         Map<UUID, String[]> identity = new HashMap<>();                       // accountId -> {code, name}
         for (var row : ledger.trialBalance(asOf, null)) {
-            derivedBalances.merge(row.accountId(), row.balance(), BigDecimal::add);
             identity.put(row.accountId(), new String[]{row.code(), row.name()});
-        }
-        for (JournalLine l : openingJournalLines()) {
-            // trialBalance is debit-positive, so removing this line's contribution
-            // means ADDING the negation of (debit − credit). Written out rather than
-            // as a subtract so the sign convention is visible at the call site.
-            derivedBalances.merge(l.getAccount().getId(),
-                    l.getDebit().subtract(l.getCredit()).negate(), BigDecimal::add);
         }
         for (Account a : index.all()) {
             identity.putIfAbsent(a.getId(), new String[]{a.getCode(), a.getName()});
@@ -538,6 +534,42 @@ public class OpeningBalanceService {
         }
         rows.sort(Comparator.comparing(ReconciliationRow::code, Comparator.nullsLast(String::compareTo)));
         return rows;
+    }
+
+    /**
+     * What <em>our</em> books hold per account as at {@code asOf}, debit-positive,
+     * with the live opening journal's own lines taken back out.
+     *
+     * <p>After the cut-over's step 1 this is, for the nine {@code DERIVED_ROLES},
+     * exactly what the contract import produced: the receivable the {@code TCO}
+     * raised, the PDC receivable the {@code PDR}s hold, the advance rent the
+     * catch-up has not released yet, the income it has, the bank the cleared
+     * cheques reached. It is the column the grid shows beside the accountant's own
+     * figures and the column the reconciliation report compares with PACT's.</p>
+     *
+     * <p><b>Why the opening journal is removed.</b> It is dated the same day this is
+     * read, so a raw trial balance would count it here and every manually entered
+     * account would reconcile against itself. Once the journal has been reversed the
+     * original and its mirror already net to zero, which is why only a LIVE posting
+     * is subtracted.</p>
+     *
+     * <p>One definition, two readers — {@link #grid()} and {@link #reconcile()} —
+     * because a grid whose derived column disagreed with the reconciliation report
+     * would be two answers to one question.</p>
+     */
+    private Map<UUID, BigDecimal> derivedBalances(LocalDate asOf) {
+        Map<UUID, BigDecimal> balances = new HashMap<>();
+        for (var row : ledger.trialBalance(asOf, null)) {
+            balances.merge(row.accountId(), row.balance(), BigDecimal::add);
+        }
+        for (JournalLine l : openingJournalLines()) {
+            // trialBalance is debit-positive, so removing this line's contribution
+            // means ADDING the negation of (debit − credit). Written out rather than
+            // as a subtract so the sign convention is visible at the call site.
+            balances.merge(l.getAccount().getId(),
+                    l.getDebit().subtract(l.getCredit()).negate(), BigDecimal::add);
+        }
+        return balances;
     }
 
     // ------------------------------------------------------------------

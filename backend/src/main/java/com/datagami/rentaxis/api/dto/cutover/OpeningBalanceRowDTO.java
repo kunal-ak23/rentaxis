@@ -20,13 +20,22 @@ import java.util.UUID;
  * {@code PUT}, and its {@code enteredDebit}/{@code enteredCredit} carry the figure
  * the journal will post rather than anything PACT's file said — which is why the
  * rows on screen add up the way the journal does.</p>
+ *
+ * <p>{@code derivedDebit}/{@code derivedCredit} are what <em>our</em> books already
+ * hold for this account as at the day before they open, with the opening journal's
+ * own lines taken back out. On a {@code derived} row that is the figure the contract
+ * import produced and the reason the row is read-only; on a manual row it is
+ * normally nothing, and anything else there is worth a second look. They were
+ * always {@code 0.00} until the bulk post existed to fill them.</p>
  */
 public record OpeningBalanceRowDTO(UUID accountId, String code, String name, String accountType, UUID propertyId,
                                    boolean derived, AccountRole derivedRole, boolean computed,
+                                   BigDecimal derivedDebit, BigDecimal derivedCredit,
                                    BigDecimal enteredDebit, BigDecimal enteredCredit) {
 
     public static OpeningBalanceRowDTO of(OpeningBalanceService.OpeningBalanceRow r) {
         return new OpeningBalanceRowDTO(r.accountId(), r.code(), r.name(), r.accountType(), r.propertyId(),
-                r.derived(), r.derivedRole(), r.computed(), r.enteredDebit(), r.enteredCredit());
+                r.derived(), r.derivedRole(), r.computed(), r.derivedDebit(), r.derivedCredit(),
+                r.enteredDebit(), r.enteredCredit());
     }
 }
