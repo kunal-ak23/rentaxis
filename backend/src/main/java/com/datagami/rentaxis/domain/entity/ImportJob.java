@@ -76,6 +76,35 @@ public class ImportJob extends BaseTenantEntity {
     @Column(name = "import_batch_id")
     private UUID importBatchId;
 
+    /**
+     * How far a long-running job has got, and how far it has to go.
+     *
+     * <p>Written by the cut-over bulk post (spec §10.3), which runs on the import
+     * executor exactly as an upload does: six hundred contracts is not a request
+     * anybody should hold a connection open for. Null on every job that has no
+     * meaningful unit to count.</p>
+     */
+    @Column(name = "processed")
+    private Integer processed;
+
+    /** @see #processed */
+    @Column(name = "total")
+    private Integer total;
+
+    /**
+     * The bulk post's own outcome, as JSON.
+     *
+     * <p>A column of its own rather than a third shape in {@link #errors}: that one
+     * carries either a JSON array of {@code ImportErrorDTO} or a
+     * {@code PortfolioImportJobDetailsDTO} object, and the portfolio controller
+     * picks between them on the first non-whitespace character. A bulk-post result
+     * parked there would be read by whichever of those two parsers matched its
+     * brace.</p>
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "result", columnDefinition = "jsonb")
+    private String result;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

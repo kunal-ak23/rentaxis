@@ -122,6 +122,46 @@ public class ChequeService {
      * user-facing endpoint ({@code POST /cheques/lease/{id}/cash-receipt}) open on an
      * ended contract.</p>
      */
+    /**
+     * A transition that is being <em>replayed</em> out of a cut-over import rather
+     * than made now (spec §10.3, controller ruling R4).
+     *
+     * <p>One object, because the two things it decides are one decision and must
+     * not drift apart:</p>
+     * <ul>
+     *   <li><b>The journal carries {@code batchId}</b>, which is what exempts it
+     *       from the period lock — every cut-over date is inside a closed month by
+     *       definition — and what lets "Reverse batch" find it again.</li>
+     *   <li><b>Nothing is announced and nothing is proposed.</b> A cheque that
+     *       bounced last March already cost the renter a fine in PACT and already
+     *       produced whatever conversation it was going to; re-proposing it would
+     *       put a year of settled penalties on finance's worklist on the first
+     *       morning, and e-mailing "your cheque cleared" for a payment made eight
+     *       months ago is a message with no possible use. The register still records
+     *       what happened — the dates, the statuses, the lease-event line for a
+     *       bounce — because that history is the thing being migrated.</li>
+     * </ul>
+     *
+     * <p>A parameter rather than a thread-local or a mutable flag on the service:
+     * the fact belongs to the one transition it describes, and an ambient value
+     * would silence whatever the same thread happened to do next.</p>
+     *
+     * <p>{@code null} everywhere a user is driving. Every public no-{@code Replay}
+     * overload below is that door.</p>
+     */
+    public record Replay(UUID batchId) {
+        public Replay {
+            if (batchId == null) {
+                throw new IllegalArgumentException("A replay must name the import batch it belongs to");
+            }
+        }
+
+        /** The batch id to stamp on a journal, or null when this is an ordinary action. */
+        static UUID batchIdOf(Replay replay) {
+            return replay == null ? null : replay.batchId();
+        }
+    }
+
     private static final Set<LeaseStatus> POSTED = EnumSet.of(
             LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.RENEWED);
 
@@ -239,6 +279,18 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO deposit(UUID chequeId, ChequeActionRequest request) {
+        return deposit(chequeId, request, null);
+    }
+
+    /**
+     * The same banking, optionally as a {@link Replay} of what PACT recorded.
+     *
+     * <p>Nothing posts either way, so the batch id has nothing to stamp here; what
+     * the replay changes is that the renter is not told their cheque went to the
+     * bank eight months ago.</p>
+     */
+    @Transactional
+    public ChequeDTO deposit(UUID chequeId, ChequeActionRequest request, Replay replay) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
@@ -247,7 +299,9 @@ public class ChequeService {
 
         applyDeposit(cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
         chequeRepository.save(cheque);
-        publishDeposited(cheque);
+        if (replay == null) {
+            publishDeposited(cheque);
+        }
         return dto(cheque, lease);
     }
 
@@ -332,13 +386,30 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO clear(UUID chequeId, ChequeActionRequest request) {
+        return clear(chequeId, request, null);
+    }
+
+    /**
+     * The same clearing, optionally as a {@link Replay}: the {@code CRT} carries the
+     * batch id, and the late-payment hook, the renter's e-mail and the
+     * did-this-close-the-tenancy question are all left alone.
+     *
+     * <p>The close hook in particular would be answered "no" anyway — a lease the
+     * bulk post has just activated is ACTIVE, not ended — but a cut-over has no
+     * business finishing a tenancy off, and saying so costs one status read less.</p>
+     */
+    @Transactional
+    public ChequeDTO clear(UUID chequeId, ChequeActionRequest request, Replay replay) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "clear", ChequeStatus.DEPOSITED);
 
-        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
+        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay);
         chequeRepository.save(cheque);
+        if (replay != null) {
+            return dto(cheque, lease);
+        }
         // A cheque cleared after its grace period is a late payment. Inside this
         // transaction on purpose: "the money arrived late" and "finance should look
         // at a late fee" are one fact, and a proposal that failed to write while the
@@ -358,6 +429,12 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO receive(UUID chequeId, ChequeActionRequest request) {
+        return receive(chequeId, request, null);
+    }
+
+    /** The same receipt, optionally as a {@link Replay} — see {@link #clear(UUID, ChequeActionRequest, Replay)}. */
+    @Transactional
+    public ChequeDTO receive(UUID chequeId, ChequeActionRequest request, Replay replay) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
@@ -368,8 +445,11 @@ public class ChequeService {
                             + " is a " + cheque.getMode() + " row. Deposit it and clear it instead.");
         }
 
-        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
+        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay);
         chequeRepository.save(cheque);
+        if (replay != null) {
+            return dto(cheque, lease);
+        }
         // Cash over the counter reaches CLEARED by a different door, but it is the
         // same fact: the money arrived, and it may have arrived late. Leaving the
         // hook on clear() alone made the late fee depend on which door the renter
@@ -396,6 +476,22 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO bounce(UUID chequeId, ChequeActionRequest request) {
+        return bounce(chequeId, request, null);
+    }
+
+    /**
+     * The same return, optionally as a {@link Replay}: the {@code CBR} carries the
+     * batch id, and no penalty is proposed, no e-mail sent and no in-app
+     * notification raised.
+     *
+     * <p><b>The lease-event line stays.</b> It is the record that this instrument
+     * was returned, which is exactly what the migration is carrying over; what must
+     * not happen is the renter being told about it again, or finance being asked a
+     * second time about a fine PACT has already dealt with (spec §10.3 — the cut-over
+     * copies history, it does not re-live it).</p>
+     */
+    @Transactional
+    public ChequeDTO bounce(UUID chequeId, ChequeActionRequest request, Replay replay) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
@@ -428,7 +524,7 @@ public class ChequeService {
                 LeaseChequeRegistrar.dimensions(lease, cheque.getId()),
                 JournalSourceType.CHEQUE,
                 cheque.getId(),
-                null,
+                Replay.batchIdOf(replay),
                 List.of(PostingRequest.pair(
                         LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
                         credit.withNarration(narration)))));
@@ -441,6 +537,9 @@ public class ChequeService {
         recordLeaseEvent(lease, cheque, "returned by the bank"
                 + (r.failureReason() != null ? " (" + r.failureReason() + ")" : "")
                 + " — " + money(amount) + " AED back on the receivable");
+        if (replay != null) {
+            return dto(cheque, lease);
+        }
 
         publish(EmailEventType.CHEQUE_BOUNCED, cheque,
                 ChequePayload.ofCheque(cheque, null,
@@ -947,6 +1046,11 @@ public class ChequeService {
      * later can easily answer with a different leaf.</p>
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes) {
+        applyClearing(lease, cheque, date, debitAccountId, notes, null);
+    }
+
+    private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
+                               Replay replay) {
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         // Checked on the way in whichever door it came through: an override the
@@ -970,7 +1074,7 @@ public class ChequeService {
                 LeaseChequeRegistrar.dimensions(lease, cheque.getId()),
                 JournalSourceType.CHEQUE,
                 cheque.getId(),
-                null,
+                Replay.batchIdOf(replay),
                 List.of(PostingRequest.pair(
                         dr.withNarration(narration),
                         PostingRequest.cr(AccountRole.PDC_RECEIVABLE, amount).withNarration(narration)))));

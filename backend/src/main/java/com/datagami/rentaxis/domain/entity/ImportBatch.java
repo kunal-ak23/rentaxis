@@ -39,7 +39,7 @@ public class ImportBatch extends BaseTenantEntity {
     private ImportBatchKind kind = ImportBatchKind.CONTRACT_IMPORT;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 16)
     private ImportBatchStatus status = ImportBatchStatus.DRAFT;
 
     /** What an accountant calls this run on the batches list — "September cut-over". */
@@ -54,6 +54,14 @@ public class ImportBatch extends BaseTenantEntity {
     @Column(name = "posted_by") private UUID postedBy;
     @Column(name = "reversed_at") private Instant reversedAt;
     @Column(name = "reversed_by") private UUID reversedBy;
+
+    /**
+     * When the batch and everything it created were deleted, and by whom. The batch
+     * row outlives its own contents on purpose: after a discard it is the only
+     * record that the import happened at all.
+     */
+    @Column(name = "discarded_at") private Instant discardedAt;
+    @Column(name = "discarded_by") private UUID discardedBy;
 
     @Column(name = "created_at", nullable = false) private Instant createdAt = Instant.now();
 }

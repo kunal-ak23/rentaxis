@@ -118,6 +118,29 @@ public class RecognitionPoster {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public RecognitionEntryDTO postJoining(UUID entryId) {
+        return postJoining(entryId, null);
+    }
+
+    /**
+     * The same posting, carrying the cut-over import batch this {@code CIL} belongs
+     * to (spec §10.3, controller ruling R4/R13).
+     *
+     * <p>A contract that started before the client's books open has months of rent
+     * already earned, and the catch-up that recognises them is dated inside the
+     * locked period exactly as the {@code TCO} is. The batch id is what
+     * {@code PostingService} exempts, and what lets a reverse of the batch take the
+     * catch-up back off with everything else — a CIL left behind would leave income
+     * recognised against advance rent that no longer exists.</p>
+     *
+     * <p>Threaded through <em>this</em> method rather than only through
+     * {@code RecognitionService}, because this bean is where the entry is actually
+     * written: the id has to reach the {@code PostingRequest}, and the bean boundary
+     * that gives a month-end run its per-row commit is between the two.</p>
+     *
+     * @param importBatchId non-null only for a cut-over catch-up.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public RecognitionEntryDTO postJoining(UUID entryId, UUID importBatchId) {
         RecognitionEntry entry = lock(entryId);
         // Checked under the lock, which is the whole point: the loser of a race
         // blocks on the SELECT above and re-reads the winner's committed status here.
@@ -135,7 +158,7 @@ public class RecognitionPoster {
                 LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.RECOGNITION,
                 entry.getId(),
-                null,
+                importBatchId,
                 List.of(PostingRequest.pair(
                         new PostingRequest.Line(deferralOf(segment, lease), PostingRequest.Side.DR,
                                 entry.getAmount(), null, null),

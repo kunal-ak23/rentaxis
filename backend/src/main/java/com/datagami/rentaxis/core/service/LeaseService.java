@@ -954,6 +954,27 @@ public class LeaseService {
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {
+        return markActiveOnPosting(lease, notes, true);
+    }
+
+    /**
+     * The same, with a say in whether anybody is told.
+     *
+     * <p>{@code announce = false} is the cut-over's (spec §10.3): a batch of six
+     * hundred contracts that have been running for months is not six hundred
+     * tenancies starting today, and the landlord's first visible act on this system
+     * must not be an activation e-mail to every renter they have.
+     * {@code ContractImportPersistService} makes the same choice about
+     * LEASE_CREATED, and this is the other half of it — the import creates the
+     * lease, the bulk post activates it, and both are the same migration.</p>
+     *
+     * <p><b>Only the e-mail is suppressed.</b> The unit is still claimed and the
+     * event row is still written: the trail is how an accountant later explains why
+     * a contract went on the books in a closed month, and the occupancy is simply
+     * true.</p>
+     */
+    @Transactional
+    public Lease markActiveOnPosting(Lease lease, String notes, boolean announce) {
         LeaseStatus previousStatus = lease.getStatus();
         if (previousStatus != LeaseStatus.DRAFT && previousStatus != LeaseStatus.PENDING_SIGNATURE) {
             throw new BusinessRuleViolationException(
@@ -973,11 +994,13 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, notes);
 
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.LEASE_ACTIVATED,
-                savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
-                "LEASE_ACTIVATED:" + savedLease.getId()));
+        if (announce) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.LEASE_ACTIVATED,
+                    savedLease.getTenantId(),
+                    buildLeasePayload(savedLease),
+                    "LEASE_ACTIVATED:" + savedLease.getId()));
+        }
 
         return savedLease;
     }

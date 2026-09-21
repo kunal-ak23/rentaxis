@@ -64,6 +64,30 @@ public class LeaseChequeRegistrar {
      * @return the entry, already recorded on the cheque as {@code pdrJournalId}.
      */
     public JournalEntry register(Lease lease, Cheque cheque) {
+        return register(lease, cheque, null);
+    }
+
+    /**
+     * The same registration, with the cut-over import batch this PDR belongs to
+     * (accounting v2 plan 4, controller ruling R4).
+     *
+     * <p><b>This overload exists because the PDRs are written here, not by
+     * {@code LeasePostingService}.</b> A batch's journals are found again by
+     * {@code import_batch_id} and are exempt from the period lock because they
+     * carry it ({@code PostingService} ~:54) — a cut-over is dated into months that
+     * are closed by definition. A PDR written with a null id would therefore be
+     * refused outright at post time, and, had it got through, would be invisible to
+     * "Reverse batch" afterwards: the instrument would stay on the books with the
+     * contract that raised it taken off.</p>
+     *
+     * <p>An explicit parameter and never a thread-local: the id has to travel with
+     * the one posting it belongs to, and an ambient value would attach itself to
+     * whatever else the same thread happened to post next.</p>
+     *
+     * @param importBatchId non-null only for a cut-over bulk post; every
+     *                      user-facing path passes null.
+     */
+    public JournalEntry register(Lease lease, Cheque cheque, UUID importBatchId) {
         String narration = narrationOf(cheque);
         JournalEntry pdr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.PDR,
@@ -72,7 +96,7 @@ public class LeaseChequeRegistrar {
                 dimensions(lease, cheque.getId()),
                 JournalSourceType.CHEQUE,
                 cheque.getId(),
-                null,
+                importBatchId,
                 java.util.List.of(PostingRequest.pair(
                         PostingRequest.dr(AccountRole.PDC_RECEIVABLE, cheque.getAmount()).withNarration(narration),
                         crReceivable(lease, cheque.getAmount()).withNarration(narration)))));

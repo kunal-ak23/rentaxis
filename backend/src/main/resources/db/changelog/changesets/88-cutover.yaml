@@ -35,7 +35,9 @@ databaseChangeLog:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
               - column: { name: kind, type: varchar(30), defaultValue: CONTRACT_IMPORT, constraints: { nullable: false } }
-              - column: { name: status, type: varchar(10), defaultValue: DRAFT, constraints: { nullable: false } }
+              # varchar(16), not (10): DISCARDED is nine characters and the next
+              # status somebody adds should not need a second changeset.
+              - column: { name: status, type: varchar(16), defaultValue: DRAFT, constraints: { nullable: false } }
               - column: { name: label, type: varchar(120) }
               - column: { name: import_job_id, type: uuid }
               - column: { name: leases_imported, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
@@ -44,6 +46,11 @@ databaseChangeLog:
               - column: { name: posted_by, type: uuid }
               - column: { name: reversed_at, type: timestamptz }
               - column: { name: reversed_by, type: uuid }
+              # A discard deletes the leases, units and renters the batch created, so
+              # the batch row is the only thing left that can say it happened, when,
+              # and who did it.
+              - column: { name: discarded_at, type: timestamptz }
+              - column: { name: discarded_by, type: uuid }
               - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
         - addForeignKeyConstraint:
             baseTableName: import_batches
@@ -61,7 +68,7 @@ databaseChangeLog:
             sql: >-
               ALTER TABLE import_batches
                 ADD CONSTRAINT ck_import_batches_kind   CHECK (kind IN ('CONTRACT_IMPORT')),
-                ADD CONSTRAINT ck_import_batches_status CHECK (status IN ('DRAFT','POSTED','REVERSED'))
+                ADD CONSTRAINT ck_import_batches_status CHECK (status IN ('DRAFT','POSTED','REVERSED','DISCARDED'))
         - createIndex: { tableName: import_batches, indexName: idx_import_batches_tenant, columns: [ { column: { name: tenant_id } } ] }
 
         - createTable:
@@ -81,10 +88,25 @@ databaseChangeLog:
             constraintName: fk_import_batch_leases_batch
             onDelete: CASCADE
 
+        # import_jobs carries the cut-over's long-running work as well as its
+        # uploads: a six-hundred contract bulk post cannot finish inside one HTTP
+        # request any more than the import that produced it can, so it runs through
+        # the same job row, the same executor and the same polling contract.
+        #
+        # `processed`/`total` are the progress signal the batches screen asked for.
+        # `result` is the bulk post's own outcome, in a column of its own rather than
+        # in `errors`: that column has exactly two documented shapes (a JSON array of
+        # ImportErrorDTO, or a PortfolioImportJobDetailsDTO object) and the portfolio
+        # controller picks between them on the first character. A third shape there
+        # would be read by the wrong parser the first time somebody polled a post job
+        # through the import endpoint.
         - addColumn:
             tableName: import_jobs
             columns:
               - column: { name: import_batch_id, type: uuid }
+              - column: { name: processed, type: int }
+              - column: { name: total, type: int }
+              - column: { name: result, type: jsonb }
 
         - createTable:
             tableName: opening_balance_snapshots
@@ -361,6 +383,9 @@ databaseChangeLog:
               ALTER TABLE leases DROP COLUMN IF EXISTS external_contract_ref;
         - dropTable: { tableName: opening_balance_postings }
         - dropTable: { tableName: opening_balance_snapshots }
+        - dropColumn: { tableName: import_jobs, columnName: result }
+        - dropColumn: { tableName: import_jobs, columnName: total }
+        - dropColumn: { tableName: import_jobs, columnName: processed }
         - dropColumn: { tableName: import_jobs, columnName: import_batch_id }
         - dropTable: { tableName: import_batch_entities }
         - dropTable: { tableName: import_batch_leases }
