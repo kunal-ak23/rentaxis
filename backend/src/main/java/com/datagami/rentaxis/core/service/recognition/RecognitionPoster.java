@@ -19,6 +19,8 @@ import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,10 +45,11 @@ import java.util.UUID;
  * roll back the whole night's work. Separating the bean is the cheapest way to
  * go through the proxy.</p>
  *
- * <p><b>The row is locked, not merely re-read.</b> See
- * {@code RecognitionEntryRepository.lockById}: the nightly job and a hand-run
- * close are exactly the pair that would otherwise both see {@code PLANNED} and
- * both post.</p>
+ * <p><b>The row is locked <em>and refreshed</em>, not merely re-read.</b> The
+ * nightly job and a hand-run close are exactly the pair that would otherwise both
+ * see {@code PLANNED} and both post — and a locking finder alone does not stop
+ * them, because it answers from the first-level cache for a row the transaction
+ * has already loaded. See {@link #lock}.</p>
  *
  * <p><b>The debit follows the line, not the role.</b> The deferral was credited
  * when the {@code TCO} was posted, to whatever account that line named; the
@@ -66,15 +69,18 @@ public class RecognitionPoster {
     private final LeaseLineRepository leaseLines;
     private final PostingService postingService;
     private final AccountResolver accountResolver;
+    private final EntityManager entityManager;
 
     public RecognitionPoster(RecognitionEntryRepository entries,
                              LeaseLineRepository leaseLines,
                              PostingService postingService,
-                             AccountResolver accountResolver) {
+                             AccountResolver accountResolver,
+                             EntityManager entityManager) {
         this.entries = entries;
         this.leaseLines = leaseLines;
         this.postingService = postingService;
         this.accountResolver = accountResolver;
+        this.entityManager = entityManager;
     }
 
     /**
@@ -109,8 +115,7 @@ public class RecognitionPoster {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public RecognitionEntryDTO postJoining(UUID entryId) {
-        RecognitionEntry entry = entries.lockById(entryId)
-                .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        RecognitionEntry entry = lock(entryId);
         // Checked under the lock, which is the whole point: the loser of a race
         // blocks on the SELECT above and re-reads the winner's committed status here.
         if (entry.getStatus() != RecognitionStatus.PLANNED) {
@@ -142,6 +147,29 @@ public class RecognitionPoster {
         return new RecognitionEntryDTO(entry.getId(), lease.getId(), segment.getId(),
                 entry.getPeriodStart(), entry.getPeriodEnd(), entry.getDays(), entry.getAmount(),
                 RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), entry.getPostedAt());
+    }
+
+    /**
+     * The row, claimed {@code FOR UPDATE} <em>and re-read</em>.
+     *
+     * <p>{@code refresh} rather than a locking finder, and the difference is the
+     * whole point of the lock. A locking query still answers from the first-level
+     * cache when the transaction has already loaded that row — so it takes the lock
+     * and hands back the <em>stale</em> status, which is exactly the value the lock
+     * exists to stop us acting on. That is not hypothetical here: {@link
+     * #postJoining} runs in the <em>caller's</em> transaction, and its one caller —
+     * a termination re-cutting the month containing {@code T} — has already loaded
+     * the entry to compute the cut. A row that the nightly close committed as
+     * POSTED in between would read PLANNED, and this would post a second {@code
+     * CIL} for the same period. {@code refresh(…, PESSIMISTIC_WRITE)} does both
+     * halves: {@code SELECT … FOR UPDATE}, then overwrite the instance from the row
+     * it just locked. Same fix, same reason, as {@code RecognitionService.lock}.</p>
+     */
+    private RecognitionEntry lock(UUID entryId) {
+        RecognitionEntry entry = entries.findById(entryId)
+                .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        entityManager.refresh(entry, LockModeType.PESSIMISTIC_WRITE);
+        return entry;
     }
 
     /**
