@@ -185,6 +185,10 @@ public class OnlinePaymentService {
             result.add(new RenterChequeDTO(
                     c.getId(),
                     lease.getId(),
+                    // The lease is already in hand — the grace period above came off
+                    // it — so this is a field of an object this loop has loaded, not
+                    // another query.
+                    lease.getStatus(),
                     c.getSeqNo(),
                     c.getChequeDate(),
                     c.getAmount(),

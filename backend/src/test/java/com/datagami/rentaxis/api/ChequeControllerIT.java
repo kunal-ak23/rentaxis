@@ -480,6 +480,15 @@ class ChequeControllerIT {
         assertThat(row.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(row.getBody().get("chequeNumber")).isEqualTo("100040");
         assertThat(row.getBody()).containsKeys("due", "overdue", "daysOverdue");
+        // The contract's status travels on the row, under exactly this name: the
+        // register decides which actions to offer from it, and the server refuses
+        // every transition on a lease that has been closed.
+        assertThat(row.getBody().get("leaseStatus"))
+                .as("leaseStatus on the wire")
+                .isEqualTo(LeaseStatus.ACTIVE.name());
+        assertThat(row.getBody().get("status"))
+                .as("and it is not the cheque's own status")
+                .isEqualTo(ChequeStatus.REGISTERED.name());
     }
 
     /** Per-lease stats arrive in one round trip rather than one per row of a table. */

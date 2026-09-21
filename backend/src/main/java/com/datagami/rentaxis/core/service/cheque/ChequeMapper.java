@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.cheque;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -38,6 +39,12 @@ public final class ChequeMapper {
         return new ChequeDTO(
                 c.getId(),
                 nullSafe(c.getLease(), lease -> lease.getId()),
+                // Costs nothing extra: every caller already dereferences the lease
+                // to get its grace period (see the graceDays argument, and
+                // ChequeQueryService.graceOf), so the association is initialised on
+                // every path that reaches here. This adds a field to an object that
+                // was already loaded, not a query.
+                nullSafe(c.getLease(), Lease::getStatus),
                 nullSafe(c.getProperty(), Property::getId),
                 nullSafe(c.getUnit(), Unit::getId),
                 nullSafe(c.getRenter(), Renter::getId),

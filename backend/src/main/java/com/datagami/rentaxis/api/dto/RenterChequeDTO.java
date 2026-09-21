@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api.dto;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -43,9 +44,15 @@ import java.util.UUID;
  *        pay button for every property nobody has configured.
  * @param penaltyAssessmentId set when this row <em>is</em> a penalty collection row,
  *        so the screen can label it as a fine rather than as rent.
+ * @param leaseStatus the contract's own status. What a row still admits belongs to
+ *        the lease and not to the instrument — a CLOSED tenancy refuses every
+ *        transition, so a portal that reads only {@code status} offers Pay-now on
+ *        rows the register will turn down. {@code payableOnline} already answers
+ *        the narrow question; this is what lets the screen say <em>why</em>.
  */
 public record RenterChequeDTO(UUID id,
                               UUID leaseId,
+                              LeaseStatus leaseStatus,
                               int installmentNumber,
                               LocalDate dueDate,
                               BigDecimal amount,
