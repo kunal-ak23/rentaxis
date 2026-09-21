@@ -76,8 +76,11 @@ class RecognitionSchemaIT {
 
     private UUID chargeType(UUID tenant) {
         UUID id = UUID.randomUUID();
+        // role/behaviour are unconstrained varchar columns (no CHECK/FK), so any
+        // string would pass the database, but RENTAL_INCOME/RENT are the real
+        // AccountRole/ChargeBehaviour enum members this fixture is standing in for.
         jdbc.update("INSERT INTO charge_types (id, tenant_id, code, name_en, role, behaviour) VALUES (?,?,?,?,?,?)",
-                id, tenant, "RENT-" + id.toString().substring(0, 8), "Rent", "RENT_INCOME", "RENT");
+                id, tenant, "RENT-" + id.toString().substring(0, 8), "Rent", "RENTAL_INCOME", "RENT");
         return id;
     }
 
@@ -95,6 +98,18 @@ class RecognitionSchemaIT {
                         + " VALUES (?,?,?,?,?,?,?,?,?)",
                 id, tenant, lease, leaseLine, from, to, new BigDecimal("1200.00"), days, new BigDecimal("39.726027"));
         return id;
+    }
+
+    /** Minimal lease_settlements row: only lease_id/tenant_id are required, everything else defaults. */
+    private UUID settlement(UUID tenant, UUID lease) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO lease_settlements (id, tenant_id, lease_id) VALUES (?,?,?)", id, tenant, lease);
+        return id;
+    }
+
+    /** Asserts that {@code callable} is rejected by a foreign-key constraint. */
+    private void assertRejectsDanglingForeignKey(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable) {
+        assertThatThrownBy(callable).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     /** How many of {@code names} exist as columns of {@code public.table}. */
@@ -215,5 +230,78 @@ class RecognitionSchemaIT {
                 UUID.randomUUID(), t, l, seg1, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), 31, new BigDecimal("100.00")))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("uq_re_segment_period");
+    }
+
+    /**
+     * Every foreign key changeset 85 (and 86's follow-up on
+     * {@code rent_segments.lease_line_id}) declares is asserted here by
+     * attempting to point it at a UUID that exists nowhere — the base rows
+     * otherwise satisfy every NOT NULL column, so a rejection can only come
+     * from the FK. {@code rent_segments.lease_line_id} became nullable in
+     * changeset 86 (a retired segment outlives its lease line), but a
+     * dangling *non-null* id must still be rejected — nullability and
+     * referential integrity are different guarantees, and this proves both
+     * still hold together.
+     */
+    @Test
+    void foreignKeysRejectDanglingIds() {
+        UUID t = tenant();
+        UUID u = unit(t, property(t));
+        UUID r = renter(t);
+        UUID l = lease(t, u, r);
+        UUID ct = chargeType(t);
+        UUID line = leaseLine(t, l, ct);
+        UUID seg = rentSegment(t, l, line, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+        UUID settlement = settlement(t, l);
+        UUID bogus = UUID.randomUUID();
+
+        // rent_segments.lease_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "INSERT INTO rent_segments (id, tenant_id, lease_id, lease_line_id, from_date, to_date, amount, days, day_rate)"
+                        + " VALUES (?,?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), t, bogus, line, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
+                new BigDecimal("1200.00"), 31, new BigDecimal("38.709677")));
+
+        // rent_segments.lease_line_id — nullable since changeset 86, but a
+        // dangling (non-null) id must still be rejected.
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "INSERT INTO rent_segments (id, tenant_id, lease_id, lease_line_id, from_date, to_date, amount, days, day_rate)"
+                        + " VALUES (?,?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), t, l, bogus, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
+                new BigDecimal("1200.00"), 31, new BigDecimal("38.709677")));
+
+        // recognition_entries.segment_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount)"
+                        + " VALUES (?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), t, l, bogus, LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), 31, new BigDecimal("100.00")));
+
+        // recognition_entries.journal_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "INSERT INTO recognition_entries (id, tenant_id, lease_id, segment_id, period_start, period_end, days, amount, journal_id)"
+                        + " VALUES (?,?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), t, l, seg, LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30), 30, new BigDecimal("100.00"), bogus));
+
+        // leases.termination_journal_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "UPDATE leases SET termination_journal_id = ? WHERE id = ?", bogus, l));
+
+        // lease_settlements.journal_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "UPDATE lease_settlements SET journal_id = ? WHERE id = ?", bogus, settlement));
+
+        // lease_settlements.refund_bank_account_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "UPDATE lease_settlements SET refund_bank_account_id = ? WHERE id = ?", bogus, settlement));
+
+        // lease_settlements.collection_cheque_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "UPDATE lease_settlements SET collection_cheque_id = ? WHERE id = ?", bogus, settlement));
+
+        // lease_settlement_deductions.account_id
+        assertRejectsDanglingForeignKey(() -> jdbc.update(
+                "INSERT INTO lease_settlement_deductions (id, tenant_id, settlement_id, category, amount, account_id)"
+                        + " VALUES (?,?,?,?,?,?)",
+                UUID.randomUUID(), t, settlement, "OTHER", new BigDecimal("10.00"), bogus));
     }
 }
