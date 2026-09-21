@@ -316,8 +316,7 @@ public class LeasePostingService {
             throw new BusinessRuleViolationException(
                     "Only an ACTIVE lease can have its lines amended; this one is " + lease.getStatus());
         }
-        UUID reversedJournalId = lease.getPostingJournalId();
-        if (reversedJournalId == null) {
+        if (lease.getPostingJournalId() == null) {
             throw new BusinessRuleViolationException("This lease has no posting journal to amend");
         }
         List<JournalEntry> contractEntries = postedContractEntries(leaseId);
@@ -343,8 +342,12 @@ public class LeasePostingService {
         plan.throwIfRefused(propertyIdOf(lease));
 
         LocalDate reversedOn = LocalDate.now();
+        // Collected as they are reversed, so the event names exactly the entries this
+        // amendment unwound — the contract's own TCO and one per extension.
+        List<UUID> reversedJournalIds = new ArrayList<>(contractEntries.size());
         for (JournalEntry contract : contractEntries) {
             postingService.reverse(contract.getId(), reversedOn, reason);
+            reversedJournalIds.add(contract.getId());
         }
         JournalEntry tco = postTco(lease, plan.pairs());
 
@@ -353,7 +356,7 @@ public class LeasePostingService {
         leaseService.recordLeaseEvent(lease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
                 "Lines amended, reposted as " + tco.getEntryNumber()
                         + (reason == null || reason.isBlank() ? "" : ": " + reason));
-        events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalId, tco.getId()));
+        events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalIds, tco.getId()));
 
         return response(lease, tco, cheques);
     }
