@@ -284,4 +284,74 @@ class LeaseControllerTerminateEndpointsIT {
 
         assertThat(currentStatus(leaseId)).isEqualTo(LeaseStatus.ACTIVE);
     }
+
+    // ------------------------------------------------------------------
+    // POST /{id}/notice
+    // ------------------------------------------------------------------
+
+    private String noticePath(UUID id) {
+        return "/api/v1/leases/" + id + "/notice";
+    }
+
+    /**
+     * Taking a renter's notice is one role wider than terminating: the building
+     * manager who was told may record it, for their own buildings only.
+     *
+     * <p>The body is optional — the fact is the whole of the request — and the
+     * refusals keep their two meanings: 403 for a role the endpoint does not admit,
+     * 404 for an admitted role reaching a lease that is not theirs.</p>
+     */
+    @Test
+    void anyoneWhoManagesTheLeaseMayRecordNotice() {
+        assertThat(status(propertyManager, HttpMethod.POST, noticePath(foreignLeaseId),
+                Map.of("notes", "not their building")))
+                .as("a building they were not assigned").isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(status(renter, HttpMethod.POST, noticePath(leaseId), null))
+                .as("a renter may not move their own contract's status")
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(currentStatus(leaseId)).isEqualTo(LeaseStatus.ACTIVE);
+
+        ResponseEntity<Map> noticed = body(propertyManager, HttpMethod.POST, noticePath(leaseId),
+                Map.of("notes", "Relocating to Abu Dhabi"));
+
+        assertThat(noticed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(noticed.getBody().get("status")).isEqualTo("NOTICE_GIVEN");
+        assertThat(currentStatus(leaseId)).isEqualTo(LeaseStatus.NOTICE_GIVEN);
+        assertThat(leaseService.getLeaseEvents(leaseId))
+                .filteredOn(e -> e.getNewState() == LeaseStatus.NOTICE_GIVEN)
+                .singleElement()
+                .satisfies(e -> assertThat(e.getNotes()).contains("Relocating to Abu Dhabi"));
+
+        // A body at all is optional, on the second lease so the first stays put.
+        assertThat(status(accountant, HttpMethod.POST, noticePath(foreignLeaseId), null))
+                .as("no body is a valid notice").isEqualTo(HttpStatus.OK);
+        assertThat(currentStatus(foreignLeaseId)).isEqualTo(LeaseStatus.NOTICE_GIVEN);
+    }
+
+    /**
+     * Notice is a thing that happens to a running contract, once.
+     *
+     * <p>A second notice is refused rather than treated as idempotent: the status is
+     * already what it would set, and answering "fine" would hide a screen acting on
+     * a stale lease. So is notice on a terminated one — that is a correction to
+     * history, not a notice.</p>
+     */
+    @Test
+    void noticeOnAnythingButARunningLeaseIsRefused() {
+        assertThat(status(accountant, HttpMethod.POST, noticePath(leaseId), null)).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<Map> second = body(accountant, HttpMethod.POST, noticePath(leaseId), null);
+        assertThat(second.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) second.getBody().get("message"))
+                .isEqualTo("Only an ACTIVE lease can be given notice; this one is NOTICE_GIVEN.");
+
+        assertThat(status(accountant, HttpMethod.POST, terminatePath(foreignLeaseId), terminateBody()))
+                .isEqualTo(HttpStatus.OK);
+        ResponseEntity<Map> onTerminated = body(accountant, HttpMethod.POST, noticePath(foreignLeaseId), null);
+        assertThat(onTerminated.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) onTerminated.getBody().get("message")).contains("this one is TERMINATED");
+
+        assertThat(currentStatus(leaseId)).isEqualTo(LeaseStatus.NOTICE_GIVEN);
+        assertThat(currentStatus(foreignLeaseId)).isEqualTo(LeaseStatus.TERMINATED);
+    }
 }

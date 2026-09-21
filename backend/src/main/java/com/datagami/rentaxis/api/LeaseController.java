@@ -9,6 +9,7 @@ import com.datagami.rentaxis.api.dto.lease.AmendLeaseLinesRequest;
 import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequeNumbersRequest;
+import com.datagami.rentaxis.api.dto.lease.GiveNoticeRequest;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
@@ -232,6 +233,30 @@ public class LeaseController {
     }
 
     // --- Termination (spec §9.1) -------------------------------------------
+
+    /**
+     * The renter has said they are leaving: ACTIVE → NOTICE_GIVEN.
+     *
+     * <p>Open to PROPERTY_MANAGER as well as the finance roles, and scoped by
+     * {@code LeaseAccessPolicy} to the buildings they are assigned (a lease
+     * elsewhere is a 404, not a 403). Taking a renter's notice is the building
+     * manager's job — it writes no journal, hands nothing back and leaves every
+     * instrument on the register exactly where it was — which is why this is one
+     * role wider than {@link #terminateLease}.</p>
+     *
+     * <p>The body is optional; anything in {@code notes} goes on the lease's event
+     * trail. A lease that is not ACTIVE is refused with a 400.</p>
+     */
+    @PostMapping("/{id}/notice")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<LeaseDTO> giveNotice(
+            @PathVariable UUID id,
+            @RequestBody(required = false) GiveNoticeRequest request,
+            HttpServletRequest httpRequest) {
+        String userIdStr = httpRequest.getHeader("X-User-Id");
+        UUID byUser = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        return ResponseEntity.ok(leaseService.giveNotice(id, request == null ? null : request.notes(), byUser));
+    }
 
     /**
      * What ending the contract on {@code date} would do, with nothing written: the

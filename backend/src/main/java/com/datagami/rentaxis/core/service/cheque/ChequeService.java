@@ -17,6 +17,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Line;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
+import com.datagami.rentaxis.core.service.lease.LeaseClosureService;
 import com.datagami.rentaxis.core.service.penalty.PenaltyRuleEngine;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -97,12 +98,41 @@ public class ChequeService {
     private static final Logger log = LoggerFactory.getLogger(ChequeService.class);
 
     /**
-     * A lease whose contract is on the books. Its cheques are instruments against
-     * a real debt; a DRAFT lease's rows are a proposal, and moving one through the
-     * register would clear money against a receivable nobody has raised.
+     * A lease whose contract is on the books <em>and still running</em> — the set
+     * that may take a new register row.
+     *
+     * <p>A DRAFT lease's rows are a proposal, and moving one through the register
+     * would clear money against a receivable nobody has raised. A TERMINATED lease
+     * is the other end of the same rule: the contract has finished, so it does not
+     * grow new instalments. EXPIRED and RENEWED are in: a tenancy that ran its
+     * course still takes a counter receipt for its last month, and an approved
+     * penalty on either raises its collection row through
+     * {@link #addRowToPostedLease}.</p>
      */
     private static final Set<LeaseStatus> POSTED = EnumSet.of(
             LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
+
+    /**
+     * A lease whose <em>existing</em> rows may still move — which is every posted
+     * lease plus a terminated one.
+     *
+     * <p><b>Money owed stays collectable.</b> Spec §9.1's keep list leaves uncleared
+     * instruments dated on or before {@code T} on the register of a TERMINATED lease
+     * precisely so they can be banked, and §9.2 raises a CASH row on that same lease
+     * for a balance the deposit could not cover. Both are claims against a debt the
+     * renter genuinely owes; refusing to deposit, clear, receive, bounce, replace,
+     * hand back or cancel them would make the register a place money goes to be
+     * forgotten.</p>
+     *
+     * <p><b>CLOSED is not here, and that is the point.</b> A closed contract has a
+     * finalised settlement and nothing outstanding (see
+     * {@link com.datagami.rentaxis.core.service.lease.LeaseClosureService}); a
+     * transition on it would be a movement after the books on that tenancy were
+     * shut.</p>
+     */
+    private static final Set<LeaseStatus> COLLECTABLE = EnumSet.of(
+            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED,
+            LeaseStatus.RENEWED, LeaseStatus.TERMINATED);
 
     /**
      * A contract that has ended and is being settled. Its register is closed to
@@ -121,6 +151,7 @@ public class ChequeService {
     private final NotificationService notificationService;
     private final PenaltyRuleEngine penaltyRules;
     private final PenaltyAssessmentRepository penaltyAssessments;
+    private final LeaseClosureService closure;
     private final ApplicationEventPublisher events;
 
     /**
@@ -141,6 +172,7 @@ public class ChequeService {
                          NotificationService notificationService,
                          @Lazy PenaltyRuleEngine penaltyRules,
                          PenaltyAssessmentRepository penaltyAssessments,
+                         LeaseClosureService closure,
                          ApplicationEventPublisher events) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
@@ -152,6 +184,7 @@ public class ChequeService {
         this.notificationService = notificationService;
         this.penaltyRules = penaltyRules;
         this.penaltyAssessments = penaltyAssessments;
+        this.closure = closure;
         this.events = events;
     }
 
@@ -215,8 +248,13 @@ public class ChequeService {
                 continue;
             }
             Lease lease = c.getLease();
-            if (lease == null || !POSTED.contains(lease.getStatus())) {
-                problems.add(label(c) + " belongs to a lease that is not posted");
+            if (lease == null) {
+                problems.add(label(c) + " belongs to no lease");
+            } else if (!COLLECTABLE.contains(lease.getStatus())) {
+                // Named by status rather than "not posted": on this screen the row
+                // the clerk has to pull out of the pile is usually one whose lease
+                // is CLOSED, not one that was never posted.
+                problems.add(label(c) + " belongs to a lease that is " + lease.getStatus());
             } else if (c.getStatus() != ChequeStatus.REGISTERED) {
                 problems.add(label(c) + " is " + c.getStatus());
             } else if (c.getMode() != ChequeMode.PDC) {
@@ -267,6 +305,7 @@ public class ChequeService {
         // clearing committed would lose it silently.
         penaltyRules.onLateClear(cheque, r.dateOrToday());
         publishCleared(cheque);
+        closeIfThisWasTheLastOne(lease, "the last instrument cleared");
         return dto(cheque, lease);
     }
 
@@ -297,6 +336,7 @@ public class ChequeService {
         // happened to pay through.
         penaltyRules.onLateClear(cheque, r.dateOrToday());
         publishCleared(cheque);
+        closeIfThisWasTheLastOne(lease, "the last receipt was taken");
         return dto(cheque, lease);
     }
 
@@ -475,7 +515,7 @@ public class ChequeService {
     @Transactional
     public ChequeDTO replaceForOnlinePayment(UUID bouncedChequeId, LocalDate date) {
         Cheque bounced = lock(bouncedChequeId);
-        Lease lease = gatewayLeaseOf(bounced);
+        Lease lease = requireCollectable(gatewayLeaseOf(bounced));
         lockLease(lease.getId());
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
 
@@ -617,6 +657,30 @@ public class ChequeService {
         return addRow(lease, row);
     }
 
+    /**
+     * The clearance that finishes a contract off (spec §9.1–§9.2).
+     *
+     * <p>Called from every path that puts a row into CLEARED — {@link #clear},
+     * {@link #receive}, {@link #clearOnline} — because which door the money came
+     * through does not change the fact that it was the last of it. The rule itself
+     * lives in {@link LeaseClosureService}: a lease that has ended, whose settlement
+     * is FINALIZED, with nothing left outstanding on its register, is CLOSED. On
+     * every other lease this is two cheap reads and no write.</p>
+     *
+     * <p>Inside the transition's own transaction, under the lease's row lock — taken
+     * here, after the cheque's, which is the order {@link #replace} already
+     * establishes. Without it two clerks clearing the last two rows at once could
+     * each see the other's still outstanding and neither would close.</p>
+     */
+    private void closeIfThisWasTheLastOne(Lease lease, String reason) {
+        if (lease.getStatus() != LeaseStatus.TERMINATED && lease.getStatus() != LeaseStatus.EXPIRED) {
+            // The overwhelmingly common case — a running lease collecting its rent —
+            // and it must not cost a lock or a settlement lookup.
+            return;
+        }
+        closure.closeIfFullyCollected(lockLease(lease.getId()), reason);
+    }
+
     /** The shared body: validate against the register, register the row, post its PDR. */
     private ChequeDTO addRow(Lease lease, ChequeRowInput row) {
         // Read once: the numbers already taken and the last position come off the
@@ -693,7 +757,7 @@ public class ChequeService {
     @Transactional
     public ChequeDTO registerOnlinePending(UUID chequeId) {
         Cheque cheque = lock(chequeId);
-        Lease lease = gatewayLeaseOf(cheque);
+        Lease lease = requireCollectable(gatewayLeaseOf(cheque));
         if (cheque.getStatus() == ChequeStatus.BOUNCED) {
             throw new BusinessRuleViolationException("Replace the bounced cheque before paying online");
         }
@@ -721,7 +785,7 @@ public class ChequeService {
     @Transactional
     public ChequeDTO revertOnlinePending(UUID chequeId) {
         Cheque cheque = lock(chequeId);
-        Lease lease = gatewayLeaseOf(cheque);
+        Lease lease = requireCollectable(gatewayLeaseOf(cheque));
         requireStatus(cheque, "revert", ChequeStatus.ONLINE_PENDING);
         moveTo(cheque, ChequeStatus.REGISTERED, null);
         chequeRepository.save(cheque);
@@ -743,6 +807,14 @@ public class ChequeService {
      * a retried webhook must not re-propose a penalty any more than it may post a
      * second CRT, and a second proposal would be a second fine on finance's
      * worklist for one payment.</p>
+     *
+     * <p><b>It also sits above the lease-status guard</b>, which is the one place
+     * {@link #requireCollectable} is not the first thing a transition does. This
+     * very capture can be the clearance that closes the lease, and Razorpay will
+     * redeliver the same webhook afterwards; answering that retry with "this
+     * cheque's lease is CLOSED" would have the gateway retrying a 400 until it
+     * gives up, over a payment that is already in the bank. Nothing is written on
+     * that path — it is a read of a row that already captured.</p>
      */
     @Transactional
     public ChequeDTO clearOnline(UUID chequeId, LocalDate capturedOn, UUID settlementAccountId) {
@@ -754,6 +826,7 @@ public class ChequeService {
             }
             throw new BusinessRuleViolationException(label(cheque) + " is not an online payment row");
         }
+        requireCollectable(lease);
         requireStatus(cheque, "capture", ChequeStatus.ONLINE_PENDING);
 
         LocalDate on = capturedOn != null ? capturedOn : LocalDate.now();
@@ -761,6 +834,7 @@ public class ChequeService {
         chequeRepository.save(cheque);
         penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
+        closeIfThisWasTheLastOne(lease, "an online payment captured");
         return dto(cheque, lease);
     }
 
@@ -946,7 +1020,7 @@ public class ChequeService {
         Lease lease = cheque.getLease();
         if (lease == null) throw new NotFoundException("Lease not found");
         leaseAccessPolicy.requireManageable(lease);
-        return requirePosted(lease);
+        return requireCollectable(lease);
     }
 
     /**
@@ -967,6 +1041,11 @@ public class ChequeService {
      *       internal caller, and the webhook's own authorisation is its signature
      *       check (Task 10).</li>
      * </ul>
+     *
+     * <p><b>Authorisation only — the lease-status guard is the caller's.</b> Every
+     * other door calls {@link #requireCollectable} straight after this one; the
+     * gateway's capture deliberately does not, until it has answered a retried
+     * webhook (see {@link #clearOnline}).</p>
      */
     private Lease gatewayLeaseOf(Cheque cheque) {
         Lease lease = cheque.getLease();
@@ -976,13 +1055,24 @@ public class ChequeService {
         if (leaseAccessPolicy.hasAuthenticatedCaller() && !leaseAccessPolicy.canManage(lease)) {
             leaseAccessPolicy.requireReadable(lease);
         }
-        return requirePosted(lease);
+        return lease;
     }
 
-    private static Lease requirePosted(Lease lease) {
-        if (!POSTED.contains(lease.getStatus())) {
-            throw new BusinessRuleViolationException(
-                    "This cheque's lease is " + lease.getStatus()
+    /**
+     * The guard every <em>transition</em> runs: this row's lease must still be one
+     * whose money is being collected.
+     *
+     * <p>Two refusals, because they are two different problems. A DRAFT lease has
+     * not been posted yet and the answer is to post it; a CLOSED one is finished
+     * and there is no answer — whatever this instrument is, it is not part of that
+     * tenancy's collections any more.</p>
+     */
+    private static Lease requireCollectable(Lease lease) {
+        if (!COLLECTABLE.contains(lease.getStatus())) {
+            throw new BusinessRuleViolationException(lease.getStatus() == LeaseStatus.CLOSED
+                    ? "This cheque's lease is CLOSED; its settlement is finished and its register rows"
+                            + " can no longer be changed."
+                    : "This cheque's lease is " + lease.getStatus()
                             + "; post the lease before changing its register rows.");
         }
         return lease;

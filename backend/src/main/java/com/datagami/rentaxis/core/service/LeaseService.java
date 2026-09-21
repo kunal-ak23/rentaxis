@@ -926,6 +926,121 @@ public class LeaseService {
     }
 
     /**
+     * The renter has said they are leaving: ACTIVE → NOTICE_GIVEN.
+     *
+     * <p>A flag on the contract and nothing more — no journal, no cheque, no unit
+     * change. It is what the renewal worklist and the expiry sweep read to tell a
+     * tenancy that is winding down from one that is simply running, and the register
+     * treats a NOTICE_GIVEN lease exactly as it treats an ACTIVE one: the rent for
+     * the remaining months is still owed and its instruments are still banked.</p>
+     *
+     * <p><b>ACTIVE only.</b> Notice on a contract that has already ended is not a
+     * notice, it is a correction to history; and a lease that is still DRAFT has
+     * nothing to give notice on. A renter who changes their mind is handled by
+     * {@code LeaseRenewalService}, which admits NOTICE_GIVEN as renewable — there is
+     * deliberately no "withdraw notice" here, because the event trail should keep
+     * saying that notice was once given.</p>
+     */
+    @Transactional
+    public LeaseDTO giveNotice(UUID leaseId, String notes, UUID byUser) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
+        if (lease.getStatus() != LeaseStatus.ACTIVE) {
+            throw new BusinessRuleViolationException(
+                    "Only an ACTIVE lease can be given notice; this one is " + lease.getStatus() + ".");
+        }
+
+        lease.setStatus(LeaseStatus.NOTICE_GIVEN);
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
+                notes != null && !notes.isBlank()
+                        ? "Notice given: " + notes.trim()
+                        : "Notice given",
+                byUser);
+        return mapToDTO(saved);
+    }
+
+    /**
+     * The nightly sweep's candidates: this tenant's running tenancies whose last
+     * day has passed (spec §9).
+     *
+     * <p>Ids rather than entities, and a transaction of its own rather than the
+     * flip's, so the sweep holds nothing open while it works through them and one
+     * lease's refusal cannot roll the rest back. {@code @Transactional} is what
+     * gives {@code TenantAspect} a session to enable the tenant filter on — without
+     * it the JPQL below has no tenant column and would answer with every
+     * landlord's contracts.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findLeasesToExpire(LocalDate today) {
+        return leaseRepository.findIdsToExpire(
+                List.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN), today);
+    }
+
+    /**
+     * Flip the contract to EXPIRED — {@link #markTerminated}'s sibling for the end
+     * the calendar decides.
+     *
+     * <p><b>It posts nothing and touches no cheque.</b> Expiry is a calendar fact:
+     * the term ran out. An instrument dated inside the term that nobody banked is
+     * still money the renter owes, and this job used to cancel exactly those on the
+     * way past — writing the debt off in the one direction that costs the landlord.
+     * Deciding what happens to uncleared paper belongs to the termination and
+     * settlement flow, where a human is looking at the contract. The recognition
+     * schedule is left alone for the mirror-image reason: its rows are earned rent
+     * and the month-end close posts them on their own.</p>
+     *
+     * <p><b>No {@code requireManageable}</b>, unlike its sibling, and that is the
+     * one thing to be careful about here: the caller is a scheduler with no
+     * principal at all, so the policy — which fails closed — would refuse every
+     * lease every night. {@link LeaseExpirationJob} is its only caller and the
+     * method is not reachable from any controller. The precondition below is what
+     * stands in for authorisation: it does nothing to a contract the calendar has
+     * not already ended.</p>
+     *
+     * @return whether this call expired it.
+     */
+    @Transactional
+    public boolean markExpired(UUID leaseId, LocalDate today) {
+        // Locked, because the sweep read its candidates in an earlier transaction
+        // and a clerk may have terminated or renewed this contract since.
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        if (lease.getStatus() != LeaseStatus.ACTIVE && lease.getStatus() != LeaseStatus.NOTICE_GIVEN) {
+            // Not an error: the row was a candidate a moment ago and is not one now.
+            // A RENEWED predecessor in particular must never become EXPIRED — both
+            // mean "over", and only one of them says where the unit and the deposit
+            // went.
+            return false;
+        }
+        if (lease.getEndDate() == null || !lease.getEndDate().isBefore(today)) {
+            return false;
+        }
+
+        LeaseStatus previousStatus = lease.getStatus();
+        lease.setStatus(LeaseStatus.EXPIRED);
+
+        // Expiry and termination are the two ways out of a running lease and must
+        // leave the unit in the same state. This job used to set only the status, so
+        // the unit went VACANT while still advertising the departed renter's name
+        // and their rent as its actual_rent — skewing occupancy and revenue
+        // reporting until someone noticed. Changeset 68's second UPDATE is exactly
+        // this cleanup, run as a production backfill, and 70 describes the same
+        // drift. The rule that a unit held by another ACTIVE lease is not released
+        // lives in one place; this is that place.
+        releaseUnitIfNoOtherActiveLease(lease);
+
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, previousStatus, LeaseStatus.EXPIRED,
+                "Automatically transitioned to EXPIRED by system job (term ended " + lease.getEndDate() + ")");
+        return true;
+    }
+
+    /**
      * Flip the contract to TERMINATED — the <em>last</em> step of a termination,
      * never the whole of one.
      *

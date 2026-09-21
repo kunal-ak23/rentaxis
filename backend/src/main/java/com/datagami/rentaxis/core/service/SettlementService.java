@@ -13,6 +13,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
+import com.datagami.rentaxis.core.service.lease.LeaseClosureService;
 import com.datagami.rentaxis.core.service.lease.LeaseDepositLedger;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
@@ -165,6 +166,7 @@ public class SettlementService {
     private final AccountResolver accountResolver;
     private final PostingService postingService;
     private final ChequeService chequeService;
+    private final LeaseClosureService closure;
     private final Clock clock;
 
     public SettlementService(LeaseSettlementRepository leaseSettlementRepository,
@@ -183,6 +185,7 @@ public class SettlementService {
                              AccountResolver accountResolver,
                              PostingService postingService,
                              ChequeService chequeService,
+                             LeaseClosureService closure,
                              Clock clock) {
         this.leaseSettlementRepository = leaseSettlementRepository;
         this.leaseSettlementDeductionRepository = leaseSettlementDeductionRepository;
@@ -200,6 +203,7 @@ public class SettlementService {
         this.accountResolver = accountResolver;
         this.postingService = postingService;
         this.chequeService = chequeService;
+        this.closure = closure;
         this.clock = clock;
     }
 
@@ -405,9 +409,11 @@ public class SettlementService {
      * Post the {@code STL} and close the settlement (spec §9.2).
      *
      * <p>One transaction, under the lease's own row lock. The lease goes CLOSED
-     * when the settlement refunds or nets to nothing; when the renter still owes,
-     * it stays TERMINATED/EXPIRED with a CASH row on the register for the balance,
-     * and Task 7's hook closes it when that row clears.</p>
+     * only if nothing is outstanding on its register once this has run — see
+     * {@link LeaseClosureService}. When the renter still owes, the CASH row raised
+     * for the balance is itself outstanding; when §9.1's keep list left an
+     * instrument for collection, so is that; either way the contract closes later,
+     * when the last of them clears.</p>
      */
     @Transactional
     public SettlementResponseDTO finalizeSettlement(UUID leaseId, FinalizeSettlementRequest request, UUID settledBy) {
@@ -461,13 +467,16 @@ public class SettlementService {
         settlement.setSettledAt(LocalDateTime.now(clock));
         leaseSettlementRepository.save(settlement);
 
-        // CLOSED only when nothing is left to collect. A lease with a balance due
-        // stays TERMINATED until its collection row clears — closing it now would
-        // retire a contract the landlord is still chasing money on.
-        if (netRefund.signum() >= 0 && lease.getStatus() != LeaseStatus.CLOSED) {
-            lease.setStatus(LeaseStatus.CLOSED);
-            leaseRepository.save(lease);
-        }
+        // CLOSED only when nothing is left to collect, which is the register's
+        // question and not this method's: a balance due has just been raised as a
+        // CASH row and is outstanding by definition, and §9.1's keep list may have
+        // left an instrument on the register that nobody has banked yet. Closing on
+        // "netRefund >= 0" alone retired contracts of the second kind — a finalised
+        // settlement with a 12,750 cheque still in the drawer — which then could not
+        // be banked at all, because a CLOSED lease refuses every transition.
+        // LeaseClosureService owns the rule; ChequeService asks it again each time a
+        // row clears.
+        closure.closeIfFullyCollected(lease, "the settlement was finalised");
 
         return buildSettlementResponse(leaseId);
     }

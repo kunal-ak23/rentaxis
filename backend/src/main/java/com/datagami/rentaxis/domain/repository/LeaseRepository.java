@@ -115,10 +115,30 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     List<Lease> findByRenterId(UUID renterId);
 
-    @Query("SELECT l FROM Lease l WHERE l.status IN :statuses AND l.endDate < :date")
-    List<Lease> findByStatusInAndEndDateBefore(
-            @Param("statuses") List<LeaseStatus> statuses,
-            @Param("date") LocalDate date);
+    /**
+     * The nightly expiry sweep's candidates (spec §9): a running tenancy whose last
+     * day has passed and which no termination has claimed.
+     *
+     * <p><b>{@code terminated_on IS NULL} is the belt to the status filter's
+     * brace.</b> A row that is still ACTIVE and already carries a termination date
+     * is a termination somebody is in the middle of — or one that left drift behind
+     * — and expiring it would stamp a second ending on a contract that already has
+     * one and release a unit the termination has not finished with. The status
+     * filter alone would not see it.</p>
+     *
+     * <p>No tenant column: the Hibernate filter supplies it, which is why the
+     * caller must have a tenant in context <em>and</em> a transaction for
+     * {@code TenantAspect} to enable it in. {@link com.datagami.rentaxis.core.service.LeaseService#findLeasesToExpire}
+     * is that caller.</p>
+     */
+    @Query("""
+        SELECT l.id FROM Lease l
+        WHERE l.status IN :statuses
+          AND l.endDate < :date
+          AND l.terminatedOn IS NULL
+        """)
+    List<UUID> findIdsToExpire(@Param("statuses") Collection<LeaseStatus> statuses,
+                               @Param("date") LocalDate date);
 
     @Query("SELECT l FROM Lease l WHERE l.status = :status AND l.endDate BETWEEN :from AND :to")
     List<Lease> findByStatusAndEndDateBetween(

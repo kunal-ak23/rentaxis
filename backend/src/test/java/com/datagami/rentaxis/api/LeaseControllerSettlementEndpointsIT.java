@@ -286,10 +286,17 @@ class LeaseControllerSettlementEndpointsIT {
         assertThat(finalized.getBody().get("journalId")).isNotNull();
         // 3,000 held + 6,357.53 the termination left owing to the renter
         // (25,500 of paper handed back against 31,857.53 of unearned rent) − 500
-        // of cleaning. A positive net, so the lease is finished with.
+        // of cleaning. A positive net, so there is nothing left to collect from the
+        // settlement itself.
         assertThat(number(finalized.getBody().get("refundAmount"))).isEqualByComparingTo("8857.53");
         assertThat(number(finalized.getBody().get("balanceDue"))).isEqualByComparingTo("0.00");
-        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        // …and the lease is nonetheless still TERMINATED, because §9.1's keep list
+        // left three uncleared instruments on this register — nothing in this
+        // fixture ever clears — dated 20 Sep, 2 Oct and 2 Jan, all before T. A
+        // settlement that refunds does not make paper in the drawer disappear, and
+        // a CLOSED lease would refuse to bank it. The contract closes when the last
+        // of those clears; ChequeOnEndedLeaseIT walks that through.
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.TERMINATED);
 
         assertThat(status(accountant, HttpMethod.GET, settlementPath(leaseId), null)).isEqualTo(HttpStatus.OK);
     }
