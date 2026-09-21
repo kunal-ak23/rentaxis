@@ -77,6 +77,16 @@ export type OpeningBalanceRow = {
     derivedRole: AccountRole | null;
     enteredDebit: number;
     enteredCredit: number;
+    /**
+     * True for an account the server works out for itself — the
+     * OPENING_BALANCE_DIFFERENCE row, which `postFresh` folds into its balancing
+     * line and whose stored figure is therefore discarded.
+     *
+     * Optional because an older backend does not send it; when it is absent the
+     * screen falls back to the OPENING_BALANCE_DIFFERENCE default mapping. When
+     * it is present it is authoritative and no lookup is needed.
+     */
+    computed?: boolean;
 };
 
 /**
@@ -101,6 +111,12 @@ export type OpeningBalanceGrid = {
     totalCredit: number;
     difference: number;
     problems: string[];
+    /**
+     * True when the snapshot has been edited since the live OB journal was
+     * posted, so the books and the grid no longer agree and a Replace is due.
+     * Optional: an older backend does not send it, and its absence says nothing.
+     */
+    changedSincePosted?: boolean;
 };
 
 /**
@@ -122,6 +138,16 @@ export type SnapshotUploadResult = {
     stored: number;
     unmatchedCodes: string[];
     problems: string[];
+    /**
+     * The file's own two column totals and whether they agree. An unbalanced file
+     * is accepted on purpose — "that disagreement is what the reconciliation
+     * report exists to show" — so this is a warning, never a refusal. All three
+     * are optional; an older backend sends none of them and the panel says
+     * nothing about balance.
+     */
+    totalDebit?: number;
+    totalCredit?: number;
+    balanced?: boolean;
 };
 
 /** `OpeningBalanceController.PostedJournalDTO` — enough for a toast and a link to the GL. */
@@ -131,11 +157,13 @@ export type PostedJournal = { id: string; entryNumber: string; entryDate: string
 export type RepostInput = { reason: string };
 
 /**
- * `OpeningBalanceController.ReverseObDTO`. `date` is optional and defaults to the
- * cut-over date: the opening journal is dated the day before the books open and
- * its mirror belongs on the same day.
+ * `OpeningBalanceController.ReverseObDTO`.
+ *
+ * No date: the server always dates the reversal to the live opening journal's
+ * own date, and no longer accepts one from the caller. Letting a caller pick
+ * would leave the opening entry and its mirror in different periods.
  */
-export type ReverseObInput = { date?: string | null; reason: string };
+export type ReverseObInput = { reason: string };
 
 /**
  * `ReconciliationRowDTO`.

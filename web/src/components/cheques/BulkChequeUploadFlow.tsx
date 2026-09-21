@@ -9,6 +9,7 @@ import { autoMapChequesToRows } from "./autoMapChequesToRows";
 import { useBulkChequeExtract, buildItemsFromFiles } from "./useBulkChequeExtract";
 import DueDateDelta from "./DueDateDelta";
 import type { Cheque } from "@/lib/api/leasing";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 /**
  * Bulk-attach scanned cheque images onto a lease's own register rows.
@@ -125,17 +126,10 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const hasPending = extract.items.some(it => it.status === "extracting" || it.status === "extracted");
-    if (!hasPending) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Modern browsers ignore custom messages but show a generic prompt when preventDefault is called.
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [extract.items]);
+  // Shared with the opening-balance grid; see useUnsavedChangesWarning.
+  useUnsavedChangesWarning(
+    extract.items.some(it => it.status === "extracting" || it.status === "extracted"),
+  );
 
   const onPick = (files: FileList | null) => {
     if (!files) return;

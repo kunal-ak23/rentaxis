@@ -101,7 +101,10 @@ function renderPage() {
 }
 
 beforeEach(() => {
-    vi.clearAllMocks();
+    // resetAllMocks, not clearAllMocks: `clear` keeps implementations, so a
+    // `mockReturnValue`/`mockRejectedValueOnce` set by one test leaks into the
+    // next and the suite's outcome depends on its order.
+    vi.resetAllMocks();
     role = "ACCOUNTANT";
     api.grid.mockResolvedValue(grid());
     api.setRow.mockResolvedValue(undefined);
@@ -121,7 +124,9 @@ describe("opening balances — the grid", () => {
         renderPage();
         const bank = await screen.findByTestId("ob-row-a-bank");
         expect(bank).toHaveTextContent("110200");
-        expect(within(bank).getByTestId("ob-debit-a-bank")).toHaveValue("120000.55");
+        // The row is on screen before the computed-account lookup answers, and
+        // the inputs only appear once it has — the grid is locked until then.
+        await waitFor(() => expect(within(bank).getByTestId("ob-debit-a-bank")).toHaveValue("120000.55"));
     });
 
     /** setRow:256-260 — "derived from the contract import, so it cannot be entered by hand". */
@@ -139,13 +144,19 @@ describe("opening balances — the grid", () => {
         renderPage();
         const diff = await screen.findByTestId("ob-row-a-diff");
         expect(within(diff).queryByTestId("ob-debit-a-diff")).not.toBeInTheDocument();
-        expect(within(diff).getByTestId("ob-readonly-a-diff")).toHaveTextContent(
-            en.Cutover.differenceAccountWhy,
+        // Only once the lookup has answered: before that the row says the grid is
+        // locked, which is the fail-closed state and its own test below.
+        await waitFor(() =>
+            expect(within(diff).getByTestId("ob-readonly-a-diff")).toHaveTextContent(
+                en.Cutover.differenceAccountWhy,
+            ),
         );
     });
 
     it("leaves every other row editable", async () => {
         renderPage();
+        // `findBy` waits for the lookup: the cells do not exist until the
+        // computed account is identified.
         expect(await screen.findByTestId("ob-debit-a-cash")).toBeEnabled();
         expect(screen.getByTestId("ob-credit-a-cap")).toBeEnabled();
     });
@@ -155,6 +166,185 @@ describe("opening balances — the grid", () => {
         api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
         renderPage();
         expect(await screen.findByTestId("ob-debit-a-cash")).toBeEnabled();
+    });
+});
+
+describe("opening balances — the difference account fails closed", () => {
+    /**
+     * The guard exists because `setRow` ACCEPTS a figure for the difference
+     * account and `postFresh` then discards it. Before this fix a failed lookup
+     * left `differenceAccountId` null and every `if (differenceAccountId && …)`
+     * short-circuited to "editable" — so the one cell the guard protects was the
+     * one it opened.
+     */
+    it("locks the whole grid when the lookup fails, and retries", async () => {
+        api.defaults.mockRejectedValueOnce(new Error("network"));
+        renderPage();
+        await screen.findByTestId("ob-row-a-cash");
+
+        expect(screen.queryByTestId("ob-debit-a-cash")).not.toBeInTheDocument();
+        expect(screen.getByTestId("ob-locked")).toBeInTheDocument();
+        expect(screen.getByTestId("ob-post")).toBeDisabled();
+        // The retry only appears once the lookup has actually failed — before
+        // that the lock is simply "not answered yet".
+        await screen.findByTestId("ob-locked-retry");
+
+        api.defaults.mockResolvedValue([
+            { role: "OPENING_BALANCE_DIFFERENCE", accountId: "a-diff", accountCode: "F-02", accountName: "x", inherited: false },
+        ]);
+        fireEvent.click(screen.getByTestId("ob-locked-retry"));
+        await waitFor(() => expect(screen.getByTestId("ob-debit-a-cash")).toBeInTheDocument());
+        expect(screen.queryByTestId("ob-locked")).not.toBeInTheDocument();
+    });
+
+    /** No mapping at all is also "not positively identified". */
+    it("locks the grid when no difference account is mapped", async () => {
+        api.defaults.mockResolvedValue([]);
+        renderPage();
+        await screen.findByTestId("ob-locked-retry");
+        expect(screen.queryByTestId("ob-debit-a-cash")).not.toBeInTheDocument();
+        expect(screen.getByTestId("ob-locked")).toBeInTheDocument();
+    });
+
+    /** No window in which the grid is editable before the lookup answers. */
+    it("is never editable between the grid arriving and the lookup resolving", async () => {
+        let resolveDefaults: (v: unknown) => void = () => {};
+        api.defaults.mockReturnValue(new Promise(r => { resolveDefaults = r; }));
+        renderPage();
+        await screen.findByTestId("ob-row-a-cash");
+
+        expect(screen.queryByTestId("ob-debit-a-cash")).not.toBeInTheDocument();
+        expect(screen.getByTestId("ob-locked")).toBeInTheDocument();
+
+        resolveDefaults([
+            { role: "OPENING_BALANCE_DIFFERENCE", accountId: "a-diff", accountCode: "F-02", accountName: "x", inherited: false },
+        ]);
+        await waitFor(() => expect(screen.getByTestId("ob-debit-a-cash")).toBeInTheDocument());
+    });
+
+    /** When the rows carry `computed`, they are authoritative and nothing is looked up. */
+    it("trusts a row's computed flag and makes no second request", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                rows: [
+                    row({ accountId: "a-cash", code: "110100", enteredDebit: 5000, computed: false }),
+                    row({ accountId: "a-diff", code: "F-02", name: "Opening Balance Difference", computed: true }),
+                ],
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        expect(screen.queryByTestId("ob-debit-a-diff")).not.toBeInTheDocument();
+        expect(within(screen.getByTestId("ob-row-a-diff")).getByTestId("ob-readonly-a-diff")).toBeInTheDocument();
+        expect(api.defaults).not.toHaveBeenCalled();
+        expect(screen.queryByTestId("ob-locked")).not.toBeInTheDocument();
+    });
+});
+
+describe("opening balances — unsaved-edit guard", () => {
+    it("warns on navigate-away only while a cell is unsaved", async () => {
+        const add = vi.spyOn(window, "addEventListener");
+        const remove = vi.spyOn(window, "removeEventListener");
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        expect(add.mock.calls.filter(c => c[0] === "beforeunload")).toHaveLength(0);
+
+        fireEvent.change(screen.getByTestId("ob-debit-a-cash"), { target: { value: "7500" } });
+        await waitFor(() =>
+            expect(add.mock.calls.filter(c => c[0] === "beforeunload").length).toBeGreaterThan(0),
+        );
+
+        fireEvent.click(screen.getByTestId("ob-save-a-cash"));
+        await waitFor(() =>
+            expect(remove.mock.calls.filter(c => c[0] === "beforeunload").length).toBeGreaterThan(0),
+        );
+        add.mockRestore();
+        remove.mockRestore();
+    });
+});
+
+describe("opening balances — invalid cell input", () => {
+    /**
+     * `parseAmount` returns null rather than 0 for text that is not an amount,
+     * so a typo cannot be saved as a silent zero.
+     */
+    it("refuses to save a cell that is not an amount, and blocks Post", async () => {
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        fireEvent.change(screen.getByTestId("ob-debit-a-cash"), { target: { value: "12ab" } });
+
+        await waitFor(() => expect(screen.getByTestId("ob-invalid-a-cash")).toBeInTheDocument());
+        expect(screen.getByTestId("ob-save-a-cash")).toBeDisabled();
+        expect(screen.getByTestId("ob-post")).toBeDisabled();
+        expect(screen.getByTestId("ob-blocker")).toHaveTextContent("1 cell is not an amount");
+        expect(api.setRow).not.toHaveBeenCalled();
+    });
+
+    it("accepts a pasted figure with thousands separators", async () => {
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        fireEvent.change(screen.getByTestId("ob-debit-a-cash"), { target: { value: "1,234.50" } });
+        await waitFor(() => expect(screen.queryByTestId("ob-invalid-a-cash")).not.toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("ob-save-a-cash"));
+        await waitFor(() => expect(api.setRow).toHaveBeenCalledWith("a-cash", { debit: 1234.5, credit: null }));
+    });
+});
+
+describe("opening balances — new optional server fields", () => {
+    /** SnapshotUploadResultDTO gains totals + `balanced`; absent means behave as before. */
+    it("warns when the uploaded file does not balance", async () => {
+        api.upload.mockResolvedValue({
+            stored: 40, unmatchedCodes: [], problems: [],
+            totalDebit: 100, totalCredit: 90, balanced: false,
+        });
+        renderPage();
+        const input = (await screen.findByTestId("ob-upload")) as HTMLInputElement;
+        Object.defineProperty(input, "files", { value: [new File(["x"], "tb.csv", { type: "text/csv" })] });
+        fireEvent.change(input);
+        expect(await screen.findByTestId("ob-upload-unbalanced")).toHaveTextContent(
+            en.Cutover.uploadDoesNotBalance,
+        );
+    });
+
+    it("says nothing about balance when the server does not send the flag", async () => {
+        api.upload.mockResolvedValue({ stored: 40, unmatchedCodes: [], problems: [] });
+        renderPage();
+        const input = (await screen.findByTestId("ob-upload")) as HTMLInputElement;
+        Object.defineProperty(input, "files", { value: [new File(["x"], "tb.csv", { type: "text/csv" })] });
+        fireEvent.change(input);
+        await screen.findByTestId("ob-upload-stored");
+        expect(screen.queryByTestId("ob-upload-unbalanced")).not.toBeInTheDocument();
+    });
+
+    /** OpeningBalanceGridDTO gains `changedSincePosted`. */
+    it("prompts for Replace when the snapshot has changed since posting", async () => {
+        api.grid.mockResolvedValue(
+            grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001", changedSincePosted: true }),
+        );
+        renderPage();
+        expect(await screen.findByTestId("ob-changed-since-posted")).toHaveTextContent(
+            en.Cutover.changedSincePosted,
+        );
+        expect(screen.getByTestId("ob-replace")).toHaveAttribute("data-primary", "true");
+    });
+
+    it("says nothing when the flag is absent or false", async () => {
+        api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
+        renderPage();
+        await screen.findByTestId("ob-replace");
+        expect(screen.queryByTestId("ob-changed-since-posted")).not.toBeInTheDocument();
+    });
+
+    /** The server will start refusing a figure on the difference account. */
+    it("surfaces the server's refusal if a difference-account write ever 400s", async () => {
+        api.setRow.mockRejectedValue(
+            new ApiError(400, "F-02 Opening Balance Difference is computed when the journal is posted"),
+        );
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        fireEvent.change(screen.getByTestId("ob-debit-a-cash"), { target: { value: "1" } });
+        fireEvent.click(screen.getByTestId("ob-save-a-cash"));
+        expect(await screen.findByTestId("ob-error")).toHaveTextContent("computed when the journal is posted");
     });
 });
 
@@ -272,7 +462,8 @@ describe("opening balances — post and replace", () => {
     it("posts behind a confirmation naming the date", async () => {
         api.post.mockResolvedValue({ id: "j1", entryNumber: "OB/2026/0001", entryDate: "2026-08-31" });
         renderPage();
-        fireEvent.click(await screen.findByTestId("ob-post"));
+        await waitFor(() => expect(screen.getByTestId("ob-post")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("ob-post"));
         expect(await screen.findByTestId("confirm-ob-post")).toBeInTheDocument();
         fireEvent.click(screen.getByTestId("confirm-ob-post"));
 
@@ -286,7 +477,8 @@ describe("opening balances — post and replace", () => {
         api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
         api.repost.mockResolvedValue({ id: "j2", entryNumber: "OB/2026/0002", entryDate: "2026-08-31" });
         renderPage();
-        fireEvent.click(await screen.findByTestId("ob-replace"));
+        await waitFor(() => expect(screen.getByTestId("ob-replace")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("ob-replace"));
 
         expect(await screen.findByTestId("confirm-ob-replace")).toBeDisabled();
         expect(screen.getByTestId("ob-replace-blocker")).toHaveTextContent(en.Cutover.replaceReasonRequired);
@@ -304,7 +496,8 @@ describe("opening balances — post and replace", () => {
             new ApiError(409, "The opening balances are being posted right now; try again"),
         );
         renderPage();
-        fireEvent.click(await screen.findByTestId("ob-post"));
+        await waitFor(() => expect(screen.getByTestId("ob-post")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("ob-post"));
         fireEvent.click(await screen.findByTestId("confirm-ob-post"));
         expect(await screen.findByRole("alert")).toHaveTextContent("being posted right now");
     });

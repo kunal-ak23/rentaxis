@@ -2263,6 +2263,13 @@
     "differencesOnly": "Differences only",
     "derivedNotYetPosted": "Accounts filled by the contract import read 0.00 here until those contracts are imported and posted. Until that step has run, a difference on one of them is expected and is not a sign the books are wrong.",
     "reconciliationTotals": "Total",
-    "notAllowedOpeningBalances": "You do not have permission to work with opening balances."
+    "notAllowedOpeningBalances": "You do not have permission to work with opening balances.",
+    "differenceAccountUnknown": "The Opening Balance Difference account could not be identified, so the grid is locked. Without it, a figure typed into that account would be accepted and then discarded when the journal is posted.",
+    "retryLookup": "Try again",
+    "invalidCells": "{n, plural, one {# cell is not an amount} other {# cells are not amounts}}. Correct them before saving or posting.",
+    "invalidCell": "Not an amount",
+    "uploadDoesNotBalance": "This file's debits and credits do not agree. It was still saved — the reconciliation report will show the difference.",
+    "uploadTotals": "Debit {debit} · Credit {credit}",
+    "changedSincePosted": "The figures below have changed since the opening balances were posted. Press Replace opening balances to put the corrected set on the books."
   }
 }

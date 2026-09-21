@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cutoverApi } from "@/lib/api/cutover";
 import {
     SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, canDownloadImportTemplate, canEditOpeningBalanceRow,
-    canPostOpeningBalances, canReplaceOpeningBalances, isBatchFinal, isReconciled, canReverseBatch,
-    snapshotRefusal,
+    canPostOpeningBalances, canReplaceOpeningBalances, gridDeclaresComputed, isBatchFinal,
+    isReconciled, canReverseBatch, snapshotRefusal,
 } from "@/lib/cutoverRules";
 import type { OpeningBalanceGrid, OpeningBalanceRow } from "@/lib/api/cutover";
 import { hasPermission } from "@/lib/rbac";
@@ -48,14 +48,23 @@ describe("opening-balance rules", () => {
      * role "is derived from the contract import, so it cannot be entered by hand".
      * The API 400s it, so the cell is read-only rather than editable-then-refused.
      */
+    /** A confirmed lookup is what unlocks the ordinary rows. */
+    const found = (accountId: string | null) => ({ kind: "lookup" as const, accountId });
+
     it("refuses to edit a derived row and allows a manual one", () => {
-        expect(canEditOpeningBalanceRow(row({ derived: false }), null)).toBe(true);
-        expect(canEditOpeningBalanceRow(row({ derived: true, derivedRole: "RENT_RECEIVABLE" }), null)).toBe(false);
+        expect(canEditOpeningBalanceRow(row({ derived: false }), found("diff-1"))).toBe(true);
+        expect(
+            canEditOpeningBalanceRow(row({ derived: true, derivedRole: "RENT_RECEIVABLE" }), found("diff-1")),
+        ).toBe(false);
     });
 
-    /** setRow:251-254 — a group account "carries no balance of its own". */
-    it("refuses a group account", () => {
-        expect(canEditOpeningBalanceRow(row({ accountType: "GROUP" }), null)).toBe(true);
+    /**
+     * `OpeningBalanceService.grid` filters `a.isGroup()` out of the rows, so a
+     * group account never reaches this predicate — the refusal is upstream, not
+     * here. Named for what it actually asserts.
+     */
+    it("does not re-check group accounts, which the server filters out upstream", () => {
+        expect(canEditOpeningBalanceRow(row({ accountType: "GROUP" }), found("diff-1"))).toBe(true);
     });
 
     /**
@@ -65,8 +74,42 @@ describe("opening-balance rules", () => {
      * away is worse than one that refuses, so it is read-only.
      */
     it("refuses to edit the opening-balance difference account", () => {
-        expect(canEditOpeningBalanceRow(row({ accountId: "diff-1" }), "diff-1")).toBe(false);
-        expect(canEditOpeningBalanceRow(row({ accountId: "a1" }), "diff-1")).toBe(true);
+        expect(canEditOpeningBalanceRow(row({ accountId: "diff-1" }), found("diff-1"))).toBe(false);
+        expect(canEditOpeningBalanceRow(row({ accountId: "a1" }), found("diff-1"))).toBe(true);
+    });
+
+    /**
+     * **Fails closed.** Until the difference account is positively identified,
+     * nothing is editable. The guard exists precisely because `setRow` ACCEPTS a
+     * figure for that account and `postFresh` then discards it — so a lookup that
+     * failed, has not answered yet, or found no mapping at all must not leave the
+     * one cell it protects wide open.
+     */
+    it("refuses every row while the difference account is unidentified", () => {
+        for (const unresolved of [
+            { kind: "lookup" as const, accountId: null },
+            { kind: "pending" as const },
+        ]) {
+            expect(canEditOpeningBalanceRow(row({ accountId: "a1" }), unresolved)).toBe(false);
+            expect(canEditOpeningBalanceRow(row({ accountId: "diff-1" }), unresolved)).toBe(false);
+        }
+    });
+
+    /**
+     * The backend is adding `computed` to OpeningBalanceRowDTO. When the rows say
+     * so themselves there is nothing to look up, and the flag is authoritative.
+     */
+    it("trusts the row's own computed flag when the server sends one", () => {
+        const src = { kind: "rows" as const };
+        expect(canEditOpeningBalanceRow(row({ accountId: "diff-1", computed: true }), src)).toBe(false);
+        expect(canEditOpeningBalanceRow(row({ accountId: "a1", computed: false }), src)).toBe(true);
+        expect(canEditOpeningBalanceRow(row({ derived: true, computed: false }), src)).toBe(false);
+    });
+
+    it("knows when the rows carry the flag and the lookup can be skipped", () => {
+        expect(gridDeclaresComputed([row({ accountId: "a1" })])).toBe(false);
+        expect(gridDeclaresComputed([row({ accountId: "a1" }), row({ accountId: "d", computed: true })])).toBe(true);
+        expect(gridDeclaresComputed([row({ accountId: "a1", computed: false })])).toBe(true);
     });
 
     /**
@@ -205,13 +248,12 @@ describe("cutoverApi.openingBalances", () => {
         expect(url).toBe("/api/proxy/v1/finance/opening-balances/repost");
         expect(JSON.parse((init as RequestInit).body as string)).toEqual({ reason: "corrected file" });
 
-        await cutoverApi.openingBalances.reverse({ date: "2026-08-31", reason: "wrong file" });
+        // No date: the server always dates the reversal to the live journal's
+        // own date, so the caller no longer supplies one.
+        await cutoverApi.openingBalances.reverse({ reason: "wrong file" });
         [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
         expect(url).toBe("/api/proxy/v1/finance/opening-balances/reverse");
-        expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-            date: "2026-08-31",
-            reason: "wrong file",
-        });
+        expect(JSON.parse((init as RequestInit).body as string)).toEqual({ reason: "wrong file" });
     });
 
     it("reads the reconciliation report", async () => {

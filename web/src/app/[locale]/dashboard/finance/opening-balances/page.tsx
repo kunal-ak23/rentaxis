@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Lock, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
@@ -17,9 +18,11 @@ import {
 } from "@/lib/api/cutover";
 import {
     SNAPSHOT_ACCEPT, canEditOpeningBalanceRow, canPostOpeningBalances,
-    canReplaceOpeningBalances, snapshotRefusal,
+    canReplaceOpeningBalances, gridDeclaresComputed, snapshotRefusal,
+    type ComputedAccountSource,
 } from "@/lib/cutoverRules";
-import { differenceOf, sumAmounts } from "@/lib/money";
+import { differenceOf, parseAmount, sumAmounts } from "@/lib/money";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /**
@@ -57,13 +60,20 @@ const field =
     "w-32 text-end bg-input border border-border rounded-lg px-3 py-1.5 text-xs text-foreground tabular-nums focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
 const fieldLabel = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
+/** Enough to work through without scrolling; the rest are a page away, not hidden. */
+const PROBLEMS_PER_PAGE = 20;
+
 /** One cell the accountant has typed but not yet sent. */
 type Edit = { debit: string; credit: string };
 
-const num = (s: string) => {
-    const n = Number.parseFloat(s);
-    return Number.isFinite(n) ? n : 0;
-};
+/**
+ * A cell's value, or null when it holds text that is not an amount.
+ *
+ * Blank is 0 — an untouched row is the ordinary state of the grid. Anything
+ * unreadable is null, NOT 0: a typo saved as a silent zero is a figure the
+ * accountant never entered and will never be told about.
+ */
+const cellAmount = (s: string): number | null => (s.trim() === "" ? 0 : parseAmount(s));
 
 /** The stored figure as text, with a true zero shown as an empty cell rather than "0". */
 const asText = (n: number) => (n ? String(n) : "");
@@ -78,7 +88,14 @@ export default function OpeningBalancesPage() {
     const allowed = hasPermission(userRole, "canManageOpeningBalances");
 
     const [grid, setGrid] = useState<OpeningBalanceGrid | null>(null);
-    const [differenceAccountId, setDifferenceAccountId] = useState<string | null>(null);
+    /**
+     * Starts `pending`, which means NOTHING is editable. See
+     * `canEditOpeningBalanceRow`: until the computed account is positively
+     * identified, an editable cell is one whose value the server will accept and
+     * then throw away.
+     */
+    const [computedSource, setComputedSource] = useState<ComputedAccountSource>({ kind: "pending" });
+    const [lookupFailed, setLookupFailed] = useState(false);
     const [edits, setEdits] = useState<Record<string, Edit>>({});
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -87,6 +104,7 @@ export default function OpeningBalancesPage() {
     const [success, setSuccess] = useState<string | null>(null);
     const [upload, setUpload] = useState<SnapshotUploadResult | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [problemPage, setProblemPage] = useState(0);
     const [confirm, setConfirm] = useState<"post" | "replace" | null>(null);
     const [replaceReason, setReplaceReason] = useState("");
     const uploadRef = useRef<HTMLInputElement>(null);
@@ -103,6 +121,30 @@ export default function OpeningBalancesPage() {
             .finally(() => setLoading(false));
     }, [tCommon]);
 
+    /**
+     * Find the account the server computes for itself.
+     *
+     * A newer backend marks it on the row (`computed`), in which case the rows are
+     * authoritative and this never runs. An older one does not, so it is looked up
+     * through the OPENING_BALANCE_DIFFERENCE default mapping — and a lookup that
+     * fails, or finds nothing, leaves the grid LOCKED rather than open.
+     */
+    const resolveComputedAccount = useCallback(() => {
+        setLookupFailed(false);
+        setComputedSource({ kind: "pending" });
+        return ledgerApi.defaults
+            .get()
+            .then(rows => {
+                const m = rows.find(r => r.role === "OPENING_BALANCE_DIFFERENCE");
+                setComputedSource({ kind: "lookup", accountId: m?.accountId ?? null });
+                if (!m?.accountId) setLookupFailed(true);
+            })
+            .catch(() => {
+                setComputedSource({ kind: "lookup", accountId: null });
+                setLookupFailed(true);
+            });
+    }, []);
+
     useEffect(() => {
         if (!userRole) return;
         if (!allowed) {
@@ -110,22 +152,38 @@ export default function OpeningBalancesPage() {
             return;
         }
         load();
-        // Which account absorbs the difference is a role mapping, not a grid
-        // field, so it is read from the default accounts — the same endpoint the
-        // settings screen uses, and the same three roles.
-        ledgerApi.defaults
-            .get()
-            .then(rows => {
-                const m = rows.find(r => r.role === "OPENING_BALANCE_DIFFERENCE");
-                setDifferenceAccountId(m?.accountId ?? null);
-            })
-            .catch(() => setDifferenceAccountId(null));
     }, [userRole, allowed, load]);
+
+    useEffect(() => {
+        if (!userRole || !allowed || !grid) return;
+        // The rows say so themselves on a newer backend — no second request.
+        if (gridDeclaresComputed(grid.rows)) {
+            setComputedSource({ kind: "rows" });
+            setLookupFailed(false);
+            return;
+        }
+        if (computedSource.kind !== "pending") return;
+        resolveComputedAccount();
+    }, [userRole, allowed, grid, computedSource.kind, resolveComputedAccount]);
 
     const valueOf = useCallback(
         (r: OpeningBalanceRow): Edit =>
             edits[r.accountId] ?? { debit: asText(r.enteredDebit), credit: asText(r.enteredCredit) },
         [edits],
+    );
+
+    /** A row whose typed text is not an amount at all. */
+    const rowIsInvalid = useCallback(
+        (r: OpeningBalanceRow) => {
+            const v = valueOf(r);
+            return cellAmount(v.debit) === null || cellAmount(v.credit) === null;
+        },
+        [valueOf],
+    );
+
+    const invalidCount = useMemo(
+        () => (grid?.rows ?? []).filter(r => !!edits[r.accountId] && rowIsInvalid(r)).length,
+        [grid, edits, rowIsInvalid],
     );
 
     /**
@@ -135,12 +193,19 @@ export default function OpeningBalancesPage() {
      */
     const totals = useMemo(() => {
         const rows = grid?.rows ?? [];
-        const debit = sumAmounts(rows.map(r => num(valueOf(r).debit)));
-        const credit = sumAmounts(rows.map(r => num(valueOf(r).credit)));
+        // `sumAmounts` skips what it cannot read, so an in-progress typo shows
+        // the total of the rest rather than "NaN"; `invalidCount` is what stops
+        // that total being saved or posted.
+        const debit = sumAmounts(rows.map(r => valueOf(r).debit));
+        const credit = sumAmounts(rows.map(r => valueOf(r).credit));
         return { debit, credit, difference: differenceOf(debit, credit) };
     }, [grid, valueOf]);
 
     const unsavedCount = Object.keys(edits).length;
+
+    // A refresh or tab close with cells typed loses them; Post is already blocked
+    // in-app, which does not help against the browser's own chrome.
+    useUnsavedChangesWarning(unsavedCount > 0);
 
     const setEdit = (accountId: string, patch: Partial<Edit>, current: Edit) =>
         setEdits(e => ({ ...e, [accountId]: { ...current, ...patch } }));
@@ -160,8 +225,12 @@ export default function OpeningBalancesPage() {
     const saveRow = (r: OpeningBalanceRow) =>
         run(async () => {
             const v = valueOf(r);
-            const debit = num(v.debit);
-            const credit = num(v.credit);
+            const debit = cellAmount(v.debit);
+            const credit = cellAmount(v.credit);
+            // Guarded here as well as on the button: null means the cell holds
+            // text that is not an amount, and sending it as 0 is the silent
+            // substitution this whole path exists to avoid.
+            if (debit === null || credit === null) return;
             // ManualOpeningBalanceDTO boxes both fields: null is "nothing on that
             // side", which is not the same as 0 and is what clears a row.
             await cutoverApi.openingBalances.setRow(r.accountId, {
@@ -187,6 +256,7 @@ export default function OpeningBalancesPage() {
         setUploadError(null);
         return run(async () => {
             setUpload(await cutoverApi.openingBalances.uploadSnapshot(file));
+            setProblemPage(0);
             await load();
         });
     };
@@ -225,12 +295,18 @@ export default function OpeningBalancesPage() {
     }
 
     const problems = grid?.problems ?? [];
+    /** The grid is locked until the computed account is positively identified. */
+    const locked = computedSource.kind === "pending" || (computedSource.kind === "lookup" && !computedSource.accountId);
     const blocker =
         problems.length > 0
             ? t("gridProblems")
-            : unsavedCount > 0
-              ? t("unsavedEdits", { n: unsavedCount })
-              : null;
+            : locked
+              ? t("differenceAccountUnknown")
+              : invalidCount > 0
+                ? t("invalidCells", { n: invalidCount })
+                : unsavedCount > 0
+                  ? t("unsavedEdits", { n: unsavedCount })
+                  : null;
 
     return (
         <div>
@@ -289,6 +365,7 @@ export default function OpeningBalancesPage() {
                         <button
                             type="button"
                             data-testid="ob-replace"
+                            data-primary={grid.changedSincePosted ? "true" : "false"}
                             disabled={busy || !!blocker}
                             aria-describedby={blocker ? "ob-blocker-reason" : undefined}
                             onClick={() => {
@@ -339,6 +416,38 @@ export default function OpeningBalancesPage() {
                 </div>
             )}
 
+            {locked && grid && (
+                <div
+                    data-testid="ob-locked"
+                    className="mb-4 bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-xs flex items-start justify-between gap-3"
+                >
+                    <span className="flex items-start gap-2">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                        {t("differenceAccountUnknown")}
+                    </span>
+                    {lookupFailed && (
+                        <button
+                            type="button"
+                            data-testid="ob-locked-retry"
+                            onClick={resolveComputedAccount}
+                            className="shrink-0 font-semibold hover:underline cursor-pointer"
+                        >
+                            {t("retryLookup")}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {grid?.changedSincePosted && grid.posted && (
+                <div
+                    data-testid="ob-changed-since-posted"
+                    className="mb-4 bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-xs flex items-start gap-2"
+                >
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    {t("changedSincePosted")}
+                </div>
+            )}
+
             {uploadError && (
                 <p role="alert" data-testid="ob-upload-error" className="mb-4 text-xs font-semibold text-error">
                     {uploadError}
@@ -356,17 +465,41 @@ export default function OpeningBalancesPage() {
                             <span className="font-mono">{upload.unmatchedCodes.join(", ")}</span>
                         </p>
                     )}
+                    {upload.balanced === false && (
+                        <p data-testid="ob-upload-unbalanced" className="text-warning">
+                            {t("uploadDoesNotBalance")}
+                            {upload.totalDebit !== undefined && upload.totalCredit !== undefined && (
+                                <span className="ms-2 font-mono tabular-nums">
+                                    {t("uploadTotals", {
+                                        debit: fmtAmount(upload.totalDebit),
+                                        credit: fmtAmount(upload.totalCredit),
+                                    })}
+                                </span>
+                            )}
+                        </p>
+                    )}
                     {upload.problems.length > 0 && (
                         <div data-testid="ob-upload-problems" className="text-error">
                             <p className="font-semibold">{t("uploadProblems", { n: upload.problems.length })}</p>
                             {/* Every rejected line, each with the number the accountant
-                                has to look at. Scrolled rather than truncated: a list
-                                that stops at ten hides the eleventh problem. */}
-                            <ul className="list-disc ms-5 max-h-48 overflow-auto space-y-0.5">
-                                {upload.problems.map((p, i) => (
-                                    <li key={i}>{p}</li>
-                                ))}
+                                has to look at — paged rather than scrolled, so a file
+                                with two hundred bad rows is worked through instead of
+                                flicked past. */}
+                            <ul className="list-disc ms-5 space-y-0.5">
+                                {upload.problems
+                                    .slice(problemPage * PROBLEMS_PER_PAGE, problemPage * PROBLEMS_PER_PAGE + PROBLEMS_PER_PAGE)
+                                    .map((p, i) => (
+                                        <li key={problemPage * PROBLEMS_PER_PAGE + i}>{p}</li>
+                                    ))}
                             </ul>
+                            {upload.problems.length > PROBLEMS_PER_PAGE && (
+                                <Pagination
+                                    currentPage={problemPage + 1}
+                                    totalItems={upload.problems.length}
+                                    itemsPerPage={PROBLEMS_PER_PAGE}
+                                    onPageChange={p => setProblemPage(p - 1)}
+                                />
+                            )}
                         </div>
                     )}
                 </div>
@@ -404,9 +537,11 @@ export default function OpeningBalancesPage() {
                                 <tbody className="divide-y divide-border">
                                     {grid.rows.map(r => {
                                         const v = valueOf(r);
-                                        const editable = canEditOpeningBalanceRow(r, differenceAccountId);
-                                        const isDifference =
-                                            !!differenceAccountId && r.accountId === differenceAccountId;
+                                        const editable = canEditOpeningBalanceRow(r, computedSource);
+                                        const isComputed =
+                                            r.computed === true
+                                            || (computedSource.kind === "lookup"
+                                                && computedSource.accountId === r.accountId);
                                         const dirty = !!edits[r.accountId];
                                         return (
                                             <tr
@@ -458,15 +593,25 @@ export default function OpeningBalancesPage() {
                                                         t("manual")
                                                     ) : (
                                                         <span data-testid={`ob-readonly-${r.accountId}`}>
-                                                            {isDifference
-                                                                ? t("differenceAccountWhy")
-                                                                : t("derivedWhy", { role: r.derivedRole ?? "" })}
+                                                            {r.derived
+                                                                ? t("derivedWhy", { role: r.derivedRole ?? "" })
+                                                                : isComputed
+                                                                  ? t("differenceAccountWhy")
+                                                                  : t("differenceAccountUnknown")}
                                                         </span>
                                                     )}
                                                 </td>
                                                 <td className={`${td} text-end whitespace-nowrap`}>
                                                     {dirty && (
                                                         <span className="inline-flex items-center gap-2">
+                                                            {rowIsInvalid(r) && (
+                                                                <span
+                                                                    data-testid={`ob-invalid-${r.accountId}`}
+                                                                    className="text-[10px] font-semibold text-error"
+                                                                >
+                                                                    {t("invalidCell")}
+                                                                </span>
+                                                            )}
                                                             <span
                                                                 data-testid={`ob-unsaved-${r.accountId}`}
                                                                 className="text-[10px] font-semibold text-warning"
@@ -476,7 +621,7 @@ export default function OpeningBalancesPage() {
                                                             <button
                                                                 type="button"
                                                                 data-testid={`ob-save-${r.accountId}`}
-                                                                disabled={busy}
+                                                                disabled={busy || rowIsInvalid(r)}
                                                                 onClick={() => saveRow(r)}
                                                                 className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50"
                                                             >

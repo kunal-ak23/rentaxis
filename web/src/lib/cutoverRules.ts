@@ -69,9 +69,22 @@ export const BATCH_REVERSAL_IGNORES_PERIOD_LOCK = true;
 // ---- opening balances (core/service/cutover/OpeningBalanceService.java) ----
 
 /**
+ * How the screen knows which account the server computes for itself.
+ *
+ * `rows` — the grid's own rows carry `computed`, so they are authoritative and
+ * nothing needs looking up. `lookup` — the older shape, where the account is
+ * found through the OPENING_BALANCE_DIFFERENCE default mapping; `accountId` is
+ * null until that lookup has positively answered. `pending` — no answer yet.
+ */
+export type ComputedAccountSource =
+    | { kind: "rows" }
+    | { kind: "lookup"; accountId: string | null }
+    | { kind: "pending" };
+
+/**
  * May this grid cell be typed into?
  *
- * Two reasons it may not, and the server has a different answer for each.
+ * Three reasons it may not, and the server has a different answer for each.
  *
  * `derived` — the account is mapped to one of `DERIVED_ROLES` (`:113-116`), so
  * the contract import produces its balance. `setRow:256-260` 400s a hand-typed
@@ -83,22 +96,40 @@ export const BATCH_REVERSAL_IGNORES_PERIOD_LOCK = true;
  * ACCEPTED by `setRow` and then silently skipped when the journal is built —
  * `postFresh:365`, "folded into the balancing line below" — because the server
  * computes that figure itself from the gap between the two columns. A cell whose
- * value is quietly discarded teaches the accountant that the screen lies, so it
- * is read-only too. It is not flagged on the row DTO, so the caller identifies it
- * from the OPENING_BALANCE_DIFFERENCE default-account mapping and passes its id.
+ * value is quietly discarded teaches the accountant that the screen lies.
+ *
+ * **Which is why this FAILS CLOSED.** The previous version took a nullable id
+ * and read null as "no difference account to worry about", so a failed lookup —
+ * a transient 5xx, a tenant switch mid-flight, or simply not having answered yet
+ * — left the one cell this guard exists for wide open, and the figure typed into
+ * it was accepted with a 204 and then discarded at post. Now nothing is editable
+ * until the account is positively identified: either the rows say so themselves,
+ * or the lookup has come back with an id. A locked grid an accountant can retry
+ * is recoverable; a figure that vanishes without a word is not.
  *
  * Note what is NOT a reason: a posted grid stays editable. `setRow` has no
  * "already posted" check, and editing the snapshot while an OB journal is live is
  * exactly how a correction is prepared before Replace. Disabling it would refuse
  * what the server allows.
  */
-export function canEditOpeningBalanceRow(
-    row: OpeningBalanceRow,
-    differenceAccountId: string | null,
-): boolean {
+export function canEditOpeningBalanceRow(row: OpeningBalanceRow, source: ComputedAccountSource): boolean {
     if (row.derived) return false;
-    if (differenceAccountId && row.accountId === differenceAccountId) return false;
-    return true;
+    if (source.kind === "rows") return !row.computed;
+    // Fail closed: no positively identified difference account, no editing.
+    if (source.kind === "pending" || !source.accountId) return false;
+    return row.accountId !== source.accountId;
+}
+
+/**
+ * Do these rows carry the server's own `computed` flag?
+ *
+ * `undefined` on every row means an older backend that does not send it, and the
+ * caller falls back to the default-account lookup. One row carrying it (true or
+ * false) means the field is being sent, so the rows are the source of truth and
+ * the second request can be skipped entirely.
+ */
+export function gridDeclaresComputed(rows: OpeningBalanceRow[]): boolean {
+    return rows.some(r => r.computed !== undefined);
 }
 
 /**

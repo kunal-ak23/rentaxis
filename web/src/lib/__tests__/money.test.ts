@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { differenceOf, round2, sumAmounts, toFils } from "@/lib/money";
+import { differenceOf, parseAmount, round2, sumAmounts, sumAmountsChecked, toFils } from "@/lib/money";
 
 /**
  * The arithmetic behind every running total on a finance screen.
@@ -25,6 +25,51 @@ describe("round2", () => {
     });
 });
 
+describe("parseAmount", () => {
+    /**
+     * The gap this closes: `Number.isFinite("12.34")` is false, so the old
+     * `toFils` returned 0 for a numeric STRING — silently conflating "not a
+     * number" with "zero". A grid cell is free text, and JSON could carry a
+     * decimal as a string tomorrow.
+     */
+    it("parses numeric strings exactly", () => {
+        expect(parseAmount("1234.50")).toBe(1234.5);
+        expect(parseAmount("0.1")).toBe(0.1);
+        expect(parseAmount("99999999.99")).toBe(99999999.99);
+        expect(parseAmount("-42.07")).toBe(-42.07);
+        expect(parseAmount("  12.34  ")).toBe(12.34);
+        expect(parseAmount(".5")).toBe(0.5);
+        expect(parseAmount("5.")).toBe(5);
+        expect(parseAmount("+7")).toBe(7);
+    });
+
+    /** Pasting a column out of Excel brings the separators with it. */
+    it("accepts grouped thousands, which a paste from Excel carries", () => {
+        expect(parseAmount("1,234.50")).toBe(1234.5);
+        expect(parseAmount("1,234,567.89")).toBe(1234567.89);
+    });
+
+    it("takes numbers as they are", () => {
+        expect(parseAmount(0.1)).toBe(0.1);
+        expect(parseAmount(-0.07)).toBe(-0.07);
+        expect(parseAmount(0)).toBe(0);
+    });
+
+    /** Null, not 0 — the caller has to decide what an unreadable cell means. */
+    it("returns null for anything that is not an amount", () => {
+        for (const bad of ["", "   ", "abc", "1.2.3", "12a", "--1", null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+            expect(parseAmount(bad as never)).toBeNull();
+        }
+    });
+
+    /** More than two decimals is still an amount; it rounds HALF_UP like the server. */
+    it("rounds a longer decimal to the fil", () => {
+        expect(parseAmount("1.005")).toBe(1.01);
+        expect(parseAmount("1.004")).toBe(1);
+        expect(parseAmount("-1.005")).toBe(-1.01);
+    });
+});
+
 describe("toFils", () => {
     it("converts to integer fils without drift", () => {
         expect(toFils(0.1)).toBe(10);
@@ -32,6 +77,24 @@ describe("toFils", () => {
         expect(toFils(1234.56)).toBe(123456);
         expect(toFils(-0.07)).toBe(-7);
         expect(Number.isInteger(toFils(19.99))).toBe(true);
+    });
+
+    /** Exact at eight digits, where a float multiply starts to lie. */
+    it("is exact at the top of the range", () => {
+        expect(toFils(99999999.99)).toBe(9999999999);
+        expect(toFils("99999999.99")).toBe(9999999999);
+        expect(toFils(8.29)).toBe(829);
+        expect(toFils(1.005)).toBe(101);
+    });
+
+    it("takes a numeric string as readily as a number", () => {
+        expect(toFils("1234.50")).toBe(123450);
+        expect(toFils("0.1")).toBe(10);
+    });
+
+    it("is null for a value that is not an amount", () => {
+        expect(toFils("abc")).toBeNull();
+        expect(toFils("")).toBeNull();
     });
 });
 
@@ -71,8 +134,29 @@ describe("sumAmounts", () => {
         expect(sumAmounts(Array.from({ length: 100 }, () => 0.07))).toBe(7);
     });
 
-    it("ignores values that are not finite rather than poisoning the total", () => {
+    it("ignores values that are not amounts rather than poisoning the total", () => {
         expect(sumAmounts([1.5, Number.NaN, 2.5])).toBe(4);
+        expect(sumAmounts([1.5, "abc", 2.5])).toBe(4);
+        expect(sumAmounts([1.5, "", 2.5])).toBe(4);
+    });
+
+    it("adds numeric strings exactly", () => {
+        expect(sumAmounts(["0.1", "0.2"])).toBe(0.3);
+        expect(sumAmounts(["1,234.50", 0.5])).toBe(1235);
+    });
+});
+
+describe("sumAmountsChecked", () => {
+    /**
+     * Skipping a bad value keeps the footer readable, but a caller that is about
+     * to SAVE must not paper over it — so the count comes back alongside.
+     */
+    it("reports how many entries were not amounts", () => {
+        expect(sumAmountsChecked([1.5, 2.5])).toEqual({ total: 4, invalid: 0 });
+        expect(sumAmountsChecked([1.5, "abc", 2.5])).toEqual({ total: 4, invalid: 1 });
+        // A blank cell is empty, not invalid — it is the ordinary state of an
+        // untouched row and must not be reported as a problem.
+        expect(sumAmountsChecked([1.5, "", "   ", 2.5])).toEqual({ total: 4, invalid: 0 });
     });
 });
 

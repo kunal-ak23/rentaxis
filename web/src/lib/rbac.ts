@@ -197,7 +197,8 @@ export const PERMISSIONS = {
     canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     // Opening balances and the reconciliation report. Mirrors
     // OpeningBalanceController's class-level @PreAuthorize
-    // (OpeningBalanceController.java:57), which covers all six handlers:
+    // (OpeningBalanceController.java:57), which covers all seven handlers
+    // (grid, snapshot, setRow, post, repost, reverse, reconcile):
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
     // Spec §11 puts "OB" in that list explicitly — opening the books writes a
     // journal covering every account the organisation has, so PROPERTY_MANAGER
