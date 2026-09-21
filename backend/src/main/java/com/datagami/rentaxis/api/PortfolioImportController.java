@@ -90,6 +90,135 @@ public class PortfolioImportController {
         }
     }
 
+    // ==================================================================
+    // Accounting v2 cut-over (spec §10.3)
+    // ==================================================================
+    //
+    // A sub-path of the same controller, deliberately: there is ONE importer, one
+    // import_jobs table and one polling contract, and the cut-over is a second
+    // sheet dialect rather than a second pipeline. What it does need of its own is
+    // a role gate — every cut-over control admits ACCOUNTANT as well, because the
+    // person who assembles a cut-over workbook out of a PACT export is the
+    // accountant, and a template they must ask an admin to fetch is a template they
+    // will rebuild by hand. The v1 endpoints above keep the roles they had.
+
+    /** Same wording as {@code RecognitionController.NO_TENANT} — one sentence, said consistently. */
+    static final String NO_TENANT = "Select an organisation first";
+
+    /** Every cut-over control. */
+    private static final String CUTOVER_ROLES = "hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')";
+
+    /** The ordinary multipart ceiling; the global handler turns an over-size upload into a 400. */
+    private static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
+
+    /** A .xlsx is a zip. {@code PK\03\04} is the local file header every one of them starts with. */
+    private static final byte[] ZIP_MAGIC = { 0x50, 0x4B, 0x03, 0x04 };
+
+    @GetMapping("/cutover/template")
+    @PreAuthorize(CUTOVER_ROLES)
+    public ResponseEntity<?> downloadCutOverTemplate() {
+        ResponseEntity<?> noTenant = tenantMissing();
+        if (noTenant != null) return noTenant;
+        try {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=contract-import-template.xlsx")
+                    .contentType(MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .body(templateService.generateCutOverTemplate());
+        } catch (Exception e) {
+            log.error("Failed to generate the cut-over template", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Upload a cut-over workbook. Answers {@code {"jobId": …}} at once and does the
+     * work on the import executor, exactly as the v1 upload does — a six-hundred
+     * contract workbook is not a request anybody should hold a connection open for.
+     *
+     * <p>The file is checked by its <em>signature</em>, not by its name or its
+     * declared content type: a renamed executable with an .xlsx extension would
+     * otherwise reach the parser, and the browser's Content-Type is whatever the
+     * client felt like sending.</p>
+     */
+    @PostMapping(path = "/cutover", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize(CUTOVER_ROLES)
+    public ResponseEntity<?> importCutOver(@RequestParam("file") MultipartFile file,
+                                           @RequestHeader("X-User-Id") UUID userId) {
+        ResponseEntity<?> noTenant = tenantMissing();
+        if (noTenant != null) return noTenant;
+
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Choose a cut-over workbook to upload"));
+        }
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File size exceeds the 10MB limit"));
+        }
+
+        byte[] fileBytes;
+        try {
+            fileBytes = file.getBytes();
+        } catch (Exception e) {
+            log.error("Failed to read the uploaded cut-over workbook", e);
+            return ResponseEntity.badRequest().body(Map.of("error", "The uploaded file could not be read"));
+        }
+        if (!looksLikeXlsx(fileBytes)) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Only .xlsx workbooks are supported; this file is not one"));
+        }
+
+        UUID tenantId = TenantContextHolder.getTenantId();
+        ImportJob job = new ImportJob();
+        job.setStatus("VALIDATING");
+        String filename = file.getOriginalFilename();
+        job.setFileName(filename == null || filename.isBlank() ? "cutover.xlsx" : filename);
+        job.setCreatedBy(userId);
+        ImportJob savedJob = importJobRepository.save(job);
+
+        importService.processImportAsync(fileBytes, savedJob, tenantId);
+        return ResponseEntity.ok(Map.of("jobId", savedJob.getId()));
+    }
+
+    /**
+     * The poll. Its own path rather than the v1 one so the cut-over's wider role gate
+     * does not widen the v1 import's; the body is the same DTO, with
+     * {@code importBatchId} filled in once the persist phase has run.
+     */
+    @GetMapping("/cutover/{jobId}/status")
+    @PreAuthorize(CUTOVER_ROLES)
+    public ResponseEntity<?> getCutOverStatus(@PathVariable UUID jobId) {
+        ResponseEntity<?> noTenant = tenantMissing();
+        if (noTenant != null) return noTenant;
+        return importJobRepository.findById(jobId)
+                .filter(job -> job.getTenantId().equals(TenantContextHolder.getTenantId()))
+                .<ResponseEntity<?>>map(job -> ResponseEntity.ok(mapToResult(job)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    static boolean looksLikeXlsx(byte[] bytes) {
+        if (bytes == null || bytes.length < ZIP_MAGIC.length) return false;
+        for (int i = 0; i < ZIP_MAGIC.length; i++) {
+            if (bytes[i] != ZIP_MAGIC[i]) return false;
+        }
+        return true;
+    }
+
+    /**
+     * {@code ApiSecurityFilter} authorises a SUPER_ADMIN unconditionally but only
+     * populates {@code TenantContextHolder} once they have picked an organisation.
+     * Without this guard a platform admin with none selected reaches a service that
+     * assumes an ambient tenant — and the Hibernate tenant filter is left off when
+     * the context is empty, so an import would write its rows nowhere in particular.
+     *
+     * @return the 400 to return, or null when an organisation is selected.
+     */
+    private ResponseEntity<?> tenantMissing() {
+        return TenantContextHolder.getTenantId() == null
+                ? ResponseEntity.badRequest().body(Map.of("error", NO_TENANT))
+                : null;
+    }
+
     /** Package-private for unit tests. */
     PortfolioImportResultDTO mapToResult(ImportJob job) {
         PortfolioImportResultDTO dto = new PortfolioImportResultDTO();
@@ -103,6 +232,10 @@ public class PortfolioImportController {
         // The job's schedules_created column now counts the cheque rows the import
         // built; the wire name follows what it holds.
         dto.setChequesCreated(job.getSchedulesCreated());
+
+        // Cut-over only; null on every v1 job, and on a cut-over job that never
+        // reached the persist phase.
+        dto.setImportBatchId(job.getImportBatchId());
 
         // The errors column carries either:
         //   - the legacy array form (List<ImportErrorDTO>) for jobs older than the
@@ -122,6 +255,8 @@ public class PortfolioImportController {
                     dto.setWarnings(details.getWarnings() == null ? Collections.emptyList() : details.getWarnings());
                     if (details.getChequesFromSheet() != null) dto.setChequesFromSheet(details.getChequesFromSheet());
                     if (details.getBookingDepositsCreated() != null) dto.setBookingDepositsCreated(details.getBookingDepositsCreated());
+                    if (details.getContractsCreated() != null) dto.setContractsCreated(details.getContractsCreated());
+                    if (details.getMappingsCreated() != null) dto.setMappingsCreated(details.getMappingsCreated());
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));

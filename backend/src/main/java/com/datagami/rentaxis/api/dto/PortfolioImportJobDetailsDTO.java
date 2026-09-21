@@ -24,4 +24,18 @@ public class PortfolioImportJobDetailsDTO {
     private List<ImportErrorDTO> warnings = new ArrayList<>();
     private Integer chequesFromSheet;
     private Integer bookingDepositsCreated;
+
+    /**
+     * Cut-over import only: contracts turned into DRAFT leases, and property role
+     * mappings taken from the sheet's account columns.
+     *
+     * <p>{@link Integer} rather than {@code int} so {@code NON_NULL} keeps every
+     * payload a v1 import writes byte-for-byte what it wrote before. New counters
+     * belong on this wrapper and never as a new array element — the controller
+     * discriminates the two on-disk shapes by their first character.</p>
+     */
+    private Integer contractsCreated;
+
+    /** @see #contractsCreated */
+    private Integer mappingsCreated;
 }
