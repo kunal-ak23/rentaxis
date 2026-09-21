@@ -115,8 +115,39 @@ public class RecognitionService {
         this.readTx.setReadOnly(true);
     }
 
-    /** What a run would do, or did: counts, the money, the rows, and what it could not post. */
-    public record RecognitionRunResult(int posted, BigDecimal amount, List<RecognitionEntryDTO> entries,
+    /**
+     * What a run would do, or did.
+     *
+     * <p><b>A preview does not claim to have posted anything.</b> {@code posted} is
+     * the number of rows this call wrote to the ledger, so it is {@code 0} for a
+     * preview however many rows the preview found; {@code wouldPost} is the count
+     * the month-end screen shows next to the button, and the two are equal on a
+     * real run. The earlier shape reported a preview as "3 posted", which is the
+     * one sentence an accountant must not be told twice.</p>
+     *
+     * <p><b>Skipped is not failed.</b> A row inside a closed period was never
+     * attempted: it is not a mapping gap for somebody to chase, it is the period
+     * lock doing its job, and it will post itself the moment the month is
+     * reopened. It travels in {@link #skippedLockedEntries} with the lock date
+     * that explains it, and {@link #errors} is left to mean exactly one thing —
+     * the ledger refused this row and a human has to look at it.</p>
+     *
+     * @param preview               what the caller asked for, echoed so a response read
+     *                              on its own is unambiguous
+     * @param posted                rows written to the ledger; always 0 on a preview
+     * @param wouldPost             rows that would post; equal to {@code posted} on a real run
+     * @param amount                Σ of {@link #entries}, at 2 dp
+     * @param entries               the rows posted, or on a preview the rows that would be
+     * @param skippedLocked         size of {@link #skippedLockedEntries}, for a caller that
+     *                              only wants the headline
+     * @param skippedLockedEntries  rows left PLANNED because their period is closed
+     * @param booksLockedThrough    the lock that skipped them, or null when nothing is locked
+     * @param errors                rows the ledger refused, one message each
+     */
+    public record RecognitionRunResult(boolean preview, int posted, int wouldPost, BigDecimal amount,
+                                       List<RecognitionEntryDTO> entries,
+                                       int skippedLocked, List<RecognitionEntryDTO> skippedLockedEntries,
+                                       LocalDate booksLockedThrough,
                                        List<String> errors) {
     }
 
@@ -228,7 +259,9 @@ public class RecognitionService {
      * <p>Rows in a closed period are reported and left {@code PLANNED}: the books
      * are shut for a reason, and forcing income into a month somebody has already
      * signed off is worse than leaving it for the accountant to decide about.
-     * They are not errors, and the run does not stop on them.</p>
+     * They are <em>not</em> errors — they come back under
+     * {@code skippedLockedEntries}, not {@code errors} — and the run does not stop
+     * on them.</p>
      *
      * <p>Each row posts through {@link RecognitionPoster} in its own
      * transaction. One lease with a retired income account costs that lease its
@@ -251,13 +284,13 @@ public class RecognitionService {
         Candidates plan = candidates(to);
 
         List<RecognitionEntryDTO> done = new ArrayList<>();
+        List<RecognitionEntryDTO> locked = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
 
         for (RecognitionEntryDTO row : plan.rows()) {
             if (plan.lockedThrough() != null && !row.periodEnd().isAfter(plan.lockedThrough())) {
-                errors.add("Entry " + row.periodStart() + "–" + row.periodEnd()
-                        + " is in a locked period (books are locked through " + plan.lockedThrough() + ")");
+                locked.add(row);
                 continue;
             }
             if (preview) {
@@ -276,7 +309,9 @@ public class RecognitionService {
                 errors.add("Entry " + row.periodStart() + "–" + row.periodEnd() + ": " + e.getMessage());
             }
         }
-        return new RecognitionRunResult(done.size(), total.setScale(2, RoundingMode.HALF_UP), done, errors);
+        return new RecognitionRunResult(preview, preview ? 0 : done.size(), done.size(),
+                total.setScale(2, RoundingMode.HALF_UP), done,
+                locked.size(), locked, plan.lockedThrough(), errors);
     }
 
     /** What a run has to decide about, read once and detached. */

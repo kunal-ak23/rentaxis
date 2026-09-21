@@ -713,6 +713,32 @@ public class LeaseService {
                 .toList();
     }
 
+    /**
+     * The object-level guard on its own, for a lease sub-resource served by a
+     * different service.
+     *
+     * <p>The recognition schedule hangs off a lease exactly as the lines do, and
+     * has to be scoped exactly as they are: a property manager assigned to one
+     * building may read their own leases' schedules and no others. The check
+     * cannot live in {@code RecognitionService} — its {@code scheduleFor} is also
+     * how one tenant proves it sees nothing of another's, and it is called from
+     * contexts with no authenticated caller at all, where the policy correctly
+     * fails closed. So the caller asks for the guard, here, where every other
+     * lease read already asks for it.</p>
+     *
+     * <p>{@code @Transactional} for the same reason {@link #getLines} is: the
+     * tenant filter only exists inside a transaction, and a check made outside one
+     * would happily find another organisation's lease.</p>
+     *
+     * @throws com.datagami.rentaxis.api.exception.NotFoundException if the lease is
+     *         another tenant's, or this caller's role does not reach it. Not
+     *         access-denied — a 403 on a lease id confirms the lease exists.
+     */
+    @Transactional(readOnly = true)
+    public void requireReadableLease(UUID leaseId) {
+        leaseAccessPolicy.requireReadable(findLeaseWithTenantCheck(leaseId));
+    }
+
     /** Amounts may legitimately be omitted (a zero-value line); null is not an error. */
     private static BigDecimal nonNull(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;

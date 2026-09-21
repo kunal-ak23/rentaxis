@@ -66,6 +66,7 @@ import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.chequeRow;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.linePeriod;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * Per-day rent recognition against a real database (spec §8).
@@ -346,16 +347,28 @@ class RecognitionServiceIT {
         assertTrialBalanceBalances();
     }
 
-    /** A preview says what would happen and writes nothing. */
+    /**
+     * A preview says what would happen and writes nothing — and does not claim to
+     * have posted it. {@code posted} is the number of rows this call put in the
+     * ledger, which for a preview is none however many it found.
+     */
     @Test
     void previewPostsNothing() {
         UUID leaseId = galah();
 
         RecognitionService.RecognitionRunResult preview = recognition.runTo(LocalDate.of(2026, 11, 30), true);
 
-        assertThat(preview.posted()).isEqualTo(3);
+        assertThat(preview.preview()).isTrue();
+        assertThat(preview.posted()).as("a preview posted nothing").isZero();
+        assertThat(preview.wouldPost()).isEqualTo(3);
         assertThat(preview.amount()).isEqualByComparingTo("9501.37");
         assertThat(preview.entries()).hasSize(3);
+        // Untouched rows, so they are still PLANNED and journal-less — the preview
+        // reports the candidates, not a posted result.
+        assertThat(preview.entries()).allSatisfy(r -> {
+            assertThat(r.status()).isEqualTo(RecognitionStatus.PLANNED);
+            assertThat(r.journalId()).isNull();
+        });
         assertThat(schedule(leaseId)).allSatisfy(r ->
                 assertThat(r.status()).isEqualTo(RecognitionStatus.PLANNED));
         assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and doc_type = 'CIL'",
@@ -376,12 +389,20 @@ class RecognitionServiceIT {
 
         assertThat(result.posted()).isEqualTo(1);
         assertThat(result.amount()).isEqualByComparingTo("4191.78");
-        assertThat(result.errors()).hasSize(2);
-        // The exact wording matters: "skipped" and "attempted and refused by the ledger"
-        // leave the same rows PLANNED, and only the message says which one happened.
-        assertThat(result.errors()).containsExactly(
-                "Entry 2026-09-24–2026-09-30 is in a locked period (books are locked through 2026-10-31)",
-                "Entry 2026-10-01–2026-10-31 is in a locked period (books are locked through 2026-10-31)");
+        // Skipped, not failed. "Nothing was attempted because the month is closed"
+        // and "the ledger refused this row" leave the same rows PLANNED, and only
+        // which list they arrive in says which one happened — so errors must be
+        // empty here, or the close screen shows two mapping gaps that do not exist.
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.skippedLocked()).isEqualTo(2);
+        assertThat(result.booksLockedThrough()).isEqualTo(LocalDate.of(2026, 10, 31));
+        assertThat(result.skippedLockedEntries())
+                .extracting(RecognitionEntryDTO::periodStart, RecognitionEntryDTO::periodEnd)
+                .containsExactly(
+                        tuple(LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 30)),
+                        tuple(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)));
+        assertThat(result.skippedLockedEntries()).allSatisfy(r ->
+                assertThat(r.status()).isEqualTo(RecognitionStatus.PLANNED));
 
         List<RecognitionEntryDTO> rows = schedule(leaseId);
         assertThat(rows.get(0).status()).isEqualTo(RecognitionStatus.PLANNED);
