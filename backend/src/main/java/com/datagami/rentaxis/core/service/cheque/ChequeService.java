@@ -1419,14 +1419,25 @@ public class ChequeService {
      */
     public static Account requireSettlementAccount(Account a) {
         if (a == null) return null;
-        boolean settles = !a.isGroup() && a.isActive()
-                && a.getAccountType() == AccountType.ASSET
-                && (a.getAccountSubType() == AccountSubType.BANK || a.getAccountSubType() == AccountSubType.CASH);
-        if (!settles) {
+        if (!isSettlementAccount(a)) {
             throw new BusinessRuleViolationException(
                     "Debit account " + a.getCode() + " must be a bank or cash account");
         }
         return a;
+    }
+
+    /**
+     * The predicate behind {@link #requireSettlementAccount}, for callers that ask
+     * the same question about a column of their own and so have to word the refusal
+     * differently — a payment voucher's {@code payment_account_id} is credited, not
+     * debited, and "Debit account …" would be the wrong sentence on that screen.
+     * Exposed rather than copied so there is exactly one definition of "an account
+     * cleared funds may land in or leave from" in the codebase.
+     */
+    public static boolean isSettlementAccount(Account a) {
+        return a != null && !a.isGroup() && a.isActive()
+                && a.getAccountType() == AccountType.ASSET
+                && (a.getAccountSubType() == AccountSubType.BANK || a.getAccountSubType() == AccountSubType.CASH);
     }
 
     /** Cheque numbers already live on the lease — everything a new row may not reuse. */

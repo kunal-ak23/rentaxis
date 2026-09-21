@@ -92,6 +92,30 @@ class VoucherDraftIT {
         assertThat(VoucherMath.grossTotal(updated.getLines())).isEqualByComparingTo("510.00");
     }
 
+    /**
+     * Rider from the Tasks 1–2 review: the persisted draft must prove that VAT is
+     * rounded per line and then summed, through the real {@code VoucherMath.vat}
+     * call inside {@code apply()} rather than through pre-rounded unit fixtures.
+     * Three lines of 100.10 at 5% are 5.005 each — HALF_UP to 5.01 — so the header
+     * totals are 15.03 VAT and 315.33 gross. Computing 5% of the 300.30 net
+     * instead would give 15.02 and 315.32.
+     */
+    @Test
+    void perLineVatIsRoundedThenSummedOnTheSavedDraft() {
+        VoucherService.VoucherLineInput odd = new VoucherService.VoucherLineInput(
+                cleaningExpense.getId(), "100.10 at 5%", new BigDecimal("100.10"), new BigDecimal("5"), null, null);
+        Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
+                VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), "INV-8813", "Three odd lines",
+                null, null, null, null, null, List.of(odd, odd, odd)));
+
+        Voucher saved = vouchers.get(v.getId());
+        assertThat(saved.getLines()).extracting(VoucherLine::getVatAmount)
+                .allSatisfy(vat -> assertThat(vat).isEqualByComparingTo("5.01"));
+        assertThat(VoucherMath.netTotal(saved.getLines())).isEqualByComparingTo("300.30");
+        assertThat(VoucherMath.vatTotal(saved.getLines())).isEqualByComparingTo("15.03");
+        assertThat(VoucherMath.grossTotal(saved.getLines())).isEqualByComparingTo("315.33");
+    }
+
     @Test
     void aPisrWithoutAVendorIsRejected() {
         VoucherService.VoucherInput noVendor = new VoucherService.VoucherInput(
