@@ -203,6 +203,16 @@ export default function OpeningBalancesPage() {
 
     const unsavedCount = Object.keys(edits).length;
 
+    /**
+     * Does the server send what the posted cut-over contracts put on the derived
+     * accounts? Two extra columns only where they exist — an older backend sends
+     * neither, and inventing a "0.00" for it would say something untrue.
+     */
+    const showsImported = useMemo(
+        () => (grid?.rows ?? []).some(r => r.derivedDebit !== undefined || r.derivedCredit !== undefined),
+        [grid],
+    );
+
     // A refresh or tab close with cells typed loses them; Post is already blocked
     // in-app, which does not help against the browser's own chrome.
     useUnsavedChangesWarning(unsavedCount > 0);
@@ -528,6 +538,8 @@ export default function OpeningBalancesPage() {
                                     <tr>
                                         <th className={th}>{tLedger("code")}</th>
                                         <th className={th}>{tLedger("account")}</th>
+                                        {showsImported && <th className={`${th} text-end`}>{t("derivedDebit")}</th>}
+                                        {showsImported && <th className={`${th} text-end`}>{t("derivedCredit")}</th>}
                                         <th className={`${th} text-end`}>{tLedger("debit")}</th>
                                         <th className={`${th} text-end`}>{tLedger("credit")}</th>
                                         <th className={th}>{t("source")}</th>
@@ -551,6 +563,22 @@ export default function OpeningBalancesPage() {
                                             >
                                                 <td className={`${td} font-mono text-muted`}>{r.code}</td>
                                                 <td className={td}>{r.name}</td>
+                                                {showsImported && (
+                                                    <>
+                                                        <td
+                                                            data-testid={`ob-derived-debit-${r.accountId}`}
+                                                            className={`${td} text-end tabular-nums text-muted`}
+                                                        >
+                                                            {fmtAmount(r.derivedDebit ?? 0)}
+                                                        </td>
+                                                        <td
+                                                            data-testid={`ob-derived-credit-${r.accountId}`}
+                                                            className={`${td} text-end tabular-nums text-muted`}
+                                                        >
+                                                            {fmtAmount(r.derivedCredit ?? 0)}
+                                                        </td>
+                                                    </>
+                                                )}
                                                 {editable ? (
                                                     <>
                                                         <td className={`${td} text-end`}>
@@ -636,7 +664,7 @@ export default function OpeningBalancesPage() {
                                 </tbody>
                                 <tfoot className="bg-input/60 border-t border-border sticky bottom-0">
                                     <tr>
-                                        <td className={`${td} font-bold`} colSpan={2}>
+                                        <td className={`${td} font-bold`} colSpan={showsImported ? 4 : 2}>
                                             {tLedger("reportTotal")}
                                         </td>
                                         <td

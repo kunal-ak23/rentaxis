@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import type { ContractImportResult } from "@/lib/api/cutover";
+import { isImportJobTerminal } from "@/lib/cutoverRules";
 
 /**
  * The cut-over import poll.
@@ -22,7 +23,22 @@ vi.mock("@/lib/api/cutover", async orig => {
     };
 });
 
-import { CUTOVER_JOB_STORAGE_KEY, useImportJobPolling } from "@/hooks/useImportJobPolling";
+import { importJobStorageKey, useImportJobPolling } from "@/hooks/useImportJobPolling";
+
+/** The scope a signed-in accountant of one organisation polls under. */
+const SCOPE = { tenantId: "tenant-1", userId: "user-1" };
+const KEY = importJobStorageKey("contract-import", SCOPE);
+
+function setup() {
+    return renderHook(() =>
+        useImportJobPolling<ContractImportResult>({
+            kind: "contract-import",
+            scope: SCOPE,
+            fetchStatus: (jobId: string) => api.status(jobId) as Promise<ContractImportResult>,
+            isTerminal: job => isImportJobTerminal(job.status),
+        }),
+    );
+}
 
 function result(over: Partial<ContractImportResult> = {}): ContractImportResult {
     return {
@@ -41,6 +57,10 @@ beforeEach(() => {
     window.sessionStorage.clear();
 });
 afterEach(() => {
+    // Every case unmounts its own hook; this is the backstop so a forgotten one
+    // cannot leave a timer running into the next test.
+    cleanup();
+    vi.clearAllTimers();
     vi.useRealTimers();
 });
 
@@ -73,7 +93,7 @@ describe("useImportJobPolling", () => {
             .mockResolvedValueOnce(result({ status: "PERSISTING" }))
             .mockResolvedValueOnce(result({ status: "COMPLETED", importBatchId: "b-1", leasesCreated: 12 }));
 
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
 
         await until(() => api.status.mock.calls.length >= 1);
@@ -87,11 +107,12 @@ describe("useImportJobPolling", () => {
         await tick(60_000);
         // Terminal means terminal: not one more request.
         expect(api.status).toHaveBeenCalledTimes(callsAtRest);
+        unmount();
     });
 
     it("backs off rather than hammering at a fixed interval", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATING" }));
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
         await until(() => api.status.mock.calls.length >= 1);
 
@@ -100,11 +121,12 @@ describe("useImportJobPolling", () => {
         await tick(30_000);
         expect(api.status.mock.calls.length).toBeLessThan(15);
         expect(api.status.mock.calls.length).toBeGreaterThan(3);
+        unmount();
     });
 
     it("stops on unmount", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATING" }));
-        const { result: hook, unmount } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
         await until(() => api.status.mock.calls.length >= 1);
 
@@ -116,47 +138,37 @@ describe("useImportJobPolling", () => {
 
     it("gives up instead of polling forever", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATING" }));
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
 
         await tick(20 * 60_000);
         await until(() => hook.current.polling === false);
         expect(hook.current.timedOut).toBe(true);
+        unmount();
     });
 
     /** A reload must rejoin the job, not orphan it. */
     it("remembers the job id and resumes it on the next mount", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATING" }));
-        const first = renderHook(() => useImportJobPolling());
+        const first = setup();
         act(() => first.result.current.start("job-1"));
-        await until(() => window.sessionStorage.getItem(CUTOVER_JOB_STORAGE_KEY) === "job-1");
+        await until(() => window.sessionStorage.getItem(KEY) === "job-1");
         first.unmount();
 
         api.status.mockClear();
         api.status.mockResolvedValue(result({ status: "COMPLETED", importBatchId: "b-1" }));
-        const second = renderHook(() => useImportJobPolling());
+        const second = setup();
         await until(() => api.status.mock.calls.some(c => c[0] === "job-1"));
         await until(() => second.result.current.job?.status === "COMPLETED");
     });
 
     it("forgets the job id once it reaches a terminal state", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATION_FAILED" }));
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
         await until(() => hook.current.job?.status === "VALIDATION_FAILED");
-        expect(window.sessionStorage.getItem(CUTOVER_JOB_STORAGE_KEY)).toBeNull();
-    });
-
-    /** A 404 is "that job is gone" — stop, do not retry it for five minutes. */
-    it("stops and reports when the job cannot be read", async () => {
-        const { ApiError } = await import("@/lib/api/facilities");
-        api.status.mockRejectedValue(new ApiError(404, "Not found"));
-        const { result: hook } = renderHook(() => useImportJobPolling());
-        act(() => hook.current.start("job-1"));
-
-        await until(() => !!hook.current.error);
-        expect(hook.current.polling).toBe(false);
-        expect(window.sessionStorage.getItem(CUTOVER_JOB_STORAGE_KEY)).toBeNull();
+        expect(window.sessionStorage.getItem(KEY)).toBeNull();
+        unmount();
     });
 
     it("rides out a transient failure rather than giving up on the job", async () => {
@@ -165,22 +177,95 @@ describe("useImportJobPolling", () => {
             .mockRejectedValueOnce(new ApiError(503, "upstream"))
             .mockResolvedValue(result({ status: "COMPLETED", importBatchId: "b-1" }));
 
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
         await tick(20_000);
         await until(() => hook.current.job?.status === "COMPLETED");
-        expect(hook.current.error).toBeNull();
+        expect(hook.current.gone).toBe(false);
+        unmount();
     });
 
     it("clears everything on reset", async () => {
         api.status.mockResolvedValue(result({ status: "VALIDATING" }));
-        const { result: hook } = renderHook(() => useImportJobPolling());
+        const { result: hook, unmount } = setup();
         act(() => hook.current.start("job-1"));
         await until(() => hook.current.polling === true);
 
         act(() => hook.current.reset());
         expect(hook.current.polling).toBe(false);
         expect(hook.current.job).toBeNull();
-        expect(window.sessionStorage.getItem(CUTOVER_JOB_STORAGE_KEY)).toBeNull();
+        expect(window.sessionStorage.getItem(KEY)).toBeNull();
+        unmount();
+    });
+
+    /**
+     * Review item (a): the key was global, so a SUPER_ADMIN who started an import,
+     * switched organisation and reloaded rejoined the previous tenant's job.
+     */
+    it("scopes the stored job id by tenant, user and job kind", () => {
+        expect(importJobStorageKey("contract-import", SCOPE)).toBe(
+            "rentaxis.cutover.job.contract-import.tenant-1.user-1",
+        );
+        expect(importJobStorageKey("bulk-post", SCOPE)).not.toBe(KEY);
+        expect(importJobStorageKey("contract-import", { tenantId: "tenant-2", userId: "user-1" })).not.toBe(KEY);
+        expect(importJobStorageKey("contract-import", { tenantId: "tenant-1", userId: "user-2" })).not.toBe(KEY);
+    });
+
+    it("does not resume a job stored under another organisation's key", async () => {
+        window.sessionStorage.setItem(
+            importJobStorageKey("contract-import", { tenantId: "other", userId: "user-1" }),
+            "job-9",
+        );
+        api.status.mockResolvedValue(result({ status: "VALIDATING" }));
+        const { unmount } = setup();
+        await tick(2_000);
+        expect(api.status).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    /** A second job KIND, not a second hook. */
+    it("polls a different job kind through the same hook", async () => {
+        const fetchStatus = vi.fn(async () => ({ status: "COMPLETED" }));
+        const { result: hook, unmount } = renderHook(() =>
+            useImportJobPolling<{ status: string }>({
+                kind: "bulk-post",
+                scope: SCOPE,
+                fetchStatus,
+                isTerminal: j => j.status === "COMPLETED",
+            }),
+        );
+        act(() => hook.current.start("post-job-1"));
+        await until(() => hook.current.job?.status === "COMPLETED");
+        expect(fetchStatus).toHaveBeenCalledWith("post-job-1");
+        expect(window.sessionStorage.getItem(importJobStorageKey("bulk-post", SCOPE))).toBeNull();
+        unmount();
+    });
+
+    /** Review item (a): the 404 message has to be truthful about both causes. */
+    it("reports a 404 as belonging to another organisation or gone", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.status.mockRejectedValue(new ApiError(404, "Import job not found"));
+        const { result: hook, unmount } = setup();
+        act(() => hook.current.start("job-1"));
+        await until(() => hook.current.gone === true);
+        expect(hook.current.polling).toBe(false);
+        expect(window.sessionStorage.getItem(KEY)).toBeNull();
+        unmount();
+    });
+
+    it("does not persist anything when there is no scope yet", async () => {
+        api.status.mockResolvedValue(result({ status: "VALIDATING" }));
+        const { result: hook, unmount } = renderHook(() =>
+            useImportJobPolling<ContractImportResult>({
+                kind: "contract-import",
+                scope: null,
+                fetchStatus: (jobId: string) => api.status(jobId) as Promise<ContractImportResult>,
+                isTerminal: job => isImportJobTerminal(job.status),
+            }),
+        );
+        act(() => hook.current.start("job-1"));
+        await until(() => api.status.mock.calls.length >= 1);
+        expect(window.sessionStorage.length).toBe(0);
+        unmount();
     });
 });

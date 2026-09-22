@@ -290,6 +290,38 @@ describe("opening balances — invalid cell input", () => {
     });
 });
 
+describe("opening balances — imported figures", () => {
+    /**
+     * `OpeningBalanceRowDTO` now carries `derivedDebit`/`derivedCredit`: what the
+     * posted cut-over contracts put on a derived account. Shown where present,
+     * absent otherwise — never hardcoded either way.
+     */
+    it("shows the imported debit and credit on a derived row", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                rows: [
+                    row({ accountId: "a-cash", code: "110100", enteredDebit: 5000 }),
+                    row({
+                        accountId: "a-rent", code: "120100", name: "Rent receivable",
+                        derived: true, derivedRole: "RENT_RECEIVABLE",
+                        derivedDebit: 82000, derivedCredit: 0,
+                    }),
+                ],
+            }),
+        );
+        renderPage();
+        const derived = await screen.findByTestId("ob-row-a-rent");
+        expect(within(derived).getByTestId("ob-derived-debit-a-rent")).toHaveTextContent("82,000.00");
+        expect(within(derived).getByTestId("ob-derived-credit-a-rent")).toHaveTextContent("0.00");
+    });
+
+    it("says nothing about imported figures when the server does not send them", async () => {
+        renderPage();
+        await screen.findByTestId("ob-row-a-rent");
+        expect(screen.queryByTestId("ob-derived-debit-a-rent")).not.toBeInTheDocument();
+    });
+});
+
 describe("opening balances — new optional server fields", () => {
     /** SnapshotUploadResultDTO gains totals + `balanced`; absent means behave as before. */
     it("warns when the uploaded file does not balance", async () => {

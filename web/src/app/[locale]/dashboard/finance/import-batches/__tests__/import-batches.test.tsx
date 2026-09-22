@@ -21,7 +21,9 @@ import type { ImportBatch } from "@/lib/api/cutover";
 
 let role: string | null = "ACCOUNTANT";
 
-vi.mock("next-auth/react", () => ({ useSession: () => ({ data: role ? { user: { role } } : null }) }));
+vi.mock("next-auth/react", () => ({
+    useSession: () => ({ data: role ? { user: { role, id: "user-1", tenantId: "tenant-1" } } : null }),
+}));
 vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push: vi.fn() }),
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -31,14 +33,21 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 
-const api = vi.hoisted(() => ({ list: vi.fn(), reverse: vi.fn(), upload: vi.fn(), status: vi.fn() }));
+const api = vi.hoisted(() => ({
+    list: vi.fn(), reverse: vi.fn(), upload: vi.fn(), status: vi.fn(),
+    post: vi.fn(), postStatus: vi.fn(), discard: vi.fn(),
+}));
 vi.mock("@/lib/api/cutover", async orig => {
     const m = await orig<typeof import("@/lib/api/cutover")>();
     return {
         ...m,
         cutoverApi: {
             ...m.cutoverApi,
-            batches: { ...m.cutoverApi.batches, list: api.list, reverse: api.reverse },
+            batches: {
+                ...m.cutoverApi.batches,
+                list: api.list, reverse: api.reverse,
+                post: api.post, postStatus: api.postStatus, discard: api.discard,
+            },
             contractImport: { ...m.cutoverApi.contractImport, upload: api.upload, status: api.status },
         },
     };
@@ -55,6 +64,35 @@ function jobResult(over: Partial<ContractImportResult> = {}): ContractImportResu
         leasesCreated: 38, chequesCreated: 152, chequesFromSheet: 152, bookingDepositsCreated: 0,
         importBatchId: "b-new", contractsCreated: 38, mappingsCreated: 9,
         errors: [], warnings: [],
+        ...over,
+    };
+}
+
+function postJob(over: Record<string, unknown> = {}) {
+    return {
+        jobId: "post-job-1", batchId: "b-posted", status: "COMPLETED",
+        processed: 38, total: 38, errors: [],
+        result: {
+            batchId: "b-posted", repostOf: null, status: "POSTED",
+            leasesPosted: 36, leasesSkipped: 1, leasesFailed: 1,
+            chequesDeposited: 100, chequesCleared: 40, chequesBounced: 2,
+            recognitionEntriesPosted: 210, journalsPosted: 412,
+            leases: [
+                { leaseId: "l1", externalContractRef: "C-001", outcome: "POSTED", reason: null, journals: 4, chequesDeposited: 3, chequesCleared: 1, chequesBounced: 0, recognitionEntriesPosted: 6 },
+                { leaseId: "l2", externalContractRef: "C-002", outcome: "SKIPPED_ALREADY_POSTED", reason: null, journals: 0, chequesDeposited: 0, chequesCleared: 0, chequesBounced: 0, recognitionEntriesPosted: 0 },
+                { leaseId: "l3", externalContractRef: "C-003", outcome: "FAILED", reason: "No rent receivable account for the property", journals: 0, chequesDeposited: 0, chequesCleared: 0, chequesBounced: 0, recognitionEntriesPosted: 0 },
+            ],
+            failures: [],
+        },
+        ...over,
+    };
+}
+
+function discardResult(over: Record<string, unknown> = {}) {
+    return {
+        batchId: "b-draft", status: "DISCARDED",
+        leasesDeleted: 12, unitsDeleted: 40, buildingsDeleted: 1, rentersDeleted: 11, propertiesDeleted: 2,
+        kept: [{ type: "PROPERTY", id: "p1", name: "L'Olivier", reason: "It has contracts from another batch" }],
         ...over,
     };
 }
@@ -80,6 +118,7 @@ function batch(over: Partial<ImportBatch> & { id: string }): ImportBatch {
         journalsPosted: 0,
         postedAt: null,
         reversedAt: null,
+        discardedAt: null,
         createdAt: "2026-09-11T08:00:00Z",
         ...over,
     };
@@ -111,6 +150,9 @@ beforeEach(() => {
     api.list.mockResolvedValue(ROWS);
     api.upload.mockResolvedValue({ jobId: "job-1" });
     api.status.mockResolvedValue(jobResult());
+    api.post.mockResolvedValue({ jobId: "post-job-1", batchId: "b-posted" });
+    api.postStatus.mockResolvedValue(postJob());
+    api.discard.mockResolvedValue(discardResult());
     window.sessionStorage.clear();
 });
 afterEach(cleanup);
@@ -133,13 +175,17 @@ describe("import batches list", () => {
         expect(screen.queryByTestId("reverse-batch-b-reversed")).not.toBeInTheDocument();
     });
 
-    /** A reversed batch is history — the screen has to say a re-import is a new batch. */
-    it("says a reversed batch can never be re-posted", async () => {
+    /**
+     * Superseded by Task 11: a REVERSED batch is no longer the end of the line.
+     * Its leases are still there, so it offers "Post again" (which creates a
+     * successor batch) and "Discard". Only DISCARDED offers nothing.
+     */
+    it("still offers actions on a reversed batch", async () => {
         renderPage();
-        const reversed = await screen.findByTestId("batch-row-b-reversed");
-        expect(within(reversed).getByTestId("batch-final-b-reversed")).toHaveTextContent(
-            en.Cutover.reversedBatchFinal,
-        );
+        await screen.findByTestId("batch-row-b-reversed");
+        expect(screen.getByTestId("post-batch-b-reversed")).toBeInTheDocument();
+        expect(screen.getByTestId("discard-batch-b-reversed")).toBeInTheDocument();
+        expect(screen.queryByTestId("batch-final-b-reversed")).not.toBeInTheDocument();
     });
 
     it("reverses behind a confirmation that collects a date and a reason", async () => {
@@ -331,7 +377,8 @@ describe("cut-over contract import", () => {
 
         const summary = await screen.findByTestId("import-counts");
         for (const n of ["3", "40", "38", "152"]) expect(summary).toHaveTextContent(n);
-        expect(screen.getByTestId("import-view-batch")).toBeInTheDocument();
+        // The pointer to the batch the upload made, which outlives the panel.
+        expect(await screen.findByTestId("import-view-batch-b-new")).toBeInTheDocument();
     });
 
     /** The batch the import just made is highlighted, so it is not a hunt. */
@@ -434,17 +481,180 @@ describe("cut-over contract import", () => {
         expect(help).toHaveTextContent(en.Cutover.cutoverHelpEjari);
     });
 
-    /** Task 11 has not landed; the page says so rather than leaving a gap. */
-    it("says posting a batch is not available yet", async () => {
-        renderPage();
-        await screen.findByTestId("batch-row-b-draft");
-        expect(screen.getByTestId("bulk-post-unavailable")).toHaveTextContent(en.Cutover.bulkPostNotAvailable);
-    });
-
     it("offers no upload control to a role the controller refuses", async () => {
         role = "PROPERTY_MANAGER";
         renderPage();
         await screen.findByTestId("import-batches-access-denied");
         expect(screen.queryByTestId("upload-cutover")).not.toBeInTheDocument();
+    });
+});
+
+describe("bulk post", () => {
+    it("offers Post on a DRAFT and not on a DISCARDED batch", async () => {
+        api.list.mockResolvedValue([
+            batch({ id: "b-draft" }),
+            batch({ id: "b-gone", status: "DISCARDED", discardedAt: "2026-09-13T08:00:00Z" }),
+        ]);
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.getByTestId("post-batch-b-draft")).toBeInTheDocument();
+        expect(screen.queryByTestId("post-batch-b-gone")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("discard-batch-b-gone")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("reverse-batch-b-gone")).not.toBeInTheDocument();
+        expect(screen.getByTestId("batch-final-b-gone")).toHaveTextContent(en.Cutover.discardedBatchFinal);
+    });
+
+    it("explains what posting does before it does it", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+
+        const dialog = await screen.findByTestId("confirm-post-batch");
+        expect(screen.getByText(/own contract date/)).toBeInTheDocument();
+        expect(screen.getByText(/No e-mails are sent/)).toBeInTheDocument();
+        fireEvent.click(dialog);
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft"));
+    });
+
+    it("shows progress while the job runs", async () => {
+        api.postStatus.mockResolvedValue(postJob({ status: "POSTING", processed: 12, total: 38, result: null }));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+
+        const progress = await screen.findByTestId("post-progress");
+        expect(progress).toHaveTextContent("12");
+        expect(progress).toHaveTextContent("38");
+        expect(screen.queryByTestId("post-results-table")).not.toBeInTheDocument();
+    });
+
+    it("lists every contract outcome, failures first", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+
+        await screen.findByTestId("post-results-table");
+        // Failures first: C-003 failed, so it leads.
+        expect(screen.getByTestId("post-result-0")).toHaveTextContent("C-003");
+        expect(screen.getByTestId("post-result-0")).toHaveTextContent("No rent receivable account");
+        expect(screen.getByTestId("post-result-0")).toHaveAttribute("data-outcome", "FAILED");
+        expect(screen.getByTestId("post-result-1")).toHaveAttribute("data-outcome", "POSTED");
+        expect(screen.getByTestId("post-summary")).toHaveTextContent("412");
+    });
+
+    /** Posting a POSTED batch is the retry path: already-posted contracts are skipped. */
+    it("offers Retry failed contracts on a posted batch that still has failures", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-posted");
+        fireEvent.click(screen.getByTestId("post-batch-b-posted"));
+        expect(await screen.findByTestId("confirm-post-batch")).toBeInTheDocument();
+        expect(screen.getByTestId("post-batch-b-posted")).toHaveTextContent(en.Cutover.retryFailed);
+    });
+
+    /** A REVERSED batch re-posts as a SUCCESSOR; the copy has to say so. */
+    it("calls a reversed batch's post 'Post again' and warns it makes a new batch", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-reversed");
+        const button = screen.getByTestId("post-batch-b-reversed");
+        expect(button).toHaveTextContent(en.Cutover.postAgain);
+        fireEvent.click(button);
+        await screen.findByTestId("confirm-post-batch");
+        expect(screen.getByText(/creates a NEW batch/)).toBeInTheDocument();
+    });
+
+    it("surfaces a batch-level refusal", async () => {
+        api.post.mockRejectedValue(
+            new ApiError(400, "Set the books start date in Settings → Fiscal before posting a cut-over batch"),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        expect(await screen.findByRole("alert")).toHaveTextContent("books start date");
+    });
+
+    it("reloads the list when the post finishes", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        const before = api.list.mock.calls.length;
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        await screen.findByTestId("post-results-table");
+        await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(before));
+    });
+});
+
+describe("discard", () => {
+    it("offers Discard on DRAFT and REVERSED but not on POSTED", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.getByTestId("discard-batch-b-draft")).toBeInTheDocument();
+        expect(screen.getByTestId("discard-batch-b-reversed")).toBeInTheDocument();
+        expect(screen.queryByTestId("discard-batch-b-posted")).not.toBeInTheDocument();
+    });
+
+    it("discards behind a destructive confirmation and summarises what went and what stayed", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("discard-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-discard-batch"));
+
+        await waitFor(() => expect(api.discard).toHaveBeenCalledWith("b-draft"));
+        const summary = await screen.findByTestId("discard-summary");
+        expect(summary).toHaveTextContent("12");
+        expect(summary).toHaveTextContent("40");
+
+        const kept = screen.getByTestId("discard-kept-table");
+        expect(within(kept).getByTestId("discard-kept-0")).toHaveTextContent("L'Olivier");
+        expect(within(kept).getByTestId("discard-kept-0")).toHaveTextContent("another batch");
+        await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(1));
+    });
+
+    it("surfaces the server's refusal", async () => {
+        api.discard.mockRejectedValue(
+            new ApiError(400, "Import batch is POSTED; only a DRAFT or REVERSED batch can be discarded"),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("discard-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-discard-batch"));
+        expect(await screen.findByRole("alert")).toHaveTextContent("only a DRAFT or REVERSED");
+    });
+});
+
+describe("journals drill-through", () => {
+    it("links a posted batch to its own journals", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-posted");
+        expect(screen.getByTestId("view-journals-b-posted")).toHaveAttribute(
+            "href",
+            "/dashboard/finance/journals?importBatchId=b-posted",
+        );
+        // Nothing to drill into on a batch that wrote no journals.
+        expect(screen.queryByTestId("view-journals-b-draft")).not.toBeInTheDocument();
+    });
+
+    it("no longer says posting is unavailable", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.queryByTestId("bulk-post-unavailable")).not.toBeInTheDocument();
+    });
+});
+
+describe("carried review items", () => {
+    /** (e) Dismissing the import result must not un-highlight the batch it made. */
+    it("keeps the imported batch highlighted after the import panel is dismissed", async () => {
+        api.list.mockResolvedValue([...ROWS, batch({ id: "b-new", label: "Cut-over" })]);
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        await waitFor(() => expect(screen.getByTestId("batch-row-b-new")).toHaveAttribute("data-imported", "true"));
+        fireEvent.click(screen.getByTestId("import-dismiss"));
+        await waitFor(() => expect(screen.queryByTestId("import-success")).not.toBeInTheDocument());
+        expect(screen.getByTestId("batch-row-b-new")).toHaveAttribute("data-imported", "true");
+        expect(screen.getByTestId("import-view-batch-b-new")).toBeInTheDocument();
     });
 });

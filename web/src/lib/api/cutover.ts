@@ -28,11 +28,14 @@ export type ImportBatchKind = "CONTRACT_IMPORT";
 
 /**
  * `DRAFT` — leases exist, nothing posted. `POSTED` — the batch's journals are in
- * the ledger and the whole run can still be undone. `REVERSED` — the end of the
- * line: a reversed batch is history, and a corrected spreadsheet comes back as a
- * NEW batch, never as a re-post of this one.
+ * the ledger and the whole run can still be undone. `REVERSED` — the journals are
+ * off and every lease is back to a clean DRAFT; `markPosted` refuses to mark it
+ * POSTED again, so re-posting the same contracts creates a SUCCESSOR batch to
+ * hold the new journals (`repostOf` names this one). `DISCARDED` — the batch and
+ * everything it created are gone, which is what makes "correct the workbook and
+ * import it again" possible at all.
  */
-export type ImportBatchStatus = "DRAFT" | "POSTED" | "REVERSED";
+export type ImportBatchStatus = "DRAFT" | "POSTED" | "REVERSED" | "DISCARDED";
 
 // ---- responses ----
 
@@ -51,6 +54,8 @@ export type ImportBatch = {
     journalsPosted: number;
     postedAt: string | null;
     reversedAt: string | null;
+    /** Set when the batch was thrown away; its leases and created rows no longer exist. */
+    discardedAt: string | null;
     createdAt: string;
 };
 
@@ -76,6 +81,13 @@ export type OpeningBalanceRow = {
     propertyId: string | null;
     derived: boolean;
     derivedRole: AccountRole | null;
+    /**
+     * What the posted cut-over contracts put on this account, for a DERIVED row.
+     * Zero until the batch is bulk-posted, which is why the reconciliation
+     * report's honesty banner keys off them rather than off a flag.
+     */
+    derivedDebit?: number;
+    derivedCredit?: number;
     enteredDebit: number;
     enteredCredit: number;
     /**
@@ -203,7 +215,12 @@ export type ImportJobStatus = "VALIDATING" | "PERSISTING" | "COMPLETED" | "VALID
  */
 export type ImportError = {
     sheet: string;
-    row: number;
+    /**
+     * The 1-based row within `sheet`, or **null** for a problem with the file as
+     * a whole — a missing sheet, a workbook that could not be opened. Nullable on
+     * the server for exactly that reason, so "row 0" must never be rendered.
+     */
+    row: number | null;
     field: string;
     message: string;
 };
@@ -239,6 +256,90 @@ export type ContractImportResult = {
     warnings: ImportError[];
 };
 
+// ---- bulk post and discard (api/ImportBatchController.java) ----
+
+/** `ImportBatchController.PostStartedDTO` (:76). */
+export type PostStarted = { jobId: string; batchId: string };
+
+/** `ContractImportPostService.LeaseOutcome.Outcome` (:106-113). */
+export type LeaseOutcomeStatus = "POSTED" | "SKIPPED_ALREADY_POSTED" | "FAILED";
+
+/**
+ * `ContractImportPostService.LeaseOutcome` — how one contract fared.
+ *
+ * `SKIPPED_ALREADY_POSTED` is not a failure: it is what a retry looks like when
+ * a contract was already on the books. A `FAILED` one carries its `reason` and
+ * stays a DRAFT of the batch, so posting again retries exactly those.
+ */
+export type LeaseOutcome = {
+    leaseId: string;
+    externalContractRef: string | null;
+    outcome: LeaseOutcomeStatus;
+    reason: string | null;
+    journals: number;
+    chequesDeposited: number;
+    chequesCleared: number;
+    chequesBounced: number;
+    recognitionEntriesPosted: number;
+};
+
+/**
+ * `ContractImportPostService.BulkPostResult` (:127-136).
+ *
+ * `batchId` is the batch that now holds the journals — normally the one asked
+ * for, but for a re-post of a REVERSED batch it is the SUCCESSOR this call
+ * created, and `repostOf` names the reversed one. `journalsPosted` is read back
+ * from the ledger rather than accumulated.
+ */
+export type BulkPostResult = {
+    batchId: string;
+    repostOf: string | null;
+    status: ImportBatchStatus;
+    leasesPosted: number;
+    leasesSkipped: number;
+    leasesFailed: number;
+    chequesDeposited: number;
+    chequesCleared: number;
+    chequesBounced: number;
+    recognitionEntriesPosted: number;
+    journalsPosted: number;
+    leases: LeaseOutcome[];
+    failures: ImportError[];
+};
+
+/**
+ * `ImportBatchController.PostJobDTO` (:87-88).
+ *
+ * `processed`/`total` are the progress signal; `result` is null until the run
+ * finishes. `errors` is only ever about the batch as a whole — a books start
+ * date that is not set, someone else posting it — because a contract that fails
+ * is inside `result.leases`, not here.
+ */
+export type PostJob = {
+    jobId: string;
+    batchId: string | null;
+    status: string;
+    processed: number | null;
+    total: number | null;
+    result: BulkPostResult | null;
+    errors: ImportError[];
+};
+
+/** `ImportBatchDiscardService.Kept` (:140) — a row the discard did NOT delete, and why. */
+export type DiscardKept = { type: string; id: string; name: string | null; reason: string };
+
+/** `ImportBatchDiscardService.DiscardResult` (:144-147). */
+export type DiscardResult = {
+    batchId: string;
+    status: ImportBatchStatus;
+    leasesDeleted: number;
+    unitsDeleted: number;
+    buildingsDeleted: number;
+    rentersDeleted: number;
+    propertiesDeleted: number;
+    kept: DiscardKept[];
+};
+
 export const cutoverApi = {
     batches: {
         /** `GET /finance/import-batches` — a plain list, oldest first (`findAllByOrderByCreatedAtAsc`). */
@@ -252,6 +353,23 @@ export const cutoverApi = {
          */
         reverse: (id: string, body: ReverseBatchInput) =>
             apiSend<ImportBatch>("POST", `/finance/import-batches/${id}/reverse`, body),
+        /**
+         * Start the bulk post. Asynchronous like the upload that produced the
+         * batch: a six-hundred-contract portfolio posts a few thousand journals,
+         * which is not a request to hold a connection open for. Answers the job
+         * id at once; poll `postStatus`.
+         */
+        post: (id: string) => apiSend<PostStarted>("POST", `/finance/import-batches/${id}/post`),
+        /** The poll. 404 when the job is not this batch's, or not this organisation's. */
+        postStatus: (id: string, jobId: string) =>
+            apiGet<PostJob>(`/finance/import-batches/${id}/post/${jobId}`),
+        /**
+         * Throw the batch away: its draft contracts, and the properties,
+         * buildings, units and renters it created, when nothing else refers to
+         * them. Synchronous — it writes no journals, and the accountant pressing
+         * it is waiting to re-upload the corrected file.
+         */
+        discard: (id: string) => apiSend<DiscardResult>("POST", `/finance/import-batches/${id}/discard`),
     },
     openingBalances: {
         grid: () => apiGet<OpeningBalanceGrid>("/finance/opening-balances"),
@@ -311,5 +429,3 @@ export const cutoverApi = {
         status: (jobId: string) => apiGet<ContractImportResult>(`/import/portfolio/cutover/${jobId}/status`),
     },
 };
-
-

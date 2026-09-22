@@ -344,7 +344,8 @@ export const ledgerApi = {
   },
   trialBalance: (q: { asOf?: string; propertyId?: string }) => apiGet<TrialBalanceRow[]>(`/finance/trial-balance${qs(q)}`),
   journals: {
-    list: (q: { docType?: JournalDocType | ""; from?: string; to?: string; propertyId?: string; leaseId?: string; page: number; size: number }) =>
+    /** `importBatchId` narrows to the journals one cut-over batch wrote (JournalController.java:52). */
+    list: (q: { docType?: JournalDocType | ""; from?: string; to?: string; propertyId?: string; leaseId?: string; importBatchId?: string; page: number; size: number }) =>
       apiGet<Page<JournalEntry>>(`/finance/journals${qs(q)}`),
     get: (id: string) => apiGet<JournalEntry>(`/finance/journals/${id}`),
     postManual: (body: ManualJournalBody) => apiSend<JournalEntry>("POST", "/finance/journals", body),

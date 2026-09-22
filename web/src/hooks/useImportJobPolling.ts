@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/facilities";
-import { cutoverApi, type ContractImportResult } from "@/lib/api/cutover";
-import { isImportJobTerminal } from "@/lib/cutoverRules";
 
 /**
  * Follow a cut-over import job to its end.
@@ -22,6 +20,9 @@ import { isImportJobTerminal } from "@/lib/cutoverRules";
  * job is in flight, so refreshing the page rejoins it instead of orphaning a
  * running import the user can no longer see. It is removed the moment the job
  * reaches a terminal state, so a later visit does not resurrect a finished one.
+ * The key is scoped by TENANT, USER and job KIND: an unscoped one meant a
+ * SUPER_ADMIN who started an import, switched organisation and reloaded rejoined
+ * the previous tenant's job, and got a 404 whose message blamed the wrong thing.
  *
  * **A transient failure is not the end of the job.** A 404 means the job is
  * genuinely gone and the poll stops; anything else is retried, because a single
@@ -29,8 +30,17 @@ import { isImportJobTerminal } from "@/lib/cutoverRules";
  * contract import has failed.
  */
 
-/** Session-scoped, not local: a finished cut-over is not something to carry to tomorrow. */
-export const CUTOVER_JOB_STORAGE_KEY = "rentaxis.cutover.importJobId";
+/** Who is watching, so one person's job is never resumed as another's. */
+export type JobScope = { tenantId: string; userId: string };
+
+/**
+ * Session-scoped, not local: a finished cut-over is not something to carry to
+ * tomorrow. Keyed by kind + tenant + user, so a contract import and a bulk post,
+ * or two organisations, never share a slot.
+ */
+export function importJobStorageKey(kind: string, scope: JobScope): string {
+    return `rentaxis.cutover.job.${kind}.${scope.tenantId}.${scope.userId}`;
+}
 
 const FIRST_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 10_000;
@@ -38,39 +48,65 @@ const MAX_DELAY_MS = 10_000;
 const GIVE_UP_AFTER_MS = 15 * 60_000;
 
 /** `sessionStorage` throws in a locked-down browser; a missing job id is not worth a crash. */
-function readStoredJobId(): string | null {
+function readStoredJobId(key: string | null): string | null {
+    if (!key) return null;
     try {
-        return window.sessionStorage.getItem(CUTOVER_JOB_STORAGE_KEY);
+        return window.sessionStorage.getItem(key);
     } catch {
         return null;
     }
 }
 
-function storeJobId(jobId: string | null): void {
+function storeJobId(key: string | null, jobId: string | null): void {
+    if (!key) return;
     try {
-        if (jobId) window.sessionStorage.setItem(CUTOVER_JOB_STORAGE_KEY, jobId);
-        else window.sessionStorage.removeItem(CUTOVER_JOB_STORAGE_KEY);
+        if (jobId) window.sessionStorage.setItem(key, jobId);
+        else window.sessionStorage.removeItem(key);
     } catch {
         // A job that cannot be remembered still polls; it just will not survive a reload.
     }
 }
 
-export type ImportJobPolling = {
-    job: ContractImportResult | null;
+export type ImportJobPolling<T> = {
+    job: T | null;
     polling: boolean;
     /** Set when the poll gave up on a job that never finished — not a job failure. */
     timedOut: boolean;
-    /** Set when the job could not be read at all (gone, or not this organisation's). */
-    error: string | null;
+    /**
+     * Set when the job could not be read at all. A 404 here means one of exactly
+     * two things and the copy has to allow for both: the job belongs to another
+     * organisation, or it no longer exists.
+     */
+    gone: boolean;
     start: (jobId: string) => void;
     reset: () => void;
 };
 
-export function useImportJobPolling(): ImportJobPolling {
-    const [job, setJob] = useState<ContractImportResult | null>(null);
+export type ImportJobPollingOptions<T> = {
+    /** Distinguishes one kind of job from another in storage; e.g. "contract-import", "bulk-post". */
+    kind: string;
+    /** Null until the session resolves — nothing is persisted until it does. */
+    scope: JobScope | null;
+    fetchStatus: (jobId: string) => Promise<T>;
+    isTerminal: (job: T) => boolean;
+};
+
+export function useImportJobPolling<T>({
+    kind,
+    scope,
+    fetchStatus,
+    isTerminal,
+}: ImportJobPollingOptions<T>): ImportJobPolling<T> {
+    const [job, setJob] = useState<T | null>(null);
     const [polling, setPolling] = useState(false);
     const [timedOut, setTimedOut] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [gone, setGone] = useState(false);
+
+    const storageKey = scope ? importJobStorageKey(kind, scope) : null;
+    // Read through refs inside the poll so a re-render with a new callback
+    // identity does not need to restart a running job.
+    const latest = useRef({ fetchStatus, isTerminal, storageKey });
+    latest.current = { fetchStatus, isTerminal, storageKey };
 
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const alive = useRef(true);
@@ -90,18 +126,18 @@ export function useImportJobPolling(): ImportJobPolling {
             delay.current = FIRST_DELAY_MS;
             setJob(null);
             setTimedOut(false);
-            setError(null);
+            setGone(false);
             setPolling(true);
-            storeJobId(jobId);
+            storeJobId(latest.current.storageKey, jobId);
 
             const poll = async () => {
                 if (!alive.current) return;
                 try {
-                    const next = await cutoverApi.contractImport.status(jobId);
+                    const next = await latest.current.fetchStatus(jobId);
                     if (!alive.current) return;
                     setJob(next);
-                    if (isImportJobTerminal(next.status)) {
-                        storeJobId(null);
+                    if (latest.current.isTerminal(next)) {
+                        storeJobId(latest.current.storageKey, null);
                         stop();
                         return;
                     }
@@ -109,8 +145,8 @@ export function useImportJobPolling(): ImportJobPolling {
                     if (!alive.current) return;
                     // Gone, or another organisation's — retrying will not change it.
                     if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
-                        storeJobId(null);
-                        setError(e.message);
+                        storeJobId(latest.current.storageKey, null);
+                        setGone(true);
                         stop();
                         return;
                     }
@@ -118,7 +154,7 @@ export function useImportJobPolling(): ImportJobPolling {
                 }
                 if (!alive.current) return;
                 if (Date.now() - startedAt.current >= GIVE_UP_AFTER_MS) {
-                    storeJobId(null);
+                    storeJobId(latest.current.storageKey, null);
                     setTimedOut(true);
                     stop();
                     return;
@@ -135,11 +171,11 @@ export function useImportJobPolling(): ImportJobPolling {
     );
 
     const reset = useCallback(() => {
-        storeJobId(null);
+        storeJobId(latest.current.storageKey, null);
         stop();
         setJob(null);
         setTimedOut(false);
-        setError(null);
+        setGone(false);
     }, [stop]);
 
     // Rejoin a job left running by a reload. Mount-only: `start` is stable, and
@@ -147,7 +183,7 @@ export function useImportJobPolling(): ImportJobPolling {
     // dismissed.
     useEffect(() => {
         alive.current = true;
-        const stored = readStoredJobId();
+        const stored = readStoredJobId(storageKey);
         if (stored) start(stored);
         return () => {
             alive.current = false;
@@ -155,9 +191,9 @@ export function useImportJobPolling(): ImportJobPolling {
             timer.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [storageKey]);
 
-    return { job, polling, timedOut, error, start, reset };
+    return { job, polling, timedOut, gone, start, reset };
 }
 
 export default useImportJobPolling;

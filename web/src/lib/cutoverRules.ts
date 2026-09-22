@@ -24,15 +24,65 @@ export function canReverseBatch(status: ImportBatchStatus): boolean {
 }
 
 /**
- * `domain/entity/enums/ImportBatchStatus.java`, in its own words: REVERSED "is
- * the end of the line — a reversed batch is history, and a corrected spreadsheet
- * is imported as a new one."
+ * Is there nothing left to do with this batch?
  *
- * There is no re-post endpoint and there is not meant to be one, so the screen
- * says so rather than leaving a disabled button implying one might appear.
+ * Only DISCARDED. `ImportBatchStatus`'s own doc: "the batch and everything it
+ * created are gone". A REVERSED batch is NOT final — its leases are still there,
+ * carrying the imported statuses and dates the reverse deliberately kept, so it
+ * can be posted again (as a successor) or discarded.
  */
 export function isBatchFinal(status: ImportBatchStatus): boolean {
+    return status === "DISCARDED";
+}
+
+/**
+ * May this batch be bulk-posted?
+ *
+ * `ContractImportPostService.runUnderBatchLock` (:169-177) takes every status but
+ * one. DRAFT posts. REVERSED posts as a SUCCESSOR batch, because `markPosted`
+ * refuses REVERSED → POSTED by design — "an undo that has already happened must
+ * not become undoable a second time" — while the leases are still there, so the
+ * corrected portfolio does not need re-uploading. POSTED is the RETRY path: the
+ * run walks the whole plan, contracts already on the books come back
+ * `SKIPPED_ALREADY_POSTED`, and the ones that failed last time are tried again.
+ * DISCARDED is refused outright: "its leases have been deleted. Import the
+ * corrected workbook again."
+ */
+export function canPostBatch(status: ImportBatchStatus): boolean {
+    return status !== "DISCARDED";
+}
+
+/**
+ * Would posting this batch create a successor rather than post this one?
+ *
+ * True only for REVERSED (`runUnderBatchLock:171-174`). The UI calls it "Post
+ * again" and says that a new batch will hold the new journals — otherwise the
+ * row the accountant pressed stays REVERSED and looks like nothing happened.
+ */
+export function isRepost(status: ImportBatchStatus): boolean {
     return status === "REVERSED";
+}
+
+/**
+ * May this batch be discarded?
+ *
+ * `ImportBatchDiscardService.requireDiscardable` (:215-222) and
+ * `ImportBatchService.markDiscarded` (:187-193): "only a DRAFT or REVERSED batch
+ * can be discarded". A POSTED one still has journals behind its leases and the
+ * server says so — "Reverse it first — its contracts are on the books."
+ */
+export function canDiscardBatch(status: ImportBatchStatus): boolean {
+    return status === "DRAFT" || status === "REVERSED";
+}
+
+/**
+ * Has the bulk post stopped?
+ *
+ * The job row is an `ImportJob`, so its statuses are that column's. The run ends
+ * COMPLETED or FAILED; anything else is in flight.
+ */
+export function isBulkPostTerminal(status: string): boolean {
+    return status === "COMPLETED" || status === "FAILED";
 }
 
 /**

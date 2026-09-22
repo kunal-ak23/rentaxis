@@ -1,18 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, CheckCircle2, Download, Info, Layers, Loader2, ShieldCheck, Undo2, Upload } from "lucide-react";
+import {
+    AlertTriangle, CheckCircle2, Download, Info, Layers, Loader2, ShieldCheck, Trash2, Undo2, Upload,
+} from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
 import { Link } from "@/i18n/routing";
-import { cutoverApi, type ImportBatch, type ImportBatchStatus } from "@/lib/api/cutover";
 import {
-    CONTRACT_IMPORT_ACCEPT, canDownloadImportTemplate, canReverseBatch, contractImportRefusal, isBatchFinal,
+    cutoverApi,
+    type ContractImportResult, type DiscardResult, type ImportBatch, type ImportBatchStatus,
+    type LeaseOutcome, type PostJob,
+} from "@/lib/api/cutover";
+import {
+    CONTRACT_IMPORT_ACCEPT, canDiscardBatch, canDownloadImportTemplate, canPostBatch, canReverseBatch,
+    contractImportRefusal, isBatchFinal, isBulkPostTerminal, isImportJobTerminal, isRepost,
 } from "@/lib/cutoverRules";
 import { useImportJobPolling } from "@/hooks/useImportJobPolling";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -55,7 +62,17 @@ const STATUS_CLASS: Record<ImportBatchStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
     REVERSED: "bg-warning/10 text-warning border-warning/30",
+    DISCARDED: "bg-input text-muted border-border line-through",
 };
+
+/** Failures first: the rows that need doing something about lead the table. */
+const OUTCOME_ORDER: Record<LeaseOutcome["outcome"], number> = {
+    FAILED: 0,
+    POSTED: 1,
+    SKIPPED_ALREADY_POSTED: 2,
+};
+
+const RESULTS_PER_PAGE = 25;
 
 export default function ImportBatchesPage() {
     const t = useTranslations("Cutover");
@@ -79,7 +96,43 @@ export default function ImportBatchesPage() {
     const [size, setSize] = useState(25);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [errorPage, setErrorPage] = useState(0);
-    const importJob = useImportJobPolling();
+    /**
+     * Scoped by tenant and user: an unscoped key meant a SUPER_ADMIN who started
+     * an import, switched organisation and reloaded rejoined the previous
+     * tenant's job.
+     */
+    const jobScope =
+        session?.user?.tenantId && session?.user?.id
+            ? { tenantId: session.user.tenantId, userId: session.user.id }
+            : null;
+
+    const importJob = useImportJobPolling<ContractImportResult>({
+        kind: "contract-import",
+        scope: jobScope,
+        fetchStatus: jobId => cutoverApi.contractImport.status(jobId),
+        isTerminal: job => isImportJobTerminal(job.status),
+    });
+
+    /** The same hook, a second job KIND — not a second implementation. */
+    const postJob = useImportJobPolling<PostJob>({
+        kind: "bulk-post",
+        scope: jobScope,
+        fetchStatus: jobId => cutoverApi.batches.postStatus(postBatchIdRef.current ?? "", jobId),
+        isTerminal: job => isBulkPostTerminal(job.status),
+    });
+
+    const [postError, setPostError] = useState<string | null>(null);
+    const [discard, setDiscard] = useState<DiscardResult | null>(null);
+    const [discardError, setDiscardError] = useState<string | null>(null);
+    const [resultPage, setResultPage] = useState(0);
+    const [confirmPost, setConfirmPost] = useState<ImportBatch | null>(null);
+    const [confirmDiscard, setConfirmDiscard] = useState<ImportBatch | null>(null);
+    /**
+     * Which batch the running post belongs to — the status URL needs it. A ref,
+     * because the poll's fetcher must read the current value without the hook
+     * restarting every time it changes.
+     */
+    const postBatchIdRef = useRef<string | null>(null);
 
     const load = useCallback(() => {
         setLoading(true);
@@ -116,6 +169,53 @@ export default function ImportBatchesPage() {
         if (!importedBatchId) return;
         load();
     }, [importedBatchId, load]);
+
+    /**
+     * Review item (e): the highlight survives dismissing the import panel. It is
+     * remembered separately, because `importJob.reset()` clears the panel and the
+     * accountant still needs to see which row the upload made.
+     */
+    const [highlightBatchId, setHighlightBatchId] = useState<string | null>(null);
+    useEffect(() => {
+        if (importedBatchId) setHighlightBatchId(importedBatchId);
+    }, [importedBatchId]);
+
+    /** A finished post changed the batch's status and its journal count. */
+    const postedBatchId = postJob.job?.result?.batchId ?? null;
+    useEffect(() => {
+        if (!postedBatchId) return;
+        load();
+    }, [postedBatchId, load]);
+
+    /** Failures first, then posted, then already-posted. */
+    const postResults = useMemo(() => {
+        const leases = postJob.job?.result?.leases ?? [];
+        return [...leases].sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome]);
+    }, [postJob.job]);
+
+    const startPost = (b: ImportBatch) => {
+        setPostError(null);
+        setDiscard(null);
+        setResultPage(0);
+        setConfirmPost(null);
+        postBatchIdRef.current = b.id;
+        cutoverApi.batches
+            .post(b.id)
+            .then(({ jobId }) => postJob.start(jobId))
+            .catch(e => setPostError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
+
+    const runDiscard = (b: ImportBatch) => {
+        setDiscardError(null);
+        setConfirmDiscard(null);
+        cutoverApi.batches
+            .discard(b.id)
+            .then(async r => {
+                setDiscard(r);
+                await load();
+            })
+            .catch(e => setDiscardError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
 
     const onWorkbook = (file: File) => {
         const refused = contractImportRefusal(file);
@@ -186,8 +286,10 @@ export default function ImportBatchesPage() {
                     <p className="text-sm text-muted max-w-2xl">{t("importBatchesDesc")}</p>
                 </div>
                 {/*
-                 * One role narrower than the page: PortfolioImportController#template
-                 * is SA/TA and would 403 an accountant on click.
+                 * The SAME roles as the page: PortfolioImportController's
+                 * CUTOVER_ROLES (:109) admits ACCOUNTANT. (It was one narrower
+                 * while this linked the v1 `/template`, which is SA/TA — that
+                 * route is not used here any more.)
                  */}
                 {canDownloadImportTemplate(userRole) && (
                     <div className="flex flex-wrap items-center gap-3">
@@ -248,7 +350,7 @@ export default function ImportBatchesPage() {
                 </p>
             )}
 
-            {importJob.error && (
+            {importJob.gone && (
                 <p role="alert" data-testid="import-job-error" className="mb-4 text-xs font-semibold text-error">
                     {t("importJobLost")}
                 </p>
@@ -291,15 +393,6 @@ export default function ImportBatchesPage() {
                                     cheques: importJob.job.chequesCreated,
                                 })}
                             </p>
-                            {importJob.job.importBatchId && (
-                                <Link
-                                    href={`/dashboard/finance/import-batches#${importJob.job.importBatchId}`}
-                                    data-testid="import-view-batch"
-                                    className="text-xs font-semibold text-primary hover:underline cursor-pointer"
-                                >
-                                    {t("viewImportedBatch")}
-                                </Link>
-                            )}
                         </div>
                     )}
 
@@ -405,13 +498,191 @@ export default function ImportBatchesPage() {
             )}
 
             {/*
-             * Task 11 has not landed: there is no bulk-post route, so a DRAFT batch
-             * has no post action. Said plainly rather than leaving a gap where a
-             * button obviously belongs.
+             * Review item (e): the panel is dismissible, the pointer to the batch
+             * it made is not. Dismissing "here is what your upload did" must not
+             * also take away "and here is the row it created".
              */}
-            <p data-testid="bulk-post-unavailable" className="mb-4 text-xs text-muted">
-                {t("bulkPostNotAvailable")}
-            </p>
+            {highlightBatchId && (
+                <p className="mb-4 text-xs">
+                    <a
+                        href={`#batch-${highlightBatchId}`}
+                        data-testid={`import-view-batch-${highlightBatchId}`}
+                        className="font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                        {t("viewImportedBatch")}
+                    </a>
+                </p>
+            )}
+
+            {postError && (
+                <p role="alert" data-testid="post-error" className="mb-4 text-xs font-semibold text-error">
+                    {postError}
+                </p>
+            )}
+            {discardError && (
+                <p role="alert" data-testid="discard-error" className="mb-4 text-xs font-semibold text-error">
+                    {discardError}
+                </p>
+            )}
+
+            {postJob.job && (
+                <div
+                    data-testid="post-job-status"
+                    data-status={postJob.job.status}
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    {!postJob.job.result && (
+                        <p data-testid="post-progress" className="text-xs font-semibold text-muted flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin shrink-0" />
+                            {postJob.job.total
+                                ? t("postingProgress", {
+                                      processed: postJob.job.processed ?? 0,
+                                      total: postJob.job.total,
+                                  })
+                                : t("postingStarting")}
+                        </p>
+                    )}
+
+                    {postJob.job.status === "FAILED" && !postJob.job.result && (
+                        <p data-testid="post-failed" className="mt-2 text-xs font-semibold text-error">
+                            {t("postBatchFailed")}
+                        </p>
+                    )}
+
+                    {/* Batch-level refusals only; a contract that failed is in the table. */}
+                    {postJob.job.errors.length > 0 && (
+                        <ul className="mt-2 list-disc ms-5 text-xs text-error space-y-0.5">
+                            {postJob.job.errors.map((e, i) => (
+                                <li key={i}>{e.message}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {postJob.job.result && (
+                        <>
+                            <p data-testid="post-summary" className="text-xs font-semibold text-foreground">
+                                {t("postBatchDone", {
+                                    posted: postJob.job.result.leasesPosted,
+                                    skipped: postJob.job.result.leasesSkipped,
+                                    failed: postJob.job.result.leasesFailed,
+                                    journals: postJob.job.result.journalsPosted,
+                                })}
+                            </p>
+                            {/* A re-post landed on a NEW batch; without this the row
+                                the accountant pressed still reads REVERSED. */}
+                            {postJob.job.result.repostOf && (
+                                <p data-testid="post-successor" className="mt-1 text-xs text-muted">
+                                    {t("postedAsSuccessor")}
+                                </p>
+                            )}
+
+                            <div className="mt-4 overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="post-results-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("contractRef")}</th>
+                                            <th className={th}>{t("outcome")}</th>
+                                            <th className={th}>{t("reason")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {postResults
+                                            .slice(resultPage * RESULTS_PER_PAGE, resultPage * RESULTS_PER_PAGE + RESULTS_PER_PAGE)
+                                            .map((r, i) => {
+                                                const index = resultPage * RESULTS_PER_PAGE + i;
+                                                return (
+                                                    <tr
+                                                        key={r.leaseId}
+                                                        data-testid={`post-result-${index}`}
+                                                        data-outcome={r.outcome}
+                                                        className={r.outcome === "FAILED" ? "bg-error/5" : undefined}
+                                                    >
+                                                        <td className={`${td} font-mono`}>
+                                                            {r.externalContractRef ?? r.leaseId.slice(0, 8)}
+                                                        </td>
+                                                        <td className={td}>{t(`outcome${r.outcome}`)}</td>
+                                                        <td className={`${td} text-muted`}>{r.reason ?? "—"}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {postResults.length > RESULTS_PER_PAGE && (
+                                <Pagination
+                                    currentPage={resultPage + 1}
+                                    totalItems={postResults.length}
+                                    itemsPerPage={RESULTS_PER_PAGE}
+                                    onPageChange={p => setResultPage(p - 1)}
+                                />
+                            )}
+                        </>
+                    )}
+
+                    {!postJob.polling && (
+                        <button
+                            type="button"
+                            data-testid="post-dismiss"
+                            onClick={postJob.reset}
+                            className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                        >
+                            {t("dismissImportResult")}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {discard && (
+                <div
+                    data-testid="discard-panel"
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    <p data-testid="discard-summary" className="text-xs font-semibold text-foreground">
+                        {t("discardDone", {
+                            leases: discard.leasesDeleted,
+                            units: discard.unitsDeleted,
+                            buildings: discard.buildingsDeleted,
+                            renters: discard.rentersDeleted,
+                            properties: discard.propertiesDeleted,
+                        })}
+                    </p>
+                    {/* What survived, and why — a discard that silently left rows
+                        behind is one the next import will trip over. */}
+                    {discard.kept.length > 0 && (
+                        <div className="mt-3">
+                            <p className="text-xs text-muted mb-2">{t("discardKept", { n: discard.kept.length })}</p>
+                            <div className="overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="discard-kept-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("keptType")}</th>
+                                            <th className={th}>{t("keptName")}</th>
+                                            <th className={th}>{t("keptReason")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {discard.kept.map((k, i) => (
+                                            <tr key={`${k.type}-${k.id}`} data-testid={`discard-kept-${i}`}>
+                                                <td className={td}>{k.type}</td>
+                                                <td className={td}>{k.name ?? k.id.slice(0, 8)}</td>
+                                                <td className={`${td} text-muted`}>{k.reason}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        data-testid="discard-dismiss"
+                        onClick={() => setDiscard(null)}
+                        className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                    >
+                        {t("dismissImportResult")}
+                    </button>
+                </div>
+            )}
 
             {loading && (
                 <div className="space-y-3 animate-pulse">
@@ -453,10 +724,11 @@ export default function ImportBatchesPage() {
                                 {visible.map(b => (
                                     <tr
                                         key={b.id}
+                                        id={`batch-${b.id}`}
                                         data-testid={`batch-row-${b.id}`}
-                                        data-imported={b.id === importedBatchId ? "true" : "false"}
+                                        data-imported={b.id === highlightBatchId ? "true" : "false"}
                                         className={
-                                            b.id === importedBatchId
+                                            b.id === highlightBatchId
                                                 ? "bg-success/5 ring-1 ring-inset ring-success/30"
                                                 : "hover:bg-input/30 transition-colors"
                                         }
@@ -480,23 +752,61 @@ export default function ImportBatchesPage() {
                                             </span>
                                         </td>
                                         <td className={`${td} text-end whitespace-nowrap`}>
-                                            {canReverseBatch(b.status) ? (
-                                                <button
-                                                    type="button"
-                                                    data-testid={`reverse-batch-${b.id}`}
-                                                    onClick={() => openReverse(b)}
-                                                    className="text-error hover:underline cursor-pointer inline-flex items-center gap-1.5 font-semibold"
-                                                >
-                                                    <Undo2 size={12} />
-                                                    {t("reverseBatch")}
-                                                </button>
-                                            ) : isBatchFinal(b.status) ? (
-                                                // Said out loud: there is no re-post, by design.
+                                            {isBatchFinal(b.status) ? (
+                                                // DISCARDED: the leases and the rows it created are
+                                                // gone, so there is nothing left to offer.
                                                 <span data-testid={`batch-final-${b.id}`} className="text-muted">
-                                                    {t("reversedBatchFinal")}
+                                                    {t("discardedBatchFinal")}
                                                 </span>
                                             ) : (
-                                                <span className="text-muted">{t("draftNothingToReverse")}</span>
+                                                <div className="inline-flex items-center gap-4">
+                                                    {b.journalsPosted > 0 && (
+                                                        <Link
+                                                            href={`/dashboard/finance/journals?importBatchId=${b.id}`}
+                                                            data-testid={`view-journals-${b.id}`}
+                                                            className="text-primary hover:underline cursor-pointer font-semibold"
+                                                        >
+                                                            {t("viewJournals")}
+                                                        </Link>
+                                                    )}
+                                                    {canPostBatch(b.status) && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`post-batch-${b.id}`}
+                                                            disabled={postJob.polling}
+                                                            onClick={() => setConfirmPost(b)}
+                                                            className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50"
+                                                        >
+                                                            {isRepost(b.status)
+                                                                ? t("postAgain")
+                                                                : b.status === "POSTED"
+                                                                  ? t("retryFailed")
+                                                                  : t("postBatch")}
+                                                        </button>
+                                                    )}
+                                                    {canReverseBatch(b.status) && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`reverse-batch-${b.id}`}
+                                                            onClick={() => openReverse(b)}
+                                                            className="text-error hover:underline cursor-pointer inline-flex items-center gap-1.5 font-semibold"
+                                                        >
+                                                            <Undo2 size={12} />
+                                                            {t("reverseBatch")}
+                                                        </button>
+                                                    )}
+                                                    {canDiscardBatch(b.status) && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`discard-batch-${b.id}`}
+                                                            onClick={() => setConfirmDiscard(b)}
+                                                            className="text-error hover:underline cursor-pointer inline-flex items-center gap-1.5 font-semibold"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                            {t("discardBatch")}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
                                         </td>
                                     </tr>
@@ -519,6 +829,45 @@ export default function ImportBatchesPage() {
                     }}
                 />
             )}
+
+            <ConfirmDialog
+                isOpen={!!confirmPost}
+                onClose={() => setConfirmPost(null)}
+                onConfirm={() => confirmPost && startPost(confirmPost)}
+                title={
+                    confirmPost && isRepost(confirmPost.status)
+                        ? t("postAgain")
+                        : confirmPost?.status === "POSTED"
+                          ? t("retryFailed")
+                          : t("postBatch")
+                }
+                description={
+                    confirmPost?.status === "POSTED"
+                        ? t("confirmRetryFailed", { n: confirmPost.leasesImported })
+                        : t("confirmPostBatch", { n: confirmPost?.leasesImported ?? 0 })
+                }
+                confirmText={t("postBatch")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-post-batch"
+            >
+                {/* A re-post lands on a NEW batch — the row pressed stays REVERSED,
+                    which is confusing unless it is said here first. */}
+                {confirmPost && isRepost(confirmPost.status) && (
+                    <p className="text-xs text-warning">{t("confirmPostAgain")}</p>
+                )}
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                isOpen={!!confirmDiscard}
+                onClose={() => setConfirmDiscard(null)}
+                onConfirm={() => confirmDiscard && runDiscard(confirmDiscard)}
+                isDestructive
+                title={t("discardBatch")}
+                description={t("confirmDiscardBatch", { n: confirmDiscard?.leasesImported ?? 0 })}
+                confirmText={t("discardBatch")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-discard-batch"
+            />
 
             <ConfirmDialog
                 isOpen={!!pending}

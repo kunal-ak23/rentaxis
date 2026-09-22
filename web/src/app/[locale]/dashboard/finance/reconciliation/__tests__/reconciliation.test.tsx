@@ -139,6 +139,22 @@ describe("reconciliation — the derived-accounts honesty banner", () => {
         );
     });
 
+    /**
+     * The banner must key off the FIGURES, not a hardcoded state: once the
+     * cut-over batch is bulk-posted the derived accounts carry real balances and
+     * the explanation is no longer true.
+     */
+    it("counts the posted contracts once derived figures arrive", async () => {
+        api.reconcile.mockResolvedValue([
+            row({ code: "110100", derivedBalance: 5000, pactBalance: 5000 }),
+            row({ code: "120100", derived: true, derivedBalance: 80000, pactBalance: 82000, difference: -2000 }),
+        ]);
+        renderPage();
+        await screen.findByTestId("rec-row-110100");
+        // Derived figures are present, so the "nothing has been posted" notice goes.
+        expect(screen.queryByTestId("rec-derived-notice")).not.toBeInTheDocument();
+    });
+
     it("drops the notice once the derived accounts carry figures", async () => {
         api.reconcile.mockResolvedValue([
             row({ code: "110100", derivedBalance: 5000, pactBalance: 5000 }),

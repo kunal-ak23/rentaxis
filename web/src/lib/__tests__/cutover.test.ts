@@ -4,7 +4,8 @@ import {
     SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, canDownloadImportTemplate, canEditOpeningBalanceRow,
     CONTRACT_IMPORT_ACCEPT, CONTRACT_IMPORT_MAX_BYTES, canPostOpeningBalances,
     canReplaceOpeningBalances, contractImportRefusal, gridDeclaresComputed, isBatchFinal,
-    isImportJobTerminal, isReconciled, canReverseBatch, snapshotRefusal,
+    canDiscardBatch, canPostBatch, isBulkPostTerminal, isImportJobTerminal, isReconciled,
+    canReverseBatch, isRepost, snapshotRefusal,
 } from "@/lib/cutoverRules";
 import type { OpeningBalanceGrid, OpeningBalanceRow } from "@/lib/api/cutover";
 import { hasPermission } from "@/lib/rbac";
@@ -183,6 +184,27 @@ describe("reconciliation rules", () => {
         expect(fetch).toHaveBeenCalledWith("/api/proxy/v1/finance/import-batches/b1", expect.anything());
     });
 
+    it("starts a bulk post and polls its job", async () => {
+        await cutoverApi.batches.post("b1");
+        expect(fetch).toHaveBeenCalledWith(
+            "/api/proxy/v1/finance/import-batches/b1/post",
+            expect.objectContaining({ method: "POST" }),
+        );
+        await cutoverApi.batches.postStatus("b1", "job-1");
+        expect(fetch).toHaveBeenCalledWith(
+            "/api/proxy/v1/finance/import-batches/b1/post/job-1",
+            expect.anything(),
+        );
+    });
+
+    it("discards a batch", async () => {
+        await cutoverApi.batches.discard("b1");
+        expect(fetch).toHaveBeenCalledWith(
+            "/api/proxy/v1/finance/import-batches/b1/discard",
+            expect.objectContaining({ method: "POST" }),
+        );
+    });
+
     it("reverses a batch with the date and reason ReverseBatchDTO takes", async () => {
         await cutoverApi.batches.reverse("b1", { date: "2026-09-30", reason: "re-import" });
         const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
@@ -197,7 +219,9 @@ describe("reconciliation rules", () => {
     it("exposes nothing the controller does not", () => {
         // ImportBatchController has list, get and reverse. A bulk-post button wired
         // to an endpoint that does not exist is the 404 this project refuses.
-        expect(Object.keys(cutoverApi.batches).sort()).toEqual(["get", "list", "reverse"]);
+        expect(Object.keys(cutoverApi.batches).sort()).toEqual([
+            "discard", "get", "list", "post", "postStatus", "reverse",
+        ]);
     });
 });
 
@@ -376,13 +400,60 @@ describe("cutover rules", () => {
         expect(canReverseBatch("POSTED")).toBe(true);
         expect(canReverseBatch("DRAFT")).toBe(false);
         expect(canReverseBatch("REVERSED")).toBe(false);
+        expect(canReverseBatch("DISCARDED")).toBe(false);
     });
 
-    // ImportBatchStatus's own doc: REVERSED "is the end of the line".
-    it("treats REVERSED as terminal", () => {
-        expect(isBatchFinal("REVERSED")).toBe(true);
+    /**
+     * DISCARDED is the only terminal state now: its leases and everything it
+     * created are gone. A REVERSED batch still has its leases, so it can be
+     * re-posted as a successor or discarded.
+     */
+    it("treats only DISCARDED as offering nothing", () => {
+        expect(isBatchFinal("DISCARDED")).toBe(true);
+        expect(isBatchFinal("REVERSED")).toBe(false);
         expect(isBatchFinal("POSTED")).toBe(false);
         expect(isBatchFinal("DRAFT")).toBe(false);
+    });
+
+    /**
+     * `ContractImportPostService.runUnderBatchLock:169-177`: a DRAFT posts, a
+     * REVERSED one posts as a SUCCESSOR batch (`repostOf`), a POSTED one is the
+     * retry path (already-posted contracts come back SKIPPED_ALREADY_POSTED), and
+     * a DISCARDED one is refused outright — "its leases have been deleted".
+     */
+    it("allows a post on every status but DISCARDED", () => {
+        expect(canPostBatch("DRAFT")).toBe(true);
+        expect(canPostBatch("POSTED")).toBe(true);
+        expect(canPostBatch("REVERSED")).toBe(true);
+        expect(canPostBatch("DISCARDED")).toBe(false);
+    });
+
+    /** A REVERSED batch's post creates a successor — the UI calls that "Post again". */
+    it("knows a post of a REVERSED batch is a re-post", () => {
+        expect(isRepost("REVERSED")).toBe(true);
+        expect(isRepost("DRAFT")).toBe(false);
+        expect(isRepost("POSTED")).toBe(false);
+    });
+
+    /**
+     * `ImportBatchDiscardService.requireDiscardable:215-222` and
+     * `ImportBatchService.markDiscarded:187-193`: "only a DRAFT or REVERSED batch
+     * can be discarded". A POSTED one has journals behind its leases — reverse it
+     * first.
+     */
+    it("allows a discard on DRAFT and REVERSED only", () => {
+        expect(canDiscardBatch("DRAFT")).toBe(true);
+        expect(canDiscardBatch("REVERSED")).toBe(true);
+        expect(canDiscardBatch("POSTED")).toBe(false);
+        expect(canDiscardBatch("DISCARDED")).toBe(false);
+    });
+
+    /** The bulk-post job's own statuses, which are the ImportJob ones. */
+    it("knows when a bulk post has stopped", () => {
+        expect(isBulkPostTerminal("COMPLETED")).toBe(true);
+        expect(isBulkPostTerminal("FAILED")).toBe(true);
+        expect(isBulkPostTerminal("POSTING")).toBe(false);
+        expect(isBulkPostTerminal("VALIDATING")).toBe(false);
     });
 
     // OpeningBalanceController.java:57 — the same three roles as the batches one.
