@@ -1,0 +1,20 @@
+# Per-day rent recognition for the tenant-two replay (spec 8.2).
+# 51,000.00 over 365 days (2026-09-24 .. 2027-09-23 inclusive); day rate 139.726027.
+# The last slice absorbs the rounding: 51,000.00 - 47,786.32 = 3,213.68.
+# This is the table the spec's own section 8.2 reference is computed from.
+# Amounts, dates and the document sequence come from the client's export; every
+# name in this replay is anonymised (ruling P5-R11/P5-R13).
+period_start,period_end,days,amount
+2026-09-24,2026-09-30,7,978.08
+2026-10-01,2026-10-31,31,4331.51
+2026-11-01,2026-11-30,30,4191.78
+2026-12-01,2026-12-31,31,4331.51
+2027-01-01,2027-01-31,31,4331.51
+2027-02-01,2027-02-28,28,3912.33
+2027-03-01,2027-03-31,31,4331.51
+2027-04-01,2027-04-30,30,4191.78
+2027-05-01,2027-05-31,31,4331.51
+2027-06-01,2027-06-30,30,4191.78
+2027-07-01,2027-07-31,31,4331.51
+2027-08-01,2027-08-31,31,4331.51
+2027-09-01,2027-09-23,23,3213.68

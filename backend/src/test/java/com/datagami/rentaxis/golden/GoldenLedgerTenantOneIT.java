@@ -410,6 +410,11 @@ class GoldenLedgerTenantOneIT {
         replay();
 
         List<TrialBalanceRowDTO> tb = ledger.trialBalance(CUT_OFF, propertyId);
+        // Seven, so an eighth account carrying a posted line — one without the
+        // renter dimension, which the renter ledger cannot see at all — fails here
+        // rather than going unnoticed (Task 2 review M-2).
+        assertThat(tb).hasSize(7);
+
         BigDecimal debit = tb.stream().map(TrialBalanceRowDTO::debit).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal credit = tb.stream().map(TrialBalanceRowDTO::credit).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(debit).isEqualByComparingTo(credit);
