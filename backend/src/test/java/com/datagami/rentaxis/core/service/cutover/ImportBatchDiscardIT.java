@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.cutover;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.PortfolioImportService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
@@ -373,8 +374,10 @@ class ImportBatchDiscardIT {
         });
 
         assertThat(discardError.get())
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("try again");
+                .isInstanceOf(RowLockedException.class)
+                // One sentence for every caller (review I1, ruling R18): it names what is
+                // happening to the BATCH, not what the refused caller was trying to do.
+                .hasMessage(ImportBatchService.BEING_WORKED_ON);
         tx.executeWithoutResult(s -> {
             assertThat(leaseRepo.findAll()).hasSize(2);
             assertThat(propertyRepo.findAll()).hasSize(1);
@@ -392,7 +395,7 @@ class ImportBatchDiscardIT {
         // The discard's own lock, taken the way the discard takes it and held for the
         // length of a transaction, which is what the running discard is doing.
         tx.executeWithoutResult(s -> {
-            batches.lockForRun(batchId, "discarded");
+            batches.lockForRun(batchId);
             Thread other = new Thread(() -> {
                 TenantContextHolder.setTenantId(tenantId);
                 fixture.authenticateAsTenantAdmin();
@@ -415,10 +418,61 @@ class ImportBatchDiscardIT {
         });
 
         assertThat(postError.get())
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("try again");
+                .isInstanceOf(RowLockedException.class)
+                .hasMessage(ImportBatchService.BEING_WORKED_ON);
         tx.executeWithoutResult(s -> assertThat(leaseRepo.findAll()).hasSize(2)
                 .allSatisfy(l -> assertThat(l.getStatus()).isEqualTo(LeaseStatus.DRAFT)));
+    }
+
+    /**
+     * And the third door (review I1, ruling R18): a <b>Reverse</b> pressed while
+     * something else holds the batch is refused <em>at once</em>, not queued behind
+     * it.
+     *
+     * <p>Reverse used to take a blocking lock of its own. A six-hundred contract bulk
+     * post holds the batch row for minutes, so an accountant who clicked Reverse in
+     * that window got a proxy timeout — and the reverse then ran to completion once
+     * the post committed, taking the whole cut-over off the books with nobody
+     * watching. The assertion that matters here is not only the exception but that
+     * the thread <em>finished</em>: with a blocking lock it would still be waiting
+     * when the join below gives up, and {@code reverseError} would be null.</p>
+     */
+    @Test
+    void aReverseRacingAHeldBatchIsRefusedAtOnceRatherThanQueueingBehindIt() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        AtomicReference<Throwable> reverseError = new AtomicReference<>();
+        AtomicReference<Boolean> finished = new AtomicReference<>(false);
+
+        tx.executeWithoutResult(s -> {
+            batches.lockForRun(batchId);
+            Thread other = new Thread(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                fixture.authenticateAsTenantAdmin();
+                try {
+                    batches.reverse(batchId, "while somebody else holds it");
+                } catch (Throwable t) {
+                    reverseError.set(t);
+                } finally {
+                    finished.set(true);
+                    TenantContextHolder.clear();
+                    fixture.clearAuthentication();
+                }
+            });
+            other.start();
+            try {
+                other.join(30_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        });
+
+        assertThat(finished.get()).as("the reverse answered rather than blocking").isTrue();
+        assertThat(reverseError.get())
+                .isInstanceOf(RowLockedException.class)
+                .hasMessage(ImportBatchService.BEING_WORKED_ON);
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
     }
 
     // ------------------------------------------------------------------

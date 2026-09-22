@@ -190,7 +190,7 @@ public class ImportBatchDiscardService {
      * that gives both properties.</p>
      */
     private DiscardResult runUnderBatchLock(UUID batchId) {
-        ImportBatch batch = batches.lockForRun(batchId, "discarded");
+        ImportBatch batch = batches.lockForRun(batchId);
         ImportBatchService.requireDiscardableStatus(batch);
 
         List<UUID> leaseIds = batches.leaseIds(batchId);

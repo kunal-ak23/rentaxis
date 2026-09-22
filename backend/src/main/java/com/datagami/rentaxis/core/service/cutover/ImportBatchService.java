@@ -306,15 +306,26 @@ public class ImportBatchService {
     }
 
     /**
-     * The batch row, locked for the length of a whole run — what {@code post} and
-     * {@code discard} both take so they cannot dismantle one batch from both ends.
+     * The batch row, locked for the length of a whole run — what {@code post},
+     * {@code discard} and {@link #reverse} all take, so no two of them can dismantle
+     * one batch from both ends.
      *
-     * <p><b>NOWAIT, unlike {@link #reverse}'s lock.</b> There the loser blocks,
-     * re-reads REVERSED and is refused by the status check, which is a clear enough
-     * answer. Here it is not: a second post of a POSTED batch is <em>legal</em> — it
-     * is the retry path — so a blocking loser would quietly walk the whole portfolio
-     * again and report a run that did nothing, and a discard that blocked behind a
-     * post would then start deleting rows the post had just put on the books.</p>
+     * <p><b>NOWAIT, for every caller</b> (review I1, ruling R18). A blocking lock is
+     * wrong here in three different ways, one per caller: a second post of a POSTED
+     * batch is <em>legal</em> — it is the retry path — so a blocking loser would
+     * quietly walk the whole portfolio again and report a run that did nothing; a
+     * discard that blocked behind a post would start deleting rows the post had just
+     * put on the books; and a <em>reverse</em> that blocked behind a six-hundred
+     * contract bulk post would sit there for minutes, hand the accountant a proxy
+     * timeout, and then — once the post committed — take the whole cut-over off the
+     * books with nobody watching. Reverse used to block, on the argument that the
+     * loser "re-reads REVERSED and is refused"; that argument only ever covered two
+     * reverses racing each other.</p>
+     *
+     * <p><b>One sentence, whoever is holding it.</b> The refusal names what is
+     * happening to the batch, not what the refused caller was trying to do — the
+     * caller already knows that, and a message saying "being reversed" to somebody
+     * whose post lost to a discard was simply wrong.</p>
      *
      * <p>{@code find} then {@code refresh(…, PESSIMISTIC_WRITE)} rather than a
      * {@code @Lock} finder, for the reason {@code VoucherService#lockForWrite}
@@ -328,12 +339,18 @@ public class ImportBatchService {
      * does — so the filter is off for both the {@code find} and the {@code refresh},
      * and the explicit comparison is the only guard on this path. Doing it first as
      * well costs nothing and stops a caller with a foreign id from holding a row lock
-     * on another organisation's batch until its 404 rolls back.</p>
+     * on another organisation's batch until its 404 rolls back — which is exactly
+     * what the reverse path did while it had a lock of its own.</p>
      *
-     * @param verb what is happening, for the refusal: "posted", "discarded".
+     * <p><b>Lock ordering</b> is <em>batch row → journal entry row → entry-number
+     * sequence row</em>, matching the order every other ledger write path takes its
+     * locks in ({@code PostingService.reverse} takes the entry, then the sequence).
+     * {@code markPosted} deliberately takes no row lock: it is called at the end of a
+     * bulk post that is already holding the sequence, and locking the batch there
+     * would invert that order.</p>
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public ImportBatch lockForRun(UUID batchId, String verb) {
+    public ImportBatch lockForRun(UUID batchId) {
         ImportBatch b = entityManager.find(ImportBatch.class, batchId);
         requireOwnTenant(b);
         try {
@@ -342,11 +359,15 @@ public class ImportBatchService {
         } catch (PessimisticLockingFailureException | PessimisticLockException | LockTimeoutException e) {
             // Three types for one event: an EntityManager call is not put through
             // Spring Data's exception translation, so JPA's own types get out.
-            throw new RowLockedException("This import batch is being " + verb + " right now; try again");
+            throw new RowLockedException(BEING_WORKED_ON);
         }
         requireOwnTenant(b);
         return b;
     }
+
+    /** What every caller of {@link #lockForRun} is told when somebody else holds the batch. */
+    public static final String BEING_WORKED_ON =
+            "This import batch is being posted, reversed or discarded right now; try again";
 
     private static void requireOwnTenant(ImportBatch b) {
         if (b == null) throw new NotFoundException("Import batch not found");
@@ -408,7 +429,7 @@ public class ImportBatchService {
      */
     @Transactional
     public ImportBatch reverse(UUID batchId, String reason) {
-        ImportBatch b = lockForWrite(batchId);
+        ImportBatch b = lockForRun(batchId);
         if (b.getStatus() != ImportBatchStatus.POSTED) {
             throw new BusinessRuleViolationException(
                     "Import batch is " + b.getStatus() + "; only a POSTED batch can be reversed");
@@ -470,55 +491,6 @@ public class ImportBatchService {
         b.setReversedAt(Instant.now());
         b.setReversedBy(currentUserId());
         return batches.save(b);
-    }
-
-    /**
-     * The batch row, locked for the length of this transaction.
-     *
-     * <p>Two clerks reversing one batch — or one clerk double-clicking — must take
-     * it off once. The status check is read-then-act, so it is a guard only while
-     * the row it read cannot move underneath it.</p>
-     *
-     * <p>{@code find} then {@code refresh(…, PESSIMISTIC_WRITE)} rather than a
-     * {@code @Lock} finder, for the reason documented on
-     * {@code VoucherService#lockForWrite}: a locking JPQL query hands back the
-     * first-level-cache instance with its <em>stale</em> state, so the loser of the
-     * race would take the lock and then decide on the pre-lock status — exactly the
-     * bug the lock exists to prevent. {@code refresh} both takes the lock and
-     * re-reads.</p>
-     *
-     * <p><b>The explicit tenant comparison below is the only guard on this path —
-     * do not delete it as redundant.</b> {@code BaseTenantEntity} sets
-     * {@code applyToLoadByKey = true}, but that only bites once the filter is
-     * <em>enabled</em>, and {@code TenantAspect} enables it {@code @Before}
-     * execution of {@code domain.repository..*} — nothing else. {@code reverse}
-     * calls this first, so no repository method has run in the transaction yet and
-     * the filter is off for both the {@code find} and the {@code refresh}.
-     * {@code ImportBatchReverseIT#tenantBCannotReadPostMarkOrReverseAnotherTenantsBatch}
-     * is what holds the line.</p>
-     *
-     * <p><b>Lock ordering</b> is <em>batch row → journal entry row → entry-number
-     * sequence row</em>, matching the order every other ledger write path takes its
-     * locks in ({@code PostingService.reverse} takes the entry, then the sequence).
-     * {@code markPosted} deliberately takes no row lock: it is called at the end of
-     * a bulk post that is already holding the sequence, and locking the batch there
-     * would invert that order.</p>
-     */
-    private ImportBatch lockForWrite(UUID batchId) {
-        ImportBatch b = entityManager.find(ImportBatch.class, batchId);
-        if (b == null) throw new NotFoundException("Import batch not found");
-        try {
-            entityManager.refresh(b, LockModeType.PESSIMISTIC_WRITE);
-        } catch (PessimisticLockingFailureException | PessimisticLockException | LockTimeoutException e) {
-            // Three types for one event: an EntityManager call is not put through
-            // Spring Data's exception translation, so JPA's own types get out.
-            throw new RowLockedException("This import batch is being reversed right now; try again");
-        }
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(b.getTenantId())) {
-            throw new NotFoundException("Import batch not found");
-        }
-        return b;
     }
 
     /** Same shape as {@code PostingService.currentUserId}: null for a system-run import. */
