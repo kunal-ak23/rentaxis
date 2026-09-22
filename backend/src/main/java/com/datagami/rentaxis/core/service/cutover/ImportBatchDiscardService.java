@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
@@ -114,7 +115,8 @@ public class ImportBatchDiscardService {
      * One deletion, suspended out of the run's transaction. {@code REQUIRES_NEW}
      * because a foreign key cannot see an uncommitted delete, and because a
      * constraint violation poisons the transaction it happens in — which is what
-     * makes {@link #deleteIfUnreferenced}'s catch safe.
+     * makes {@link #deleteIfUnreferenced}'s catch safe, <em>provided the catch is
+     * outside {@code execute}</em>. See that method.
      */
     private final TransactionTemplate ownTx;
 
@@ -212,7 +214,7 @@ public class ImportBatchDiscardService {
         int rentersDeleted = 0;
         int propertiesDeleted = 0;
         for (ImportBatchEntity e : ordered(created)) {
-            Outcome outcome = ownTx.execute(s -> deleteIfUnreferenced(e.getEntityType(), e.getEntityId()));
+            Outcome outcome = deleteIfUnreferenced(e.getEntityType(), e.getEntityId());
             if (outcome.kept() != null) {
                 kept.add(outcome.kept());
                 continue;
@@ -308,28 +310,54 @@ public class ImportBatchDiscardService {
      *
      * <p><b>Two layers, on purpose.</b> The explicit checks are for the cases that
      * actually happen and produce a sentence an accountant can act on — "a lease has
-     * been created on it since". The {@code DataIntegrityViolationException} catch
-     * underneath is for everything else this service does not know about: a booking,
-     * a listing, a maintenance ticket, a journal entry naming the property, a column
-     * a later release adds. Without it one unexpected foreign key would abort the
-     * whole discard; with it, that row is kept and named. Its own transaction is what
-     * makes the catch safe — a constraint violation poisons the transaction it
-     * happens in, and this one has nothing else in it.</p>
+     * been created on it since". The catch underneath is for everything else this
+     * service does not know about: a booking, a listing, a maintenance ticket, a
+     * journal entry naming the property, a column a later release adds. Without it one
+     * unexpected foreign key would abort the whole discard; with it, that row is kept
+     * and named.</p>
+     *
+     * <p><b>The catch is AROUND {@code ownTx.execute}, not inside the callback</b>
+     * (review I2, ruling R19), and that is the whole of the fix. {@code units.delete}
+     * and {@code units.flush()} go through the Spring Data proxy, whose
+     * {@code TransactionInterceptor} <em>participates</em> in this template's
+     * transaction; when the flush throws, {@code completeTransactionAfterThrowing}
+     * marks the participating status rollback-only
+     * ({@code globalRollbackOnParticipationFailure} is true by default), and
+     * Hibernate's session is unusable after a failed flush anyway. A catch inside the
+     * callback therefore swallowed the exception, returned {@code Kept(...)}
+     * normally — and then {@code TransactionTemplate.execute} tried to <b>commit</b>
+     * a rollback-only transaction and threw {@code UnexpectedRollbackException} out
+     * of the whole run. The leases deleted in their own committed transactions were
+     * already gone, the loop stopped, the batch stayed DRAFT, the endpoint answered a
+     * 500, and a retry hit the same key the same way: the batch could never be
+     * discarded, and the "something else still refers to it" sentence was
+     * unreachable. Catching out here lets the template do its own rollback first; the
+     * exception translation still carries the constraint name for the log.</p>
      */
     private Outcome deleteIfUnreferenced(ImportedEntityType type, UUID id) {
         try {
-            return switch (type) {
+            return ownTx.execute(s -> switch (type) {
                 case UNIT -> deleteUnit(id);
                 case BUILDING -> deleteBuilding(id);
                 case RENTER -> deleteRenter(id);
                 case PROPERTY -> deleteProperty(id);
-            };
-        } catch (DataIntegrityViolationException e) {
-            log.info("Discard kept {} {}: still referenced ({})", type, id,
-                    e.getMostSpecificCause().getMessage());
+            });
+        } catch (DataIntegrityViolationException | UnexpectedRollbackException e) {
+            log.info("Discard kept {} {}: still referenced ({})", type, id, mostSpecific(e));
             return new Outcome(new Kept(type.name(), id, null,
                     "something else still refers to it, so it was kept"));
         }
+    }
+
+    /**
+     * The sentence worth logging. An {@code UnexpectedRollbackException} raised by
+     * the template carries no cause of its own — the real one was the flush inside —
+     * so this falls back to its own message rather than printing "null".
+     */
+    private static String mostSpecific(RuntimeException e) {
+        return e instanceof DataIntegrityViolationException dive
+                ? dive.getMostSpecificCause().getMessage()
+                : e.getMessage();
     }
 
     private Outcome deleteUnit(UUID id) {

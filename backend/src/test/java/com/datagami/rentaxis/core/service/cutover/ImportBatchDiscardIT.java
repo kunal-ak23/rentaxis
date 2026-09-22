@@ -10,6 +10,7 @@ import com.datagami.rentaxis.core.service.cutover.ContractImportPostService.Bulk
 import com.datagami.rentaxis.core.service.cutover.ImportBatchDiscardService.DiscardResult;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.MaintenanceTicket;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -19,6 +20,7 @@ import com.datagami.rentaxis.domain.repository.BuildingRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
@@ -88,6 +90,7 @@ class ImportBatchDiscardIT {
     @Autowired RenterRepository renterRepo;
     @Autowired PropertyRepository propertyRepo;
     @Autowired PropertyAccountMappingRepository mappings;
+    @Autowired MaintenanceTicketRepository tickets;
     @Autowired RecognitionEntryRepository recognitionEntries;
     @Autowired TransactionTemplate tx;
 
@@ -252,6 +255,61 @@ class ImportBatchDiscardIT {
             // The batch's own contracts are gone even so.
             assertThat(leaseRepo.findAll()).extracting(Lease::getId).containsExactly(outsiderLease);
         });
+    }
+
+    /**
+     * A foreign key this service has never heard of (review I2, ruling R19).
+     *
+     * <p>The explicit checks above cover what actually happens — a lease on the unit,
+     * a renter with a contract — and produce a sentence an accountant can act on.
+     * Underneath them is the catch for everything else: a booking, a listing, a
+     * <b>maintenance ticket</b>, a column a later release adds. Nothing exercised it
+     * until now, and it could not have worked: the catch was <em>inside</em> the
+     * {@code REQUIRES_NEW} callback, so the failed flush marked that transaction
+     * rollback-only, the callback returned "kept" normally, and
+     * {@code TransactionTemplate.execute} then threw
+     * {@code UnexpectedRollbackException} trying to commit it — out of the whole run.
+     * The contracts deleted in their own committed transactions were already gone,
+     * the batch stayed DRAFT, the endpoint answered a 500, and the retry failed
+     * identically: the batch could never be discarded at all.</p>
+     *
+     * <p>{@code fk_ticket_unit} (changeset 27) is an ordinary restricting key, which
+     * is exactly the shape of the case this is about.</p>
+     */
+    @Test
+    void aUnitAnUnforeseenForeignKeyStillPointsAtIsKeptAndTheDiscardFinishes() throws Exception {
+        UUID batchId = importTheTemplate();
+        UUID keptUnitId = tx.execute(s -> unitRepo.findAll().get(0).getId());
+        UUID ticketId = tx.execute(s -> {
+            Unit unit = unitRepo.findById(keptUnitId).orElseThrow();
+            MaintenanceTicket ticket = new MaintenanceTicket();
+            ticket.setProperty(propertyRepo.findAll().get(0));
+            ticket.setUnit(unit);
+            ticket.setReportedBy(UUID.randomUUID());
+            ticket.setTitle("The air conditioning in the hall");
+            return tickets.save(ticket).getId();
+        });
+
+        DiscardResult result = discardService.discard(batchId);
+
+        // It finished, rather than dying half-way with a 500 nobody could retry past.
+        assertThat(result.status()).isEqualTo(ImportBatchStatus.DISCARDED);
+        assertThat(result.leasesDeleted()).isEqualTo(2);
+        assertThat(result.kept())
+                .anySatisfy(k -> {
+                    assertThat(k.type()).isEqualTo("UNIT");
+                    assertThat(k.id()).isEqualTo(keptUnitId);
+                    assertThat(k.reason()).contains("something else still refers to it");
+                });
+        // The ticket, and the unit it names, are untouched — and the rest of the
+        // batch went, which is the half the old behaviour lost.
+        tx.executeWithoutResult(s -> {
+            assertThat(tickets.findById(ticketId)).isPresent();
+            assertThat(unitRepo.findById(keptUnitId)).isPresent();
+            assertThat(unitRepo.findAll()).hasSize(1);
+            assertThat(leaseRepo.findAll()).isEmpty();
+        });
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.DISCARDED);
     }
 
     /**
