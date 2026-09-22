@@ -261,11 +261,6 @@ public class ContractImportPostService {
                 deposited, cleared, bounced, recognised, journalsPosted, withCounts, failures);
     }
 
-    /** The batch as it now stands, for a caller that wants the row rather than the result. */
-    public ImportBatch batch(UUID batchId) {
-        return batches.get(batchId);
-    }
-
     /** One contract of the batch, and the reference a failure has to name. */
     private record Plan(UUID leaseId, String ref, LocalDate contractDate) {
     }
