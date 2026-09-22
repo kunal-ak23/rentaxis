@@ -1,5 +1,9 @@
 import { test, expect } from '../fixtures/auth.fixture';
 
+// create → edit → delete share one tenant's user list, which the page sorts by
+// raw id; under fullyParallel the delete can eat the user create just asserted.
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Users CRUD', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) {
