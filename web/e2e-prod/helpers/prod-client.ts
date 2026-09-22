@@ -233,7 +233,8 @@ export const api = {
       | 'LISTINGS'
       | 'MEETINGS'
       | 'LEASE_RENEWALS'
-      | 'GATEPASS',
+      | 'GATEPASS'
+      | 'MOBILE_FINANCE',
     enabled: boolean,
   ): Promise<void> => {
     const res = await pctx.request.put(
