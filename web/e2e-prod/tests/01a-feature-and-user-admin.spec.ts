@@ -18,6 +18,7 @@ const FEATURES = [
   'MEETINGS',
   'LEASE_RENEWALS',
   'GATEPASS',
+  'MOBILE_FINANCE',
 ] as const;
 
 async function assertOk(response: APIResponse, operation: string): Promise<void> {
