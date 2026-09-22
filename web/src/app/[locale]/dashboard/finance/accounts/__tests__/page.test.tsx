@@ -74,11 +74,34 @@ const seededTree = [
     },
 ];
 
+/** A root leaf: on screen whatever the tree's groups are doing. */
+const suspenseAccount = {
+    id: "leaf-suspense",
+    code: "A-99",
+    name: "Suspense Account",
+    nameEn: "Suspense Account",
+    nameAr: "حساب معلق",
+    alias: null,
+    accountType: "ASSET",
+    accountSubType: "OTHER_ASSET",
+    parentId: null,
+    propertyId: null,
+    description: null,
+    system: false,
+    group: false,
+    active: true,
+    displayOrder: 9,
+};
+
 type FetchCall = { url: string; init?: RequestInit };
 let calls: FetchCall[] = [];
 let failNextWrite: { status: number; message: string } | null = null;
 /** What GET /finance/accounts answers — swapped per test. */
 let accountsFixture: unknown[] = sampleAccounts;
+
+/** How many times the chart has been READ (the create's POST goes to the same path). */
+const accountGets = () =>
+    calls.filter(c => c.url.includes("/finance/accounts") && (c.init?.method ?? "GET") === "GET").length;
 
 function stubFetch() {
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -135,6 +158,7 @@ describe("AccountsPage", () => {
         accountsFixture = seededTree;
         render(<AccountsPage />);
         await screen.findByText("Capital Account");
+        expect(accountGets()).toBe(1);
 
         // The chevron on the group row.
         const groupRow = document.querySelector('[data-code="F"]') as HTMLElement;
@@ -143,11 +167,25 @@ describe("AccountsPage", () => {
 
         // A create refetches the list; the auto-expand must not fire twice and
         // undo what the user just did.
+        //
+        // `handleCreate` does not await that refetch, so waiting on the POST
+        // alone re-checks a condition that is already true and never observes
+        // the re-render this test exists to check. The second answer carries
+        // one MORE account instead — a root leaf, visible whatever the tree is
+        // doing — so the list landing is a positive event to wait for.
+        // `setAccounts` and the would-be `setExpandedIds` are two writes in one
+        // continuation, so React commits them together: when the new row is on
+        // screen, a re-expand would be on screen with it.
+        accountsFixture = [...seededTree, suspenseAccount];
         fireEvent.click(screen.getByRole("button", { name: "addAccount" }));
         fireEvent.submit(document.querySelector("form") as HTMLFormElement);
         await waitFor(() => expect(calls.some(c => c.init?.method === "POST")).toBe(true));
 
-        await waitFor(() => expect(screen.queryByText("Capital Account")).toBeNull());
+        expect(await screen.findByText("Suspense Account")).toBeTruthy();
+        // At least two: the mount's read and the create's. Not exactly two —
+        // the Add modal's own parent AccountPicker reads the chart as well.
+        expect(accountGets()).toBeGreaterThanOrEqual(2);
+        expect(screen.queryByText("Capital Account")).toBeNull();
     });
 
     it("surfaces the backend message on a failed create and keeps the modal open", async () => {
