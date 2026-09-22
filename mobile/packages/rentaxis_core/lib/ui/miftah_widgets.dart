@@ -526,9 +526,8 @@ class MiftahNavBar extends StatelessWidget {
     this.onCentreTap,
   });
 
-  /// Three or four — split evenly either side of the centre action, if there
-  /// is one. Three is what a shell shows when a capability behind one of the
-  /// items (and behind the centre action) is switched off for the tenant.
+  /// Three or four, in the order they appear. Three is what a shell shows when
+  /// a capability behind one of the items is switched off for the tenant.
   final List<MiftahNavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -546,11 +545,27 @@ class MiftahNavBar extends StatelessWidget {
       items.length == 3 || items.length == 4,
       'MiftahNavBar expects three or four flanking items',
     );
-    final half = items.length ~/ 2;
+    // Icon + tap without a label used to render a silently blank caption.
+    assert(
+      !_hasCentre || centreLabel != null,
+      'MiftahNavBar centre action needs a label',
+    );
+    // The raised gold circle only reads as *centred* when the slots either
+    // side of it weigh the same, and every slot is an equal-flex Expanded —
+    // so the total slot count has to be odd. Four items give 2 + centre + 2
+    // and need nothing (this is the layout the design was drawn against).
+    // Three items give 2 + centre + 1, which is off by one column: the circle
+    // would sit at 5/8 of the width. One empty trailing column restores the
+    // balance, so the bar ends in whitespace rather than a misplaced action.
+    // In RTL the Row flips with the Directionality, so the gap stays at the
+    // bar's end either way.
+    final leading = _hasCentre ? (items.length + 1) ~/ 2 : items.length;
+    final balance = _hasCentre ? 2 * leading - items.length : 0;
     final slots = <Widget>[
-      for (var i = 0; i < half; i++) _slot(context, i),
+      for (var i = 0; i < leading; i++) _slot(context, i),
       if (_hasCentre) _centre(context),
-      for (var i = half; i < items.length; i++) _slot(context, i),
+      for (var i = leading; i < items.length; i++) _slot(context, i),
+      for (var i = 0; i < balance; i++) const SizedBox.shrink(),
     ];
     final m = context.miftah;
     return Container(
