@@ -409,7 +409,9 @@ class GoldenLedgerTenantOneIT {
     void theTrialBalanceBalancesAndShowsTheExpectedClosingPositions() {
         replay();
 
-        List<TrialBalanceRowDTO> tb = ledger.trialBalance(CUT_OFF, propertyId);
+        // Tenant-wide on purpose: a property-filtered trial balance cannot see a
+        // line posted without the property dimension (Task 3 review I-1).
+        List<TrialBalanceRowDTO> tb = ledger.trialBalance(CUT_OFF, null);
         // Seven, so an eighth account carrying a posted line — one without the
         // renter dimension, which the renter ledger cannot see at all — fails here
         // rather than going unnoticed (Task 2 review M-2).

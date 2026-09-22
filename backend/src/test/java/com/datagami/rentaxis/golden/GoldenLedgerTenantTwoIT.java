@@ -462,7 +462,9 @@ class GoldenLedgerTenantTwoIT {
     void theTrialBalanceBalancesAndLeavesTheWholeContractInPdcReceivable() {
         replay();
 
-        List<TrialBalanceRowDTO> tb = ledger.trialBalance(CUT_OFF, propertyId);
+        // Tenant-wide on purpose: a property-filtered trial balance cannot see a
+        // line posted without the property dimension (Task 3 review I-1).
+        List<TrialBalanceRowDTO> tb = ledger.trialBalance(CUT_OFF, null);
         // Five, so a sixth account carrying a posted line — one without the renter
         // dimension, which the renter ledger cannot see at all — fails here.
         assertThat(tb).hasSize(5);
