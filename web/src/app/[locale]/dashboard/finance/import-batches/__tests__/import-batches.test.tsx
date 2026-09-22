@@ -166,6 +166,27 @@ describe("import batches list", () => {
         expect(within(posted).getByTestId("batch-status-b-posted")).toHaveAttribute("data-status", "POSTED");
     });
 
+    /**
+     * The badge was a three-armed ternary over FOUR statuses, so a DISCARDED
+     * batch rendered `tLedger("reversed")` — a struck-through pill reading
+     * "Reversed" beside "nothing left to do". REVERSED and DISCARDED have
+     * opposite recoveries (`canPostBatch` admits one and refuses the other), so
+     * that was the one place the screen actively misinformed.
+     */
+    it("labels every status on the badge, DISCARDED included", async () => {
+        api.list.mockResolvedValue([
+            ...ROWS,
+            batch({ id: "b-gone", status: "DISCARDED", discardedAt: "2026-09-13T08:00:00Z" }),
+        ]);
+        renderPage();
+        await screen.findByTestId("batch-row-b-gone");
+        expect(screen.getByTestId("batch-status-b-draft")).toHaveTextContent(en.Cutover.draft);
+        expect(screen.getByTestId("batch-status-b-posted")).toHaveTextContent(en.Ledger.posted);
+        expect(screen.getByTestId("batch-status-b-reversed")).toHaveTextContent(en.Ledger.reversed);
+        expect(screen.getByTestId("batch-status-b-gone")).toHaveTextContent(en.Cutover.batchDiscarded);
+        expect(screen.getByTestId("batch-status-b-gone")).not.toHaveTextContent(en.Ledger.reversed);
+    });
+
     /** ImportBatchService.reverse refuses anything that is not POSTED. */
     it("offers Reverse on a POSTED batch only", async () => {
         renderPage();

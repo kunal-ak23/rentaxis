@@ -83,6 +83,23 @@ export default function ImportBatchesPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const allowed = hasPermission(userRole, "canManageImportBatches");
 
+    /**
+     * One label per status, beside `STATUS_CLASS` and keyed the same way.
+     *
+     * It was a three-armed ternary over four statuses, so DISCARDED fell through
+     * to "Reversed" — a struck-through pill reading REVERSED next to "nothing
+     * left to do", on the two states whose recoveries are opposites
+     * (`canPostBatch` admits REVERSED and refuses DISCARDED). A
+     * `Record<ImportBatchStatus, string>` cannot lose an arm: a fifth status is a
+     * type error rather than a row that quietly misinforms.
+     */
+    const STATUS_LABEL: Record<ImportBatchStatus, string> = {
+        DRAFT: t("draft"),
+        POSTED: tLedger("posted"),
+        REVERSED: tLedger("reversed"),
+        DISCARDED: t("batchDiscarded"),
+    };
+
     const [rows, setRows] = useState<ImportBatch[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -815,11 +832,7 @@ export default function ImportBatchesPage() {
                                                 data-status={b.status}
                                                 className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${STATUS_CLASS[b.status]}`}
                                             >
-                                                {b.status === "DRAFT"
-                                                    ? t("draft")
-                                                    : b.status === "POSTED"
-                                                      ? tLedger("posted")
-                                                      : tLedger("reversed")}
+                                                {STATUS_LABEL[b.status]}
                                             </span>
                                         </td>
                                         <td className={`${td} text-end whitespace-nowrap`}>
