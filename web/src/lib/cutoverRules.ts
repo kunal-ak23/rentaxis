@@ -330,6 +330,26 @@ export function canReplaceOpeningBalances(grid: OpeningBalanceGrid): boolean {
 }
 
 /**
+ * `OpeningBalanceService.reverse` — "There is no posted opening-balance journal
+ * to reverse", so the action exists only while one is live.
+ *
+ * Its own act, and NOT a substitute for Replace: `repost` reverses and
+ * immediately posts a corrected set, so it can fix the opening balances but
+ * cannot return the tenant to "books not yet opened". An OB posted on the wrong
+ * books start date, or posted before the contract import was ready, has no other
+ * way back — the journal detail page refuses an OPENING_BALANCE entry by design
+ * (`JournalService.requireManual`, whose message points at this screen).
+ *
+ * The mirror is dated on the opening entry's own date and the caller does not
+ * choose: a mirror dated later leaves the opening balance standing as at D − 1
+ * while the marker says "not posted", and the next Post writes a second OB
+ * journal on the same day. So there is no date field here, deliberately.
+ */
+export function canReverseOpeningBalances(grid: OpeningBalanceGrid): boolean {
+    return grid.posted;
+}
+
+/**
  * `spring.servlet.multipart.max-file-size: 10MB` (application.yml:6), which the
  * global handler turns into a 400 rather than a raw 500. A trial balance that big
  * is not a trial balance.

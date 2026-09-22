@@ -18,8 +18,8 @@ import {
 } from "@/lib/api/cutover";
 import {
     SNAPSHOT_ACCEPT, advisoryProblems, blockingProblems, canEditOpeningBalanceRow,
-    canPostOpeningBalances, canReplaceOpeningBalances, gridDeclaresComputed, problemMessage,
-    snapshotRefusal, type ComputedAccountSource,
+    canPostOpeningBalances, canReplaceOpeningBalances, canReverseOpeningBalances,
+    gridDeclaresComputed, problemMessage, snapshotRefusal, type ComputedAccountSource,
 } from "@/lib/cutoverRules";
 import { differenceOf, parseAmount, sumAmounts } from "@/lib/money";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
@@ -37,11 +37,14 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
  * the columns. Both are shown, neither can be typed into, and each says why —
  * a cell whose value is quietly discarded teaches people the screen lies.
  *
- * **Post and Replace are different acts.** `post()` refuses a second post;
- * `repost(reason)` reverses the live journal and writes a corrected one in one
- * transaction. Exactly one of the two buttons is ever on screen, decided by
- * `grid.posted`. Replace demands a reason, because the reversal's narration is
- * where that reason ends up.
+ * **Post, Replace and Reverse are three different acts.** `post()` refuses a
+ * second post; `repost(reason)` reverses the live journal and writes a corrected
+ * one in one transaction; `reverse(reason)` takes the journal off and leaves the
+ * figures, which is the only way back to "books not yet opened". Post is on
+ * screen while the books are closed, Replace and Reverse while they are open —
+ * decided by `grid.posted`, never by this page's memory of what it just did.
+ * Both of the latter demand a reason, because it becomes the reversal's
+ * narration and is all the ledger will say about why six months from now.
  *
  * **Editing stays open after posting.** `setRow` has no posted check, and
  * correcting the snapshot while a journal is live is precisely how a Replace is
@@ -105,8 +108,9 @@ export default function OpeningBalancesPage() {
     const [upload, setUpload] = useState<SnapshotUploadResult | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [problemPage, setProblemPage] = useState(0);
-    const [confirm, setConfirm] = useState<"post" | "replace" | null>(null);
+    const [confirm, setConfirm] = useState<"post" | "replace" | "reverse" | null>(null);
     const [replaceReason, setReplaceReason] = useState("");
+    const [reverseReason, setReverseReason] = useState("");
     const uploadRef = useRef<HTMLInputElement>(null);
 
     const load = useCallback(() => {
@@ -288,6 +292,22 @@ export default function OpeningBalancesPage() {
             await load();
         });
 
+    /**
+     * Takes the OB journal off the books and leaves the grid's figures alone, so
+     * the tenant is back to "books not yet opened" with the snapshot intact.
+     * `load()` afterwards rather than patching `grid`: the reversed state is the
+     * server's — `posted` false, the difference row recomputed — and this screen
+     * should not be guessing at either.
+     */
+    const doReverse = () =>
+        run(async () => {
+            const e = await cutoverApi.openingBalances.reverse({ reason: reverseReason });
+            setConfirm(null);
+            setReverseReason("");
+            setSuccess(t("openingBalancesReversed", { number: e.entryNumber }));
+            await load();
+        });
+
     if (!userRole) {
         return <div data-testid="ob-loading" className="bg-input rounded-xl h-14 animate-pulse" />;
     }
@@ -394,6 +414,27 @@ export default function OpeningBalancesPage() {
                             className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {t("replaceOpeningBalances")}
+                        </button>
+                    )}
+                    {grid && canReverseOpeningBalances(grid) && (
+                        <button
+                            type="button"
+                            data-testid="ob-reverse"
+                            // `busy` only, deliberately: `blocker` is about the
+                            // GRID — unsaved cells, unreadable ones, a fatal
+                            // problem — and none of it reaches a reversal, which
+                            // takes the live journal off and touches no figure.
+                            // Gating it on the grid would refuse what the server
+                            // allows, and would do it exactly when somebody is
+                            // mid-correction and wants the books closed again.
+                            disabled={busy}
+                            onClick={() => {
+                                setReverseReason("");
+                                setConfirm("reverse");
+                            }}
+                            className="border border-error/40 text-error px-4 py-2 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {t("reverseOpeningBalances")}
                         </button>
                     )}
                 </div>
@@ -794,6 +835,41 @@ export default function OpeningBalancesPage() {
                 {!replaceReason.trim() && (
                     <p data-testid="ob-replace-blocker" className="text-xs font-semibold text-warning">
                         {t("replaceReasonRequired")}
+                    </p>
+                )}
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                isOpen={confirm === "reverse"}
+                onClose={() => setConfirm(null)}
+                onConfirm={doReverse}
+                isLoading={busy}
+                isDestructive
+                title={t("reverseOpeningBalances")}
+                description={t("confirmReverseOpeningBalances", { number: grid?.journalNumber ?? "" })}
+                confirmText={t("reverseOpeningBalances")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-ob-reverse"
+                // The server defaults the narration, but a reversal of the
+                // opening balances with nothing said about why is a mystery in
+                // the ledger six months later.
+                confirmDisabled={!reverseReason.trim()}
+            >
+                <div>
+                    <label className={fieldLabel} htmlFor="ob-reverse-reason">
+                        {t("reverseReason")}
+                    </label>
+                    <input
+                        id="ob-reverse-reason"
+                        data-testid="ob-reverse-reason"
+                        className="w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                        value={reverseReason}
+                        onChange={e => setReverseReason(e.target.value)}
+                    />
+                </div>
+                {!reverseReason.trim() && (
+                    <p data-testid="ob-reverse-blocker" className="text-xs font-semibold text-warning">
+                        {t("reverseReasonRequired")}
                     </p>
                 )}
             </ConfirmDialog>

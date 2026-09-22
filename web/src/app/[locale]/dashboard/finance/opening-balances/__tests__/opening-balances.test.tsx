@@ -37,6 +37,7 @@ const api = vi.hoisted(() => ({
     upload: vi.fn(),
     post: vi.fn(),
     repost: vi.fn(),
+    reverse: vi.fn(),
     defaults: vi.fn(),
 }));
 
@@ -53,6 +54,7 @@ vi.mock("@/lib/api/cutover", async orig => {
                 uploadSnapshot: api.upload,
                 post: api.post,
                 repost: api.repost,
+                reverse: api.reverse,
             },
         },
     };
@@ -596,6 +598,82 @@ describe("opening balances — post and replace", () => {
         fireEvent.click(screen.getByTestId("ob-post"));
         fireEvent.click(await screen.findByTestId("confirm-ob-post"));
         await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    });
+
+    /**
+     * `OpeningBalanceService.reverse` is the only way back to "books not yet
+     * opened" — Replace reverses and immediately re-posts, and the journal detail
+     * page refuses an OPENING_BALANCE entry by design, pointing at this screen.
+     * The web had the typed method and no UI at all for it.
+     */
+    it("offers Reverse only once the books are open", async () => {
+        renderPage();
+        await screen.findByTestId("ob-post");
+        expect(screen.queryByTestId("ob-reverse")).not.toBeInTheDocument();
+
+        cleanup();
+        api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
+        renderPage();
+        expect(await screen.findByTestId("ob-reverse")).toBeInTheDocument();
+    });
+
+    it("reverses behind a confirmation that requires a reason, and reloads the grid", async () => {
+        const open = grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" });
+        api.grid.mockResolvedValue(open);
+        api.reverse.mockResolvedValue({ id: "j2", entryNumber: "OB/2026/0002", entryDate: "2026-08-31" });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("ob-reverse"));
+
+        // The dialog names the journal being taken off.
+        expect(await screen.findByText(/Reverse the opening balances\? OB\/2026\/0001/)).toBeInTheDocument();
+        expect(screen.getByTestId("confirm-ob-reverse")).toBeDisabled();
+        expect(screen.getByTestId("ob-reverse-blocker")).toHaveTextContent(en.Cutover.reverseReasonRequired);
+
+        fireEvent.change(screen.getByTestId("ob-reverse-reason"), { target: { value: "wrong books start date" } });
+        await waitFor(() => expect(screen.getByTestId("confirm-ob-reverse")).toBeEnabled());
+
+        // The grid the reload answers with is the reversed one, so the screen
+        // shows the server's state rather than its own guess at it.
+        api.grid.mockResolvedValue(grid({ posted: false, journalId: null, journalNumber: null }));
+        fireEvent.click(screen.getByTestId("confirm-ob-reverse"));
+
+        await waitFor(() =>
+            expect(api.reverse).toHaveBeenCalledWith({ reason: "wrong books start date" }),
+        );
+        expect(await screen.findByTestId("ob-success")).toHaveTextContent("OB/2026/0002");
+        // Posted figures gone: Post is back, Replace and Reverse are not.
+        await waitFor(() => expect(screen.getByTestId("ob-post")).toBeInTheDocument());
+        expect(screen.queryByTestId("ob-reverse")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("ob-replace")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("ob-posted-banner")).not.toBeInTheDocument();
+    });
+
+    /**
+     * The reversal touches no figure, so the grid's own blockers — an unsaved
+     * cell, one that is not an amount — must not reach it. Blocking there would
+     * refuse what the server allows, exactly when somebody mid-correction wants
+     * the books closed again.
+     */
+    it("stays available while a cell is unsaved", async () => {
+        api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        fireEvent.change(screen.getByTestId("ob-debit-a-cash"), { target: { value: "7500" } });
+
+        await waitFor(() => expect(screen.getByTestId("ob-replace")).toBeDisabled());
+        expect(screen.getByTestId("ob-reverse")).toBeEnabled();
+    });
+
+    it("surfaces the server's refusal on a reverse", async () => {
+        api.grid.mockResolvedValue(grid({ posted: true, journalId: "j1", journalNumber: "OB/2026/0001" }));
+        api.reverse.mockRejectedValue(
+            new ApiError(400, "There is no posted opening-balance journal to reverse"),
+        );
+        renderPage();
+        fireEvent.click(await screen.findByTestId("ob-reverse"));
+        fireEvent.change(await screen.findByTestId("ob-reverse-reason"), { target: { value: "wrong date" } });
+        fireEvent.click(screen.getByTestId("confirm-ob-reverse"));
+        expect(await screen.findByTestId("ob-error")).toHaveTextContent("no posted opening-balance journal");
     });
 
     /** A fatal one among advisories still blocks, and each lands in its own panel. */
