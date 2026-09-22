@@ -99,9 +99,9 @@ Use the same 6.9-inch screenshot sets as a fallback for Arabic. The final screen
 
 All three apps require an account provisioned by a participating property organisation, so App Review must receive durable access to every major feature.
 
-- Miftah Resident reviewer username: `ahmed@alashramdemo.com` (Al Ashram Demo Account — demo tenant, all feature switches on)
+- Miftah Resident reviewer username: `ahmed@miftahdemo.example` (Miftah Demo Account — demo tenant, all feature switches on)
 - Miftah Resident reviewer password: `<demo password — scripts/seed_demo_tenant.out.json, gitignored>`
-- Miftah Manager reviewer username: `admin@alashramdemo.com` (organisation administrator, sees the whole app)
+- Miftah Manager reviewer username: `admin@miftahdemo.example` (organisation administrator, sees the whole app)
 - Miftah Manager reviewer password: `<demo password — scripts/seed_demo_tenant.out.json, gitignored>`
 - Miftah Security reviewer test phone number: **OWNER ACTION** — Firebase test number (e.g. `+971 50 000 0001`), see [app-review-information.md](app-review-information.md) §4
 - Miftah Security reviewer fixed OTP/test flow: **OWNER ACTION** — fixed code configured with the test number (e.g. `123456`); a matching active guard must exist on the demo tenant

@@ -1,5 +1,7 @@
 # Accounting v2 — Plan 1: Ledger Core — Implementation Plan
 
+> **Names in this document are placeholders.** Tenant, renter, building and contract-reference names were replaced with synthetic equivalents (issue #304); the figures, dates and document sequences are from the client's own exports.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace v1's one-legged `financial_transactions` with an immutable, balanced, role-resolved journal (accounts tree with property dimension, `PostingService`, `AccountResolver`, per-property account sets, fiscal period lock, manual JV) and the four control views (General Ledger, Tenant Ledger, Vendor Ledger, Trial Balance) on the web.
@@ -32,7 +34,7 @@
 - `domain/entity/enums/AccountRole.java`, `JournalDocType.java`, `JournalStatus.java`, `JournalSourceType.java`
 - `domain/entity/JournalEntry.java`, `JournalLine.java`, `JournalEntrySequence.java`, `TenantFiscalSettings.java`, `PropertyAccountMapping.java`, `TenantDefaultAccountMapping.java`, `PropertyAccountTemplateRow.java`
 - `domain/repository/JournalEntryRepository.java`, `JournalLineRepository.java`, `JournalEntrySequenceRepository.java`, `TenantFiscalSettingsRepository.java`, `PropertyAccountMappingRepository.java`, `TenantDefaultAccountMappingRepository.java`, `PropertyAccountTemplateRowRepository.java`
-- `core/service/ledger/EntryNumberService.java` — `TCO-26/1629` numbering
+- `core/service/ledger/EntryNumberService.java` — `SAMPLE-26/001` numbering
 - `core/service/ledger/TenantFiscalSettingsService.java` — fiscal year + period lock
 - `core/service/ledger/AccountResolver.java` — role → account
 - `core/service/ledger/PostingService.java` + `PostingRequest.java` (records) + `UnmappedAccountRoleException.java`
@@ -670,7 +672,7 @@ class AccountServiceTreeIT {
         Account parent = service.getAccountByCode("A-02-01");
         Account imported = new Account();
         imported.setCode("166269");
-        imported.setName("Rent Receivable - L'Olivier");
+        imported.setName("Rent Receivable - Sample Heights");
         imported.setAccountType(AccountType.ASSET);
         imported.setParent(parent);
         service.createAccount(imported);
@@ -681,7 +683,7 @@ class AccountServiceTreeIT {
     void createLeafUnderParentInheritsTypeAndGetsSequentialCode() {
         service.seedDefaultAccounts();
         Account parent = service.getAccountByCode("A-02-01");
-        Account leaf = service.createLeaf("Rent Receivable - Tulip 7", parent, null);
+        Account leaf = service.createLeaf("Rent Receivable - Sample Plaza 7", parent, null);
         assertThat(leaf.getCode()).isEqualTo("100001");
         assertThat(leaf.getAccountType()).isEqualTo(AccountType.ASSET);
         assertThat(leaf.getParent().getId()).isEqualTo(parent.getId());
@@ -1565,7 +1567,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * Hands out "TCO-26/1629"-style numbers: doc type, two-digit fiscal year,
+ * Hands out "SAMPLE-26/001"-style numbers: doc type, two-digit fiscal year,
  * per-tenant per-type per-year counter. Runs in the caller's transaction so
  * a rolled-back posting releases its number (gaps are acceptable; duplicates
  * are not — the row lock guarantees that).
@@ -2034,11 +2036,11 @@ class PostingServiceIT {
         tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
-        Property p = new Property(); p.setNameEn("L'Olivier"); p.setEmirate(Emirate.DUBAI);
+        Property p = new Property(); p.setNameEn("Sample Heights"); p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
-        rentRecvLeaf = accounts.createLeaf("Rent Receivable - L'Olivier", accounts.getAccountByCode("A-02-01"), propertyId);
-        advanceRentLeaf = accounts.createLeaf("Advance Rent - L'Olivier", accounts.getAccountByCode("B-01-01"), propertyId);
-        bankLeaf = accounts.createLeaf("Emirates Islamic - L'Olivier", accounts.getAccountByCode("A-02-02"), propertyId);
+        rentRecvLeaf = accounts.createLeaf("Rent Receivable - Sample Heights", accounts.getAccountByCode("A-02-01"), propertyId);
+        advanceRentLeaf = accounts.createLeaf("Advance Rent - Sample Heights", accounts.getAccountByCode("B-01-01"), propertyId);
+        bankLeaf = accounts.createLeaf("Emirates Islamic - Sample Heights", accounts.getAccountByCode("A-02-02"), propertyId);
         map(propertyId, AccountRole.RENT_RECEIVABLE, rentRecvLeaf);
         map(propertyId, AccountRole.ADVANCE_RENT, advanceRentLeaf);
         map(propertyId, AccountRole.BANK, bankLeaf);
@@ -2052,7 +2054,7 @@ class PostingServiceIT {
     }
 
     private PostingRequest contract(BigDecimal amount) {
-        return new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract L'Olivier OLV-324",
+        return new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract Sample Heights SMH-324",
                 Dimensions.ofProperty(propertyId), JournalSourceType.LEASE, UUID.randomUUID(), null,
                 List.of(dr(AccountRole.RENT_RECEIVABLE, amount), cr(AccountRole.ADVANCE_RENT, amount)));
     }
@@ -2474,40 +2476,40 @@ class PropertyAccountServiceIT {
 
     @Test
     void creatingAPropertyGeneratesItsAccountSetAndMappings() {
-        Property p = newProperty("Tulip Oasis 7");
+        Property p = newProperty("Sample Plaza Oasis 7");
         List<RoleMappingDTO> m = service.getMappings(p.getId());
         RoleMappingDTO rr = m.stream().filter(x -> x.role() == AccountRole.RENT_RECEIVABLE).findFirst().orElseThrow();
-        assertThat(rr.accountName()).isEqualTo("Rent Receivable - Tulip Oasis 7");
+        assertThat(rr.accountName()).isEqualTo("Rent Receivable - Sample Plaza Oasis 7");
         assertThat(rr.inherited()).isFalse();
         Account leaf = accountRepo.findById(rr.accountId()).orElseThrow();
         assertThat(leaf.getParent().getCode()).isEqualTo("A-02-01");
         assertThat(leaf.getAccountType()).isEqualTo(AccountType.ASSET);
         assertThat(leaf.getPropertyId()).isEqualTo(p.getId());
-        assertThat(resolver.resolve(AccountRole.ADVANCE_RENT, p.getId()).getName()).isEqualTo("Advance Rent - Tulip Oasis 7");
+        assertThat(resolver.resolve(AccountRole.ADVANCE_RENT, p.getId()).getName()).isEqualTo("Advance Rent - Sample Plaza Oasis 7");
     }
 
     @Test
     void generateMissingIsIdempotentAndFillsOnlyGaps() {
-        Property p = newProperty("Belle Vue");
+        Property p = newProperty("Sample Vista");
         int before = accountRepo.findByProperty_Id(p.getId()).size();
         service.clearMapping(p.getId(), AccountRole.BANK);
         service.generateMissing(p.getId());
-        // the existing "Emirates Islamic - Belle Vue" leaf is reused, not duplicated
+        // the existing "Emirates Islamic - Sample Vista" leaf is reused, not duplicated
         assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
-        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Belle Vue");
+        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Sample Vista");
     }
 
     @Test
     void manualMappingToASharedAccountAndTypeCheck() {
-        Property galah = newProperty("Galah Residence 2");
+        Property sample residences = newProperty("Sample Residences 2");
         Account generic = accounts.createLeaf("Rent Receivable", accounts.getAccountByCode("A-02-01"), null);
-        service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, generic.getId());
-        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, galah.getId()).getId()).isEqualTo(generic.getId());
+        service.setMapping(sample residences.getId(), AccountRole.RENT_RECEIVABLE, generic.getId());
+        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, sample residences.getId()).getId()).isEqualTo(generic.getId());
         Account income = accounts.getAccountByCode("C-01-02-001");
-        assertThatThrownBy(() -> service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, income.getId()))
+        assertThatThrownBy(() -> service.setMapping(sample residences.getId(), AccountRole.RENT_RECEIVABLE, income.getId()))
                 .hasMessageContaining("ASSET");
         Account group = accounts.getAccountByCode("A-02-01");
-        assertThatThrownBy(() -> service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, group.getId()))
+        assertThatThrownBy(() -> service.setMapping(sample residences.getId(), AccountRole.RENT_RECEIVABLE, group.getId()))
                 .hasMessageContaining("group");
     }
 
@@ -2515,7 +2517,7 @@ class PropertyAccountServiceIT {
     void disabledTemplateRowIsSkipped() {
         var rows = service.getTemplate();
         service.saveTemplate(rows.stream().map(r -> r.role() == AccountRole.COOLING_CHARGES ? r.withEnabled(false) : r).toList());
-        Property p = newProperty("OST-10");
+        Property p = newProperty("Sample Atrium 10");
         RoleMappingDTO cooling = service.getMappings(p.getId()).stream().filter(x -> x.role() == AccountRole.COOLING_CHARGES).findFirst().orElseThrow();
         assertThat(cooling.accountId()).isNull();
     }
@@ -2897,7 +2899,7 @@ class SilentAccountsIT {
 
     @Test
     void bankAccountOnAPropertyDefaultsToThePropertyBankLeaf() {
-        Property p = new Property(); p.setNameEn("Tara 2"); p.setEmirate(Emirate.DUBAI); p = properties.createProperty(p);
+        Property p = new Property(); p.setNameEn("Sample Palm 2"); p.setEmirate(Emirate.DUBAI); p = properties.createProperty(p);
         BankAccount b = new BankAccount(); b.setBankName("Emirates Islamic"); b.setAccountNumber("1234567890"); b.setProperty(p);
         b = bankAccounts.create(b);
         assertThat(b.getCoaAccount().getId()).isEqualTo(resolver.resolve(AccountRole.BANK, p.getId()).getId());
@@ -3053,9 +3055,9 @@ class LedgerQueryServiceIT {
         LandlordOrg org = new LandlordOrg(); org.setName("LQ-" + UUID.randomUUID());
         TenantContextHolder.setTenantId(orgRepo.save(org).getId());
         accounts.seedDefaultAccounts(); propertyAccounts.seedDefaultTemplateAndDefaults();
-        Property p = new Property(); p.setNameEn("L'Olivier"); p.setEmirate(Emirate.DUBAI);
+        Property p = new Property(); p.setNameEn("Sample Heights"); p.setEmirate(Emirate.DUBAI);
         propertyId = properties.createProperty(p).getId();
-        Renter r = new Renter(); r.setFullName("Prabhjot Singh");   // adjust to Renter's actual required fields
+        Renter r = new Renter(); r.setFullName("Sample Renter One");   // adjust to Renter's actual required fields
         renterId = renterRepo.save(r).getId();
         leaseId = UUID.randomUUID();
         Dimensions dims = new Dimensions(propertyId, null, leaseId, renterId, null);
@@ -3081,10 +3083,10 @@ class LedgerQueryServiceIT {
         assertThat(l.openingBalance()).isEqualByComparingTo("0");
         assertThat(l.rows()).hasSize(2);
         assertThat(l.rows().get(0).debit()).isEqualByComparingTo("64500");
-        assertThat(l.rows().get(0).particular()).contains("Advance Rent - L'Olivier").contains("Security Deposit L'Olivier").contains("Admin Fee - L'Olivier");
+        assertThat(l.rows().get(0).particular()).contains("Advance Rent - Sample Heights").contains("Security Deposit Sample Heights").contains("Admin Fee - Sample Heights");
         assertThat(l.rows().get(0).balance()).isEqualByComparingTo("64500");
         assertThat(l.rows().get(1).credit()).isEqualByComparingTo("13700");
-        assertThat(l.rows().get(1).particular()).isEqualTo("PDC Receivable L'Olivier");
+        assertThat(l.rows().get(1).particular()).isEqualTo("PDC Receivable Sample Heights");
         assertThat(l.rows().get(1).balance()).isEqualByComparingTo("50800");
         assertThat(l.closingBalance()).isEqualByComparingTo("50800");
         assertThat(l.totalDebit()).isEqualByComparingTo("64500");
@@ -3104,15 +3106,15 @@ class LedgerQueryServiceIT {
     void renterLedgerGroupsByAccountAndOnlyShowsThatRenter() {
         List<AccountLedgerDTO> l = ledger.renterLedger(renterId, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
         assertThat(l).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder(
-                "Rent Receivable - L'Olivier", "Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
-                "PDC Receivable L'Olivier", "Emirates Islamic - L'Olivier");
+                "Rent Receivable - Sample Heights", "Advance Rent - Sample Heights", "Security Deposit Sample Heights", "Admin Fee - Sample Heights",
+                "PDC Receivable Sample Heights", "Emirates Islamic - Sample Heights");
         assertThat(ledger.renterLedger(UUID.randomUUID(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))).isEmpty();
     }
 
     @Test
     void generalLedgerWithNoAccountIdsReturnsEveryLeafWithActivityInRange() {
         List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(LocalDate.of(2026, 9, 15), LocalDate.of(2026, 9, 15), null, null, null, null));
-        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - L'Olivier", "PDC Receivable L'Olivier");
+        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - Sample Heights", "PDC Receivable Sample Heights");
     }
 
     @Test
@@ -3121,7 +3123,7 @@ class LedgerQueryServiceIT {
         BigDecimal dr = tb.stream().map(TrialBalanceRowDTO::debit).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cr = tb.stream().map(TrialBalanceRowDTO::credit).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(dr).isEqualByComparingTo(cr);
-        TrialBalanceRowDTO adv = tb.stream().filter(r -> r.name().equals("Advance Rent - L'Olivier")).findFirst().orElseThrow();
+        TrialBalanceRowDTO adv = tb.stream().filter(r -> r.name().equals("Advance Rent - Sample Heights")).findFirst().orElseThrow();
         assertThat(adv.balance()).isEqualByComparingTo("-61000"); // credit balance, signed debit-positive
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 10), null)).isEmpty();
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 30), UUID.randomUUID())).isEmpty();
@@ -3987,7 +3989,7 @@ import en from "../../../../messages/en.json";
 import PropertyAccountsTab from "../PropertyAccountsTab";
 
 const mappings = [
-  { role: "RENT_RECEIVABLE", accountId: "a1", accountCode: "100001", accountName: "Rent Receivable - Tulip 7", inherited: false },
+  { role: "RENT_RECEIVABLE", accountId: "a1", accountCode: "100001", accountName: "Rent Receivable - Sample Plaza 7", inherited: false },
   { role: "ADVANCE_RENT", accountId: null, accountCode: null, accountName: null, inherited: false },
   { role: "CASH", accountId: "c1", accountCode: "A-02-05-001", accountName: "Cash Account", inherited: true },
 ];
@@ -4004,7 +4006,7 @@ const wrap = (ui: React.ReactNode) => <NextIntlClientProvider locale="en" messag
 describe("PropertyAccountsTab", () => {
   it("renders one row per role with mapped, unmapped and inherited states", async () => {
     render(wrap(<PropertyAccountsTab propertyId="p1" />));
-    await waitFor(() => expect(screen.getByText("Rent Receivable - Tulip 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Rent Receivable - Sample Plaza 7")).toBeInTheDocument());
     expect(screen.getByText("Not mapped")).toBeInTheDocument();
     expect(screen.getByText("Default")).toBeInTheDocument();
   });
@@ -4190,7 +4192,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Test: `web/src/components/finance/__tests__/LedgerTable.test.tsx`
 
 **Interfaces:**
-- `LedgerTable({ ledgers: AccountLedger[], showTenantColumns?: boolean })` — renders, per account, PACT's layout: an orange-ish account header band (`Account Code :: 166269   Name :: Rent Receivable - L'Olivier`), an opening-balance row when `openingBalance ≠ 0`, one row per `LedgerRow` (Doc Date | Doc No | Particular | Debit | Credit | Balance | Unit | Tenant), a **Sub Total** row (totalDebit / totalCredit / closingBalance), and a final **Report Total** row across all accounts. Amounts via `fmtAmount`, balances via `fmtBalance`. Doc No links to `/dashboard/finance/journals/{entryId}`. Unit/Tenant columns show ids resolved to names through a small lookup hook (`useNameLookup(kind)`) that fetches `/api/proxy/v1/units` and `/api/proxy/v1/renters` once and caches by id; if those list endpoints are paginated, fetch with `size=1000`.
+- `LedgerTable({ ledgers: AccountLedger[], showTenantColumns?: boolean })` — renders, per account, PACT's layout: an orange-ish account header band (`Account Code :: 166269   Name :: Rent Receivable - Sample Heights`), an opening-balance row when `openingBalance ≠ 0`, one row per `LedgerRow` (Doc Date | Doc No | Particular | Debit | Credit | Balance | Unit | Tenant), a **Sub Total** row (totalDebit / totalCredit / closingBalance), and a final **Report Total** row across all accounts. Amounts via `fmtAmount`, balances via `fmtBalance`. Doc No links to `/dashboard/finance/journals/{entryId}`. Unit/Tenant columns show ids resolved to names through a small lookup hook (`useNameLookup(kind)`) that fetches `/api/proxy/v1/units` and `/api/proxy/v1/renters` once and caches by id; if those list endpoints are paginated, fetch with `size=1000`.
 - `LedgerFilters({ value, onChange, showAccounts?, showProperty?, showRenter? })` — From/To date inputs (default: first day of current month → today), Property select, Account multi-select (`AccountPicker` with chips), Renter select. Emits `LedgerQuery`.
 - Pages:
   - **General Ledger**: filters + `ledgerApi.ledger.general(q)` → `LedgerTable`. Query params `?accountId=` / `?vendorId=` pre-select (vendor → `ledgerApi.ledger.vendor`). Export button downloads CSV built client-side from the rows.
@@ -4210,11 +4212,11 @@ import LedgerTable from "../LedgerTable";
 vi.mock("../useNameLookup", () => ({ useNameLookup: () => ({ name: (id: string | null) => id ?? "" }) }));
 
 const ledgers = [{
-  accountId: "a", accountCode: "166269", accountName: "Rent Receivable - L'Olivier", accountType: "ASSET",
+  accountId: "a", accountCode: "166269", accountName: "Rent Receivable - Sample Heights", accountType: "ASSET",
   openingBalance: 0, totalDebit: 64500, totalCredit: 13700, closingBalance: 50800, truncated: false,
   rows: [
-    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - L'Olivier / Security Deposit L'Olivier", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
-    { entryId: "e2", entryNumber: "PDR-26/75", entryDate: "2026-09-11", docType: "PDR", particular: "PDC Receivable L'Olivier", narration: "Rent - 1st Installment", debit: 0, credit: 13700, balance: 50800, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
+    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - Sample Heights / Security Deposit Sample Heights", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
+    { entryId: "e2", entryNumber: "PDR-26/75", entryDate: "2026-09-11", docType: "PDR", particular: "PDC Receivable Sample Heights", narration: "Rent - 1st Installment", debit: 0, credit: 13700, balance: 50800, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
   ],
 }];
 
@@ -4620,4 +4622,4 @@ Callers in Plans 2–4 post pairs: `TCO` = one pair per lease line; `PDR/CRT/CBR
 
 **Task 8 (`LedgerQueryService.accountLedger`):** `particular` = `line.contraAccount.name` when set; else the joined counter-account names (existing `counterAccounts` query). Add `contraAccountName` to `LineRow` via `left join accounts ca on ca.id = l.contra_account_id` and select `ca.name as contraAccountName`. Ordering is already `(e.entry_date, e.created_at, l.line_no)` — keep it.
 
-**Task 8 test:** change `accountLedgerHasRunningBalanceAndCounterAccountParticular` to post the TCO with `ofPairs` and assert three RR rows with particulars `Advance Rent - L'Olivier`, `Security Deposit L'Olivier`, `Admin Fee - L'Olivier` and balances 61,000 / 64,000 / 64,500.
+**Task 8 test:** change `accountLedgerHasRunningBalanceAndCounterAccountParticular` to post the TCO with `ofPairs` and assert three RR rows with particulars `Advance Rent - Sample Heights`, `Security Deposit Sample Heights`, `Admin Fee - Sample Heights` and balances 61,000 / 64,000 / 64,500.

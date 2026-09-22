@@ -140,7 +140,7 @@ Guideline 2.1 "Information Needed" rejection is really asking for.
    sends no SMS and skips app verification for test numbers, so this works in
    the App Store build with no defines.
 2. Create one **active** `SECURITY_GUARD` with exactly that E.164 phone on the
-   Al Ashram Demo Account tenant and assign it to the demo property (web:
+   Miftah Demo Account tenant and assign it to the demo property (web:
    Security guards → Add; or `POST /api/v1/gatepass/guards` as the demo admin).
 3. Put the number and code in App Store Connect → App Review Information →
    Notes. Keep them configured permanently — every update is re-reviewed.

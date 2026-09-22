@@ -19,7 +19,7 @@
 **Files:**
 - Read: `docs/plans/2026-04-30-lease-agreement-template-design.md`
 - Read: `docs/plans/2026-04-30-lease-agreement-template-plan.md` (this file)
-- Reference (client format): the original PDF the client shared (`GH2-603_001.pdf`) — not in repo
+- Reference (client format): the original PDF the client shared (`SR2-603_001.pdf`) — not in repo
 
 **Step 1:** Read the design doc top-to-bottom. The plan tasks below assume you understand:
 - Sections 1–4 of the rendered PDF and which DB fields back each cell
@@ -776,7 +776,7 @@ git commit -m "feat: add booking deposit row to PaymentSchedule on lease creatio
 </ol>
 ```
 
-**Step 2:** Carefully transcribe each of the 53 terms. Source: pages 2, 3, 4, 5, 6 of `GH2-603_001.pdf`. Cross-check spelling and numbering against the PDF.
+**Step 2:** Carefully transcribe each of the 53 terms. Source: pages 2, 3, 4, 5, 6 of `SR2-603_001.pdf`. Cross-check spelling and numbering against the PDF.
 
 **Step 3: Commit**
 
