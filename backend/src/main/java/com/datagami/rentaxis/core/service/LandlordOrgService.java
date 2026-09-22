@@ -191,6 +191,9 @@ public class LandlordOrgService {
             log.info("deleteTenant({}): reparented {} cross-tenant users to their other tenants", tenantId, preserved);
         }
 
+        // The ledger cannot be cleared by the pass loop below — see purgeLedger.
+        purgeLedger(tenantId);
+
         jdbcTemplate.execute((java.sql.Connection conn) -> {
             List<String> remaining = new java.util.ArrayList<>(tenantedTables);
             for (int pass = 1; pass <= 6 && !remaining.isEmpty(); pass++) {
@@ -245,6 +248,110 @@ public class LandlordOrgService {
         scheduleExternalCleanupAfterCommit(tenantId, contractDocumentUrls);
         log.info("deleteTenant({}): database purge completed; contract cleanup and {} exact artifact cleanups scheduled after commit",
                 tenantId, queuedArtifacts);
+    }
+
+    /** The two ledger tables, in the order their foreign keys allow. */
+    private static final List<String> LEDGER_TABLES = List.of("journal_lines", "journal_entries");
+
+    /**
+     * Clear this tenant's journal, which the pass loop provably cannot (issue #326).
+     *
+     * <p>Two separate obstacles, and the loop hits both at once — it retried
+     * {@code leases}, {@code journal_entries} and {@code journal_lines} until it
+     * ran out of passes and threw {@code deleteTenant stalled}:</p>
+     *
+     * <ol>
+     *   <li><b>A foreign-key cycle.</b> {@code leases.posting_journal_id} and
+     *       {@code leases.termination_journal_id} point at {@code journal_entries};
+     *       {@code journal_entries.lease_id} points back. Neither table can be
+     *       deleted before the other, whatever order the loop tries, so the
+     *       pointers are NULLed first — discovered from {@code information_schema}
+     *       rather than listed here, so a future table that references a journal
+     *       (and carries a {@code tenant_id}) is handled the day it is added.</li>
+     *   <li><b>The immutability triggers</b> of changeset 81 refuse every DELETE on
+     *       {@code journal_entries} and {@code journal_lines} — "reverse the entry
+     *       instead" — which is the right answer for every caller except this one.
+     *       A tenant being erased has no books left to reverse into. They are
+     *       switched off for the length of the two DELETEs and switched straight
+     *       back on; both statements run inside {@code deleteTenant}'s own
+     *       transaction, so a failure anywhere later rolls the disable back with
+     *       everything else, and {@code ALTER TABLE} takes an ACCESS EXCLUSIVE lock
+     *       — no other session can write an unguarded journal through the window,
+     *       because no other session can write at all while it is open.</li>
+     * </ol>
+     *
+     * <p>Tenant-scoped like every other statement here: both DELETEs carry
+     * {@code WHERE tenant_id = ?}, so another tenant's ledger is never in range
+     * even while the triggers are off.</p>
+     */
+    private void purgeLedger(UUID tenantId) {
+        for (JournalReference reference : inboundJournalReferences()) {
+            int cleared = jdbcTemplate.update(
+                    "UPDATE " + quote(reference.table()) + " SET " + quote(reference.column())
+                            + " = NULL WHERE tenant_id = ? AND " + quote(reference.column()) + " IS NOT NULL",
+                    tenantId);
+            if (cleared > 0) {
+                log.debug("deleteTenant({}): cleared {} {}.{} journal pointers",
+                        tenantId, cleared, reference.table(), reference.column());
+            }
+        }
+
+        for (String table : LEDGER_TABLES) {
+            jdbcTemplate.execute("ALTER TABLE " + quote(table) + " DISABLE TRIGGER USER");
+        }
+        try {
+            for (String table : LEDGER_TABLES) {
+                int deleted = jdbcTemplate.update(
+                        "DELETE FROM " + quote(table) + " WHERE tenant_id = ?", tenantId);
+                log.debug("deleteTenant({}): deleted {} rows from {}", tenantId, deleted, table);
+            }
+        } finally {
+            for (String table : LEDGER_TABLES) {
+                jdbcTemplate.execute("ALTER TABLE " + quote(table) + " ENABLE TRIGGER USER");
+            }
+        }
+    }
+
+    /** A tenanted column somewhere in the schema that points at a journal entry. */
+    private record JournalReference(String table, String column) {
+    }
+
+    /**
+     * Every {@code tenant_id}-carrying column that references {@code journal_entries},
+     * excluding the journal's own tables — {@code journal_lines} is deleted outright
+     * below, and {@code journal_entries}' self-references (a reversal and its
+     * original) go in the one statement that deletes both.
+     */
+    private List<JournalReference> inboundJournalReferences() {
+        return jdbcTemplate.query(
+                "SELECT tc.table_name, kcu.column_name " +
+                        "FROM information_schema.table_constraints tc " +
+                        "JOIN information_schema.key_column_usage kcu " +
+                        "  ON kcu.constraint_name = tc.constraint_name " +
+                        " AND kcu.constraint_schema = tc.constraint_schema " +
+                        "JOIN information_schema.constraint_column_usage ccu " +
+                        "  ON ccu.constraint_name = tc.constraint_name " +
+                        " AND ccu.constraint_schema = tc.constraint_schema " +
+                        "WHERE tc.constraint_type = 'FOREIGN KEY' " +
+                        "  AND tc.table_schema = 'public' " +
+                        "  AND ccu.table_name = 'journal_entries' " +
+                        "  AND tc.table_name NOT IN ('journal_entries', 'journal_lines') " +
+                        "  AND EXISTS (SELECT 1 FROM information_schema.columns c " +
+                        "              WHERE c.table_schema = 'public' AND c.table_name = tc.table_name " +
+                        "                AND c.column_name = 'tenant_id')",
+                (rs, rowNum) -> new JournalReference(rs.getString(1), rs.getString(2)));
+    }
+
+    /**
+     * Identifiers come from {@code information_schema}, never from a request, but
+     * they are quoted anyway (mixed case, reserved words) and an embedded quote is
+     * refused outright — the same safety net the purge loop applies to table names.
+     */
+    private static String quote(String identifier) {
+        if (identifier == null || identifier.contains("\"")) {
+            throw new IllegalStateException("Refusing to use identifier with a double quote: " + identifier);
+        }
+        return "\"" + identifier + "\"";
     }
 
     private void scheduleExternalCleanupAfterCommit(UUID tenantId, List<String> documentUrls) {
