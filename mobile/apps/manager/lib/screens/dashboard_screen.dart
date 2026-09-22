@@ -48,6 +48,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final dashboardAsync = ref.watch(_dashboardDataProvider);
     final notifications = ref.watch(notificationProvider);
     final auth = ref.watch(authProvider);
+    // MOBILE_FINANCE: the payment, lease and cheque surfaces behind these
+    // cards and quick actions are hidden until the app is rewritten for
+    // accounting v2 (spec D7), so the cards must not offer them either.
+    final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
     final m = context.miftah;
     final l = _L(context.isAr);
 
@@ -76,9 +80,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       children: [
                         _KpiGrid(data: data, l: l),
                         const SizedBox(height: 20),
-                        _NeedsAttention(data: data, l: l, m: m),
+                        _NeedsAttention(
+                          data: data,
+                          l: l,
+                          m: m,
+                          financeEnabled: financeEnabled,
+                        ),
                         const SizedBox(height: 20),
-                        _QuickActions(l: l),
+                        _QuickActions(l: l, financeEnabled: financeEnabled),
                         const SizedBox(height: 22),
                         _PortfolioGlance(data: data, l: l, m: m),
                       ],
@@ -338,10 +347,20 @@ class _NeedsAttention extends StatelessWidget {
   final Map<String, dynamic> data;
   final _L l;
   final LegacyMiftahColors m;
-  const _NeedsAttention({required this.data, required this.l, required this.m});
+  final bool financeEnabled;
+  const _NeedsAttention({
+    required this.data,
+    required this.l,
+    required this.m,
+    required this.financeEnabled,
+  });
 
   List<_Task> _buildTasks() {
     final tasks = <_Task>[];
+    // Every task here routes to /payments or /leases. With MOBILE_FINANCE off
+    // those routes redirect to Today, so an unguarded card would be a tap that
+    // silently does nothing.
+    if (!financeEnabled) return tasks;
     final overdueAmount = ((data['overdueAmount'] ?? 0) as num).toDouble();
     final pendingAmount = ((data['pendingAmount'] ?? 0) as num).toDouble();
     final expiring = (data['expiringLeases'] ?? 0) as num;
@@ -423,7 +442,8 @@ class _NeedsAttention extends StatelessWidget {
                     ),
             ),
             InkWell(
-              onTap: () => context.go('/payments'),
+              // Same guard as the cards: no destination while finance is off.
+              onTap: financeEnabled ? () => context.go('/payments') : null,
               child: Text(
                 l.itemsCount(tasks.length),
                 style: l.ar
@@ -598,30 +618,36 @@ class _TaskRow extends StatelessWidget {
 
 class _QuickActions extends StatelessWidget {
   final _L l;
-  const _QuickActions({required this.l});
+  final bool financeEnabled;
+  const _QuickActions({required this.l, required this.financeEnabled});
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
+    // Scan, New lease and Record payment all land on gated routes while
+    // MOBILE_FINANCE is off; only Maintenance survives, so the grid narrows
+    // rather than offering three tiles that bounce back to Today.
     final actions = [
-      (
-        icon: Icons.qr_code_scanner_outlined,
-        label: l.scanCheque,
-        primary: true,
-        route: '/scan',
-      ),
-      (
-        icon: Icons.note_add_outlined,
-        label: l.newLease,
-        primary: false,
-        route: '/leases',
-      ),
-      (
-        icon: Icons.payments_outlined,
-        label: l.recordPay,
-        primary: false,
-        route: '/payments',
-      ),
+      if (financeEnabled) ...[
+        (
+          icon: Icons.qr_code_scanner_outlined,
+          label: l.scanCheque,
+          primary: true,
+          route: '/scan',
+        ),
+        (
+          icon: Icons.note_add_outlined,
+          label: l.newLease,
+          primary: false,
+          route: '/leases',
+        ),
+        (
+          icon: Icons.payments_outlined,
+          label: l.recordPay,
+          primary: false,
+          route: '/payments',
+        ),
+      ],
       (
         icon: Icons.build_outlined,
         label: l.maintenance,
@@ -634,6 +660,8 @@ class _QuickActions extends StatelessWidget {
       // with MediaQuery.padding, which under extendBody carries the
       // floating nav height and opens a gap below the content.
       padding: EdgeInsets.zero,
+      // Stays four even when the list is shorter: the surviving tiles keep
+      // their quarter-width shape instead of stretching to fill the row.
       crossAxisCount: 4,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),

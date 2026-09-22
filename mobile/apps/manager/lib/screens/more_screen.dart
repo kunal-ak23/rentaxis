@@ -21,6 +21,9 @@ class MoreScreen extends ConsumerWidget {
     // canAccessFinance gating in rbac.ts.
     final isAdmin =
         authState.role == 'TENANT_ADMIN' || authState.role == 'SUPER_ADMIN';
+    // MOBILE_FINANCE: the ledger/report screens are hidden until the app is
+    // rewritten for accounting v2 (spec D7).
+    final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
     // Real version from the bundle: the About dialog said 1.0.0 while the app
     // shipped 1.2.0, the kind of mismatch App Review flags.
     final version = ref
@@ -108,26 +111,40 @@ class MoreScreen extends ConsumerWidget {
                   _sectionLabel(l.finance, l.ar, m),
                   _MenuCard(
                     items: [
-                      _MenuRow(
-                        icon: Icons.account_balance_outlined,
-                        label: l.accountsTransactions,
-                        onTap: () => context.push('/finance'),
-                      ),
-                      _MenuRow(
-                        icon: Icons.account_balance_wallet_outlined,
-                        label: l.bankAccounts,
-                        onTap: () => context.push('/bank-accounts'),
-                      ),
+                      // Accounts, bank accounts and reports ride on endpoints
+                      // accounting v2 removed. Rather than vanish, the group
+                      // collapses to one disabled "coming soon" row, so the
+                      // capability reads as pending instead of missing.
+                      if (financeEnabled) ...[
+                        _MenuRow(
+                          icon: Icons.account_balance_outlined,
+                          label: l.accountsTransactions,
+                          onTap: () => context.push('/finance'),
+                        ),
+                        _MenuRow(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: l.bankAccounts,
+                          onTap: () => context.push('/bank-accounts'),
+                        ),
+                      ] else
+                        _MenuRow(
+                          icon: Icons.account_balance_outlined,
+                          label: l.accountsTransactions,
+                          sub: l.comingSoon,
+                        ),
+                      // Vendors survives: /v1/vendors and the vendor ledger
+                      // are both still served (pre-flight 6.2).
                       _MenuRow(
                         icon: Icons.store_outlined,
                         label: l.vendors,
                         onTap: () => context.push('/vendors'),
                       ),
-                      _MenuRow(
-                        icon: Icons.assessment_outlined,
-                        label: l.reports,
-                        onTap: () => context.push('/finance-reports'),
-                      ),
+                      if (financeEnabled)
+                        _MenuRow(
+                          icon: Icons.assessment_outlined,
+                          label: l.reports,
+                          onTap: () => context.push('/finance-reports'),
+                        ),
                     ],
                   ),
                 ],
@@ -583,12 +600,17 @@ class _MenuCard extends StatelessWidget {
 class _MenuRow extends StatelessWidget {
   final IconData icon;
   final String label;
+
+  /// Secondary line under the label. A row with a [sub] and no [onTap] is the
+  /// "present but not yet available" state — it stays visible and inert.
+  final String? sub;
   final Widget? trailing;
   final VoidCallback? onTap;
 
   const _MenuRow({
     required this.icon,
     required this.label,
+    this.sub,
     this.trailing,
     this.onTap,
   });
@@ -596,31 +618,56 @@ class _MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
+    final disabled = onTap == null && trailing == null;
+    final labelColor = disabled ? m.textMuted : m.textPrimary;
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         child: Row(
           children: [
-            Icon(icon, size: 21, color: AppColors.accentDark),
+            Icon(
+              icon,
+              size: 21,
+              color: disabled ? m.textMuted : AppColors.accentDark,
+            ),
             const SizedBox(width: 13),
             Expanded(
-              child: Text(
-                label,
-                style: context.isAr
-                    ? GoogleFonts.notoNaskhArabic(
-                        fontSize: 14.5,
-                        color: m.textPrimary,
-                      )
-                    : GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        color: m.textPrimary,
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: context.isAr
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 14.5,
+                            color: labelColor,
+                          )
+                        : GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            color: labelColor,
+                          ),
+                  ),
+                  if (sub != null)
+                    Text(
+                      sub!,
+                      style: context.isAr
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 12,
+                              color: m.textMuted,
+                            )
+                          : GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              color: m.textMuted,
+                            ),
+                    ),
+                ],
               ),
             ),
             if (trailing != null)
               trailing!
-            else
+            else if (!disabled)
               Icon(Icons.chevron_right, size: 18, color: m.textMuted),
           ],
         ),
@@ -657,6 +704,7 @@ class _L {
   String get bankAccounts => ar ? 'الحسابات البنكية' : 'Bank Accounts';
   String get vendors => ar ? 'المورّدون' : 'Vendors';
   String get reports => ar ? 'التقارير' : 'Reports';
+  String get comingSoon => ar ? 'قريباً' : 'Coming soon';
   String get operations => ar ? 'العمليات' : 'Operations';
   String get tickets => ar ? 'طلبات الصيانة' : 'Tickets';
   String get preferences => ar ? 'التفضيلات' : 'Preferences';
