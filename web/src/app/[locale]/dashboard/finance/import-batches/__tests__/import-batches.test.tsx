@@ -707,6 +707,67 @@ describe("carried review items", () => {
     });
 });
 
+describe("bulk post: fix round", () => {
+    /**
+     * The copy says "only the {n} that failed are tried again". It was given the
+     * batch TOTAL, so a 12-contract batch with one failure offered to retry 12.
+     */
+    it("counts the failures, not the whole batch, in the retry confirmation", async () => {
+        // Twelve contracts imported; the run leaves exactly one failed.
+        api.list.mockResolvedValue([
+            batch({ id: "b-draft", leasesImported: 12 }),
+            batch({ id: "b-posted", status: "POSTED", leasesImported: 12, journalsPosted: 36 }),
+        ]);
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+
+        // Post the draft; the fixture's result lands on b-posted with 1 FAILED of 3.
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        await screen.findByTestId("post-results-table");
+
+        // b-posted now offers a retry, because one contract is known to have failed.
+        await waitFor(() => expect(screen.getByTestId("post-batch-b-posted")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("post-batch-b-posted"));
+        await screen.findByTestId("confirm-post-batch");
+
+        // "only the 1 that failed are tried again" — not the batch's twelve.
+        // Matched on the dialog's own rendered description, the way the
+        // "explains what posting does" test above reads its copy.
+        expect(screen.getByText(/only the 1 that failed/)).toBeInTheDocument();
+        expect(screen.queryByText(/only the 12 that failed/)).not.toBeInTheDocument();
+    });
+
+    it("renders a bulk-post job that has gone, and lets it be dismissed", async () => {
+        const { importJobStorageKey } = await import("@/hooks/useImportJobPolling");
+        const key = importJobStorageKey("bulk-post:b-posted", { tenantId: "tenant-1", userId: "user-1" });
+        window.sessionStorage.setItem(key, "post-job-1");
+        api.postStatus.mockRejectedValue(new ApiError(404, "Import job not found"));
+
+        renderPage();
+        expect(await screen.findByTestId("post-job-error")).toHaveTextContent(en.Cutover.importJobLost);
+        // The hook clears the key so a second reload does not chase it again.
+        await waitFor(() => expect(window.sessionStorage.getItem(key)).toBeNull());
+
+        fireEvent.click(screen.getByTestId("post-job-error-dismiss"));
+        await waitFor(() => expect(screen.queryByTestId("post-job-error")).not.toBeInTheDocument());
+    });
+
+    /** One job at a time, BOTH ways. */
+    it("disables the workbook upload while a bulk post is running", async () => {
+        api.postStatus.mockResolvedValue(postJob({ status: "POSTING", processed: 5, total: 38, result: null }));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        expect(screen.getByTestId("upload-cutover")).not.toBeDisabled();
+
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+
+        await waitFor(() => expect(screen.getByTestId("upload-cutover")).toBeDisabled());
+        expect(screen.getByTestId("upload-blocked")).toHaveTextContent(en.Cutover.uploadBlockedByPost);
+    });
+});
+
 describe("bulk post: resume and contention", () => {
     /** (b) A reload rejoins the post, the way the workbook upload already does. */
     it("resumes a running bulk post after a reload", async () => {

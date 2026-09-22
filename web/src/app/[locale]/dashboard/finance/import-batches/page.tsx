@@ -211,6 +211,12 @@ export default function ImportBatchesPage() {
         setLastOutcomes(prev => ({ ...prev, [result.batchId]: result.leases }));
     }, [postJob.job]);
 
+    /** How many contracts of this batch the last run left FAILED. */
+    const failedCount = useCallback(
+        (batchId: string) => (lastOutcomes[batchId] ?? []).filter(o => o.outcome === "FAILED").length,
+        [lastOutcomes],
+    );
+
     /** Failures first, then posted, then already-posted. */
     const postResults = useMemo(() => {
         const leases = postJob.job?.result?.leases ?? [];
@@ -347,7 +353,10 @@ export default function ImportBatchesPage() {
                                 aria-label={t("uploadCutoverWorkbook")}
                                 className="hidden"
                                 accept={CONTRACT_IMPORT_ACCEPT}
-                                disabled={importJob.polling}
+                                // One job at a time, both ways: Post is disabled
+                                // during an upload, so an upload is disabled
+                                // during a post.
+                                disabled={importJob.polling || postJob.polling}
                                 onChange={e => {
                                     const f = e.target.files?.[0];
                                     if (f) onWorkbook(f);
@@ -538,9 +547,41 @@ export default function ImportBatchesPage() {
                 </p>
             )}
 
+            {/*
+             * The bulk post's twin of the import's "job gone" banner. A resumed
+             * or stale job that 404s used to stop silently, leaving the screen
+             * looking like nothing was ever running.
+             */}
+            {postJob.gone && (
+                <div
+                    role="alert"
+                    data-testid="post-job-error"
+                    className="mb-4 flex items-center justify-between gap-3 bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3"
+                >
+                    <span className="text-xs font-semibold">{t("importJobLost")}</span>
+                    <button
+                        type="button"
+                        data-testid="post-job-error-dismiss"
+                        onClick={() => {
+                            postJob.reset();
+                            setPostBatchId(null);
+                        }}
+                        className="shrink-0 text-xs font-semibold hover:underline cursor-pointer"
+                    >
+                        {t("dismissImportResult")}
+                    </button>
+                </div>
+            )}
+
             {importJob.polling && (
                 <p data-testid="post-blocked" className="mb-4 text-xs font-medium text-warning">
                     {t("postBlockedByUpload")}
+                </p>
+            )}
+
+            {postJob.polling && (
+                <p data-testid="upload-blocked" className="mb-4 text-xs font-medium text-warning">
+                    {t("uploadBlockedByPost")}
                 </p>
             )}
 
@@ -881,7 +922,11 @@ export default function ImportBatchesPage() {
                 }
                 description={
                     confirmPost?.status === "POSTED"
-                        ? t("confirmRetryFailed", { n: confirmPost.leasesImported })
+                        // The FAILED count, not the batch total: the copy says
+                        // "only the {n} that failed are tried again", and a
+                        // twelve-contract batch with one failure was offering to
+                        // retry twelve.
+                        ? t("confirmRetryFailed", { n: failedCount(confirmPost.id) })
                         : t("confirmPostBatch", { n: confirmPost?.leasesImported ?? 0 })
                 }
                 confirmText={t("postBatch")}

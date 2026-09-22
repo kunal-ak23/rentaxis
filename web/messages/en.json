@@ -2329,6 +2329,7 @@
     "derivedDebit": "Imported debit",
     "derivedCredit": "Imported credit",
     "derivedFromPosted": "Derived figures come from {n, plural, one {# posted contract} other {# posted contracts}}.",
-    "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch."
+    "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch.",
+    "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
   }
 }
