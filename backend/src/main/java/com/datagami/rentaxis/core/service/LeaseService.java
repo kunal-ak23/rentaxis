@@ -1371,7 +1371,7 @@ public class LeaseService {
     }
 
     /**
-     * "GLA_B1/681" when the property carries a code, else the bare number. The
+     * "SMP_B1/001" when the property carries a code, else the bare number. The
      * code is nullable and the number is null until a contract is generated, so
      * both absences have to survive this.
      */

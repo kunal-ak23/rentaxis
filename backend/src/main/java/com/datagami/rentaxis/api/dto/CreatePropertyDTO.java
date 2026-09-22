@@ -18,7 +18,7 @@ public class CreatePropertyDTO {
     private String nameAr;
 
     /**
-     * Optional short building code ("GLA_B1") prefixed to contract numbers on
+     * Optional short building code ("SMP_B1") prefixed to contract numbers on
      * documents. Unique per tenant when set; a duplicate comes back as 409 from
      * the database index rather than a read-then-write check here.
      */
