@@ -60,6 +60,29 @@ import { buildXlsx } from './minimal-xlsx';
  * books-start date cannot change once an opening-balance journal is live, and the
  * import refuses a property name the organisation already holds — so scenarios
  * 04, 05 and 07 are each one-shot facts about this tenant.
+ *
+ * ── THE ORDER HAS TO CHANGE ON THE NEXT STACK ──
+ *
+ * This file was written and recorded against the jar built from `da2bd454`. Three
+ * backend commits landed on the branch while it ran, and two of them move the
+ * ground under the order above:
+ *
+ *   - `2aefd796` refuses **Post batch, Reverse batch and Post again while an
+ *     opening-balance journal is live** — opening balances become the LAST step
+ *     of a cut-over. Scenarios 08 and 09 would be refused as this file stands,
+ *     because 05 posts the OB journal first.
+ *   - `d59ad4be` makes the OB journal post **PACT minus what step 1 already
+ *     left on the books**, so 05's posted figures and the deliberate omission of
+ *     the bank line from the uploaded trial balance both change meaning.
+ *   - `cbfb558a` pins each batch-reversal mirror to the entry it reverses and
+ *     drops `date` from `ReverseBatchDTO`, so 09's date picker becomes a
+ *     no-op the web can remove.
+ *
+ * What to do when the jar is rebuilt: run the cut-over first (07 → 08 → 09),
+ * upload the PACT snapshot before them but POST the opening balances after, and
+ * re-derive 05's trial-balance expectations from the delta rule (PACT's bank
+ * figure belongs in the CSV again, and the journal posts the difference). The
+ * task-17 report's "Hand-off" section spells it out line by line.
  */
 
 const BACKEND = process.env.WT_BACKEND_URL || 'http://localhost:8081';
