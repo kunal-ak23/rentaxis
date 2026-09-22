@@ -192,8 +192,11 @@ export const PERMISSIONS = {
     // finance rather than with property management — PROPERTY_MANAGER is absent
     // because the controller refuses it. Its own key, not a reuse of
     // canManageVouchers: same set today, different annotation on a different
-    // controller. NOTE the template download on that same page is narrower
-    // still (SA/TA) — see cutoverRules.canDownloadImportTemplate.
+    // controller. The cut-over template download on that same page is the SAME
+    // set — PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT, because
+    // the person assembling a cut-over workbook out of a PACT export is the
+    // accountant. (It was SA/TA while the page linked the v1 /template, which
+    // keeps its narrower gate.) See cutoverRules.canDownloadImportTemplate.
     canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     // Opening balances and the reconciliation report. Mirrors
     // OpeningBalanceController's class-level @PreAuthorize

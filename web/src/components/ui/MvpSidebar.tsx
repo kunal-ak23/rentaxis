@@ -160,8 +160,9 @@ export default function MvpSidebar() {
         // The cut-over. ImportBatchController is SA/TA/ACCOUNTANT — the same set
         // as canAccessFinance, so it belongs in this branch and not in the
         // SA/TA-only one below; its own key all the same, mirroring that one
-        // annotation. The template download ON the page is narrower still (SA/TA)
-        // and is gated there, not here.
+        // annotation. The cut-over template download ON the page is the same set
+        // (PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT) and is
+        // gated there, not here.
         ...(hasPermission(userRole, 'canManageImportBatches') ? [
             { name: tCutover("importBatches"), href: "/dashboard/finance/import-batches", icon: Layers, tourId: 'sidebar-import-batches' },
         ] : []),
