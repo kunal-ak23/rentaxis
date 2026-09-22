@@ -1144,7 +1144,7 @@ track is commissioned separately.
   cheque, open its row and choose Clear. Enter the value date the bank gave you.
   RentAxis debits your bank account and credits post-dated cheques receivable.
   That is the moment the money becomes yours. Now take a cheque the bank has
-  returned. Open its row and choose Mark returned, give the reason, and confirm.
+  returned. Open its row and choose Bounce, give the reason, and confirm.
   Because this cheque had already cleared, RentAxis reverses the bank side:
   it debits rent receivable and credits the bank. The amount is owed again, and
   the register shows it as due. Open Return and replace. A returned cheque is
