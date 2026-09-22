@@ -56,10 +56,10 @@ class LedgerQueryServiceIT {
         LandlordOrg org = new LandlordOrg(); org.setName("LQ-" + UUID.randomUUID());
         TenantContextHolder.setTenantId(orgRepo.save(org).getId());
         accounts.seedDefaultAccounts(); propertyAccounts.seedDefaultTemplateAndDefaults();
-        Property p = new Property(); p.setNameEn("L'Olivier"); p.setEmirate(Emirate.DUBAI);
+        Property p = new Property(); p.setNameEn("Sample Heights"); p.setEmirate(Emirate.DUBAI);
         Property property = properties.createProperty(p);
         propertyId = property.getId();
-        Renter r = new Renter(); r.setNameEn("Prabhjot Singh");
+        Renter r = new Renter(); r.setNameEn("Sample Renter One");
         Renter renter = renterRepo.save(r);
         renterId = renter.getId();
         // journal_entries.lease_id and .renter_id are real foreign keys (changeset 81),
@@ -95,17 +95,17 @@ class LedgerQueryServiceIT {
         assertThat(l.rows()).hasSize(4);
         // Three receivable rows from the TCO, each naming the one account it faces.
         assertThat(l.rows().get(0).debit()).isEqualByComparingTo("61000");
-        assertThat(l.rows().get(0).particular()).isEqualTo("Advance Rent - L'Olivier");
+        assertThat(l.rows().get(0).particular()).isEqualTo("Advance Rent - Sample Heights");
         assertThat(l.rows().get(0).balance()).isEqualByComparingTo("61000");
         assertThat(l.rows().get(1).debit()).isEqualByComparingTo("3000");
-        assertThat(l.rows().get(1).particular()).isEqualTo("Security Deposit L'Olivier");
+        assertThat(l.rows().get(1).particular()).isEqualTo("Security Deposit Sample Heights");
         assertThat(l.rows().get(1).balance()).isEqualByComparingTo("64000");
         assertThat(l.rows().get(2).debit()).isEqualByComparingTo("500");
-        assertThat(l.rows().get(2).particular()).isEqualTo("Admin Fee - L'Olivier");
+        assertThat(l.rows().get(2).particular()).isEqualTo("Admin Fee - Sample Heights");
         assertThat(l.rows().get(2).balance()).isEqualByComparingTo("64500");
         // The PDR is unpaired, so its Particular falls back to the entry's other accounts.
         assertThat(l.rows().get(3).credit()).isEqualByComparingTo("13700");
-        assertThat(l.rows().get(3).particular()).isEqualTo("PDC Receivable L'Olivier");
+        assertThat(l.rows().get(3).particular()).isEqualTo("PDC Receivable Sample Heights");
         assertThat(l.rows().get(3).balance()).isEqualByComparingTo("50800");
         assertThat(l.closingBalance()).isEqualByComparingTo("50800");
         assertThat(l.totalDebit()).isEqualByComparingTo("64500");
@@ -152,15 +152,15 @@ class LedgerQueryServiceIT {
     void renterLedgerGroupsByAccountAndOnlyShowsThatRenter() {
         List<AccountLedgerDTO> l = ledger.renterLedger(renterId, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
         assertThat(l).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder(
-                "Rent Receivable - L'Olivier", "Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
-                "PDC Receivable L'Olivier", "Emirates Islamic - L'Olivier");
+                "Rent Receivable - Sample Heights", "Advance Rent - Sample Heights", "Security Deposit Sample Heights", "Admin Fee - Sample Heights",
+                "PDC Receivable Sample Heights", "Emirates Islamic - Sample Heights");
         assertThat(ledger.renterLedger(UUID.randomUUID(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))).isEmpty();
     }
 
     @Test
     void generalLedgerWithNoAccountIdsReturnsEveryLeafWithActivityInRange() {
         List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(LocalDate.of(2026, 9, 15), LocalDate.of(2026, 9, 15), null, null, null, null));
-        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - L'Olivier", "PDC Receivable L'Olivier");
+        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - Sample Heights", "PDC Receivable Sample Heights");
     }
 
     /**
@@ -180,9 +180,9 @@ class LedgerQueryServiceIT {
         List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(null, null, null, null, null, null));
 
         assertThat(gl).extracting(AccountLedgerDTO::accountName)
-                .contains("Rent Penalty - L'Olivier")
-                .doesNotContain("Maintenance Charges - L'Olivier");
-        AccountLedgerDTO penalty = gl.stream().filter(a -> a.accountName().equals("Rent Penalty - L'Olivier")).findFirst().orElseThrow();
+                .contains("Rent Penalty - Sample Heights")
+                .doesNotContain("Maintenance Charges - Sample Heights");
+        AccountLedgerDTO penalty = gl.stream().filter(a -> a.accountName().equals("Rent Penalty - Sample Heights")).findFirst().orElseThrow();
         assertThat(penalty.rows()).hasSize(1);
         assertThat(penalty.closingBalance()).isEqualByComparingTo("300");
     }
@@ -193,7 +193,7 @@ class LedgerQueryServiceIT {
         BigDecimal dr = tb.stream().map(TrialBalanceRowDTO::debit).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cr = tb.stream().map(TrialBalanceRowDTO::credit).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(dr).isEqualByComparingTo(cr);
-        TrialBalanceRowDTO adv = tb.stream().filter(r -> r.name().equals("Advance Rent - L'Olivier")).findFirst().orElseThrow();
+        TrialBalanceRowDTO adv = tb.stream().filter(r -> r.name().equals("Advance Rent - Sample Heights")).findFirst().orElseThrow();
         assertThat(adv.balance()).isEqualByComparingTo("-61000"); // credit balance, signed debit-positive
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 10), null)).isEmpty();
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 30), UUID.randomUUID())).isEmpty();

@@ -84,13 +84,13 @@ class PurchaseInvoicePostingIT {
         accounts.seedDefaultAccounts();
 
         Property p = new Property();
-        p.setNameEn("Ocean Residencia");
+        p.setNameEn("Sample Oasis");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
         Account expenseGroup = accounts.getAccountByCode("D-01");
-        pestControl = accounts.createLeaf("PEST CONTROL AMC OCEAN RESIDENCIA", expenseGroup, propertyId);
-        lifeguard = accounts.createLeaf("LIFEGUARD EXP - OCEAN RESIDENCIA", expenseGroup, propertyId);
+        pestControl = accounts.createLeaf("PEST CONTROL AMC SAMPLE OASIS", expenseGroup, propertyId);
+        lifeguard = accounts.createLeaf("LIFEGUARD EXP - SAMPLE OASIS", expenseGroup, propertyId);
         inputVat = accounts.createLeaf("VAT Receivable", accounts.getAccountByCode("A-02-04"), null);
         mapDefault(AccountRole.INPUT_VAT, inputVat);
 

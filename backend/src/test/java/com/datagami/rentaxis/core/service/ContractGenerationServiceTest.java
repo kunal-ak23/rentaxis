@@ -329,7 +329,7 @@ class ContractGenerationServiceTest {
     private LandlordOrg buildLandlordOrg(UUID tenantId) {
         LandlordOrg org = new LandlordOrg();
         org.setId(tenantId);
-        org.setName("TAREK MOHAMMED ALASHRAM");
+        org.setName("MIFTAH DEMO PROPERTIES");
         org.setAddress("P.O.Box: 366, Dubai Silicon Oasis, Dubai, U.A.E.");
         org.setPhone("+971 4 272 7070");
         org.setStampImageUrl(null);
@@ -339,7 +339,7 @@ class ContractGenerationServiceTest {
     private Property buildProperty(UUID tenantId, PropertyType type) {
         Property p = new Property();
         p.setTenantId(tenantId);
-        p.setNameEn("GALAH RESIDENCE 2");
+        p.setNameEn("SAMPLE RESIDENCES 2");
         p.setEmirate(Emirate.DUBAI);
         p.setType(type);
         return p;
@@ -349,7 +349,7 @@ class ContractGenerationServiceTest {
         Unit u = new Unit();
         u.setTenantId(tenantId);
         u.setProperty(property);
-        u.setUnitNumber("GH2-603");
+        u.setUnitNumber("SR2-603");
         return u;
     }
 
@@ -517,16 +517,16 @@ class ContractGenerationServiceTest {
         String html = htmlCaptor.getValue();
 
         // ---- Content assertions ----
-        assertThat(html).contains("TAREK MOHAMMED ALASHRAM");
+        assertThat(html).contains("MIFTAH DEMO PROPERTIES");
         assertThat(html).contains("P.O.Box: 366, Dubai Silicon Oasis, Dubai, U.A.E.");
         assertThat(html).contains("+971 4 272 7070");
         // Contract number is max+1 = 1751
         assertThat(html).contains("1751");
-        assertThat(html).contains("GALAH RESIDENCE 2");
+        assertThat(html).contains("SAMPLE RESIDENCES 2");
         assertThat(html).contains("FATHIMA RISWANA AHAMED KABEER");
         assertThat(html).contains("Noorfaizal91@hotmail.com");
         assertThat(html).contains("050 8831786");
-        assertThat(html).contains("GH2-603");
+        assertThat(html).contains("SR2-603");
 
         // Section 3 amounts
         assertThat(html).contains("55,000.00");

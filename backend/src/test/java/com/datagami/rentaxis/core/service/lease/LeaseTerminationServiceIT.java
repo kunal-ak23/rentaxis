@@ -194,7 +194,7 @@ class LeaseTerminationServiceIT {
      * then {@code LeasePostingService}, so the register's money is real — the
      * assertions below read it.
      */
-    private UUID galah() {
+    private UUID sampleResidences() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")));
         chequeGeneration.saveRows(leaseId, List.of(
@@ -208,8 +208,8 @@ class LeaseTerminationServiceIT {
     }
 
     /** …and the three instruments that have been banked, each cleared on its own date. */
-    private UUID galahWithThreeCleared() {
-        UUID leaseId = galah();
+    private UUID sampleResidencesWithThreeCleared() {
+        UUID leaseId = sampleResidences();
         clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
         clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
         clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
@@ -223,8 +223,8 @@ class LeaseTerminationServiceIT {
      * @param creditAccountId the extension line's own deferral account, or null to
      *                        let it resolve the property's {@code ADVANCE_RENT}.
      */
-    private UUID galahExtended(UUID creditAccountId) {
-        UUID leaseId = galahWithThreeCleared();
+    private UUID sampleResidencesExtended(UUID creditAccountId) {
+        UUID leaseId = sampleResidencesWithThreeCleared();
         renewal.extend(leaseId, new ExtendLeaseRequest(
                 EXTENSION_END,
                 LocalDate.of(2027, 9, 20),
@@ -242,7 +242,7 @@ class LeaseTerminationServiceIT {
      * <p>One line only, because VAT is what this fixture is about and an admin fee
      * would put a second, un-recognised charge into every figure below.</p>
      */
-    private UUID commercialGalah() {
+    private UUID commercialSampleResidences() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(LeaseTestFixtures.vatLine("RENT", "51000")));
         chequeGeneration.saveRows(leaseId, List.of(
@@ -484,7 +484,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void previewDefaultsReturnChequesDatedAfterT() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         TerminationPreviewDTO preview = termination.preview(leaseId, T);
@@ -533,7 +533,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminatePostsReturnReversalsTruncatesRecognitionAndReversesUnearned() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         LeaseDTO result = termination.terminate(leaseId,
@@ -634,7 +634,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminatingAVatBearingLeaseCreditsTheVatOnTheUnearnedRent() {
-        UUID leaseId = commercialGalah();
+        UUID leaseId = commercialSampleResidences();
         UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
         assertThat(balanceOf(outputVat, leaseId)).as("VAT charged on the whole contract")
                 .isEqualByComparingTo("-2550.00");
@@ -678,7 +678,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aVatBearingLeaseTerminatedOnItsLastDayCreditsNoVat() {
-        UUID leaseId = commercialGalah();
+        UUID leaseId = commercialSampleResidences();
 
         TerminationPreviewDTO preview = termination.preview(leaseId, END);
         assertThat(preview.unearnedRent()).isEqualByComparingTo("0.00");
@@ -701,7 +701,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminateWithPostedEntryAfterT() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 3, 31), false);
         assertThat(recognised(leaseId)).isEqualByComparingTo("26408.23");   // Sep–Mar
 
@@ -786,7 +786,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminationOnAMonthEndRepostsTheMonthAtTheTruncatedAmount() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         LocalDate monthEnd = LocalDate.of(2027, 1, 31);
         recognition.runTo(monthEnd, false);
         assertThat(recognised(leaseId)).isEqualByComparingTo("18164.39");
@@ -840,7 +840,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aTruncatedSegmentDescribesTheTermItActuallyRan() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
@@ -878,7 +878,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aTerminatedLeaseCannotBeAmended() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
 
         assertThatThrownBy(() -> posting.amendLines(leaseId,
@@ -893,7 +893,7 @@ class LeaseTerminationServiceIT {
     /** Finance overrules the default: one cheque is kept for collection, only the other goes back. */
     @Test
     void keepListOverridesDefault() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
         UUID keep = chequeOn(leaseId, RENT_3).getId();
         UUID hand = chequeOn(leaseId, RENT_4).getId();
@@ -924,7 +924,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void everyUnclearedChequeMustBeInExactlyOneList() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         UUID april = chequeOn(leaseId, RENT_3).getId();
         UUID july = chequeOn(leaseId, RENT_4).getId();
         UUID alreadyCleared = chequeOn(leaseId, RENT_1).getId();
@@ -955,7 +955,7 @@ class LeaseTerminationServiceIT {
     /** A date outside the term, or inside a month somebody has signed off, is not a termination date. */
     @Test
     void rejectsDateOutsideTermOrLocked() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
 
         assertThatThrownBy(() -> termination.preview(leaseId, START.minusDays(1)))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -1005,7 +1005,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aRefusedUnearnedReversalRollsTheWholeTerminationBack() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 3, 31), false);
         long reversalsBefore = reversalCount();
         long cilsBefore = journalCount(JournalDocType.CIL);
@@ -1074,7 +1074,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aRowPostedMidTerminationIsReversedNotCancelled() throws Exception {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
         UUID marchId = rowStarting(leaseId, LocalDate.of(2027, 3, 1)).id();
         UUID tenantId = fixtures.tenantId();
@@ -1140,7 +1140,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminatingInsideTheOriginalTermCancelsTheExtensionUnstarted() {
-        UUID leaseId = galahExtended(null);
+        UUID leaseId = sampleResidencesExtended(null);
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
@@ -1189,7 +1189,7 @@ class LeaseTerminationServiceIT {
         Account mapped = leaf(AccountRole.ADVANCE_RENT);
         Account override = tx.execute(s -> accountService.createLeaf("Advance Rent - extension",
                 accounts.findById(mapped.getId()).orElseThrow().getParent(), fixtures.property().getId()));
-        UUID leaseId = galahExtended(override.getId());
+        UUID leaseId = sampleResidencesExtended(override.getId());
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
@@ -1216,7 +1216,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void terminatingInsideTheExtensionLeavesTheFinishedSegmentAlone() {
-        UUID leaseId = galahExtended(null);
+        UUID leaseId = sampleResidencesExtended(null);
         LocalDate late = LocalDate.of(2027, 11, 15);
         recognition.runTo(LocalDate.of(2027, 10, 31), false);
 
@@ -1268,7 +1268,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void anOnlineCheckoutIsRevertedBeforeItIsHandedBack() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         UUID april = chequeOn(leaseId, RENT_3).getId();
         UUID july = chequeOn(leaseId, RENT_4).getId();
         chequeService.registerOnlinePending(april);
@@ -1305,7 +1305,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aBouncedRowIsOwedRatherThanReturnedOrKept() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         UUID april = chequeOn(leaseId, RENT_3).getId();
         chequeService.deposit(april, ChequeActionRequest.on(RENT_3));
         chequeService.bounce(april, new ChequeActionRequest(RENT_3, null, ChequeFailureReason.BOUNCE, null));
@@ -1341,7 +1341,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aManagerWithNoBuildingsCanNeitherPreviewNorTerminate() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
         asUnassignedPropertyManager();
 
         assertThatThrownBy(() -> termination.preview(leaseId, T)).isInstanceOf(NotFoundException.class);
@@ -1369,7 +1369,7 @@ class LeaseTerminationServiceIT {
      */
     @Test
     void aNoticeThatMeetsALockedLeaseIsAskedToTryAgain() throws Exception {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID tenantId = fixtures.tenantId();
 
         ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -1409,7 +1409,7 @@ class LeaseTerminationServiceIT {
     /** Another landlord cannot see this contract, let alone end it. */
     @Test
     void anotherTenantCanNeitherPreviewNorTerminateThisLease() {
-        UUID leaseId = galahWithThreeCleared();
+        UUID leaseId = sampleResidencesWithThreeCleared();
 
         fixtures.newTenant();
         fixtures.asTenantAdmin();

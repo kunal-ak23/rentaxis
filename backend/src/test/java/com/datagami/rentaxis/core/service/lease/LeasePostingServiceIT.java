@@ -79,7 +79,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Nothing here can be usefully mocked: the assertions are about what is in the
  * ledger afterwards — which accounts, which contra accounts, which dimensions,
  * which entry numbers — and about all-or-nothing behaviour that only a real
- * transaction exhibits. The figures are PACT's Galah 2 shape: 51,000 of rent over
+ * transaction exhibits. The figures are PACT's Sample Residences 2 shape: 51,000 of rent over
  * four cheques plus a 2,000 admin fee, contract dated before the tenancy starts.</p>
  *
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant
@@ -146,7 +146,7 @@ class LeasePostingServiceIT {
         return dto;
     }
 
-    /** The Galah 2 draft: 51,000 rent credited to Advance Rent, a 2,000 admin fee. */
+    /** The Sample Residences 2 draft: 51,000 rent credited to Advance Rent, a 2,000 admin fee. */
     private UUID draft() {
         return draft(fixtures.unit(), List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")));
     }
@@ -625,7 +625,7 @@ class LeasePostingServiceIT {
     void theLeasesOwnReceivableAccountCarriesBothHalvesOfTheContract() {
         UUID leaseId = readyToPost();
         Account ownReceivable = tx.execute(s -> accountService.createLeaf(
-                "Rent Receivable - Galah 2", accountService.getAccountByCode("A-02-01"), fixtures.property().getId()));
+                "Rent Receivable - Sample Residences 2", accountService.getAccountByCode("A-02-01"), fixtures.property().getId()));
         setReceivableOverride(leaseId, ownReceivable.getId());
         Account propertyReceivable = leaf(AccountRole.RENT_RECEIVABLE);
 

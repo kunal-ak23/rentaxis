@@ -119,13 +119,13 @@ class OpeningBalanceIT {
         seedChart();
 
         Property p = new Property();
-        p.setNameEn("Tulip Oasis 7");
+        p.setNameEn("Sample Plaza Oasis 7");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         vatPayable = accounts.createLeaf("VAT Payable", accounts.getAccountByCode("B-01"), null);
-        rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
+        rentReceivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), propertyId);
 
         // By role, not by code: the seed already mapped OPENING_BALANCE_DIFFERENCE to F-02.
         obDifference = resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);
@@ -346,7 +346,7 @@ class OpeningBalanceIT {
         assertThatThrownBy(() -> ob.setRow(rentReceivable.getId(), new BigDecimal("15000.00"), null))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining(rentReceivable.getCode())
-                .hasMessageContaining("Rent Receivable - Tulip 7");
+                .hasMessageContaining("Rent Receivable - Sample Plaza 7");
     }
 
     // ------------------------------------------------------------------
@@ -388,7 +388,7 @@ class OpeningBalanceIT {
         upload("""
                 Account Code,Account Name,Debit,Credit
                 %s,Cash In Hand,50000.00,0.00
-                %s,Rent Receivable - Tulip 7,15000.00,0.00
+                %s,Rent Receivable - Sample Plaza 7,15000.00,0.00
                 %s,VAT Payable,0.00,12000.00
                 """.formatted(cashInHand.getCode(), rentReceivable.getCode(), vatPayable.getCode()));
         JournalEntry e = ob.post();

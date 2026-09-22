@@ -71,40 +71,40 @@ class PropertyAccountServiceIT {
 
     @Test
     void creatingAPropertyGeneratesItsAccountSetAndMappings() {
-        Property p = newProperty("Tulip Oasis 7");
+        Property p = newProperty("Sample Plaza Oasis 7");
         List<RoleMappingDTO> m = service.getMappings(p.getId());
         RoleMappingDTO rr = m.stream().filter(x -> x.role() == AccountRole.RENT_RECEIVABLE).findFirst().orElseThrow();
-        assertThat(rr.accountName()).isEqualTo("Rent Receivable - Tulip Oasis 7");
+        assertThat(rr.accountName()).isEqualTo("Rent Receivable - Sample Plaza Oasis 7");
         assertThat(rr.inherited()).isFalse();
         Account leaf = accountRepo.findById(rr.accountId()).orElseThrow();
         assertThat(accountRepo.findById(leaf.getParentId()).orElseThrow().getCode()).isEqualTo("A-02-01");
         assertThat(leaf.getAccountType()).isEqualTo(AccountType.ASSET);
         assertThat(leaf.getPropertyId()).isEqualTo(p.getId());
-        assertThat(resolver.resolve(AccountRole.ADVANCE_RENT, p.getId()).getName()).isEqualTo("Advance Rent - Tulip Oasis 7");
+        assertThat(resolver.resolve(AccountRole.ADVANCE_RENT, p.getId()).getName()).isEqualTo("Advance Rent - Sample Plaza Oasis 7");
     }
 
     @Test
     void generateMissingIsIdempotentAndFillsOnlyGaps() {
-        Property p = newProperty("Belle Vue");
+        Property p = newProperty("Sample Vista");
         int before = accountRepo.findByProperty_Id(p.getId()).size();
         service.clearMapping(p.getId(), AccountRole.BANK);
         service.generateMissing(p.getId());
-        // the existing "Emirates Islamic - Belle Vue" leaf is reused, not duplicated
+        // the existing "Emirates Islamic - Sample Vista" leaf is reused, not duplicated
         assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
-        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Belle Vue");
+        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Sample Vista");
     }
 
     @Test
     void manualMappingToASharedAccountAndTypeCheck() {
-        Property galah = newProperty("Galah Residence 2");
+        Property sampleResidences = newProperty("Sample Residences 2");
         Account generic = accounts.createLeaf("Rent Receivable", accounts.getAccountByCode("A-02-01"), null);
-        service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, generic.getId());
-        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, galah.getId()).getId()).isEqualTo(generic.getId());
+        service.setMapping(sampleResidences.getId(), AccountRole.RENT_RECEIVABLE, generic.getId());
+        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, sampleResidences.getId()).getId()).isEqualTo(generic.getId());
         Account income = accounts.getAccountByCode("C-01-02-001");
-        assertThatThrownBy(() -> service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, income.getId()))
+        assertThatThrownBy(() -> service.setMapping(sampleResidences.getId(), AccountRole.RENT_RECEIVABLE, income.getId()))
                 .hasMessageContaining("ASSET");
         Account group = accounts.getAccountByCode("A-02-01");
-        assertThatThrownBy(() -> service.setMapping(galah.getId(), AccountRole.RENT_RECEIVABLE, group.getId()))
+        assertThatThrownBy(() -> service.setMapping(sampleResidences.getId(), AccountRole.RENT_RECEIVABLE, group.getId()))
                 .hasMessageContaining("group");
     }
 
@@ -112,7 +112,7 @@ class PropertyAccountServiceIT {
     void disabledTemplateRowIsSkipped() {
         var rows = service.getTemplate();
         service.saveTemplate(rows.stream().map(r -> r.role() == AccountRole.COOLING_CHARGES ? r.withEnabled(false) : r).toList());
-        Property p = newProperty("OST-10");
+        Property p = newProperty("Sample Atrium 10");
         RoleMappingDTO cooling = service.getMappings(p.getId()).stream().filter(x -> x.role() == AccountRole.COOLING_CHARGES).findFirst().orElseThrow();
         assertThat(cooling.accountId()).isNull();
     }

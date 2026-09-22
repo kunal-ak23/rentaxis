@@ -323,7 +323,7 @@ class LeaseLinesIT {
     /**
      * The migrated tenancy's own contract number (changeset 88, spec §10.3).
      *
-     * <p>PACT identifies a contract as "TLP7/681"; {@code contractNumber} is a
+     * <p>PACT identifies a contract as "SAMPLE-25/001"; {@code contractNumber} is a
      * {@code Long} and the column our next contract number is generated from, so
      * the imported reference gets a column of its own and the two live side by
      * side. The lease screen has to be able to show both — an accountant
@@ -338,13 +338,13 @@ class LeaseLinesIT {
 
         tx.executeWithoutResult(status -> {
             Lease row = leaseRepository.findById(lease.getId()).orElseThrow();
-            row.setExternalContractRef("TLP7/681");
+            row.setExternalContractRef("SAMPLE-25/001");
             row.setContractNumber(681L);
             leaseRepository.save(row);
         });
 
         LeaseDTO reread = leaseService.getLeaseById(lease.getId());
-        assertThat(reread.getExternalContractRef()).isEqualTo("TLP7/681");
+        assertThat(reread.getExternalContractRef()).isEqualTo("SAMPLE-25/001");
         // ...and it has not been confused with our own sequence.
         assertThat(reread.getContractNumber()).isEqualTo(681L);
         assertThat(reread.getDisplayContractNumber()).isEqualTo(fixtures.property().getCode() + "/681");

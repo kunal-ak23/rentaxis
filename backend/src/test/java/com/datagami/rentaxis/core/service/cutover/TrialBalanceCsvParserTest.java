@@ -29,8 +29,8 @@ class TrialBalanceCsvParserTest {
     void parsesCodeNameDebitCredit() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
-                145661,Rental Income Tulip 7,0.00,61000.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
+                145661,Rental Income Sample Plaza 7,0.00,61000.00
                 """);
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows()).hasSize(2);
@@ -42,7 +42,7 @@ class TrialBalanceCsvParserTest {
     /** PACT exports without a header when the report is saved rather than printed. */
     @Test
     void aFileWithNoHeaderRowStillParses() {
-        var r = parse("166269,Rent Receivable - Tulip 7,15000.00,0.00\n");
+        var r = parse("166269,Rent Receivable - Sample Plaza 7,15000.00,0.00\n");
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows()).singleElement().satisfies(row ->
                 assertThat(row.code()).isEqualTo("166269"));
@@ -53,8 +53,8 @@ class TrialBalanceCsvParserTest {
     void thousandsSeparatorsQuotesAndParenthesesAreUnderstood() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                "166269","Rent Receivable - Tulip 7","1,015,000.00","0.00"
-                "145661","Rental Income Tulip 7","0.00","(61,000.00)"
+                "166269","Rent Receivable - Sample Plaza 7","1,015,000.00","0.00"
+                "145661","Rental Income Sample Plaza 7","0.00","(61,000.00)"
                 """);
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows().get(0).debit()).isEqualByComparingTo("1015000.00");
@@ -65,7 +65,7 @@ class TrialBalanceCsvParserTest {
     void blankLinesAndTotalRowsAreSkippedNotReportedAsErrors() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
 
                 ,,15000.00,15000.00
                 """);
@@ -111,8 +111,8 @@ class TrialBalanceCsvParserTest {
     void aDrOrCrSuffixDecidesTheSide() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                145800,Security Deposit-Warsan,"2,750.00Cr",0.00
-                145911,Rent Receivable LE BOULEVARD,"19,000.00 Dr",0.00
+                145800,Security Deposit-Sample Court,"2,750.00Cr",0.00
+                145911,Rent Receivable SAMPLE TOWER,"19,000.00 Dr",0.00
                 125620,Advance Rent,0.00,"55,000.00 Cr"
                 """);
         assertThat(r.problems()).isEmpty();
@@ -133,7 +133,7 @@ class TrialBalanceCsvParserTest {
                 Trial Balance as at 30-09-2026
 
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
                 """);
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows()).singleElement().satisfies(row ->
@@ -145,9 +145,9 @@ class TrialBalanceCsvParserTest {
     void subTotalAndGrandTotalRowsAreSkipped() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
                 Sub Total,,15000.00,0.00
-                145661,Rental Income Tulip 7,0.00,15000.00
+                145661,Rental Income Sample Plaza 7,0.00,15000.00
                 Grand Total,,15000.00,15000.00
                 """);
         assertThat(r.problems()).isEmpty();

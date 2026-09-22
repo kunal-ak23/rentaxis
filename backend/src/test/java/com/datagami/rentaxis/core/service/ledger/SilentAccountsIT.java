@@ -65,7 +65,7 @@ class SilentAccountsIT {
 
     @Test
     void bankAccountOnAPropertyDefaultsToThePropertyBankLeaf() {
-        Property p = new Property(); p.setNameEn("Tara 2"); p.setEmirate(Emirate.DUBAI); p = properties.createProperty(p);
+        Property p = new Property(); p.setNameEn("Sample Palm 2"); p.setEmirate(Emirate.DUBAI); p = properties.createProperty(p);
         BankAccount b = new BankAccount(); b.setBankName("Emirates Islamic"); b.setAccountNumber("1234567890"); b.setProperty(p);
         b = bankAccounts.createBankAccount(b);
         assertThat(b.getCoaAccount().getId()).isEqualTo(resolver.resolve(AccountRole.BANK, p.getId()).getId());
