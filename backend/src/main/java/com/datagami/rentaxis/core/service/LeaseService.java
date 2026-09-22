@@ -963,7 +963,7 @@ public class LeaseService {
      * row — handing it an already-ACTIVE lease, or a TERMINATED one, would do all
      * three for a contract that is not becoming active at all.</p>
      *
-     * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/1629"}
+     * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/0042"}
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {

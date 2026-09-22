@@ -15,7 +15,7 @@ import java.util.UUID;
  * one now carries a {@code pdrJournalId} and has moved to {@code REGISTERED}: the
  * grid the user was looking at a moment ago is stale in every row.</p>
  *
- * @param tcoEntryNumber the human-facing number, e.g. {@code "TCO-26/1629"} — the
+ * @param tcoEntryNumber the human-facing number, e.g. {@code "TCO-26/0042"} — the
  *                       one the accountant will look for in PACT.
  */
 public record PostLeaseResponse(LeaseDTO lease,
