@@ -2210,7 +2210,7 @@
     "reverseBatch": "Reverse batch",
     "confirmReverseBatch": "Reverse this batch? {journals} journals are reversed, newest first, and {leases} contracts go back to draft.",
     "reverseBatchHint": "Every journal is reversed on its own date — each mirror lands on the day of the entry it undoes, never today. The contracts go back to draft, and the batch can be posted again afterwards.",
-    "batchReversed": "Batch reversed. Import the corrected spreadsheet as a new batch.",
+    "batchReversed": "Batch reversed on each journal's own date. Use Post again to put the same contracts back on the books, or discard the draft and import a corrected spreadsheet.",
     "downloadCutoverTemplate": "Download cut-over template",
     "noBatches": "No import batches yet",
     "noBatchesDesc": "A cut-over import creates one batch here, with everything it wrote held together so the whole run can be taken back in one step.",
