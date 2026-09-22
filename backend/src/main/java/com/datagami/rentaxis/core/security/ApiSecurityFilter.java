@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.security;
 
+import com.datagami.rentaxis.api.AssetController;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import jakarta.servlet.FilterChain;
@@ -70,7 +71,11 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         // Skip auth routes to prevent interception overhead
         if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
                 || path.startsWith("/actuator/") || path.startsWith("/api/webhooks/")
-                || path.startsWith("/api/v1/assets/serve/") || path.startsWith("/public/")
+                // Only the public asset folder skips authentication (issue #300):
+                // every other storage key under /serve now requires a caller, and
+                // skipping the filter for it would leave that caller anonymous.
+                || path.startsWith("/api/v1/assets/serve/" + AssetController.PUBLIC_PREFIX + "/")
+                || path.startsWith("/public/")
                 || path.startsWith("/api/v1/public/")) {
             filterChain.doFilter(request, response);
             return;

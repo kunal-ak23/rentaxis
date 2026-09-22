@@ -12,6 +12,7 @@ import {
     Wrench, Building2, Home, Tag, AlertTriangle, CheckCircle, X, FileText, Trash2,
 } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { assetSrc } from "@/lib/assetUrl";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -374,7 +375,7 @@ export default function TicketDetailPage() {
                                             {isImage ? (
                                                 <div
                                                     className="aspect-square bg-cover bg-center cursor-pointer hover:opacity-90 transition-opacity"
-                                                    style={{ backgroundImage: `url(${att.fileUrl})` }}
+                                                    style={{ backgroundImage: `url(${assetSrc(att.fileUrl)})` }}
                                                     onClick={() => setLightboxIndex(mediaIndex)}
                                                 />
                                             ) : isVideo ? (
@@ -382,7 +383,7 @@ export default function TicketDetailPage() {
                                                     className="aspect-square relative cursor-pointer hover:opacity-90 transition-opacity"
                                                     onClick={() => setLightboxIndex(mediaIndex)}
                                                 >
-                                                    <video src={att.fileUrl} className="w-full h-full object-cover" preload="metadata" muted />
+                                                    <video src={assetSrc(att.fileUrl)} className="w-full h-full object-cover" preload="metadata" muted />
                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                                                         <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
                                                             <div className="w-0 h-0 border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent border-l-[14px] border-l-foreground ml-1" />
@@ -649,11 +650,11 @@ export default function TicketDetailPage() {
                 const mediaItems = attachments.filter(a => a.fileType?.startsWith("image/") || a.fileType?.startsWith("video/"));
                 return mediaItems.length > 0 ? (
                     <ImageLightbox
-                        images={mediaItems.map(a => ({ url: a.fileUrl, name: a.fileUrl.split("/").pop() || "file", type: a.fileType }))}
+                        images={mediaItems.map(a => ({ url: assetSrc(a.fileUrl), name: a.fileUrl.split("/").pop() || "file", type: a.fileType }))}
                         initialIndex={Math.min(lightboxIndex, mediaItems.length - 1)}
                         onClose={() => setLightboxIndex(null)}
                         onDownload={(url, name) => {
-                            const att = attachments.find(a => a.fileUrl === url);
+                            const att = attachments.find(a => assetSrc(a.fileUrl) === url);
                             if (att) handleDownloadAttachment(att.id, name);
                         }}
                     />

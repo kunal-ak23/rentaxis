@@ -16,6 +16,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
+import { assetSrc } from "@/lib/assetUrl";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
@@ -118,7 +119,7 @@ function AttachmentThumbnail({ attachment, onDelete, onPreview, editable }: {
         >
             {isImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={attachment.fileUrl} alt={attachment.name} className="w-full h-full object-cover" />
+                <img src={assetSrc(attachment.fileUrl)} alt={attachment.name} className="w-full h-full object-cover" />
             ) : isVideo ? (
                 <Video size={20} className="text-muted" />
             ) : (
@@ -181,9 +182,9 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                 <div className="flex-1 overflow-auto bg-input/30 flex items-center justify-center p-4">
                     {isImage ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={attachment.fileUrl} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
+                        <img src={assetSrc(attachment.fileUrl)} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
                     ) : isPdf ? (
-                        <iframe src={attachment.fileUrl} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
+                        <iframe src={assetSrc(attachment.fileUrl)} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
                     ) : (
                         <a
                             href={downloadUrl}
