@@ -81,12 +81,19 @@ test('tenant admin edits a draft payment plan, bulk-attaches a cheque, and delet
 
   // The cheque grid is generated on the draft — still DRAFT-status rows,
   // since nothing has posted (ChequeGrid/`leaseApi.generateCheques`).
-  const grid = await api.generateCheques(adminCtx, created.id, { installments: 4 });
+  await api.generateCheques(adminCtx, created.id, { installments: 4 });
+  // Read the grid back rather than re-sending the generate response: the save
+  // below is the whole table, and the generate response does not carry the
+  // dates each row was born with.
+  const grid = await api.getLeaseCheques(adminCtx, created.id);
   const editableRows = grid.filter((row) => row.status === 'DRAFT' && row.mode === 'PDC');
   expect(editableRows.length).toBeGreaterThanOrEqual(2);
 
   // `PUT /leases/{id}/cheques` re-saves the WHOLE grid, not one row — flip
-  // just the first row's mode to CASH and resend every row unchanged.
+  // just the first row's mode to CASH and resend every row unchanged. Every
+  // column has to travel with it: a field the payload omits is cleared, and a
+  // CASH row with no date is refused ("a CASH receipt needs the date it is
+  // expected on").
   const cashRow = editableRows[0];
   const savedGrid = await api.saveLeaseCheques(
     adminCtx,
@@ -94,6 +101,11 @@ test('tenant admin edits a draft payment plan, bulk-attaches a cheque, and delet
     grid.map((row) => ({
       id: row.id,
       seqNo: row.seqNo,
+      postingDate: row.postingDate,
+      chequeNumber: row.chequeNumber,
+      chequeDate: row.chequeDate,
+      payeeBank: row.payeeBank,
+      narration: row.narration,
       amount: row.amount,
       mode: row.id === cashRow.id ? 'CASH' : (row.mode as 'PDC' | 'CASH' | 'TRANSFER' | 'ONLINE'),
     })),
