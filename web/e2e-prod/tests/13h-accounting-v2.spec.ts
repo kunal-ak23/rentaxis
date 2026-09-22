@@ -96,9 +96,16 @@ test('a contract posts, its cheques clear, bounce and are replaced, and the mont
       unitNumber: `TEST-ACC-${ctx.runSuffix}`,
       expectedRent: 60000,
     });
+    // A ledger fixture, not a portal user: the synthetic `@e2e.rentaxis.test`
+    // domain (10b's pattern) rather than 01-provision's real Gmail alias, which
+    // that spec uses deliberately so an operator can confirm the invite mail
+    // really delivered. Nothing here reads a mailbox, and `createPortalAccount:
+    // false` keeps the run from sending an invite to a domain that does not
+    // accept mail.
     const renter = await api.createRenter(pctx, {
       nameEn: `TEST-Accounting ${ctx.runSuffix}`,
-      email: `kunalsharma.ks13+e2e-acct-${ctx.runSuffix}@gmail.com`,
+      email: `test-accounting-renter-${ctx.runSuffix}@e2e.rentaxis.test`,
+      createPortalAccount: false,
     });
 
     // 60,000 rent + 12,000 deposit, matched to the rial by the grid below —
@@ -248,8 +255,15 @@ test('a contract posts, its cheques clear, bounce and are replaced, and the mont
       'the journal endpoint must refuse a lease document',
     ).rejects.toThrow(/amend or terminate the lease/i);
 
-    // A manual voucher is the one entry it does reverse, and the books stay
-    // balanced across both halves.
+    // A manual voucher is the one entry it does reverse. Watch the two
+    // accounts it touches across all three states: a reversal that quietly did
+    // nothing would leave the bank 100 up, and Σdebit = Σcredit — which holds
+    // for any set of balanced entries, reversed or not — would not notice.
+    const balanceOf = (rows: Awaited<ReturnType<typeof api.getTrialBalance>>, code: string) =>
+      Number(rows.find((r) => r.code === code)?.balance ?? 0);
+    const bankBefore = balanceOf(tb, bankCode);
+    const receivableBefore = balanceOf(tb, receivableCode);
+
     const voucher = await api.postManualJournal(pctx, {
       entryDate: today,
       narration: `TEST-E2E manual voucher ${ctx.runSuffix}`,
@@ -261,18 +275,25 @@ test('a contract posts, its cheques clear, bounce and are replaced, and the mont
     });
     expect(voucher.entryNumber).toMatch(/^JV-/);
 
+    // Posted: the bank is 100 up and the receivable 100 down, debit-positive.
+    const tbWithVoucher = await api.getTrialBalance(pctx, today);
+    expect(balanceOf(tbWithVoucher, bankCode)).toBeCloseTo(bankBefore + 100, 2);
+    expect(balanceOf(tbWithVoucher, receivableCode)).toBeCloseTo(receivableBefore - 100, 2);
+
     const reversal = await api.reverseJournal(pctx, voucher.id, today, 'e2e reversal check');
     expect(reversal.reversalOfId).toBe(voucher.id);
     // Only a document path maps TCO→TCR; a voucher's mirror keeps its own type.
     expect(reversal.entryNumber).toMatch(/^JV-/);
 
+    // Reversed: the mirror swapped the sides, so both accounts are back where
+    // they stood before the voucher — and the books still balance.
     const tbAfter = await api.getTrialBalance(pctx, today);
+    expect(balanceOf(tbAfter, bankCode)).toBeCloseTo(bankBefore, 2);
+    expect(balanceOf(tbAfter, receivableCode)).toBeCloseTo(receivableBefore, 2);
     expect(tbAfter.reduce((a, r) => a + Number(r.debit), 0)).toBeCloseTo(
       tbAfter.reduce((a, r) => a + Number(r.credit), 0),
       2,
     );
-    // The voucher and its mirror cancel, so the books read exactly as they did.
-    expect(tbAfter.reduce((a, r) => a + Number(r.balance), 0)).toBeCloseTo(0, 2);
   } finally {
     await pctx.request.dispose();
   }
