@@ -194,6 +194,38 @@ describe("Termination page", () => {
         expect(date).toHaveAttribute("max", "2026-12-31");
     });
 
+    it("ignores a pricing that the user's edit has already superseded", async () => {
+        // The page opens priced for today and the user moves the date before
+        // that answer lands. The two responses come back out of order.
+        let releaseFirst: (p: TerminationPreview) => void = () => {};
+        api.preview
+            .mockImplementationOnce(() => new Promise<TerminationPreview>(res => { releaseFirst = res; }))
+            .mockResolvedValueOnce({ ...PREVIEW, terminationDate: "2026-06-15", receivableAfter: 7000 });
+
+        renderPage();
+        const date = await screen.findByTestId("terminate-date");
+        fireEvent.change(date, { target: { value: "2026-06-15" } });
+
+        await waitFor(() => expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("7,000.00"));
+
+        // …and only now does the first one arrive.
+        releaseFirst({ ...PREVIEW, terminationDate: "2026-06-30", receivableAfter: 5000 });
+        await waitFor(() => expect(api.preview).toHaveBeenCalledTimes(2));
+
+        // It must not land: the confirm posts `preview.terminationDate`, so a
+        // stale answer here ends the contract on the date the user moved off.
+        expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("7,000.00");
+
+        fireEvent.click(screen.getByTestId("terminate-submit"));
+        fireEvent.click(await screen.findByTestId("terminate-confirm"));
+        await waitFor(() =>
+            expect(api.terminate).toHaveBeenCalledWith(
+                "lease-1",
+                expect.objectContaining({ terminationDate: "2026-06-15" }),
+            ),
+        );
+    });
+
     it("names the back arrow, which was icon-only", async () => {
         renderPage();
         expect(await screen.findByTestId("terminate-back")).toHaveAccessibleName("Back to contract");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -136,19 +136,36 @@ export default function TerminateLeasePage() {
         setDate(clampIso(todayIso(), minDate, maxDate));
     }, [lease, terminable, date, minDate, maxDate]);
 
+    /**
+     * Which pricing is the current one. The page opens priced for today and
+     * the user's first edit fires a second price before that one has landed,
+     * so two are routinely in flight; HTTP does not order them. A late answer
+     * for the date the picker has moved off would otherwise overwrite the new
+     * one — and because the confirm posts `preview.terminationDate` and not
+     * the picker's value, that is not a cosmetic flicker: the contract would
+     * end on the date the user changed away from.
+     */
+    const priceTicket = useRef(0);
+
     const price = useCallback(
         async (on: string) => {
+            const ticket = ++priceTicket.current;
+            const current = () => ticket === priceTicket.current;
             setPricing(true);
             setPreviewError(null);
             try {
                 const p = await terminationApi.preview(leaseId, on);
+                if (!current()) return;
                 setPreview(p);
                 setDecisions(defaultDecisions(p));
             } catch (e) {
+                if (!current()) return;
                 setPreview(null);
                 setPreviewError(e instanceof ApiError ? e.message : t("previewFailed"));
             } finally {
-                setPricing(false);
+                // A superseded price leaves the flag alone: the one that
+                // replaced it is still running, and the screen is still busy.
+                if (current()) setPricing(false);
             }
         },
         [leaseId, t],
