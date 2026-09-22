@@ -209,59 +209,42 @@ describe("import batches list", () => {
         expect(screen.queryByTestId("batch-final-b-reversed")).not.toBeInTheDocument();
     });
 
-    it("reverses behind a confirmation that collects a date and a reason", async () => {
+    /**
+     * `ReverseBatchDTO` is a reason and nothing else (backend cbfb558a): every
+     * mirror is dated on the journal it reverses. The date used to be the
+     * accountant's to pick, and because `PostingService.reverse` exempts a batch
+     * journal from `assertOpen` it was accepted whatever it was — a mirror dated
+     * later left the batch's figures standing at their own dates with the row
+     * reading REVERSED.
+     */
+    it("reverses behind a confirmation that collects a reason and no date", async () => {
         api.reverse.mockResolvedValue(batch({ id: "b-posted", status: "REVERSED" }));
         renderPage();
         await screen.findByTestId("batch-row-b-posted");
         fireEvent.click(screen.getByTestId("reverse-batch-b-posted"));
 
-        // The confirmation explains what it is about to do.
-        expect(await screen.findByTestId("batch-reverse-date")).toBeInTheDocument();
-        expect(screen.getByText(en.Cutover.reverseBatchHint)).toBeInTheDocument();
+        // The confirmation explains what it is about to do, and says where the
+        // reversal lands — one date per journal, none of them this screen's.
+        expect(await screen.findByText(en.Cutover.reverseBatchHint)).toBeInTheDocument();
+        expect(screen.queryByTestId("batch-reverse-date")).not.toBeInTheDocument();
 
-        fireEvent.change(screen.getByTestId("batch-reverse-date"), { target: { value: "2026-09-30" } });
         fireEvent.change(screen.getByTestId("batch-reverse-reason"), { target: { value: "bad rents" } });
         fireEvent.click(screen.getByTestId("confirm-reverse-batch"));
 
-        await waitFor(() =>
-            expect(api.reverse).toHaveBeenCalledWith("b-posted", { date: "2026-09-30", reason: "bad rents" }),
-        );
+        await waitFor(() => expect(api.reverse).toHaveBeenCalledWith("b-posted", { reason: "bad rents" }));
         // And the list reloads so the row's status is the server's, not a guess.
         await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
         expect(await screen.findByTestId("batch-reversed-banner")).toBeInTheDocument();
     });
 
-    /**
-     * A batch reversal is exempt from the period lock
-     * (`PostingService.reverse` skips `assertOpen` when `importBatchId != null`),
-     * so the date field carries no lock gate — refusing here would be the
-     * mirror-image bug.
-     */
-    it("does not require a reversal date after the period lock", async () => {
+    /** Nothing to fill in but the reason, so nothing gates the button. */
+    it("does not gate the reversal on a date it no longer sends", async () => {
         api.reverse.mockResolvedValue(batch({ id: "b-posted", status: "REVERSED" }));
         renderPage();
         await screen.findByTestId("batch-row-b-posted");
         fireEvent.click(screen.getByTestId("reverse-batch-b-posted"));
-        fireEvent.change(await screen.findByTestId("batch-reverse-date"), { target: { value: "2026-01-31" } });
-        expect(screen.getByTestId("confirm-reverse-batch")).toBeEnabled();
-    });
-
-    /**
-     * `ReverseBatchDTO.date` is `@NotNull` (ImportBatchController.java:52) and
-     * `ImportBatchService.reverse:181` refuses a null one — so an empty date
-     * field must not reach the server.
-     */
-    it("will not reverse without a date", async () => {
-        renderPage();
-        await screen.findByTestId("batch-row-b-posted");
-        fireEvent.click(screen.getByTestId("reverse-batch-b-posted"));
-
-        fireEvent.change(await screen.findByTestId("batch-reverse-date"), { target: { value: "" } });
-        await waitFor(() => expect(screen.getByTestId("confirm-reverse-batch")).toBeDisabled());
-        expect(screen.getByTestId("batch-reverse-blocker")).toHaveTextContent(en.Cutover.reverseDateRequired);
-
-        fireEvent.change(screen.getByTestId("batch-reverse-date"), { target: { value: "2026-09-30" } });
-        await waitFor(() => expect(screen.getByTestId("confirm-reverse-batch")).toBeEnabled());
+        expect(await screen.findByTestId("confirm-reverse-batch")).toBeEnabled();
+        expect(screen.queryByTestId("batch-reverse-blocker")).not.toBeInTheDocument();
     });
 
     /** "This import batch is being reversed right now; try again" — RowLockedException. */

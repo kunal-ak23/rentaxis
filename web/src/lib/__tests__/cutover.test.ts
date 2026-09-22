@@ -235,15 +235,18 @@ describe("reconciliation rules", () => {
         );
     });
 
-    it("reverses a batch with the date and reason ReverseBatchDTO takes", async () => {
-        await cutoverApi.batches.reverse("b1", { date: "2026-09-30", reason: "re-import" });
+    /**
+     * `ReverseBatchDTO` is the reason and nothing else. The date went with the
+     * rule: every mirror is dated on the journal it reverses, because a batch
+     * journal is exempt from the period lock and any date at all was therefore
+     * accepted — one dated later left the original standing at its own date.
+     */
+    it("reverses a batch with the reason ReverseBatchDTO takes, and no date", async () => {
+        await cutoverApi.batches.reverse("b1", { reason: "re-import" });
         const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
         expect(url).toBe("/api/proxy/v1/finance/import-batches/b1/reverse");
         expect((init as RequestInit).method).toBe("POST");
-        expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-            date: "2026-09-30",
-            reason: "re-import",
-        });
+        expect(JSON.parse((init as RequestInit).body as string)).toEqual({ reason: "re-import" });
     });
 
     it("exposes nothing the controller does not", () => {

@@ -9,7 +9,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
-import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
 import { Link } from "@/i18n/routing";
 import {
@@ -43,10 +43,11 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
  *
  * **What is deliberately absent.** The brief described a bulk-post action; no
  * such endpoint exists in `ImportBatchController`, so there is no button for it.
- * The reversal date carries no period-lock gate either — `PostingService.reverse`
- * exempts batch journals from `assertOpen`, and a cut-over is loaded into periods
- * that are normally closed, so gating here would refuse what the server allows.
- * Both are recorded in `lib/cutoverRules.ts`.
+ * The reversal takes no date: every mirror is dated on the journal it reverses,
+ * because `PostingService.reverse` exempts batch journals from `assertOpen` and
+ * a date the accountant picked was therefore accepted whatever it was, leaving
+ * the figures standing while the row read REVERSED. Both are recorded in
+ * `lib/cutoverRules.ts`.
  */
 
 const th = "text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider";
@@ -105,7 +106,6 @@ export default function ImportBatchesPage() {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [banner, setBanner] = useState<string | null>(null);
     const [pending, setPending] = useState<ImportBatch | null>(null);
-    const [reverseDate, setReverseDate] = useState(todayIso);
     const [reason, setReason] = useState("");
     const [reversing, setReversing] = useState(false);
     const [reverseError, setReverseError] = useState<string | null>(null);
@@ -297,7 +297,6 @@ export default function ImportBatchesPage() {
 
     const openReverse = (b: ImportBatch) => {
         setPending(b);
-        setReverseDate(todayIso());
         setReason("");
         setReverseError(null);
         setBanner(null);
@@ -308,7 +307,7 @@ export default function ImportBatchesPage() {
         setReversing(true);
         setReverseError(null);
         try {
-            await cutoverApi.batches.reverse(pending.id, { date: reverseDate, reason });
+            await cutoverApi.batches.reverse(pending.id, { reason });
             setPending(null);
             setBanner(t("batchReversed"));
             // Reloaded rather than patched in place: the status the row shows
@@ -979,31 +978,20 @@ export default function ImportBatchesPage() {
                 confirmText={t("reverseBatch")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-reverse-batch"
-                // ReverseBatchDTO.date is @NotNull and ImportBatchService.reverse
-                // refuses a null one, so an emptied field must not travel.
-                confirmDisabled={!reverseDate}
             >
+                {/*
+                 * No date field: `ReverseBatchDTO` is a reason and nothing else,
+                 * and every mirror is dated on the journal it reverses. It used
+                 * to be the accountant's to pick — and because
+                 * `PostingService.reverse` exempts a batch journal from
+                 * `assertOpen`, any date at all was accepted, while
+                 * `balancesAsOf` has no status predicate. A mirror dated later
+                 * therefore left the batch's figures standing at their own dates
+                 * with the row reading REVERSED. The hint says where the
+                 * reversal lands, because "reverse the batch" is thirty-six
+                 * journals on thirty-six days, not one entry today.
+                 */}
                 <p className="text-xs text-muted">{t("reverseBatchHint")}</p>
-                <div>
-                    <label className={fieldLabel} htmlFor="batch-reverse-date">
-                        {tLedger("reverseDate")}
-                    </label>
-                    {/*
-                     * No period-lock gate, deliberately: PostingService.reverse
-                     * exempts a journal carrying an importBatchId from assertOpen,
-                     * because a cut-over is loaded into periods that are normally
-                     * closed and a batch that could not be undone afterwards would
-                     * be a one-way door.
-                     */}
-                    <input
-                        id="batch-reverse-date"
-                        data-testid="batch-reverse-date"
-                        type="date"
-                        className={field}
-                        value={reverseDate}
-                        onChange={e => setReverseDate(e.target.value)}
-                    />
-                </div>
                 <div>
                     <label className={fieldLabel} htmlFor="batch-reverse-reason">
                         {tLedger("reverseReason")}
@@ -1016,11 +1004,6 @@ export default function ImportBatchesPage() {
                         onChange={e => setReason(e.target.value)}
                     />
                 </div>
-                {!reverseDate && (
-                    <p data-testid="batch-reverse-blocker" className="text-xs font-semibold text-warning">
-                        {t("reverseDateRequired")}
-                    </p>
-                )}
                 {reverseError && (
                     <p role="alert" data-testid="batch-reverse-error" className="text-xs font-semibold text-error">
                         {reverseError}

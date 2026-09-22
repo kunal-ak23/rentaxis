@@ -188,7 +188,7 @@ export function isImportJobTerminal(status: ImportJobStatus): boolean {
 
 /**
  * **Not** a rule this module exposes, and deliberately: a batch reversal is NOT
- * checked against the period lock.
+ * checked against the period lock, and it has NO DATE.
  *
  * `PostingService.reverse` reads
  * `if (original.getImportBatchId() == null) fiscal.assertOpen(date);` — a
@@ -198,8 +198,17 @@ export function isImportJobTerminal(status: ImportJobStatus): boolean {
  * journals dated 11–12 Sep 2026 reverse cleanly with the books locked through
  * 30 Sep 2026.
  *
- * So the reversal-date field here carries no lock gate. Adding one would be the
- * mirror-image bug — the UI refusing what the server allows.
+ * That exemption is exactly why the date went away. `ImportBatchService.reverse`
+ * now dates every mirror on the journal it reverses and `ReverseBatchDTO` has
+ * only a `reason`: with the lock not applying, a date the accountant picked was
+ * accepted whatever it was, and `JournalLineRepository.balancesAsOf` has no
+ * status predicate — so a mirror dated later left the batch's own figures
+ * standing at their original dates while the row read REVERSED. A reversal that
+ * did not undo anything, on a screen that said it had.
+ *
+ * So there is no date field and no lock gate here. Adding either would be a bug:
+ * a date because the server no longer takes one, a gate because it would refuse
+ * what the server allows.
  */
 export const BATCH_REVERSAL_IGNORES_PERIOD_LOCK = true;
 

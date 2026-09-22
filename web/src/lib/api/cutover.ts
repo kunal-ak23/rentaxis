@@ -59,8 +59,16 @@ export type ImportBatch = {
     createdAt: string;
 };
 
-/** `ImportBatchController.ReverseBatchDTO` — `date` is `@NotNull`, `reason` is free text. */
-export type ReverseBatchInput = { date: string; reason: string };
+/**
+ * `ImportBatchController.ReverseBatchDTO` — `reason` and nothing else.
+ *
+ * There was a `date`, and it was the caller's to choose. It is gone: every
+ * mirror is now dated on the journal it reverses, because a batch journal is
+ * exempt from the period lock and `balancesAsOf` has no status predicate, so a
+ * mirror dated later left the original standing at its own date while the batch
+ * read REVERSED. One date per journal, none of them this screen's to pick.
+ */
+export type ReverseBatchInput = { reason: string };
 
 // ---- opening balances (api/OpeningBalanceController.java) ----
 
