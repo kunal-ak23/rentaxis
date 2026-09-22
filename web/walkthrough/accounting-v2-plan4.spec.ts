@@ -56,33 +56,25 @@ import { buildXlsx } from './minimal-xlsx';
  * *before* the import, so the derived column moving from 0.00 to the hand-derived
  * figures is observable on the same rows.
  *
- * ORDER MATTERS. The period lock in scenario 04 only ever moves forwards, the
- * books-start date cannot change once an opening-balance journal is live, and the
- * import refuses a property name the organisation already holds — so scenarios
- * 04, 05 and 07 are each one-shot facts about this tenant.
+ * ── ORDER MATTERS, and the order is the cut-over's own ──
  *
- * ── THE ORDER HAS TO CHANGE ON THE NEXT STACK ──
+ * **Opening balances are the LAST step** (spec §10.3 "Amendment 2026-09-22",
+ * `ImportBatchService.OPENING_BALANCES_ARE_LIVE`). The OB journal posts
+ * `PACT(X) − ours(X)` for every non-derived account, so a bulk post, a batch
+ * reverse or a Post-again afterwards would move `ours` under a journal computed
+ * against the old value — all three are refused while an OB journal is live, and
+ * scenario 10 shows that refusal on the screen rather than only in a test.
  *
- * This file was written and recorded against the jar built from `da2bd454`. Three
- * backend commits landed on the branch while it ran, and two of them move the
- * ground under the order above:
+ * So the run is: the vouchers (01–04), PACT's trial balance uploaded but not
+ * posted (05) and the reconciliation that explains its zeroes (06), the contract
+ * import (07), the bulk post (08), reverse / post again / discard (09), and only
+ * then the opening balances (10) and the reconciliation that closes the story
+ * (11). Arabic (12) reads the five screens at the end.
  *
- *   - `2aefd796` refuses **Post batch, Reverse batch and Post again while an
- *     opening-balance journal is live** — opening balances become the LAST step
- *     of a cut-over. Scenarios 08 and 09 would be refused as this file stands,
- *     because 05 posts the OB journal first.
- *   - `d59ad4be` makes the OB journal post **PACT minus what step 1 already
- *     left on the books**, so 05's posted figures and the deliberate omission of
- *     the bank line from the uploaded trial balance both change meaning.
- *   - `cbfb558a` pins each batch-reversal mirror to the entry it reverses and
- *     drops `date` from `ReverseBatchDTO`, so 09's date picker becomes a
- *     no-op the web can remove.
- *
- * What to do when the jar is rebuilt: run the cut-over first (07 → 08 → 09),
- * upload the PACT snapshot before them but POST the opening balances after, and
- * re-derive 05's trial-balance expectations from the delta rule (PACT's bank
- * figure belongs in the CSV again, and the journal posts the difference). The
- * task-17 report's "Hand-off" section spells it out line by line.
+ * Three more one-shot facts pin the order beyond that: the period lock in
+ * scenario 04 only ever moves forwards, the books-start date cannot change once
+ * an OB journal is live, and the import refuses a property name the organisation
+ * already holds.
  */
 
 const BACKEND = process.env.WT_BACKEND_URL || 'http://localhost:8081';
@@ -283,10 +275,25 @@ async function signIn(page: Page, email: string, password: string) {
 }
 
 /** Sign in once in a throwaway context purely to bank the session for later takes. */
+/**
+ * A session cookie is only banked once it EXISTS.
+ *
+ * `waitForURL(/dashboard/)` resolves on the client-side redirect, which can win
+ * the race against NextAuth's `Set-Cookie` landing in the context — and a state
+ * file carrying only the CSRF cookie signs the next take out at its first
+ * navigation, six scenarios later, with nothing at the failure site to say why.
+ * Seen once, hence this.
+ */
 async function bankSession(browser: Browser, email: string, password: string, statePath: string) {
     const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
     await signIn(page, email, password);
+    await expect
+        .poll(
+            async () => (await context.cookies()).some(c => c.name.endsWith('next-auth.session-token')),
+            { message: `${email}: the session cookie must exist before it is banked`, timeout: 20_000 },
+        )
+        .toBe(true);
     await context.storageState({ path: statePath });
     await context.close();
 }
@@ -707,6 +714,12 @@ test('00 provision a tenant, its chart, the three finance roles and a vendor wit
     const { page, close } = await recorded(browser, '00-provision-tenant-and-chart', { state: null });
     try {
         await signIn(page, admin.email, admin.password);
+        await expect
+            .poll(
+                async () => (await page.context().cookies()).some(c => c.name.endsWith('next-auth.session-token')),
+                { message: 'the admin session cookie must exist before it is banked', timeout: 20_000 },
+            )
+            .toBe(true);
         await page.context().storageState({ path: STATE_ADMIN });
 
         await page.goto('/en/dashboard/properties');
@@ -1080,14 +1093,12 @@ test('04 the screen never offers what the server refuses: a role, a reversed doc
  * separators, a row whose code our chart has never heard of, a row whose amount
  * is not an amount, and a Grand Total the parser skips.
  *
- * **The bank line is deliberately absent.** PACT's own trial balance carries one
- * — 20,000 by 30 Sep 2025 — but `OpeningBalanceService.DERIVED_ROLES` (spec
- * §10.3) does not list BANK, so the grid treats the bank leaf as a MANUAL row
- * and the OB journal would post the figure typed into it. The contract import
- * *also* produces that balance, by replaying two clearances dated before the
- * books open. Entering it here would put 40,000 in the bank on a portfolio that
- * holds 20,000. Scenario 08 asserts the gap this leaves on the reconciliation
- * rather than papering over it; it is written up in the task report.
+ * **The bank line is here in full**, at 20,000.00 Dr, exactly as PACT's own
+ * export would carry it. The OB journal posts `PACT(X) − ours(X)` for every
+ * non-derived account, and the contract import produces that same 20,000 by
+ * replaying two clearances dated before the books open — so the row posts
+ * **0.00** and the books end at PACT's figure rather than at twice it. Scenario
+ * 10 asserts all three of that row's figures.
  */
 function trialBalanceCsv(cashDebit: string): string {
     const r = fx.roles;
@@ -1100,18 +1111,19 @@ function trialBalanceCsv(cashDebit: string): string {
         `${fx.capital.code},${fx.capital.name},,"5,000.00"`,
         `${r.RENT_RECEIVABLE.accountCode},${r.RENT_RECEIVABLE.accountName},"15,000.00",`,
         `${r.PDC_RECEIVABLE.accountCode},${r.PDC_RECEIVABLE.accountName},"30,000.00",`,
+        `${r.BANK.accountCode},${r.BANK.accountName},"20,000.00",`,
         `${r.ADVANCE_RENT.accountCode},${r.ADVANCE_RENT.accountName},,"44,876.71"`,
         `${r.RENTAL_INCOME.accountCode},${r.RENTAL_INCOME.accountName},,"15,123.29"`,
         `${r.SECURITY_DEPOSIT.accountCode},${r.SECURITY_DEPOSIT.accountName},,"5,000.00"`,
         '999999,Legacy Suspense (PACT),"777.00",',
         'PACTBAD,Unreadable Figure,abc,',
-        'Grand Total,,"57,777.00","65,000.00"',
+        'Grand Total,,"77,777.00","65,000.00"',
         '',
     ].join('\n');
 }
 
-test('05 opening balances: a PACT trial balance, a computed difference, and a replacement', async ({ browser }) => {
-    const { page, close } = await recorded(browser, '05-opening-balances');
+test('05 PACT’s trial balance is uploaded, read row by row, and not yet posted', async ({ browser }) => {
+    const { page, close } = await recorded(browser, '05-upload-the-pact-trial-balance');
     try {
         await page.goto('/en/dashboard/finance/opening-balances');
         await expect(page.getByTestId('ob-grid')).toBeVisible({ timeout: 20_000 });
@@ -1123,12 +1135,12 @@ test('05 opening balances: a PACT trial balance, a computed difference, and a re
             asUpload('pact-trial-balance.csv', 'text/csv', Buffer.from(trialBalanceCsv('12,000.00'), 'utf8')),
         );
 
-        // Eight rows are stored — the seven our chart knows plus the code it does
-        // not, which is KEPT and reported rather than dropped. The ninth could
+        // Nine rows are stored — the eight our chart knows plus the code it does
+        // not, which is KEPT and reported rather than dropped. The tenth could
         // not be read at all and says which line it was on.
-        await expect(page.getByTestId('ob-upload-stored')).toContainText('8 rows read', { timeout: 20_000 });
+        await expect(page.getByTestId('ob-upload-stored')).toContainText('9 rows read', { timeout: 20_000 });
         await expect(page.getByTestId('ob-upload-unmatched')).toContainText('999999');
-        await expect(page.getByTestId('ob-upload-problems')).toContainText('line 13');
+        await expect(page.getByTestId('ob-upload-problems')).toContainText('line 14');
         await expect(page.getByTestId('ob-upload-problems')).toContainText('abc');
         await hold(page, 1600);
 
@@ -1139,70 +1151,29 @@ test('05 opening balances: a PACT trial balance, a computed difference, and a re
         await expect(page.getByTestId(`ob-readonly-${pdcId}`)).toContainText('PDC_RECEIVABLE');
         // …and the manual ones are not.
         await expect(page.getByTestId(`ob-debit-${fx.cash.id}`)).toHaveValue('12000');
-
-        // ── the difference row is computed, not typed ──
-        // 12,000 Dr against 5,000 Cr leaves 7,000, and the server puts that gap
-        // on OPENING_BALANCE_DIFFERENCE itself — read-only, and carrying the
-        // figure the journal will post, so the grid adds up the way the journal
-        // does rather than showing a total nobody can tie out.
+        // The difference account is read-only for a different reason: the server
+        // works its figure out rather than taking one.
         await expect(page.getByTestId(`ob-debit-${fx.difference.id}`), 'the gap is not hand-entered')
             .toHaveCount(0);
         await expect(page.getByTestId(`ob-readonly-${fx.difference.id}`))
             .toContainText('worked out when the journal is posted');
-        await expect(page.getByTestId(`ob-row-${fx.difference.id}`)).toContainText(money(7_000));
-        await expect(page.getByTestId('ob-total-debit')).toHaveText(money(12_000));
-        await expect(page.getByTestId('ob-total-credit')).toHaveText(money(12_000));
-        await expect(page.getByTestId('ob-difference'), 'the grid balances once the gap is placed')
-            .toHaveText(money(0));
 
-        await page.getByTestId('ob-post').click();
-        await page.getByTestId('confirm-ob-post').click();
-        await expect(page.getByTestId('ob-success')).toContainText('OB-', { timeout: 30_000 });
-        await expect(page.getByTestId('ob-posted-banner')).toBeVisible();
-
-        const firstGrid = await adminApi<{ posted: boolean; journalId: string; journalNumber: string }>(
+        // Nothing is posted here. The books open in scenario 10, after the
+        // cut-over, because the OB journal posts PACT less what the import has
+        // already put on the books and the import has not run yet.
+        const grid = await adminApi<{ posted: boolean; difference: number }>(
             'GET',
             '/api/v1/finance/opening-balances',
         );
-        expect(firstGrid.posted).toBe(true);
-        record('journal', firstGrid.journalId, firstGrid.journalNumber);
-
-        let tb = await trialBalanceAt(AS_OF);
-        expect(tb[fx.cash.code], 'the cash figure the accountant uploaded').toBeCloseTo(12_000, 2);
-        expect(tb[fx.capital.code]).toBeCloseTo(-5_000, 2);
-        expect(tb['F-02'], 'the gap opens the books balanced').toBeCloseTo(-7_000, 2);
-
-        // ── a corrected figure: the grid says so, and Replace is the way back ──
-        await page.getByTestId(`ob-debit-${fx.cash.id}`).fill('12500');
-        await expect(page.getByTestId(`ob-unsaved-${fx.cash.id}`)).toBeVisible();
-        await expect(page.getByTestId('ob-blocker')).toContainText('1');
-        await page.getByTestId(`ob-save-${fx.cash.id}`).click();
-        await expect(page.getByTestId('ob-changed-since-posted')).toBeVisible({ timeout: 20_000 });
-        // The computed row follows the correction: 12,500 against 5,000 is 7,500.
-        await expect(page.getByTestId(`ob-row-${fx.difference.id}`)).toContainText(money(7_500));
-        await expect(page.getByTestId('ob-total-debit')).toHaveText(money(12_500));
-
-        await page.getByTestId('ob-replace').click();
-        await expect(page.getByTestId('ob-replace-blocker')).toBeVisible();
-        await page.getByTestId('ob-replace-reason').fill('Corrected cash balance from the bank statement');
-        await page.getByTestId('confirm-ob-replace').click();
-        await expect(page.getByTestId('ob-success')).toContainText('OB-', { timeout: 30_000 });
-        await expect(page.getByTestId('ob-changed-since-posted')).toHaveCount(0);
-
-        const secondGrid = await adminApi<{ posted: boolean; journalId: string; journalNumber: string }>(
-            'GET',
-            '/api/v1/finance/opening-balances',
-        );
-        expect(secondGrid.journalId, 'a replacement is a different journal').not.toBe(firstGrid.journalId);
-        const reversedOb = await journalOf(firstGrid.journalId);
-        expect(reversedOb.status, 'the first opening journal is off the books').toBe('REVERSED');
-
-        tb = await trialBalanceAt(AS_OF);
-        expect(tb[fx.cash.code], 'the corrected cash balance').toBeCloseTo(12_500, 2);
-        expect(tb[fx.capital.code]).toBeCloseTo(-5_000, 2);
-        expect(tb['F-02'], 'and the recomputed difference').toBeCloseTo(-7_500, 2);
-
-        await assertTrialBalanceBalances('05');
+        expect(grid.posted, 'uploading a trial balance opens nothing').toBe(false);
+        // 12,000 cash + 20,000 bank against 5,000 of capital. The bank is in
+        // there at its full figure because our books hold nothing yet; once the
+        // cut-over has posted, the same file's bank row posts 0.00 and this gap
+        // falls to 7,000 (scenario 10).
+        expect(round2(grid.difference), 'what PACT’s file alone would open the books with')
+            .toBeCloseTo(27_000, 2);
+        await expect(page.getByTestId('ob-posted-banner')).toHaveCount(0);
+        await expect(page.getByTestId('ob-post')).toBeVisible();
         await hold(page);
     } finally {
         await close();
@@ -1236,19 +1207,19 @@ test('06 reconciliation before the contracts are imported, with the banner that 
         await expect(page.getByTestId('rec-pact-999999')).toHaveText(balance(777));
 
         // ── the report is the uploaded file plus whatever our books hold ──
-        // Eight rows: the seven codes the upload matched and the one it did not.
+        // Nine rows: the eight codes the upload matched and the one it did not.
         // An account nobody has a figure for on either side is not reported at
         // all (`OpeningBalanceService.reconcile` walks the snapshot and the
         // non-zero derived balances), which is why the vendor's payable leaf is
-        // absent here and the bank appears only in scenario 08.
+        // absent here.
         const all = await page.locator('[data-testid^="rec-row-"]').count();
-        expect(all, 'seven matched codes and one that is not ours').toBe(8);
+        expect(all, 'eight matched codes and one that is not ours').toBe(9);
         await expect(page.getByTestId(`rec-row-${fx.vendorPayable.code}`)).toHaveCount(0);
-        await expect(page.getByTestId('rec-out-of-balance')).toContainText('8');
+        await expect(page.getByTestId('rec-out-of-balance')).toContainText('9');
 
         // Nothing agrees yet, so the filter hides nothing — which is the honest
         // state of a cut-over whose contracts have not been imported. Scenario 08
-        // presses the same box once five of these rows have come into line.
+        // presses the same box once six of these rows have come into line.
         await page.getByTestId('rec-differences-only').check();
         await expect(page.locator('[data-testid^="rec-row-"]')).toHaveCount(all);
         await expect(page.getByTestId(`rec-row-${r.PDC_RECEIVABLE.accountCode}`)).toBeVisible();
@@ -1461,39 +1432,34 @@ test('08 bulk post: twelve journals, the hand-derived balances, and nothing said
             'and the contract balances to zero on its own',
         ).toBeCloseTo(0, 2);
 
-        // ── reconciliation now agrees with PACT on every derived account ──
+        // ── reconciliation now agrees with PACT, account by account ──
+        // Including the BANK, which PACT's file carries and the import produced:
+        // the two agree at 20,000, which is what makes the opening balances able
+        // to post nothing for it in scenario 10 rather than double it.
         await page.goto('/en/dashboard/finance/reconciliation');
         await expect(page.getByTestId('rec-table')).toBeVisible({ timeout: 20_000 });
-        for (const role of ['RENT_RECEIVABLE', 'PDC_RECEIVABLE', 'ADVANCE_RENT', 'RENTAL_INCOME', 'SECURITY_DEPOSIT']) {
+        for (const role of ['RENT_RECEIVABLE', 'PDC_RECEIVABLE', 'BANK', 'ADVANCE_RENT', 'RENTAL_INCOME', 'SECURITY_DEPOSIT']) {
             const code = r[role].accountCode;
             await expect(page.getByTestId(`rec-difference-${code}`), `${role} must reconcile`)
                 .toHaveAttribute('data-differs', 'false');
         }
         await expect(page.getByTestId(`rec-derived-${r.PDC_RECEIVABLE.accountCode}`)).toHaveText(balance(30_000));
         await expect(page.getByTestId(`rec-derived-${r.ADVANCE_RENT.accountCode}`)).toHaveText(balance(-44_876.71));
+        await expect(page.getByTestId(`rec-derived-${r.BANK.accountCode}`)).toHaveText(balance(20_000));
+        await expect(page.getByTestId(`rec-pact-${r.BANK.accountCode}`)).toHaveText(balance(20_000));
         await expect(page.getByTestId('rec-derived-notice'), 'the step it was waiting for has run')
             .toHaveCount(0);
 
-        // The bank is the account this design leaves in the middle: the import
-        // produced 20,000 by replaying two clearances dated before the books
-        // open, but BANK is not one of the nine DERIVED_ROLES, so the grid would
-        // have taken PACT's own bank figure as a manual opening balance and the
-        // books would hold both. The uploaded trial balance deliberately omits
-        // it, and this is the gap that leaves.
-        await expect(page.getByTestId(`rec-derived-${r.BANK.accountCode}`)).toHaveText(balance(20_000));
-        await expect(page.getByTestId(`rec-pact-${r.BANK.accountCode}`)).toHaveText('0.00');
-        await expect(page.getByTestId(`rec-difference-${r.BANK.accountCode}`))
-            .toHaveAttribute('data-differs', 'true');
-
         // ── and now the filter has something to hide ──
         const allRows = await page.locator('[data-testid^="rec-row-"]').count();
-        expect(allRows, 'the eight uploaded rows plus the bank the import filled').toBe(9);
-        await expect(page.getByTestId('rec-out-of-balance')).toContainText('4');
+        expect(allRows, 'the nine rows PACT’s file carried').toBe(9);
+        await expect(page.getByTestId('rec-out-of-balance')).toContainText('3');
         await page.getByTestId('rec-differences-only').check();
-        await expect(page.locator('[data-testid^="rec-row-"]')).toHaveCount(4);
+        await expect(page.locator('[data-testid^="rec-row-"]')).toHaveCount(3);
         await expect(page.getByTestId(`rec-row-${r.PDC_RECEIVABLE.accountCode}`), 'the rows that agree are gone')
             .toHaveCount(0);
-        await expect(page.getByTestId(`rec-row-${r.BANK.accountCode}`)).toBeVisible();
+        await expect(page.getByTestId('rec-row-999999'), 'a code our chart has no account for cannot agree')
+            .toBeVisible();
         await hold(page, 1600);
 
         // ── imported history raises no fines and tells nobody ──
@@ -1521,17 +1487,19 @@ test('09 reverse the batch, post it again as a successor, and discard a draft on
         await expect(page.getByTestId(`batch-row-${batchId}`)).toBeVisible({ timeout: 20_000 });
 
         // ── reverse ──
-        // Dated on the cut-over itself, not on today. The dialog offers today by
-        // default and the server accepts it — a batch journal is exempt from the
-        // period lock either way — but a mirror dated after the books open leaves
-        // the OPENING position standing: the reconciliation reads `books start −
-        // 1`, where a reversal dated later has not happened yet. Written up in
-        // the task report; here the accountant does the right thing.
+        // The dialog asks for a reason and NOT for a date: `ImportBatchService
+        // .reverse` mirrors every journal on the day of the entry it undoes, so
+        // there is no date for the accountant to get wrong. A mirror dated today
+        // would have left the whole cut-over standing as at `books start − 1`,
+        // which is the date the reconciliation and the opening balances read.
         await page.getByTestId(`reverse-batch-${batchId}`).click();
-        await page.getByTestId('batch-reverse-date').fill(AS_OF);
+        await expect(page.getByTestId('batch-reverse-date'), 'a batch reversal takes no date')
+            .toHaveCount(0);
         await page.getByTestId('batch-reverse-reason').fill('The September cut-over was loaded against the wrong bank');
         await page.getByTestId('confirm-reverse-batch').click();
         await expect(page.getByTestId('batch-reversed-banner')).toBeVisible({ timeout: 60_000 });
+        await expect(page.getByTestId('batch-reversed-banner'), 'and the banner names the way back')
+            .toContainText('Post again');
         await expect(page.getByTestId(`batch-status-${batchId}`)).toHaveAttribute('data-status', 'REVERSED');
 
         const reversedJournals = await adminApi<{ content: Journal[] }>(
@@ -1630,6 +1598,12 @@ test('09 reverse the batch, post it again as a successor, and discard a draft on
         const afterDiscard = await batchesOf();
         expect(afterDiscard.find(b => b.id === draftBatchId)?.status, 'the batch row survives as the record')
             .toBe('DISCARDED');
+        // The row says DISCARDED in its own word, not "Reversed", and offers
+        // nothing — what it created is gone.
+        await expect(page.getByTestId(`batch-status-${draftBatchId}`))
+            .toHaveAttribute('data-status', 'DISCARDED');
+        await expect(page.getByTestId(`batch-status-${draftBatchId}`)).toHaveText('Discarded');
+        await expect(page.getByTestId(`batch-final-${draftBatchId}`)).toBeVisible();
         const propertiesAfter = await adminApi<{ content?: { nameEn: string }[] }>('GET', '/api/v1/properties');
         expect((propertiesAfter.content ?? []).map(p => p.nameEn), 'and everything it made is gone')
             .not.toContain(`WT4 Annex ${SUFFIX}`);
@@ -1643,8 +1617,200 @@ test('09 reverse the batch, post it again as a successor, and discard a draft on
 
 // ── 10 ──────────────────────────────────────────────────────────────────────
 
-test('10 the five new screens read right-to-left in Arabic', async ({ browser }) => {
-    const { page, close } = await recorded(browser, '10-arabic-rtl');
+test('10 the books open last: PACT less what the cut-over already posted', async ({ browser }) => {
+    const { page, close } = await recorded(browser, '10-opening-balances-are-the-last-step');
+    try {
+        const r = fx.roles;
+        await page.goto('/en/dashboard/finance/opening-balances');
+        await expect(page.getByTestId('ob-grid')).toBeVisible({ timeout: 20_000 });
+
+        // ── three figures per row, and each one means something different ──
+        // The bank is the row this rule exists for: PACT says 20,000, our books
+        // already hold 20,000 from two clearances the import replayed, and the
+        // journal therefore writes nothing at all. Posting PACT's figure gross
+        // would have put 40,000 in the bank on a portfolio holding 20,000.
+        await expect(page.getByTestId(`ob-derived-debit-${r.BANK.accountId}`)).toHaveText(money(20_000));
+        await expect(page.getByTestId(`ob-debit-${r.BANK.accountId}`)).toHaveValue('20000');
+        await expect(page.getByTestId(`ob-post-debit-${r.BANK.accountId}`), 'so the journal writes nothing')
+            .toHaveText(money(0));
+        // Cash is untouched by the import, so it posts in full.
+        await expect(page.getByTestId(`ob-post-debit-${fx.cash.id}`)).toHaveText(money(12_000));
+        // A derived account is the import's outright, and is never posted here.
+        await expect(page.getByTestId(`ob-derived-debit-${r.PDC_RECEIVABLE.accountId}`)).toHaveText(money(30_000));
+        await expect(page.getByTestId(`ob-post-debit-${r.PDC_RECEIVABLE.accountId}`)).toHaveText(money(0));
+        await expect(page.getByTestId(`ob-readonly-${r.PDC_RECEIVABLE.accountId}`)).toContainText('PDC_RECEIVABLE');
+
+        // The footer names the figure that balances it, rather than leaving a
+        // difference on screen with nowhere to go.
+        await expect(page.getByTestId('ob-difference-line'))
+            .toContainText(`AED ${money(7_000)} posts to Opening Balance Difference`);
+        await expect(page.getByTestId('ob-difference'), 'the columns themselves balance').toHaveText(money(0));
+        const grid = await adminApi<{ posted: boolean; difference: number }>(
+            'GET',
+            '/api/v1/finance/opening-balances',
+        );
+        expect(round2(grid.difference), 'and the server agrees to the fil').toBeCloseTo(7_000, 2);
+        expect(grid.posted).toBe(false);
+        await hold(page, 1600);
+
+        await page.getByTestId('ob-post').click();
+        await page.getByTestId('confirm-ob-post').click();
+        await expect(page.getByTestId('ob-success')).toContainText('OB-', { timeout: 30_000 });
+        await expect(page.getByTestId('ob-posted-banner')).toBeVisible();
+
+        const firstGrid = await adminApi<{ posted: boolean; journalId: string; journalNumber: string }>(
+            'GET',
+            '/api/v1/finance/opening-balances',
+        );
+        expect(firstGrid.posted).toBe(true);
+        record('journal', firstGrid.journalId, firstGrid.journalNumber);
+
+        let tb = await trialBalanceAt(AS_OF);
+        expect(tb[fx.cash.code], 'the cash figure the accountant uploaded').toBeCloseTo(12_000, 2);
+        expect(tb[fx.capital.code]).toBeCloseTo(-5_000, 2);
+        expect(tb['F-02'], 'the gap opens the books balanced').toBeCloseTo(-7_000, 2);
+        expect(tb[r.BANK.accountCode], 'and the bank holds what the portfolio holds, once')
+            .toBeCloseTo(20_000, 2);
+        expect(tb[r.PDC_RECEIVABLE.accountCode], 'the derived accounts are the import’s alone')
+            .toBeCloseTo(30_000, 2);
+        expect(tb[r.ADVANCE_RENT.accountCode]).toBeCloseTo(EXPECTED.advanceRent, 2);
+
+        // ── and now the cut-over is closed for as long as the books are open ──
+        await page.goto('/en/dashboard/finance/import-batches');
+        await page.getByTestId(`reverse-batch-${successorBatchId}`).click();
+        await page.getByTestId('batch-reverse-reason').fill('Trying to undo the cut-over after opening the books');
+        await page.getByTestId('confirm-reverse-batch').click();
+        await expect(page.getByTestId('batch-reverse-error'), 'the server’s own sentence, verbatim')
+            .toContainText('Opening balances are posted. Reverse them first, then post them again after this step.');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(page.getByTestId(`batch-status-${successorBatchId}`)).toHaveAttribute('data-status', 'POSTED');
+        // A bulk post is refused by the same rule, but one layer down: the POST
+        // starts a job (200 + a job id) and the guard runs inside it, under the
+        // batch lock and before the first contract — so the refusal arrives as a
+        // FAILED job carrying the same sentence, which is what the screen's
+        // `post-job-status` panel renders.
+        const started = await adminApi<{ jobId: string }>(
+            'POST',
+            `/api/v1/finance/import-batches/${successorBatchId}/post`,
+        );
+        let postJob: { status: string; errors: { message: string }[]; result: unknown } | null = null;
+        for (let i = 0; i < 60; i++) {
+            postJob = await adminApi<{ status: string; errors: { message: string }[]; result: unknown }>(
+                'GET',
+                `/api/v1/finance/import-batches/${successorBatchId}/post/${started.jobId}`,
+            );
+            if (postJob.status === 'COMPLETED' || postJob.status === 'FAILED') break;
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        expect(postJob?.status, 'a bulk post is refused the same way').toBe('FAILED');
+        expect(postJob?.errors.map(e => e.message).join(' ')).toContain('Opening balances are posted');
+        expect(postJob?.result, 'and it wrote nothing at all').toBeNull();
+        const batchesAfterRefusal = await batchesOf();
+        expect(batchesAfterRefusal.filter(b => b.repostOf === successorBatchId), 'no successor was made either')
+            .toHaveLength(0);
+        await hold(page, 1400);
+
+        // ── a corrected figure: the grid says so, and Replace is the way back ──
+        await page.goto('/en/dashboard/finance/opening-balances');
+        await expect(page.getByTestId('ob-grid')).toBeVisible({ timeout: 20_000 });
+        await page.getByTestId(`ob-debit-${fx.cash.id}`).fill('12500');
+        await expect(page.getByTestId(`ob-unsaved-${fx.cash.id}`)).toBeVisible();
+        await expect(page.getByTestId('ob-blocker')).toContainText('1');
+        await page.getByTestId(`ob-save-${fx.cash.id}`).click();
+        await expect(page.getByTestId('ob-changed-since-posted')).toBeVisible({ timeout: 20_000 });
+        await expect(page.getByTestId('ob-difference-line')).toContainText(money(7_500));
+
+        await page.getByTestId('ob-replace').click();
+        await expect(page.getByTestId('ob-replace-blocker')).toBeVisible();
+        await page.getByTestId('ob-replace-reason').fill('Corrected cash balance from the bank statement');
+        await page.getByTestId('confirm-ob-replace').click();
+        await expect(page.getByTestId('ob-success')).toContainText('OB-', { timeout: 30_000 });
+        await expect(page.getByTestId('ob-changed-since-posted')).toHaveCount(0);
+
+        const secondGrid = await adminApi<{ journalId: string }>('GET', '/api/v1/finance/opening-balances');
+        expect(secondGrid.journalId, 'a replacement is a different journal').not.toBe(firstGrid.journalId);
+        expect((await journalOf(firstGrid.journalId)).status, 'the first opening journal is off the books')
+            .toBe('REVERSED');
+
+        tb = await trialBalanceAt(AS_OF);
+        expect(tb[fx.cash.code], 'the corrected cash balance').toBeCloseTo(12_500, 2);
+        expect(tb['F-02'], 'and the recomputed difference').toBeCloseTo(-7_500, 2);
+        expect(tb[r.BANK.accountCode], 'still once').toBeCloseTo(20_000, 2);
+
+        // ── the books can be closed again, which is the remedy the refusal names ──
+        await page.getByTestId('ob-reverse').click();
+        await expect(page.getByTestId('ob-reverse-blocker')).toBeVisible();
+        await page.getByTestId('ob-reverse-reason').fill('Closing the books to correct the cut-over');
+        await page.getByTestId('confirm-ob-reverse').click();
+        await expect(page.getByTestId('ob-success')).toContainText('reversed', { timeout: 30_000 });
+        await expect(page.getByTestId('ob-posted-banner')).toHaveCount(0);
+        await expect(page.getByTestId('ob-post'), 'the books are closed again, so Post is back').toBeVisible();
+
+        const closed = await adminApi<{ posted: boolean }>('GET', '/api/v1/finance/opening-balances');
+        expect(closed.posted).toBe(false);
+        tb = await trialBalanceAt(AS_OF);
+        expect(tb[fx.cash.code] ?? 0, 'nothing of the opening balances is left').toBeCloseTo(0, 2);
+        expect(tb['F-02'] ?? 0).toBeCloseTo(0, 2);
+        expect(tb[r.BANK.accountCode], 'and the cut-over is untouched by any of it').toBeCloseTo(20_000, 2);
+
+        // Open them again, with the corrected figures, so the story ends with a
+        // set of books somebody can work in.
+        await page.getByTestId('ob-post').click();
+        await page.getByTestId('confirm-ob-post').click();
+        await expect(page.getByTestId('ob-success')).toContainText('OB-', { timeout: 30_000 });
+        tb = await trialBalanceAt(AS_OF);
+        expect(tb[fx.cash.code]).toBeCloseTo(12_500, 2);
+        expect(tb['F-02']).toBeCloseTo(-7_500, 2);
+        expect(tb[r.BANK.accountCode]).toBeCloseTo(20_000, 2);
+
+        await assertTrialBalanceBalances('10');
+        await hold(page);
+    } finally {
+        await close();
+    }
+});
+
+// ── 11 ──────────────────────────────────────────────────────────────────────
+
+test('11 the reconciliation with the books open: opening them moved nothing', async ({ browser }) => {
+    const { page, close } = await recorded(browser, '11-reconciliation-after-the-books-open');
+    try {
+        const r = fx.roles;
+        await page.goto('/en/dashboard/finance/reconciliation');
+        await expect(page.getByTestId('rec-table')).toBeVisible({ timeout: 20_000 });
+
+        // The derived column is what the CONTRACT IMPORT produced, with the live
+        // opening journal's own lines netted back out — so opening the books
+        // cannot move it, and these are the same figures scenario 08 read before
+        // the OB journal existed.
+        await expect(page.getByTestId(`rec-derived-${r.PDC_RECEIVABLE.accountCode}`)).toHaveText(balance(30_000));
+        await expect(page.getByTestId(`rec-derived-${r.ADVANCE_RENT.accountCode}`)).toHaveText(balance(-44_876.71));
+        await expect(page.getByTestId(`rec-derived-${r.BANK.accountCode}`)).toHaveText(balance(20_000));
+        for (const role of ['RENT_RECEIVABLE', 'PDC_RECEIVABLE', 'BANK', 'ADVANCE_RENT', 'RENTAL_INCOME', 'SECURITY_DEPOSIT']) {
+            await expect(page.getByTestId(`rec-difference-${r[role].accountCode}`), `${role} must reconcile`)
+                .toHaveAttribute('data-differs', 'false');
+        }
+        await expect(page.getByTestId('rec-derived-notice')).toHaveCount(0);
+
+        // What is left differing is the three PACT rows the import never touches:
+        // the cash and capital the OB journal itself carries — netted out of the
+        // derived column by construction — and the code our chart has no account
+        // for.
+        await expect(page.getByTestId('rec-out-of-balance')).toContainText('3');
+        await page.getByTestId('rec-differences-only').check();
+        await expect(page.locator('[data-testid^="rec-row-"]')).toHaveCount(3);
+        await expect(page.getByTestId('rec-row-999999')).toBeVisible();
+        await expect(page.getByTestId(`rec-row-${fx.cash.code}`)).toBeVisible();
+        await hold(page);
+    } finally {
+        await close();
+    }
+});
+
+// ── 12 ──────────────────────────────────────────────────────────────────────
+
+test('12 the five new screens read right-to-left in Arabic', async ({ browser }) => {
+    const { page, close } = await recorded(browser, '12-arabic-rtl');
     try {
         const ar = JSON.parse(
             fs.readFileSync(path.join(__dirname, '..', 'messages', 'ar.json'), 'utf8'),
@@ -1691,7 +1857,12 @@ test('10 the five new screens read right-to-left in Arabic', async ({ browser })
         );
         await rtlPage(
             '/ar/dashboard/finance/opening-balances',
-            [ar.Cutover.openingBalances, ar.Cutover.uploadTrialBalance, ar.Cutover.difference],
+            [
+                ar.Cutover.openingBalances, ar.Cutover.uploadTrialBalance, ar.Cutover.difference,
+                // The three columns the delta rule added, and the action that
+                // closes the books again.
+                ar.Cutover.derivedDebit, ar.Cutover.postDebit, ar.Cutover.reverseOpeningBalances,
+            ],
             'the opening-balance grid',
         );
         await rtlPage(
