@@ -163,6 +163,8 @@ class ChequeOnEndedLeaseIT {
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
     /** The day the kept paper is finally banked, a fortnight after the move-out. */
     private static final LocalDate BANKED_ON = LocalDate.of(2027, 3, 1);
+    /** A cheque that had cleared comes back before the statement is drawn (#297). */
+    private static final LocalDate RETURNED_BEFORE_SETTLEMENT = LocalDate.of(2027, 2, 18);
     /** A fine approved before T, so its collection row is kept rather than handed back. */
     private static final LocalDate PENALTY_ON = LocalDate.of(2027, 1, 20);
 
@@ -632,6 +634,78 @@ class ChequeOnEndedLeaseIT {
         assertThat(statusOfLease(leaseId))
                 .as("the ledger says the tenancy is settled, so it is finished with")
                 .isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * Issue #297: two bounces on one contract, and the settlement's own one must
+     * stay shut.
+     *
+     * <p>The October cheque (A) cleared, then failed before the statement was
+     * drawn, so the {@code STL} netted its 12,750 against the deposit and raised a
+     * CASH row for the remainder — A has been paid for. The January cheque (B) is
+     * the one §9.1 kept; it bounces a fortnight <em>after</em> finalise, and that
+     * genuinely puts 12,750 back on the contract.</p>
+     *
+     * <p>Deciding from the lease's receivable alone, as the guard used to, that
+     * positive balance re-opened {@code replace} on <b>A</b>: its replacement would
+     * credit the receivable over money the landlord had already been paid, B would
+     * then be locked out of its own replacement, and a contract whose absorbed
+     * cheque was the larger of the two could never reach CLOSED. Per cheque, the two
+     * are not the same question — A's {@code CBR} is older than the {@code STL} and
+     * B's is not — so A stays refused through both doors and B is replaced, cleared
+     * and closes the tenancy.</p>
+     */
+    @Test
+    void aBounceAfterFinaliseDoesNotReopenReplaceOnAChequeTheSettlementAbsorbed() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID absorbed = chequeOn(leaseId, RENT_1).getId();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+
+        // A: cleared in October, returned by the bank before the statement is drawn.
+        cheques.bounce(absorbed, ChequeActionRequest.on(RETURNED_BEFORE_SETTLEMENT));
+        assertThat(statusOf(absorbed)).isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("7510.27");
+
+        SettlementResponseDTO settled = finalizeSettlement(leaseId, null);
+        UUID collection = settled.getCollectionChequeId();
+        assertThat(collection).as("the row raised for what the deposit could not cover").isNotNull();
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the STL settled everything that was owed when it was posted")
+                .isEqualByComparingTo("0.00");
+
+        // B: the kept instrument is banked afterwards and comes back.
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("B's failure is a debt nobody has been paid for")
+                .isEqualByComparingTo("12750.00");
+
+        // A is still the settlement's business, whatever B has done to the balance.
+        assertThatThrownBy(() -> cheques.replace(absorbed, new ReplaceChequeRequest(
+                List.of(row("100056", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid again")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        assertThatThrownBy(() -> cheques.replaceForOnlinePayment(absorbed, BANKED_ON))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        assertThat(register(leaseId))
+                .as("six contract rows plus the settlement's CASH row: no replacement was registered")
+                .hasSize(7);
+
+        // B is replaced, and the replacement is what finishes the contract off.
+        UUID replacement = cheques.replace(kept, new ReplaceChequeRequest(
+                        List.of(row("100057", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid by new cheque"))
+                .get(0).id();
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.REPLACED);
+        clearOnItsOwnDate(chequeById(replacement));
+        cheques.receive(collection, ChequeActionRequest.on(SETTLED_ON));
+
+        assertThat(statusOf(absorbed)).as("A stays on the register as the thing that failed")
+                .isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
         assertThat(closedEvents(leaseId)).isEqualTo(1);
         assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
