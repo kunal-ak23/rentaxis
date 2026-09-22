@@ -7,6 +7,9 @@ mobile apps use, so it doubles as a smoke test of the prod API.
 What it creates:
   - Named demo tenant + TENANT_ADMIN login
   - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS
+  - Chart of accounts + charge-type catalogue + per-property account sets
+    (generated from the tenant template) + the fiscal year opened on 1 January
+    and everything before it locked
   - 2 properties with rent-collection settings, 8 units
   - 4 renters with portal (RENTER) logins
   - 4 leases covering the cheque lifecycle:
@@ -15,6 +18,8 @@ What it creates:
       * a monthly lease with an overdue installment
       * a PENDING_SIGNATURE lease (payment plan visible before acceptance)
   - 4 published marketplace listings + 1 draft (vacant units)
+  - 2 vendors, one of them with a posted purchase invoice (PISR, 5% input VAT)
+    and the payment voucher (BPV) that settles it
   - 2 meetings (cheque replacement + property viewing), one approved
 
 Credentials & IDs are printed and written to scripts/seed_demo_tenant.out.json.
@@ -291,6 +296,17 @@ def iso(d):
     return d.isoformat()
 
 
+def page_items(payload):
+    """The rows of a response that may be a bare list or a Spring Page.
+    Module level because both the finance steps (section 5b) and the
+    operational fixtures (section 8) page through collections."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict) and isinstance(payload.get("content"), list):
+        return payload["content"]
+    return []
+
+
 def main():
     load_env()
     base = os.environ.get(
@@ -397,11 +413,42 @@ def main():
     api = Api(base, web_base)
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
+    out["adminUserId"] = admin_user_id
 
-    # Chart of accounts + account mappings — required before cheque
-    # clear/deposit postings work. Idempotent (no-op if accounts exist).
+    # Chart of accounts + the per-property account template + the tenant-level
+    # role defaults + the charge-type catalogue: one call since accounting v2
+    # (AccountController.seedDefaultAccounts). Each of its three parts is
+    # idempotent server-side, so this is a no-op on an established tenant.
     api.post("/api/v1/finance/accounts/seed")
-    log("chart of accounts seeded")
+    log("chart of accounts, property template, role defaults and charge types seeded")
+
+    # Open the books on 1 January of the demo year and close everything before
+    # it, so back-dated demo documents post and nothing can be written into last
+    # year. The period lock is its own endpoint and only ever moves forward
+    # (TenantFiscalSettingsService.lockThrough), so both steps are read first.
+    books_start = dt.date(TODAY.year, 1, 1)
+    locked_through = books_start - dt.timedelta(days=1)
+    fiscal = api.get("/api/v1/finance/fiscal-settings") or {}
+    if (fiscal.get("booksStartDate") != iso(books_start)
+            or fiscal.get("fiscalYearStartMonth") != 1):
+        # Setting the books start date also sets the lock to the day before it
+        # when no lock exists yet — the POST below is then a no-op re-assertion.
+        fiscal = api.put(
+            "/api/v1/finance/fiscal-settings",
+            json={"fiscalYearStartMonth": 1, "booksStartDate": iso(books_start)},
+        )
+    if (fiscal.get("booksLockedThrough") or "") < iso(locked_through):
+        fiscal = api.post(
+            "/api/v1/finance/fiscal-settings/lock",
+            json={"through": iso(locked_through)},
+        )
+    out["fiscal"] = {
+        "fiscalYearStartMonth": fiscal.get("fiscalYearStartMonth"),
+        "booksStartDate": fiscal.get("booksStartDate"),
+        "booksLockedThrough": fiscal.get("booksLockedThrough"),
+    }
+    log(f"books open {fiscal.get('booksStartDate')}, "
+        f"locked through {fiscal.get('booksLockedThrough')}")
 
     # GET /api/v1/properties returns summaries: {"property": {...}, vacancies...}
     existing_props = {
@@ -444,6 +491,39 @@ def main():
         f"{DEMO_BRAND} Marina Heights", "أبراج رنت أكسيس مارينا", "Dubai Marina, Dubai"
     )
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
+
+    # Creating a property already generates its account set from the tenant
+    # template (PropertyService.createProperty → generateMissing); *generate*
+    # here fills any gap left by a property that existed before the template
+    # did, and is idempotent — it skips every role already mapped.
+    REQUIRED_ROLES = ("RENT_RECEIVABLE", "ADVANCE_RENT", "RENTAL_INCOME",
+                      "PDC_RECEIVABLE", "BANK", "SECURITY_DEPOSIT", "ADMIN_FEE")
+
+    def property_accounts(prop):
+        """Role -> account id for one property. A row with no accountId is a
+        property-scoped role the template does not cover; the lease-critical
+        seven are fatal, the rest are reported and left alone."""
+        api.post(f"/api/v1/properties/{prop['id']}/accounts/generate")
+        rows = api.get(f"/api/v1/properties/{prop['id']}/accounts") or []
+        mapped = {r["role"]: r["accountId"] for r in rows if r.get("accountId")}
+        missing = [r["role"] for r in rows if not r.get("accountId")]
+        for role in REQUIRED_ROLES:
+            if role not in mapped:
+                raise RuntimeError(
+                    f"{prop['nameEn']}: role {role} is unmapped, a lease on it "
+                    f"cannot post. Unmapped roles: {missing}"
+                )
+        if missing:
+            log(f"  note: {prop['nameEn']} has no account for {', '.join(missing)}")
+        return mapped
+
+    out["accounts"] = {
+        "tower": property_accounts(tower),
+        "marina": property_accounts(marina),
+    }
+    log(f"property account sets ready "
+        f"({len(out['accounts']['tower'])} roles on the tower, "
+        f"{len(out['accounts']['marina'])} on the marina)")
 
     def make_unit(prop, number, utype, sqft, rent):
         for u in api.get(f"/api/v1/units/property/{prop['id']}") or []:
@@ -572,6 +652,10 @@ def main():
             "paymentMethod": "CHEQUE",
             "depositPaymentMethod": "CHEQUE",
             "agreementDate": iso(year_start - dt.timedelta(days=10)),
+            # Signed ten days early, but *dated* the first of the year: the TCO
+            # journal carries contractDate (LeaseService: contractDate ?? agreement
+            # date ?? today), and last year is locked by the fiscal step above.
+            "contractDate": iso(year_start),
             "rentVatApplicable": False,
             "lines": [
                 {"chargeTypeCode": "RENT", "grossAmount": rent},
@@ -689,6 +773,151 @@ def main():
     # (`foldDepositsAndFeesIntoFirst`, ChequeGenerationService) — there is no
     # separate deposit row left to clear; it rode along with cheque #1 in the
     # per-lease loops above.
+
+    # ── 5b. Vendors, a purchase invoice and the payment that settles it ──────
+    # Ahead of the listings section on purpose: everything below this point
+    # needs the Next.js app (NextAuth session for /api/proxy/*), and the books
+    # should not depend on the web app being up.
+    #
+    # Creating a vendor also creates its payable leaf under B-01-04 Vendors
+    # (accounting v2 plan 1), so the demo tenant gets a usable payables side of
+    # the chart with no extra step.
+    existing_vendors = {
+        v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
+        if isinstance(v, dict)
+    }
+
+    def make_vendor(name_en, name_ar, contact, phone):
+        if name_en in existing_vendors:
+            return existing_vendors[name_en]
+        return api.post("/api/v1/vendors", json={
+            "nameEn": name_en, "nameAr": name_ar,
+            "contactPerson": contact, "phone": phone,
+        })
+
+    fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
+                            "Imran Shaikh", "+97143330001")
+    cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
+                                  "Maria Santos", "+97143330002")
+    for v in (fm_vendor, cleaning_vendor):
+        log(f"vendor ready: {v.get('nameEn')}")
+
+    def vendor_payable_id(vendor):
+        """The vendor's ledger leaf, created silently under B-01-04 when the
+        vendor is saved — but skipped in silence if the chart of accounts was
+        not seeded first, which is why this asks rather than assumes."""
+        vendor = api.get(f"/api/v1/vendors/{vendor['id']}")
+        acc = (vendor.get("payableAccount") or {}).get("id")
+        if not acc:
+            raise RuntimeError(
+                f"vendor {vendor.get('nameEn')} has no payable account; "
+                f"VendorService creates one under B-01-04 on save, but skips it "
+                f"when the chart of accounts is missing — re-run the seed step"
+            )
+        return acc
+
+    # The v1 split-expense demo posted to `/finance/transactions`, removed with
+    # `financial_transactions` in plan 1. Its replacement is a Purchase/Service
+    # Invoice and a Bank/Cash Payment Voucher (spec §10.1/§10.2), built in plan 4.
+    chart = {a["code"]: a for a in (api.get("/api/v1/finance/accounts") or [])
+             if isinstance(a, dict) and a.get("code")}
+
+    def expense_leaf(code, name_en, name_ar, parent_code):
+        """Get-or-create a leaf under a seeded expense group. D-01 Direct
+        Expense ships as an empty group ("one leaf per property per category"),
+        so the demo tenant has to put its own categories in it."""
+        if code in chart:
+            return chart[code]
+        parent = chart.get(parent_code)
+        if not parent:
+            raise RuntimeError(f"expense group {parent_code} is missing from the chart")
+        leaf = api.post("/api/v1/finance/accounts", json={
+            "code": code,
+            "nameEn": name_en,
+            "nameAr": name_ar,
+            "accountType": parent["accountType"],
+            "accountSubType": parent["accountSubType"],
+            "parentId": parent["id"],
+            "group": False,
+        })
+        chart[code] = leaf
+        log(f"expense account created: {code} {name_en}")
+        return leaf
+
+    maintenance_expense = expense_leaf(
+        "D-01-001", "Building Maintenance & AMC", "صيانة المباني والعقود السنوية",
+        "D-01",
+    )
+
+    existing_vouchers = {
+        v.get("narration"): v
+        for v in page_items(api.get("/api/v1/finance/vouchers", params={"size": 200}))
+        if isinstance(v, dict) and v.get("narration")
+    }
+
+    def make_voucher(narration, body):
+        """Create-and-post a voucher, keyed on its narration so a re-run is a
+        no-op. A draft left behind by a half-finished run is posted, not
+        duplicated."""
+        voucher = existing_vouchers.get(narration)
+        if voucher is None:
+            voucher = api.post("/api/v1/finance/vouchers",
+                               json={**body, "narration": narration})
+        elif voucher.get("status") != "DRAFT":
+            return voucher
+        posted = api.post(f"/api/v1/finance/vouchers/{voucher['id']}/post")
+        existing_vouchers[narration] = posted
+        log(f"voucher posted: {posted.get('voucherNumber')} — {narration}")
+        return posted
+
+    # Purchase / Service Invoice — Dr the expense + Dr input VAT, Cr the vendor's
+    # payable leaf with the gross (spec §10.1). 5% VAT, added on top of the line.
+    invoice = make_voucher(
+        f"Fire safety AMC — {tower['nameEn']}",
+        {
+            "docType": "PISR",
+            "docDate": iso(dt.date(TODAY.year, 2, 10)),
+            "vendorId": fm_vendor["id"],
+            "invoiceNumber": f"EFM-{TODAY.year}-0114",
+            "propertyId": tower["id"],
+            # The per-line VAT amount is derived on the server from vatRate.
+            "lines": [{
+                "accountId": maintenance_expense["id"],
+                "description": "Annual fire safety maintenance contract",
+                "amount": 9000.0,
+                "vatRate": 5.0,
+                "propertyId": tower["id"],
+            }],
+        },
+    )
+
+    # Bank / Cash Payment Voucher — Dr the vendor's payable, Cr the tower's bank
+    # leaf (spec §10.2). The header names the vendor because the line is that
+    # vendor's payable account, which VoucherService insists on matching.
+    payment = make_voucher(
+        "Payment — fire safety AMC",
+        {
+            "docType": "BPV",
+            "docDate": iso(dt.date(TODAY.year, 3, 5)),
+            "vendorId": fm_vendor["id"],
+            "propertyId": tower["id"],
+            "paymentAccountId": out["accounts"]["tower"]["BANK"],
+            "chequeNumber": "700001",
+            "chequeDate": iso(dt.date(TODAY.year, 3, 5)),
+            "lines": [{
+                "accountId": vendor_payable_id(fm_vendor),
+                "description": "Fire safety AMC — invoice settled in full",
+                "amount": 9450.0,
+            }],
+        },
+    )
+    out["vouchers"] = {
+        "purchaseInvoice": invoice["id"],
+        "purchaseInvoiceNumber": invoice.get("voucherNumber"),
+        "paymentVoucher": payment["id"],
+        "paymentVoucherNumber": payment.get("voucherNumber"),
+        "vendorId": fm_vendor["id"],
+    }
 
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
@@ -815,36 +1044,6 @@ def main():
                     )
             log(f"media uploaded (fallback placeholders): {title}")
 
-    # ── 6b. Vendors ──────────────────────────────────────────────────────────
-    # Creating a vendor also creates its payable leaf under B-01-04 Vendors
-    # (accounting v2 plan 1), so the demo tenant gets a usable payables side of
-    # the chart with no extra step.
-    existing_vendors = {
-        v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
-        if isinstance(v, dict)
-    }
-
-    def make_vendor(name_en, name_ar, contact, phone):
-        if name_en in existing_vendors:
-            return existing_vendors[name_en]
-        return api.post("/api/v1/vendors", json={
-            "nameEn": name_en, "nameAr": name_ar,
-            "contactPerson": contact, "phone": phone,
-        })
-
-    for v in (
-        make_vendor("Emirates Facility Management", "إدارة المرافق",
-                    "Imran Shaikh", "+97143330001"),
-        make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
-                    "Maria Santos", "+97143330002"),
-    ):
-        log(f"vendor ready: {v.get('nameEn')}")
-
-    # The split-expense demo used the v1 `/finance/transactions` endpoints, which
-    # accounting v2 plan 1 removed along with `financial_transactions`. Vendor
-    # bills post as journal entries from plan 2 onwards; this seed re-gains them
-    # then.
-
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):
         d = dt.datetime.combine(
@@ -910,13 +1109,6 @@ def main():
     # ── 8. Operational tutorial fixtures ───────────────────────────────────
     # These records keep the property, staff, ticket, booking, promotions, and
     # gate-pass tutorial screens useful without requiring a live customer.
-    def page_items(payload):
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict) and isinstance(payload.get("content"), list):
-            return payload["content"]
-        return []
-
     buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
     building = next(
         (b for b in buildings if b.get("nameEn") == "Tutorial Operations Tower"),
