@@ -188,7 +188,6 @@ test.describe('Cut-over import', () => {
             .toHaveAttribute('data-status', 'POSTED', { timeout: 20_000 });
 
         await page.getByTestId(`reverse-batch-${batchId}`).click();
-        await page.getByTestId('batch-reverse-date').fill(`${YEAR - 1}-12-31`);
         await page.getByTestId('batch-reverse-reason').fill('e2e');
         await page.getByTestId('confirm-reverse-batch').click();
         await expect(page.getByTestId('batch-reversed-banner')).toBeVisible({ timeout: 60_000 });
