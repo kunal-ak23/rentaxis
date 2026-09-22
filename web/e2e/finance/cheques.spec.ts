@@ -23,16 +23,40 @@ import { createUnit, createRenter, createLease, generateCheques, postLease, getL
  *
  * The renter's own ledger balance is read via the SAME endpoint the tenant
  * ledger page reads (`GET /finance/ledger/renter/{id}`), fetched directly
- * rather than scraped off the rendered table — one renter, one lease, so
- * summing every account's closingBalance in that response is the tenant's
- * net position without guessing at LedgerTable's markup.
+ * rather than scraped off the rendered table — one renter, one lease, so it
+ * needs no guessing at LedgerTable's markup.
+ *
+ * What it must NOT do is sum every account in that response. The renter
+ * dimension is stamped on BOTH legs of every journal, so the landlord's own
+ * bank leaf is in there too: a CRT is Dr bank / Cr PDC receivable and both
+ * lines carry this renter. Summing the lot is therefore a mini trial balance
+ * over one renter — identically zero, and unmovable by anything the register
+ * does. (Verified against the books: after post, after a clearing, after a
+ * bounce, after a replace and after a late return, that sum is 0.00 every
+ * time.) The settlement leaves — BANK and CASH — are dropped, and what is left
+ * (rent receivable + PDC receivable + advance rent) is what the renter
+ * actually owes, which is the figure every assertion below is about.
  */
 
-async function tenantLedgerBalance(page: Page, renterId: string): Promise<number> {
+/** The chart's BANK/CASH leaves: the landlord's side of a receipt, not the renter's. */
+async function settlementAccountIds(page: Page): Promise<Set<string>> {
+  const accounts = await proxy<Array<{ id: string; accountSubType: string | null }>>(
+    page,
+    'get',
+    '/finance/accounts',
+  );
+  return new Set(
+    accounts.filter(a => a.accountSubType === 'BANK' || a.accountSubType === 'CASH').map(a => a.id),
+  );
+}
+
+async function tenantLedgerBalance(page: Page, renterId: string, settlement: Set<string>): Promise<number> {
   const res = await page.request.get(`/api/proxy/v1/finance/ledger/renter/${renterId}`);
   expect(res.ok(), `tenant ledger read failed: ${res.status()}`).toBeTruthy();
-  const ledgers: Array<{ closingBalance: number }> = await res.json();
-  return ledgers.reduce((sum, l) => sum + (l.closingBalance || 0), 0);
+  const ledgers: Array<{ accountId: string; closingBalance: number }> = await res.json();
+  return ledgers
+    .filter(l => !settlement.has(l.accountId))
+    .reduce((sum, l) => sum + (l.closingBalance || 0), 0);
 }
 
 /** Anything on the v1 API, through the proxy this browser session is signed in to. */
@@ -124,7 +148,8 @@ test.describe('Cheque register lifecycle', () => {
     await page.getByTestId('cheque-clear-confirm').click();
     await expect(page.getByTestId(`cheque-row-action-bounce-${chequeA.id}`)).toBeVisible({ timeout: 10_000 });
 
-    const balanceBeforeBounceReplace = await tenantLedgerBalance(page, renter.id);
+    const settlement = await settlementAccountIds(page);
+    const balanceBeforeBounceReplace = await tenantLedgerBalance(page, renter.id, settlement);
 
     // ── cheque B: deposit -> bounce -> replace ───────────────────────────
     await page.getByTestId(`cheque-row-action-deposit-${chequeB.id}`).click();
@@ -142,7 +167,7 @@ test.describe('Cheque register lifecycle', () => {
 
     // "Nets to zero": swapping a bounced instrument for a fresh one of the
     // same amount changes nothing about what is owed.
-    const balanceAfterReplace = await tenantLedgerBalance(page, renter.id);
+    const balanceAfterReplace = await tenantLedgerBalance(page, renter.id, settlement);
     expect(balanceAfterReplace, 'a like-for-like replace must not move the tenant balance').toBeCloseTo(balanceBeforeBounceReplace, 2);
 
     // ── cheque A (now CLEARED): a late return — CLEARED PDC may still bounce ──
@@ -150,23 +175,47 @@ test.describe('Cheque register lifecycle', () => {
     await page.getByTestId('cheque-bounce-confirm').click();
     await expect(page.getByTestId(`cheque-row-action-replace-${chequeA.id}`)).toBeVisible({ timeout: 10_000 });
 
-    const balanceAfterLateReturn = await tenantLedgerBalance(page, renter.id);
+    const balanceAfterLateReturn = await tenantLedgerBalance(page, renter.id, settlement);
     expect(balanceAfterLateReturn - balanceAfterReplace, 'a late return reopens exactly its own cheque amount').toBeCloseTo(12_750, 2);
 
     // ── propose + approve a CHEQUE_RETURN penalty for the late return ──────
     await page.goto(`/en/dashboard/leases/${draft.id}`);
     await page.getByTestId('lease-tab-penalties').click();
     await page.getByTestId('penalty-propose-open').click();
-    await page.getByTestId('penalty-amount').fill('500');
-    await page.getByTestId('penalty-description').fill(`TEST-E2E late return ${suffix}`);
+    // The propose panel's three fields are addressed by `id`, not by testid —
+    // they carry `htmlFor` labels and nothing else (LeasePenaltiesTab :84-97).
+    // `getByTestId` found none of them and the fill timed out on a panel that
+    // was on screen the whole time.
+    await page.locator('#penalty-reason').selectOption('CHEQUE_RETURN');
+    await page.locator('#penalty-amount').fill('500');
+    await page.locator('#penalty-description').fill(`TEST-E2E late return ${suffix}`);
     await page.getByTestId('penalty-propose-confirm').click();
-    await expect(page.getByTestId('penalty-row-0')).toBeVisible({ timeout: 10_000 });
 
-    await page.getByTestId('penalty-approve-0').click();
+    // Row 0 is NOT this proposal. The two bounces above already had the rule
+    // engine propose their own CHEQUE_RETURN fines, so the PROPOSED tab holds
+    // at least two rows and the positional testid picks whichever the queue
+    // sorted first — the one this test typed is found by its own narration.
+    const proposed = page.locator('[data-testid^="penalty-row-"]')
+      .filter({ hasText: `TEST-E2E late return ${suffix}` })
+      .first();
+    await expect(proposed).toBeVisible({ timeout: 10_000 });
+
+    // `PenaltyQueue` remounts on propose (its `key` is bumped) and refetches,
+    // so the Approve button this resolves can be swapped out from under the
+    // click — which lands on a detached node and opens no dialog. Retried as
+    // one step: setting `decision` is idempotent, and a dialog that genuinely
+    // never opens still fails here.
+    await expect(async () => {
+      await proposed.getByRole('button', { name: 'Approve' }).click();
+      await expect(page.getByTestId('penalty-approve-confirm')).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
     await page.getByTestId('penalty-approve-confirm').click();
+
     await expect(page.getByTestId('penalty-tab-APPROVED')).toBeVisible();
     await page.getByTestId('penalty-tab-APPROVED').click();
-    await expect(page.getByTestId('penalty-row-0')).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator('[data-testid^="penalty-row-"]').filter({ hasText: `TEST-E2E late return ${suffix}` }).first(),
+    ).toBeVisible({ timeout: 10_000 });
 
     // ── receive cash against the reopened late-return cheque ───────────────
     // Approving the penalty ALSO opened its own CASH collection row on the
@@ -181,7 +230,7 @@ test.describe('Cheque register lifecycle', () => {
     await page.getByTestId('cash-receipt-confirm').click();
     await expect(page.getByTestId('cash-receipt-selected-lease')).toHaveCount(0, { timeout: 10_000 });
 
-    const balanceAfterCashReceipt = await tenantLedgerBalance(page, renter.id);
+    const balanceAfterCashReceipt = await tenantLedgerBalance(page, renter.id, settlement);
     // The cash receipt closes cheque A's reopened 12,750; the penalty's own
     // 500 collection row is still REGISTERED (approving opens it but does
     // not receipt it), so the net change from the late return is -12,750
@@ -284,8 +333,26 @@ test.describe('Cheque register lifecycle', () => {
 
     // ── termination at a date ──────────────────────────────────────────────
     await page.goto(`/en/dashboard/leases/${draft.id}/terminate`);
+    // The confirm posts `preview.terminationDate` — the date the figures on
+    // screen were priced for — and NOT what the picker currently reads
+    // (terminate/page.tsx :174-181, and the doc comment at :25-33 says why).
+    // The page opens already priced for today, so `terminate-receivable-after`
+    // is on screen before this fill and waiting for it proves nothing: click
+    // too early and the contract is terminated on today's date, which is
+    // exactly how this test used to end up with terminatedOn = today. Wait for
+    // the re-price the fill triggers, then for the button the re-price
+    // re-enables — `pricing` and `preview` are committed in the same render,
+    // so an enabled button means the preview on screen is this date's.
+    const repriced = page.waitForResponse(
+      r => r.url().includes(`/leases/${draft.id}/terminate/preview`)
+        && r.url().includes(`date=${terminationDate}`)
+        && r.ok(),
+      { timeout: 20_000 },
+    );
     await page.getByTestId('terminate-date').fill(terminationDate);
+    await repriced;
     await expect(page.getByTestId('terminate-receivable-after')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('terminate-submit')).toBeEnabled({ timeout: 15_000 });
     await page.getByTestId('terminate-submit').click();
     await page.getByTestId('terminate-confirm').click();
     await page.waitForURL(/\/settlement$/, { timeout: 30_000 });
@@ -310,6 +377,19 @@ test.describe('Cheque register lifecycle', () => {
     expect(statement.netRefund, 'the deposit comes back, less nothing').toBeGreaterThan(0);
 
     await expect(page.getByTestId('settlement-net-refund')).toBeVisible({ timeout: 15_000 });
+
+    // The settlement is a stored document, and Finalize posts the row that
+    // Save draft writes: `SettlementService.finalizeSettlement` answers
+    // "No settlement found for this lease" (:528-530) when there is none. The
+    // screen offers both buttons side by side and this test only ever pressed
+    // the second, so the page came back with `settlement-finalize-error` and
+    // never rendered `settlement-status` at all (it only exists once a stored
+    // row does, settlement/page.tsx :528-540). Saved BEFORE the refund account
+    // is named, because saving re-reads the statement and the picker's value
+    // is page state, not part of the draft.
+    await page.getByTestId('settlement-save-draft').click();
+    await expect(page.getByTestId('settlement-status')).toHaveText('Draft', { timeout: 15_000 });
+
     // A refund needs an asset leaf to pay from. Which leaves exist depends on
     // the seeded chart, so the account is looked up rather than typed from
     // memory, and matched by its code, which is unique.
