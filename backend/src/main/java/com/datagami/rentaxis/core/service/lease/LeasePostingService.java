@@ -59,6 +59,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -191,31 +192,40 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId) {
-        refuseIfItBelongsToADraftImportBatch(leaseId);
+        draftImportBatchProblem(leaseId).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
         return post(leaseId, null);
     }
 
     /**
-     * "This contract belongs to import batch X; post the batch instead."
+     * "This contract belongs to import batch X; post the batch instead." — or empty
+     * when this door is the right one.
+     *
+     * <p><b>A sentence rather than a throw</b>, because two callers need it in two
+     * shapes (ruling R28): {@link #post(UUID)} refuses with it, and {@link #dryRun}
+     * has to <em>report</em> it. A dry run that answered {@code ok: true} for a
+     * contract the very next click would refuse is the one answer that endpoint must
+     * never give — its whole purpose is that the review step gets every problem at
+     * once instead of one refusal per attempt.</p>
      *
      * <p>The link table carries no tenant column of its own — every reader has to
      * resolve the batch and compare, which is what {@code ContractImportValidator}'s
      * lookups do — so the batch is loaded through the filtered repository and
      * compared again explicitly. Only a <b>DRAFT</b> batch blocks: once the batch has
-     * posted, its contracts are ACTIVE and this method's own status check refuses
+     * posted, its contracts are ACTIVE and the post's own status check refuses
      * them anyway, and a REVERSED batch's contracts are back in DRAFT deliberately so
      * that "Post again" can put them back — through the batch, which is the door this
      * one points at.</p>
      */
-    private void refuseIfItBelongsToADraftImportBatch(UUID leaseId) {
+    private Optional<String> draftImportBatchProblem(UUID leaseId) {
         UUID tenantId = TenantContextHolder.getTenantId();
         for (ImportBatchLease link : importBatchLeases.findByLeaseId(leaseId)) {
             ImportBatch batch = importBatches.findById(link.getBatchId()).orElse(null);
             if (batch == null || batch.getStatus() != ImportBatchStatus.DRAFT) continue;
             if (tenantId != null && !tenantId.equals(batch.getTenantId())) continue;
-            throw new BusinessRuleViolationException(
+            return Optional.of(
                     "This contract belongs to import batch " + batch.getId() + "; post the batch instead.");
         }
+        return Optional.empty();
     }
 
     /**
@@ -289,6 +299,13 @@ public class LeasePostingService {
      * It also rules out {@code TenantFiscalSettingsService.get()}, which creates
      * the settings row on first access — the period lock is read straight from the
      * repository instead, and an absent row simply means nothing is locked.</p>
+     *
+     * <p><b>It answers for the door it is standing in front of</b> (ruling R28). The
+     * batch rule {@link #post(UUID)} enforces is reported here too, first in the
+     * list: a dry run that said {@code ok: true} for an imported DRAFT contract and
+     * then watched the post refuse would be worse than no dry run, because the whole
+     * contract of this endpoint is that the review step sees every problem before the
+     * button rather than one refusal per attempt.</p>
      */
     @Transactional(readOnly = true)
     public PostLeaseDryRunResponse dryRun(UUID leaseId) {
@@ -299,7 +316,11 @@ public class LeasePostingService {
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 
         PostingPlan plan = validate(lease, lines, cheques);
-        List<String> errors = plan.errors(propertyIdOf(lease));
+        List<String> errors = new ArrayList<>();
+        // First, because it is the only one of these that is not about the contract's
+        // own contents: no amount of fixing the grid makes this door the right one.
+        draftImportBatchProblem(leaseId).ifPresent(errors::add);
+        errors.addAll(plan.errors(propertyIdOf(lease)));
         // What "carry the deposit forward" is actually worth today. Shown because
         // it is not the figure on last year's contract — a partly refunded deposit
         // carries only what is left — and an accountant approving the renewal

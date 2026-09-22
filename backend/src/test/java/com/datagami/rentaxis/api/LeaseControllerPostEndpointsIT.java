@@ -275,6 +275,37 @@ class LeaseControllerPostEndpointsIT {
         assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 
+    /**
+     * And the dry run in front of that door says so too (ruling R28).
+     *
+     * <p>The lease is otherwise clean — {@link #dryRunReportsTheProblemsWithoutPosting}
+     * has the same lease with the same grid answering {@code ok: true} — so this is
+     * the batch rule and nothing else. A review step that said "yes, this will post"
+     * about a contract the very next click refuses is the one answer this endpoint
+     * must never give: an accountant reads it as permission, and the refusal that
+     * follows looks like a bug in the button rather than a rule about the
+     * contract.</p>
+     */
+    @Test
+    void theDryRunReportsTheImportBatchRefusalRatherThanAnsweringOk() {
+        generateGrid();
+        TenantContextHolder.setTenantId(fixtures.tenantId());
+        UUID batchId = importBatches.create(null, "September cut-over").getId();
+        importBatches.linkLease(batchId, leaseId);
+
+        ResponseEntity<Map> dry = body(accountant, HttpMethod.POST, postPath() + "?dryRun=true", null);
+
+        assertThat(dry.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(dry.getBody().get("ok")).isEqualTo(false);
+        // Exactly one, and it is the batch rule: the grid is cut, so nothing else is
+        // wrong with this contract.
+        List<?> errors = (List<?>) dry.getBody().get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0))
+                .isEqualTo("This contract belongs to import batch " + batchId + "; post the batch instead.");
+        assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
     /** The old activation route is gone: Post is the only way onto the books. */
     @Test
     void theActivateEndpointNoLongerExists() {
