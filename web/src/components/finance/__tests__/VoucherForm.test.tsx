@@ -857,6 +857,37 @@ describe("VoucherForm — attachments", () => {
         await waitFor(() => expect(api.attachUpload).toHaveBeenCalledWith("v1", "scan.pdf", ok));
         expect(await screen.findByTestId("attachment-row-att-1")).toHaveTextContent("scan.pdf");
     });
+
+    /**
+     * Ruling R24. An attachment needs a voucher to hang off, so uploading one
+     * from a brand-new document saves a draft first. While a save is ALREADY in
+     * flight `savedId` is still null — so picking a file during it sent a SECOND
+     * `POST /vouchers` and the accountant ended up with two drafts of the same
+     * invoice, one of them holding the attachment.
+     */
+    it("takes no file while a save is in flight, so a second draft cannot be created", async () => {
+        let finishCreate: (v: unknown) => void = () => {};
+        api.create.mockReturnValue(new Promise(r => { finishCreate = r; }));
+        renderForm("PISR");
+        await screen.findByTestId("line-amount-0");
+        fillLine(0, "1000", "5");
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1));
+
+        // The save has not answered, so there is still no voucher to attach to.
+        const input = (await screen.findByTestId("attachment-input")) as HTMLInputElement;
+        expect(input).toBeDisabled();
+        const file = new File(["x"], "scan.pdf", { type: "application/pdf" });
+        Object.defineProperty(input, "files", { value: [file], configurable: true });
+        fireEvent.change(input);
+
+        // No second draft, and nothing uploaded against one that does not exist.
+        expect(api.create).toHaveBeenCalledTimes(1);
+        expect(api.attachUpload).not.toHaveBeenCalled();
+
+        finishCreate(detail({ id: "v-new" }));
+        await waitFor(() => expect(screen.getByTestId("attachment-input")).not.toBeDisabled());
+    });
 });
 
 describe("VoucherForm — one load, never a reload over unsaved lines", () => {

@@ -500,6 +500,13 @@ export default function VoucherForm({
         });
 
     const uploadAttachment = (file: File) => {
+        // Nothing while a save is in flight. An attachment needs a voucher to
+        // hang off, so this saves a draft first — and during a save that is
+        // ALREADY running `savedId` is still null, so the `persist()` below
+        // fires a SECOND `POST /vouchers`: two drafts of the same invoice, one
+        // of them carrying the attachment and neither of them named. The input
+        // is `disabled` on `busy` too; this is the rule, that is the affordance.
+        if (busy) return;
         const refused = attachmentRefusal(file, attachments.length);
         if (refused) {
             // Checked here rather than after a 25MB round trip that can only fail.
@@ -937,6 +944,9 @@ export default function VoucherForm({
                                 aria-label={t("addAttachment")}
                                 className="hidden"
                                 accept={ATTACHMENT_ACCEPT}
+                                /* Closed while anything is in flight; see
+                                   `uploadAttachment` for what it prevents. */
+                                disabled={busy}
                                 onChange={e => {
                                     const f = e.target.files?.[0];
                                     if (f) uploadAttachment(f);
