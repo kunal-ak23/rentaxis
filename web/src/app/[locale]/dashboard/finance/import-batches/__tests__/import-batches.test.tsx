@@ -623,6 +623,49 @@ describe("bulk post", () => {
     });
 });
 
+/**
+ * Backend 2aefd796: with the OB journal posting PACT minus what our books
+ * already hold, any cut-over act underneath it moves `ours` beneath a journal
+ * that already netted the old value out. Bulk post, batch reverse and Post again
+ * are refused with 409 while an opening balance is live, and the sentence names
+ * the two-click remedy. The screen cannot know that state without fetching the
+ * whole opening-balance grid (which 400s until the books start date is set), so
+ * it does not guess — it shows the server's refusal, on all three.
+ */
+describe("the cut-over order rule", () => {
+    const LIVE_OB = "Opening balances are posted. Reverse them first, then post them again after this step.";
+
+    it("shows the refusal when a bulk post is blocked by live opening balances", async () => {
+        api.post.mockRejectedValue(new ApiError(409, LIVE_OB));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        expect(await screen.findByTestId("post-error")).toHaveTextContent(LIVE_OB);
+    });
+
+    it("shows the refusal when a Post again is blocked", async () => {
+        api.post.mockRejectedValue(new ApiError(409, LIVE_OB));
+        renderPage();
+        await screen.findByTestId("batch-row-b-reversed");
+        fireEvent.click(screen.getByTestId("post-batch-b-reversed"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        expect(await screen.findByTestId("post-error")).toHaveTextContent("Reverse them first");
+    });
+
+    it("shows the refusal when a batch reverse is blocked, in the dialog that asked", async () => {
+        api.reverse.mockRejectedValue(new ApiError(409, LIVE_OB));
+        renderPage();
+        await screen.findByTestId("batch-row-b-posted");
+        fireEvent.click(screen.getByTestId("reverse-batch-b-posted"));
+        fireEvent.click(await screen.findByTestId("confirm-reverse-batch"));
+
+        expect(await screen.findByTestId("batch-reverse-error")).toHaveTextContent(LIVE_OB);
+        // Nothing happened, so nothing is announced as having happened.
+        expect(screen.queryByTestId("batch-reversed-banner")).not.toBeInTheDocument();
+    });
+});
+
 describe("discard", () => {
     /**
      * Controller ruling landing now: "A reversed batch keeps its contracts; post

@@ -212,6 +212,27 @@ export function isImportJobTerminal(status: ImportJobStatus): boolean {
  */
 export const BATCH_REVERSAL_IGNORES_PERIOD_LOCK = true;
 
+/**
+ * **Not** mirrored here, and the report says why: the cut-over ORDER rule.
+ *
+ * Backend 2aefd796 refuses a bulk post, a batch reverse and a Post-again with
+ * 409 while `TenantFiscalSettingsService.hasLiveOpeningBalance()` — "Opening
+ * balances are posted. Reverse them first, then post them again after this
+ * step." With the OB journal posting PACT minus what our books already hold, any
+ * cut-over act underneath it moves `ours` beneath a journal that already netted
+ * the old value out.
+ *
+ * Mirroring it would mean knowing on the batches screen whether an OB journal is
+ * live, and the only thing that answers that is `GET /finance/opening-balances`
+ * — the whole chart of accounts, which also 400s outright until the books start
+ * date is set, i.e. on exactly the fresh tenant this screen is used on first. A
+ * banner saying "could not load" on a page that never needed the call is a worse
+ * lie than a refusal that arrives on the press. So the three actions surface the
+ * server's own sentence, which names the two-click remedy, and this constant is
+ * where the decision is written down rather than being absent.
+ */
+export const ORDER_RULE_IS_SERVER_SIDE_ONLY = true;
+
 // ---- opening balances (core/service/cutover/OpeningBalanceService.java) ----
 
 /**
