@@ -27,7 +27,7 @@ const LEASE = {
     id: "lease-123",
     unitIdentifier: "A-101",
     renterName: "Jane Tenant",
-    propertyName: "Ocean Residencia",
+    propertyName: "Sample Oasis",
     startDate: "2026-01-01",
     endDate: "2026-12-31",
     rentAmount: 60000,

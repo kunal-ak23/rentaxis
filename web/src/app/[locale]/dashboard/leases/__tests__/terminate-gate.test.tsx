@@ -52,7 +52,7 @@ function lease(id: string, status: LeaseStatus, unit: string): LeaseDetail {
         startDate: "2026-01-01", endDate: "2026-12-31", status,
         rentAmount: 60000, depositAmount: null, ejariNumber: null, paymentTerms: 4,
         installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+        paymentReferenceNumber: null, propertyId: "p1", propertyName: "Sample Heights", propertyCode: "SMH",
         hasContract: false, contractNumber: null, displayContractNumber: null,
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,

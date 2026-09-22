@@ -90,11 +90,11 @@ import SettlementPage from "../page";
 import { ApiError } from "@/lib/api/leasing";
 
 const LEASE: LeaseDetail = {
-    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Prabhjot Singh",
+    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Sample Renter One",
     startDate: "2026-01-01", endDate: "2026-12-31", status: "TERMINATED",
     rentAmount: 120000, depositAmount: 10000, ejariNumber: null, paymentTerms: 4,
     installmentDistribution: "UNIFORM", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-    paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+    paymentReferenceNumber: null, propertyId: "p1", propertyName: "Sample Heights", propertyCode: "SMH",
     hasContract: true, contractNumber: 15, displayContractNumber: "TCO-26/15",
     agreementDate: null, rentVatApplicable: false, contractDate: "2026-01-01", totalDays: 365,
     gracePeriodDays: 5, firstDueDate: "2026-01-01", renterAcceptedAt: null,

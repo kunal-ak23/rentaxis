@@ -23,7 +23,7 @@ vi.mock("@/lib/api/leasing", async orig => {
 function cheque(over: Partial<Cheque> & { id: string; seqNo: number; amount: number; chequeDate: string }): Cheque {
     return {
         leaseId: "l1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "A-101", renterName: "Sample Renter One",
         postingDate: over.chequeDate, chequeNumber: `00010${over.seqNo}`,
         payeeBank: "ENBD", payerName: null, debitAccountId: "acc-1", debitAccountName: "PDC Receivable",
         narration: null, mode: "PDC", status: "REGISTERED",

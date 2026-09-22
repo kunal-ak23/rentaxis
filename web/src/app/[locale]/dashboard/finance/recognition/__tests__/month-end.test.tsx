@@ -46,7 +46,7 @@ import { ApiError } from "@/lib/api/leasing";
 function entry(over: Partial<RecognitionEntry> & { id: string }): RecognitionEntry {
     return {
         leaseId: "lease-1", segmentId: "seg-1",
-        propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
+        propertyId: "prop-smh", propertyName: "Sample Heights", unitName: "204",
         periodStart: "2026-08-01", periodEnd: "2026-08-31", days: 31, amount: 10191.78,
         status: "PLANNED", journalId: null, journalNumber: null, postedAt: null,
         ...over,
@@ -54,11 +54,11 @@ function entry(over: Partial<RecognitionEntry> & { id: string }): RecognitionEnt
 }
 
 /**
- * Deliberately out of order on every axis the page has to sort: Marina before
- * L'Olivier, unit 512 before 101, August before July.
+ * Deliberately out of order on every axis the page has to sort: Sample Marina
+ * before Sample Heights, unit 512 before 101, August before July.
  */
 const PENDING: RecognitionEntry[] = [
-    entry({ id: "e3", leaseId: "lease-2", propertyId: "prop-mar", propertyName: "Marina Heights", unitName: "512", amount: 5000 }),
+    entry({ id: "e3", leaseId: "lease-2", propertyId: "prop-mar", propertyName: "Sample Marina", unitName: "512", amount: 5000 }),
     entry({ id: "e2", leaseId: "lease-1", unitName: "204" }),
     entry({ id: "e1", leaseId: "lease-1", unitName: "204", periodStart: "2026-07-01", periodEnd: "2026-07-31" }),
 ];
@@ -93,27 +93,27 @@ afterEach(() => {
 describe("Month-end recognition page", () => {
     it("groups the pending entries by property, each with its own subtotal", async () => {
         renderPage();
-        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-olv")).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-smh")).toBeInTheDocument());
 
         expect(screen.getByTestId("recognition-group-prop-mar")).toBeInTheDocument();
         expect(screen.getAllByTestId(/^recognition-pending-row-/)).toHaveLength(3);
 
-        // 10,191.78 × 2 against L'Olivier, 5,000 against Marina — and the grand
+        // 10,191.78 × 2 against Sample Heights, 5,000 against Sample Marina — and the grand
         // total is the sum of the subtotals, not of one of them.
-        expect(screen.getByTestId("recognition-group-total-prop-olv")).toHaveTextContent("20,383.56");
+        expect(screen.getByTestId("recognition-group-total-prop-smh")).toHaveTextContent("20,383.56");
         expect(screen.getByTestId("recognition-group-total-prop-mar")).toHaveTextContent("5,000.00");
         expect(screen.getByTestId("recognition-pending-total")).toHaveTextContent("25,383.56");
     });
 
     it("sorts the groups by property name, and the rows inside one by unit then period", async () => {
         renderPage();
-        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-olv")).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId("recognition-group-prop-smh")).toBeInTheDocument());
 
         const groups = screen.getAllByTestId(/^recognition-group-(?!total)/).map(g => g.getAttribute("data-testid"));
-        expect(groups).toEqual(["recognition-group-prop-olv", "recognition-group-prop-mar"]);
+        expect(groups).toEqual(["recognition-group-prop-smh", "recognition-group-prop-mar"]);
 
         const rows = screen.getAllByTestId(/^recognition-pending-row-/).map(r => r.getAttribute("data-testid"));
-        // e1 (July) before e2 (August), both on unit 204, then Marina's row.
+        // e1 (July) before e2 (August), both on unit 204, then Sample Marina's row.
         expect(rows).toEqual([
             "recognition-pending-row-e1",
             "recognition-pending-row-e2",

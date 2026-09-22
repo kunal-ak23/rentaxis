@@ -27,7 +27,7 @@ import ChequeActionDialog from "../ChequeActionDialog";
 function cheque(over: Partial<Cheque> = {}): Cheque {
     return {
         id: "c1", leaseId: "l1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "A-101", renterName: "Sample Renter One",
         seqNo: 3, postingDate: "2026-06-01", chequeNumber: "100041", chequeDate: "2026-06-01",
         payeeBank: "ENBD", payerName: null, debitAccountId: "acc-1", debitAccountName: "Bank",
         amount: 13700, narration: null, mode: "PDC", status: "BOUNCED",

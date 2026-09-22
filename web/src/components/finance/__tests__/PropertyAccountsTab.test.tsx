@@ -5,7 +5,7 @@ import en from "../../../../messages/en.json";
 import PropertyAccountsTab from "../PropertyAccountsTab";
 
 const mappings = [
-  { role: "RENT_RECEIVABLE", accountId: "a1", accountCode: "100001", accountName: "Rent Receivable - Tulip 7", inherited: false },
+  { role: "RENT_RECEIVABLE", accountId: "a1", accountCode: "100001", accountName: "Rent Receivable - Sample Plaza 7", inherited: false },
   { role: "ADVANCE_RENT", accountId: null, accountCode: null, accountName: null, inherited: false },
   { role: "CASH", accountId: "c1", accountCode: "A-02-05-001", accountName: "Cash Account", inherited: true },
 ];
@@ -26,7 +26,7 @@ afterEach(cleanup);
 describe("PropertyAccountsTab", () => {
   it("renders one row per role with mapped, unmapped and inherited states", async () => {
     render(wrap(<PropertyAccountsTab propertyId="p1" />));
-    await waitFor(() => expect(screen.getByText("Rent Receivable - Tulip 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Rent Receivable - Sample Plaza 7")).toBeInTheDocument());
     expect(screen.getByText("Not mapped")).toBeInTheDocument();
     expect(screen.getByText("Default")).toBeInTheDocument();
   });

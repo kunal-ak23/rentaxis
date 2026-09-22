@@ -13,7 +13,7 @@ vi.mock("next-auth/react", () => ({
 import RentSettingsPage from "../page";
 
 const sampleProperties = [
-    { property: { id: "p1", nameEn: "Belle Vue", nameAr: "بيل فيو" } },
+    { property: { id: "p1", nameEn: "Sample Vista", nameAr: "سامبل فيستا" } },
 ];
 
 /** What GET /v1/rent-settings/{propertyId} answers with. */
@@ -57,7 +57,7 @@ afterEach(() => {
 async function selectProperty() {
     render(<RentSettingsPage />);
     const select = (await screen.findAllByRole("combobox"))[0];
-    await screen.findByText("Belle Vue");
+    await screen.findByText("Sample Vista");
     fireEvent.change(select, { target: { value: "p1" } });
 }
 
@@ -111,7 +111,7 @@ describe("RentSettingsPage fetchSettings", () => {
 
         render(<RentSettingsPage />);
         const select = (await screen.findAllByRole("combobox"))[0];
-        await screen.findByText("Belle Vue");
+        await screen.findByText("Sample Vista");
         fireEvent.change(select, { target: { value: "p1" } });
 
         expect(await screen.findByText("Failed to load rent settings.")).toBeTruthy();

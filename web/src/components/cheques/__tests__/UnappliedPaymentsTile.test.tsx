@@ -25,7 +25,7 @@ function payment(over: Partial<UnappliedOnlinePayment> = {}): UnappliedOnlinePay
         amount: 5000, currency: "AED", gatewayOrderId: "order_1", gatewayPaymentId: "pay_1",
         failureReason: "Cheque row never cleared", chequeId: "c1", chequeNumber: "000101",
         chequeStatus: "ONLINE_PENDING", leaseId: "l1", displayContractNumber: "CN-100",
-        renterName: "Prabhjot Singh", propertyName: "L'Olivier", unitIdentifier: "A-101",
+        renterName: "Sample Renter One", propertyName: "Sample Heights", unitIdentifier: "A-101",
         ...over,
     };
 }
@@ -87,7 +87,7 @@ describe("UnappliedPaymentsTile expand", () => {
         screen.getByTestId("unapplied-payments-toggle").click();
 
         const row = await screen.findByTestId("unapplied-payments-row-u1");
-        expect(row).toHaveTextContent("Prabhjot Singh");
+        expect(row).toHaveTextContent("Sample Renter One");
         expect(row).toHaveTextContent("000101");
         expect(row).toHaveTextContent("pay_1");
         expect(api.unapplied).toHaveBeenCalledTimes(1);

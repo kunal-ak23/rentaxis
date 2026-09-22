@@ -57,9 +57,9 @@ import TerminateLeasePage from "../page";
 function cheque(over: Partial<Cheque> & { id: string; seqNo: number; amount: number }): Cheque {
     return {
         leaseId: "lease-1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "204", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "204", renterName: "Sample Renter One",
         postingDate: "2026-01-01", chequeNumber: "000101", chequeDate: "2026-06-01",
-        payeeBank: "ENBD", payerName: "Prabhjot Singh", debitAccountId: null, debitAccountName: null,
+        payeeBank: "ENBD", payerName: "Sample Renter One", debitAccountId: null, debitAccountName: null,
         narration: null, mode: "PDC", status: "REGISTERED", failureReason: null,
         replacesId: null, replacedById: null, imageUrl: null, depositedAt: null, clearedAt: null,
         bouncedAt: null, returnedAt: null, pdrJournalId: null, crtJournalId: null, cbrJournalId: null,
@@ -69,11 +69,11 @@ function cheque(over: Partial<Cheque> & { id: string; seqNo: number; amount: num
 }
 
 const LEASE: LeaseDetail = {
-    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Prabhjot Singh",
+    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Sample Renter One",
     startDate: "2026-01-01", endDate: "2026-12-31", status: "ACTIVE",
     rentAmount: 120000, depositAmount: 10000, ejariNumber: null, paymentTerms: 4,
     installmentDistribution: "UNIFORM", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-    paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+    paymentReferenceNumber: null, propertyId: "p1", propertyName: "Sample Heights", propertyCode: "SMH",
     hasContract: true, contractNumber: 15, displayContractNumber: "TCO-26/15",
     agreementDate: null, rentVatApplicable: false, contractDate: "2026-01-01", totalDays: 365,
     gracePeriodDays: 5, firstDueDate: "2026-01-01", renterAcceptedAt: null,

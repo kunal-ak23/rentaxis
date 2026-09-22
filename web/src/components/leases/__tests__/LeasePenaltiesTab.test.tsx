@@ -29,7 +29,7 @@ import LeasePenaltiesTab from "../LeasePenaltiesTab";
 function assessment(over: Partial<PenaltyAssessment> = {}): PenaltyAssessment {
     return {
         id: "pen-1", leaseId: "lease-1", chequeId: "c1", chequeNumber: "000101",
-        renterId: "r1", renterName: "Prabhjot Singh", propertyId: "p1", propertyName: "L'Olivier",
+        renterId: "r1", renterName: "Sample Renter One", propertyId: "p1", propertyName: "Sample Heights",
         reason: "CHEQUE_RETURN", amount: 500, description: "Cheque returned unpaid",
         status: "PROPOSED", proposedBy: "system", proposedAt: "2026-02-02", approvedBy: null,
         approvedAt: null, journalId: null, collectionChequeId: null, collectionStatus: null,
