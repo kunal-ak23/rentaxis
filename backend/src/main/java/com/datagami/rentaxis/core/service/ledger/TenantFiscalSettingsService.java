@@ -4,7 +4,9 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.OpeningBalancePosting;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
+import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
@@ -37,12 +39,22 @@ public class TenantFiscalSettingsService {
     private final OpeningBalancePostingRepository openingBalances;
     private final JournalEntryRepository journals;
 
+    /**
+     * For the second half of the same invariant: a posted cut-over is dated against
+     * the books start date too (review I4, ruling R21). Read directly, for the reason
+     * above — depending on {@code ImportBatchService} from the ledger's calendar would
+     * be a cycle, because that service now asks this one about the opening balances.
+     */
+    private final ImportBatchRepository importBatches;
+
     public TenantFiscalSettingsService(TenantFiscalSettingsRepository repo,
                                        OpeningBalancePostingRepository openingBalances,
-                                       JournalEntryRepository journals) {
+                                       JournalEntryRepository journals,
+                                       ImportBatchRepository importBatches) {
         this.repo = repo;
         this.openingBalances = openingBalances;
         this.journals = journals;
+        this.importBatches = importBatches;
     }
 
     /** Settings for the current tenant; a default row is created on first access. */
@@ -122,6 +134,16 @@ public class TenantFiscalSettingsService {
      * the second half of that fix, and {@code reverse}/{@code repost} pinning the
      * mirror to {@code live.getEntryDate()} is the first.</p>
      *
+     * <p><b>And refused while a cut-over batch is POSTED</b> (review I4, ruling R21).
+     * The books start date D is baked into three things a bulk post already did:
+     * every imported contract was recognised through {@code D − 1}
+     * ({@code ContractImportPostService}), {@code books_locked_through} was set from
+     * the old D and is never moved again by this method, and a later opening balance
+     * would be dated against the <em>new</em> D − 1. Nothing double-counts, but the
+     * three dates that define the cut-over stop agreeing with each other and nothing
+     * says so — a silence worth a sentence. The remedy is the same shape as the
+     * opening-balance one: take the batch off the books, move the date, put it back.</p>
+     *
      * <p>Setting it to the value it already holds is not a change and is allowed, so a
      * settings screen that PUTs the whole form back is not punished for it.</p>
      */
@@ -134,10 +156,17 @@ public class TenantFiscalSettingsService {
                     "Reverse or replace the opening balances before changing the books start date: "
                             + "the opening-balance journal is dated the day before it.");
         }
+        if (changing && importBatches.existsByStatus(ImportBatchStatus.POSTED)) {
+            throw new BusinessRuleViolationException(BOOKS_START_FROZEN_BY_A_POSTED_BATCH);
+        }
         s.setBooksStartDate(date);
         if (date != null && s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));
         return repo.save(s);
     }
+
+    /** Ruling R21's sentence, shared so the guard and its test cannot drift apart. */
+    public static final String BOOKS_START_FROZEN_BY_A_POSTED_BATCH =
+            "Books start is frozen while a posted cut-over batch exists; reverse the batch first.";
 
     /** True when this tenant has an opening-balance journal that has not been reversed. */
     @Transactional(readOnly = true)

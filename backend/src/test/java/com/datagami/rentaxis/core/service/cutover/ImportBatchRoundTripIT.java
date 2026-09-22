@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPostService.BulkPostResult;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
+import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -78,6 +80,7 @@ class ImportBatchRoundTripIT {
     @Autowired ChequeService chequeService;
     @Autowired RecognitionService recognition;
     @Autowired LedgerQueryService ledger;
+    @Autowired TenantFiscalSettingsService fiscal;
     @Autowired LeaseRepository leaseRepo;
     @Autowired ChequeRepository chequeRepo;
     @Autowired UnitRepository unitRepo;
@@ -431,6 +434,39 @@ class ImportBatchRoundTripIT {
                 .hasMessageContaining("Correct individual contracts by amendment instead")
                 .hasMessageNotContaining("Reverse that period's recognition first");
         assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
+    }
+
+    /**
+     * Review I4 / ruling R21: the books start date is frozen while a cut-over is on
+     * the books.
+     *
+     * <p>D is baked into three things the bulk post already did — the recognition
+     * catch-up stopped at {@code D − 1}, {@code books_locked_through} was set from the
+     * old D and is never moved again, and a later opening balance would be dated
+     * against the new {@code D − 1}. Moving D afterwards double-counts nothing; it
+     * just leaves the three dates that define the cut-over disagreeing with each
+     * other, silently. The existing guard only covered a live opening balance, which
+     * a portfolio posted but not yet reconciled does not have.</p>
+     */
+    @Test
+    void theBooksStartDateIsFrozenWhileACutOverBatchIsPosted() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+
+        assertThatThrownBy(() -> fiscal.setBooksStartDate(LocalDate.of(2026, 11, 1)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(TenantFiscalSettingsService.BOOKS_START_FROZEN_BY_A_POSTED_BATCH);
+        assertThat(fiscal.booksStartDate()).isEqualTo(CutoverFixture.BOOKS_START);
+
+        // Re-PUTting the value it already holds is not a change, so a settings screen
+        // that posts the whole form back is not punished for it.
+        assertThatCode(() -> fiscal.setBooksStartDate(CutoverFixture.BOOKS_START))
+                .doesNotThrowAnyException();
+
+        // And the remedy the sentence names actually works.
+        batches.reverse(batchId, "moving the cut-over date");
+        fiscal.setBooksStartDate(LocalDate.of(2026, 11, 1));
+        assertThat(fiscal.booksStartDate()).isEqualTo(LocalDate.of(2026, 11, 1));
     }
 
     @Test

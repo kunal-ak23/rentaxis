@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.ledger;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
+import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
@@ -30,7 +31,10 @@ class TenantFiscalSettingsServiceTest {
      */
     OpeningBalancePostingRepository openingBalances = mock(OpeningBalancePostingRepository.class);
     JournalEntryRepository journals = mock(JournalEntryRepository.class);
-    TenantFiscalSettingsService service = new TenantFiscalSettingsService(repo, openingBalances, journals);
+    /** Same shape, for the other half of the invariant: no posted cut-over batch here either. */
+    ImportBatchRepository importBatches = mock(ImportBatchRepository.class);
+    TenantFiscalSettingsService service =
+            new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches);
     UUID tenant = UUID.randomUUID();
 
     @BeforeEach void ctx() { TenantContextHolder.setTenantId(tenant); when(repo.save(any())).thenAnswer(i -> i.getArgument(0)); }

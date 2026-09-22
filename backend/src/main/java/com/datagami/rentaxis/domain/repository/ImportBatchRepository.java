@@ -24,4 +24,13 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
      * at-most-one an unfinished run can have left behind.</p>
      */
     List<ImportBatch> findByRepostOfAndStatus(UUID repostOf, ImportBatchStatus status);
+
+    /**
+     * Does this organisation have a batch in that state at all?
+     *
+     * <p>{@code TenantFiscalSettingsService} asks it about POSTED, to freeze the
+     * books start date while a cut-over is on the books (review I4, ruling R21).
+     * Tenant-scoped by the Hibernate filter, like every other finder here.</p>
+     */
+    boolean existsByStatus(ImportBatchStatus status);
 }
