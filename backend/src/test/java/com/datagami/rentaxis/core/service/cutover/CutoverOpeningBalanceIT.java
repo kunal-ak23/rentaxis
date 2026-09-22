@@ -184,6 +184,26 @@ class CutoverOpeningBalanceIT {
         openingBalances.uploadSnapshot(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
     }
 
+    /**
+     * PACT's trial balance with the Output VAT row dropped — the account is one
+     * PACT's file never names at all, rather than one it names at 0. See
+     * {@link #anAccountPactNeverNamesIsZeroedOutRatherThanLeftCarryingWhatStep1Posted}.
+     */
+    private void uploadPactTrialBalanceWithoutOutputVat() {
+        String csv = """
+                Account Code,Account Name,Debit,Credit
+                %s,PDC Receivable ST1,48050.00,0
+                %s,Sample Bank - ST1,250000.00,0
+                %s,Advance Rent - ST1,0,71021.92
+                %s,Rental Income ST1,0,978.08
+                %s,Security Deposit ST1,0,5000.00
+                %s,Capital Account,0,218050.00
+                """.formatted(
+                codeOf("PDC Receivable ST1"), codeOf("Sample Bank - ST1"), codeOf("Advance Rent - ST1"),
+                codeOf("Rental Income ST1"), codeOf("Security Deposit ST1"), codeOf("Capital Account"));
+        openingBalances.uploadSnapshot(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
+    }
+
     // ------------------------------------------------------------------
 
     /**
@@ -337,6 +357,47 @@ class CutoverOpeningBalanceIT {
 
         assertThat(gapOnDerivedRoles).isEqualByComparingTo("1000.00");
         assertThat(balanceOf(differenceAccountName())).isEqualByComparingTo(gapOnDerivedRoles);
+    }
+
+    /**
+     * The {@code −ours} branch of {@link OpeningBalanceService#postable} (review C2,
+     * finding N3): an account our books hold a balance on that PACT's file never
+     * names at all, rather than one it names at 0.
+     *
+     * <p>This suite's PACT file otherwise names all seven accounts {@code ours}
+     * touches, so that branch never ran. Here Output VAT is dropped from the CSV
+     * entirely — PACT(Output VAT) is undefined rather than 0 — and the class
+     * Javadoc's hand-derivation says {@code ours} on that account is a credit of
+     * 1,050.00 (SAMPLE-0002's VAT). The line posts {@code −ours} — a debit of
+     * 1,050.00, closing out the credit step 1 left — which zeroes the account out
+     * at D − 1 rather than leaving it carrying what step 1 posted.</p>
+     */
+    @Test
+    void anAccountPactNeverNamesIsZeroedOutRatherThanLeftCarryingWhatStep1Posted() throws Exception {
+        importAndPost();
+        uploadPactTrialBalanceWithoutOutputVat();
+
+        var grid = openingBalances.grid();
+        var vat = grid.rows().stream().filter(r -> outputVatName().equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(vat.derived()).as("output VAT is NOT one of the nine derived roles").isFalse();
+        // PACT never named it at all, so entered* is empty — unlike the difference
+        // row, which is empty for the same reason but computed rather than skipped.
+        assertThat(vat.enteredDebit()).isEqualByComparingTo("0.00");
+        assertThat(vat.enteredCredit()).isEqualByComparingTo("0.00");
+        // ours: SAMPLE-0002's VAT, a credit of 1,050.00 (class Javadoc).
+        assertThat(vat.derivedDebit()).isEqualByComparingTo("0.00");
+        assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
+        // The post figure is −ours: a debit of 1,050.00 closes out the credit step 1
+        // left, rather than leaving the account carrying it forever.
+        assertThat(vat.postDebit()).isEqualByComparingTo("1050.00");
+        assertThat(vat.postCredit()).isEqualByComparingTo("0.00");
+
+        openingBalances.post();
+
+        assertThat(balanceOf(outputVatName()))
+                .as("the account PACT never named ends the cut-over at zero, not at what step 1 posted")
+                .isEqualByComparingTo("0.00");
     }
 
     // ------------------------------------------------------------------
