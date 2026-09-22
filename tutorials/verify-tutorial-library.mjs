@@ -20,7 +20,7 @@ const details = [];
 // Used only to check that each reviewed script fits its storyboard duration.
 // Final runtime comes from the selected AI voice and is validated after muxing.
 const calibratedSpeechRate = 135;
-const expectedNumbers = Array.from({ length: 33 }, (_, index) =>
+const expectedNumbers = Array.from({ length: 37 }, (_, index) =>
   String(index + 1).padStart(2, '0'),
 );
 
@@ -28,13 +28,13 @@ const sections = [...storyboards.matchAll(
   /^## (\d{2}) — (.+)\n([\s\S]*?)(?=^## (?:\d{2} —|Recording acceptance checklist))/gm,
 )];
 
-if (sections.length !== 33) {
-  failures.push(`Expected 33 storyboards, found ${sections.length}`);
+if (sections.length !== 37) {
+  failures.push(`Expected 37 storyboards, found ${sections.length}`);
 }
 
 const actualNumbers = sections.map((match) => match[1]);
 if (actualNumbers.join(',') !== expectedNumbers.join(',')) {
-  failures.push(`Storyboard numbers are not exactly 01–33: ${actualNumbers.join(', ')}`);
+  failures.push(`Storyboard numbers are not exactly 01–37: ${actualNumbers.join(', ')}`);
 }
 
 const expectedNarrationFiles = [];
@@ -98,12 +98,12 @@ const actualNarrationFiles = readdirSync(narrationDir)
   .filter((name) => /^\d{2}-.*\.txt$/.test(name))
   .sort();
 if (actualNarrationFiles.join(',') !== expectedNarrationFiles.sort().join(',')) {
-  failures.push('Narration directory does not contain exactly the 33 expected tracks');
+  failures.push('Narration directory does not contain exactly the 37 expected tracks');
 }
 
 const matrixNumbers = [...matrix.matchAll(/^\| (\d{2})\./gm)].map((match) => match[1]);
 if (matrixNumbers.join(',') !== expectedNumbers.join(',')) {
-  failures.push(`Capability matrix is not exactly 01–33: ${matrixNumbers.join(', ')}`);
+  failures.push(`Capability matrix is not exactly 01–37: ${matrixNumbers.join(', ')}`);
 }
 
 for (const token of [
@@ -129,5 +129,5 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log('\nTutorial library verification passed: 33 complete narrated tutorials.');
+  console.log('\nTutorial library verification passed: 37 complete narrated tutorials.');
 }

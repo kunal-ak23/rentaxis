@@ -12,10 +12,44 @@ import 'queue_screen.dart' show managerQueueCountProvider;
 bool hasFullFinanceAccess(String? role) =>
     role == 'TENANT_ADMIN' || role == 'SUPER_ADMIN';
 
-String managerFinanceRouteForRole(String? role) =>
-    hasFullFinanceAccess(role) ? '/finance' : '/payments';
+/// Finance, lease and cheque screens are hidden until the apps are rewritten
+/// for accounting v2 (spec D7): plans 1-4 removed or reshaped the endpoints
+/// behind them, so what is left would 404 or render blank rows. The role rule
+/// still applies on top of the flag.
+bool managerFinanceEnabled(String? role, bool flag) => flag;
 
-int managerShellIndexForLocation(String location) {
+/// Every location the MOBILE_FINANCE flag covers, as one list so the shell,
+/// the screens and the router redirect cannot drift apart.
+///
+/// `/leases` carries the two screens plan 3 broke outright — terminate (posts
+/// `{notes}` with no date, now a 400) and settlement (reads preview fields that
+/// no longer exist) — and both are sub-routes of it. `/queue`, `/vendors` and
+/// `/settings/rent` are deliberately absent: their endpoints survived v2.
+bool isManagerFinanceLocation(String location) =>
+    location.startsWith('/finance') ||
+    location.startsWith('/payments') ||
+    location.startsWith('/leases') ||
+    location.startsWith('/portfolio-pnl') ||
+    location == '/scan' ||
+    location == '/bank-accounts' ||
+    location == '/settings/mappings';
+
+/// Null when finance is hidden — callers must not fall back to a route.
+String? managerFinanceRouteForRole(String? role, bool financeEnabled) {
+  if (!financeEnabled) return null;
+  return hasFullFinanceAccess(role) ? '/finance' : '/payments';
+}
+
+/// The *logical* nav slot for a location: 0 Today, 1 Portfolio, 2 Finance,
+/// 3 Queue. Null means "no tab owns this location" — which, for a gated
+/// finance location, is the whole point: the bar must not light up an item it
+/// no longer shows. [ShellScreen] maps the logical slot onto the visible bar,
+/// which is one item shorter while the flag is off.
+int? managerShellIndexForLocation(
+  String location, {
+  required bool financeEnabled,
+}) {
+  if (!financeEnabled && isManagerFinanceLocation(location)) return null;
   if (location.startsWith('/properties')) return 1;
   if (location.startsWith('/finance') ||
       location.startsWith('/payments') ||
@@ -57,11 +91,56 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final currentIndex = managerShellIndexForLocation(location);
     final authState = ref.watch(authProvider);
-    final financeRoute = managerFinanceRouteForRole(authState.role);
+    final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
+    final financeRoute = managerFinanceRouteForRole(authState.role, financeEnabled);
     final isAr = context.isAr;
     final queueCount = ref.watch(managerQueueCountProvider).valueOrNull ?? 0;
+
+    // One list drives both the items and the tap targets, so an absent Finance
+    // tab cannot shift Queue's index out from under the router.
+    final tabs = <({String route, MiftahNavItem item})>[
+      (
+        route: '/',
+        item: MiftahNavItem(
+          icon: Icons.dashboard_rounded,
+          label: isAr ? 'اليوم' : 'Today',
+        ),
+      ),
+      (
+        route: '/properties',
+        item: MiftahNavItem(
+          icon: Icons.apartment_rounded,
+          label: isAr ? 'المحفظة' : 'Portfolio',
+        ),
+      ),
+      if (financeRoute != null)
+        (
+          route: financeRoute,
+          item: MiftahNavItem(
+            icon: Icons.payments_rounded,
+            label: isAr ? 'المالية' : 'Finance',
+          ),
+        ),
+      (
+        route: '/queue',
+        item: MiftahNavItem(
+          icon: Icons.inbox_rounded,
+          label: isAr ? 'القائمة' : 'Queue',
+          badge: queueCount > 0 ? queueCount : null,
+        ),
+      ),
+    ];
+
+    // Logical slot -> visible slot. With the Finance tab dropped, everything
+    // after it moves down one. A gated location owns no tab, so it falls back
+    // to Today — the same place the router redirect sends it.
+    final logicalIndex =
+        managerShellIndexForLocation(location, financeEnabled: financeEnabled) ??
+            0;
+    final currentIndex = financeRoute == null && logicalIndex > 2
+        ? logicalIndex - 1
+        : logicalIndex;
 
     // System back from a non-home tab returns to Today instead of exiting
     // the app; back on Today exits as usual.
@@ -75,35 +154,16 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
         body: SafeArea(bottom: false, child: widget.child),
         bottomNavigationBar: MiftahNavBar(
           currentIndex: currentIndex,
-          onTap: (index) => context.go(switch (index) {
-            0 => '/',
-            1 => '/properties',
-            2 => financeRoute,
-            3 => '/queue',
-            _ => '/',
-          }),
-          centreIcon: Icons.document_scanner_rounded,
-          centreLabel: isAr ? 'مسح' : 'Scan',
-          onCentreTap: () => context.push('/scan'),
-          items: [
-            MiftahNavItem(
-              icon: Icons.dashboard_rounded,
-              label: isAr ? 'اليوم' : 'Today',
-            ),
-            MiftahNavItem(
-              icon: Icons.apartment_rounded,
-              label: isAr ? 'المحفظة' : 'Portfolio',
-            ),
-            MiftahNavItem(
-              icon: Icons.payments_rounded,
-              label: isAr ? 'المالية' : 'Finance',
-            ),
-            MiftahNavItem(
-              icon: Icons.inbox_rounded,
-              label: isAr ? 'القائمة' : 'Queue',
-              badge: queueCount > 0 ? queueCount : null,
-            ),
-          ],
+          onTap: (index) => context.go(
+            index >= 0 && index < tabs.length ? tabs[index].route : '/',
+          ),
+          // Cheque scan is a finance surface too, so the raised action goes
+          // with the Finance tab rather than pushing a screen the router
+          // would immediately bounce.
+          centreIcon: financeEnabled ? Icons.document_scanner_rounded : null,
+          centreLabel: financeEnabled ? (isAr ? 'مسح' : 'Scan') : null,
+          onCentreTap: financeEnabled ? () => context.push('/scan') : null,
+          items: [for (final t in tabs) t.item],
         ),
       ),
     );

@@ -5,7 +5,6 @@ import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -58,10 +57,25 @@ public class AccountImportService {
         return linkAndSave(rows);
     }
 
+    /**
+     * A chart of accounts out of a spreadsheet.
+     *
+     * <p><b>Opened through {@link WorkbookGuard}</b>, like every other uploaded
+     * workbook. This endpoint takes an untrusted file and hands it to a parser that
+     * builds the whole thing in memory: an over-inflating archive here does not fail
+     * the import, it exhausts the heap and takes the process — and everyone else's
+     * requests — with it. The guard is the single door, so the chart import, the v1
+     * portfolio import and the cut-over import are all judged by the same limits
+     * rather than by whichever one was last reviewed. It also means a file that is
+     * not really an .xlsx, a macro-enabled one, or a password-protected one is a 400
+     * with one sentence instead of a stack trace out of POI.</p>
+     *
+     * <p>The client's own chart is 826 rows, so no cap needed adjusting.</p>
+     */
     @Transactional
     public List<Account> importFromExcel(MultipartFile file) throws Exception {
         List<ParsedRow> parsed = new ArrayList<>();
-        try (Workbook wb = new XSSFWorkbook(file.getInputStream())) {
+        try (Workbook wb = WorkbookGuard.open(file.getBytes())) {
             Sheet sheet = wb.getSheetAt(0);
             Iterator<Row> rows = sheet.iterator();
             if (rows.hasNext()) rows.next(); // skip header

@@ -31,9 +31,15 @@ class _QueueItem {
   final DateTime? when;
 }
 
+/// Leases awaiting signature. GET /v1/leases still exists, but the row's only
+/// destination is /leases, which MOBILE_FINANCE gates — so while the flag is
+/// off this resolves empty rather than offering a tap that bounces to Today.
+/// Queue itself is NOT gated: gate passes and bookings are unaffected by
+/// accounting v2.
 final _queueLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((
   ref,
 ) async {
+  if (!ref.watch(mobileFinanceEnabledProvider)) return const [];
   final client = ref.watch(apiClientProvider);
   return LeaseService(client.dio).getAllLeases();
 });

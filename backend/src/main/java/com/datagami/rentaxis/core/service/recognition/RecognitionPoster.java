@@ -12,6 +12,7 @@ import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.RecognitionEntry;
 import com.datagami.rentaxis.domain.entity.RentSegment;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -117,6 +118,29 @@ public class RecognitionPoster {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public RecognitionEntryDTO postJoining(UUID entryId) {
+        return postJoining(entryId, null);
+    }
+
+    /**
+     * The same posting, carrying the cut-over import batch this {@code CIL} belongs
+     * to (spec §10.3, controller ruling R4/R13).
+     *
+     * <p>A contract that started before the client's books open has months of rent
+     * already earned, and the catch-up that recognises them is dated inside the
+     * locked period exactly as the {@code TCO} is. The batch id is what
+     * {@code PostingService} exempts, and what lets a reverse of the batch take the
+     * catch-up back off with everything else — a CIL left behind would leave income
+     * recognised against advance rent that no longer exists.</p>
+     *
+     * <p>Threaded through <em>this</em> method rather than only through
+     * {@code RecognitionService}, because this bean is where the entry is actually
+     * written: the id has to reach the {@code PostingRequest}, and the bean boundary
+     * that gives a month-end run its per-row commit is between the two.</p>
+     *
+     * @param importBatchId non-null only for a cut-over catch-up.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public RecognitionEntryDTO postJoining(UUID entryId, UUID importBatchId) {
         RecognitionEntry entry = lock(entryId);
         // Checked under the lock, which is the whole point: the loser of a race
         // blocks on the SELECT above and re-reads the winner's committed status here.
@@ -134,7 +158,7 @@ public class RecognitionPoster {
                 LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.RECOGNITION,
                 entry.getId(),
-                null,
+                importBatchId,
                 List.of(PostingRequest.pair(
                         new PostingRequest.Line(deferralOf(segment, lease), PostingRequest.Side.DR,
                                 entry.getAmount(), null, null),
@@ -179,8 +203,34 @@ public class RecognitionPoster {
     private RecognitionEntry lock(UUID entryId) {
         RecognitionEntry entry = entries.findById(entryId)
                 .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        requireOwnTenant(entry);
         entityManager.refresh(entry, LockModeType.PESSIMISTIC_WRITE);
         return entry;
+    }
+
+    /**
+     * The row this transaction is about to lock and post belongs to the tenant in
+     * context, and there <em>is</em> one.
+     *
+     * <p>The Hibernate filter already scopes the read above ({@code TenantAspect}
+     * covers inherited repository methods — {@code TenantAspectIT} pins it), so
+     * this is the second layer rather than the first. It earns its place by being
+     * local: the entry id arrives from a caller, and what happens next writes a
+     * {@code CIL} into the ledger of whoever is in context, under that tenant's
+     * entry number. An empty context fails closed here rather than several calls
+     * later — the nightly close sets the context per organisation
+     * ({@code RevenueRecognitionJob}), so nothing legitimate reaches this without
+     * one, and a posting path is the wrong place to discover that by accident.</p>
+     */
+    private static void requireOwnTenant(RecognitionEntry entry) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException(
+                    "No tenant in context; recognition entry " + entry.getId() + " cannot be posted");
+        }
+        if (!tenantId.equals(entry.getTenantId())) {
+            throw new NotFoundException("Recognition entry not found");
+        }
     }
 
     /**

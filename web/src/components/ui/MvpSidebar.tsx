@@ -9,6 +9,9 @@ import {
     ShieldCheck,
     BookOpen,
     Receipt,
+    ReceiptText,
+    Layers,
+    GitCompare,
     Home,
     FileText,
     Contact,
@@ -59,6 +62,8 @@ export default function MvpSidebar() {
     const tPromotions = useTranslations("Promotions");
     const tLedger = useTranslations("Ledger");
     const tRecognition = useTranslations("Recognition");
+    const tVouchers = useTranslations("Vouchers");
+    const tCutover = useTranslations("Cutover");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -141,6 +146,33 @@ export default function MvpSidebar() {
             { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
             { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
             { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
+        ] : []),
+        // Vouchers sit in this branch, not in canAccessFinanceOps, because
+        // VoucherController's single class-level @PreAuthorize is
+        // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT') — the same set
+        // canAccessFinance carries, and NOT the SA/TA-only set the operational
+        // pages below use. Its own gate all the same: canManageVouchers mirrors
+        // that one annotation, so a future widening of the ledger's roles is not
+        // silently a widening of the voucher screens'.
+        ...(hasPermission(userRole, 'canManageVouchers') ? [
+            { name: tVouchers("vouchers"), href: "/dashboard/finance/vouchers", icon: ReceiptText, tourId: 'sidebar-vouchers' },
+        ] : []),
+        // The cut-over. ImportBatchController is SA/TA/ACCOUNTANT — the same set
+        // as canAccessFinance, so it belongs in this branch and not in the
+        // SA/TA-only one below; its own key all the same, mirroring that one
+        // annotation. The cut-over template download ON the page is the same set
+        // (PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT) and is
+        // gated there, not here.
+        ...(hasPermission(userRole, 'canManageImportBatches') ? [
+            { name: tCutover("importBatches"), href: "/dashboard/finance/import-batches", icon: Layers, tourId: 'sidebar-import-batches' },
+        ] : []),
+        // OpeningBalanceController is SA/TA/ACCOUNTANT too, on its own annotation
+        // (OpeningBalanceController.java:57) — hence its own key rather than a
+        // reuse of the batches one. Both pages sit behind it: the reconciliation
+        // report is the same controller.
+        ...(hasPermission(userRole, 'canManageOpeningBalances') ? [
+            { name: tCutover("openingBalances"), href: "/dashboard/finance/opening-balances", icon: Scale, tourId: 'sidebar-opening-balances' },
+            { name: tCutover("reconciliation"), href: "/dashboard/finance/reconciliation", icon: GitCompare, tourId: 'sidebar-reconciliation' },
         ] : []),
         // The month-end close. Its own gate rather than canAccessFinance because
         // the two endpoints behind the page (RecognitionController's

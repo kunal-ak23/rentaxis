@@ -47,9 +47,12 @@ public class JournalController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) UUID propertyId,
             @RequestParam(required = false) UUID leaseId,
+            // The drill-through from the cut-over batches screen (spec §10.3): the
+            // journals one import wrote, including its reversal mirrors.
+            @RequestParam(required = false) UUID importBatchId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return ResponseEntity.ok(service.search(docType, from, to, propertyId, leaseId,
+        return ResponseEntity.ok(service.search(docType, from, to, propertyId, leaseId, importBatchId,
                 PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE))));
     }
 

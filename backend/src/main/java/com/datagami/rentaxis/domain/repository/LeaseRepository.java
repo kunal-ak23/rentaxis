@@ -125,6 +125,16 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      */
     List<Lease> findByUnitIdAndStatusIn(UUID unitId, Collection<LeaseStatus> statuses);
 
+    /**
+     * Leases already holding a PACT contract reference in this organisation.
+     *
+     * <p>Explicitly tenant-scoped rather than relying on the Hibernate filter: the
+     * cut-over validator runs on the import executor's thread, and "is this
+     * reference free?" answered across organisations would refuse one landlord's
+     * contract because another landlord numbers theirs the same way.</p>
+     */
+    List<Lease> findByTenantIdAndExternalContractRef(UUID tenantId, String externalContractRef);
+
     List<Lease> findByRenterId(UUID renterId);
 
     /**

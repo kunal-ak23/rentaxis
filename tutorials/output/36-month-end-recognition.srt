@@ -1,0 +1,157 @@
+1
+00:00:00,000 --> 00:00:03,829
+Rent is collected in a handful of cheques
+but
+
+2
+00:00:03,829 --> 00:00:07,658
+earned every day, so this tutorial closes
+a month.
+
+3
+00:00:07,658 --> 00:00:12,338
+Start on a posted contract and open its
+Recognition schedule tab.
+
+4
+00:00:12,338 --> 00:00:16,592
+RentAxis divided the term by its actual
+number of days
+
+5
+00:00:16,592 --> 00:00:20,847
+to get a daily rate, then multiplied that
+rate by
+
+6
+00:00:20,847 --> 00:00:24,676
+the real number of days in each calendar
+month.
+
+7
+00:00:24,676 --> 00:00:29,781
+A twelve month contract that starts mid
+month therefore opens with a
+
+8
+00:00:29,781 --> 00:00:34,461
+short period and closes with another, and
+the last row absorbs
+
+9
+00:00:34,461 --> 00:00:39,140
+any rounding so the schedule adds up to
+the rent exactly.
+
+10
+00:00:39,140 --> 00:00:42,119
+Every row shows its period, its day
+
+11
+00:00:42,119 --> 00:00:44,671
+count, its amount and its status.
+
+12
+00:00:44,671 --> 00:00:47,649
+Rows are planned until they are posted.
+
+13
+00:00:47,649 --> 00:00:50,202
+Now open Finance and choose Recognition.
+
+14
+00:00:50,202 --> 00:00:54,031
+Enter the date you are closing to,
+normally the
+
+15
+00:00:54,031 --> 00:00:57,434
+last day of last month, and select
+Preview.
+
+16
+00:00:57,434 --> 00:01:01,263
+RentAxis lists every planned row across
+every contract that
+
+17
+00:01:01,263 --> 00:01:05,092
+ends on or before that date, with a total.
+
+18
+00:01:05,092 --> 00:01:09,347
+Read the total before you post it; this is
+the
+
+19
+00:01:09,347 --> 00:01:13,601
+rental income you are about to recognise
+for the period.
+
+20
+00:01:13,601 --> 00:01:14,452
+Select Run.
+
+21
+00:01:14,452 --> 00:01:18,706
+Each row becomes one journal dated the
+last day of
+
+22
+00:01:18,706 --> 00:01:22,961
+its own period, debiting advance rent and
+crediting rental income,
+
+23
+00:01:22,961 --> 00:01:26,790
+with the narration Advance rent adjustment
+and the month.
+
+24
+00:01:26,790 --> 00:01:31,044
+Dating these entries at the period end
+rather than the
+
+25
+00:01:31,044 --> 00:01:35,299
+first of the next month is deliberate, so
+a month's
+
+26
+00:01:35,299 --> 00:01:39,128
+income falls inside the month it was
+earned in.
+
+27
+00:01:39,128 --> 00:01:43,807
+Open the General Ledger and filter to the
+advance rent account.
+
+28
+00:01:43,807 --> 00:01:48,062
+The balance falls by exactly what you just
+recognised, and
+
+29
+00:01:48,062 --> 00:01:51,891
+the rental income account rises by the
+same amount.
+
+30
+00:01:51,891 --> 00:01:55,294
+Recognition also runs automatically each
+night, so a
+
+31
+00:01:55,294 --> 00:01:58,272
+backdated contract catches up on its own.
+
+32
+00:01:58,272 --> 00:02:02,952
+Running it by hand is for closing a period
+on purpose,
+
+33
+00:02:02,952 --> 00:02:07,632
+and for the first catch-up after you move
+your books across.

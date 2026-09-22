@@ -1,0 +1,189 @@
+package com.datagami.rentaxis.core.service.cutover;
+
+import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.core.service.lease.LeasePostingService;
+import com.datagami.rentaxis.core.service.recognition.RecognitionService;
+import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * One imported contract, put on the books: its {@code TCO} at its own contract
+ * date, its cheques replayed to the statuses and days PACT recorded, and its rent
+ * recognised up to the day before the client's books open.
+ *
+ * <p><b>Why this is a bean of its own and not a method on
+ * {@code ContractImportPostService}.</b> A cut-over is six hundred contracts, and
+ * contract 87 having an unmapped income account must cost contract 87 and nothing
+ * else — an all-or-nothing failure tells the accountant that something, somewhere,
+ * is wrong. {@code REQUIRES_NEW} is what gives each lease its own commit boundary,
+ * and Spring's transaction advice lives on the proxy: a {@code REQUIRES_NEW}
+ * method called from a sibling method of the same class runs in the caller's
+ * transaction, so the first failure would roll the whole run back. Separating the
+ * bean is the cheapest way to go through the proxy —
+ * {@code RecognitionPoster} exists for exactly the same reason.</p>
+ *
+ * <p><b>And why the whole lease is one transaction.</b> Within a contract the
+ * opposite guarantee is wanted: a lease whose fourth cheque cannot be replayed
+ * must leave no journals at all, not a {@code TCO} and three {@code PDR}s with a
+ * grid that disagrees with them. That is also why the cheque loop does not collect
+ * per-row failures and carry on — every transition joins this transaction, so an
+ * exception out of one has already marked it rollback-only and continuing would
+ * only turn a clear failure into an {@code UnexpectedRollbackException} at commit.</p>
+ */
+@Component
+public class ContractImportLeasePoster {
+
+    private static final Logger log = LoggerFactory.getLogger(ContractImportLeasePoster.class);
+
+    /** What a lease looks like before it has been posted — the two states a post accepts. */
+    private static final Set<LeaseStatus> UNPOSTED =
+            EnumSet.of(LeaseStatus.DRAFT, LeaseStatus.PENDING_SIGNATURE);
+
+    private final LeaseRepository leases;
+    private final ChequeRepository cheques;
+    private final LeasePostingService leasePosting;
+    private final ChequeService chequeService;
+    private final RecognitionService recognition;
+
+    public ContractImportLeasePoster(LeaseRepository leases, ChequeRepository cheques,
+                                     LeasePostingService leasePosting, ChequeService chequeService,
+                                     RecognitionService recognition) {
+        this.leases = leases;
+        this.cheques = cheques;
+        this.leasePosting = leasePosting;
+        this.chequeService = chequeService;
+        this.recognition = recognition;
+    }
+
+    /** What one lease's post did, for the caller's result row. */
+    public record Posted(int chequesDeposited, int chequesCleared, int chequesBounced,
+                         int recognitionEntriesPosted) {
+    }
+
+    /**
+     * Post one lease of the batch, or say why it is being skipped.
+     *
+     * @return what was written, or {@code null} when the lease is already posted —
+     *         which is not a failure but the answer a retry needs. A lease that
+     *         cannot post throws, and the caller records it against this contract
+     *         and moves on to the next.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Posted postOne(UUID batchId, UUID leaseId, LocalDate recogniseThrough) {
+        Lease lease = leases.findByIdScopedToTenant(leaseId).orElse(null);
+        if (lease == null) {
+            // The link has no foreign key on lease_id by design (changeset 88), so a
+            // lease deleted between the import and the post leaves one behind.
+            throw new BusinessRuleViolationException("This lease no longer exists");
+        }
+        if (!UNPOSTED.contains(lease.getStatus())) {
+            // Idempotence, and the reason a second Post retries only what failed: a
+            // contract already on the books is left exactly as it is. Posting it again
+            // would raise the whole contract value a second time.
+            return null;
+        }
+
+        leasePosting.post(leaseId, batchId);
+
+        ChequeService.Replay replay = new ChequeService.Replay(batchId);
+        int deposited = 0;
+        int cleared = 0;
+        int bounced = 0;
+        for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            switch (replayTarget(c)) {
+                case REGISTERED -> {
+                    // The lease post already registered it and wrote its PDR; the
+                    // spreadsheet says nothing else happened to this instrument.
+                }
+                case DEPOSITED -> {
+                    chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                    deposited++;
+                }
+                case CLEARED -> {
+                    if (c.getMode() == ChequeMode.PDC) {
+                        // Paper goes to the bank before the bank confirms it. The date
+                        // is the sheet's, or the day it cleared when PACT exported only
+                        // that — ContractImportValidator.depositedOnFor owns that rule
+                        // and wrote this column with it.
+                        chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                        chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
+                    } else {
+                        // Cash and transfers are received straight to CLEARED and never
+                        // go near a bank; ChequeService.requireDepositable refuses to
+                        // deposit one.
+                        chequeService.receive(c.getId(), on(c.getImportedClearedOn()), replay);
+                    }
+                    cleared++;
+                }
+                case BOUNCED -> {
+                    chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                    if (c.getImportedClearedOn() != null) {
+                        // A cheque that cleared and was returned weeks later. The
+                        // difference is not cosmetic: bouncing after clearing credits
+                        // the bank the money actually reached, while bouncing before it
+                        // credits the PDC receivable.
+                        chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
+                    }
+                    chequeService.bounce(c.getId(), on(c.getImportedBouncedOn()), replay);
+                    bounced++;
+                }
+                default -> throw new BusinessRuleViolationException(
+                        "Cheque " + label(c) + " asks to be imported as " + c.getImportedStatus()
+                                + ", which the replay cannot reach from a new contract");
+            }
+        }
+
+        RecognitionService.LeaseCatchUp caughtUp =
+                recognition.catchUpLease(leaseId, recogniseThrough, batchId);
+
+        log.debug("Imported lease {} posted in batch {}: {} deposited, {} cleared, {} bounced, {} recognised",
+                leaseId, batchId, deposited, cleared, bounced, caughtUp.posted());
+        return new Posted(deposited, cleared, bounced, caughtUp.posted());
+    }
+
+    /**
+     * The status the spreadsheet asked this row to end up in.
+     *
+     * <p>Null means the row came from somewhere other than a cut-over import — it
+     * has just been registered by the lease post and that is all the sheet claimed.</p>
+     */
+    private static ChequeStatus replayTarget(Cheque c) {
+        return c.getImportedStatus() == null ? ChequeStatus.REGISTERED : c.getImportedStatus();
+    }
+
+    /**
+     * The transition, dated the day the money really moved.
+     *
+     * <p>No notes: a replay must leave the row's {@code notes} column as the
+     * importer wrote it, because reverting a batch puts the lease back to a clean
+     * DRAFT and a note the replay invented would be one more thing to erase.</p>
+     *
+     * <p>No debit-account override either: the row already carries the account the
+     * sheet named, or the property's BANK mapping the import resolved for it.</p>
+     */
+    private static ChequeActionRequest on(LocalDate date) {
+        return new ChequeActionRequest(date, null, null, null);
+    }
+
+    private static String label(Cheque c) {
+        return c.getChequeNumber() != null && !c.getChequeNumber().isBlank()
+                ? c.getChequeNumber() : "row " + c.getSeqNo();
+    }
+}

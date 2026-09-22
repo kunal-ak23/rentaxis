@@ -66,8 +66,14 @@ public class LeaseService {
      * <p>Deliberately <em>not</em> a set of "statuses that mean the contract has not
      * finished": RENEWED and EXPIRED leases are over as tenancies even though their
      * money may still be moving. This set answers one question — who is in the flat.</p>
+     *
+     * <p>Public since the cut-over import (plan 4) asks the same question from
+     * another package: a workbook must not create a second tenancy on a unit that is
+     * already let, and it has to find that out at <em>validation</em> time, before
+     * anything is written. A copy of the set there would be the fourth definition
+     * this Javadoc exists to prevent.</p>
      */
-    static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
+    public static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
 
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;
@@ -261,6 +267,19 @@ public class LeaseService {
      * in it. Overlaps should no longer be creatable, but production already
      * contains some, and this must not make those worse.
      */
+    /**
+     * Public door onto the same rule, for the one caller outside this class that
+     * has to give a unit back: {@code ImportedLeaseReverter}, undoing a cut-over
+     * import batch (spec §10.3). A re-import has to be able to create a lease on
+     * that flat again without tripping {@code ux_leases_one_active_per_unit}, and a
+     * second copy of "is anybody else living here" is how a unit comes to read
+     * VACANT with a renter in it.
+     */
+    @Transactional
+    public void releaseUnitIfNoOtherLiveLease(Lease lease) {
+        releaseUnitIfNoOtherActiveLease(lease);
+    }
+
     private void releaseUnitIfNoOtherActiveLease(Lease lease) {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());
@@ -948,6 +967,27 @@ public class LeaseService {
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {
+        return markActiveOnPosting(lease, notes, true);
+    }
+
+    /**
+     * The same, with a say in whether anybody is told.
+     *
+     * <p>{@code announce = false} is the cut-over's (spec §10.3): a batch of six
+     * hundred contracts that have been running for months is not six hundred
+     * tenancies starting today, and the landlord's first visible act on this system
+     * must not be an activation e-mail to every renter they have.
+     * {@code ContractImportPersistService} makes the same choice about
+     * LEASE_CREATED, and this is the other half of it — the import creates the
+     * lease, the bulk post activates it, and both are the same migration.</p>
+     *
+     * <p><b>Only the e-mail is suppressed.</b> The unit is still claimed and the
+     * event row is still written: the trail is how an accountant later explains why
+     * a contract went on the books in a closed month, and the occupancy is simply
+     * true.</p>
+     */
+    @Transactional
+    public Lease markActiveOnPosting(Lease lease, String notes, boolean announce) {
         LeaseStatus previousStatus = lease.getStatus();
         if (previousStatus != LeaseStatus.DRAFT && previousStatus != LeaseStatus.PENDING_SIGNATURE) {
             throw new BusinessRuleViolationException(
@@ -967,11 +1007,13 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, notes);
 
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.LEASE_ACTIVATED,
-                savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
-                "LEASE_ACTIVATED:" + savedLease.getId()));
+        if (announce) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.LEASE_ACTIVATED,
+                    savedLease.getTenantId(),
+                    buildLeasePayload(savedLease),
+                    "LEASE_ACTIVATED:" + savedLease.getId()));
+        }
 
         return savedLease;
     }
@@ -1303,6 +1345,7 @@ public class LeaseService {
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
         dto.setContractNumber(lease.getContractNumber());
         dto.setDisplayContractNumber(displayContractNumber(property.getCode(), lease.getContractNumber()));
+        dto.setExternalContractRef(lease.getExternalContractRef());
         dto.setAgreementDate(lease.getAgreementDate());
         dto.setRentVatApplicable(lease.isRentVatApplicable());
 

@@ -45,13 +45,36 @@ public final class LeaseVat {
     }
 
     /**
+     * VAT on a line that does not exist yet — the cut-over import's validator, which
+     * has a spreadsheet row rather than a {@link LeaseLine} and still has to arrive
+     * at the same figure (review R5).
+     *
+     * <p>It is the primitive the rest of this class is written in, not a parallel
+     * implementation: {@link #vatOf(LeaseLine)} calls it with the line's own three
+     * facts. That matters because the number it produces is compared for exact
+     * equality against a cheque grid at import time and again at posting time, and
+     * a second copy of "a deposit is never taxed" would let a workbook pass import
+     * and fail post — which is precisely the defect the pre-flight found in the
+     * brief's net-only rule.</p>
+     *
+     * @param behaviour the charge type's behaviour, or null when it has none.
+     */
+    public static BigDecimal vatOfNet(BigDecimal net, boolean vatApplicable, ChargeBehaviour behaviour) {
+        return vatApplicable && behaviour != ChargeBehaviour.DEPOSIT ? vatOf(net) : BigDecimal.ZERO;
+    }
+
+    private static ChargeBehaviour behaviourOf(LeaseLine line) {
+        return line.getChargeType() == null ? null : line.getChargeType().getBehaviour();
+    }
+
+    /**
      * Whether this line is taxed at all: VAT-applicable, and not a DEPOSIT (see the
      * class note). The single definition every method here and every caller
      * outside it agrees on.
      */
     private static boolean carriesVat(LeaseLine line) {
         if (line == null || !line.isVatApplicable()) return false;
-        return line.getChargeType() == null || line.getChargeType().getBehaviour() != ChargeBehaviour.DEPOSIT;
+        return behaviourOf(line) != ChargeBehaviour.DEPOSIT;
     }
 
     /**
@@ -63,7 +86,8 @@ public final class LeaseVat {
      * own copy of the deposit rule.</p>
      */
     public static BigDecimal vatOf(LeaseLine line) {
-        return carriesVat(line) ? vatOf(line.getNetAmount()) : BigDecimal.ZERO;
+        if (line == null) return BigDecimal.ZERO;
+        return vatOfNet(line.getNetAmount(), line.isVatApplicable(), behaviourOf(line));
     }
 
     /**

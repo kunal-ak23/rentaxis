@@ -167,6 +167,47 @@ export const PERMISSIONS = {
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
     // and Spring Security does not combine the two — the narrower one wins on writes.
     canManageChargeTypes: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+
+    // ---- accounting-v2 plan 4: vouchers ----
+    //
+    // Purchase/Service Invoices and Bank/Cash Payment Vouchers: the list, both
+    // forms, post, amend, delete and the attachment sub-resources. Mirrors the
+    // ONE class-level annotation on VoucherController
+    // (VoucherController.java:55), which covers every handler in the file:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    //
+    // Its own key rather than a reuse of canPostJournals even though the two
+    // lists are identical today: they mirror different annotations, on different
+    // controllers, and a future widening of one is not a widening of the other.
+    // PROPERTY_MANAGER is absent because the controller refuses it — so the
+    // sidebar shows a manager no voucher link, and the pages show an
+    // access-denied panel rather than a screen that 403s on its first fetch.
+    canManageVouchers: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // The cut-over import batches screen: the list and the one Reverse button.
+    // Mirrors ImportBatchController's class-level @PreAuthorize
+    // (ImportBatchController.java:44), which covers every handler in the file:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    //
+    // Reversing a cut-over unposts every contract it created, so it sits with
+    // finance rather than with property management — PROPERTY_MANAGER is absent
+    // because the controller refuses it. Its own key, not a reuse of
+    // canManageVouchers: same set today, different annotation on a different
+    // controller. The cut-over template download on that same page is the SAME
+    // set — PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT, because
+    // the person assembling a cut-over workbook out of a PACT export is the
+    // accountant. (It was SA/TA while the page linked the v1 /template, which
+    // keeps its narrower gate.) See cutoverRules.canDownloadImportTemplate.
+    canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Opening balances and the reconciliation report. Mirrors
+    // OpeningBalanceController's class-level @PreAuthorize
+    // (OpeningBalanceController.java:57), which covers all seven handlers
+    // (grid, snapshot, setRow, post, repost, reverse, reconcile):
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    // Spec §11 puts "OB" in that list explicitly — opening the books writes a
+    // journal covering every account the organisation has, so PROPERTY_MANAGER
+    // is absent. Its own key for the same reason as the neighbours above: same
+    // set today, a different annotation on a different controller.
+    canManageOpeningBalances: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

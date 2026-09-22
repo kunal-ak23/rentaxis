@@ -89,6 +89,20 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "contract_number")
     private Long contractNumber;
 
+    /**
+     * The contract number the tenancy carried in the system this tenant migrated
+     * from — PACT's "TLP7/681" (changeset 88, spec §10.3).
+     *
+     * <p>Deliberately not {@code contractNumber}: that is a {@code Long}, our own
+     * per-tenant sequence, and the column the next contract number is generated
+     * from. An alphanumeric foreign identifier does not fit in it and must not be
+     * allowed to steer it. Written only by the cut-over contract import; indexed
+     * per tenant so a re-import after a batch reverse can find the earlier lease
+     * by it.</p>
+     */
+    @Column(name = "external_contract_ref", length = 64)
+    private String externalContractRef;
+
     @Column(name = "agreement_date")
     private LocalDate agreementDate;
 

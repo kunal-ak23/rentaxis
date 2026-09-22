@@ -13,6 +13,7 @@ import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -66,6 +67,7 @@ import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.chequeRow;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.linePeriod;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -920,5 +922,52 @@ class RecognitionServiceIT {
         assertThat(schedule(leaseId)).hasSize(13);
         assertThat(schedule(leaseId)).allSatisfy(r ->
                 assertThat(r.status()).isEqualTo(RecognitionStatus.PLANNED));
+    }
+
+    /**
+     * The poster takes an entry id straight from its caller and locks the row as
+     * the first statement of its own transaction. Posting somebody else's row would
+     * write a CIL into this tenant's ledger, under this tenant's entry number,
+     * against the other tenant's accounts — so the row it loads has to be checked
+     * against the context, not merely against the filter that happens to be on.
+     */
+    @Test
+    void anotherTenantCannotPostThisOnesRecognitionRow() {
+        UUID leaseId = galah();
+        UUID tenantA = fixtures.tenantId();
+        UUID september = rowStarting(leaseId, START).id();
+
+        LeaseTestFixtures other = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService).bootstrap();
+        assertThat(other.tenantId()).isNotEqualTo(tenantA);
+
+        assertThatThrownBy(() -> poster.post(september))
+                .isInstanceOf(NotFoundException.class);
+
+        TenantContextHolder.setTenantId(tenantA);
+        assertThat(tx.execute(s -> entriesRepo.findById(september).orElseThrow()).getStatus())
+                .isEqualTo(RecognitionStatus.PLANNED);
+    }
+
+    /**
+     * And with no tenant in context at all the same write path fails closed rather
+     * than posting into whatever the filter leaves visible. The nightly job sets
+     * the context per organisation (see {@code RevenueRecognitionJob}); anything
+     * that reaches here without one is a bug, not a super-admin.
+     */
+    @Test
+    void postingWithNoTenantInContextIsRefused() {
+        UUID leaseId = galah();
+        UUID tenantA = fixtures.tenantId();
+        UUID september = rowStarting(leaseId, START).id();
+
+        TenantContextHolder.clear();
+        assertThatThrownBy(() -> poster.post(september))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cannot be posted");
+
+        TenantContextHolder.setTenantId(tenantA);
+        assertThat(tx.execute(s -> entriesRepo.findById(september).orElseThrow()).getStatus())
+                .isEqualTo(RecognitionStatus.PLANNED);
     }
 }

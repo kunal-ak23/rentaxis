@@ -41,9 +41,12 @@ const ROUTES: RouteCheck[] = [
     contentIndicator: /account/i,
   },
   {
-    path: '/en/dashboard/finance/payments',
+    // /dashboard/finance/payments was the v1 rent-collection screen; plan 1
+    // deleted it (the route now 404s) and journal vouchers are where finance
+    // entries are read and posted. See web/src/app/[locale]/dashboard/finance.
+    path: '/en/dashboard/finance/journals',
     allowedProjects: ['super-admin', 'tenant-admin'],
-    contentIndicator: /payment/i,
+    contentIndicator: /journal/i,
   },
   {
     path: '/en/dashboard/settings/gateway',
@@ -94,7 +97,13 @@ test.describe('Route access control', () => {
       }
 
       await page.goto(route.path);
-      await page.waitForLoadState('networkidle');
+
+      // Not `networkidle`: every page in the dashboard shell fires fetches that
+      // a given role may not be entitled to, and a non-2xx whose body the
+      // caller never reads stays in flight for ever, so the idle state never
+      // arrives (renter/tenant-user on /dashboard, tenant-admin on
+      // /superadmin/users). The shell rendering is the real precondition.
+      await expect(page.locator('aside')).toBeVisible({ timeout: 15_000 });
 
       // Authorized role should see actual content
       const body = page.locator('body');

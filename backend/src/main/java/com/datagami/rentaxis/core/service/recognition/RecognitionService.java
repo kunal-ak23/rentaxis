@@ -613,8 +613,34 @@ public class RecognitionService {
     private RecognitionEntry lock(UUID entryId) {
         RecognitionEntry entry = entries.findById(entryId)
                 .orElseThrow(() -> new NotFoundException("Recognition entry not found"));
+        requireOwnTenant(entry);
         entityManager.refresh(entry, LockModeType.PESSIMISTIC_WRITE);
         return entry;
+    }
+
+    /**
+     * The row this transaction is about to lock and post belongs to the tenant in
+     * context, and there <em>is</em> one.
+     *
+     * <p>The Hibernate filter already scopes the read above ({@code TenantAspect}
+     * covers inherited repository methods — {@code TenantAspectIT} pins it), so
+     * this is the second layer rather than the first. It earns its place by being
+     * local: the entry id arrives from a caller, and what happens next writes a
+     * {@code CIL} into the ledger of whoever is in context, under that tenant's
+     * entry number. An empty context fails closed here rather than several calls
+     * later — the nightly close sets the context per organisation
+     * ({@code RevenueRecognitionJob}), so nothing legitimate reaches this without
+     * one, and a posting path is the wrong place to discover that by accident.</p>
+     */
+    private static void requireOwnTenant(RecognitionEntry entry) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException(
+                    "No tenant in context; recognition entry " + entry.getId() + " cannot be posted");
+        }
+        if (!tenantId.equals(entry.getTenantId())) {
+            throw new NotFoundException("Recognition entry not found");
+        }
     }
 
     /**
@@ -737,6 +763,58 @@ public class RecognitionService {
 
     /** What a run has to decide about, read once and detached. */
     private record Candidates(List<RecognitionEntryDTO> rows, LocalDate lockedThrough) {
+    }
+
+    /** What a cut-over catch-up recognised for one lease. */
+    public record LeaseCatchUp(int posted, BigDecimal amount) {
+    }
+
+    /**
+     * Recognise everything <em>one</em> lease has already earned, up to and
+     * including {@code through} (spec §10.3, controller ruling R13).
+     *
+     * <p>A cut-over contract normally started months before the client's books
+     * open. Its {@code TCO} parks the whole year in advance rent on the contract
+     * date; the months between then and the cut-over are income the landlord has
+     * already earned, and the books cannot open with them still sitting in a
+     * liability. This is what earns them, and it stops on {@code through} —
+     * {@code booksStart − 1} — because everything after that belongs to the
+     * ordinary month-end close on this system.</p>
+     *
+     * <p><b>Not {@link #runTo}.</b> That one walks every planned row of the whole
+     * organisation, which during a bulk post would sweep up the leases of other
+     * batches and of contracts typed in by hand, stamping them all with a batch id
+     * they have nothing to do with — and then a reverse of that batch would take
+     * them off the books. It also skips rows inside the period lock, which is every
+     * row a cut-over has. This one is scoped to the lease and is deliberately
+     * lock-blind: the exemption comes from the batch id it threads through.</p>
+     *
+     * <p><b>{@code MANDATORY}, and {@code postJoining} rather than
+     * {@code post}.</b> The catch-up is part of its lease's own all-or-nothing
+     * post: a lease that cannot recognise its history — an unmapped income account,
+     * a term with no usable period — must leave no {@code TCO} and no {@code PDR}
+     * behind either. {@code RecognitionPoster.post}'s {@code REQUIRES_NEW} would
+     * commit each {@code CIL} independently of exactly the transaction that is
+     * about to roll back, and would not see the schedule the same uncommitted
+     * transaction has just built.</p>
+     *
+     * @param through      the last period end to recognise, inclusive
+     * @param importBatchId the batch every {@code CIL} carries; never null here in
+     *                      practice, and the parameter is what makes that explicit
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public LeaseCatchUp catchUpLease(UUID leaseId, LocalDate through, UUID importBatchId) {
+        lease(leaseId); // tenant-scoped, and a 404 rather than a silent empty run
+        int posted = 0;
+        BigDecimal amount = BigDecimal.ZERO;
+        for (RecognitionEntry entry : entries.findByLease_IdAndStatusInOrderByPeriodStartAsc(
+                leaseId, EnumSet.of(RecognitionStatus.PLANNED))) {
+            if (entry.getPeriodEnd().isAfter(through)) continue;
+            poster.postJoining(entry.getId(), importBatchId);
+            posted++;
+            amount = amount.add(entry.getAmount());
+        }
+        return new LeaseCatchUp(posted, amount.setScale(2, RoundingMode.HALF_UP));
     }
 
     /**

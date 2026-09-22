@@ -45,7 +45,14 @@ ApiClient _client(List<Map<String, dynamic>> leases) {
   return client;
 }
 
-List<Override> _overrides({Object? gatePassError}) => [
+List<Override> _overrides({
+  Object? gatePassError,
+  bool financeEnabled = true,
+}) => [
+  // Gate passes and bookings are unaffected by MOBILE_FINANCE; the lease rows
+  // are, because their only destination is the gated /leases. These cases pin
+  // the merge itself, so they run with the flag ON unless they say otherwise.
+  mobileFinanceEnabledProvider.overrideWithValue(financeEnabled),
   apiClientProvider.overrideWithValue(
     _client([
       {
@@ -148,6 +155,39 @@ void main() {
     addTearDown(container.dispose);
 
     expect(await container.read(managerQueueCountProvider.future), 3);
+  });
+
+  testWidgets('the lease rows drop out while MOBILE_FINANCE is off', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(financeEnabled: false),
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const Scaffold(body: QueueScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Queue itself is NOT gated — the two sources whose endpoints survived
+    // accounting v2 are still there.
+    expect(find.text('2 waiting'), findsOneWidget);
+    expect(find.text('Community Hall'), findsOneWidget);
+    expect(find.text('Omar Visitor'), findsOneWidget);
+    // The lease row would tap through to /leases, which the router redirects.
+    expect(find.text('Layla Renter'), findsNothing);
+    expect(find.text('LEASE'), findsNothing);
+  });
+
+  test('the badge stops counting leases while MOBILE_FINANCE is off', () async {
+    final container = ProviderContainer(
+      overrides: _overrides(financeEnabled: false),
+    );
+    addTearDown(container.dispose);
+
+    expect(await container.read(managerQueueCountProvider.future), 2);
   });
 
   test('queue badge still counts the working sources when one fails', () async {

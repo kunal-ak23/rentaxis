@@ -47,6 +47,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function JournalDetail() {
     const t = useTranslations("Ledger");
     const tCommon = useTranslations("Common");
+    const tVouchers = useTranslations("Vouchers");
     const params = useParams<{ id: string }>();
     const search = useSearchParams();
     const router = useRouter();
@@ -146,7 +147,32 @@ function JournalDetail() {
 
     const totalDebit = entry?.lines.reduce((s, l) => s + l.debit, 0) ?? 0;
     const totalCredit = entry?.lines.reduce((s, l) => s + l.credit, 0) ?? 0;
-    const canReverse = !!entry && entry.status === "POSTED" && entry.reversalOfId === null && canPost;
+    /**
+     * Reverse belongs to a MANUAL journal and to nothing else.
+     *
+     * `POST /journals/{id}/reverse` refuses an entry that belongs to a document
+     * — a voucher, a lease, a cheque, a recognition period, a settlement —
+     * because reversing the journal behind a document would leave the document
+     * POSTED and its ledger empty, with neither screen saying so. Each of those
+     * is corrected where it was created: a voucher through Amend (reverse and
+     * re-post as one transaction), a contract through termination, a cheque
+     * through cancel.
+     *
+     * A null `sourceType` is an entry written before the column existed — not
+     * manual, and not safe to assume manual.
+     */
+    const canReverse =
+        !!entry
+        && entry.status === "POSTED"
+        && entry.reversalOfId === null
+        && entry.sourceType === "MANUAL"
+        && canPost;
+
+    /** The document page that owns a voucher-sourced entry, if it is one. */
+    const sourceVoucherHref =
+        entry?.sourceType === "VOUCHER" && entry.sourceId
+            ? `/dashboard/finance/vouchers/${entry.docType === "BPV" ? "payment" : "purchase-invoice"}?id=${entry.sourceId}`
+            : null;
 
     return (
         <div className="max-w-6xl">
@@ -189,6 +215,7 @@ function JournalDetail() {
                         {canReverse && (
                             <button
                                 type="button"
+                                data-testid="reverse-journal"
                                 onClick={() => {
                                     setReverseError(null);
                                     setReverseDate(today());
@@ -219,11 +246,18 @@ function JournalDetail() {
                         </div>
                     </div>
 
-                    {(entry.sourceType === "LEASE" && entry.sourceId) || entry.reversalOfId || entry.reversedById ? (
+                    {(entry.sourceType === "LEASE" && entry.sourceId) || sourceVoucherHref || entry.reversalOfId || entry.reversedById ? (
                         <div className="flex flex-wrap items-center gap-4 mb-6 text-xs font-semibold">
                             {entry.sourceType === "LEASE" && entry.sourceId && (
                                 <Link href={`/dashboard/leases/${entry.sourceId}`} className="text-primary hover:underline cursor-pointer">
                                     {t("sourceLease")}
+                                </Link>
+                            )}
+                            {/* Where this entry can actually be corrected, now that
+                                Reverse no longer offers to do it from here. */}
+                            {sourceVoucherHref && (
+                                <Link href={sourceVoucherHref} data-testid="source-voucher" className="text-primary hover:underline cursor-pointer">
+                                    {tVouchers("sourceVoucher")}
                                 </Link>
                             )}
                             {entry.reversalOfId && (

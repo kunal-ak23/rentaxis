@@ -1,0 +1,160 @@
+1
+00:00:00,000 --> 00:00:03,020
+In this tutorial you will turn a
+
+2
+00:00:03,020 --> 00:00:05,609
+draft tenancy contract into accounting
+entries.
+
+3
+00:00:05,609 --> 00:00:08,629
+Open Leases and select the prepared draft.
+
+4
+00:00:08,629 --> 00:00:11,649
+A contract in RentAxis has two grids.
+
+5
+00:00:11,649 --> 00:00:14,238
+The first is its charge lines.
+
+6
+00:00:14,238 --> 00:00:19,415
+Each line names what is being charged, the
+account the income or
+
+7
+00:00:19,415 --> 00:00:24,592
+liability is credited to, the gross
+amount, any discount, and the net.
+
+8
+00:00:24,592 --> 00:00:29,769
+Rent, security deposit and administration
+fee are separate lines because they behave
+
+9
+00:00:29,769 --> 00:00:34,947
+differently: rent is recognised across the
+term, a deposit is a liability
+
+10
+00:00:34,947 --> 00:00:39,692
+you hold, and a fee is income the day you
+post.
+
+11
+00:00:39,692 --> 00:00:44,007
+The second grid is the cheque register for
+this contract.
+
+12
+00:00:44,007 --> 00:00:47,890
+Every row carries a posting date, a cheque
+number,
+
+13
+00:00:47,890 --> 00:00:51,341
+a maturity date, the drawer's bank, the
+amount
+
+14
+00:00:51,341 --> 00:00:54,793
+and a narration such as Rent, first
+installment.
+
+15
+00:00:54,793 --> 00:00:59,970
+Notice that the cheque grid adds up to
+exactly the contract value.
+
+16
+00:00:59,970 --> 00:01:03,853
+If it does not, posting is refused,
+because the
+
+17
+00:01:03,853 --> 00:01:07,305
+register is how the money is tracked and
+
+18
+00:01:07,305 --> 00:01:10,756
+it has to account for all of it.
+
+19
+00:01:10,756 --> 00:01:15,502
+Nothing you have looked at so far has
+touched the ledger.
+
+20
+00:01:15,502 --> 00:01:18,522
+The contract is still a draft, and
+
+21
+00:01:18,522 --> 00:01:21,111
+a draft can be edited freely.
+
+22
+00:01:21,111 --> 00:01:22,405
+Now select Post.
+
+23
+00:01:22,405 --> 00:01:24,131
+Confirm the contract date.
+
+24
+00:01:24,131 --> 00:01:28,014
+RentAxis writes one tenancy contract
+journal debiting rent receivable
+
+25
+00:01:28,014 --> 00:01:31,897
+and crediting each line's own account, and
+one post-dated
+
+26
+00:01:31,897 --> 00:01:35,780
+cheque journal for every row of the grid,
+moving
+
+27
+00:01:35,780 --> 00:01:39,663
+the amount from rent receivable into
+post-dated cheques receivable.
+
+28
+00:01:39,663 --> 00:01:42,683
+Open the Journals tab and read them.
+
+29
+00:01:42,683 --> 00:01:45,271
+The contract status is now Active.
+
+30
+00:01:45,271 --> 00:01:47,429
+Open the Recognition schedule tab.
+
+31
+00:01:47,429 --> 00:01:52,606
+RentAxis has already planned how the rent
+will be earned, one row
+
+32
+00:01:52,606 --> 00:01:57,352
+per calendar month, using the actual
+number of days in each.
+
+33
+00:01:57,352 --> 00:01:59,509
+Nothing there is posted yet.
+
+34
+00:01:59,509 --> 00:02:04,686
+Posting is deliberate: after a contract is
+posted it is never edited,
+
+35
+00:02:04,686 --> 00:02:09,432
+only amended, which reverses the original
+and writes a fresh one.

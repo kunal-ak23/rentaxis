@@ -60,7 +60,11 @@ void main() {
         .setMockMethodCallHandler(storageChannel, null);
   });
 
-  Future<void> pumpMore(WidgetTester tester, String role) async {
+  Future<void> pumpMore(
+    WidgetTester tester,
+    String role, {
+    bool financeEnabled = true,
+  }) async {
     // Tall surface so the non-lazy assertions below see every ListView child.
     await tester.binding.setSurfaceSize(const Size(500, 3000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -70,6 +74,9 @@ void main() {
           authProvider.overrideWith(
             (ref) => AuthNotifier(_FakeAuthService(role)),
           ),
+          // Role gating is what these cases pin, so the MOBILE_FINANCE flag is
+          // held ON except where a case says otherwise.
+          mobileFinanceEnabledProvider.overrideWithValue(financeEnabled),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -110,4 +117,30 @@ void main() {
     expect(find.text('Bank Accounts'), findsOneWidget);
     expect(find.text('Reports'), findsOneWidget);
   });
+
+  testWidgets(
+    'MOBILE_FINANCE off collapses the finance group to a coming-soon row',
+    (tester) async {
+      await pumpMore(tester, 'TENANT_ADMIN', financeEnabled: false);
+
+      // The section stays — Vendors is backed by endpoints accounting v2 kept.
+      expect(find.text('FINANCE'), findsOneWidget);
+      expect(find.text('Vendors'), findsOneWidget);
+      // The ledger screens are gone, replaced by one inert row.
+      expect(find.text('Bank Accounts'), findsNothing);
+      expect(find.text('Reports'), findsNothing);
+      expect(find.text('Accounts & Transactions'), findsOneWidget);
+      expect(find.text('Coming soon'), findsOneWidget);
+      // Inert: no tap target behind it.
+      final row = tester.widget<InkWell>(
+        find
+            .ancestor(
+              of: find.text('Coming soon'),
+              matching: find.byType(InkWell),
+            )
+            .first,
+      );
+      expect(row.onTap, isNull);
+    },
+  );
 }
