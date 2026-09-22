@@ -42,6 +42,7 @@ import os
 import re
 import sys
 import datetime as dt
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import requests
@@ -662,7 +663,10 @@ def main():
         for l in lines:
             net = l["grossAmount"] - l["discountAmount"]
             taxed = l["vatApplicable"] and l["chargeTypeCode"] not in DEPOSIT_CODES
-            total += net + (round(net * VAT_RATE, 2) if taxed else 0.0)
+            # HALF_UP like the server's VoucherMath/LeaseVat — Python's round()
+            # is half-to-even and would drift on a .xx5 line.
+            vat = float(Decimal(str(net * VAT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if taxed else 0.0
+            total += net + vat
         return total
 
     def cheque(seq, number, date, amount, narration, bank="Emirates NBD",
