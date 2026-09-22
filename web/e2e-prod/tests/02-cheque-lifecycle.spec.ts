@@ -1,15 +1,27 @@
 /**
- * 02 — Cheque state transitions on the accounting-v2 register.
+ * 02 — A property manager moves cheques through the register.
  *
- * Covers: deposit on two REGISTERED rows. `clear` and `bounce` are left
- * out — they emit ledger entries (CBR/PDR reversal) and are covered by
- * 13a-cheques-and-penalties once 13-finance-and-settings has seeded the
- * chart of accounts.
+ * The full accounting lifecycle (post, deposit, clear, bounce, replace,
+ * recognise, reconcile) lives in 13h-accounting-v2.spec.ts, on a contract of
+ * its own and as the role that owns the books. This one keeps the check that
+ * was always its real reason for existing: cheque collection is a
+ * PROPERTY_MANAGER job in the product
+ * (web/src/app/[locale]/dashboard/finance/cheques/collection/page.tsx), so a
+ * PM-only restriction on ChequeController has to surface somewhere, and a
+ * spec that banks cheques as an admin would never see it.
  *
- * There is no PENDING/"collect" step any more: 01-provision's
- * `postLeaseFlow` already generated and posted the cheque grid, so every
- * rent cheque on the lease starts REGISTERED. The four lifecycle endpoints
- * are now PUT/POST on /v1/cheques/{id}/{deposit|clear|bounce|replace}.
+ * It deposits two rows rather than one because 13a-cheques-and-penalties
+ * clears one of them and bounces the other; that spec's own preconditions say
+ * so.
+ *
+ * There is no PENDING/"collect" step any more: 01-provision's `postLeaseFlow`
+ * already generated and posted the cheque grid, so every rent cheque on the
+ * lease starts REGISTERED, and the transitions are PUT /v1/cheques/{id}/...
+ *
+ * The v1 note about a fresh tenant lacking account mappings — which is why
+ * this spec used to stop before `clear` — is obsolete: `PropertyService`
+ * calls `generateMissing` on create, so a property owns its account set from
+ * the moment it exists (spec §5.1).
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -18,15 +30,11 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('cheque state transitions — deposit two REGISTERED rows', async () => {
+test('a property manager deposits two registered cheques', async () => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.lease?.id, '01-provision must run first').toBeTruthy();
   expect(ctx.pmEmail, '01-provision must have created a PROPERTY_MANAGER').toBeTruthy();
 
-  // Cheque deposit is performed by a PROPERTY_MANAGER in the real product —
-  // see web/src/app/[locale]/dashboard/finance/cheques/collection/page.tsx.
-  // Login as PM (a role we'd otherwise never exercise) so any PM-only
-  // restriction on ChequeController surfaces here.
   const pctx = await loginAsNextAuth(ctx.baseURL, ctx.pmEmail, ctx.pmPassword);
   await setActiveTenant(pctx, ctx.tenant.id);
 
@@ -37,13 +45,18 @@ test('cheque state transitions — deposit two REGISTERED rows', async () => {
   expect(registered.length, 'expected at least 2 REGISTERED PDC rows').toBeGreaterThanOrEqual(2);
   const [happyRow, bounceRow] = registered;
 
-  // Row 1: deposit, leave at DEPOSITED.
   const deposited1 = await api.depositCheque(pctx, happyRow.id, { notes: 'TEST-E2E cheque deposited' });
   expect(deposited1.status).toMatch(/DEPOSITED/i);
 
-  // Row 2: deposit too (bounce/clear are 13a's, once the chart of accounts exists).
   const deposited2 = await api.depositCheque(pctx, bounceRow.id, { notes: 'TEST-E2E cheque deposited' });
   expect(deposited2.status).toMatch(/DEPOSITED/i);
+
+  // Read the register back rather than trusting the two responses: what the
+  // next spec reaches for is the state of the grid, not the value a PUT
+  // happened to echo.
+  const afterwards = await api.getLeaseCheques(pctx, ctx.lease.id);
+  const depositedIds = afterwards.filter((c) => c.status === 'DEPOSITED').map((c) => c.id).sort();
+  expect(depositedIds).toEqual([happyRow.id, bounceRow.id].sort());
 
   await pctx.request.dispose();
 });

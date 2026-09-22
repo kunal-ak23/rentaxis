@@ -43,6 +43,20 @@ for (const [roleKey, fileName] of Object.entries(ROLE_FILE_MAP)) {
     // Wait for redirect away from login page
     await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
 
+    // A super-admin works inside a selected organisation (the proxy forwards
+    // the `active_tenant_id` cookie as X-Tenant-Id); without one, every
+    // tenant-scoped API call is refused. Select the test tenant, as a person
+    // would with the org switcher.
+    if (roleKey === 'superAdmin' && ctx.testTenantId) {
+      const origin = new URL(page.url());
+      await page.context().addCookies([{
+        name: 'active_tenant_id',
+        value: String(ctx.testTenantId),
+        domain: origin.hostname,
+        path: '/',
+      }]);
+    }
+
     // Save storage state
     if (!fs.existsSync(AUTH_DIR)) {
       fs.mkdirSync(AUTH_DIR, { recursive: true });

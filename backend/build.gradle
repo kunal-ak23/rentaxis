@@ -74,7 +74,30 @@ dependencies {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		// The golden ledger replays are slow (a whole contract each, through
+		// Testcontainers) but they are the client-acceptance gate, so they stay in the
+		// default run. These properties let a caller split them out:
+		//   ./gradlew test -PincludeTags=golden   — the acceptance gate alone
+		//   ./gradlew test -PexcludeTags=golden   — everything else
+		// @Tag("golden") marks the REPLAY classes only; the harness's own unit tests
+		// (GoldenLedgerFixtureTest, LedgerDiffTest) are untagged, so they run with the
+		// rest of the suite where they belong.
+		if (project.hasProperty('includeTags')) {
+			includeTags((project.property('includeTags') as String).split(',') as String[])
+		}
+		if (project.hasProperty('excludeTags')) {
+			excludeTags((project.property('excludeTags') as String).split(',') as String[])
+		}
+	}
+	// Gradle 9's failOnNoDiscoveredTests defaults to true. It counts the classes Gradle
+	// detects, not the tests the engine runs after tag filtering, so `-PincludeTags=golden`
+	// with nothing tagged passes today (verified on 9.3.1). "No class carries that tag on
+	// this branch" is a legitimate answer to a tag filter rather than a build error, so we
+	// say so explicitly and keep it true if that accounting ever changes.
+	if (project.hasProperty('includeTags') || project.hasProperty('excludeTags')) {
+		failOnNoDiscoveredTests = false
+	}
 	// Gradle defaults test workers to 512m, which the full suite now exhausts:
 	// several @SpringBootTest contexts plus the Testcontainers integration tests
 	// (GatePassScanConcurrencyIT, OtpLoginRollbackIT) exceed it and the worker

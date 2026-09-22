@@ -296,6 +296,8 @@ export default function SuperAdminTenantsPage() {
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Organization Name</label>
                                 <input
                                     required
+                                    name="name"
+                                    data-testid="org-name"
                                     placeholder="e.g. Al Futtaim Properties"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                     value={formData.name}

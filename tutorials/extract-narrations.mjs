@@ -12,8 +12,8 @@ const sections = [...source.matchAll(
   /^## (\d{2}) — (.+)\n([\s\S]*?)(?=^## (?:\d{2} —|Recording acceptance checklist))/gm,
 )];
 
-if (sections.length !== 33) {
-  throw new Error(`Expected 33 numbered storyboards, found ${sections.length}`);
+if (sections.length !== 37) {
+  throw new Error(`Expected 37 numbered storyboards, found ${sections.length}`);
 }
 
 mkdirSync(outputDir, { recursive: true });
@@ -39,8 +39,8 @@ for (const [, number, title, body] of sections) {
 }
 
 const outputs = readdirSync(outputDir).filter((name) => /^\d{2}-.*\.txt$/.test(name));
-if (outputs.length !== 33) {
-  throw new Error(`Expected 33 narration tracks, generated ${outputs.length}`);
+if (outputs.length !== 37) {
+  throw new Error(`Expected 37 narration tracks, generated ${outputs.length}`);
 }
 
 console.log(`Generated ${outputs.length} narration tracks in ${outputDir}`);

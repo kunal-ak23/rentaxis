@@ -1,0 +1,4 @@
+# The date on line 3 is the export's own dd-MM-yyyy, not the ISO the format asks for.
+# The complaint has to name the line, or transcribing 60 rows is a guessing game.
+account,entry_date,doc_type,particular,narration,debit,credit,balance
+Rent Receivable Sample Tower,28-08-2025,TCO,Advance Rent Sample Tower,,12000.00,0.00,12000.00

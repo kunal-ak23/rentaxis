@@ -20,11 +20,17 @@ void main() {
   Future<_StubAuthNotifier> pumpScreen(
     WidgetTester tester, {
     required String role,
+    bool financeEnabled = true,
   }) async {
     final auth = _StubAuthNotifier();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [authProvider.overrideWith((ref) => auth)],
+        overrides: [
+          authProvider.overrideWith((ref) => auth),
+          // Role gating is what these cases pin, so MOBILE_FINANCE is held ON
+          // except where a case says otherwise.
+          mobileFinanceEnabledProvider.overrideWithValue(financeEnabled),
+        ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
           home: const SettingsHubScreen(),
@@ -55,5 +61,20 @@ void main() {
     expect(find.text('Rent Collection Settings'), findsOneWidget);
     expect(find.text('Payment Gateway'), findsOneWidget);
     expect(find.text('Account Mappings'), findsOneWidget);
+  });
+
+  testWidgets('MOBILE_FINANCE off hides Account Mappings from an admin too', (
+    tester,
+  ) async {
+    // /v1/finance/account-mappings was removed by accounting v2. The router
+    // redirects /settings/mappings, but go_router applies redirect to push as
+    // well — so a visible tile would PUSH the dashboard on top of Settings.
+    // P5-R8: hidden AND redirected.
+    await pumpScreen(tester, role: 'TENANT_ADMIN', financeEnabled: false);
+
+    expect(find.text('Account Mappings'), findsNothing);
+    // The two settings backed by endpoints v2 kept are untouched.
+    expect(find.text('Rent Collection Settings'), findsOneWidget);
+    expect(find.text('Payment Gateway'), findsOneWidget);
   });
 }

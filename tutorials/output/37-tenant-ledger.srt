@@ -1,0 +1,140 @@
+1
+00:00:00,000 --> 00:00:04,897
+This tutorial reads a renter's account the
+way an accountant does.
+
+2
+00:00:04,897 --> 00:00:09,795
+Open Finance and choose Tenant Ledger,
+then select the prepared renter.
+
+3
+00:00:09,795 --> 00:00:14,247
+RentAxis shows one block per ledger
+account the renter has
+
+4
+00:00:14,247 --> 00:00:18,254
+touched, and inside each block one row per
+entry.
+
+5
+00:00:18,254 --> 00:00:23,152
+Every row carries the document date, the
+document number, the account
+
+6
+00:00:23,152 --> 00:00:27,604
+on the other side of the entry, the
+narration, the
+
+7
+00:00:27,604 --> 00:00:32,056
+debit or the credit, and the running
+balance after it.
+
+8
+00:00:32,056 --> 00:00:33,837
+Start with rent receivable.
+
+9
+00:00:33,837 --> 00:00:38,289
+The tenancy contract debited it with the
+whole contract value,
+
+10
+00:00:38,289 --> 00:00:42,296
+then one post-dated cheque entry per
+cheque credited it
+
+11
+00:00:42,296 --> 00:00:46,303
+back, so immediately after posting the
+balance is zero.
+
+12
+00:00:46,303 --> 00:00:51,201
+That is correct and it is the point: what
+the renter
+
+13
+00:00:51,201 --> 00:00:55,653
+owes lives in the cheque register, not in
+this account.
+
+14
+00:00:55,653 --> 00:00:59,660
+A balance appears here only when something
+goes wrong,
+
+15
+00:00:59,660 --> 00:01:03,667
+such as a returned cheque, which debits it
+again.
+
+16
+00:01:03,667 --> 00:01:06,338
+Read the post-dated cheques receivable
+block.
+
+17
+00:01:06,338 --> 00:01:11,236
+It rises with every cheque registered and
+falls with every cheque
+
+18
+00:01:11,236 --> 00:01:16,133
+cleared, so its balance is the paper you
+are still holding.
+
+19
+00:01:16,133 --> 00:01:17,469
+Read advance rent.
+
+20
+00:01:17,469 --> 00:01:22,811
+The contract credited the whole year, and
+each month-end recognition debits back
+
+21
+00:01:22,811 --> 00:01:28,154
+the portion earned, so it winds down to
+zero across the term.
+
+22
+00:01:28,154 --> 00:01:32,606
+Select any document number to open the
+journal behind it.
+
+23
+00:01:32,606 --> 00:01:36,613
+A journal shows every line, always
+balancing, and it
+
+24
+00:01:36,613 --> 00:01:40,175
+cannot be edited or deleted, only
+reversed, which
+
+25
+00:01:40,175 --> 00:01:43,737
+writes a mirror entry and links the two.
+
+26
+00:01:43,737 --> 00:01:45,518
+Finally open Trial Balance.
+
+27
+00:01:45,518 --> 00:01:50,415
+Choose a date and confirm that total
+debits equal total credits.
+
+28
+00:01:50,415 --> 00:01:54,422
+That single check is what tells you the
+ledger
+
+29
+00:01:54,422 --> 00:01:57,984
+behind every screen in this tutorial is
+sound.

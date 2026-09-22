@@ -91,6 +91,9 @@ export default function AccountsPage() {
 
     // Tree expand state — keyed by account id, the same key the tree is built on.
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+    // Whether the first non-empty load has already opened the tree. A ref, not
+    // state: it must not re-render, and it must survive every later refetch.
+    const autoExpanded = useRef(false);
     // Flat view expand state
     const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(TYPE_ORDER));
 
@@ -102,7 +105,18 @@ export default function AccountsPage() {
 
     const fetchAccounts = useCallback(async () => {
         try {
-            setAccounts(await ledgerApi.accounts.list());
+            const list = await ledgerApi.accounts.list();
+            setAccounts(list);
+            // A chart that is already seeded opens the way it does the moment
+            // the seed lands: every group open. The tree's roots are the five
+            // PACT types, so a collapsed chart is five rows and a counter
+            // claiming sixty accounts — the whole chart is there and none of
+            // it is on screen. Once only: a refetch after a create, an edit or
+            // a delete must not re-open what the user has just collapsed.
+            if (!autoExpanded.current && list.length > 0) {
+                autoExpanded.current = true;
+                setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
+            }
         } catch (err) {
             setPageError(err instanceof ApiError ? err.message : "Failed to load accounts");
         } finally {

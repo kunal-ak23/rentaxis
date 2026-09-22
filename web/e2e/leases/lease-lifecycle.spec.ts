@@ -22,12 +22,17 @@ import { createUnit, createRenter } from '../helpers/api-client';
 // inserts a second combobox (the search box) immediately after itself in
 // the DOM, shifting every later trigger's index by one. `triggerIndex` is
 // the combobox's position BEFORE opening any other picker on the page.
-// VERIFY: confirm this index arithmetic against the real DOM in 17b — if a
-// wizard step ever renders the pickers in a different order this drifts.
+//
+// Scoped to the wizard dialog, not the page: the leases list behind the modal
+// now renders its own `<select data-testid="lease-status-filter">`, which is
+// also a combobox and sorts FIRST in document order — so `nth(0)` resolved to
+// the status filter and every click bounced off the modal's overlay until the
+// test timed out. Counting inside `lease-wizard` keeps 0 = Unit, 1 = Renter.
 async function pickSearchable(page: Page, triggerIndex: number, query: string) {
-  const combos = page.getByRole('combobox');
+  const wizard = page.getByTestId('lease-wizard');
+  const combos = wizard.getByRole('combobox');
   await combos.nth(triggerIndex).click();
-  const searchBox = page.getByRole('combobox').nth(triggerIndex + 1);
+  const searchBox = wizard.getByRole('combobox').nth(triggerIndex + 1);
   await searchBox.fill(query);
   await page.getByRole('option', { name: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first().click();
 }
@@ -38,7 +43,7 @@ async function draftLineAndPost(
   opts: { unitNumber: string; renterName: string; rentAmount: string },
 ) {
   await page.goto('/en/dashboard/leases');
-  await page.waitForLoadState('networkidle');
+  await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
 
   // Step 1: parties. Each picker's dropdown closes on selection, so the
@@ -81,8 +86,11 @@ test.describe('Lease Lifecycle', () => {
       test.skip();
       return;
     }
+    // Not `networkidle` anywhere in this file: a fetch whose non-2xx body the
+    // caller never reads stays in flight for ever in Chromium, so the idle
+    // state never arrives. Wait for a control the page itself renders.
     await page.goto('/en/dashboard/leases');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
   });
 
   test('generate contract on DRAFT lease', async ({ page, testContext }, testInfo) => {
@@ -93,7 +101,6 @@ test.describe('Lease Lifecycle', () => {
     }
 
     await page.goto(`/en/dashboard/leases/${testContext.leaseId}`);
-    await page.waitForLoadState('networkidle');
     await page.getByTestId('lease-tab-contract').click();
 
     // Only SA/TA may generate a contract (canGenerateContract); a wizard
@@ -165,15 +172,17 @@ test.describe('Lease Lifecycle', () => {
   test('board view reflects status columns', async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
 
-    const boardBtn = page.getByRole('button', { name: /board|kanban/i });
-    if (await boardBtn.isVisible({ timeout: 3000 })) {
-      await boardBtn.click();
-      await page.waitForTimeout(500);
+    // BOARD_COLUMNS (leases/page.tsx) renders one <h3> per column. The old
+    // `getByText('Draft').first()` matched the status filter's hidden
+    // <option value="DRAFT">Draft</option> long before it reached the board,
+    // so every run failed on an element that is never visible by design.
+    await page.getByTestId('lease-view-board').click();
 
-      await expect(page.getByText('Draft').first()).toBeVisible();
-      await expect(page.getByText(/pending signature/i).first()).toBeVisible();
-      await expect(page.getByText('Active').first()).toBeVisible();
-      await expect(page.getByText('Closed').first()).toBeVisible();
+    for (const column of ['Draft', 'Pending Signature', 'Active', 'Closed']) {
+      await expect(
+        page.getByRole('heading', { name: column, exact: true }),
+        `board column "${column}"`,
+      ).toBeVisible({ timeout: 10_000 });
     }
   });
 });

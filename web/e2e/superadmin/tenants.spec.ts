@@ -24,12 +24,15 @@ test.describe('Tenants Management', () => {
     const addBtn = page.getByRole('button', { name: /add|create|new/i });
     await addBtn.click();
 
-    const nameInput = page.locator('input[placeholder*="name" i], input[name*="name" i]').first();
-    await nameInput.fill(`E2E Org ${Date.now()}`);
+    const orgName = `E2E Org ${Date.now()}`;
+    await page.getByTestId('org-name').fill(orgName);
 
-    await page.getByRole('button', { name: /create|save|submit/i }).click();
+    await page.getByRole('button', { name: /create organization/i }).click();
 
-    await page.waitForTimeout(1000);
-    await expect(page.getByText(/E2E Org/)).toBeVisible({ timeout: 10_000 });
+    // The list is paginated and sorted by creation time, so the new row may
+    // sit on a later page: find it through the search box.
+    await expect(page.getByTestId('org-name')).toBeHidden({ timeout: 15_000 });
+    await page.locator('input[placeholder="Search..."]').fill(orgName);
+    await expect(page.getByText(orgName)).toBeVisible({ timeout: 10_000 });
   });
 });

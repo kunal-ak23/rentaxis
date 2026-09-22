@@ -51,6 +51,13 @@ cd web
 npx playwright test --config=e2e-prod/playwright.config.ts
 ```
 
+Until the tutorial-state scripts move out of `e2e-prod/tests/` (#327), the unfiltered
+command aborts at collection on a missing `tutorials/state/*.json`; run the numbered specs:
+
+```bash
+npx playwright test --config=e2e-prod/playwright.config.ts "global-setup" "tests/[0-9]"
+```
+
 Single spec:
 
 ```bash
@@ -103,7 +110,8 @@ gates.
 | `10b-draft-lease-administration` | Metadata/payment-plan edits, synthetic bulk cheque attachment, and deletion |
 | `11-ticket-lifecycle` | Renter submission through assignment, OTP closure, rating, and reporting |
 | `12-property-operations` | Project/property detail plus building, unit, contact, amenity, and parking lifecycle |
-| `13-finance-and-settings` | Accounts, mappings, transactions, staff, vendors, and bank accounts |
+| `13-finance-and-settings` | Accounts, staff, vendors, and bank accounts (v2 chart; mappings/transactions are gone) |
+| `13h-accounting-v2` | Post a contract, cheque lifecycle, recognition, renter ledger, trial balance, manual JV + reversal (a TCO cannot be reversed from the journal API) |
 | `13a-cheques-and-penalties` | Cheque clear/failure plus open, paid, waived, receipt, and history states |
 | `13b-facilities-and-bookings` | Amenity/parking requests, release, approval, and rejection |
 | `13c-gatepass-lifecycle` | Policy, guard assignment, visitor registration, resident pass, manager approval, report access, and cancellation |

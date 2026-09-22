@@ -49,6 +49,23 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   // 3. Pivot SUPER_ADMIN's effective tenant for subsequent scoped calls.
   await setActiveTenant(pctx, tenant.id);
 
+  // 3a. Open the tenant's books before anything is created in them.
+  //
+  //     `POST /finance/accounts/seed` is three seeds in one idempotent call
+  //     (AccountController.seedDefaultAccounts): the chart of accounts, the
+  //     property-account template plus the tenant-level role defaults, and the
+  //     charge-type catalogue. All three are accounting-v2 preconditions that
+  //     v1 provisioning never had:
+  //       * a lease line is cut from the catalogue by code, so without it the
+  //         first lease is refused with "Line 1: unknown charge type RENT";
+  //       * a property generates its account set on create, resolving each
+  //         role against the template and the defaults — so this has to run
+  //         BEFORE the property below, or the property is born with nothing
+  //         mapped and its first contract cannot post.
+  //     13-finance-and-settings seeds again and asserts the chart; the call is
+  //     idempotent and leaves anything the tenant has edited alone.
+  await api.seedAccounts(pctx);
+
   // 3. Tenant admin + property manager. In production, SUPER_ADMIN provisions
   //    the org and creates the TENANT_ADMIN; subsequent operations are done
   //    by the TENANT_ADMIN or by a PROPERTY_MANAGER. We capture both so
@@ -151,6 +168,11 @@ test('provision tenant + property + unit + renter + active lease', async () => {
           portalPassword: renter.portalPassword,
         },
         lease: { id: activated.id, status: activated.status },
+        // The renter of `lease`, flat, for the ledger specs: `/v1/finance/ledger/renter/{id}`
+        // takes a renter id, and reaching for `ctx.renter.id` from a spec that
+        // only cares about the books reads as if it also cared about the portal
+        // account that object carries.
+        renterId: renter.id,
         adminEmail,
         adminPassword,
         pmEmail,
