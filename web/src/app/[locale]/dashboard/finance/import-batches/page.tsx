@@ -26,28 +26,31 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /**
  * The cut-over Import Batches screen (spec §10.3, §11): what has been imported,
- * and the one button that takes a whole run back off the books.
+ * what it has done to the ledger, and every way back out of it.
  *
- * **Three things the screen owes the person reading it.**
+ * **One action per row, and it is the one the server would take.** Every gate
+ * here comes from `lib/cutoverRules.ts`, which names the Java it mirrors. Post
+ * on a DRAFT; Post again on a REVERSED one, which the server answers by writing
+ * a SUCCESSOR batch (`markPosted` refuses REVERSED → POSTED by design), so the
+ * dialog says a new row will appear; Retry on a POSTED one, but only once a run
+ * has actually reported a FAILED contract, because offering a retry nothing
+ * knows exists is a promise with nothing behind it. Reverse on a POSTED batch
+ * alone. Discard on a DRAFT alone — a REVERSED batch keeps its contracts, and
+ * the way back from it is to post them again, not to throw them away.
+ * DISCARDED offers nothing, and its badge says so.
  *
- * Reverse appears on a POSTED batch and nowhere else, mirroring
- * `ImportBatchService.reverse` — a DRAFT has written no journals and a REVERSED
- * one has already been taken back. The confirmation says what will happen in
- * numbers, because "reverse the batch" is thirty-six journals and twelve
- * contracts, not one row.
+ * **The confirmations say what will happen in numbers**, because "reverse the
+ * batch" is thirty-six journals and twelve contracts, not one row.
  *
- * And REVERSED is stated as terminal, in the row and in the dialog. There is no
- * re-post endpoint and there is not meant to be one: a corrected spreadsheet
- * comes back as a NEW batch. A screen that left that unsaid would have people
- * hunting for a button that does not exist.
- *
- * **What is deliberately absent.** The brief described a bulk-post action; no
- * such endpoint exists in `ImportBatchController`, so there is no button for it.
- * The reversal takes no date: every mirror is dated on the journal it reverses,
- * because `PostingService.reverse` exempts batch journals from `assertOpen` and
- * a date the accountant picked was therefore accepted whatever it was, leaving
- * the figures standing while the row read REVERSED. Both are recorded in
- * `lib/cutoverRules.ts`.
+ * **What is deliberately absent.** The reversal takes no date: every mirror is
+ * dated on the journal it reverses, because `PostingService.reverse` exempts
+ * batch journals from `assertOpen` and a date the accountant picked was
+ * therefore accepted whatever it was, leaving the figures standing while the row
+ * read REVERSED. And the cut-over ORDER rule — bulk post, reverse and Post again
+ * are all refused while an opening-balance journal is live — is not mirrored as
+ * a disabled button, because nothing here knows that state without fetching the
+ * whole opening-balance grid; the server's own sentence is shown instead. Both
+ * are recorded in `lib/cutoverRules.ts`.
  */
 
 const th = "text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider";

@@ -7,18 +7,20 @@ const BASE = "/api/proxy/v1";
 /**
  * The cut-over client (spec §10.3, §11).
  *
- * Typed from the Java, not from the plan's sketch: `api/ImportBatchController.java`
- * for the routes and `api/dto/cutover/ImportBatchDTO.java` for the shape. The
- * controller exposes exactly three handlers — list, get and reverse — so this
- * module has exactly three. The brief also described a bulk-post endpoint and a
- * `BulkPostResult`; neither exists in the backend, and a button wired to a route
- * that is not there is the 404 this project refuses to ship.
+ * Typed from the Java, not from a plan's sketch: `api/ImportBatchController.java`
+ * for the routes and `api/dto/cutover/ImportBatchDTO.java` for the shape. When
+ * this module was first written that controller had three handlers — list, get
+ * and reverse — and the bulk post the brief described did not exist, so this had
+ * three methods and the screen said why there was no Post button. Task 11 built
+ * the rest: `post` and its status poll, and `discard`. Both are here now, and a
+ * REVERSED batch re-posts through the same `post` route, which answers with a
+ * SUCCESSOR batch (`BulkPostResult.repostOf`).
  *
  * Opening balances and the reconciliation report were added in task 15 against
- * `api/OpeningBalanceController.java` and `api/dto/cutover/*`; the contract import
- * against `api/PortfolioImportController.java`'s three `/cutover` handlers. The
- * BULK POST is still deliberately absent — that route does not exist yet, so a
- * DRAFT batch has no post action and the page says why.
+ * `api/OpeningBalanceController.java` and `api/dto/cutover/*`; the contract
+ * import against `api/PortfolioImportController.java`'s three `/cutover`
+ * handlers. Nothing here is wired to a route that does not exist: that is the
+ * 404 this project refuses to ship, and it is why each method names its handler.
  */
 
 // ---- enums (domain/entity/enums/ImportBatchKind.java, ImportBatchStatus.java) ----

@@ -14,8 +14,8 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
  */
 
 /**
- * `core/service/cutover/ImportBatchService.reverse:177-180` — "Import batch is
- * {status}; only a POSTED batch can be reversed".
+ * `core/service/cutover/ImportBatchService.reverse` (:431-435) — "Import batch
+ * is {status}; only a POSTED batch can be reversed".
  *
  * A DRAFT has written no journals, so there is nothing to take back; a REVERSED
  * one has already been taken back and cannot be reversed twice.
@@ -69,17 +69,15 @@ export function isRepost(status: ImportBatchStatus): boolean {
  *
  * **DRAFT alone.**
  *
- * `ImportBatchDiscardService.requireDiscardable` and
- * `ImportBatchService.markDiscarded` allowed DRAFT *or* REVERSED when this screen
- * was first written, and it offered both. A controller ruling in the backend's
- * current fix round narrows it: a REVERSED batch keeps its contracts, so the way
- * back is to post it again — not to throw the contracts away. The server refuses
- * it with "A reversed batch keeps its contracts; post it again or leave it
- * reversed", and the UI must not offer what the server refuses, so this changes
- * ahead of the commit rather than after it.
+ * `ImportBatchService.requireDiscardableStatus` (:298-303), called by both
+ * `markDiscarded` (:284) and `ImportBatchDiscardService`'s up-front check
+ * (:196), refuses everything else — a REVERSED batch with "A reversed batch
+ * keeps its contracts; post it again or leave it reversed."
  *
- * (When that commit lands, the Java to cite is the same two methods; until then
- * this is deliberately stricter than the code in `main`.)
+ * Both allowed DRAFT *or* REVERSED when this screen was first written, and it
+ * offered both. The narrowing landed in Task 11 with the re-post: a REVERSED
+ * batch still has its contracts, so the way back is to post them again rather
+ * than to throw them away.
  */
 export function canDiscardBatch(status: ImportBatchStatus): boolean {
     return status === "DRAFT";
