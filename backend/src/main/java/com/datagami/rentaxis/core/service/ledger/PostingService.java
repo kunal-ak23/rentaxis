@@ -142,6 +142,24 @@ public class PostingService {
         // PostingServiceIT.anOrdinaryEntryStillCannotBeReversedIntoALockedPeriod and
         // .anOpeningBalanceOrImportEntryCanBeReversedInsideTheLockedPeriod hold both
         // sides of this line.
+        //
+        // THE BATCH-ID EXEMPTION IS INHERITED, AND AT ANY DATE (review M6). The
+        // mirror below copies importBatchId off the original, so a LATER reversal of
+        // an imported journal by some other document path — an amendment or a
+        // termination of an imported lease — is itself exempt, on whatever day that
+        // path chose. Two consequences worth knowing before adding a third such path:
+        //   1. Every document path that can reverse an imported journal must assert
+        //      the period lock ITSELF. They all do today: VoucherService.amend calls
+        //      fiscal.assertOpen(reversalDate) explicitly, LeasePostingService and
+        //      LeaseTerminationService post their own dated entries through post()
+        //      with a null batch id, and ImportBatchService.reverse pins each mirror
+        //      to its original's own date (ruling R16) so it cannot reach a month the
+        //      exemption was never meant to cover. A new path that forgets is not
+        //      caught here.
+        //   2. Those post-cut-over mirrors carry the batch id, so the batches
+        //      screen's drill-through lists them under the batch. That is the id
+        //      telling the truth — the entry really does belong to the import's
+        //      history — not a bug to filter away.
         if (original.getDocType() != JournalDocType.OB && original.getImportBatchId() == null) fiscal.assertOpen(date);
 
         JournalEntry rev = new JournalEntry();

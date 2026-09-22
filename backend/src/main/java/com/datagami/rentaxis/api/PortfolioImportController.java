@@ -17,6 +17,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -145,8 +147,14 @@ public class PortfolioImportController {
      */
     @PostMapping(path = "/cutover", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize(CUTOVER_ROLES)
-    public ResponseEntity<?> importCutOver(@RequestParam("file") MultipartFile file,
-                                           @RequestHeader("X-User-Id") UUID userId) {
+    public ResponseEntity<?> importCutOver(@RequestParam("file") MultipartFile file) {
+        // Who uploaded it comes from the AUTHENTICATED principal, not from the
+        // client-supplied X-User-Id header (review M7) — the same source
+        // ImportBatchController.post uses. Attribution only, so this was cosmetic
+        // rather than a hole, but the header is the subject of an open P0 and a new
+        // endpoint should not add a reader of it. The v1 upload above is unchanged;
+        // it is not this plan's to move.
+        UUID userId = currentUserId(SecurityContextHolder.getContext().getAuthentication());
         ResponseEntity<?> noTenant = tenantMissing();
         if (noTenant != null) return noTenant;
 
@@ -215,6 +223,29 @@ public class PortfolioImportController {
                 : null;
     }
 
+    /**
+     * Every row of a list, carrying the severity the list it came from means.
+     *
+     * <p>Stamped here rather than trusted from the stored JSON: the column holds rows
+     * written before {@code severity} existed, and the two arrays have always been
+     * the real classification. A null list is a list of none, not a null.</p>
+     */
+    private static List<ImportErrorDTO> stamped(List<ImportErrorDTO> rows, ImportErrorDTO.Severity severity) {
+        if (rows == null) return Collections.emptyList();
+        rows.forEach(r -> r.setSeverity(severity));
+        return rows;
+    }
+
+    /** Same shape as {@code PostingService.currentUserId}: null for a system-run job. */
+    private static UUID currentUserId(Authentication auth) {
+        if (auth == null || !(auth.getPrincipal() instanceof String s)) return null;
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /** Package-private for unit tests. */
     PortfolioImportResultDTO mapToResult(ImportJob job) {
         PortfolioImportResultDTO dto = new PortfolioImportResultDTO();
@@ -247,8 +278,8 @@ public class PortfolioImportController {
             if (trimmed.startsWith("{")) {
                 try {
                     PortfolioImportJobDetailsDTO details = objectMapper.readValue(raw, PortfolioImportJobDetailsDTO.class);
-                    dto.setErrors(details.getErrors() == null ? Collections.emptyList() : details.getErrors());
-                    dto.setWarnings(details.getWarnings() == null ? Collections.emptyList() : details.getWarnings());
+                    dto.setErrors(stamped(details.getErrors(), ImportErrorDTO.Severity.ERROR));
+                    dto.setWarnings(stamped(details.getWarnings(), ImportErrorDTO.Severity.WARNING));
                     if (details.getChequesFromSheet() != null) dto.setChequesFromSheet(details.getChequesFromSheet());
                     if (details.getBookingDepositsCreated() != null) dto.setBookingDepositsCreated(details.getBookingDepositsCreated());
                     if (details.getContractsCreated() != null) dto.setContractsCreated(details.getContractsCreated());
@@ -259,7 +290,8 @@ public class PortfolioImportController {
                 }
             } else {
                 try {
-                    dto.setErrors(objectMapper.readValue(raw, new TypeReference<List<ImportErrorDTO>>() {}));
+                    dto.setErrors(stamped(objectMapper.readValue(raw,
+                            new TypeReference<List<ImportErrorDTO>>() {}), ImportErrorDTO.Severity.ERROR));
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as legacy array: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(ImportErrorDTO.file("General", "File", "Could not parse error details")));

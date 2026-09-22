@@ -823,12 +823,6 @@ public class OpeningBalanceService {
         return postings.findFirstByOrderByCreatedAtAsc().filter(p -> liveJournal(p) != null);
     }
 
-    /** accountId → the derived role it is mapped to, across property mappings and tenant defaults. */
-    @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
-    public Map<UUID, AccountRole> derivedAccountRoles() {
-        return derived().byAccount();
-    }
-
     /**
      * Which accounts step 1 will produce, and which mappings claim to but cannot.
      *

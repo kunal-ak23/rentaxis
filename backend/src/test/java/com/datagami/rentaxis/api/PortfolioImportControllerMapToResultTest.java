@@ -64,6 +64,7 @@ class PortfolioImportControllerMapToResultTest {
 
         assertThat(dto.getErrors()).hasSize(1);
         assertThat(dto.getErrors().get(0).getField()).isEqualTo("RentAmount");
+        assertThat(dto.getErrors().get(0).getSeverity()).isEqualTo(ImportErrorDTO.Severity.ERROR);
         assertThat(dto.getWarnings()).isNull();
         assertThat(dto.getChequesFromSheet()).isZero();
     }
@@ -85,6 +86,10 @@ class PortfolioImportControllerMapToResultTest {
         assertThat(dto.getBookingDepositsCreated()).isEqualTo(1);
         assertThat(dto.getWarnings()).hasSize(1);
         assertThat(dto.getWarnings().get(0).getField()).isEqualTo("DueDate");
+        // The validator has always kept two lists; severity puts that on the row, so a
+        // screen rendering them merged can still tell "fix this" from "know this".
+        // Stamped at mapping time, so a row stored before the field existed reads right.
+        assertThat(dto.getWarnings().get(0).getSeverity()).isEqualTo(ImportErrorDTO.Severity.WARNING);
         assertThat(dto.getErrors()).isEmpty();
     }
 

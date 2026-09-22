@@ -845,7 +845,7 @@ class OpeningBalanceIT {
     // ------------------------------------------------------------------
 
     /**
-     * I4. These five are the integration surface Tasks 10–11 were handed. Called with
+     * I4. These four are the integration surface Tasks 10–11 were handed. Called with
      * no transaction of their own, {@code TenantAspect} enables the Hibernate tenant
      * filter on one session while the query runs on another — an unfiltered,
      * cross-tenant read. They refuse loudly instead.
@@ -854,7 +854,6 @@ class OpeningBalanceIT {
     void thePublishedHelpersRefuseToRunWithoutATransaction() {
         assertThatThrownBy(() -> ob.asOf()).hasMessageContaining("transaction");
         assertThatThrownBy(() -> ob.livePosting()).hasMessageContaining("transaction");
-        assertThatThrownBy(() -> ob.derivedAccountRoles()).hasMessageContaining("transaction");
         assertThatThrownBy(() -> ob.derived()).hasMessageContaining("transaction");
         assertThatThrownBy(() -> ob.openingJournalLines()).hasMessageContaining("transaction");
 

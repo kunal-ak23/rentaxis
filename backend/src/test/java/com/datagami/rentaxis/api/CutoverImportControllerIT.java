@@ -271,6 +271,14 @@ class CutoverImportControllerIT {
         assertThat(started.getStatusCode()).isEqualTo(HttpStatus.OK);
         UUID jobId = UUID.fromString(json(started.getBody()).get("jobId").asText());
 
+        // Who uploaded it comes from the authenticated principal, not from the
+        // client-supplied X-User-Id header (review M7). The two happen to agree on
+        // this request — the filter builds the principal from the header — but the
+        // endpoint no longer reads the header itself, and a new reader of it is
+        // exactly what the open P0 on those headers asks us not to add.
+        UUID createdBy = tx.execute(s -> importJobs.findById(jobId).orElseThrow().getCreatedBy());
+        assertThat(createdBy).isEqualTo(accountant.getId());
+
         JsonNode done = awaitTerminal(jobId, accountant);
         assertThat(done.get("status").asText()).isEqualTo("COMPLETED");
         assertThat(done.get("contractsCreated").asInt()).isEqualTo(2);

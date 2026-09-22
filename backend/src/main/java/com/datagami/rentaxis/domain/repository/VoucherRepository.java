@@ -39,8 +39,4 @@ public interface VoucherRepository extends JpaRepository<Voucher, UUID> {
         """)
     Page<Voucher> search(VoucherType docType, VoucherStatus status, UUID vendorId, UUID propertyId,
                          LocalDate from, LocalDate to, Pageable pageable);
-
-    List<Voucher> findByJournalId(UUID journalId);
-
-    boolean existsByPaymentAccount_Id(UUID accountId);
 }
