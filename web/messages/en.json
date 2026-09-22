@@ -2251,6 +2251,7 @@
     "difference": "Difference",
     "differenceGoesToEquity": "The difference posts to the Opening Balance Difference account so the books open balanced.",
     "gridProblems": "Posting will fail until these are fixed:",
+    "gridAdvisories": "Worth knowing before you post. None of these stops it:",
     "unsavedRow": "Unsaved",
     "saveRow": "Save",
     "rowSaved": "Saved",

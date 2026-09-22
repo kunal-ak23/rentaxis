@@ -17,9 +17,9 @@ import {
     type SnapshotUploadResult,
 } from "@/lib/api/cutover";
 import {
-    SNAPSHOT_ACCEPT, canEditOpeningBalanceRow, canPostOpeningBalances,
-    canReplaceOpeningBalances, gridDeclaresComputed, snapshotRefusal,
-    type ComputedAccountSource,
+    SNAPSHOT_ACCEPT, advisoryProblems, blockingProblems, canEditOpeningBalanceRow,
+    canPostOpeningBalances, canReplaceOpeningBalances, gridDeclaresComputed, problemMessage,
+    snapshotRefusal, type ComputedAccountSource,
 } from "@/lib/cutoverRules";
 import { differenceOf, parseAmount, sumAmounts } from "@/lib/money";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
@@ -304,11 +304,20 @@ export default function OpeningBalancesPage() {
         );
     }
 
+    /**
+     * Split by severity, never by count. `problems` is a mixed bag: one entry is
+     * fatal (`postable`'s missing difference account, which `postFresh` throws
+     * on) and the rest are advisory — including the one every real PACT export
+     * carries. Gating Post on `problems.length > 0` greyed the button out on the
+     * ordinary path with no escape but hand-editing the CSV.
+     */
     const problems = grid?.problems ?? [];
+    const blockers = blockingProblems(problems);
+    const advisories = advisoryProblems(problems);
     /** The grid is locked until the computed account is positively identified. */
     const locked = computedSource.kind === "pending" || (computedSource.kind === "lookup" && !computedSource.accountId);
     const blocker =
-        problems.length > 0
+        blockers.length > 0
             ? t("gridProblems")
             : locked
               ? t("differenceAccountUnknown")
@@ -412,15 +421,30 @@ export default function OpeningBalancesPage() {
                 </div>
             )}
 
-            {problems.length > 0 && (
+            {blockers.length > 0 && (
                 <div
                     data-testid="ob-problems"
                     className="mb-4 bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3 text-xs"
                 >
                     <p className="font-bold mb-1">{t("gridProblems")}</p>
                     <ul className="list-disc ms-5 space-y-0.5">
-                        {problems.map((p, i) => (
-                            <li key={i}>{p}</li>
+                        {blockers.map((p, i) => (
+                            <li key={i}>{problemMessage(p)}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* Said, never in the way: the server posts over every one of these. */}
+            {advisories.length > 0 && (
+                <div
+                    data-testid="ob-advisories"
+                    className="mb-4 bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-xs"
+                >
+                    <p className="font-bold mb-1">{t("gridAdvisories")}</p>
+                    <ul className="list-disc ms-5 space-y-0.5">
+                        {advisories.map((p, i) => (
+                            <li key={i}>{problemMessage(p)}</li>
                         ))}
                     </ul>
                 </div>

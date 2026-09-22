@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cutoverApi } from "@/lib/api/cutover";
 import {
-    SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, canDownloadImportTemplate, canEditOpeningBalanceRow,
+    SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, advisoryProblems, blockingProblems,
+    canDownloadImportTemplate, canEditOpeningBalanceRow,
     CONTRACT_IMPORT_ACCEPT, CONTRACT_IMPORT_MAX_BYTES, canPostOpeningBalances,
     canReplaceOpeningBalances, contractImportRefusal, gridDeclaresComputed, isBatchFinal,
     batchAction, canDiscardBatch, canPostBatch, isBulkPostTerminal, isImportJobTerminal,
-    isReconciled, canReverseBatch, isRepost, snapshotRefusal,
+    isReconciled, canReverseBatch, isRepost, problemMessage, problemSeverity, snapshotRefusal,
 } from "@/lib/cutoverRules";
 import type { OpeningBalanceGrid, OpeningBalanceRow } from "@/lib/api/cutover";
 import { hasPermission } from "@/lib/rbac";
@@ -152,6 +153,35 @@ describe("opening-balance rules", () => {
         for (const type of ["text/csv", "application/csv", "text/plain", ""]) {
             expect(snapshotRefusal(new File(["x"], "tb.csv", { type }))).toBeNull();
         }
+    });
+
+    /**
+     * `problems` is a mixed bag on the server: `postable:611`'s missing
+     * difference account is fatal and `postFresh` throws on it; the PACT
+     * difference note (`:620-623`) and a derived role mapped to a missing
+     * account are advisory, and posting succeeds over both. The screen blocks on
+     * the first kind only — blocking on `problems.length` refused what the
+     * server allows on every real PACT export.
+     */
+    it("splits the grid's problems by severity, failing closed", () => {
+        const fatal = { message: "No opening-balance difference account", severity: "ERROR" as const };
+        const advisory = { message: "PACT's own difference is not carried over", severity: "WARNING" as const };
+        const legacy = "The role RENT_RECEIVABLE is mapped to an account that no longer exists";
+        const unlabelled = { message: "a shape we have not seen" };
+
+        expect(problemSeverity(fatal)).toBe("ERROR");
+        expect(problemSeverity(advisory)).toBe("WARNING");
+        // No severity — an older backend, or a shape we have not seen — is
+        // ERROR: guessing "advisory" re-opens Post on the one fatal problem.
+        expect(problemSeverity(legacy)).toBe("ERROR");
+        expect(problemSeverity(unlabelled)).toBe("ERROR");
+
+        expect(problemMessage(legacy)).toBe(legacy);
+        expect(problemMessage(advisory)).toBe("PACT's own difference is not carried over");
+
+        expect(blockingProblems([advisory])).toEqual([]);
+        expect(blockingProblems([fatal, advisory, legacy])).toEqual([fatal, legacy]);
+        expect(advisoryProblems([fatal, advisory, legacy])).toEqual([advisory]);
     });
 });
 

@@ -103,6 +103,28 @@ export type OpeningBalanceRow = {
 };
 
 /**
+ * How much a grid problem matters.
+ *
+ * `ERROR` is a fault that makes `postFresh` throw — today exactly one:
+ * `postable`'s "no opening-balance difference account". `WARNING` is a fact the
+ * accountant has to know and the server posts happily over, of which the
+ * ordinary one is "PACT's own opening-balance difference is not carried over;
+ * ours is recomputed from the other rows" — emitted on every real PACT export
+ * that carries a figure on that leaf.
+ */
+export type ProblemSeverity = "ERROR" | "WARNING";
+
+/**
+ * One entry of `OpeningBalanceGridDTO.problems`.
+ *
+ * A bare string is the older shape, from before the server said how much each
+ * one mattered. It is read as an ERROR — see `problemSeverity` — because a
+ * screen that guessed "advisory" would offer Post on the one problem posting
+ * actually fails on.
+ */
+export type GridProblem = string | { message: string; severity?: ProblemSeverity };
+
+/**
  * `OpeningBalanceGridDTO` — the whole screen in one response.
  *
  * `asOf` is the books start date minus one day, computed by the server
@@ -110,9 +132,12 @@ export type OpeningBalanceRow = {
  * `journalNumber` say whether a live OB journal exists, which is what decides
  * between Post and Replace. `difference` is `totalDebit - totalCredit` over the
  * entered figures and closes against OPENING_BALANCE_DIFFERENCE when the journal
- * is written — a non-zero one is normal, not an error. `problems` are
- * configuration faults that would make posting fail, listed so the screen can say
- * so before anyone presses Post.
+ * is written — a non-zero one is normal, not an error. `problems` are a mixed
+ * bag, which is why each carries a `severity`: an ERROR is a configuration fault
+ * that makes posting fail and an advisory is a note the server posts over. The
+ * screen gates Post on the first kind only — blocking on the second refused the
+ * plan's headline path, because a real PACT export always carries the
+ * difference-account advisory.
  */
 export type OpeningBalanceGrid = {
     asOf: string;
@@ -123,7 +148,7 @@ export type OpeningBalanceGrid = {
     totalDebit: number;
     totalCredit: number;
     difference: number;
-    problems: string[];
+    problems: GridProblem[];
     /**
      * True when the snapshot has been edited since the live OB journal was
      * posted, so the books and the grid no longer agree and a Replace is due.

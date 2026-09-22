@@ -1,6 +1,6 @@
 import type {
-    ImportBatchStatus, ImportJobStatus, LeaseOutcomeStatus, OpeningBalanceGrid, OpeningBalanceRow,
-    ReconciliationRow,
+    GridProblem, ImportBatchStatus, ImportJobStatus, LeaseOutcomeStatus, OpeningBalanceGrid,
+    OpeningBalanceRow, ProblemSeverity, ReconciliationRow,
 } from "@/lib/api/cutover";
 import { isZeroAmount } from "@/lib/money";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -267,6 +267,46 @@ export function canEditOpeningBalanceRow(row: OpeningBalanceRow, source: Compute
  */
 export function gridDeclaresComputed(rows: OpeningBalanceRow[]): boolean {
     return rows.some(r => r.computed !== undefined);
+}
+
+/** The sentence of a grid problem, whichever shape the server sent it in. */
+export function problemMessage(p: GridProblem): string {
+    return typeof p === "string" ? p : p.message;
+}
+
+/**
+ * How much one grid problem matters — **failing closed**.
+ *
+ * `OpeningBalanceGridDTO.problems` is a mixed bag. Exactly one entry is fatal:
+ * `OpeningBalanceService.postable`'s "no opening-balance difference account",
+ * which `postFresh` re-asserts and throws on. The others are advisory by design
+ * — "PACT's own opening-balance difference is not carried over; ours is
+ * recomputed from the other rows" (emitted for every real PACT export carrying a
+ * figure on that leaf), and a DERIVED role mapped to a missing account, which
+ * `postFresh` never consults because it skips derived accounts entirely.
+ *
+ * The screen used to block Post on `problems.length > 0`, so the ordinary
+ * cut-over arrived with one advisory note and Post permanently greyed out — the
+ * UI refusing what the server allows, on the plan's headline path, which is the
+ * exact defect this module exists to prevent.
+ *
+ * An entry with no `severity` — an older backend, or a shape we have not seen —
+ * reads ERROR. Guessing "advisory" would re-open the one problem posting really
+ * does fail on; a blocked Post an accountant can ask about is recoverable, a 500
+ * at post time is not.
+ */
+export function problemSeverity(p: GridProblem): ProblemSeverity {
+    return typeof p === "string" ? "ERROR" : p.severity ?? "ERROR";
+}
+
+/** The problems that must be fixed before Post can be offered. */
+export function blockingProblems(problems: GridProblem[]): GridProblem[] {
+    return problems.filter(p => problemSeverity(p) === "ERROR");
+}
+
+/** The problems that are worth saying and that the server posts over. */
+export function advisoryProblems(problems: GridProblem[]): GridProblem[] {
+    return problems.filter(p => problemSeverity(p) !== "ERROR");
 }
 
 /**

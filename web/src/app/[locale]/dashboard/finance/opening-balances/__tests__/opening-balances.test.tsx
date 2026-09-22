@@ -534,13 +534,84 @@ describe("opening balances — post and replace", () => {
         expect(await screen.findByRole("alert")).toHaveTextContent("being posted right now");
     });
 
-    /** grid.problems are config faults that would make posting fail. */
+    /**
+     * grid.problems with no severity is the older shape and is read as fatal:
+     * guessing "advisory" would re-open Post on the one problem posting really
+     * does fail on (`postFresh` re-asserts the difference account and throws).
+     */
     it("shows the grid's problems and blocks Post", async () => {
         api.grid.mockResolvedValue(
             grid({ problems: ["The role RENT_RECEIVABLE is mapped to an account that no longer exists"] }),
         );
         renderPage();
         expect(await screen.findByTestId("ob-problems")).toHaveTextContent("no longer exists");
+        expect(screen.getByTestId("ob-post")).toBeDisabled();
+    });
+
+    /** An ERROR in the new shape blocks exactly as the bare string does. */
+    it("blocks Post on an ERROR problem", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                problems: [
+                    {
+                        message: "No opening-balance difference account is mapped",
+                        severity: "ERROR" as const,
+                    },
+                ],
+            }),
+        );
+        renderPage();
+        expect(await screen.findByTestId("ob-problems")).toHaveTextContent("difference account is mapped");
+        expect(screen.getByTestId("ob-post")).toBeDisabled();
+        expect(screen.queryByTestId("ob-advisories")).not.toBeInTheDocument();
+    });
+
+    /**
+     * The headline path: `postable:620-623` emits this for every real PACT
+     * export that carries a figure on the opening-balance-difference leaf, and
+     * the server posts happily over it. Blocking on it greyed Post out with no
+     * escape but hand-editing the CSV.
+     */
+    it("posts over a WARNING problem, showing it as an advisory", async () => {
+        api.post.mockResolvedValue({ id: "j1", entryNumber: "OB/2026/0001", entryDate: "2026-08-31" });
+        api.grid.mockResolvedValue(
+            grid({
+                problems: [
+                    {
+                        message:
+                            "F-02 Opening Balance Difference: PACT's own opening-balance difference is not"
+                            + " carried over; ours is recomputed from the other rows",
+                        severity: "WARNING" as const,
+                    },
+                ],
+            }),
+        );
+        renderPage();
+        expect(await screen.findByTestId("ob-advisories")).toHaveTextContent("not carried over");
+        expect(screen.queryByTestId("ob-problems")).not.toBeInTheDocument();
+
+        await waitFor(() => expect(screen.getByTestId("ob-post")).toBeEnabled());
+        expect(screen.queryByTestId("ob-blocker")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId("ob-post"));
+        fireEvent.click(await screen.findByTestId("confirm-ob-post"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    });
+
+    /** A fatal one among advisories still blocks, and each lands in its own panel. */
+    it("separates a mixed bag and blocks on the fatal one", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                problems: [
+                    { message: "PACT's own difference is not carried over", severity: "WARNING" as const },
+                    { message: "No opening-balance difference account", severity: "ERROR" as const },
+                ],
+            }),
+        );
+        renderPage();
+        expect(await screen.findByTestId("ob-problems")).toHaveTextContent("No opening-balance difference account");
+        expect(screen.getByTestId("ob-problems")).not.toHaveTextContent("not carried over");
+        expect(screen.getByTestId("ob-advisories")).toHaveTextContent("not carried over");
         expect(screen.getByTestId("ob-post")).toBeDisabled();
     });
 });
