@@ -1,0 +1,20 @@
+# Sample ledger fixture for the harness's own unit tests. ANONYMISED: property
+# "Sample Tower", renter "Sample Renter One", contract SAMPLE-25/001. The amounts and
+# dates are arbitrary — the real exports are replayed by the golden tests, not by this.
+# It exercises every shape the format has to carry:
+#   - accounts interleaved, so grouping must preserve each account's own file order
+#   - a TCO row whose narration is blank (the export's Remarks cell is empty there)
+#   - a CIL narration with an en dash, which is why the file is read as UTF-8
+#   - credit-balance accounts, which read negative
+# REPORT TOTAL: debit 19,000.00 = credit 19,000.00.
+account,entry_date,doc_type,particular,narration,debit,credit,balance
+Rent Receivable Sample Tower,2025-08-28,TCO,Advance Rent Sample Tower,,12000.00,0.00,12000.00
+Rent Receivable Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 1st Installment,0.00,3000.00,9000.00
+Advance Rent Sample Tower,2025-08-28,TCO,Rent Receivable Sample Tower,,0.00,12000.00,-12000.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable Sample Tower,Rent - 1st Installment,3000.00,0.00,3000.00
+
+# A blank line and a comment in the middle of the data are skipped too.
+Advance Rent Sample Tower,2025-09-30,CIL,Rental Income Sample Tower,Advance rent adjustment – Sep 2025,1000.00,0.00,-11000.00
+Rental Income Sample Tower,2025-09-30,CIL,Advance Rent Sample Tower,Advance rent adjustment – Sep 2025,0.00,1000.00,-1000.00
+Rent Receivable Sample Tower,2025-10-06,PDR,PDC Receivable Sample Tower,Rent - 2nd Installment,0.00,3000.00,6000.00
+PDC Receivable Sample Tower,2025-10-06,PDR,Rent Receivable Sample Tower,Rent - 2nd Installment,3000.00,0.00,6000.00
