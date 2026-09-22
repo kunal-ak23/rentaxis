@@ -42,14 +42,31 @@ export function useTenantFeatures() {
             // Mark up front so concurrently mounting hook instances don't all fetch.
             cacheFetchedAt = Date.now();
             fetch("/api/proxy/v1/tenant/features")
-                .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+                .then(r => {
+                    if (!r.ok) {
+                        // Consume/cancel the body before rejecting: an unread response
+                        // body on a non-ok fetch never "finishes" in Chromium, which
+                        // stalls Playwright's networkidle wait on every page that
+                        // renders this hook. The fail-closed behaviour (no features
+                        // enabled) is unchanged.
+                        r.body?.cancel().catch(() => {});
+                        return Promise.reject(new Error(String(r.status)));
+                    }
+                    return r.json();
+                })
                 .then((data: FeatureMap) => {
                     featuresCache = data;
                     setFeatures(data);
                 })
                 .catch(() => {});
             fetch("/api/proxy/v1/tenant/info")
-                .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+                .then(r => {
+                    if (!r.ok) {
+                        r.body?.cancel().catch(() => {});
+                        return Promise.reject(new Error(String(r.status)));
+                    }
+                    return r.json();
+                })
                 .then((data: { slug?: string }) => {
                     const slug = data.slug ?? "";
                     slugCache = slug;

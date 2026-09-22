@@ -20,7 +20,12 @@ vi.mock("next-auth/react", () => ({
     useSession: () => sessionHolder.current,
 }));
 
-type FetchResult = { ok: boolean; json: () => Promise<unknown> };
+type FetchResult = {
+    ok: boolean;
+    status?: number;
+    json: () => Promise<unknown>;
+    body?: { cancel: ReturnType<typeof vi.fn> };
+};
 
 let featuresResponse: Record<string, boolean>;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -116,5 +121,30 @@ describe("useTenantFeatures", () => {
         });
         await waitFor(() => expect(result.current.isEnabled("LISTINGS")).toBe(false));
         expect(featureFetchCalls()).toBe(2);
+    });
+
+    it("leaves features at defaults and cancels the body when the features fetch 500s", async () => {
+        const cancel = vi.fn().mockResolvedValue(undefined);
+        fetchMock.mockImplementation((url: string): Promise<FetchResult> => {
+            if (String(url).includes("/tenant/features")) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 500,
+                    json: () => Promise.reject(new Error("should not be read")),
+                    body: { cancel },
+                });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({ slug: "acme" }) });
+        });
+
+        const useTenantFeatures = await loadHook();
+        const { result } = renderHook(() => useTenantFeatures());
+
+        // The tenant slug call still succeeds independently, so wait on that
+        // to know both fetches have settled before asserting on features.
+        await waitFor(() => expect(result.current.tenantSlug).toBe("acme"));
+
+        expect(result.current.isEnabled("LISTINGS")).toBe(false);
+        expect(cancel).toHaveBeenCalledTimes(1);
     });
 });
