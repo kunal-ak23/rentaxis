@@ -123,25 +123,34 @@ function narrationDurationSeconds() {
   }
 }
 
+/**
+ * How long a navigation and the app-shell wait may take. The default is what
+ * this recorder has always used; it is raised from the environment when the
+ * machine is shared — a capture that dies on a 30-second navigation because
+ * another suite is saturating the box wastes the whole take, and the seeded
+ * state some of these tutorials consume with it.
+ */
+const navTimeoutMs = Number(process.env.TUTORIAL_NAV_TIMEOUT_MS || 30_000);
+
 async function waitForApp(page) {
-  await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => {});
+  await page.waitForLoadState('domcontentloaded', { timeout: navTimeoutMs }).catch(() => {});
   await Promise.race([
-    page.locator('main').waitFor({ state: 'visible', timeout: 30_000 }),
-    page.locator('#login-email').waitFor({ state: 'visible', timeout: 30_000 }),
-    page.getByText('Create Account', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
-    page.getByText('Browse Properties', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
-    page.getByText('My Wishlist', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
+    page.locator('main').waitFor({ state: 'visible', timeout: navTimeoutMs }),
+    page.locator('#login-email').waitFor({ state: 'visible', timeout: navTimeoutMs }),
+    page.getByText('Create Account', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs }),
+    page.getByText('Browse Properties', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs }),
+    page.getByText('My Wishlist', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs }),
   ]);
   // Dashboard data can arrive a moment after the shell. Never freeze a
   // transient error state into a tutorial frame; wait for the retrying page to
   // recover, and fail the preflight if it remains genuinely unavailable.
   const dashboardError = page.getByText('Unable to load dashboard data', { exact: true });
   if (await dashboardError.isVisible().catch(() => false)) {
-    await dashboardError.waitFor({ state: 'hidden', timeout: 30_000 });
+    await dashboardError.waitFor({ state: 'hidden', timeout: navTimeoutMs });
   }
   const dashboardLoading = page.getByText('Loading dashboard...', { exact: true });
   if (await dashboardLoading.isVisible().catch(() => false)) {
-    await dashboardLoading.waitFor({ state: 'hidden', timeout: 30_000 });
+    await dashboardLoading.waitFor({ state: 'hidden', timeout: navTimeoutMs });
   }
   await page.waitForTimeout(800);
 }
@@ -197,7 +206,7 @@ async function goto(page, pathname) {
   // role-specific content that follows.
   // Wait only for the document commit. The production shell keeps long-lived
   // resources open, so DOMContentLoaded can lag even after the app is usable.
-  await page.goto(`${baseURL}${pathname}`, { waitUntil: 'commit', timeout: 30_000 });
+  await page.goto(`${baseURL}${pathname}`, { waitUntil: 'commit', timeout: navTimeoutMs });
   await waitForApp(page);
   await clearRecordingIntro(page);
   await applyCaptureStyles(page);
@@ -387,7 +396,7 @@ async function signInWithCredentials(page, credentials) {
   await page.locator('#login-email').fill(credentials.email);
   await page.locator('#login-password').fill(credentials.password);
   await page.getByRole('button', { name: /sign in|log in/i }).click();
-  await page.waitForURL(/\/(en|ar)\/dashboard/, { timeout: 30_000 });
+  await page.waitForURL(/\/(en|ar)\/dashboard/, { timeout: navTimeoutMs });
   await waitForApp(page);
 }
 
@@ -396,7 +405,7 @@ async function openGlobalSearch(page, query) {
   const dialog = page.getByRole('dialog', { name: /search/i });
   await dialog.waitFor({ state: 'visible' });
   await dialog.getByRole('textbox').fill(query);
-  await dialog.getByRole('button').filter({ hasText: query }).first().waitFor({ state: 'visible', timeout: 30_000 });
+  await dialog.getByRole('button').filter({ hasText: query }).first().waitFor({ state: 'visible', timeout: navTimeoutMs });
 }
 
 async function openPreparedParkingRequest(page) {
@@ -411,7 +420,7 @@ async function openPreparedParkingRequest(page) {
 
 async function openPreparedBookingApproval(page) {
   const row = page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Ahmed Hassan' });
-  await row.waitFor({ state: 'visible', timeout: 30_000 });
+  await row.waitFor({ state: 'visible', timeout: navTimeoutMs });
   await row.click();
   const drawer = page.getByRole('dialog', { name: 'Booking Request' });
   await drawer.waitFor({ state: 'visible' });
@@ -457,7 +466,7 @@ const scenarios = {
       afterNavigation: async (page) => {
         await page.locator('header button').filter({ hasText: 'Tenant Admin' }).last().click();
         await page.getByRole('button', { name: 'Logout', exact: true }).click();
-        await page.waitForURL(/\/auth\/login/, { timeout: 30_000 });
+        await page.waitForURL(/\/auth\/login/, { timeout: navTimeoutMs });
         await waitForApp(page);
       },
     }),
@@ -480,7 +489,7 @@ const scenarios = {
       afterNavigation: async (page) => {
         await openGlobalSearch(page, 'Ahmed Hassan');
         await page.getByRole('dialog', { name: /search/i }).getByRole('button').filter({ hasText: 'Ahmed Hassan' }).first().click();
-        await page.waitForURL(new RegExp(`/en/dashboard/leases/${ahmedLeaseId}`), { timeout: 30_000 });
+        await page.waitForURL(new RegExp(`/en/dashboard/leases/${ahmedLeaseId}`), { timeout: navTimeoutMs });
         await waitForApp(page);
       },
     }),
@@ -525,7 +534,7 @@ const scenarios = {
       weight: 58,
       verifyTenantContext: false,
       afterNavigation: async (page) => {
-        await page.getByText(towerName, { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+        await page.getByText(towerName, { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       },
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Tenant User', 'Use this more limited staff role for a defined operational surface without tenant-wide administration.', {
@@ -561,7 +570,7 @@ const scenarios = {
       await page.getByPlaceholder('Search...').fill(tenantName);
       const row = page.getByRole('row').filter({ hasText: tenantName });
       await row.getByRole('button', { name: 'Feature Toggles' }).click();
-      await page.getByText('Listings (Marketplace)', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+      await page.getByText('Listings (Marketplace)', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs });
     }),
     routeScene('/en/dashboard', 'Verify the tenant context', 'After switching, confirm the organisation name before creating or editing records.'),
   ],
@@ -836,7 +845,7 @@ const scenarios = {
       afterNavigation: async (page) => {
         const dialog = await openPreparedParkingRequest(page);
         await dialog.getByRole('button', { name: 'Submit Request', exact: true }).click();
-        await dialog.waitFor({ state: 'hidden', timeout: 30_000 });
+        await dialog.waitFor({ state: 'hidden', timeout: navTimeoutMs });
         await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Pending' }).waitFor({ state: 'visible' });
       },
     }),
@@ -849,7 +858,7 @@ const scenarios = {
       afterNavigation: async (page) => {
         const drawer = await openPreparedBookingApproval(page);
         await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
-        await drawer.getByText('Approved', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+        await drawer.getByText('Approved', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       },
     }),
     roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Confirm the allocation', 'Back in the renter account, the same request is Approved and the parking card is held for this resident.', {
@@ -867,7 +876,7 @@ const scenarios = {
         await row.getByRole('button', { name: 'Release Spot', exact: true }).click();
         await page.getByText('Give up this parking spot? It becomes available to others.', { exact: true }).waitFor({ state: 'visible' });
         await page.getByRole('button', { name: 'Release Spot', exact: true }).last().click();
-        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ has: page.getByText('Released', { exact: true }) }).last().waitFor({ state: 'visible', timeout: 30_000 });
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ has: page.getByText('Released', { exact: true }) }).last().waitFor({ state: 'visible', timeout: navTimeoutMs });
       },
     }),
     roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Verify restored availability', 'Return to the property inventory and confirm that the spot is Available, active, and ready for another request.', {
@@ -952,7 +961,7 @@ const scenarios = {
         // confirm button is only meaningful once it is on screen.
         await page.getByTestId('post-dry-run-ok').waitFor({ state: 'visible', timeout: 20_000 });
         await page.getByTestId('post-lease-confirm').click();
-        await page.getByTestId('lease-posting-journal').waitFor({ state: 'visible', timeout: 30_000 });
+        await page.getByTestId('lease-posting-journal').waitFor({ state: 'visible', timeout: navTimeoutMs });
       },
     }),
     roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Read the journals it wrote',
@@ -994,7 +1003,7 @@ const scenarios = {
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques/collection', 'Bank a batch',
       'Selecting rows and entering a deposit date moves them to deposited. Nothing is posted, because nothing has changed about what you are owed.', {
-      weight: 60,
+      weight: 70,
       afterNavigation: async (page) => {
         // `GET /cheques/to-deposit` is REGISTERED **and matured**
         // (`ChequeRepository#findToDeposit`: `chequeDate <= today`), so which of
@@ -1020,18 +1029,25 @@ const scenarios = {
         await page.getByTestId('cheque-clear-confirm').click();
         // A cleared PDC may still be returned late, so its bounce action
         // appearing in place of clear is the proof the clearing landed.
-        await page.getByTestId(`cheque-row-action-bounce-${id}`).waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId(`cheque-row-action-bounce-${id}`).waitFor({ state: 'visible', timeout: 30_000 });
       },
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques', 'Return a cheque the bank sent back',
       'Bouncing a cleared cheque reverses the bank side: rent receivable is debited again and the bank credited. The amount is owed once more.', {
-      weight: 55,
+      weight: 70,
       afterNavigation: async (page) => {
         const id = chequeIdAt('fatima', 2);
+        // Narrowed to one renter's unit first. Every transition on this page
+        // refreshes the list, the summary tiles and the aging strip together,
+        // and doing that over the whole register is the slowest thing either
+        // of these scenes does — which matters because the clip is recording
+        // throughout, so a slow action is a blank frame.
+        await page.getByTestId('cheque-search').fill('A-102');
+        await page.getByTestId('cheque-filter-apply').click();
         await page.getByTestId(`cheque-row-action-bounce-${id}`).click();
-        await page.getByTestId('bounce-failure-reason').waitFor({ state: 'visible', timeout: 15_000 });
+        await page.getByTestId('bounce-failure-reason').waitFor({ state: 'visible', timeout: 20_000 });
         await page.getByTestId('cheque-bounce-confirm').click();
-        await page.getByTestId(`cheque-row-action-replace-${id}`).waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId(`cheque-row-action-replace-${id}`).waitFor({ state: 'visible', timeout: 30_000 });
       },
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques/return-replace', 'Replace it with new paper',
