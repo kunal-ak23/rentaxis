@@ -592,63 +592,74 @@ track is commissioned separately.
   credential may be compromised, deactivate first and investigate rather than
   asking renters to retry repeatedly.”
 
-## 17 — Chart of accounts and account mappings
+## 17 — Chart of accounts, the account template, and charge types
 
 - Audience: finance admins; 2–3 minutes.
-- Capture: inspect seeded accounts, add a child account, show hierarchy, map a
-  rent/expense event, edit the mapping, and explain downstream ledger use.
-- Narration: “This tutorial introduces the chart of accounts and the mappings
-  that connect operational events to ledger accounts. Open Finance and choose
-  Chart of Accounts in the Tutorial Demo organization. Review the seeded asset,
-  liability, income, and expense groups. Account codes and parent-child
-  structure should follow the organization’s approved accounting design; do not
-  invent a live code during data entry. Select Add Account and create the
-  prepared synthetic child account beneath the correct parent. Enter its code,
-  English name, type, and active status, then save. Reopen it and confirm that it
-  appears at the intended level of the hierarchy rather than as an unrelated
-  root account. Demonstrate a safe edit to the demo name and verify the result.
-  Next, open Account Mappings from Settings or Finance. A mapping tells RentAxis
-  which debit and credit accounts to use when a supported operational event is
-  posted. Select the prepared rent, payment, or expense event. Review both sides
-  of the mapping and choose accounts whose types match the approved accounting
-  treatment. Save and reload the page. The configured event should show the
-  selected debit and credit lines. Edit the mapping using the separate prepared
-  test account, confirm the warning, and verify the new configuration. Explain
-  that a mapping change affects future postings; it must not be used to reinterpret
-  historical transactions without an approved adjustment process. Before
-  enabling live operations, finance should review every required event for
-  missing, duplicate, or inactive accounts. Finish by opening the child account
-  and the mapping side by side. The chart defines where values can be recorded,
-  while mappings consistently connect RentAxis workflows to those accounts.”
+- Capture: browse the seeded chart of accounts in tree and flat view, add a
+  child account, open the property account template and its per-role name
+  patterns, edit one and save, set a tenant-wide default account, open a draft
+  lease's charge-line picker to show the charge-type catalogue those roles
+  belong to, then set the fiscal year and a lock date.
+- Narration: “This tutorial explains where every AED in RentAxis is meant to
+  live before it explains how it gets there. Open Finance and choose Chart of
+  Accounts. Every account belongs to one of five types — asset, liability,
+  income, expense or equity — and the tree view nests each leaf account under
+  its group. Select Add Account and create a child under the correct group;
+  its type, group and parent cannot change afterward, so choosing them
+  carefully matters more than the name. Switch to the flat view and see the
+  same accounts organised by type instead of hierarchy, useful when you are
+  hunting for one account rather than browsing the structure. Now open
+  Settings and choose Account Template. Every property posts to its own
+  accounts, not a shared tenant-wide one, and this page is the pattern
+  RentAxis follows when it generates them: one row per role, such as Rent
+  Receivable, Advance Rent, Security Deposit or Admin Fee, each with a name
+  pattern, the parent group its generated account files under, and whether it
+  is enabled. Edit a name pattern and save; the change only affects accounts
+  generated after today, not ones a property already has. Below it, Default
+  Accounts holds the tenant-wide fallback used only when a property has no
+  account of its own for a role — pick one and save. These roles are not
+  arbitrary: every charge line on a lease is drawn from the tenant's
+  charge-type catalogue — rent, security deposit, admin fee, parking, cooling
+  charges, maintenance — and each charge type carries the role it posts to,
+  which is why this template reads like a list of charges. Open a draft
+  lease's charge-line picker to see that catalogue in use. Finally open
+  Settings and choose Fiscal to set the fiscal year's start month and the date
+  the books themselves begin. A lock date closes every period through that day
+  to new and reversing entries, and it can only move forward, never back, so
+  confirm the date before you set one.”
 
-## 18 — Record and review financial transactions
+## 18 — Journal vouchers: create, read, and reverse
 
 - Audience: finance admins; 2–3 minutes.
-- Capture: create income and expense entries, select property/unit scope, add a
-  reference and description, filter the transaction list, and open details.
-- Narration: “This tutorial records and reviews approved manual financial
-  transactions. Use this workflow for items that are not already generated by a
-  lease, cheque, settlement, or another automated process. Open Finance and
-  Transactions in the Tutorial Demo organization. Select Add Transaction and
-  begin with the prepared income entry. Choose the correct income account, enter
-  the transaction date and amount, and select the related property. Add a unit
-  only when the source item belongs to one unit. Enter a clear reference and
-  description that another finance operator can reconcile with the approved
-  source. Review the currency and save once. Open the resulting detail and
-  confirm the type, account, date, property, unit, amount, reference, description,
-  operator, and timestamp. Return to the list and create the prepared expense
-  entry. Choose an expense account rather than using a negative income value.
-  Apply the correct property scope and leave the unit empty when the expense
-  belongs to the whole property. Save and verify the detail. Now use the list
-  filters. Select the Tutorial Demo property and the prepared date range, then
-  filter by income and expense. Confirm that both fixtures appear in the correct
-  views and that totals do not mix another property or period. Search by the
-  reference to reach one transaction directly. Manual entries should not
-  duplicate automated rent collection, penalties, or settlement postings. If a
-  transaction is wrong, follow the approved reversal or correction workflow
-  rather than silently changing the source meaning. Finish by comparing the
-  filtered list with the prepared source documents and showing how the reference
-  and description make reconciliation possible.”
+- Capture: open the journal list and filter it, post a manual two-line journal
+  voucher, open its detail to read the balanced lines, then reverse it and
+  follow the link back to the reversal.
+- Narration: “This tutorial covers the ledger's own manual entry point: the
+  journal voucher, for whatever a lease, cheque, recognition run, voucher or
+  settlement does not already write on its own. Open Finance and choose
+  Journals. Every posted entry lands here, tagged with its document type — a
+  tenancy contract, a post-dated cheque, a cash and cheque collection, an
+  advance rent adjustment, a manual journal voucher and more — and you can
+  filter by document type, date range and property. Select New Journal. Enter
+  the entry date, an optional property, and a narration that explains the
+  entry to whoever reads it later. A journal voucher is a grid of lines, and
+  each line picks one account and either a debit or a credit, never both. Add
+  a second line, choose its account, and enter the matching amount on the
+  opposite side. RentAxis will not let you post until the debits and the
+  credits add up to the same total; that balance is not a suggestion, it is
+  the definition of a journal. Post it and land on its detail page. Read every
+  line: the account, the debit or the credit, its own narration, and the unit
+  or tenant it is tied to when one applies. The header repeats the totals so
+  you can confirm the balance without adding the lines yourself. Only a
+  manual journal voucher that has not already been reversed can be reversed
+  from this screen; an entry that belongs to a lease, a cheque, a recognition
+  period, a voucher or a settlement is corrected from its own screen instead,
+  because reversing it here would leave that document posted while its ledger
+  vanished. Select Reverse, confirm the date and give a reason, then confirm
+  again. RentAxis writes a mirror entry with every debit and credit swapped
+  and links the two permanently: open either one and follow Reversal of or
+  Reversed by to reach the other. The original is not deleted and cannot be
+  edited; the ledger keeps both, and together they net to zero.”
 
 ## 19 — Vendors and bank accounts
 
@@ -1083,6 +1094,123 @@ track is commissioned separately.
   Finish on the recent-status queue and confirm the entry, denial, admission, or
   exit appears with the correct time. Security decisions must always use the live
   result, not a screenshot, forwarded code, verbal claim, or cached page.”
+
+## 34 — Post a tenancy contract
+
+- Audience: finance admins and property managers; 2–3 minutes.
+- Capture: open the prepared draft contract, review its charge lines and cheque
+  grid, post it, then show the two journal types the post produced and the
+  recognition schedule it planned.
+- Narration: “In this tutorial you will turn a draft tenancy contract into
+  accounting entries. Open Leases and select the prepared draft. A contract in
+  RentAxis has two grids. The first is its charge lines. Each line names what is
+  being charged, the account the income or liability is credited to, the gross
+  amount, any discount, and the net. Rent, security deposit and administration
+  fee are separate lines because they behave differently: rent is recognised
+  across the term, a deposit is a liability you hold, and a fee is income the
+  day you post. The second grid is the cheque register for this contract.
+  Every row carries a posting date, a cheque number, a maturity date, the
+  drawer's bank, the amount and a narration such as Rent, first installment.
+  Notice that the cheque grid adds up to exactly the contract value. If it does
+  not, posting is refused, because the register is how the money is tracked and
+  it has to account for all of it. Nothing you have looked at so far has touched
+  the ledger. The contract is still a draft, and a draft can be edited freely.
+  Now select Post. Confirm the contract date. RentAxis writes one tenancy
+  contract journal debiting rent receivable and crediting each line's own
+  account, and one post-dated cheque journal for every row of the grid, moving
+  the amount from rent receivable into post-dated cheques receivable. Open the
+  Journals tab and read them. The contract status is now Active. Open the
+  Recognition schedule tab. RentAxis has already planned how the rent will be
+  earned, one row per calendar month, using the actual number of days in each.
+  Nothing there is posted yet. Posting is deliberate: after a contract is
+  posted it is never edited, only amended, which reverses the original and
+  writes a fresh one.”
+
+## 35 — Register and clear cheques
+
+- Audience: finance admins and property managers; 2–3 minutes.
+- Capture: open the cheque register, filter by status, bank a batch, clear one
+  row, mark another returned, and replace the returned cheque with two rows.
+- Narration: “This tutorial follows a cheque from the drawer's hand to the bank
+  and back again. Open Finance and choose Cheques. Every cheque from every
+  posted contract is here, with its status, its maturity date, the property and
+  the renter. Use the filters to narrow the list to registered cheques maturing
+  this month. Registered means the cheque is recorded and its journal is
+  written, but the paper has not left the office. Select the rows you are taking
+  to the bank and choose Cheque and cash collection. Enter the deposit date and
+  the account you are banking into, then confirm. The selected rows move to
+  deposited. Depositing is an operational step and writes no accounting entry,
+  because nothing has changed about what you are owed. When the bank confirms a
+  cheque, open its row and choose Clear. Enter the value date the bank gave you.
+  RentAxis debits your bank account and credits post-dated cheques receivable.
+  That is the moment the money becomes yours. Now take a cheque the bank has
+  returned. Open its row and choose Mark returned, give the reason, and confirm.
+  Because this cheque had already cleared, RentAxis reverses the bank side:
+  it debits rent receivable and credits the bank. The amount is owed again, and
+  the register shows it as due. Open Return and replace. A returned cheque is
+  usually settled with new paper, and often more than one. Add two replacement
+  rows, each with its own number, maturity date and amount, then save. Each
+  replacement registers its own journal. If the replacements do not add up to
+  the returned amount, the difference stays in rent receivable rather than
+  disappearing. Penalties are separate and never automatic: a returned cheque
+  proposes a penalty that finance approves, waives or reverses from the
+  Penalties queue.”
+
+## 36 — Month-end recognition
+
+- Audience: finance admins; 2–3 minutes.
+- Capture: show a contract's planned recognition schedule, preview a run to a
+  chosen date, post it, then find the resulting journals in the general ledger.
+- Narration: “Rent is collected in a handful of cheques but earned every day, so
+  this tutorial closes a month. Start on a posted contract and open its
+  Recognition schedule tab. RentAxis divided the term by its actual number of
+  days to get a daily rate, then multiplied that rate by the real number of days
+  in each calendar month. A twelve month contract that starts mid month
+  therefore opens with a short period and closes with another, and the last row
+  absorbs any rounding so the schedule adds up to the rent exactly. Every row
+  shows its period, its day count, its amount and its status. Rows are planned
+  until they are posted. Now open Finance and choose Recognition. Enter the date
+  you are closing to, normally the last day of last month, and select Preview.
+  RentAxis lists every planned row across every contract that ends on or before
+  that date, with a total. Read the total before you post it; this is the rental
+  income you are about to recognise for the period. Select Run. Each row becomes
+  one journal dated the last day of its own period, debiting advance rent and
+  crediting rental income, with the narration Advance rent adjustment and the
+  month. Dating these entries at the period end rather than the first of the
+  next month is deliberate, so a month's income falls inside the month it was
+  earned in. Open the General Ledger and filter to the advance rent account. The
+  balance falls by exactly what you just recognised, and the rental income
+  account rises by the same amount. Recognition also runs automatically each
+  night, so a backdated contract catches up on its own. Running it by hand is
+  for closing a period on purpose, and for the first catch-up after you move
+  your books across.”
+
+## 37 — Tenant ledger
+
+- Audience: finance admins and accountants; 2–3 minutes.
+- Capture: open a renter's ledger, read each account, explain the running
+  balance, drill into a journal, and compare the trial balance totals.
+- Narration: “This tutorial reads a renter's account the way an accountant
+  does. Open Finance and choose Tenant Ledger, then select the prepared renter.
+  RentAxis shows one block per ledger account the renter has touched, and inside
+  each block one row per entry. Every row carries the document date, the
+  document number, the account on the other side of the entry, the narration,
+  the debit or the credit, and the running balance after it. Start with rent
+  receivable. The tenancy contract debited it with the whole contract value,
+  then one post-dated cheque entry per cheque credited it back, so immediately
+  after posting the balance is zero. That is correct and it is the point: what
+  the renter owes lives in the cheque register, not in this account. A balance
+  appears here only when something goes wrong, such as a returned cheque, which
+  debits it again. Read the post-dated cheques receivable block. It rises with
+  every cheque registered and falls with every cheque cleared, so its balance is
+  the paper you are still holding. Read advance rent. The contract credited the
+  whole year, and each month-end recognition debits back the portion earned, so
+  it winds down to zero across the term. Select any document number to open the
+  journal behind it. A journal shows every line, always balancing, and it cannot
+  be edited or deleted, only reversed, which writes a mirror entry and links the
+  two. Finally open Trial Balance. Choose a date and confirm that total debits
+  equal total credits. That single check is what tells you the ledger behind
+  every screen in this tutorial is sound.”
 
 ## Recording acceptance checklist
 
