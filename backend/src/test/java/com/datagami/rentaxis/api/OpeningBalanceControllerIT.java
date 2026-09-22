@@ -237,6 +237,11 @@ class OpeningBalanceControllerIT {
         assertThat(derivedRow.get("derived").asBoolean()).isTrue();
         assertThat(derivedRow.get("derivedRole").asText()).isEqualTo("RENT_RECEIVABLE");
         assertThat(derivedRow.get("enteredDebit").decimalValue()).isEqualByComparingTo("0.00");
+        // Ruling R25: three pairs on the wire, not two. The web reads post* for what
+        // the journal will write and seeds its edit inputs from entered*.
+        assertThat(derivedRow.get("postDebit").decimalValue()).isEqualByComparingTo("0.00");
+        assertThat(derivedRow.get("postCredit").decimalValue()).isEqualByComparingTo("0.00");
+        assertThat(derivedRow.get("derivedDebit")).isNotNull();
     }
 
     @Test

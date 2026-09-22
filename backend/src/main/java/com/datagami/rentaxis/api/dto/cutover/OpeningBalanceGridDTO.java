@@ -22,8 +22,10 @@ import java.util.UUID;
  *
  * <p><b>Every figure here is the delta</b> — PACT's trial balance less what our own
  * books already hold as at the same day (ruling R17) — so {@code totalDebit},
- * {@code totalCredit} and {@code difference} are the journal's, not the file's. The
- * file's own sums live on the upload result.</p>
+ * {@code totalCredit} and {@code difference} are the journal's, not the file's: they
+ * are the sums of the rows' {@code postDebit}/{@code postCredit}, never of their
+ * {@code enteredDebit}/{@code enteredCredit} (ruling R25). The file's own sums live
+ * on the upload result.</p>
  *
  * <p>{@code changedSincePosted} is true when the grid's postable lines no longer
  * match the live OB journal's. The snapshot stays editable after posting — that is

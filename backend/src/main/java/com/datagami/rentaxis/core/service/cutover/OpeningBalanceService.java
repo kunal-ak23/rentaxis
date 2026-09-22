@@ -93,11 +93,19 @@ import java.util.UUID;
  * figure gross (review C2, ruling R17). The nine {@link #DERIVED_ROLES} are the
  * accounts step 1 <em>raises</em>; they are not the only accounts step 1
  * <em>touches</em>, and bank and output VAT are both. See {@link #postable} for the
- * arithmetic and for why the gross form double-counted them. It follows that
- * {@code enteredDebit}/{@code enteredCredit} on the grid are the figures that will
- * post, which on an account our books already hold is PACT's figure less that
- * holding; {@code derivedDebit}/{@code derivedCredit} beside them are the holding
- * itself, so the accountant can see both halves of the subtraction.</p>
+ * arithmetic and for why the gross form double-counted them.</p>
+ *
+ * <p><b>Three figures per row, and each one keeps its own meaning</b> (ruling R25).
+ * {@code enteredDebit}/{@code enteredCredit} are the figure <em>as entered or
+ * uploaded</em> — what the accountant typed into {@link #setRow} or what PACT's file
+ * carried, unchanged, which is what the edit inputs on the screen are seeded from.
+ * {@code derivedDebit}/{@code derivedCredit} are what our own books already hold at
+ * D − 1. {@code postDebit}/{@code postCredit} are what the journal will actually
+ * write, which is the subtraction of the two. Carrying the delta on
+ * {@code entered*} — as the first cut of R17 did — closed a feedback loop: the
+ * screen showed the remainder in the box the accountant edits, so saving the row
+ * back unchanged stored the remainder as the new PACT figure and the books drifted
+ * one subtraction further every time.</p>
  *
  * <p><b>The opening balances are the LAST step.</b> Once an OB journal is live, a
  * bulk post, a batch reverse and a Post-again would each move {@code ours} under a
@@ -164,17 +172,33 @@ public class OpeningBalanceService {
      * whose figure is the balancing gap and is recomputed on every post. Both are
      * read-only on the screen and both are refused by {@link #setRow}.</p>
      *
-     * <p>{@code derivedDebit}/{@code derivedCredit} are what our books already hold
-     * for the account as at D − 1; {@code enteredDebit}/{@code enteredCredit} are
-     * what a post would <em>write</em>, which is PACT's figure less that holding
-     * (ruling R17). On the overwhelming majority of rows our books hold nothing and
-     * the two readings coincide; where they do not — bank, output VAT — the pair
-     * shows the accountant both halves of the subtraction.</p>
+     * <p><b>Three figures, three meanings</b> (ruling R25).</p>
+     * <ul>
+     *   <li>{@code enteredDebit}/{@code enteredCredit} — the figure <em>as entered or
+     *       uploaded</em>: exactly what {@link #setRow} stored or what PACT's file
+     *       carried for this account, untouched by any arithmetic of ours. This is
+     *       the one the screen's edit inputs are seeded from, so saving a row back
+     *       unchanged is a no-op.</li>
+     *   <li>{@code derivedDebit}/{@code derivedCredit} — what our own books already
+     *       hold for the account as at D − 1, with a live opening journal's own lines
+     *       taken back out.</li>
+     *   <li>{@code postDebit}/{@code postCredit} — what a post would <em>write</em>:
+     *       the delta {@code entered − derived} on a manual account, nothing on a
+     *       {@code derived} one (step 1 already raised it), and on the
+     *       {@code computed} difference row the balancing figure. The grid's totals,
+     *       its {@code difference} and {@link #postFresh}'s lines are all read off
+     *       these.</li>
+     * </ul>
+     *
+     * <p>On the overwhelming majority of rows our books hold nothing, so
+     * {@code post*} and {@code entered*} coincide; where they do not — bank, output
+     * VAT — the three columns show the accountant the whole subtraction.</p>
      */
     public record OpeningBalanceRow(UUID accountId, String code, String name, String accountType, UUID propertyId,
                                     boolean derived, AccountRole derivedRole, boolean computed,
                                     BigDecimal derivedDebit, BigDecimal derivedCredit,
-                                    BigDecimal enteredDebit, BigDecimal enteredCredit) {}
+                                    BigDecimal enteredDebit, BigDecimal enteredCredit,
+                                    BigDecimal postDebit, BigDecimal postCredit) {}
 
     /**
      * {@code difference} is {@code totalDebit − totalCredit} over the postable
@@ -234,13 +258,18 @@ public class OpeningBalanceService {
             if (a.isGroup() || !a.isActive()) continue;
             AccountRole role = derived.byAccount().get(a.getId());
             boolean computed = postable.isDifferenceAccount(a.getId());
-            BigDecimal net = postable.byAccount().getOrDefault(a.getId(), ZERO);
+            // Three readings of one account, never collapsed into two: what was typed
+            // or uploaded, what our books hold, and what a post would write (R25).
+            BigDecimal entered = postable.entered().getOrDefault(a.getId(), ZERO);
             BigDecimal ours = ourBooks.getOrDefault(a.getId(), ZERO);
+            BigDecimal net = postable.byAccount().getOrDefault(a.getId(), ZERO);
             rows.add(new OpeningBalanceRow(a.getId(), a.getCode(), a.getName(),
                     a.getAccountType() == null ? null : a.getAccountType().name(), a.getPropertyId(),
                     role != null, role, computed,
                     ours.signum() > 0 ? ours : ZERO,
                     ours.signum() < 0 ? ours.negate() : ZERO,
+                    entered.signum() > 0 ? entered : ZERO,
+                    entered.signum() < 0 ? entered.negate() : ZERO,
                     net.signum() > 0 ? net : ZERO,
                     net.signum() < 0 ? net.negate() : ZERO));
         }
@@ -606,8 +635,16 @@ public class OpeningBalanceService {
      * The journal a post right now would produce: {@code byAccount} is
      * account id → signed amount (debit-positive) in a stable order, <em>including</em>
      * the balancing line against the opening-balance difference account.
+     *
+     * <p>{@code entered} is the other half of the grid's story and takes part in no
+     * arithmetic here: account id → the figure the snapshot holds, signed
+     * debit-positive, for <em>every</em> account a stored row resolved to — derived
+     * accounts and the difference account included, which {@code byAccount}
+     * deliberately excludes. It is what the accountant typed or PACT's file carried,
+     * and the screen seeds its edit inputs from it (ruling R25).</p>
      */
-    private record Postable(LinkedHashMap<UUID, BigDecimal> byAccount, BigDecimal totalDebit,
+    private record Postable(LinkedHashMap<UUID, BigDecimal> byAccount, Map<UUID, BigDecimal> entered,
+                            BigDecimal totalDebit,
                             BigDecimal totalCredit, BigDecimal gap, Account difference,
                             List<String> problems) {
 
@@ -663,6 +700,12 @@ public class OpeningBalanceService {
      * <p>Two PACT rows that resolve to the same account of ours (one by code, one by
      * name) are summed, so the grid and the journal agree on one line per account.</p>
      *
+     * <p>Alongside, and taking no part in any of the above, it collects
+     * {@code Postable.entered}: the stored figure for every account a snapshot row
+     * resolved to, exactly as it stands. That is the column the accountant edits, and
+     * the skips listed above must not reach it — an account whose figure will not be
+     * posted still has one on file, and the screen has to be able to show it (R25).</p>
+     *
      * @param ours what our books hold per account as at {@code asOf}, debit-positive,
      *             with the live opening entry's own lines removed.
      */
@@ -672,10 +715,18 @@ public class OpeningBalanceService {
         if (difference == null) problems.add(noDifferenceAccountMessage());
 
         // What PACT says, per account of ours, in the file's own (code) order.
+        // `entered` keeps every stored figure as it stands, including the rows `pact`
+        // skips, because the grid has to show the accountant what is on file for an
+        // account even when no line will be posted to it (R25); `pact` is the subset
+        // the journal is built from and its membership rule is unchanged.
+        LinkedHashMap<UUID, BigDecimal> entered = new LinkedHashMap<>();
         LinkedHashMap<UUID, BigDecimal> pact = new LinkedHashMap<>();
         for (OpeningBalanceSnapshotRow r : snapshots.findAllByOrderByAccountCodeAsc()) {
             Account a = index.match(r.getAccountCode(), r.getAccountName()).account();
-            if (a == null || a.isGroup() || !a.isActive() || derived.containsKey(a.getId())) continue;
+            if (a == null) continue;
+            BigDecimal figure = r.getDebit().subtract(r.getCredit());
+            entered.merge(a.getId(), figure, BigDecimal::add);
+            if (a.isGroup() || !a.isActive() || derived.containsKey(a.getId())) continue;
             if (difference != null && difference.getId().equals(a.getId())) {
                 if (r.getDebit().signum() != 0 || r.getCredit().signum() != 0) {
                     problems.add(a.getCode() + " " + a.getName() + ": PACT's own opening-balance difference"
@@ -683,7 +734,7 @@ public class OpeningBalanceService {
                 }
                 continue;
             }
-            pact.merge(a.getId(), r.getDebit().subtract(r.getCredit()), BigDecimal::add);
+            pact.merge(a.getId(), figure, BigDecimal::add);
         }
 
         LinkedHashMap<UUID, BigDecimal> byAccount = new LinkedHashMap<>();
@@ -717,7 +768,7 @@ public class OpeningBalanceService {
             // Negated because the line CLOSES the gap: an excess of debits is credited away.
             byAccount.put(difference.getId(), gap.negate());
         }
-        return new Postable(byAccount, totalDebit, totalCredit, gap, difference, problems);
+        return new Postable(byAccount, entered, totalDebit, totalCredit, gap, difference, problems);
     }
 
     /** True when the grid's postable lines no longer match the live OB journal's. */

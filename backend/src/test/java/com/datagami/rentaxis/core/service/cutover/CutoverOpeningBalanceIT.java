@@ -219,9 +219,10 @@ class CutoverOpeningBalanceIT {
     }
 
     /**
-     * The grid says what the journal will do, before it does it: the bank's line is
-     * the remainder, not PACT's figure, and the derived column beside it is the other
-     * half of the subtraction.
+     * The grid says what the journal will do, before it does it: the bank's
+     * <em>post</em> figure is the remainder, not PACT's figure — and all three
+     * columns are on the row at once, so the subtraction is visible rather than
+     * implied (rulings R17 and R25).
      */
     @Test
     void theGridShowsTheFigureThatWillPostRatherThanPactsGrossBalance() throws Exception {
@@ -232,20 +233,85 @@ class CutoverOpeningBalanceIT {
         var bank = grid.rows().stream().filter(r -> "Sample Bank - ST1".equals(r.name()))
                 .findFirst().orElseThrow();
         assertThat(bank.derived()).as("the bank is NOT one of the nine derived roles").isFalse();
+        // entered = PACT's file, untouched; derived = what step 1 left; post = the two subtracted.
+        assertThat(bank.enteredDebit()).isEqualByComparingTo("250000.00");
         assertThat(bank.derivedDebit()).isEqualByComparingTo("31000.00");
-        assertThat(bank.enteredDebit()).isEqualByComparingTo("219000.00");
+        assertThat(bank.postDebit()).isEqualByComparingTo("219000.00");
 
         var vat = grid.rows().stream().filter(r -> outputVatName().equals(r.name()))
                 .findFirst().orElseThrow();
         assertThat(vat.derived()).isFalse();
+        assertThat(vat.enteredCredit()).isEqualByComparingTo("3000.00");
         assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
-        assertThat(vat.enteredCredit()).isEqualByComparingTo("1950.00");
+        assertThat(vat.postCredit()).isEqualByComparingTo("1950.00");
 
-        // The totals and the difference are the journal's, so the number on the screen
-        // the accountant presses Post from is the number posted.
+        // A derived row still shows PACT's figure — the reconciliation screen compares
+        // against it — but nothing will be posted to it.
+        var pdc = grid.rows().stream().filter(r -> "PDC Receivable ST1".equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(pdc.derived()).isTrue();
+        assertThat(pdc.enteredDebit()).isEqualByComparingTo("48050.00");
+        assertThat(pdc.derivedDebit()).isEqualByComparingTo("47050.00");
+        assertThat(pdc.postDebit()).isEqualByComparingTo("0.00");
+        assertThat(pdc.postCredit()).isEqualByComparingTo("0.00");
+
+        // The computed difference row carries the balancing figure on post*, and PACT's
+        // file named no difference figure at all, so entered* is empty.
+        var diff = grid.rows().stream().filter(r -> differenceAccountName().equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(diff.computed()).isTrue();
+        assertThat(diff.enteredDebit()).isEqualByComparingTo("0.00");
+        assertThat(diff.postDebit()).isEqualByComparingTo("1000.00");
+
+        // The totals and the difference are the journal's — sums of post*, not of
+        // entered* — so the number on the screen the accountant presses Post from is
+        // the number posted.
         assertThat(grid.totalDebit()).isEqualByComparingTo("219000.00");
         assertThat(grid.totalCredit()).isEqualByComparingTo("220000.00");
         assertThat(grid.difference()).isEqualByComparingTo("-1000.00");
+    }
+
+    /**
+     * The feedback loop ruling R25 closes, asserted end to end.
+     *
+     * <p>The screen seeds its edit inputs from {@code entered*}. Save a row back
+     * untouched — which is what happens the moment an accountant opens the bank row,
+     * changes something else and presses Save — and the stored snapshot must still
+     * say 250,000, so the post figure must still be 219,000. When {@code entered*}
+     * carried the delta instead, the round trip stored 219,000 as the new PACT figure
+     * and the next post would have written 188,000, one subtraction further away
+     * every time.</p>
+     */
+    @Test
+    void savingABankRowBackExactlyAsItWasReadChangesNothing() throws Exception {
+        importAndPost();
+        uploadPactTrialBalance();
+
+        var before = bankRow(openingBalances.grid());
+        openingBalances.setRow(before.accountId(), before.enteredDebit(), before.enteredCredit());
+
+        var after = bankRow(openingBalances.grid());
+        assertThat(after.enteredDebit()).isEqualByComparingTo(before.enteredDebit());
+        assertThat(after.derivedDebit()).isEqualByComparingTo(before.derivedDebit());
+        assertThat(after.postDebit())
+                .as("the figure that will post is the same one the screen was read from")
+                .isEqualByComparingTo(before.postDebit())
+                .isEqualByComparingTo("219000.00");
+
+        // And the whole grid agrees: totals and difference unmoved.
+        var grid = openingBalances.grid();
+        assertThat(grid.totalDebit()).isEqualByComparingTo("219000.00");
+        assertThat(grid.totalCredit()).isEqualByComparingTo("220000.00");
+        assertThat(grid.difference()).isEqualByComparingTo("-1000.00");
+
+        // The books still open on PACT's figure, which is the thing the loop broke.
+        openingBalances.post();
+        assertThat(balanceOf("Sample Bank - ST1")).isEqualByComparingTo("250000.00");
+    }
+
+    private OpeningBalanceService.OpeningBalanceRow bankRow(OpeningBalanceService.OpeningBalanceGrid grid) {
+        return grid.rows().stream().filter(r -> "Sample Bank - ST1".equals(r.name()))
+                .findFirst().orElseThrow();
     }
 
     /**
