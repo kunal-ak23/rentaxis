@@ -51,6 +51,13 @@ databaseChangeLog:
               # and who did it.
               - column: { name: discarded_at, type: timestamptz }
               - column: { name: discarded_by, type: uuid }
+              # Posting a REVERSED batch again produces a SUCCESSOR row to hold the
+              # new journals — markPosted refuses REVERSED -> POSTED by design. The
+              # link is a column rather than a label convention because a run that
+              # dies after its first contract has committed has to find the successor
+              # it already created instead of making a second one and stranding the
+              # first one's journals in a DRAFT batch nobody looks at.
+              - column: { name: repost_of, type: uuid }
               - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
         - addForeignKeyConstraint:
             baseTableName: import_batches
@@ -69,7 +76,36 @@ databaseChangeLog:
               ALTER TABLE import_batches
                 ADD CONSTRAINT ck_import_batches_kind   CHECK (kind IN ('CONTRACT_IMPORT')),
                 ADD CONSTRAINT ck_import_batches_status CHECK (status IN ('DRAFT','POSTED','REVERSED','DISCARDED'))
+        - addForeignKeyConstraint:
+            baseTableName: import_batches
+            baseColumnNames: repost_of
+            referencedTableName: import_batches
+            referencedColumnNames: id
+            constraintName: fk_import_batches_repost_of
         - createIndex: { tableName: import_batches, indexName: idx_import_batches_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - createIndex: { tableName: import_batches, indexName: idx_import_batches_repost_of, columns: [ { column: { name: repost_of } } ] }
+
+        # The backstop under the whole batch-id design.
+        #
+        # import_batch_id is how every cut-over journal is found again: "Reverse
+        # batch" walks it, the drill-through filters on it, and PostingService
+        # exempts an entry from the period lock because of it. An entry carrying an
+        # id no row has is therefore a journal nothing can ever reach — and the
+        # window for producing one is real: the contracts of a run commit one at a
+        # time while the run's own transaction (which is where the batch row was
+        # created on the re-post path) stays open for the whole run.
+        #
+        # RESTRICT rather than CASCADE: nothing in the application deletes a batch
+        # row — a discard marks it DISCARDED and is refused for anything but a DRAFT
+        # batch, which by definition has no journals — so if something ever starts
+        # to, it should fail loudly rather than take a ledger with it.
+        - addForeignKeyConstraint:
+            baseTableName: journal_entries
+            baseColumnNames: import_batch_id
+            referencedTableName: import_batches
+            referencedColumnNames: id
+            constraintName: fk_je_import_batch
+            onDelete: RESTRICT
 
         - createTable:
             tableName: import_batch_leases
@@ -383,6 +419,8 @@ databaseChangeLog:
               ALTER TABLE leases DROP COLUMN IF EXISTS external_contract_ref;
         - dropTable: { tableName: opening_balance_postings }
         - dropTable: { tableName: opening_balance_snapshots }
+        - sql:
+            sql: ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS fk_je_import_batch
         - dropColumn: { tableName: import_jobs, columnName: result }
         - dropColumn: { tableName: import_jobs, columnName: total }
         - dropColumn: { tableName: import_jobs, columnName: processed }

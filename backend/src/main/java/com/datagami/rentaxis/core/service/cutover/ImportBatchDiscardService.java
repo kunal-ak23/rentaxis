@@ -73,12 +73,13 @@ import java.util.UUID;
  *   <li><b>A DRAFT batch</b> — imported, read on screen, found wrong, never posted —
  *       discards completely, and the corrected workbook then imports cleanly. This
  *       is the case the rule exists for and the overwhelmingly common one.</li>
- *   <li><b>A REVERSED batch</b> — posted, then taken back off — keeps its contracts
- *       and everything they name, each reported with that reason. Its route back is
- *       not a re-import at all: it is <em>Post</em> again, which
- *       {@code ContractImportPostService} serves by creating a successor batch over
- *       the same leases (R12). The imported statuses and dates survived the reverse
- *       precisely so that works.</li>
+ *   <li><b>A REVERSED batch</b> — posted, then taken back off — is <b>refused</b>.
+ *       Its journals still name its contracts, so there is nothing here that could
+ *       actually remove them, and marking it DISCARDED anyway used to leave the
+ *       contracts standing while taking away the one thing that still worked. Its
+ *       route back is <em>Post</em> again, which {@code ContractImportPostService}
+ *       serves with a successor batch over the same leases (R12) — the imported
+ *       statuses and dates survived the reverse precisely so that works.</li>
  * </ul>
  *
  * <p><b>Not one transaction, deliberately.</b> Each lease and each created row is
@@ -105,7 +106,17 @@ public class ImportBatchDiscardService {
     private final PropertyAccountMappingRepository propertyMappings;
     private final AccountRepository accounts;
     private final LeaseService leaseService;
+
+    /** The run's own transaction: it holds the batch row lock and nothing else. */
     private final TransactionTemplate tx;
+
+    /**
+     * One deletion, suspended out of the run's transaction. {@code REQUIRES_NEW}
+     * because a foreign key cannot see an uncommitted delete, and because a
+     * constraint violation poisons the transaction it happens in — which is what
+     * makes {@link #deleteIfUnreferenced}'s catch safe.
+     */
+    private final TransactionTemplate ownTx;
 
     public ImportBatchDiscardService(ImportBatchService batches, LeaseRepository leases,
                                      JournalEntryRepository journals,
@@ -127,6 +138,9 @@ public class ImportBatchDiscardService {
         this.accounts = accounts;
         this.leaseService = leaseService;
         this.tx = new TransactionTemplate(transactionManager);
+        this.ownTx = new TransactionTemplate(transactionManager);
+        this.ownTx.setPropagationBehavior(
+                org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -155,13 +169,37 @@ public class ImportBatchDiscardService {
      *         before anything is deleted.
      */
     public DiscardResult discard(UUID batchId) {
-        List<UUID> leaseIds = tx.execute(s -> requireDiscardable(batchId));
-        List<ImportBatchEntity> created = tx.execute(s -> batches.createdEntities(batchId));
+        return tx.execute(s -> runUnderBatchLock(batchId));
+    }
+
+    /**
+     * The run, with the batch row held for its whole length.
+     *
+     * <p><b>The lock is the same one {@code post} takes</b> (review I2). Without it a
+     * discard could start while a post was running: it would read DRAFT, delete the
+     * contracts the post had not reached yet — which the post then reported as "this
+     * lease no longer exists" — and finish by calling {@code markDiscarded} on a
+     * batch the post had just marked POSTED, throwing <em>after</em> the rows were
+     * gone. No ledger damage, because the foreign keys protect a posted contract, but
+     * a half-dismantled batch and an opaque 400.</p>
+     *
+     * <p>The deletions still happen in transactions of their own, suspended out of
+     * this one: a foreign key cannot see an uncommitted delete, so a unit whose lease
+     * went a moment ago in an <em>open</em> transaction still has that lease pointing
+     * at it. Holding the lock here and committing the rows there is the combination
+     * that gives both properties.</p>
+     */
+    private DiscardResult runUnderBatchLock(UUID batchId) {
+        ImportBatch batch = batches.lockForRun(batchId, "discarded");
+        ImportBatchService.requireDiscardableStatus(batch);
+
+        List<UUID> leaseIds = batches.leaseIds(batchId);
+        List<ImportBatchEntity> created = batches.createdEntities(batchId);
 
         List<Kept> kept = new ArrayList<>();
         int leasesDeleted = 0;
         for (UUID leaseId : leaseIds) {
-            Outcome outcome = tx.execute(s -> deleteLease(leaseId));
+            Outcome outcome = ownTx.execute(s -> deleteLease(leaseId));
             if (outcome.kept() == null) {
                 leasesDeleted++;
             } else {
@@ -174,7 +212,7 @@ public class ImportBatchDiscardService {
         int rentersDeleted = 0;
         int propertiesDeleted = 0;
         for (ImportBatchEntity e : ordered(created)) {
-            Outcome outcome = tx.execute(s -> deleteIfUnreferenced(e.getEntityType(), e.getEntityId()));
+            Outcome outcome = ownTx.execute(s -> deleteIfUnreferenced(e.getEntityType(), e.getEntityId()));
             if (outcome.kept() != null) {
                 kept.add(outcome.kept());
                 continue;
@@ -187,11 +225,11 @@ public class ImportBatchDiscardService {
             }
         }
 
-        ImportBatch batch = tx.execute(s -> batches.markDiscarded(batchId));
+        ImportBatch discarded = batches.markDiscarded(batchId);
         log.info("Discarded import batch {}: {} leases, {} units, {} buildings, {} renters, {} properties, {} kept",
                 batchId, leasesDeleted, unitsDeleted, buildingsDeleted, rentersDeleted, propertiesDeleted,
                 kept.size());
-        return new DiscardResult(batchId, batch.getStatus(), leasesDeleted, unitsDeleted, buildingsDeleted,
+        return new DiscardResult(batchId, discarded.getStatus(), leasesDeleted, unitsDeleted, buildingsDeleted,
                 rentersDeleted, propertiesDeleted, List.copyOf(kept));
     }
 
@@ -210,17 +248,6 @@ public class ImportBatchDiscardService {
             case PROPERTY -> 3;
         }));
         return out;
-    }
-
-    private List<UUID> requireDiscardable(UUID batchId) {
-        ImportBatch batch = batches.get(batchId);
-        if (batch.getStatus() != ImportBatchStatus.DRAFT && batch.getStatus() != ImportBatchStatus.REVERSED) {
-            throw new BusinessRuleViolationException(
-                    "Import batch is " + batch.getStatus() + "; only a DRAFT or REVERSED batch can be discarded"
-                            + (batch.getStatus() == ImportBatchStatus.POSTED
-                            ? ". Reverse it first — its contracts are on the books." : "."));
-        }
-        return batches.leaseIds(batchId);
     }
 
     /** Either the row went, or it stayed and here is why. */
@@ -242,20 +269,26 @@ public class ImportBatchDiscardService {
         if (lease == null) return Outcome.DELETED;   // the link may outlive its lease; changeset 88 has no FK
         String name = lease.getExternalContractRef() == null ? leaseId.toString() : lease.getExternalContractRef();
 
-        if (lease.getStatus() != LeaseStatus.DRAFT) {
-            return new Outcome(new Kept("LEASE", leaseId, name,
-                    "the contract is " + lease.getStatus() + "; reverse the batch before discarding it"));
-        }
+        // The journal check comes FIRST because it is the reason nothing can fix. A
+        // contract the ledger names cannot be deleted whatever its status is, and a
+        // batch reaching here is DRAFT, so a contract of it that is ACTIVE was posted
+        // by something other than this batch's own run — most likely a run that died
+        // after committing it, or the ordinary "post this lease" door.
         long entries = journals.countByLeaseId(leaseId);
         if (entries > 0) {
-            // A batch that was posted and then reversed. The journals net to zero but
-            // they are still entries with numbers in a gapless series, and the ledger
-            // refuses both to delete them and to unpoint them (changeset 81's
-            // immutability trigger). See the class note: the route back for a reversed
-            // batch is Post again, not a re-import.
+            // The journals may net to zero but they are still entries with numbers in
+            // a gapless series, and the ledger refuses both to delete them and to
+            // unpoint them (changeset 81's immutability trigger).
             return new Outcome(new Kept("LEASE", leaseId, name,
                     entries + " journal entries permanently name this contract, so it cannot be deleted."
                             + " Post the batch again instead of re-importing it."));
+        }
+        if (lease.getStatus() != LeaseStatus.DRAFT) {
+            // No journals and not a draft: not a state this code produces, and not one
+            // to guess at either — LeaseService.deleteDraftLease would refuse it, and
+            // saying so is better than an opaque 400 from inside the loop.
+            return new Outcome(new Kept("LEASE", leaseId, name,
+                    "the contract is " + lease.getStatus() + " rather than a draft, so it was left alone"));
         }
 
         for (RecognitionEntry e : recognitionEntries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.cutover.ContractImportPostJobService;
 import com.datagami.rentaxis.core.service.cutover.ImportBatchService;
 import com.datagami.rentaxis.core.service.cutover.LeaseReverter;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
@@ -70,6 +71,7 @@ class ImportBatchControllerIT {
     @Autowired AccountService accounts;
     @Autowired PostingService posting;
     @Autowired ImportBatchService batches;
+    @Autowired ContractImportPostJobService postJobs;
     @Autowired TenantFiscalSettingsService fiscal;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
@@ -355,7 +357,7 @@ class ImportBatchControllerIT {
         ResponseEntity<String> res = call(HttpMethod.POST,
                 "/api/v1/finance/import-batches/" + b.getId() + "/discard", accountant, null);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody()).contains("Reverse it first");
+        assertThat(res.getBody()).contains("reverse it first");
     }
 
     /** The drill-through the batches screen needs: the journals this batch wrote. */
@@ -425,6 +427,32 @@ class ImportBatchControllerIT {
                 accountant, null).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(call(HttpMethod.POST, "/api/v1/finance/import-batches/" + theirs.getId() + "/discard",
                 accountant, null).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * And another organisation's <em>job</em> id, which is the third door onto the
+     * same run (review M6). The poll carries the batch in its path, so the guard has
+     * two halves: the job must be this tenant's, and it must be this batch's.
+     */
+    @Test
+    void anotherOrganisationsPostJobIs404() {
+        LandlordOrg other = new LandlordOrg();
+        other.setName("Other-" + UUID.randomUUID());
+        UUID otherTenant = orgRepo.save(other).getId();
+        TenantContextHolder.setTenantId(otherTenant);
+        ImportBatch theirs = batches.create(null, "theirs");
+        UUID theirJob = postJobs.start(theirs.getId(), null).getId();
+        TenantContextHolder.setTenantId(tenantId);
+
+        ImportBatch mine = batches.create(null, "mine");
+        // Their job id, on their batch: not this organisation's to read.
+        assertThat(call(HttpMethod.GET,
+                "/api/v1/finance/import-batches/" + theirs.getId() + "/post/" + theirJob, accountant, null)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        // Their job id, dressed up as one of mine: the batch-of-job check refuses it.
+        assertThat(call(HttpMethod.GET,
+                "/api/v1/finance/import-batches/" + mine.getId() + "/post/" + theirJob, accountant, null)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     /**

@@ -92,6 +92,14 @@ class CutoverSchemaIT {
         return id;
     }
 
+    /** The same, carrying a cut-over batch id. */
+    private void batchJournal(UUID tenant, String number, UUID batchId) {
+        jdbc.update("INSERT INTO journal_entries (id, tenant_id, entry_number, doc_type, entry_date,"
+                        + " source_type, source_id, import_batch_id) VALUES (?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), tenant, number, "TCO", LocalDate.of(2026, 9, 11),
+                "LEASE", UUID.randomUUID(), batchId);
+    }
+
     /** A bare journal header — enough columns to satisfy NOT NULL, nothing more. */
     private void journalEntry(UUID tenant, String number, String sourceType, UUID sourceId) {
         jdbc.update("INSERT INTO journal_entries (id, tenant_id, entry_number, doc_type, entry_date, source_type, source_id)"
@@ -144,17 +152,67 @@ class CutoverSchemaIT {
         UUID t = tenant();
         assertThatCode(() -> batch(t, "POSTED")).doesNotThrowAnyException();
         assertThatCode(() -> batch(t, "REVERSED")).doesNotThrowAnyException();
+        // A batch thrown away is a fourth state, not a variant of the other three:
+        // its leases and the rows it created are gone (plan 4 Task 11).
+        assertThatCode(() -> batch(t, "DISCARDED")).doesNotThrowAnyException();
         assertThatThrownBy(() -> batch(t, "PARTIAL"))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("ck_import_batches_status");
     }
 
+    /**
+     * A re-post of a reversed batch is a <em>successor</em> row, and the link is a
+     * column rather than a naming convention: a run that dies after its first
+     * contract has to be able to find the successor it already created instead of
+     * making a second one.
+     */
     @Test
-    void importJobsCarryTheBatchId() {
+    void aBatchCanNameTheReversedBatchItRePosts() {
+        UUID t = tenant();
+        UUID reversed = batch(t, "REVERSED");
+        UUID successor = batch(t, "DRAFT");
+        assertThatCode(() -> jdbc.update("UPDATE import_batches SET repost_of = ? WHERE id = ?", reversed, successor))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> jdbc.update("UPDATE import_batches SET repost_of = ? WHERE id = ?",
+                UUID.randomUUID(), successor))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_import_batches_repost_of");
+    }
+
+    /**
+     * The backstop under the whole batch-id design (review I3): a journal may not
+     * name a batch that does not exist, and a batch holding journals may not be
+     * deleted out from under them.
+     *
+     * <p>{@code import_batch_id} is how every cut-over journal is found again —
+     * "Reverse batch", the drill-through, and the period-lock exemption all key on
+     * it — so an entry carrying an id no row has is a journal nothing can ever
+     * reach. Nothing in the application deletes a batch row (a discard marks it
+     * DISCARDED), which is why RESTRICT rather than CASCADE: if something ever
+     * starts to, it should fail loudly rather than orphan a ledger.</p>
+     */
+    @Test
+    void aJournalCannotNameABatchThatDoesNotExistAndABatchWithJournalsCannotBeDropped() {
+        UUID t = tenant();
+        UUID b = batch(t, "POSTED");
+
+        assertThatThrownBy(() -> batchJournal(t, "TCO-26/9001", UUID.randomUUID()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_je_import_batch");
+
+        assertThatCode(() -> batchJournal(t, "TCO-26/9002", b)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM import_batches WHERE id = ?", b))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_je_import_batch");
+    }
+
+    @Test
+    void importJobsCarryTheBatchIdAndTheProgressOfALongRun() {
         Integer n = jdbc.queryForObject(
-                "SELECT count(*) FROM information_schema.columns WHERE table_name = 'import_jobs' AND column_name = 'import_batch_id'",
+                "SELECT count(*) FROM information_schema.columns WHERE table_name = 'import_jobs'"
+                        + " AND column_name IN ('import_batch_id','processed','total','result')",
                 Integer.class);
-        assertThat(n).isEqualTo(1);
+        assertThat(n).isEqualTo(4);
     }
 
     // ---- opening balances ---------------------------------------------------

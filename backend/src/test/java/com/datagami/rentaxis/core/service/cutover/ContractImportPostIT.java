@@ -5,6 +5,8 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.core.service.ledger.PostingRequest;
+import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPostService.BulkPostResult;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPostService.LeaseOutcome;
@@ -18,9 +20,11 @@ import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
+import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgFineSettingsRepository;
@@ -99,6 +103,8 @@ class ContractImportPostIT {
     @Autowired AccountService accountService;
     @Autowired PropertyAccountService propertyAccounts;
     @Autowired TenantFiscalSettingsRepository fiscalRepo;
+    @Autowired AccountRepository accountRepo;
+    @Autowired PostingService posting;
     @Autowired ContractImportPersistService contractPersist;
     @Autowired ContractImportPostService postService;
     @Autowired ImportBatchService batches;
@@ -534,5 +540,116 @@ class ContractImportPostIT {
 
         assertThat(emails.events).isEmpty();
         tx.executeWithoutResult(s -> assertThat(notifications.findAll()).isEmpty());
+    }
+
+    // ------------------------------------------------------------------
+    // the argument this whole class rests on
+    // ------------------------------------------------------------------
+
+    /**
+     * The positive control for the class Javadoc (review M4).
+     *
+     * <p>Every test here proves something about journals posted into a locked period,
+     * and the whole exemption argument rests on {@code books_locked_through =
+     * 2026-09-30} really being in force in <em>this</em> fixture. If
+     * {@code fiscal.lockThrough} silently stopped working, every other test would
+     * still pass and would be proving nothing at all. So: the same date, the same
+     * organisation, one journal that carries no batch id — refused.</p>
+     */
+    @Test
+    void aJournalWithNoBatchIdStillCannotBePostedIntoThisFixturesLockedPeriod() {
+        assertThatThrownBy(() -> posting.post(new PostingRequest(
+                JournalDocType.JV, LocalDate.of(2026, 9, 11), "a manual entry, no batch",
+                PostingRequest.Dimensions.none(), JournalSourceType.MANUAL, UUID.randomUUID(), null,
+                List.of(PostingRequest.dr(accountService.getAccountByCode("A-02-01").getId(), new BigDecimal("10")),
+                        PostingRequest.cr(accountService.getAccountByCode("B-01-01").getId(), new BigDecimal("10"))))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("locked through 2026-09-30");
+    }
+
+    /**
+     * A contract whose cheque replay fails <em>after</em> its TCO and PDRs are
+     * written leaves no journals at all (review M5).
+     *
+     * <p>Every other isolation test in this class fails at validate time, before the
+     * TCO exists, so none of them exercises the guarantee
+     * {@code ContractImportLeasePoster}'s Javadoc is actually about: the cheque
+     * transitions join the contract's own transaction, so a half-replayed contract
+     * cannot commit. Deactivating the bank leaf after the import is the cheapest way
+     * to break a clearance and nothing else — the TCO does not touch it, the PDR
+     * does not touch it, and the posting validation does not look at a cheque's own
+     * debit account.</p>
+     */
+    @Test
+    void aContractWhoseChequeReplayFailsLeavesNoJournalsAtAll() throws Exception {
+        UUID batchId = importTheTemplate();
+        tx.executeWithoutResult(s -> {
+            var bank = accountService.getAllAccounts().stream()
+                    .filter(a -> "Sample Bank - ST1".equals(a.getName())).findFirst().orElseThrow();
+            bank.setActive(false);
+            accountRepo.save(bank);
+        });
+
+        BulkPostResult result = postService.post(batchId);
+
+        // SAMPLE-0001 is the one with a CLEARED cheque; SAMPLE-0002's single row stays
+        // REGISTERED and never goes near a bank.
+        assertThat(result.leasesFailed()).isEqualTo(1);
+        assertThat(result.leases())
+                .filteredOn(o -> "SAMPLE-0001".equals(o.externalContractRef()))
+                .singleElement()
+                .satisfies(o -> assertThat(o.outcome()).isEqualTo(LeaseOutcome.Outcome.FAILED));
+        assertThat(result.leasesPosted()).isEqualTo(1);
+
+        UUID failed = leaseIdOf("SAMPLE-0001");
+        // Not one journal of it survived: no TCO, no PDR, not a single orphan.
+        assertThat(batchJournals(batchId)).noneMatch(e -> failed.equals(e.getLeaseId()));
+        tx.executeWithoutResult(s -> {
+            assertThat(leaseRepo.findById(failed).orElseThrow().getStatus()).isEqualTo(LeaseStatus.DRAFT);
+            assertThat(chequeRepo.findByLease_IdOrderBySeqNoAsc(failed))
+                    .allSatisfy(c -> {
+                        assertThat(c.getStatus()).isEqualTo(ChequeStatus.DRAFT);
+                        assertThat(c.getPdrJournalId()).isNull();
+                    });
+        });
+    }
+
+    /**
+     * A run that dies after the first contract has committed leaves those journals in
+     * a batch row that exists (review I3).
+     *
+     * <p>The contracts commit one at a time in transactions of their own while the
+     * run's outer transaction — the one holding the batch lock — stays open for the
+     * whole run. Anything that rolls that outer transaction back afterwards used to be
+     * survivable only because the batch row was already there; on the re-post path it
+     * was created in that same outer transaction, so a rollback would have left
+     * committed journals carrying a batch id no row had, invisible to "Reverse batch"
+     * forever. The progress callback is the failure injector, because it is the one
+     * place a test can stand inside the run.</p>
+     */
+    @Test
+    void aRunThatFailsAfterTheFirstContractLeavesItsJournalsInABatchThatExists() throws Exception {
+        UUID batchId = importTheTemplate();
+
+        assertThatThrownBy(() -> postService.post(batchId, progress -> {
+            if (progress.processed() == 1) throw new IllegalStateException("the connection went away");
+        })).isInstanceOf(IllegalStateException.class);
+
+        // The batch row survived the rollback — it was committed before the run began.
+        assertThat(batches.get(batchId)).isNotNull();
+        List<JournalEntry> written = batchJournals(batchId);
+        assertThat(written).isNotEmpty()
+                .allSatisfy(e -> assertThat(e.getImportBatchId()).isEqualTo(batchId));
+        // markPosted never ran, so the batch is still DRAFT — and pressing Post again
+        // is exactly the recovery: the committed contract is skipped, the rest posts.
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.DRAFT);
+
+        BulkPostResult again = postService.post(batchId);
+        assertThat(again.leasesSkipped()).isEqualTo(1);
+        assertThat(again.leasesPosted()).isEqualTo(1);
+        assertThat(again.status()).isEqualTo(ImportBatchStatus.POSTED);
+        // And the whole thing is reversible, which is what "not stranded" means.
+        batches.reverse(batchId, CutoverFixture.AS_OF, "starting again");
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
     }
 }

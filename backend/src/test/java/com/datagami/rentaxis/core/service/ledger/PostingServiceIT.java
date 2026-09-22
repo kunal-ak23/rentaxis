@@ -51,6 +51,7 @@ class PostingServiceIT {
     @Autowired PropertyRepository propertyRepo;
     @Autowired AccountRepository accountRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.cutover.ImportBatchService batches;
 
     UUID tenantId; UUID propertyId;
     Account rentRecvLeaf, advanceRentLeaf, bankLeaf;
@@ -150,6 +151,19 @@ class PostingServiceIT {
         assertThatThrownBy(() -> posting.post(r)).isInstanceOf(UnmappedAccountRoleException.class).hasMessageContaining("SECURITY_DEPOSIT");
     }
 
+    /**
+     * A real cut-over batch row.
+     *
+     * <p>{@code journal_entries.import_batch_id} is a foreign key (changeset 88):
+     * the id that exempts an entry from the period lock and that "Reverse batch"
+     * finds it by has to name a batch that exists, or the entry is one nothing can
+     * ever reach. A synthetic UUID used to do here and no longer does, which is the
+     * constraint working.</p>
+     */
+    private UUID aRealBatch() {
+        return batches.create(null, "cut-over").getId();
+    }
+
     @Test
     void periodLockBlocksOrdinaryPostingsButNotOpeningBalancesOrImports() {
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));
@@ -158,7 +172,7 @@ class PostingServiceIT {
                 List.of(dr(bankLeaf.getId(), new BigDecimal("10")), cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
         assertThat(posting.post(ob).getEntryNumber()).startsWith("OB-26/");
         PostingRequest imported = new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "imported", Dimensions.ofProperty(propertyId),
-                JournalSourceType.IMPORT, UUID.randomUUID(), UUID.randomUUID(),
+                JournalSourceType.IMPORT, UUID.randomUUID(), aRealBatch(),
                 List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")), cr(AccountRole.ADVANCE_RENT, new BigDecimal("10"))));
         assertThat(posting.post(imported).getImportBatchId()).isNotNull();
     }
@@ -217,7 +231,7 @@ class PostingServiceIT {
                 List.of(dr(bankLeaf.getId(), new BigDecimal("10")),
                         cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
         PostingRequest importedRequest = new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "imported",
-                Dimensions.ofProperty(propertyId), JournalSourceType.IMPORT, UUID.randomUUID(), UUID.randomUUID(),
+                Dimensions.ofProperty(propertyId), JournalSourceType.IMPORT, UUID.randomUUID(), aRealBatch(),
                 List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")),
                         cr(AccountRole.ADVANCE_RENT, new BigDecimal("10"))));
         JournalEntry ob = posting.post(obRequest);

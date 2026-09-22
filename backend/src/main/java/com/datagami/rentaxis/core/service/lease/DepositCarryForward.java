@@ -135,6 +135,23 @@ public class DepositCarryForward {
      */
     @Transactional
     public JournalEntry carry(Lease successor) {
+        return carry(successor, null);
+    }
+
+    /**
+     * The same, as part of a cut-over import batch (R4).
+     *
+     * <p>Unreachable today — Task 10 gives every imported contract a fresh chain, so
+     * {@code renewedFromLeaseId} is null and {@link #plan} returns nothing — but the
+     * day an import understands renewals this {@code JV} is a journal of the batch
+     * like any other: without the id it would be refused by the period lock (a
+     * cut-over is dated into a closed month), and if the date happened to be open it
+     * would go on the books outside the batch and survive "Reverse batch". Threaded
+     * rather than left as a null with a comment, because the comment is what stops
+     * being true.</p>
+     */
+    @Transactional
+    public JournalEntry carry(Lease successor, UUID importBatchId) {
         Map<UUID, BigDecimal> amounts = plan(successor);
         if (amounts.isEmpty()) {
             return null;
@@ -162,7 +179,7 @@ public class DepositCarryForward {
                 to,
                 JournalSourceType.LEASE,
                 successor.getId(),
-                null,
+                importBatchId,
                 pairs));
     }
 

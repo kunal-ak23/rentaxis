@@ -63,5 +63,19 @@ public class ImportBatch extends BaseTenantEntity {
     @Column(name = "discarded_at") private Instant discardedAt;
     @Column(name = "discarded_by") private UUID discardedBy;
 
+    /**
+     * The REVERSED batch this one was created to re-post (spec §10.3, R12).
+     *
+     * <p>{@code ImportBatchService.markPosted} refuses REVERSED → POSTED by design,
+     * so putting a reversed cut-over back on the books means a successor row to hold
+     * the new journals. The link is a column rather than a naming convention because
+     * a run that dies after its first contract has committed has to find the
+     * successor it already made instead of creating a second one — which would leave
+     * the first one's journals in a DRAFT batch nobody ever looks at.</p>
+     *
+     * <p>Null on every ordinary batch.</p>
+     */
+    @Column(name = "repost_of") private UUID repostOf;
+
     @Column(name = "created_at", nullable = false) private Instant createdAt = Instant.now();
 }

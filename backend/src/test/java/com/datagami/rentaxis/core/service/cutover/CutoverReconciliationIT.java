@@ -76,6 +76,7 @@ class CutoverReconciliationIT {
     @Autowired ContractImportPostService postService;
     @Autowired OpeningBalanceService openingBalances;
     @Autowired AccountService accounts;
+    @Autowired com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository defaultMappings;
     @Autowired TransactionTemplate tx;
 
     UUID tenantId;
@@ -183,6 +184,14 @@ class CutoverReconciliationIT {
         assertThat(recon(rows, "Rental Income ST1").difference()).isEqualByComparingTo("0.00");
         assertThat(recon(rows, "Security Deposit ST1").difference()).isEqualByComparingTo("0.00");
 
+        // Output VAT, which is the one account a VAT-bearing contract exists in this
+        // template to produce (review I4). SAMPLE-0002's TCO raises 1,050 of it as a
+        // second pair at the contract date, so a regression that dropped the pair or
+        // credited the wrong leaf would show here as a 1,050 gap rather than passing
+        // unnoticed.
+        assertThat(recon(rows, outputVatName()).derivedBalance()).isEqualByComparingTo("-1050.00");
+        assertThat(recon(rows, outputVatName()).difference()).isEqualByComparingTo("0.00");
+
         // A code PACT exported and our chart has no account for: kept and shown, with
         // its whole balance as the difference, rather than silently dropped.
         assertThat(rows).anySatisfy(r -> {
@@ -223,10 +232,28 @@ class CutoverReconciliationIT {
                 %s,Advance Rent - ST1,0,71021.92
                 %s,Rental Income ST1,0,978.08
                 %s,Security Deposit ST1,0,5000.00
+                %s,Output VAT,0,1050.00
                 999999,Directors Current Account,0,777.00
                 """.formatted(
                 codeOf("PDC Receivable ST1"), codeOf("Sample Bank - ST1"), codeOf("Advance Rent - ST1"),
-                codeOf("Rental Income ST1"), codeOf("Security Deposit ST1")));
+                codeOf("Rental Income ST1"), codeOf("Security Deposit ST1"),
+                codeOf(outputVatName())));
+    }
+
+    /**
+     * The leaf the tenant's default OUTPUT_VAT mapping points at.
+     *
+     * <p>Resolved through the mapping rather than by a hard-coded name: the account
+     * template seeds it (`B-01-03-001`), the Properties sheet has no column for it,
+     * and a test that named the leaf directly would still pass if the mapping moved
+     * to a different one.</p>
+     */
+    private String outputVatName() {
+        return tx.execute(s -> accounts.getAccountById(
+                defaultMappings.findAll().stream()
+                        .filter(m -> m.getRole() == AccountRole.OUTPUT_VAT)
+                        .findFirst().orElseThrow(() -> new AssertionError("OUTPUT_VAT is not mapped"))
+                        .getAccount().getId()).getName());
     }
 
     private void uploadCsv(String csv) {

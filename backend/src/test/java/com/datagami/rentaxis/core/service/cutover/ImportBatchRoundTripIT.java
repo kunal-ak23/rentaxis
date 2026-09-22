@@ -9,6 +9,7 @@ import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.JournalLine;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
@@ -122,6 +123,12 @@ class ImportBatchRoundTripIT {
 
     private List<com.datagami.rentaxis.domain.entity.JournalEntry> batchJournals(UUID batchId) {
         return tx.execute(s -> entries.findByImportBatchIdOrderByCreatedAtAsc(batchId));
+    }
+
+    /** Every batch created to re-post this one. */
+    private List<ImportBatch> successorsOf(UUID reversedBatchId) {
+        return tx.execute(s -> batches.list().stream()
+                .filter(b -> reversedBatchId.equals(b.getRepostOf())).toList());
     }
 
     /** Account code → balance as at the cut-over, debit-positive, in code order. */
@@ -273,6 +280,49 @@ class ImportBatchRoundTripIT {
                 .filteredOn(e -> e.getDocType() == com.datagami.rentaxis.domain.entity.enums.JournalDocType.CRT)
                 .singleElement()
                 .satisfies(e -> assertThat(e.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 25)));
+    }
+
+    /**
+     * A re-post that dies after its first contract has committed (review I3).
+     *
+     * <p>This is the path the outer transaction's length actually endangers. The
+     * successor batch holds the id every journal of the re-post will carry; the
+     * contracts commit one at a time in transactions of their own while the run's own
+     * transaction stays open for the whole run. If the successor row lived in <em>that</em>
+     * transaction, an idle timeout, a recycled connection or a pooler killing it would
+     * leave committed journals naming a batch that does not exist — unreachable by
+     * "Reverse batch" forever, and with a database that would happily hold them.</p>
+     *
+     * <p>So the successor is committed first, and found again rather than made twice:
+     * a second successor would strand the first one's journals in a DRAFT batch
+     * nobody looks at.</p>
+     */
+    @Test
+    void aFailedRePostKeepsItsSuccessorBatchAndTheNextAttemptReusesIt() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+
+        assertThatThrownBy(() -> postService.post(batchId, progress -> {
+            if (progress.processed() == 1) throw new IllegalStateException("the connection went away");
+        })).isInstanceOf(IllegalStateException.class);
+
+        // The successor survived the rollback, and it says what it is.
+        List<ImportBatch> successors = successorsOf(batchId);
+        assertThat(successors).singleElement()
+                .satisfies(b -> assertThat(b.getStatus()).isEqualTo(ImportBatchStatus.DRAFT));
+        UUID successorId = successors.get(0).getId();
+        // And the contract that did commit is in it, reachable by the id it carries.
+        assertThat(batchJournals(successorId)).isNotEmpty();
+
+        // Pressing Post again finds that successor rather than making a second one.
+        BulkPostResult retried = postService.post(batchId);
+        assertThat(retried.batchId()).isEqualTo(successorId);
+        assertThat(retried.repostOf()).isEqualTo(batchId);
+        assertThat(retried.leasesSkipped()).isEqualTo(1);
+        assertThat(retried.leasesPosted()).isEqualTo(1);
+        assertThat(successorsOf(batchId)).hasSize(1);
+        assertThat(batches.get(successorId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
     }
 
     // ------------------------------------------------------------------

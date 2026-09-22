@@ -212,7 +212,7 @@ public class LeasePostingService {
         // retired: the JV is subject to the same period lock as the TCO, and a
         // renewal that went on the books without the deposit that paid for it
         // would leave the money on a lease nothing will ever settle.
-        depositCarryForward.carry(lease);
+        depositCarryForward.carry(lease, importBatchId);
 
         // The predecessor is retired *before* the successor goes ACTIVE, and while
         // the successor's own row is still untouched — see markPredecessorRenewed.

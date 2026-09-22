@@ -2,10 +2,7 @@ package com.datagami.rentaxis.core.service.cutover;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
-import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
-import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.ImportBatchEntity;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
@@ -13,15 +10,11 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
-import jakarta.persistence.LockTimeoutException;
-import jakarta.persistence.PessimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
@@ -71,7 +64,6 @@ public class ContractImportPostService {
     private final JournalEntryRepository journals;
     private final ContractImportLeasePoster leasePoster;
     private final TenantFiscalSettingsService fiscal;
-    private final EntityManager entityManager;
 
     /**
      * Read-write, for the transaction that holds the batch's row lock across the
@@ -80,18 +72,26 @@ public class ContractImportPostService {
      */
     private final TransactionTemplate tx;
 
+    /**
+     * A transaction of its own, suspended out of the run's. Used for exactly one
+     * thing: committing the successor batch row before the first contract posts —
+     * see {@link #successorOf}.
+     */
+    private final TransactionTemplate ownTx;
+
     public ContractImportPostService(ImportBatchService batches,
                                      LeaseRepository leases, JournalEntryRepository journals,
                                      ContractImportLeasePoster leasePoster,
-                                     TenantFiscalSettingsService fiscal, EntityManager entityManager,
+                                     TenantFiscalSettingsService fiscal,
                                      PlatformTransactionManager transactionManager) {
         this.batches = batches;
         this.leases = leases;
         this.journals = journals;
         this.leasePoster = leasePoster;
         this.fiscal = fiscal;
-        this.entityManager = entityManager;
         this.tx = new TransactionTemplate(transactionManager);
+        this.ownTx = new TransactionTemplate(transactionManager);
+        this.ownTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     // ------------------------------------------------------------------
@@ -167,14 +167,18 @@ public class ContractImportPostService {
     }
 
     private BulkPostResult runUnderBatchLock(UUID batchId, Consumer<Progress> progress) {
-        ImportBatch batch = lockForPost(batchId);
+        ImportBatch batch = batches.lockForRun(batchId, "posted");
         UUID repostOf = null;
         if (batch.getStatus() == ImportBatchStatus.REVERSED) {
             repostOf = batch.getId();
             batch = successorOf(batch);
         } else if (batch.getStatus() == ImportBatchStatus.DISCARDED) {
+            // Says only what is true: a discard deletes what it can and reports what
+            // it kept, so "its leases have been deleted" was a claim this code cannot
+            // make.
             throw new BusinessRuleViolationException(
-                    "Import batch is DISCARDED; its leases have been deleted. Import the corrected workbook again.");
+                    "Import batch is DISCARDED; what it created has been thrown away."
+                            + " Import the corrected workbook again.");
         }
         UUID target = batch.getId();
 
@@ -245,11 +249,13 @@ public class ContractImportPostService {
                 .toList();
 
         ImportBatchStatus finalStatus = batch.getStatus();
-        if (posted > 0 || (skipped > 0 && failures.isEmpty())) {
-            // "POSTED only if at least one lease posted" — plus the retry case, where
-            // everything was already posted and the batch simply stays POSTED. A batch
-            // where every contract failed stays DRAFT: nothing of it is on the books,
-            // and offering "Reverse" for it would be a button with nothing to undo.
+        if (posted > 0 || skipped > 0) {
+            // "POSTED only if at least one contract posted" — plus every retry that
+            // found something already on the books, because `journals_posted` is a
+            // figure the batches screen shows and a partially successful retry that
+            // skipped this would leave it stale. A batch where every contract failed
+            // stays DRAFT: nothing of it is on the books, and offering "Reverse" for
+            // it would be a button with nothing to undo.
             finalStatus = batches.markPosted(target, journalsPosted).getStatus();
         }
 
@@ -295,18 +301,51 @@ public class ContractImportPostService {
      *
      * <p>The links are copied rather than moved: the reversed batch keeps saying
      * which contracts it once held, which is what its own reversal is a record of.</p>
+     *
+     * <p><b>Committed before the run starts, in a transaction of its own</b>
+     * (review I3). The contracts commit one at a time in {@code REQUIRES_NEW}
+     * transactions while this run's own transaction — the one holding the lock —
+     * stays open for the whole run, and a long-running transaction is exactly the
+     * one an idle timeout, a connection recycle or a pooler kills. If the successor
+     * row lived in that transaction, a rollback any time after the first contract
+     * committed would leave journals carrying a batch id no row has: invisible to
+     * "Reverse batch" forever. {@code REQUIRES_NEW} here means the id those journals
+     * will carry is durable before the first one is written; a failed run then costs
+     * an empty DRAFT batch, which is discardable and postable, rather than an
+     * unreachable ledger. {@code fk_je_import_batch} (changeset 88) is the database's
+     * half of the same guarantee.</p>
+     *
+     * <p><b>And it is found again rather than made twice.</b> A run that died
+     * half-way already has its successor; creating a second one would strand the
+     * first one's journals in a DRAFT batch nobody looks at. The lock on the reversed
+     * batch is what makes the look-up-then-create safe.</p>
      */
     private ImportBatch successorOf(ImportBatch reversed) {
-        ImportBatch successor = batches.create(reversed.getImportJobId(),
-                label("Re-post of ", reversed.getLabel()));
-        for (UUID leaseId : batches.leaseIds(reversed.getId())) {
-            batches.linkLease(successor.getId(), leaseId);
-        }
-        for (ImportBatchEntity e : batches.createdEntities(reversed.getId())) {
-            batches.linkEntity(successor.getId(), e.getEntityType(), e.getEntityId());
-        }
-        log.info("Re-posting reversed batch {} as a new batch {}", reversed.getId(), successor.getId());
-        return successor;
+        UUID reversedId = reversed.getId();
+        String label = label("Re-post of ", reversed.getLabel());
+        UUID jobId = reversed.getImportJobId();
+        // Read under the outer transaction's lock, so the lists cannot move while the
+        // successor is being built.
+        List<UUID> leaseIds = batches.leaseIds(reversedId);
+        List<ImportBatchEntity> created = batches.createdEntities(reversedId);
+
+        return ownTx.execute(s -> {
+            ImportBatch existing = batches.successorOf(reversedId).orElse(null);
+            if (existing != null) {
+                log.info("Re-posting reversed batch {} into the successor {} it already has",
+                        reversedId, existing.getId());
+                return existing;
+            }
+            ImportBatch successor = batches.createSuccessor(jobId, label, reversedId);
+            for (UUID leaseId : leaseIds) {
+                batches.linkLease(successor.getId(), leaseId);
+            }
+            for (ImportBatchEntity e : created) {
+                batches.linkEntity(successor.getId(), e.getEntityType(), e.getEntityId());
+            }
+            log.info("Re-posting reversed batch {} as a new batch {}", reversedId, successor.getId());
+            return successor;
+        });
     }
 
     /** {@code import_batches.label} is varchar(120); a prefix must not push it over. */
@@ -315,44 +354,4 @@ public class ContractImportPostService {
         return full.length() <= 120 ? full : full.substring(0, 120);
     }
 
-    /**
-     * The batch row, locked for the length of the run.
-     *
-     * <p><b>NOWAIT, unlike {@code ImportBatchService.reverse}'s lock.</b> There the
-     * loser blocks, re-reads REVERSED and is refused by the status check, which is a
-     * clear enough answer. Here it is not: the winner leaves the batch POSTED, and a
-     * second post of a POSTED batch is <em>legal</em> — it is the retry path — so the
-     * loser would quietly walk the whole portfolio again, find every lease already
-     * ACTIVE and report a run that did nothing. "Someone else is posting this; try
-     * again" is the true answer, and it needs the lock to fail rather than wait.</p>
-     *
-     * <p>{@code find} then {@code refresh(…, PESSIMISTIC_WRITE)} rather than a
-     * {@code @Lock} finder, for the reason {@code VoucherService#lockForWrite} and
-     * {@code ImportBatchService#lockForWrite} both document: a locking JPQL query
-     * hands back the first-level-cache instance with its stale state, so the loser
-     * would take the lock and then decide on the pre-lock status.</p>
-     *
-     * <p><b>The explicit tenant comparison is the only guard on this path.</b>
-     * {@code TenantAspect} enables the Hibernate filter {@code @Before} a
-     * {@code domain.repository} call, and this is the first thing the transaction
-     * does — so the filter is off for both the {@code find} and the
-     * {@code refresh}.</p>
-     */
-    private ImportBatch lockForPost(UUID batchId) {
-        ImportBatch b = entityManager.find(ImportBatch.class, batchId);
-        if (b == null) throw new NotFoundException("Import batch not found");
-        try {
-            entityManager.refresh(b, LockModeType.PESSIMISTIC_WRITE,
-                    Map.of("jakarta.persistence.lock.timeout", 0));
-        } catch (PessimisticLockingFailureException | PessimisticLockException | LockTimeoutException e) {
-            // Three types for one event: an EntityManager call is not put through
-            // Spring Data's exception translation, so JPA's own types get out.
-            throw new RowLockedException("This import batch is being posted right now; try again");
-        }
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null && !tenantId.equals(b.getTenantId())) {
-            throw new NotFoundException("Import batch not found");
-        }
-        return b;
-    }
 }
