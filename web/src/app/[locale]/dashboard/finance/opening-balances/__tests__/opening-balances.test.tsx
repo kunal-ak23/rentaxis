@@ -413,11 +413,11 @@ describe("opening balances — totals", () => {
 
     /**
      * Where float drift actually bites a user: `fmtAmount` would round
-     * 0.30000000000000004 down to "0.30" and hide it, but the imbalance warning
-     * is driven by `difference !== 0` — so a grid that balances to the fil would
-     * light up "this does not balance" over 5.5e-17. Summed in fils it is zero.
+     * 0.30000000000000004 down to "0.30" and hide it, but the difference line is
+     * driven by `!== 0` — so a grid that balances to the fil would announce a
+     * balancing entry over 5.5e-17. Summed in fils it is zero.
      */
-    it("does not claim an imbalance on a column that balances to the fil", async () => {
+    it("says nothing about a difference on a column that balances to the fil", async () => {
         api.grid.mockResolvedValue(
             grid({
                 rows: [
@@ -431,7 +431,40 @@ describe("opening balances — totals", () => {
         renderPage();
         await screen.findByTestId("ob-debit-a1");
         expect(screen.getByTestId("ob-difference")).toHaveTextContent("0.00");
-        expect(screen.queryByTestId("ob-difference-warning")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("ob-difference-line")).not.toBeInTheDocument();
+    });
+
+    /**
+     * Ruling R23. The computed row carries the balancing figure — its
+     * entered figures are "what the journal will post … which is why the rows on
+     * screen add up the way the journal does" — so the two columns ALWAYS agree
+     * and the old `totals.difference !== 0` warning was unreachable on every
+     * real grid. The sentence naming where an unbalanced trial balance goes was
+     * the one thing on this footer worth reading, and nobody ever saw it.
+     */
+    it("names the figure the difference account takes, even though the columns balance", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                rows: [
+                    row({ accountId: "a-cash", code: "110100", enteredDebit: 5000, computed: false }),
+                    row({
+                        accountId: "a-diff", code: "F-02", name: "Opening Balance Difference",
+                        accountType: "EQUITY", computed: true, enteredCredit: 5000,
+                    }),
+                ],
+                totalDebit: 5000, totalCredit: 0, difference: 5000,
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("ob-debit-a-cash");
+        // The columns agree, exactly as the journal does.
+        expect(screen.getByTestId("ob-difference")).toHaveTextContent("0.00");
+        // And the balancing line is stated anyway, as a magnitude: debit-positive,
+        // a positive difference is a CREDIT, so a minus sign here would read as
+        // the opposite of what it means.
+        expect(screen.getByTestId("ob-difference-line")).toHaveTextContent(
+            "AED 5,000.00 posts to Opening Balance Difference",
+        );
     });
 });
 
@@ -748,9 +781,10 @@ describe("opening balances — snapshot upload", () => {
     /**
      * A trial balance whose two sides disagree is accepted and flagged, never
      * refused — "that disagreement is what the reconciliation report exists to
-     * show, and refusing the upload would hide it". So an imbalance is a warning.
+     * show, and refusing the upload would hide it". So the gap is stated, with
+     * the account that absorbs it named, and it is not an alert.
      */
-    it("flags a file that does not balance as a warning, not an error", async () => {
+    it("says where the gap goes on a file that does not balance, without alarm", async () => {
         // Rows that genuinely do not balance: the footer is computed from what is
         // on screen, so an imbalance has to be in the rows, not just in the
         // server's summary fields.
@@ -765,9 +799,11 @@ describe("opening balances — snapshot upload", () => {
         );
         renderPage();
         await waitFor(() => expect(screen.getByTestId("ob-difference")).toHaveTextContent("10.00"));
-        const warning = await screen.findByTestId("ob-difference-warning");
-        expect(warning).toHaveTextContent(en.Cutover.differenceGoesToEquity);
-        expect(warning.getAttribute("role")).not.toBe("alert");
+        // No computed row on this grid, so the gap between the columns IS what
+        // the server would balance — the fallback reading.
+        const line = await screen.findByTestId("ob-difference-line");
+        expect(line).toHaveTextContent("AED 10.00 posts to Opening Balance Difference");
+        expect(line.getAttribute("role")).not.toBe("alert");
     });
 });
 

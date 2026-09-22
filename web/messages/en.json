@@ -2253,7 +2253,7 @@
     "openingBalancesPosted": "Opening balances posted as {number}",
     "alreadyPosted": "Opening balances are posted as {number}. Edit the figures below and use Replace to correct them.",
     "difference": "Difference",
-    "differenceGoesToEquity": "The difference posts to the Opening Balance Difference account so the books open balanced.",
+    "differencePostsToAccount": "AED {amount} posts to Opening Balance Difference so the books open balanced.",
     "gridProblems": "Posting will fail until these are fixed:",
     "gridAdvisories": "Worth knowing before you post. None of these stops it:",
     "unsavedRow": "Unsaved",

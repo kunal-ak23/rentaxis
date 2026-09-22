@@ -208,6 +208,32 @@ export default function OpeningBalancesPage() {
     const unsavedCount = Object.keys(edits).length;
 
     /**
+     * What the OB journal will put on the Opening Balance Difference account.
+     *
+     * Read off the COMPUTED ROW, not off the gap between the two columns.
+     * `OpeningBalanceRowDTO` says it in as many words — that row's
+     * `enteredDebit`/`enteredCredit` "carry the figure the journal will post …
+     * which is why the rows on screen add up the way the journal does". So the
+     * columns always agree and the old `difference !== 0` warning, which keyed
+     * off their gap, could never appear at all: the one sentence explaining
+     * where an unbalanced trial balance goes was unreachable.
+     *
+     * The fallback is that gap, for a grid with no computed row on screen — an
+     * older backend, or a chart with no difference account, where what the
+     * server would balance is exactly the gap.
+     */
+    const differenceLine = useMemo(() => {
+        const computedRow = (grid?.rows ?? []).find(
+            r =>
+                r.computed === true
+                || (computedSource.kind === "lookup" && computedSource.accountId === r.accountId),
+        );
+        return computedRow
+            ? differenceOf(computedRow.enteredDebit, computedRow.enteredCredit)
+            : totals.difference;
+    }, [grid, computedSource, totals.difference]);
+
+    /**
      * Does the server send what the posted cut-over contracts put on the derived
      * accounts? Two extra columns only where they exist — an older backend sends
      * neither, and inventing a "0.00" for it would say something untrue.
@@ -766,18 +792,23 @@ export default function OpeningBalancesPage() {
                         <div className="flex items-center gap-8 text-xs">
                             {/*
                              * A difference is normal, not an error: the OB journal
-                             * closes it against OPENING_BALANCE_DIFFERENCE. The
+                             * closes it against OPENING_BALANCE_DIFFERENCE, and the
                              * server accepts an unbalanced trial balance on purpose
                              * — "that disagreement is what the reconciliation report
-                             * exists to show" — so this is a warning, never an alert.
+                             * exists to show". So this states the figure rather than
+                             * warning about it.
+                             *
+                             * The magnitude, not the signed number: debit-positive,
+                             * a POSITIVE difference is a CREDIT to the difference
+                             * account, and a minus sign that means the opposite of
+                             * what it looks like helps nobody. Which side it lands
+                             * on is on the account's own row, three lines up.
                              */}
-                            {totals.difference !== 0 && (
-                                <span
-                                    data-testid="ob-difference-warning"
-                                    className="text-warning inline-flex items-center gap-1.5"
-                                >
-                                    <AlertTriangle size={12} />
-                                    {t("differenceGoesToEquity")}
+                            {differenceLine !== 0 && (
+                                <span data-testid="ob-difference-line" className="text-muted">
+                                    {t("differencePostsToAccount", {
+                                        amount: fmtAmount(Math.abs(differenceLine)),
+                                    })}
                                 </span>
                             )}
                             <span className="font-bold text-foreground">
