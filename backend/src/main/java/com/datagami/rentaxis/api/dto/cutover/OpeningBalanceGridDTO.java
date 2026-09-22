@@ -35,14 +35,19 @@ import java.util.UUID;
  * opened, which the gross form could not see at all.</p>
  *
  * <p>{@code problems} are faults the accountant has to fix, or facts they have to
- * know, before posting: an account role with no usable account behind it, or a PACT
- * figure on the difference account that we do not carry over.</p>
+ * know, before posting, each carrying its own {@code severity} (ruling R26). An
+ * {@code ERROR} will refuse the post — today that is exactly one condition, no
+ * account mapped to OPENING_BALANCE_DIFFERENCE. A {@code WARNING} is reported beside
+ * a grid that posts fine: a role with no usable account behind it, or a PACT figure
+ * on the difference account that we do not carry over. The upload result's own
+ * {@code problems} stay plain strings — they are line-by-line complaints about one
+ * file, and none of them blocks anything.</p>
  */
 public record OpeningBalanceGridDTO(LocalDate asOf, boolean posted, UUID journalId, String journalNumber,
                                     boolean changedSincePosted,
                                     List<OpeningBalanceRowDTO> rows, BigDecimal totalDebit,
                                     BigDecimal totalCredit, BigDecimal difference,
-                                    List<String> problems) {
+                                    List<GridProblemDTO> problems) {
 
     public static OpeningBalanceGridDTO of(OpeningBalanceService.OpeningBalanceGrid g) {
         return new OpeningBalanceGridDTO(g.asOf(), g.posted(), g.journalId(), g.journalNumber(),

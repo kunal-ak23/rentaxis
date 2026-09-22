@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cutover;
 
+import com.datagami.rentaxis.api.dto.cutover.GridProblemDTO;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -253,7 +254,12 @@ class OpeningBalanceIT {
     void aDerivedRoleMappedToAGroupAccountIsReportedRatherThanSilentlyTreatedAsManual() {
         mapProperty(AccountRole.SECURITY_DEPOSIT, accounts.getAccountByCode("B-01-02"));
         assertThat(ob.grid().problems())
-                .anySatisfy(p -> assertThat(p).contains("SECURITY_DEPOSIT").contains("B-01-02"));
+                .anySatisfy(p -> {
+                    assertThat(p.message()).contains("SECURITY_DEPOSIT").contains("B-01-02");
+                    // Advisory: the grid can still be posted, it just cannot tell
+                    // whether that account is derived or manual until somebody re-maps it.
+                    assertThat(p.severity()).isEqualTo(GridProblemDTO.Severity.WARNING);
+                });
     }
 
     // ------------------------------------------------------------------
@@ -482,12 +488,20 @@ class OpeningBalanceIT {
         assertThat(liveOpeningJournals()).isZero();
     }
 
-    /** The grid warns about the same missing mapping before the accountant presses Post. */
+    /**
+     * The grid warns about the same missing mapping before the accountant presses
+     * Post — and says it is the kind of problem that will refuse the post, not one of
+     * the advisories beside it (ruling R26). The test above is the refusal itself, so
+     * the two are one statement made twice.
+     */
     @Test
     void theGridWarnsWhenTheDifferenceAccountIsNotMapped() {
         unmapOpeningBalanceDifference();
         assertThat(ob.grid().problems())
-                .anySatisfy(p -> assertThat(p).contains("OPENING_BALANCE_DIFFERENCE"));
+                .anySatisfy(p -> {
+                    assertThat(p.message()).contains("OPENING_BALANCE_DIFFERENCE");
+                    assertThat(p.severity()).isEqualTo(GridProblemDTO.Severity.ERROR);
+                });
     }
 
     /** Stands in for a tenant whose default-account seed ran before F-02 existed. */
@@ -701,7 +715,10 @@ class OpeningBalanceIT {
         var grid = ob.grid();
         assertThat(grid.difference()).isEqualByComparingTo("38000.00");
         assertThat(grid.problems())
-                .anySatisfy(p -> assertThat(p).contains(obDifference.getCode()).contains("recomputed"));
+                .anySatisfy(p -> {
+                    assertThat(p.message()).contains(obDifference.getCode()).contains("recomputed");
+                    assertThat(p.severity()).isEqualTo(GridProblemDTO.Severity.WARNING);
+                });
 
         JournalEntry e = ob.post();
         assertThat(lineOn(e.getId(), obDifference, false))

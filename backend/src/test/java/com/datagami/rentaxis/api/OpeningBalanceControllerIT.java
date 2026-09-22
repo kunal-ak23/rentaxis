@@ -18,6 +18,7 @@ import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +38,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -81,12 +83,14 @@ class OpeningBalanceControllerIT {
     @Autowired UserRepository userRepo;
     @Autowired PropertyRepository propertyRepo;
     @Autowired PropertyAccountMappingRepository propertyMappings;
+    @Autowired TenantDefaultAccountMappingRepository defaultMappings;
+    @Autowired TransactionTemplate tx;
 
     static final LocalDate BOOKS_START = LocalDate.of(2026, 10, 1);
     static final LocalDate AS_OF = LocalDate.of(2026, 9, 30);
 
     UUID tenantId, otherTenantId;
-    Account cashInHand, vatPayable, rentReceivable;
+    Account cashInHand, vatPayable, rentReceivable, obDifference;
     User accountant, tenantAdmin, superAdmin, propertyManager, tenantUser, renter;
 
     @BeforeEach
@@ -104,7 +108,7 @@ class OpeningBalanceControllerIT {
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         vatPayable = accounts.createLeaf("VAT Payable", accounts.getAccountByCode("B-01"), null);
         rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
-        resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);      // seeded as F-02
+        obDifference = resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);   // seeded as F-02
 
         PropertyAccountMapping m = new PropertyAccountMapping();
         m.setPropertyId(propertyId);
@@ -242,6 +246,54 @@ class OpeningBalanceControllerIT {
         assertThat(derivedRow.get("postDebit").decimalValue()).isEqualByComparingTo("0.00");
         assertThat(derivedRow.get("postCredit").decimalValue()).isEqualByComparingTo("0.00");
         assertThat(derivedRow.get("derivedDebit")).isNotNull();
+    }
+
+    /**
+     * Ruling R26: the grid's problems are objects with a severity, and the one that
+     * will refuse the post is marked apart from the ones that will not.
+     *
+     * <p>Both halves in one test on purpose — the point of the field is the
+     * <em>contrast</em>, and asserting ERROR somewhere and WARNING somewhere else
+     * would not catch a mapping that stamped everything the same.</p>
+     */
+    @Test
+    void theGridsProblemsSayWhichOfThemWillStopThePost() {
+        // An advisory, on a chart that is otherwise in order: PACT's own suspense
+        // figure, which we report and do not carry over.
+        uploadCsv(accountant, csv()
+                + obDifference.getCode() + ",Opening Balance Difference,0.00,5000.00\n");
+
+        JsonNode advisory = onlyProblem(json(call(HttpMethod.GET, "/api/v1/finance/opening-balances",
+                accountant, null)));
+        assertThat(advisory.get("message").asText())
+                .contains(obDifference.getCode()).contains("recomputed");
+        assertThat(advisory.get("severity").asText()).isEqualTo("WARNING");
+
+        // And the fault that refuses the post, on the same grid.
+        unmapOpeningBalanceDifference();
+
+        JsonNode fault = onlyProblem(json(call(HttpMethod.GET, "/api/v1/finance/opening-balances",
+                accountant, null)));
+        assertThat(fault.get("message").asText()).contains("OPENING_BALANCE_DIFFERENCE");
+        assertThat(fault.get("severity").asText()).isEqualTo("ERROR");
+
+        // Said once, meant once: the post refuses on exactly that condition.
+        ResponseEntity<String> refused = call(HttpMethod.POST, "/api/v1/finance/opening-balances/post",
+                accountant, null);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("OPENING_BALANCE_DIFFERENCE");
+    }
+
+    private JsonNode onlyProblem(JsonNode grid) {
+        assertThat(grid.get("problems")).hasSize(1);
+        return grid.get("problems").get(0);
+    }
+
+    /** Stands in for a tenant whose default-account seed ran before F-02 existed. */
+    private void unmapOpeningBalanceDifference() {
+        tx.executeWithoutResult(s -> defaultMappings.findAllByOrderByRoleAsc().stream()
+                .filter(m -> m.getRole() == AccountRole.OPENING_BALANCE_DIFFERENCE)
+                .forEach(defaultMappings::delete));
     }
 
     @Test

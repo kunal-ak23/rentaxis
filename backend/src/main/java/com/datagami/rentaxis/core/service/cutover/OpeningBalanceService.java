@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cutover;
 
+import com.datagami.rentaxis.api.dto.cutover.GridProblemDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
@@ -212,14 +213,18 @@ public class OpeningBalanceService {
      * is the Replace workflow) and the screen has to say so.</p>
      *
      * <p>{@code problems} are faults the accountant has to fix, or facts they have to
-     * know, before posting: a role with no usable account behind it, or a PACT figure
-     * on the difference account that we do not carry over.</p>
+     * know, before posting, and each says which it is (ruling R26). Exactly one is an
+     * {@code ERROR} — no account mapped to OPENING_BALANCE_DIFFERENCE, which
+     * {@link #postFresh} re-asserts and refuses on. Everything else is a
+     * {@code WARNING}: a role mapped to an account nothing can post to, or a PACT
+     * figure on the difference account that we do not carry over. Both used to be
+     * bare strings, which made a blocker and an advisory look the same on screen.</p>
      */
     public record OpeningBalanceGrid(LocalDate asOf, boolean posted, UUID journalId, String journalNumber,
                                      boolean changedSincePosted,
                                      List<OpeningBalanceRow> rows, BigDecimal totalDebit,
                                      BigDecimal totalCredit, BigDecimal difference,
-                                     List<String> problems) {}
+                                     List<GridProblemDTO> problems) {}
 
     /**
      * What one upload did. {@code totalDebit}/{@code totalCredit} are the file's own
@@ -275,7 +280,12 @@ public class OpeningBalanceService {
         }
         rows.sort(Comparator.comparing(OpeningBalanceRow::code, Comparator.nullsLast(String::compareTo)));
 
-        List<String> problems = new ArrayList<>(derived.problems());
+        // Every DerivedRoles problem is an advisory: a role mapped to something
+        // unpostable leaves the grid unsure whether an account is derived or manual,
+        // which is worth saying out loud, but it does not stop the post. The only
+        // ERROR the grid can raise comes out of `postable`.
+        List<GridProblemDTO> problems = new ArrayList<>(derived.problems().stream()
+                .map(GridProblemDTO::warning).toList());
         problems.addAll(postable.problems());
 
         JournalEntry live = liveJournal(postings.findFirstByOrderByCreatedAtAsc().orElse(null));
@@ -646,7 +656,7 @@ public class OpeningBalanceService {
     private record Postable(LinkedHashMap<UUID, BigDecimal> byAccount, Map<UUID, BigDecimal> entered,
                             BigDecimal totalDebit,
                             BigDecimal totalCredit, BigDecimal gap, Account difference,
-                            List<String> problems) {
+                            List<GridProblemDTO> problems) {
 
         boolean isDifferenceAccount(UUID accountId) {
             return difference != null && difference.getId().equals(accountId);
@@ -711,8 +721,10 @@ public class OpeningBalanceService {
      */
     private Postable postable(ChartIndex index, Map<UUID, AccountRole> derived, Map<UUID, BigDecimal> ours) {
         Account difference = resolver.resolveOrNull(AccountRole.OPENING_BALANCE_DIFFERENCE, null);
-        List<String> problems = new ArrayList<>();
-        if (difference == null) problems.add(noDifferenceAccountMessage());
+        List<GridProblemDTO> problems = new ArrayList<>();
+        // The one ERROR the grid can carry: postFresh throws on exactly this condition,
+        // so the screen has to be able to say "this stops you" rather than "note that".
+        if (difference == null) problems.add(GridProblemDTO.error(noDifferenceAccountMessage()));
 
         // What PACT says, per account of ours, in the file's own (code) order.
         // `entered` keeps every stored figure as it stands, including the rows `pact`
@@ -729,8 +741,11 @@ public class OpeningBalanceService {
             if (a.isGroup() || !a.isActive() || derived.containsKey(a.getId())) continue;
             if (difference != null && difference.getId().equals(a.getId())) {
                 if (r.getDebit().signum() != 0 || r.getCredit().signum() != 0) {
-                    problems.add(a.getCode() + " " + a.getName() + ": PACT's own opening-balance difference"
-                            + " is not carried over; ours is recomputed from the other rows.");
+                    // Advisory, not a fault: the post goes through, and what it does
+                    // with PACT's suspense figure is the thing worth stating.
+                    problems.add(GridProblemDTO.warning(a.getCode() + " " + a.getName()
+                            + ": PACT's own opening-balance difference"
+                            + " is not carried over; ours is recomputed from the other rows."));
                 }
                 continue;
             }
