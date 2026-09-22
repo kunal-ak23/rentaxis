@@ -6,8 +6,16 @@ test.describe('Users CRUD', () => {
       test.skip();
       return;
     }
+    // A TENANT_ADMIN belongs here: `canManageUsers` is SUPER_ADMIN +
+    // TENANT_ADMIN (web/src/lib/rbac.ts), the sidebar offers them the link, and
+    // GET /admin/users answers them scoped to their own tenant — verified: the
+    // tenant admin sees only their org's users while the super admin sees all.
+    //
+    // Not `networkidle`: the page also asks for /admin/tenants, which 403s for a
+    // TENANT_ADMIN, and a non-2xx whose body is never read keeps the request in
+    // flight for ever, so the idle state never arrives. Wait for the heading.
     await page.goto('/en/superadmin/users');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: /manage users/i })).toBeVisible({ timeout: 15_000 });
   });
 
   test('page loads with users table', async ({ page }, testInfo) => {
@@ -37,11 +45,11 @@ test.describe('Users CRUD', () => {
     // Password - placeholder "Secure password"
     await page.locator('input[placeholder*="Secure"]').fill('test123');
 
-    // Role select
-    const roleSelect = page.locator('select').first();
-    if (await roleSelect.isVisible({ timeout: 2000 })) {
-      await roleSelect.selectOption('TENANT_ADMIN');
-    }
+    // Role select — scoped to the dialog's <form>. The list below the modal now
+    // carries a <Pagination> whose "n per page" <select> sorts first in document
+    // order, so an unscoped `locator('select').first()` grabbed that one and
+    // spun until the test timed out looking for a TENANT_ADMIN option on it.
+    await page.locator('form select').first().selectOption('TENANT_ADMIN');
 
     // Submit - "PROVISION USER" button
     await page.getByRole('button', { name: /provision|create|save|submit/i }).click();
