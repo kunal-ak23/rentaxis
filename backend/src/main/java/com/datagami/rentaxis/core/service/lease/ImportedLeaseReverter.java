@@ -231,10 +231,19 @@ public class ImportedLeaseReverter implements LeaseReverter {
         }
         for (RecognitionEntry entry : recognitionEntries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
             if (entry.getStatus() != RecognitionStatus.POSTED || entry.getJournalId() == null) continue;
-            outsideTheBatch(entry.getJournalId(), batchId)
-                    .ifPresent(number -> blockers.add(who + ": rent for " + entry.getPeriodStart()
-                            + " – " + entry.getPeriodEnd() + " was recognised by a month-end close after the"
-                            + " cut-over (" + number + "). Reverse that period's recognition first."));
+            // The remedy this used to name — "Reverse that period's recognition
+            // first" — does not exist (review I3, ruling R20): no endpoint reverses a
+            // CIL, and the only path that touches a posted one is a termination or an
+            // amendment, each of which is itself a blocker here. So the sentence says
+            // the product fact instead: the correction window for a whole cut-over
+            // batch closes at the first month-end close, and after it a contract is
+            // corrected one at a time.
+            if (outsideTheBatch(entry.getJournalId(), batchId).isPresent()) {
+                blockers.add(who + ": rent for " + entry.getPeriodStart() + " – " + entry.getPeriodEnd()
+                        + " was recognised by the month-end close on " + entry.getPeriodEnd()
+                        + "; a cut-over batch cannot be reversed once its contracts have been through a close."
+                        + " Correct individual contracts by amendment instead.");
+            }
         }
         for (PenaltyAssessment p : penalties.findByLease_Id(leaseId)) {
             if (LIVE_PENALTIES.contains(p.getStatus())) {

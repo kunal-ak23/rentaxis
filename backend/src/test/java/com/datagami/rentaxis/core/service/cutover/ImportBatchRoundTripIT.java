@@ -416,9 +416,20 @@ class ImportBatchRoundTripIT {
         RecognitionService.RecognitionRunResult run = recognition.runTo(LocalDate.of(2026, 10, 31), false);
         assertThat(run.posted()).isGreaterThan(0);
 
+        // Review I3 / ruling R20: the blocker used to send the accountant to
+        // "Reverse that period's recognition first", a door that does not exist —
+        // no endpoint reverses a CIL, and the only paths that touch a posted one
+        // (termination, amendment) are themselves blockers here. The sentence now
+        // states the product fact instead: the window for undoing a WHOLE cut-over
+        // closes at the first month-end close, and after it contracts are corrected
+        // one at a time.
         assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("month-end close after the cut-over");
+                .hasMessageContaining("was recognised by the month-end close on 2026-10-31")
+                .hasMessageContaining(
+                        "a cut-over batch cannot be reversed once its contracts have been through a close")
+                .hasMessageContaining("Correct individual contracts by amendment instead")
+                .hasMessageNotContaining("Reverse that period's recognition first");
         assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
     }
 
