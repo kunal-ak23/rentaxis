@@ -62,6 +62,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -73,12 +74,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
@@ -125,7 +131,15 @@ class OnlinePaymentServiceIT {
     @Autowired LeaseAccessPolicy leaseAccessPolicy;
 
     @Autowired ChequeRepository chequeRepo;
-    @Autowired OnlinePaymentRepository onlinePaymentRepo;
+
+    /**
+     * A spy, not a mock: every test here uses the real repository. One test
+     * ({@code aCaptureThatCommitsMidRetryIsNotRewrittenAsFailed}) needs a seam
+     * <em>between</em> the read of a row's sessions and the write that supersedes
+     * them, because that window is where issue #286's capture lands, and nothing
+     * else in the call is a seam at all.
+     */
+    @MockitoSpyBean OnlinePaymentRepository onlinePaymentRepo;
     @Autowired PaymentGatewayRepository gatewayRepo;
     @Autowired TenantGatewayConfigRepository configRepo;
     @Autowired RentCollectionSettingsRepository settingsRepo;
@@ -138,6 +152,7 @@ class OnlinePaymentServiceIT {
     @Autowired UnitRepository unitRepo;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
+    @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager entityManager;
 
     @MockitoBean PaymentGatewayFactory gatewayFactory;
 
@@ -514,6 +529,88 @@ class OnlinePaymentServiceIT {
                 .as("two payments, one instalment: the second is a refund, not a second CRT")
                 .isEqualTo(OnlinePaymentStatus.CAPTURED_UNAPPLIED);
         assertThat(crtCount(chequeId)).isEqualTo(1L);
+    }
+
+    /**
+     * Issue #286: the capture commits <em>inside</em> the retry, and the retry's
+     * rewrite must not put FAILED over it.
+     *
+     * <p>The ordering is the whole test, so it is made to happen rather than raced
+     * for. The retry reads the row's sessions (all CREATED), the webhook for the
+     * abandoned order commits from a thread and a transaction of its own — the
+     * gateway does not wait for us — and only then does the retry get to its
+     * rewrite. Before the fix that rewrite was the in-memory entity saved back, so
+     * the flush at commit wrote FAILED over a payment that had just posted its
+     * {@code CRT}: {@code CAPTURED} downgraded to {@code FAILED}, the transition
+     * {@code MONEY_CAPTURED} exists to forbid, with the money taken and the
+     * instalment cleared.</p>
+     *
+     * <p>Now the rewrite is conditional on the row still being CREATED, and a row
+     * that moved into money refuses the retry outright: the renter is told the
+     * gateway already has their money instead of being handed a second order to pay
+     * it again.</p>
+     */
+    @Test
+    void aCaptureThatCommitsMidRetryIsNotRewrittenAsFailed() {
+        UUID chequeId = firstCheque();
+        String abandoned = startOrder(chequeId);
+
+        AtomicBoolean captureLanded = new AtomicBoolean(false);
+        doAnswer(invocation -> {
+            // The real query, not callRealMethod: the repository is an interface
+            // proxy, so Mockito has no real method to call. Same persistence
+            // context, same transaction, same rows.
+            List<OnlinePayment> sessions = sessionsOf(invocation.getArgument(0));
+            if (chequeId.equals(invocation.getArgument(0)) && captureLanded.compareAndSet(false, true)) {
+                captureInItsOwnTransaction(abandoned);
+            }
+            return sessions;
+        }).when(onlinePaymentRepo).findByCheque_Id(any());
+
+        assertThatThrownBy(() -> onlinePayments.createOrder(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already been taken by the gateway");
+
+        assertThat(captureLanded).isTrue();
+        assertThat(paymentByOrder(abandoned).getStatus())
+                .as("a captured payment is never rewritten as failed")
+                .isEqualTo(OnlinePaymentStatus.CAPTURED);
+        assertThat(paymentByOrder(abandoned).getFailureReason()).isNull();
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(crtCount(chequeId)).isEqualTo(1L);
+        assertThat(paymentsFor(chequeId))
+                .as("no second order may be raised over money the gateway already took")
+                .hasSize(1);
+    }
+
+    /** What {@code findByCheque_Id} answers, issued against the caller's own session. */
+    private List<OnlinePayment> sessionsOf(UUID chequeId) {
+        return entityManager.createQuery(
+                        "select o from OnlinePayment o where o.cheque.id = :chequeId", OnlinePayment.class)
+                .setParameter("chequeId", chequeId)
+                .getResultList();
+    }
+
+    /**
+     * The webhook, delivered the way the gateway delivers it: on another thread, in
+     * a transaction of its own, committed before this returns.
+     */
+    private void captureInItsOwnTransaction(String order) {
+        bindSignaturesToSecrets();
+        String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{"
+                + "\"order_id\":\"" + order + "\",\"id\":\"" + PAYMENT_ID + "\","
+                + "\"amount\":" + INSTALMENT.multiply(BigDecimal.valueOf(100)).longValue()
+                + ",\"currency\":\"AED\"}}}}";
+        ExecutorService gatewayThread = Executors.newSingleThreadExecutor();
+        try {
+            gatewayThread.submit(() ->
+                    webhookService.processRazorpayWebhook(payload, signatureFor(WEBHOOK_SECRET)))
+                    .get(60, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("The webhook delivery failed", e);
+        } finally {
+            gatewayThread.shutdownNow();
+        }
     }
 
     /** A renter cannot open a fresh checkout over money the gateway has already taken. */

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -112,6 +113,43 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, UU
               and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED_UNAPPLIED
             """)
     Page<OnlinePayment> findUnapplied(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /**
+     * Fail one still-open checkout — <em>only</em> if it is still open (issue #286).
+     *
+     * <p>The rewrite that supersedes an abandoned session decides from rows that
+     * were read a moment earlier, and a gateway capture can commit inside that
+     * window: the entity in memory still says CREATED, so saving it wrote FAILED
+     * over a row the webhook had just marked CAPTURED — the one transition the
+     * MONEY_CAPTURED rule says never happens. A conditional UPDATE cannot do that
+     * whatever the reader believed: the status test is evaluated by the database,
+     * against the row as it is now, under the row lock the UPDATE itself takes.</p>
+     *
+     * <p>Callers must treat {@code 0} as "the row moved" and go and look, not as
+     * "nothing to do" — see {@code OnlinePaymentService#failOpenCheckouts}.</p>
+     *
+     * @return 1 when this call failed the session, 0 when it was no longer CREATED.
+     */
+    @Modifying
+    @Query("""
+            update OnlinePayment o
+               set o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.FAILED,
+                   o.failureReason = :reason,
+                   o.updatedAt = :now
+             where o.id = :id
+               and o.status = com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CREATED
+            """)
+    int failIfStillOpen(@Param("id") UUID id, @Param("reason") String reason, @Param("now") Instant now);
+
+    /**
+     * This payment's status as the database holds it right now.
+     *
+     * <p>A scalar projection rather than {@code findById}: the entity is already in
+     * the persistence context with the state it was read with, and asking for it
+     * again would hand back that same stale instance. This goes to the row.</p>
+     */
+    @Query("select o.status from OnlinePayment o where o.id = :id")
+    Optional<OnlinePaymentStatus> currentStatus(@Param("id") UUID id);
 
     /** How many refunds are outstanding — the dashboard tile's count. */
     @Query("""

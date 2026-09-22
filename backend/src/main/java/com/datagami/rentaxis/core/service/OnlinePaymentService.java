@@ -677,13 +677,56 @@ public class OnlinePaymentService {
         }
     }
 
+    /**
+     * Mark the still-open sessions failed — and refuse the whole caller if the
+     * gateway captured one of them in the meantime (issue #286).
+     *
+     * <p><b>The sessions were read before this runs, and a capture commits in
+     * between.</b> {@code requireNoMoneyTaken} asked the question of rows loaded a
+     * few statements earlier; the webhook's transaction is somewhere else entirely
+     * and does not wait for ours. Writing the entity back therefore wrote FAILED
+     * over a row that had become CAPTURED between the read and the write — money
+     * the gateway really took, on a payment the ledger really posted a {@code CRT}
+     * for, recorded as a failure. It is the one transition {@link #MONEY_CAPTURED}
+     * exists to forbid, and no re-check made against the in-memory copy can see
+     * it.</p>
+     *
+     * <p>So the transition is asked of the database: {@code failIfStillOpen}
+     * updates the row only while it is still CREATED. Zero rows means the row moved
+     * under us, and the only interesting way for it to move is money — so the
+     * status is read back from the row and, when the gateway has taken it, this
+     * throws. The caller's whole transaction rolls back: no superseding write, no
+     * second order raised over money already taken, and the capture stands exactly
+     * as the webhook left it.</p>
+     *
+     * <p><b>No row lock is taken on the cheque here</b> (the first shape this fix
+     * took). {@code createOrder} calls the gateway <em>inside</em> its transaction
+     * on purpose, so holding the cheque's NOWAIT lock across the retry branch would
+     * mean every capture webhook arriving during a checkout's HTTP round trip
+     * failed with "this cheque is being updated". A conditional write costs
+     * nothing, is not order-dependent, and protects {@link #cancelPendingOnlinePayment}
+     * and {@link #releaseOnlinePending} in the same breath.</p>
+     *
+     * <p>The entity is deliberately <em>not</em> mutated afterwards. It stays
+     * managed with the state it was loaded with, so Hibernate finds it unchanged
+     * and flushes no second, unconditional UPDATE behind this one.</p>
+     */
     private void failOpenCheckouts(List<OnlinePayment> sessions, String reason) {
         for (OnlinePayment session : sessions) {
-            if (session.getStatus() == OnlinePaymentStatus.CREATED) {
-                session.setStatus(OnlinePaymentStatus.FAILED);
-                session.setFailureReason(reason);
-                session.setUpdatedAt(Instant.now());
-                onlinePaymentRepository.save(session);
+            if (session.getStatus() != OnlinePaymentStatus.CREATED) {
+                continue;
+            }
+            int failed = onlinePaymentRepository.failIfStillOpen(session.getId(), reason, Instant.now());
+            if (failed == 0) {
+                OnlinePaymentStatus current = onlinePaymentRepository.currentStatus(session.getId())
+                        .orElse(null);
+                log.warn("Online payment {} was {} rather than CREATED when a checkout was superseded",
+                        session.getId(), current);
+                if (current != null && MONEY_CAPTURED.contains(current)) {
+                    throw new BusinessRuleViolationException(
+                            "A payment for this instalment has already been taken by the gateway. "
+                                    + "Please contact the landlord rather than paying it again.");
+                }
             }
         }
     }
@@ -703,15 +746,10 @@ public class OnlinePaymentService {
         }
         // Idempotent on a row that is already back: a renter who closes the modal
         // twice, or closes it after the webhook already cleared the row, gets a
-        // no-op rather than a refusal.
-        for (OnlinePayment op : onlinePaymentRepository.findByCheque_Id(chequeId)) {
-            if (op.getStatus() == OnlinePaymentStatus.CREATED) {
-                op.setStatus(OnlinePaymentStatus.FAILED);
-                op.setFailureReason("User cancelled checkout");
-                op.setUpdatedAt(Instant.now());
-                onlinePaymentRepository.save(op);
-            }
-        }
+        // no-op rather than a refusal. Through the shared helper, so a capture that
+        // lands while the modal is closing is not recorded as a cancellation either
+        // (issue #286).
+        failOpenCheckouts(onlinePaymentRepository.findByCheque_Id(chequeId), "User cancelled checkout");
     }
 
     // ------------------------------------------------------------------
