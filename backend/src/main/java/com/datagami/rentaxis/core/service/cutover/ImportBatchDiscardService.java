@@ -201,7 +201,21 @@ public class ImportBatchDiscardService {
         List<Kept> kept = new ArrayList<>();
         int leasesDeleted = 0;
         for (UUID leaseId : leaseIds) {
-            Outcome outcome = ownTx.execute(s -> deleteLease(leaseId));
+            Outcome outcome;
+            try {
+                outcome = ownTx.execute(s -> deleteLease(leaseId));
+            } catch (DataIntegrityViolationException | UnexpectedRollbackException e) {
+                // Same shape as deleteIfUnreferenced (review I2, ruling R19), one loop
+                // up: deleteLease's own checks (journals, non-DRAFT status) cover what
+                // happens today, but a lease-side foreign key this service does not
+                // know about — a maintenance ticket, a booking, a notification row —
+                // would otherwise abort the run after earlier leases had already
+                // committed their deletes. Catching it here keeps that lease KEPT and
+                // lets the rest of the batch finish rather than dying half-way.
+                log.info("Discard kept LEASE {}: still referenced ({})", leaseId, mostSpecific(e));
+                outcome = new Outcome(new Kept("LEASE", leaseId, null,
+                        "something else still refers to it, so it was kept"));
+            }
             if (outcome.kept() == null) {
                 leasesDeleted++;
             } else {

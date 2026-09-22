@@ -382,6 +382,58 @@ class ImportBatchDiscardIT {
         });
     }
 
+    /**
+     * A foreign key this service has never heard of, one loop up from the entity
+     * case above and outside review I2's own fix (N4, same class): a maintenance
+     * ticket that names one of the batch's own <em>leases</em> directly, which
+     * {@code deleteLease}'s own checks — journal entries, non-DRAFT status — say
+     * nothing about.
+     *
+     * <p>{@code fk_ticket_lease} (changeset 27) is an ordinary restricting key.
+     * Before the fix the lease loop ran {@code ownTx.execute(s -> deleteLease(leaseId))}
+     * with no catch at all, so this constraint violation aborted the whole run: the
+     * other lease, already deleted in its own committed transaction, stayed gone,
+     * and the batch was left stuck rather than DISCARDED. Wrapping it the same way
+     * {@code deleteIfUnreferenced} is wrapped (review I2, ruling R19) keeps this
+     * lease KEPT and lets the rest of the batch finish.</p>
+     */
+    @Test
+    void aLeaseAnUnforeseenForeignKeyStillPointsAtIsKeptAndTheDiscardFinishes() throws Exception {
+        UUID batchId = importTheTemplate();
+        UUID keptLeaseId = tx.execute(s -> leaseOf("SAMPLE-0001").getId());
+        UUID ticketId = tx.execute(s -> {
+            Lease lease = leaseRepo.findById(keptLeaseId).orElseThrow();
+            MaintenanceTicket ticket = new MaintenanceTicket();
+            ticket.setProperty(propertyRepo.findAll().get(0));
+            ticket.setLease(lease);
+            ticket.setReportedBy(UUID.randomUUID());
+            ticket.setTitle("A leak the renter reported before moving in");
+            return tickets.save(ticket).getId();
+        });
+
+        DiscardResult result = discardService.discard(batchId);
+
+        // It finished, rather than dying half-way with the other lease already gone
+        // and the batch stuck between DRAFT and DISCARDED.
+        assertThat(result.status()).isEqualTo(ImportBatchStatus.DISCARDED);
+        assertThat(result.leasesDeleted()).isEqualTo(1);
+        assertThat(result.kept())
+                .filteredOn(k -> "LEASE".equals(k.type()))
+                .singleElement()
+                .satisfies(k -> {
+                    assertThat(k.id()).isEqualTo(keptLeaseId);
+                    assertThat(k.reason()).contains("something else still refers to it");
+                });
+        // The ticket, and the lease it names, are untouched — and the other
+        // contract still went, which is the half the old behaviour lost.
+        tx.executeWithoutResult(s -> {
+            assertThat(tickets.findById(ticketId)).isPresent();
+            assertThat(leaseRepo.findById(keptLeaseId)).isPresent();
+            assertThat(leaseRepo.findAll()).extracting(Lease::getId).containsExactly(keptLeaseId);
+        });
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.DISCARDED);
+    }
+
     // ------------------------------------------------------------------
     // discard and post cannot interleave (review I2)
     // ------------------------------------------------------------------
