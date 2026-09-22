@@ -61,7 +61,8 @@ const FINANCE_NAV: [string, string][] = [
     ['General Ledger', '/dashboard/finance/general-ledger'],
     ['Tenant Ledger', '/dashboard/finance/tenant-ledger'],
     ['Trial Balance', '/dashboard/finance/trial-balance'],
-    ['Payments', '/dashboard/finance/payments'],
+    // 'Payments' was the v1 register; plan 2 replaced it with Cheques.
+    ['Cheque Register', '/dashboard/finance/cheques'],
     ['Vendors', '/dashboard/finance/vendors'],
     ['Bank Accounts', '/dashboard/finance/bank-accounts'],
 ];
@@ -732,7 +733,14 @@ test('13 the accountant owns the ledger and the property manager does not', asyn
         await page.context().clearCookies();
         await signIn(page, fx.manager.email, fx.manager.password);
         const pmNav = page.locator('nav[data-tour="sidebar-nav"]');
-        await expect(pmNav.locator('a[href*="/dashboard/finance/"]')).toHaveCount(0);
+        // Plan 1 hid all of finance from a property manager; plans 2–4 gave them the
+        // operational screens (cheque register, penalties, vendors, bank accounts).
+        // The LEDGER stays the accountant's: none of these may be reachable.
+        for (const ledgerHref of ['/finance/accounts', '/finance/journals', '/finance/general-ledger',
+            '/finance/tenant-ledger', '/finance/trial-balance', '/finance/vouchers',
+            '/finance/import-batches', '/finance/opening-balances', '/finance/reconciliation']) {
+            await expect(pmNav.locator(`a[href*="${ledgerHref}"]`)).toHaveCount(0);
+        }
         await expect(pmNav.locator('a[href*="/settings/account-template"]')).toHaveCount(0);
         await expect(pmNav.locator('a[href*="/settings/fiscal"]')).toHaveCount(0);
 

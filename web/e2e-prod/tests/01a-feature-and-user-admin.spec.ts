@@ -18,6 +18,7 @@ const FEATURES = [
   'MEETINGS',
   'LEASE_RENEWALS',
   'GATEPASS',
+  'MOBILE_FINANCE',
 ] as const;
 
 async function assertOk(response: APIResponse, operation: string): Promise<void> {
@@ -60,7 +61,9 @@ test('super admin controls disposable feature access and tenant admin manages us
   await assertOk(featuresResponse, 'feature listing');
   const features = (await featuresResponse.json()) as Array<{ feature: string; enabled: boolean }>;
   expect(features.map((item) => item.feature).sort()).toEqual([...FEATURES].sort());
-  expect(features.every((item) => item.enabled)).toBeTruthy();
+  // Every switch is on for the disposable tenant except MOBILE_FINANCE, which
+  // stays off until the mobile finance screens are rebuilt for accounting v2.
+  expect(features.every((item) => item.enabled === (item.feature !== 'MOBILE_FINANCE'))).toBeTruthy();
 
   // Exercise a real toggle round-trip on the disposable tenant, restoring it
   // immediately so the later gate-pass lifecycle still runs.

@@ -20,8 +20,24 @@ const PUBLIC_PROXY_PATHS = new Set<string>([
     '/api/proxy/v1/public/renewal-intent',
 ]);
 
-function addSecurityHeaders(response: NextResponse): NextResponse {
-    response.headers.set('X-Frame-Options', 'DENY');
+/**
+ * The one proxied path that may be framed by this app.
+ *
+ * `DENY` forbids framing even by the same origin, and issue #300 moved private
+ * attachments onto the proxy — including the settlement page's deduction PDF,
+ * which is rendered in an `<iframe>`. `SAMEORIGIN` keeps every cross-origin
+ * framing attempt refused while letting our own page display the document it
+ * just asked for. Scoped to this prefix: nothing else served through the proxy
+ * has any business inside a frame.
+ */
+const FRAMEABLE_PROXY_PREFIX = '/api/proxy/v1/assets/serve/';
+
+export function frameOptionsFor(pathname: string): 'DENY' | 'SAMEORIGIN' {
+    return pathname.startsWith(FRAMEABLE_PROXY_PREFIX) ? 'SAMEORIGIN' : 'DENY';
+}
+
+function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
+    response.headers.set('X-Frame-Options', frameOptionsFor(pathname));
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     response.headers.set('X-XSS-Protection', '1; mode=block');
@@ -47,20 +63,22 @@ export default async function middleware(req: NextRequest) {
                 request: {
                     headers: requestHeaders,
                 },
-            }));
+            }), req.nextUrl.pathname);
         }
 
         // Authenticate proxy requests and attach tenant context headers
         const token = await getToken({ req });
         if (!token) {
-            return addSecurityHeaders(new NextResponse('Unauthorized', { status: 401 }));
+            return addSecurityHeaders(new NextResponse('Unauthorized', { status: 401 }),
+                req.nextUrl.pathname);
         }
 
         // The jwt callback marks a token revoked once the backend reports the
         // account no longer exists. Refuse it here rather than forwarding the
         // stale role to the backend, which trusts these headers as presented.
         if (token.revoked === true) {
-            return addSecurityHeaders(new NextResponse('Session revoked', { status: 401 }));
+            return addSecurityHeaders(new NextResponse('Session revoked', { status: 401 }),
+                req.nextUrl.pathname);
         }
 
         const requestHeaders = new Headers(req.headers);
@@ -130,12 +148,12 @@ export default async function middleware(req: NextRequest) {
             request: {
                 headers: requestHeaders,
             },
-        }));
+        }), req.nextUrl.pathname);
     }
 
     // For all other routes, let next-intl handle internationalization
     const response = intlMiddleware(req);
-    return addSecurityHeaders(response as NextResponse);
+    return addSecurityHeaders(response as NextResponse, req.nextUrl.pathname);
 }
 
 export const config = {

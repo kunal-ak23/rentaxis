@@ -13,7 +13,7 @@ vi.mock("next-intl/middleware", () => ({
 }));
 vi.mock("@/i18n/routing", () => ({ routing: {} }));
 
-import middleware from "../proxy";
+import middleware, { frameOptionsFor } from "../proxy";
 
 function makeRequest(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`http://localhost:3000${path}`, {
@@ -239,5 +239,41 @@ describe("proxy middleware — active tenant selection", () => {
 
     expect(activeTenant(res)).toBe("home");
     expect(userTenant(res)).toBe("home");
+  });
+});
+
+describe("proxy middleware — X-Frame-Options", () => {
+  it("lets the app frame an asset it fetched through the proxy (issue #300)", async () => {
+    getTokenMock.mockResolvedValue({ id: "u1", role: "TENANT_ADMIN", tenantId: "home" });
+
+    // The settlement page renders a deduction PDF in an <iframe>; DENY forbids
+    // framing even same-origin, so the preview would not render at all.
+    const res = await middleware(makeRequest(
+      "/api/proxy/v1/assets/serve/settlement-deductions/d1/damage.pdf"));
+
+    expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
+    expect(frameOptionsFor("/api/proxy/v1/assets/serve/ticket-attachments/a.png"))
+      .toBe("SAMEORIGIN");
+  });
+
+  it("still denies framing for every other proxied path", async () => {
+    getTokenMock.mockResolvedValue({ id: "u1", role: "TENANT_ADMIN", tenantId: "home" });
+
+    const res = await middleware(makeRequest("/api/proxy/v1/leases"));
+
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(frameOptionsFor("/api/proxy/v1/finance/vouchers")).toBe("DENY");
+    expect(frameOptionsFor("/api/proxy/v1/assets/upload")).toBe("DENY");
+    // Not a proxy path at all, and not a prefix match either.
+    expect(frameOptionsFor("/en/dashboard/leases")).toBe("DENY");
+  });
+
+  it("keeps the other security headers on the framed path", async () => {
+    getTokenMock.mockResolvedValue({ id: "u1", role: "TENANT_ADMIN", tenantId: "home" });
+
+    const res = await middleware(makeRequest("/api/proxy/v1/assets/serve/lease-docs/a.pdf"));
+
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   });
 });

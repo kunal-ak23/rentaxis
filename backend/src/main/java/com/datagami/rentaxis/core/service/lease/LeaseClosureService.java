@@ -2,6 +2,8 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
+import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
@@ -10,6 +12,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
@@ -110,6 +113,7 @@ public class LeaseClosureService {
     private final ChequeRepository cheques;
     private final LeaseSettlementRepository settlements;
     private final LeaseEventRepository leaseEvents;
+    private final JournalEntryRepository journals;
     private final LedgerQueryService ledgerQueryService;
     private final AccountResolver accountResolver;
     private final LeaseDepositLedger depositLedger;
@@ -118,6 +122,7 @@ public class LeaseClosureService {
                                ChequeRepository cheques,
                                LeaseSettlementRepository settlements,
                                LeaseEventRepository leaseEvents,
+                               JournalEntryRepository journals,
                                LedgerQueryService ledgerQueryService,
                                AccountResolver accountResolver,
                                LeaseDepositLedger depositLedger) {
@@ -125,6 +130,7 @@ public class LeaseClosureService {
         this.cheques = cheques;
         this.settlements = settlements;
         this.leaseEvents = leaseEvents;
+        this.journals = journals;
         this.ledgerQueryService = ledgerQueryService;
         this.accountResolver = accountResolver;
         this.depositLedger = depositLedger;
@@ -210,6 +216,57 @@ public class LeaseClosureService {
                 .map(LeaseSettlement::getStatus)
                 .filter(status -> status == SettlementStatus.FINALIZED)
                 .isPresent();
+    }
+
+    /**
+     * Did the finalised settlement already pay for this bounced cheque? (issue #297)
+     *
+     * <p><b>Why the per-lease receivable cannot answer it.</b> {@code ChequeService}
+     * used to decide from the lease's balance alone — "the settlement absorbed this
+     * bounce iff the contract shows no debt" — which is true of a contract with one
+     * unreplaced bounce on it and false as soon as there are two. Finalise a
+     * settlement over bounced cheque A (the {@code STL} nets its debt against the
+     * deposit and raises a CASH row for the rest, leaving the receivable flat), then
+     * let a <em>kept</em> cheque B bounce afterwards: the receivable is positive
+     * again, and by that rule A becomes replaceable a second time. A's replacement
+     * credits the receivable over money the landlord has already been paid, B is
+     * afterwards locked out of its own replacement, and if A is the larger of the
+     * two the contract can never reach CLOSED at all.</p>
+     *
+     * <p><b>The question is per cheque, and it is still a ledger question.</b> The
+     * {@code STL} settles the whole rent receivable as it stood when it was posted:
+     * whatever was owed then was either netted against the deposit or moved onto the
+     * settlement's own collection row. So a bounce whose {@code CBR} was posted
+     * <em>before</em> that {@code STL} is a debt the settlement has dealt with,
+     * whatever the contract's balance reads today — and a bounce after it is a debt
+     * nobody has paid for, which is exactly what {@code replace} is for. The two
+     * journals' creation order is the discriminator, not the cheque's status and not
+     * the row's own dates: a bounce recorded today for a cheque that failed last
+     * month is still a bounce the settlement never saw.</p>
+     *
+     * @return false whenever the question does not arise — no finalised settlement,
+     *         a settlement that posted no {@code STL} (it had nothing to settle), or
+     *         a cheque with no {@code CBR} of its own.
+     */
+    @Transactional(readOnly = true)
+    public boolean settlementAbsorbed(UUID leaseId, Cheque cheque) {
+        if (cheque == null || cheque.getCbrJournalId() == null) {
+            return false;
+        }
+        UUID settlementJournalId = settlements.findByLeaseId(leaseId)
+                .filter(s -> s.getStatus() == SettlementStatus.FINALIZED)
+                .map(LeaseSettlement::getJournalId)
+                .orElse(null);
+        if (settlementJournalId == null) {
+            return false;
+        }
+        Instant bounced = postedAt(cheque.getCbrJournalId());
+        Instant settled = postedAt(settlementJournalId);
+        return bounced != null && settled != null && !bounced.isAfter(settled);
+    }
+
+    private Instant postedAt(UUID journalId) {
+        return journals.findById(journalId).map(JournalEntry::getCreatedAt).orElse(null);
     }
 
     /**

@@ -1169,15 +1169,26 @@ public class ChequeService {
      * <p><b>The discriminator is the ledger, not the row's status.</b> A cheque the
      * settlement kept and that bounces <em>after</em> finalise leaves a receivable
      * genuinely in debit — that money really is owed, nobody has been paid for it,
-     * and {@code replace} is exactly the right answer. So the question asked here is
-     * "does this contract still show a debt", and the two cases separate
-     * themselves.</p>
+     * and {@code replace} is exactly the right answer.</p>
+     *
+     * <p><b>Asked of this cheque, not of the contract</b> (issue #297). "Does the
+     * lease still show a debt" separates the two cases only while there is one
+     * unreplaced bounce on the contract. With two, it gets the first one wrong: a
+     * settlement finalised over bounced cheque A leaves the receivable flat, and a
+     * <em>kept</em> cheque B bouncing afterwards makes it positive again — which
+     * re-opened {@code replace} on A, whose debt the {@code STL} had already paid
+     * for. A could then be collected a second time, B was afterwards locked out of
+     * its own replacement, and an A larger than B left the contract unable ever to
+     * close. So {@link LeaseClosureService#settlementAbsorbed} asks whether
+     * <em>this</em> cheque's {@code CBR} was posted before the {@code STL}, and only
+     * a row the settlement never saw falls through to the contract-level test.</p>
      */
     private void requireNotAlreadySettled(Lease lease, Cheque bounced) {
         if (!closure.isSettlementFinalized(lease.getId())) {
             return;
         }
-        if (closure.receivableBalance(lease).signum() > 0) {
+        if (!closure.settlementAbsorbed(lease.getId(), bounced)
+                && closure.receivableBalance(lease).signum() > 0) {
             return;
         }
         throw new BusinessRuleViolationException(

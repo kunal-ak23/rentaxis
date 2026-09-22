@@ -669,8 +669,14 @@ class VoucherControllerIT {
         String storageKey = entity.getFileUrl();
         assertThat(storageKey).contains("/private/");
 
+        // 401/403 now rather than the controller's 404: issue #300 closed the route
+        // itself, so an anonymous request for anything outside the public asset
+        // folder is refused by SecurityConfig before AssetController sees it. The
+        // controller's own private-prefix refusal is still there behind it — see
+        // AssetServeAuthIT, which asserts both layers.
         ResponseEntity<String> raw = unauthenticatedGet(storageKey);
-        assertThat(raw.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(raw.getStatusCode())
+                .isIn(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND);
 
         // The authenticated path still works, with a safe Content-Disposition:
         // no raw CR/LF or quotes, and an RFC 5987 filename* for the non-ASCII name.
