@@ -68,6 +68,63 @@ export type LeaseStatus =
 
 export type InstallmentDistribution = "UNIFORM" | "FIRST_LARGER" | "LAST_LARGER" | "FIRST_AND_LAST_LARGER";
 
+/** RecognitionStatus — domain.entity.enums.RecognitionStatus (spec §8.2). */
+export type RecognitionStatus = "PLANNED" | "POSTED" | "REVERSED" | "CANCELLED";
+
+/** DeductionCategory — domain.entity.enums.DeductionCategory, in full. */
+export type DeductionCategory =
+  | "UNPAID_RENT"
+  | "PENALTIES"
+  | "PROPERTY_DAMAGE"
+  | "EARLY_TERMINATION_FEE"
+  | "CLEANING"
+  | "UTILITY_ARREARS"
+  | "KEY_REPLACEMENT"
+  | "OTHER";
+
+/** AdditionCategory — domain.entity.enums.AdditionCategory, in full. */
+export type AdditionCategory =
+  | "PREPAID_RENT"
+  | "UTILITY_OVERPAYMENT"
+  | "DEPOSIT_INTEREST"
+  | "LANDLORD_COMPENSATION"
+  | "OTHER";
+
+export type SettlementLineType = "DEDUCTION" | "ADDITION";
+
+export type SettlementStatus = "DRAFT" | "FINALIZED";
+
+/**
+ * The deduction categories a settlement line may actually carry.
+ *
+ * `PENALTIES` and `UNPAID_RENT` are deliberately absent, mirroring
+ * `SettlementService.DEDUCTION_ROLES` / `requireAllowed(DeductionCategory)`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/SettlementService.java:131-138,
+ * :737-751): both are already inside `receivableBalance`, which the statement
+ * subtracts, so a line for either charges the renter's deposit twice and is
+ * refused with a 400 on save *and* on finalise. Offering them in the select
+ * would be offering an action the server always refuses.
+ */
+export const SETTLEMENT_DEDUCTION_CATEGORIES: readonly DeductionCategory[] = [
+  "PROPERTY_DAMAGE",
+  "EARLY_TERMINATION_FEE",
+  "CLEANING",
+  "UTILITY_ARREARS",
+  "KEY_REPLACEMENT",
+  "OTHER",
+];
+
+/**
+ * …and the addition categories, minus `PREPAID_RENT` and `UTILITY_OVERPAYMENT`
+ * for the mirror reason — `SettlementService.ADDITION_ROLES` /
+ * `requireAllowed(AdditionCategory)` (SettlementService.java:147-151, :753-761).
+ */
+export const SETTLEMENT_ADDITION_CATEGORIES: readonly AdditionCategory[] = [
+  "DEPOSIT_INTEREST",
+  "LANDLORD_COMPENSATION",
+  "OTHER",
+];
+
 /**
  * What a lease is read back as. The column still holds the older, wider set on
  * leases drafted before accounting-v2, so a lease that comes back says
@@ -190,6 +247,11 @@ export type LeaseDetail = {
   postingJournalId: string | null;
   postedAt: string | null;
   contractValue: number | null;
+  /** Set by a termination; null on every other status (spec §9.1). */
+  terminatedOn: string | null;
+  /** The `TCR`, or null when nothing was unearned. */
+  terminationJournalId: string | null;
+  terminationNotes: string | null;
   lines: LeaseLine[];
 };
 
@@ -279,6 +341,267 @@ export type Cheque = {
   due: boolean;
   overdue: boolean;
   daysOverdue: number;
+};
+
+// ---- recognition (spec §8.2, §8.4 — api/dto/recognition) ----
+
+/** RecognitionEntryDTO — one calendar-month slice of a rent segment. */
+export type RecognitionEntry = {
+  id: string;
+  leaseId: string;
+  segmentId: string;
+  /**
+   * The lease's property, through its unit, denormalised onto the row so the
+   * month-end page can group by building without two lazy loads per line.
+   *
+   * Nullable on the wire, and typed that way here although the schema does not
+   * allow a lease without a unit: a null is exactly the row the close would
+   * still post, so the page buckets it rather than dropping it.
+   */
+  propertyId: string | null;
+  propertyName: string | null;
+  unitName: string | null;
+  periodStart: string;
+  periodEnd: string;
+  days: number;
+  amount: number;
+  status: RecognitionStatus;
+  journalId: string | null;
+  journalNumber: string | null;
+  /** Instant — an ISO timestamp, not a date. */
+  postedAt: string | null;
+};
+
+/**
+ * RecognitionRunResultDTO — the answer to a month-end run, preview or not.
+ *
+ * `posted` is **0 on a preview** and `wouldPost` carries the count; on a real
+ * run the two are equal (RecognitionRunResultDTO's own doc). A screen that
+ * reads `posted` on a preview reports a close that never happened.
+ */
+export type RecognitionRunResult = {
+  preview: boolean;
+  posted: number;
+  wouldPost: number;
+  amount: number;
+  entries: RecognitionEntry[];
+  skippedLocked: number;
+  skippedLockedEntries: RecognitionEntry[];
+  booksLockedThrough: string | null;
+  failed: number;
+  errors: string[];
+};
+
+// ---- termination (spec §9.1 — api/dto/lease) ----
+
+/** TerminationPreviewDTO — what ending the contract on `date` would do. */
+export type TerminationPreview = {
+  terminationDate: string;
+  earnedRentThroughDate: number;
+  recognisedSoFar: number;
+  unearnedRent: number;
+  /**
+   * The VAT charged on that unearned rent, which the same `TCR` credits back as
+   * a credit note (`Dr OUTPUT_VAT / Cr RENT_RECEIVABLE`). **Zero on a
+   * residential tenancy**, and zero for a deposit line whatever its flag says.
+   *
+   * Optional here and only here: a backend that has not shipped the field must
+   * not make the screen read `NaN` — an absent value is 0, which is what a
+   * residential tenancy's is anyway. `receivableAfter` below already has it
+   * netted in (`LeaseTerminationService` :155, :414-422), so the client's
+   * flip arithmetic never adds it a second time.
+   */
+  unearnedVat?: number;
+  /** Uncleared rows dated after T — the default "hand the paper back". */
+  chequesToReturn: Cheque[];
+  /** Uncleared rows dated on or before T — the money was already due. */
+  chequesToKeep: Cheque[];
+  /**
+   * Rows that already failed. Neither returned nor kept: `ChequeStatus.isUncleared()`
+   * excludes BOUNCED, so sending one of these in either list is refused with
+   * "These cheques are not uncleared rows of this lease".
+   */
+  bouncedOutstanding: Cheque[];
+  receivableAfter: number;
+};
+
+/**
+ * TerminateLeaseRequest.
+ *
+ * The two lists are a decision, not a filter: **every** uncleared row must
+ * appear in exactly one of them or the request is refused naming the rows it
+ * forgot (`LeaseTerminationService.chosenReturns`, :279-315). Both empty means
+ * "use the preview's default split".
+ */
+export type TerminateLeaseInput = {
+  terminationDate: string;
+  returnChequeIds?: string[] | null;
+  keepChequeIds?: string[] | null;
+  notes?: string | null;
+};
+
+// ---- settlement (spec §9.2 — api/dto/settlement) ----
+
+/** DeductionAttachmentDTO. */
+export type DeductionAttachment = {
+  id: string;
+  deductionId: string;
+  name: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: string;
+};
+
+/** DeductionLineDTO — one charge against the deposit, on the live statement. */
+export type DeductionLine = {
+  id: string;
+  category: DeductionCategory;
+  description: string | null;
+  amount: number;
+  /** The line's own leaf, else the one its category resolves to. Null only for a legacy line. */
+  accountId: string | null;
+  accountName: string | null;
+  autoCalculated: boolean;
+  attachments: DeductionAttachment[];
+};
+
+/** AdditionLineDTO — something the landlord owes the renter on top of the deposit. */
+export type AdditionLine = {
+  id: string;
+  category: AdditionCategory;
+  description: string | null;
+  amount: number;
+  accountId: string | null;
+  accountName: string | null;
+};
+
+/**
+ * OutstandingInstrumentDTO — a register row the landlord is still waiting on.
+ *
+ * Their money sits in PDC receivable, so `receivableBalance` cannot see them
+ * and `netRefund` does not net them off — they are listed so the accountant can
+ * decide whether to pay a refund out anyway.
+ */
+export type OutstandingInstrument = {
+  id: string;
+  seqNo: number;
+  mode: ChequeMode;
+  chequeNumber: string | null;
+  chequeDate: string | null;
+  amount: number;
+  status: ChequeStatus;
+  /** This row exists to collect an approved penalty. */
+  penaltyCollection: boolean;
+};
+
+/**
+ * SettlementStatementDTO — the move-out statement, recomputed from the ledger
+ * on every read.
+ *
+ * `instrumentsOutstanding` / `outstandingInstruments` are optional here and
+ * only here: a backend that has not shipped them yet must not be read as
+ * "nothing outstanding, go ahead" by accident — the screen treats an absent
+ * value as 0, which is the same thing it shows when the register really is
+ * empty, and the server re-checks the acknowledgement either way.
+ */
+export type SettlementStatement = {
+  asOf: string;
+  earnedRent: number;
+  receivedTotal: number;
+  /** Debit-positive: +ve the renter owes, −ve the landlord does. */
+  receivableBalance: number;
+  depositsHeld: number;
+  /** APPROVED assessments whose collection row has not cleared. Shown, never added. */
+  penaltiesOutstanding: number;
+  instrumentsOutstanding?: number;
+  outstandingInstruments?: OutstandingInstrument[];
+  deductions: DeductionLine[];
+  additions: AdditionLine[];
+  totalDeductions: number;
+  totalAdditions: number;
+  /** >0 the landlord pays out, <0 the renter still owes. */
+  netRefund: number;
+  /** PLANNED recognition rows. Non-zero → run recognition before settling. */
+  unrecognisedEntries: number;
+};
+
+/** SettlementResponseDTO.DeductionDTO — one stored line. */
+export type SettlementLine = {
+  id: string;
+  category: DeductionCategory | null;
+  description: string | null;
+  amount: number;
+  autoCalculated: boolean;
+  type: SettlementLineType;
+  additionCategory: AdditionCategory | null;
+  accountId: string | null;
+  accountName: string | null;
+  attachments: DeductionAttachment[];
+};
+
+/** SettlementResponseDTO — the stored row: the draft as saved, or what finalise posted. */
+export type SettlementResponse = {
+  id: string;
+  leaseId: string;
+  depositAmount: number;
+  totalDeductions: number;
+  totalAdditions: number;
+  /** max(netRefund, 0). */
+  refundAmount: number;
+  notes: string | null;
+  status: SettlementStatus;
+  settledBy: string | null;
+  settledByName: string | null;
+  settledAt: string | null;
+  createdAt: string | null;
+  settlementDate: string | null;
+  earnedRent: number | null;
+  receivedTotal: number | null;
+  receivableBalance: number | null;
+  depositsHeld: number | null;
+  penaltiesOutstanding: number | null;
+  /** max(-netRefund, 0). */
+  balanceDue: number | null;
+  refundBankAccountId: string | null;
+  /** The STL, or null on a draft. */
+  journalId: string | null;
+  journalNumber: string | null;
+  /** The CASH row raised to collect a balance the deposit could not cover. */
+  collectionChequeId: string | null;
+  deductions: SettlementLine[];
+};
+
+/** SaveSettlementDTO.DeductionItemDTO — one line as the caller submits it. */
+export type SaveSettlementLine = {
+  id?: string | null;
+  category?: DeductionCategory | null;
+  description?: string | null;
+  amount: number;
+  autoCalculated?: boolean;
+  type: SettlementLineType;
+  additionCategory?: AdditionCategory | null;
+  /** Override the leaf this line posts to; omit to let the category resolve it. */
+  accountId?: string | null;
+};
+
+/** SaveSettlementDTO — the whole grid on every save, never a diff. */
+export type SaveSettlementInput = {
+  notes?: string | null;
+  deductions: SaveSettlementLine[];
+};
+
+/**
+ * FinalizeSettlementRequest.
+ *
+ * `refundBankAccountId` is required exactly when `netRefund > 0`
+ * (`SettlementService.finalizeSettlement`:452-454) and `acknowledgeOutstanding`
+ * exactly when the settlement refunds *and* the register still holds something.
+ */
+export type FinalizeSettlementInput = {
+  settlementDate: string;
+  refundBankAccountId?: string | null;
+  acknowledgeOutstanding?: boolean;
 };
 
 /** PostLeaseResponse — the lease and its cheques re-read after a post, an amend, or an extend. */
@@ -576,6 +899,52 @@ export const leaseApi = {
   /** GET /finance/journals?leaseId — the plan-1 journals list, filtered to one lease. */
   journals: (leaseId: string, q: { page?: number; size?: number } = {}) =>
     get<Page<JournalEntry>>(`/finance/journals${qs({ leaseId, page: q.page ?? 0, size: q.size ?? 25 })}`),
+};
+
+/**
+ * Month-end close (spec §8.4) and the lease page's Recognition schedule tab.
+ *
+ * `RecognitionController` refuses a `to` later than today on **both** `pending`
+ * and `run` ("Cannot recognise income for periods that have not ended",
+ * RecognitionController.java:145-157), and refuses either of them outright when
+ * a SUPER_ADMIN has not picked an organisation ("Select an organisation first",
+ * :131-135). Both arrive as a 400 with the message in `ApiError.message`.
+ */
+export const recognitionApi = {
+  /** Everything still waiting to be recognised as of `to` (default: today), oldest period first. */
+  pending: (to?: string) => get<RecognitionEntry[]>(`/finance/recognition/pending${qs({ to })}`),
+  /** `preview: true` writes nothing and answers with `posted: 0` / `wouldPost: n`. */
+  run: (to: string | undefined, preview: boolean) =>
+    send<RecognitionRunResult>("POST", `/finance/recognition/run${qs({ to, preview })}`),
+  /** One lease's whole schedule, every status, oldest period first. Open to PROPERTY_MANAGER. */
+  leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
+};
+
+/** Notice and termination (spec §9.1) — `LeaseController` :250-296. */
+export const terminationApi = {
+  /** Readable by a PROPERTY_MANAGER on their own buildings; writing is one role narrower. */
+  preview: (id: string, date: string) =>
+    get<TerminationPreview>(`/leases/${id}/terminate/preview${qs({ date })}`),
+  terminate: (id: string, body: TerminateLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/terminate`, body),
+  /** ACTIVE → NOTICE_GIVEN. Writes no journal, which is why it admits a manager. */
+  notice: (id: string, notes?: string | null) => send<LeaseDetail>("POST", `/leases/${id}/notice`, { notes }),
+};
+
+/**
+ * The move-out statement (spec §9.2) — `LeaseController` :309-369.
+ *
+ * `statement` is the live computation and `get` is the stored row; they are two
+ * different documents and the screen needs both. `get` answers **404** when the
+ * lease has no settlement yet, which is not an error — it is the normal state
+ * before the first Save draft.
+ */
+export const settlementApi = {
+  statement: (id: string) => get<SettlementStatement>(`/leases/${id}/settlement/preview`),
+  get: (id: string) => get<SettlementResponse>(`/leases/${id}/settlement`),
+  saveDraft: (id: string, body: SaveSettlementInput) =>
+    send<SettlementResponse>("POST", `/leases/${id}/settlement/draft`, body),
+  finalize: (id: string, body: FinalizeSettlementInput) =>
+    send<SettlementResponse>("POST", `/leases/${id}/settlement/finalize`, body),
 };
 
 export const chequeApi = {

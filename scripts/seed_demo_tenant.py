@@ -7,14 +7,20 @@ mobile apps use, so it doubles as a smoke test of the prod API.
 What it creates:
   - Named demo tenant + TENANT_ADMIN login
   - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS
+  - Chart of accounts + charge-type catalogue + per-property account sets
+    (generated from the tenant template) + the fiscal year opened on 1 January
+    and everything before it locked
   - 2 properties with rent-collection settings, 8 units
   - 4 renters with portal (RENTER) logins
-  - 4 leases covering the cheque lifecycle:
-      * cleared / deposited / collected (shows in "Cheques to deposit")
-      * a bounced cheque with penalty (mark-failed)
-      * a monthly lease with an overdue installment
-      * a PENDING_SIGNATURE lease (payment plan visible before acceptance)
+  - 4 tenancy contracts, each with its own cheque grid, covering the register:
+      * quarterly, 3 cleared + 1 deposited + 1 still registered
+      * quarterly, one cheque returned by the bank and replaced by two
+      * monthly, 5 cleared and the next instalment overdue
+      * one left in DRAFT with its grid, to post live in the demo
+  - Month-end income recognition run to the end of last month (CIL journals)
   - 4 published marketplace listings + 1 draft (vacant units)
+  - 2 vendors, one of them with a posted purchase invoice (PISR, 5% input VAT)
+    and the payment voucher (BPV) that settles it
   - 2 meetings (cheque replacement + property viewing), one approved
 
 Credentials & IDs are printed and written to scripts/seed_demo_tenant.out.json.
@@ -36,6 +42,7 @@ import os
 import re
 import sys
 import datetime as dt
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import requests
@@ -291,6 +298,17 @@ def iso(d):
     return d.isoformat()
 
 
+def page_items(payload):
+    """The rows of a response that may be a bare list or a Spring Page.
+    Module level because both the finance steps (section 5b) and the
+    operational fixtures (section 8) page through collections."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict) and isinstance(payload.get("content"), list):
+        return payload["content"]
+    return []
+
+
 def main():
     load_env()
     base = os.environ.get(
@@ -375,6 +393,15 @@ def main():
         )
     log("features enabled: LISTINGS, MEETINGS, EMAIL_NOTIFICATIONS, "
         "LEASE_RENEWALS, GATEPASS")
+    # Mobile finance/lease/cheque screens stay hidden until the apps are rewritten
+    # for accounting v2. Set explicitly rather than relying on the default, because
+    # this tenant is also the App Store reviewer's tenant and the flag is the one
+    # thing that decides what the reviewer sees.
+    sa.put(
+        f"/api/admin/tenants/{tenant_id}/features/MOBILE_FINANCE",
+        json={"enabled": False},
+    )
+    log("feature MOBILE_FINANCE explicitly off (mobile finance screens hidden)")
 
     try:
         sa.post(
@@ -397,11 +424,42 @@ def main():
     api = Api(base, web_base)
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
+    out["adminUserId"] = admin_user_id
 
-    # Chart of accounts + account mappings — required before cheque
-    # clear/deposit postings work. Idempotent (no-op if accounts exist).
+    # Chart of accounts + the per-property account template + the tenant-level
+    # role defaults + the charge-type catalogue: one call since accounting v2
+    # (AccountController.seedDefaultAccounts). Each of its three parts is
+    # idempotent server-side, so this is a no-op on an established tenant.
     api.post("/api/v1/finance/accounts/seed")
-    log("chart of accounts seeded")
+    log("chart of accounts, property template, role defaults and charge types seeded")
+
+    # Open the books on 1 January of the demo year and close everything before
+    # it, so back-dated demo documents post and nothing can be written into last
+    # year. The period lock is its own endpoint and only ever moves forward
+    # (TenantFiscalSettingsService.lockThrough), so both steps are read first.
+    books_start = dt.date(TODAY.year, 1, 1)
+    locked_through = books_start - dt.timedelta(days=1)
+    fiscal = api.get("/api/v1/finance/fiscal-settings") or {}
+    if (fiscal.get("booksStartDate") != iso(books_start)
+            or fiscal.get("fiscalYearStartMonth") != 1):
+        # Setting the books start date also sets the lock to the day before it
+        # when no lock exists yet — the POST below is then a no-op re-assertion.
+        fiscal = api.put(
+            "/api/v1/finance/fiscal-settings",
+            json={"fiscalYearStartMonth": 1, "booksStartDate": iso(books_start)},
+        )
+    if (fiscal.get("booksLockedThrough") or "") < iso(locked_through):
+        fiscal = api.post(
+            "/api/v1/finance/fiscal-settings/lock",
+            json={"through": iso(locked_through)},
+        )
+    out["fiscal"] = {
+        "fiscalYearStartMonth": fiscal.get("fiscalYearStartMonth"),
+        "booksStartDate": fiscal.get("booksStartDate"),
+        "booksLockedThrough": fiscal.get("booksLockedThrough"),
+    }
+    log(f"books open {fiscal.get('booksStartDate')}, "
+        f"locked through {fiscal.get('booksLockedThrough')}")
 
     # GET /api/v1/properties returns summaries: {"property": {...}, vacancies...}
     existing_props = {
@@ -444,6 +502,39 @@ def main():
         f"{DEMO_BRAND} Marina Heights", "أبراج رنت أكسيس مارينا", "Dubai Marina, Dubai"
     )
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
+
+    # Creating a property already generates its account set from the tenant
+    # template (PropertyService.createProperty → generateMissing); *generate*
+    # here fills any gap left by a property that existed before the template
+    # did, and is idempotent — it skips every role already mapped.
+    REQUIRED_ROLES = ("RENT_RECEIVABLE", "ADVANCE_RENT", "RENTAL_INCOME",
+                      "PDC_RECEIVABLE", "BANK", "SECURITY_DEPOSIT", "ADMIN_FEE")
+
+    def property_accounts(prop):
+        """Role -> account id for one property. A row with no accountId is a
+        property-scoped role the template does not cover; the lease-critical
+        seven are fatal, the rest are reported and left alone."""
+        api.post(f"/api/v1/properties/{prop['id']}/accounts/generate")
+        rows = api.get(f"/api/v1/properties/{prop['id']}/accounts") or []
+        mapped = {r["role"]: r["accountId"] for r in rows if r.get("accountId")}
+        missing = [r["role"] for r in rows if not r.get("accountId")]
+        for role in REQUIRED_ROLES:
+            if role not in mapped:
+                raise RuntimeError(
+                    f"{prop['nameEn']}: role {role} is unmapped, a lease on it "
+                    f"cannot post. Unmapped roles: {missing}"
+                )
+        if missing:
+            log(f"  note: {prop['nameEn']} has no account for {', '.join(missing)}")
+        return mapped
+
+    out["accounts"] = {
+        "tower": property_accounts(tower),
+        "marina": property_accounts(marina),
+    }
+    log(f"property account sets ready "
+        f"({len(out['accounts']['tower'])} roles on the tower, "
+        f"{len(out['accounts']['marina'])} on the marina)")
 
     def make_unit(prop, number, utype, sqft, rent):
         for u in api.get(f"/api/v1/units/property/{prop['id']}") or []:
@@ -536,159 +627,424 @@ def main():
         for r in (ahmed, fatima, rajesh, sara)
     ]
 
-    # ── 4. Leases ────────────────────────────────────────────────────────────
+    out["renterIds"] = {
+        "ahmed": ahmed["id"], "fatima": fatima["id"],
+        "rajesh": rajesh["id"], "sara": sara["id"],
+    }
+
+    # ── 4. Leases as posting documents ───────────────────────────────────────
+    # A v2 lease is a document, not a settings form: `lines` say what is charged,
+    # an explicit cheque grid says how it is collected, and `post` writes the TCO
+    # and one PDR per row. `POST /api/v1/leases` ignores a `cheques` key in
+    # silence (CreateLeaseDTO has no such field), so the grid is its own call.
     year_start = dt.date(TODAY.year, 1, 1)
     year_end = dt.date(TODAY.year, 12, 31)
+    # Signed ten days before the tenancy starts, but *dated* the first of the
+    # year: the TCO carries the contract date and every cheque's posting date
+    # defaults to it, and the fiscal step above locks everything before 1 Jan.
+    agreement_date = year_start - dt.timedelta(days=10)
+    contract_date = year_start
 
     existing_leases = {
         l.get("unitId"): l for l in (api.get("/api/v1/leases") or [])
     }
 
-    def make_lease(unit, renter, rent, terms, distribution, deposit, charges=None,
-                   booking=None, activate=True):
-        """accounting-v2 plan 2 minimal fix: `PUT .../activate` and the flat
-        rentAmount/depositAmount/paymentTerms body are gone — a lease is now
-        built from `lines` (cut from the charge-type catalogue seeded by
-        `/finance/accounts/seed`, called above) and becomes ACTIVE only via
-        generate-cheques + post.
+    # A deposit is never taxed, whatever its charge type's flag says (LeaseVat),
+    # so it is excluded from the check below rather than trusted to be flagged.
+    DEPOSIT_CODES = {"SECURITY_DEPOSIT", "PARKING_DEPOSIT"}
+    VAT_RATE = 0.05
 
-        `charges` (per-charge-type fee lines, e.g. Admin Fee, Parking) and
-        `booking` (a separate booking-deposit cheque) are NOT reproduced here
-        — every v1 call site below just gets a RENT + SECURITY_DEPOSIT line,
-        same as the wizard's own default. Modelling the full charge/booking
-        structure in `lines` terms is the plan 5 rewrite this fix explicitly
-        defers to; this keeps the script *running* against v2, not feature-
-        complete with v1.
+    def line(code, gross, narration="", discount=0.0, vat=False):
+        """One charged particular. `vat` is spelled out on every line rather than
+        left to the charge type's default: all seven seeded types default to
+        false today, and a flip of that default must not silently unbalance a
+        grid the demo depends on."""
+        return {"chargeTypeCode": code, "grossAmount": float(gross),
+                "discountAmount": float(discount), "narration": narration,
+                "vatApplicable": vat}
+
+    def contract_value(lines):
+        """Σ (net + VAT) — the figure `post` compares the cheque grid against
+        (LeasePostingService.validate: "Cheque grid totals X but contract value
+        incl. VAT is Y"), computed the way the server computes it: VAT rounded
+        per line, deposits untaxed."""
+        total = 0.0
+        for l in lines:
+            net = l["grossAmount"] - l["discountAmount"]
+            taxed = l["vatApplicable"] and l["chargeTypeCode"] not in DEPOSIT_CODES
+            # HALF_UP like the server's VoucherMath/LeaseVat — Python's round()
+            # is half-to-even and would drift on a .xx5 line.
+            vat = float(Decimal(str(net * VAT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if taxed else 0.0
+            total += net + vat
+        return total
+
+    def cheque(seq, number, date, amount, narration, bank="Emirates NBD",
+               mode="PDC", posting_date=None):
+        """One row of the grid. `seqNo` is accepted and ignored by the server —
+        position is the order of the list — but it is sent anyway because it is
+        what the row is called in the log and in the manifest."""
+        return {"seqNo": seq, "postingDate": iso(posting_date or contract_date),
+                "chequeNumber": number, "chequeDate": iso(date),
+                "payeeBank": bank, "amount": float(amount),
+                "narration": narration, "mode": mode}
+
+    def make_lease(unit, renter, contract_ref, lines, cheques, terms, post=True):
+        """Create-or-fetch a DRAFT lease, give it its grid, then post it.
+
+        Every half is idempotent: a lease already on the unit is returned as it
+        stands, a grid is only written when the lease has none, and a lease that
+        is already ACTIVE is never posted twice.
+
+        `contract_ref` is not sent anywhere — `contractNumber` is the server's
+        own per-tenant sequence and `externalContractRef` is written only by the
+        cut-over import. It names the contract in the arithmetic check below and
+        in the cheque narrations, which is where a human reads it.
         """
-        if unit["id"] in existing_leases:
-            return existing_leases[unit["id"]]
-        body = {
-            "unitId": unit["id"],
-            "renterId": renter["id"],
-            "startDate": iso(year_start),
-            "endDate": iso(year_end),
-            "paymentTerms": terms,
-            "installmentDistribution": distribution,
-            "paymentMethod": "CHEQUE",
-            "depositPaymentMethod": "CHEQUE",
-            "agreementDate": iso(year_start - dt.timedelta(days=10)),
-            "rentVatApplicable": False,
-            "lines": [
-                {"chargeTypeCode": "RENT", "grossAmount": rent},
-                {"chargeTypeCode": "SECURITY_DEPOSIT", "grossAmount": deposit},
-            ],
-        }
-        lease = api.post("/api/v1/leases", json=body)
-        if activate:
-            api.post(f"/api/v1/leases/{lease['id']}/cheques/generate",
-                     json={"installments": terms, "distribution": distribution})
+        lease = existing_leases.get(unit["id"])
+        if not lease:
+            # Checked here as well as by the server: a grid that does not add up
+            # is refused at *post* time, which on a fresh tenant means a lease
+            # and a grid are already written and the run dies three calls later.
+            value, collected = contract_value(lines), sum(c["amount"] for c in cheques)
+            if abs(value - collected) > 0.005:
+                raise RuntimeError(
+                    f"{contract_ref}: cheque grid {collected:,.2f} does not equal "
+                    f"contract value {value:,.2f} — the post would be rejected"
+                )
+            lease = api.post("/api/v1/leases", json={
+                "unitId": unit["id"],
+                "renterId": renter["id"],
+                "startDate": iso(year_start),
+                "endDate": iso(year_end),
+                "agreementDate": iso(agreement_date),
+                "contractDate": iso(contract_date),
+                "gracePeriodDays": 5,
+                "paymentTerms": terms,
+                "paymentMethod": "CHEQUE",
+                "depositPaymentMethod": "CHEQUE",
+                "rentVatApplicable": False,
+                "lines": lines,
+            })
+        if lease.get("status") == "DRAFT" and not api.get(
+                f"/api/v1/leases/{lease['id']}/cheques"):
+            api.put(f"/api/v1/leases/{lease['id']}/cheques", json=cheques)
+        if post and lease.get("status") in ("DRAFT", "PENDING_SIGNATURE"):
+            # PostLeaseResponse — {lease, tcoJournalId, tcoEntryNumber, cheques}.
             posted = api.post(f"/api/v1/leases/{lease['id']}/post")
             lease = posted["lease"]
+            log(f"{contract_ref} posted: TCO {posted.get('tcoEntryNumber')}, "
+                f"{len(posted.get('cheques') or [])} instruments registered")
         return lease
 
-    # v2's cheque generator has no "no cheque may exceed the deposit" cap
-    # (that was a v1 PaymentScheduleService rule) — the deposit figures below
-    # are kept as-is for continuity with the old demo data, not because v2
-    # requires it. `charges=`/`booking=` are accepted but not modelled in
-    # `lines` yet — see make_lease's own docstring.
+    # Ahmed — quarterly rent, the admin fee folded into the first rent cheque,
+    # the deposit on its own row. 108,500 = 22,000 + 22,750 + 3 × 21,250.
     lease_ahmed = make_lease(
-        a101, ahmed, 85000, 4, "LAST_LARGER", 22000,
-        charges=[{"name": "Admin Fee", "amount": 1500.0, "vatApplicable": True,
-                  "frequency": "ONE_TIME"}],
-        booking={"amount": 5000.0, "chequeNumber": "100001",
-                 "chequeDate": iso(year_start - dt.timedelta(days=12)),
-                 "bankName": "Emirates NBD"},
+        a101, ahmed, "ART/1001",
+        [line("SECURITY_DEPOSIT", 22000), line("RENT", 85000),
+         line("ADMIN_FEE", 1500, "Contract administration")],
+        [cheque(1, "200100", year_start, 22000, "Security Deposit"),
+         cheque(2, "200101", year_start, 22750, "Rent - 1st Installment"),
+         cheque(3, "200102", dt.date(TODAY.year, 4, 1), 21250, "Rent - 2nd Installment"),
+         cheque(4, "200103", dt.date(TODAY.year, 7, 1), 21250, "Rent - 3rd Installment"),
+         cheque(5, "200104", dt.date(TODAY.year, 10, 1), 21250, "Rent - 4th Installment")],
+        terms=4,
     )
-    lease_fatima = make_lease(a102, fatima, 62000, 4, "UNIFORM", 16000)
-    # Deposit covers cheque (10,000 rent + 250 folded parking charge).
-    lease_rajesh = make_lease(
-        a103, rajesh, 120000, 12, "UNIFORM", 12000,
-        charges=[{"name": "Parking", "amount": 250.0, "vatApplicable": False,
-                  "frequency": "PER_INSTALLMENT"}],
-    )
-    log("3 active leases (quarterly LAST_LARGER, quarterly UNIFORM, monthly)")
 
-    # PENDING_SIGNATURE lease — shows payment plan before acceptance.
-    lease_sara = make_lease(m1501, sara, 110000, 4, "LAST_LARGER", 30000,
-                            activate=False)
-    if lease_sara.get("status") in (None, "DRAFT"):
-        try:
-            api.post(f"/api/v1/leases/{lease_sara['id']}/generate-contract")
-            log("Sara's lease moved to PENDING_SIGNATURE "
-                "(accept it live in the demo)")
-        except RuntimeError as e:
-            log(f"WARN generate-contract failed ({e}); lease left in DRAFT")
+    # Fatima — quarterly; her second rent cheque comes back and is replaced by
+    # two smaller ones further down. 78,000 = 16,000 + 4 × 15,500.
+    lease_fatima = make_lease(
+        a102, fatima, "ART/1002",
+        [line("SECURITY_DEPOSIT", 16000), line("RENT", 62000)],
+        [cheque(1, "300200", year_start, 16000, "Security Deposit", bank="FAB"),
+         cheque(2, "300201", year_start, 15500, "Rent - 1st Installment", bank="FAB"),
+         cheque(3, "300202", dt.date(TODAY.year, 4, 1), 15500, "Rent - 2nd Installment", bank="FAB"),
+         cheque(4, "300203", dt.date(TODAY.year, 7, 1), 15500, "Rent - 3rd Installment", bank="FAB"),
+         cheque(5, "300204", dt.date(TODAY.year, 10, 1), 15500, "Rent - 4th Installment", bank="FAB")],
+        terms=4,
+    )
+
+    # Rajesh — monthly, with the year's parking folded into January.
+    # 135,000 = 12,000 + 13,000 + 11 × 10,000.
+    ORDINALS = {1: "1st", 2: "2nd", 3: "3rd"}
+    rajesh_cheques = [cheque(1, "400300", year_start, 12000, "Security Deposit",
+                             bank="Dubai Islamic Bank")]
+    for m in range(1, 13):
+        rajesh_cheques.append(cheque(
+            m + 1, f"4003{m:02d}", dt.date(TODAY.year, m, 1),
+            13000 if m == 1 else 10000,
+            f"Rent - {ORDINALS.get(m, f'{m}th')} Installment",
+            bank="Dubai Islamic Bank"))
+    lease_rajesh = make_lease(
+        a103, rajesh, "ART/1003",
+        [line("SECURITY_DEPOSIT", 12000), line("RENT", 120000),
+         line("PARKING_FEE", 3000, "Annual parking — bay B2-18")],
+        rajesh_cheques, terms=12,
+    )
+
+    # Sara — left in DRAFT on purpose, grid and all. Posting it is the one
+    # moment in the demo where the audience watches TCO and PDR journals appear.
+    # 140,000 = 30,000 + 4 × 27,500.
+    lease_sara = make_lease(
+        m1501, sara, "MH/2001",
+        [line("SECURITY_DEPOSIT", 30000), line("RENT", 110000)],
+        [cheque(1, "500400", year_start, 30000, "Security Deposit"),
+         cheque(2, "500401", year_start, 27500, "Rent - 1st Installment"),
+         cheque(3, "500402", dt.date(TODAY.year, 4, 1), 27500, "Rent - 2nd Installment"),
+         cheque(4, "500403", dt.date(TODAY.year, 7, 1), 27500, "Rent - 3rd Installment"),
+         cheque(5, "500404", dt.date(TODAY.year, 10, 1), 27500, "Rent - 4th Installment")],
+        terms=4, post=False,
+    )
+    log("3 posted contracts (quarterly, quarterly, monthly) + 1 draft to post live")
+
     out["leases"] = {
         "ahmed": lease_ahmed["id"],
         "fatima": lease_fatima["id"],
         "rajesh": lease_rajesh["id"],
         "sara": lease_sara["id"],
     }
+    out["leaseStatus"] = {
+        key: api.get(f"/api/v1/leases/{lease_id}")["status"]
+        for key, lease_id in out["leases"].items()
+    }
 
-    # ── 5. Cheque lifecycle on the register ──────────────────────────────────
-    # accounting-v2 plan 2 minimal fix: there is no payment-schedule resource
-    # and no PENDING/"collect" step any more — `POST .../cheques/generate`
-    # already registered every row (chequeNumber/bank/payer included) when
-    # `make_lease` posted the lease above. Walk REGISTERED -> DEPOSITED ->
-    # CLEARED/BOUNCED via `/api/v1/cheques/{id}/...` instead.
-    def rent_rows(lease_id):
+    # ── 5. Cheque lifecycle on the PDC register ──────────────────────────────
+    # Posting registered every row; the register walks them on from there
+    # (PUT /api/v1/cheques/{id}/deposit|clear|bounce, each with a {date} body).
+    RANK = {"DRAFT": 0, "REGISTERED": 1, "DEPOSITED": 2, "CLEARED": 3, "BOUNCED": 3,
+            "REPLACED": 4}
+    # Statuses this script must never try to move: a row that is out of the
+    # normal walk entirely. Left out of RANK on purpose — `RANK.get(s, 0)` would
+    # read them as "not started yet" and try to deposit a cancelled cheque.
+    OFF_THE_WALK = {"CANCELLED", "RETURNED", "ONLINE_PENDING"}
+
+    def rows_for(lease_id):
         rows = api.get(f"/api/v1/leases/{lease_id}/cheques") or []
-        rows = [r for r in rows if r.get("mode") == "PDC"]
         return sorted(rows, key=lambda r: r["seqNo"])
 
-    def advance(row, target, chequeDate):
-        """Walk a cheque row REGISTERED→DEPOSITED→CLEARED/BOUNCED, skipping
-        transitions already done (safe to re-run). Each transition carries a
-        realistic value date derived from the cheque date (banked the day
-        after, cleared/bounced a few days later) — never in the future."""
-        rank = {"REGISTERED": 0, "DEPOSITED": 1, "CLEARED": 2, "BOUNCED": 2}
-        status = row.get("status", "REGISTERED")
-        if status in ("BOUNCED", "CLEARED") or status == target:
-            return
+    def value_date(cheque_date, days_after):
+        """Banked the day after, settled a few days later — but never in the
+        future: a demo ledger dated next month is not a demo of anything."""
+        d = dt.date.fromisoformat(cheque_date) + dt.timedelta(days=days_after)
+        return iso(min(d, TODAY))
+
+    def advance(row, target):
+        """Walk one register row REGISTERED → DEPOSITED → CLEARED/BOUNCED,
+        skipping what has already happened. Safe to re-run."""
+        status = row.get("status") or "REGISTERED"
+        if status in OFF_THE_WALK or RANK.get(status, 0) >= RANK[target]:
+            return row
         cid = row["id"]
-
-        def eff(days_after):
-            return iso(min(chequeDate + dt.timedelta(days=days_after), TODAY))
-
-        if status == "REGISTERED" and rank[target] >= 1:
-            api.put(f"/api/v1/cheques/{cid}/deposit", json={"date": eff(1)})
-            status = "DEPOSITED"
+        if status == "REGISTERED" and RANK[target] >= RANK["DEPOSITED"]:
+            row = api.put(f"/api/v1/cheques/{cid}/deposit",
+                          json={"date": value_date(row["chequeDate"], 1)})
+            status = row["status"]
         if status == "DEPOSITED" and target == "CLEARED":
-            api.put(f"/api/v1/cheques/{cid}/clear", json={"date": eff(4)})
+            row = api.put(f"/api/v1/cheques/{cid}/clear",
+                          json={"date": value_date(row["chequeDate"], 4)})
         if status == "DEPOSITED" and target == "BOUNCED":
-            api.put(f"/api/v1/cheques/{cid}/bounce",
-                    json={"date": eff(5), "failureReason": "BOUNCE",
-                          "notes": "Insufficient funds"})
+            row = api.put(f"/api/v1/cheques/{cid}/bounce",
+                          json={"date": value_date(row["chequeDate"], 5),
+                                "failureReason": "BOUNCE",
+                                "notes": "Insufficient funds"})
+        return row
 
-    # Ahmed: Q1 cleared, Q2 deposited, Q3 registered (a REGISTERED-but-due row
-    # still shows in "Cheques to deposit"), Q4 registered.
-    rows = rent_rows(lease_ahmed["id"])
-    advance(rows[0], "CLEARED", year_start)
-    advance(rows[1], "DEPOSITED", dt.date(TODAY.year, 4, 1))
-    log("Ahmed: cleared + deposited + registered-awaiting-deposit cheques")
+    def tally(rows):
+        counts = {}
+        for r in rows:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        return ", ".join(f"{n} {s.lower()}" for s, n in sorted(counts.items()))
 
-    # Fatima: Q1 cleared; Q2 bounced. A single bounce does not cross the
-    # org's default auto-propose threshold (2 — FineSettingsInitializer), so
-    # this does NOT auto-create a penalty the way v1's mark-failed did;
-    # propose it by hand from the lease's Penalties tab in the live demo.
-    rows = rent_rows(lease_fatima["id"])
-    advance(rows[0], "CLEARED", year_start)
-    advance(rows[1], "BOUNCED", dt.date(TODAY.year, 4, 1))
-    bounced_payment_id = rows[1]["id"]
-    log("Fatima: bounced Q2 cheque (propose the penalty from the Penalties tab)")
+    # Ahmed: deposit and the first two rent cheques cleared, Q3 banked and
+    # waiting on the bank, Q4 still sitting in the register.
+    rows = rows_for(lease_ahmed["id"])
+    for r in rows[:3]:
+        advance(r, "CLEARED")
+    advance(rows[3], "DEPOSITED")
+    log(f"Ahmed: {tally(rows_for(lease_ahmed['id']))}")
 
-    # Rajesh: Jan–May cleared, June left registered → overdue.
-    rows = rent_rows(lease_rajesh["id"])
-    for i, row in enumerate(rows[:5]):
-        advance(row, "CLEARED", dt.date(TODAY.year, i + 1, 1))
-    log("Rajesh: 5 cleared monthly cheques; June installment overdue")
+    # Fatima: deposit and Q1 cleared; Q2 returned by the bank and replaced by
+    # two smaller cheques, each registering its own PDR. One bounce does not
+    # cross the org's auto-propose threshold (2 — FineSettingsInitializer), so
+    # the penalty is proposed by hand from the Penalties tab in the live demo.
+    rows = rows_for(lease_fatima["id"])
+    for r in rows[:2]:
+        advance(r, "CLEARED")
+    bounced = advance(rows[2], "BOUNCED")
+    bounced_payment_id = bounced["id"]
+    if bounced["status"] == "BOUNCED" and not bounced.get("replacedById"):
+        replacement_date = dt.date(TODAY.year, 4, 20)
+        api.post(f"/api/v1/cheques/{bounced['id']}/replace", json={
+            "date": iso(replacement_date),
+            "notes": "Returned unpaid; renter re-papered it in two instruments",
+            "replacements": [
+                cheque(90, "300290", dt.date(TODAY.year, 5, 1), 10000,
+                       "Replacement 1 of 2 — returned cheque 300202", bank="FAB",
+                       posting_date=replacement_date),
+                cheque(91, "300291", dt.date(TODAY.year, 6, 1), 5500,
+                       "Replacement 2 of 2 — returned cheque 300202", bank="FAB",
+                       posting_date=replacement_date),
+            ],
+        })
+        log("Fatima: Q2 cheque returned and replaced by two rows")
+    log(f"Fatima: {tally(rows_for(lease_fatima['id']))}")
 
-    # v1 kept the security deposit as its own payment-schedule row, separate
-    # from the rent installments, and cleared it here. v2's cheque generator
-    # folds the SECURITY_DEPOSIT line into cheque #1 by default
-    # (`foldDepositsAndFeesIntoFirst`, ChequeGenerationService) — there is no
-    # separate deposit row left to clear; it rode along with cheque #1 in the
-    # per-lease loops above.
+    # Rajesh: deposit and five months cleared; the sixth is past its date and
+    # unpaid, so the register shows it as overdue.
+    rows = rows_for(lease_rajesh["id"])
+    for r in rows[:6]:
+        advance(r, "CLEARED")
+    log(f"Rajesh: {tally(rows_for(lease_rajesh['id']))}, the next one overdue")
+
+    out["cheques"] = {
+        key: [{"id": r["id"], "seqNo": r["seqNo"], "status": r["status"]}
+              for r in rows_for(lease_id)]
+        for key, lease_id in out["leases"].items()
+    }
+
+    # ── 5b. Vendors, a purchase invoice and the payment that settles it ──────
+    # Ahead of the listings section on purpose: everything below this point
+    # needs the Next.js app (NextAuth session for /api/proxy/*), and the books
+    # should not depend on the web app being up.
+    #
+    # Creating a vendor also creates its payable leaf under B-01-04 Vendors
+    # (accounting v2 plan 1), so the demo tenant gets a usable payables side of
+    # the chart with no extra step.
+    existing_vendors = {
+        v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
+        if isinstance(v, dict)
+    }
+
+    def make_vendor(name_en, name_ar, contact, phone):
+        if name_en in existing_vendors:
+            return existing_vendors[name_en]
+        return api.post("/api/v1/vendors", json={
+            "nameEn": name_en, "nameAr": name_ar,
+            "contactPerson": contact, "phone": phone,
+        })
+
+    fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
+                            "Imran Shaikh", "+97143330001")
+    cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
+                                  "Maria Santos", "+97143330002")
+    for v in (fm_vendor, cleaning_vendor):
+        log(f"vendor ready: {v.get('nameEn')}")
+
+    def vendor_payable_id(vendor):
+        """The vendor's ledger leaf, created silently under B-01-04 when the
+        vendor is saved — but skipped in silence if the chart of accounts was
+        not seeded first, which is why this asks rather than assumes."""
+        vendor = api.get(f"/api/v1/vendors/{vendor['id']}")
+        acc = (vendor.get("payableAccount") or {}).get("id")
+        if not acc:
+            raise RuntimeError(
+                f"vendor {vendor.get('nameEn')} has no payable account; "
+                f"VendorService creates one under B-01-04 on save, but skips it "
+                f"when the chart of accounts is missing — re-run the seed step"
+            )
+        return acc
+
+    # The v1 split-expense demo posted to `/finance/transactions`, removed with
+    # `financial_transactions` in plan 1. Its replacement is a Purchase/Service
+    # Invoice and a Bank/Cash Payment Voucher (spec §10.1/§10.2), built in plan 4.
+    chart = {a["code"]: a for a in (api.get("/api/v1/finance/accounts") or [])
+             if isinstance(a, dict) and a.get("code")}
+
+    def expense_leaf(code, name_en, name_ar, parent_code):
+        """Get-or-create a leaf under a seeded expense group. D-01 Direct
+        Expense ships as an empty group ("one leaf per property per category"),
+        so the demo tenant has to put its own categories in it."""
+        if code in chart:
+            return chart[code]
+        parent = chart.get(parent_code)
+        if not parent:
+            raise RuntimeError(f"expense group {parent_code} is missing from the chart")
+        leaf = api.post("/api/v1/finance/accounts", json={
+            "code": code,
+            "nameEn": name_en,
+            "nameAr": name_ar,
+            "accountType": parent["accountType"],
+            "accountSubType": parent["accountSubType"],
+            "parentId": parent["id"],
+            "group": False,
+        })
+        chart[code] = leaf
+        log(f"expense account created: {code} {name_en}")
+        return leaf
+
+    maintenance_expense = expense_leaf(
+        "D-01-001", "Building Maintenance & AMC", "صيانة المباني والعقود السنوية",
+        "D-01",
+    )
+
+    existing_vouchers = {
+        v.get("narration"): v
+        for v in page_items(api.get("/api/v1/finance/vouchers", params={"size": 200}))
+        if isinstance(v, dict) and v.get("narration")
+    }
+
+    def make_voucher(narration, body):
+        """Create-and-post a voucher, keyed on its narration so a re-run is a
+        no-op. A draft left behind by a half-finished run is posted, not
+        duplicated."""
+        voucher = existing_vouchers.get(narration)
+        if voucher is None:
+            voucher = api.post("/api/v1/finance/vouchers",
+                               json={**body, "narration": narration})
+        elif voucher.get("status") != "DRAFT":
+            return voucher
+        posted = api.post(f"/api/v1/finance/vouchers/{voucher['id']}/post")
+        existing_vouchers[narration] = posted
+        log(f"voucher posted: {posted.get('voucherNumber')} — {narration}")
+        return posted
+
+    # Purchase / Service Invoice — Dr the expense + Dr input VAT, Cr the vendor's
+    # payable leaf with the gross (spec §10.1). 5% VAT, added on top of the line.
+    invoice = make_voucher(
+        f"Fire safety AMC — {tower['nameEn']}",
+        {
+            "docType": "PISR",
+            "docDate": iso(dt.date(TODAY.year, 2, 10)),
+            "vendorId": fm_vendor["id"],
+            "invoiceNumber": f"EFM-{TODAY.year}-0114",
+            "propertyId": tower["id"],
+            # The per-line VAT amount is derived on the server from vatRate.
+            "lines": [{
+                "accountId": maintenance_expense["id"],
+                "description": "Annual fire safety maintenance contract",
+                "amount": 9000.0,
+                "vatRate": 5.0,
+                "propertyId": tower["id"],
+            }],
+        },
+    )
+
+    # Bank / Cash Payment Voucher — Dr the vendor's payable, Cr the tower's bank
+    # leaf (spec §10.2). The header names the vendor because the line is that
+    # vendor's payable account, which VoucherService insists on matching.
+    payment = make_voucher(
+        "Payment — fire safety AMC",
+        {
+            "docType": "BPV",
+            "docDate": iso(dt.date(TODAY.year, 3, 5)),
+            "vendorId": fm_vendor["id"],
+            "propertyId": tower["id"],
+            "paymentAccountId": out["accounts"]["tower"]["BANK"],
+            "chequeNumber": "700001",
+            "chequeDate": iso(dt.date(TODAY.year, 3, 5)),
+            "lines": [{
+                "accountId": vendor_payable_id(fm_vendor),
+                "description": "Fire safety AMC — invoice settled in full",
+                "amount": 9450.0,
+            }],
+        },
+    )
+    out["vouchers"] = {
+        "purchaseInvoice": invoice["id"],
+        "purchaseInvoiceNumber": invoice.get("voucherNumber"),
+        "paymentVoucher": payment["id"],
+        "paymentVoucherNumber": payment.get("voucherNumber"),
+        "vendorId": fm_vendor["id"],
+    }
 
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
@@ -815,36 +1171,6 @@ def main():
                     )
             log(f"media uploaded (fallback placeholders): {title}")
 
-    # ── 6b. Vendors ──────────────────────────────────────────────────────────
-    # Creating a vendor also creates its payable leaf under B-01-04 Vendors
-    # (accounting v2 plan 1), so the demo tenant gets a usable payables side of
-    # the chart with no extra step.
-    existing_vendors = {
-        v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
-        if isinstance(v, dict)
-    }
-
-    def make_vendor(name_en, name_ar, contact, phone):
-        if name_en in existing_vendors:
-            return existing_vendors[name_en]
-        return api.post("/api/v1/vendors", json={
-            "nameEn": name_en, "nameAr": name_ar,
-            "contactPerson": contact, "phone": phone,
-        })
-
-    for v in (
-        make_vendor("Emirates Facility Management", "إدارة المرافق",
-                    "Imran Shaikh", "+97143330001"),
-        make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
-                    "Maria Santos", "+97143330002"),
-    ):
-        log(f"vendor ready: {v.get('nameEn')}")
-
-    # The split-expense demo used the v1 `/finance/transactions` endpoints, which
-    # accounting v2 plan 1 removed along with `financial_transactions`. Vendor
-    # bills post as journal entries from plan 2 onwards; this seed re-gains them
-    # then.
-
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):
         d = dt.datetime.combine(
@@ -910,13 +1236,6 @@ def main():
     # ── 8. Operational tutorial fixtures ───────────────────────────────────
     # These records keep the property, staff, ticket, booking, promotions, and
     # gate-pass tutorial screens useful without requiring a live customer.
-    def page_items(payload):
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict) and isinstance(payload.get("content"), list):
-            return payload["content"]
-        return []
-
     buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
     building = next(
         (b for b in buildings if b.get("nameEn") == "Tutorial Operations Tower"),
@@ -1181,6 +1500,38 @@ def main():
         )
     out["gatePassId"] = gate_pass["id"]
     log("gate policy, registered visitor, and active resident pass ready")
+
+    # ── Month-end recognition ────────────────────────────────────────────────
+    # Accounting v2 plan 3 recognises rent PER DAY, one CIL per calendar month,
+    # and only for periods that have already ENDED. A freshly seeded tenant is
+    # therefore all schedule and no income: every recognition entry is PLANNED,
+    # Rental Income is zero and the income reports the demo exists to show are
+    # empty. Run the close to the end of last month — the same date the
+    # month-end screen defaults to — so the seeded books look like a landlord's
+    # in the middle of a year rather than one on their first day.
+    last_month_end = TODAY.replace(day=1) - dt.timedelta(days=1)
+    recognition = api.post(
+        f"/api/v1/finance/recognition/run?to={iso(last_month_end)}&preview=false"
+    ) or {}
+    # The date the books are closed to. Its own key as well as the block below,
+    # because that is the one fact the walkthroughs and the tutorials read.
+    out["recognitionRunTo"] = iso(last_month_end)
+    out["recognition"] = {
+        "to": iso(last_month_end),
+        "posted": recognition.get("posted", 0),
+        "amount": recognition.get("amount", 0),
+        "skippedLocked": recognition.get("skippedLocked", 0),
+        "failed": recognition.get("failed", 0),
+    }
+    log(
+        f"recognition run to {iso(last_month_end)}: "
+        f"{recognition.get('posted', 0)} entries posted, "
+        f"{recognition.get('amount', 0)} recognised"
+    )
+    if recognition.get("failed"):
+        # Not fatal — the rest of the demo data is still usable — but a silent
+        # partial close is how a demo ends up with books that do not add up.
+        log(f"  WARNING: {recognition['failed']} entries the ledger refused: {recognition.get('errors')}")
 
     # ── Done ─────────────────────────────────────────────────────────────────
     OUT_FILE.write_text(json.dumps(out, indent=2))

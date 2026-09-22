@@ -45,6 +45,19 @@ public class LeaseSettlementDeduction extends BaseTenantEntity {
     @Column(name = "addition_category", length = 50)
     private AdditionCategory additionCategory;
 
+    /**
+     * The leaf this line posts to, when the accountant overrode the one its
+     * category resolves to (changeset 85).
+     *
+     * <p>Stored rather than resolved at finalise time because the two are asked at
+     * different moments: an accountant picks "Cleaning – Marina Heights" while
+     * drafting, and the property's {@code MAINTENANCE_CHARGES} mapping may have
+     * been re-pointed by the time the settlement is finalised. Null means "whatever
+     * the category resolves to", which is what the resolver answers on every read.</p>
+     */
+    @Column(name = "account_id")
+    private UUID accountId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

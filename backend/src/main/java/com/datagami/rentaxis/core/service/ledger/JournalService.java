@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.ledger.ManualJournalRequest;
 import com.datagami.rentaxis.api.dto.ledger.ReverseRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.JournalLine;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -118,11 +119,70 @@ public class JournalService {
         }
     }
 
+    /**
+     * Reverse a manual journal voucher — and nothing else.
+     *
+     * <p>Every other entry in this table belongs to a document that carries its own
+     * status: a voucher, a lease, a cheque, a recognition period, a settlement, a
+     * penalty, an import batch, an opening balance. Reversing one of those here
+     * leaves the <em>document</em> posted and its ledger empty, and neither screen
+     * says so — the voucher still reads POSTED while the vendor's payable has
+     * vanished, and its own Amend then dead-ends on "already reversed". Which of
+     * the two is lying is not recoverable from the data afterwards.</p>
+     *
+     * <p>So each document is corrected where it was created, and the refusal says
+     * where that is. {@link PostingService#reverse} — the call those documents make
+     * for themselves, inside the transaction that also moves their status — is
+     * deliberately not narrowed.</p>
+     */
     @Transactional
     public JournalEntryDTO reverse(UUID id, ReverseRequest r) {
+        JournalEntry entry = entries.findById(id).orElseThrow(() -> new NotFoundException("Journal entry not found"));
+        // Scoped twice on purpose. The Hibernate filter already answers this read
+        // for one tenant (TenantAspect covers inherited repository methods too —
+        // TenantAspectIT pins that), but the refusal below names the *kind* of
+        // document an entry belongs to, so a read that ever ran unfiltered would
+        // answer a stranger's probe with both the entry's existence and its
+        // category. A foreign id is "not found", full stop.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(entry.getTenantId())) {
+            throw new NotFoundException("Journal entry not found");
+        }
+        requireManual(entry);
         ReverseRequest req = r == null ? new ReverseRequest(null, null) : r;
         LocalDate date = req.date() == null ? LocalDate.now() : req.date();
+        // PostingService owns the rest of the immutability rule: an entry that is
+        // already REVERSED, and a reversal entry itself, are refused there.
         return toDto(posting.reverse(id, date, req.reason()), true);
+    }
+
+    private static void requireManual(JournalEntry e) {
+        if (e.getSourceType() == JournalSourceType.MANUAL) return;
+        throw new BusinessRuleViolationException(whereToCorrect(e.getSourceType()));
+    }
+
+    /**
+     * A null source type is an entry written before the column existed, not a
+     * manual voucher — the same reading the journal screen takes when it decides
+     * whether to offer Reverse at all.
+     */
+    private static String whereToCorrect(JournalSourceType source) {
+        if (source == null) {
+            return "This journal has no source document; only a manual journal voucher can be reversed here";
+        }
+        String belongsTo = switch (source) {
+            case VOUCHER -> "voucher; amend the voucher instead";
+            case LEASE -> "lease; amend or terminate the lease instead";
+            case CHEQUE -> "cheque; correct it from the cheque register";
+            case RECOGNITION -> "rent recognition period; re-run month-end instead";
+            case SETTLEMENT -> "lease settlement, which cannot be reversed";
+            case PENALTY -> "penalty; reverse it from the penalties queue";
+            case IMPORT -> "import batch; reverse the whole batch instead";
+            case OPENING_BALANCE -> "opening balance; correct it from the opening-balance screen";
+            case REVERSAL -> "reversal of another entry, and a reversal is never reversed";
+            case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
+        };
+        return "This journal belongs to a " + belongsTo;
     }
 
     @Transactional(readOnly = true)
@@ -133,7 +193,27 @@ public class JournalService {
     @Transactional(readOnly = true)
     public Page<JournalEntryDTO> search(JournalDocType docType, LocalDate from, LocalDate to,
                                         UUID propertyId, UUID leaseId, Pageable pageable) {
-        return entries.search(docType, from, to, propertyId, leaseId, pageable).map(e -> toDto(e, false));
+        return search(docType, from, to, propertyId, leaseId, null, pageable);
+    }
+
+    /**
+     * The same search, narrowed to one cut-over import batch (spec §10.3).
+     *
+     * <p>This is the drill-through from the batches screen: "this batch wrote 1,431
+     * journals" is a number nobody can check, and the way to check it is to look at
+     * them. It is a filter on the ordinary journal list rather than a list of ids on
+     * the batch DTO, because the answer is a page of journals and the journal list
+     * already knows how to render, page and date-filter one.</p>
+     *
+     * <p>Its reversal mirrors come back too: {@code PostingService.reverse} copies
+     * the batch id onto them deliberately, and a drill-through that hid them would
+     * show a reversed batch as though its journals were still live.</p>
+     */
+    @Transactional(readOnly = true)
+    public Page<JournalEntryDTO> search(JournalDocType docType, LocalDate from, LocalDate to,
+                                        UUID propertyId, UUID leaseId, UUID importBatchId, Pageable pageable) {
+        return entries.search(docType, from, to, propertyId, leaseId, importBatchId, pageable)
+                .map(e -> toDto(e, false));
     }
 
     JournalEntryDTO toDto(JournalEntry e, boolean withLines) {

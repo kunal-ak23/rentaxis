@@ -1,12 +1,17 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -91,5 +96,88 @@ class AccountImportServiceTest {
 
         assertThat(saved.get(0).isSystem()).isFalse();
         assertThat(saved.get(0).isGroup()).isTrue();
+    }
+
+    // ------------------------------------------------------------------
+    // the spreadsheet door
+    // ------------------------------------------------------------------
+    //
+    // This endpoint parses an untrusted upload in-process with a library that
+    // builds the whole workbook in memory. It went straight to `new XSSFWorkbook`
+    // while the two portfolio importers went through WorkbookGuard, so the same
+    // file was judged by two different sets of limits depending on which URL it
+    // was posted to. These three pin that it now comes through the one door.
+
+    @Test
+    void anOrdinaryChartOfAccountsSpreadsheetStillImports() throws Exception {
+        List<Account> saved = service.importFromExcel(xlsx(
+                new String[]{"A", "Assets", "", "ASSET", "", ""},
+                new String[]{"A-01", "Current Assets", "", "ASSET", "A", ""}));
+
+        assertThat(saved).extracting(Account::getCode).containsExactly("A", "A-01");
+        assertThat(saved.get(1).getParent()).isSameAs(saved.get(0));
+    }
+
+    @Test
+    void aMacroEnabledChartIsRefusedWithASentenceRatherThanAStackTrace() {
+        assertThatThrownBy(() -> service.importFromExcel(upload(zipOf("xl/vbaProject.bin", "\0\0macro"))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(".xlsm");
+    }
+
+    @Test
+    void aChartWithMoreRowsThanTheImportAcceptsIsRefused() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            var sheet = wb.createSheet("Accounts");
+            for (int r = 0; r <= WorkbookGuard.MAX_ROWS_PER_SHEET; r++) {
+                sheet.createRow(r).createCell(0).setCellValue("A-" + r);
+            }
+            wb.write(out);
+        }
+        assertThatThrownBy(() -> service.importFromExcel(upload(out.toByteArray())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("split it into smaller workbooks");
+    }
+
+    /** A file whose name says .xlsx and whose bytes say otherwise. */
+    @Test
+    void aFileThatIsNotReallyAWorkbookIsRefused() {
+        assertThatThrownBy(() -> service.importFromExcel(
+                upload("code,name\nA,Assets\n".getBytes(StandardCharsets.UTF_8))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(".xlsx");
+    }
+
+    /** code | name | nameAr | type | parentCode | description */
+    private MockMultipartFile xlsx(String[]... rows) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            var sheet = wb.createSheet("Accounts");
+            var header = sheet.createRow(0);
+            String[] headers = {"code", "name", "nameAr", "type", "parentCode", "description"};
+            for (int c = 0; c < headers.length; c++) header.createCell(c).setCellValue(headers[c]);
+            for (int r = 0; r < rows.length; r++) {
+                var row = sheet.createRow(r + 1);
+                for (int c = 0; c < rows[r].length; c++) row.createCell(c).setCellValue(rows[r][c]);
+            }
+            wb.write(out);
+        }
+        return upload(out.toByteArray());
+    }
+
+    private MockMultipartFile upload(byte[] bytes) {
+        return new MockMultipartFile("file", "coa.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+    }
+
+    private static byte[] zipOf(String entryName, String content) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry(entryName));
+            zip.write(content.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return out.toByteArray();
     }
 }

@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api.dto.cheque;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,9 +21,18 @@ import java.util.UUID;
  * grace period. They are not stored: a client that derived them from
  * {@code chequeDate} alone would ignore grace days and show a renter as late a
  * week early.</p>
+ *
+ * <p>{@code leaseStatus} is on the row for the same reason: <b>which actions this
+ * row still admits is a property of the contract, not of the instrument</b>. A
+ * CLOSED lease refuses every transition and an ended one refuses new grid rows, so
+ * a register that knows only {@code status} keeps offering Deposit and Clear on
+ * rows the server will refuse — the client cannot tell a REGISTERED cheque on a
+ * running tenancy from one on a contract that has been settled and shut. It is the
+ * lease's own status, never re-derived.</p>
  */
 public record ChequeDTO(UUID id,
                         UUID leaseId,
+                        LeaseStatus leaseStatus,
                         UUID propertyId,
                         UUID unitId,
                         UUID renterId,

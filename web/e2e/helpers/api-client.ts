@@ -264,7 +264,17 @@ export async function generateCheques(
   role: string,
   tenantId: string,
   leaseId: string,
-  req: { installments?: number; firstDueDate?: string; distribution?: string } = {},
+  /**
+   * `foldDepositsAndFeesIntoFirst` defaults to TRUE server-side
+   * (GenerateChequesRequest's own doc), so a caller that wants the deposit on a
+   * row of its own — which is what a termination hands back — has to say so.
+   */
+  req: {
+    installments?: number;
+    firstDueDate?: string;
+    distribution?: string;
+    foldDepositsAndFeesIntoFirst?: boolean;
+  } = {},
 ) {
   return apiCall<any[]>(`/api/v1/leases/${leaseId}/cheques/generate`, {
     method: 'POST',

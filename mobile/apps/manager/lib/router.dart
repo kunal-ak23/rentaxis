@@ -52,6 +52,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   final gateProvider = appGateProvider(AppId.manager);
   final gateState = ref.watch(gateProvider);
   final gateFuture = ref.read(gateProvider.future);
+  // Read at build time, not inside the redirect closure: ref.watch belongs to
+  // the provider's build. The flag reads false until the flags resolve, so the
+  // redirect below is live from the first frame.
+  final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
 
   return GoRouter(
     // Dev affordance: --dart-define=START_ROUTE=/payments boots straight to a
@@ -87,6 +91,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/login';
       }
       if (isLoggedIn && isLoginRoute) {
+        return '/';
+      }
+
+      // MOBILE_FINANCE (default OFF) hides every finance, lease and cheque
+      // surface: accounting v2 removed or reshaped the endpoints behind them,
+      // so hiding the nav entry is not enough — a deep link, a restored
+      // location or a stale notification must not reach a screen that 404s or
+      // renders blank rows. Sending them to Today keeps the rest of the app
+      // usable. Every GoRoute below stays declared; only reachability changes.
+      if (isLoggedIn &&
+          !financeEnabled &&
+          isManagerFinanceLocation(state.matchedLocation)) {
         return '/';
       }
 

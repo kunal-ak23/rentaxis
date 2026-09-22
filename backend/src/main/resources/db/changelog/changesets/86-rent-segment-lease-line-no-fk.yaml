@@ -1,0 +1,158 @@
+databaseChangeLog:
+  # A retired rent segment outlives the lease line it was cut from.
+  #
+  # Amending a posted lease replaces its lines wholesale — LeaseService.applyLines
+  # is delete-then-insert and it *flushes* the delete before the amendment's event
+  # is published — so by the time RecognitionService.rebuildAfterAmend runs, the
+  # rows its segments point at are already gone. The segments themselves must not
+  # go with them: a POSTED recognition entry explains a CIL journal an auditor can
+  # still see, and the segment is where that entry's arithmetic came from.
+  #
+  # So the foreign key goes and the column stays NOT NULL. A cancelled segment
+  # keeps saying which line it was cut from — the audit link an amendment should
+  # record — and no segment, live or retired, can ever have no line at all. The
+  # alternative considered first (nullable + ON DELETE SET NULL) preserved strictly
+  # less: it erased exactly that link, and it left an ON DELETE behaviour that
+  # could in principle blank a live segment.
+  #
+  # The id is therefore a plain UUID, not a mapped association: RentSegment.leaseLineId
+  # is read back through LeaseLineRepository, which answers empty for a line an
+  # amendment deleted, and RecognitionPoster treats that the same way it treats a
+  # line with no credit account.
+  #
+  # The same changeset also makes room for a *truncated replacement* recognition
+  # entry, which is what a termination at T writes when the month containing T has
+  # already been posted (spec §8.5). The replacement is a NEW recognition_entries
+  # row: the original stays REVERSED, pointing at the CIL an auditor can still see,
+  # and the replacement gets a CIL of its own. Two consequences, both handled here:
+  #
+  #   * uq_re_segment_period (segment_id, period_start) would refuse the
+  #     replacement, because it shares both with the row it replaces. It becomes a
+  #     *partial* unique index over the live statuses only — at most one PLANNED or
+  #     POSTED row per segment and period, which is the invariant that was actually
+  #     meant; a REVERSED or CANCELLED row is history and no longer claims the slot.
+  #
+  #   * A new row per repost means a CIL's source_id is now immutable per journal,
+  #     which is the missing piece Task 3's C-1 flagged: with it, "at most one CIL
+  #     per recognition entry" can finally be a database guarantee and not only a
+  #     row lock. A reversal carries source_type = 'REVERSAL' and the *journal's*
+  #     id as its source (PostingService.reverse), so it sits outside the predicate
+  #     and the index cannot mistake it for a second recognition posting.
+  #
+  # OPERATOR NOTE. This changeset was edited after it first shipped to this branch
+  # and carries no `validCheckSum`, so a database that already ran the earlier
+  # version fails Liquibase's checksum check on startup. It is unreleased — it
+  # exists only on the accounting-v2 plan-3 branch — so the intended recovery is to
+  # drop and re-migrate the local database rather than to pin a checksum that would
+  # then travel to production. If a real environment somehow has it, roll 86 back
+  # and re-run it.
+  #
+  # `CREATE UNIQUE INDEX ux_leases_one_active_per_unit` can fail outright on a
+  # database that already holds an ACTIVE and a NOTICE_GIVEN lease on one unit —
+  # which 80's narrower predicate allowed. That failure is the index doing its job:
+  #   SELECT unit_id, count(*) FROM leases
+  #    WHERE status IN ('ACTIVE','NOTICE_GIVEN') AND unit_id IS NOT NULL
+  #    GROUP BY unit_id HAVING count(*) > 1;
+  # and end the tenancy that really finished before re-running. The rollback puts
+  # 80's `status = 'ACTIVE'` form back, which always succeeds because it constrains
+  # strictly fewer rows.
+  #
+  # `CREATE UNIQUE INDEX uq_je_recognition_source` can also fail outright, on any
+  # database that already holds two RECOGNITION journals for one source_id — the
+  # duplicate Task 3's row lock was the only guard against. That failure is the
+  # index doing its job: find the pair with
+  #   SELECT source_id, count(*) FROM journal_entries
+  #    WHERE source_type = 'RECOGNITION' GROUP BY source_id HAVING count(*) > 1;
+  # and reverse the later journal before re-running.
+  - changeSet:
+      id: 86-rent-segment-lease-line-no-fk
+      author: claude
+      changes:
+        - dropForeignKeyConstraint: { baseTableName: rent_segments, constraintName: fk_rs_line }
+        - sql:
+            # Raw SQL rather than dropUniqueConstraint + createIndex: a partial
+            # unique index has no Liquibase YAML form, and the pair has to be
+            # atomic — between the two there would be no uniqueness at all.
+            sql: |
+              ALTER TABLE recognition_entries DROP CONSTRAINT uq_re_segment_period;
+              CREATE UNIQUE INDEX uq_re_segment_period ON recognition_entries (segment_id, period_start)
+                WHERE status IN ('PLANNED', 'POSTED');
+        - sql:
+            sql: |
+              CREATE UNIQUE INDEX uq_je_recognition_source ON journal_entries (source_id)
+                WHERE source_type = 'RECOGNITION';
+        # One LIVE lease per unit, not one ACTIVE one.
+        #
+        # Changeset 80 wrote this index over `status = 'ACTIVE'`, which was the whole
+        # truth while NOTICE_GIVEN was unreachable — nothing in the backend could set
+        # it. This plan's `POST /leases/{id}/notice` makes it reachable, and a renter
+        # who has given notice is still in the flat: they owe the remaining months and
+        # their cheques are still banked. Left at 'ACTIVE' the database would happily
+        # accept a second tenancy on a unit the day a notice was recorded, which is
+        # exactly the double-let 80 exists to prevent. LeaseService.LIVE is the
+        # service-side half of this; this is the backstop.
+        #
+        # Drop-and-recreate rather than a second index: two overlapping partial
+        # uniques would refuse the same rows twice and report whichever fired first,
+        # and the one being replaced is strictly narrower.
+        - sql:
+            comment: Widen 80's one-lease-per-unit index to every LIVE tenancy
+            sql: |
+              DROP INDEX IF EXISTS ux_leases_one_active_per_unit;
+              CREATE UNIQUE INDEX ux_leases_one_active_per_unit
+                ON leases (unit_id) WHERE status IN ('ACTIVE', 'NOTICE_GIVEN');
+        # A truncated segment describes the term the tenancy actually ran — amount,
+        # to_date and days all move to the termination date, so `amount / days`
+        # keeps meaning something and ProrationEngine.earnedThrough answers the
+        # earned figure rather than the contract value for anyone who asks it about
+        # the row. `day_rate` stays the ORIGINAL contract rate, because that is what
+        # the months before the cut were worth and re-deriving it would restate
+        # them. These two columns are where the contract record goes instead:
+        # null on every live segment, filled only by a termination.
+        - addColumn:
+            tableName: rent_segments
+            columns:
+              - column: { name: original_amount, type: "decimal(14,2)" }
+              - column: { name: original_to_date, type: date }
+        # An optimistic lock on the settlement row.
+        #
+        # SettlementService.saveDraft now takes the lease's row lock, which is what
+        # actually serialises a save against a finalise. This is the backstop behind
+        # it, for any future path that writes a settlement without taking that lock:
+        # the failure is silent and expensive — a stale save puts a FINALIZED row
+        # back to DRAFT with journal_id blanked, over an STL that is posted and a
+        # refund that has been paid, and the settlement can then be finalised twice.
+        # Nullable with a default of 0, the same shape Lease and Cheque use (83).
+        - addColumn:
+            tableName: lease_settlements
+            columns:
+              - column: { name: version, type: bigint, defaultValueNumeric: 0 }
+      rollback:
+        # Non-destructive on purpose. The rows this changeset exists to protect are
+        # retired segments whose line is gone, and re-adding a validating FK would
+        # either fail on them or — worse, if the rollback "helpfully" deleted them —
+        # shred POSTED recognition entries whose journal_id points at a real,
+        # un-reversed CIL in the ledger. NOT VALID re-establishes the constraint for
+        # every future row and leaves the existing ones alone; an operator who wants
+        # them checked can VALIDATE CONSTRAINT once the data is reconciled.
+        #
+        # The two indexes go the other way: they are dropped and the original
+        # whole-table unique constraint is put back. That restore is deliberately
+        # allowed to *fail* on a database where a termination has already written a
+        # truncated replacement — the alternative would be deleting one of the two
+        # rows, and one of them explains a POSTED CIL. A refused rollback is the
+        # safe direction.
+        - sql:
+            sql: |
+              ALTER TABLE rent_segments
+                ADD CONSTRAINT fk_rs_line FOREIGN KEY (lease_line_id) REFERENCES lease_lines (id) NOT VALID;
+              ALTER TABLE rent_segments
+                DROP COLUMN IF EXISTS original_amount, DROP COLUMN IF EXISTS original_to_date;
+              ALTER TABLE lease_settlements DROP COLUMN IF EXISTS version;
+              DROP INDEX IF EXISTS ux_leases_one_active_per_unit;
+              CREATE UNIQUE INDEX ux_leases_one_active_per_unit
+                ON leases (unit_id) WHERE status = 'ACTIVE';
+              DROP INDEX IF EXISTS uq_je_recognition_source;
+              DROP INDEX IF EXISTS uq_re_segment_period;
+              ALTER TABLE recognition_entries
+                ADD CONSTRAINT uq_re_segment_period UNIQUE (segment_id, period_start);

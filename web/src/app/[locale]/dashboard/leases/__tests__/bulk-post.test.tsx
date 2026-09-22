@@ -52,6 +52,7 @@ function lease(over: Partial<LeaseDetail> & { id: string }): LeaseDetail {
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,
         renewedFromLeaseId: null, chainId: "chain-aaaaaaaa", receivableAccountId: null,
         incomeAccountId: null, postingJournalId: null, postedAt: null, contractValue: 60000,
+    terminatedOn: null, terminationJournalId: null, terminationNotes: null,
         lines: [],
         ...over,
     };

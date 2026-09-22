@@ -137,9 +137,19 @@ setup('seed test data', async () => {
   let leaseId: string = '';
   if (unitId && renterId) {
     try {
+      // The term STARTS IN THE PAST on purpose. Recognition only posts periods
+      // whose `period_end` has already passed (`RecognitionController
+      // #notInTheFuture`), so a contract that starts today has nothing to close
+      // and accounting-v2's month-end step is invisible to
+      // `finance/accounting-v2.spec.ts`, which walks THIS lease. Two months back
+      // leaves at least one closed period whatever day of the month the run is.
       const today = new Date();
-      const startDate = today.toISOString().split('T')[0];
-      const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate()).toISOString().split('T')[0];
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+      const startDate = isoOf(start);
+      // A one-year term: the day before the same date next year.
+      const endDate = isoOf(new Date(start.getFullYear() + 1, start.getMonth(), 0));
       const lease = await createLease(adminId, adminRole, testTenantId, {
         unitId,
         renterId,

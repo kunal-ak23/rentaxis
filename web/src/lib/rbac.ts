@@ -108,24 +108,106 @@ export const PERMISSIONS = {
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')") — turning
     // a proposal into a charge on the ledger is finance's decision, not a manager's.
     canApprovePenalties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
-    // Terminating a contract, which on this product means running its
-    // settlement: the "Terminate" action opens /leases/{id}/settlement.
-    // Mirrors LeaseController#getSettlementPreview, #getSettlement,
-    // #saveSettlementDraft and #finalizeSettlement, all
-    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')").
+    // ---- accounting-v2 plan 3: recognition / termination / settlement ----
     //
-    // Deliberately NOT canManageLeases. Gating Terminate on that key excluded
-    // PROPERTY_MANAGER, who had been able to terminate since before
-    // accounting-v2 and whom all four settlement endpoints still admit —
-    // move-outs are the manager's job, and drafting contracts is not.
-    // ACCOUNTANT is absent for the mirror-image reason: the settlement
-    // endpoints refuse them.
-    canTerminateLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // Ending a contract: POST /leases/{id}/terminate, which hands cheques back,
+    // truncates recognition and posts a TCR. Mirrors LeaseController#terminateLease's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')")
+    // (LeaseController.java:287-288).
+    //
+    // This key USED to be ['SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER'] and
+    // its comment claimed the four settlement endpoints admitted a PM and refused
+    // an ACCOUNTANT. Both halves are now false — plan 3 made termination a finance
+    // act with its own journals, and gave the accountant the settlement. A PM is
+    // not shut out of move-outs: they still preview a termination
+    // (canPreviewTermination) and read the statement (canViewSettlement).
+    canTerminateLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Looking at what ending a tenancy would cost. Mirrors
+    // LeaseController#previewTermination's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')")
+    // (LeaseController.java:273-274), scoped further to the manager's own
+    // buildings by LeaseAccessPolicy. One role wider than canTerminateLeases on
+    // purpose: reading the consequences of a move-out is the building manager's
+    // job, posting the journals that end the contract is the accountant's.
+    canPreviewTermination: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Taking a renter's notice: POST /leases/{id}/notice, ACTIVE → NOTICE_GIVEN.
+    // Mirrors LeaseController#giveNotice's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')")
+    // (LeaseController.java:250-251).
+    //
+    // Its own key rather than a reuse of canTerminateLeases: the annotation is
+    // one role wider, deliberately, because taking a notice writes no journal,
+    // hands nothing back and leaves every instrument on the register exactly
+    // where it was — which is the building manager's job, not finance's.
+    canGiveNotice: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Reading the move-out statement and the stored settlement row. Mirrors
+    // LeaseController#getSettlementStatement and #getSettlement
+    // (LeaseController.java:309-316) — both SA/TA/ACCOUNTANT/PM.
+    canViewSettlement: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Saving the settlement's lines and finalising it. Mirrors
+    // LeaseController#saveSettlementDraft and #finalizeSettlement
+    // (LeaseController.java:333-334, :360-361) — SA/TA/ACCOUNTANT, PM removed:
+    // deciding what comes out of a renter's deposit posts an STL.
+    canSettleLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // The month-end close. Mirrors RecognitionController's FINANCE_ROLES
+    // constant, "hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')"
+    // (RecognitionController.java:50), on GET /finance/recognition/pending and
+    // POST /finance/recognition/run. PROPERTY_MANAGER is deliberately absent —
+    // the same controller admits them to GET /leases/{id}/recognition, because a
+    // lease's schedule is part of the contract they manage while running a close
+    // is an act on the organisation's books.
+    canRunRecognition: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Reading one lease's recognition schedule tab. Mirrors
+    // RecognitionController#schedule's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')")
+    // (RecognitionController.java:110-111).
+    canViewRecognitionSchedule: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     // Mirrors ChargeTypeController's write methods (POST, PUT /{id}):
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). The
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
     // and Spring Security does not combine the two — the narrower one wins on writes.
     canManageChargeTypes: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+
+    // ---- accounting-v2 plan 4: vouchers ----
+    //
+    // Purchase/Service Invoices and Bank/Cash Payment Vouchers: the list, both
+    // forms, post, amend, delete and the attachment sub-resources. Mirrors the
+    // ONE class-level annotation on VoucherController
+    // (VoucherController.java:55), which covers every handler in the file:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    //
+    // Its own key rather than a reuse of canPostJournals even though the two
+    // lists are identical today: they mirror different annotations, on different
+    // controllers, and a future widening of one is not a widening of the other.
+    // PROPERTY_MANAGER is absent because the controller refuses it — so the
+    // sidebar shows a manager no voucher link, and the pages show an
+    // access-denied panel rather than a screen that 403s on its first fetch.
+    canManageVouchers: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // The cut-over import batches screen: the list and the one Reverse button.
+    // Mirrors ImportBatchController's class-level @PreAuthorize
+    // (ImportBatchController.java:44), which covers every handler in the file:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    //
+    // Reversing a cut-over unposts every contract it created, so it sits with
+    // finance rather than with property management — PROPERTY_MANAGER is absent
+    // because the controller refuses it. Its own key, not a reuse of
+    // canManageVouchers: same set today, different annotation on a different
+    // controller. The cut-over template download on that same page is the SAME
+    // set — PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT, because
+    // the person assembling a cut-over workbook out of a PACT export is the
+    // accountant. (It was SA/TA while the page linked the v1 /template, which
+    // keeps its narrower gate.) See cutoverRules.canDownloadImportTemplate.
+    canManageImportBatches: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Opening balances and the reconciliation report. Mirrors
+    // OpeningBalanceController's class-level @PreAuthorize
+    // (OpeningBalanceController.java:57), which covers all seven handlers
+    // (grid, snapshot, setRow, post, repost, reverse, reconcile):
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    // Spec §11 puts "OB" in that list explicitly — opening the books writes a
+    // journal covering every account the organisation has, so PROPERTY_MANAGER
+    // is absent. Its own key for the same reason as the neighbours above: same
+    // set today, a different annotation on a different controller.
+    canManageOpeningBalances: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

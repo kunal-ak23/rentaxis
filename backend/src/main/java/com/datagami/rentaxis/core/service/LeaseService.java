@@ -4,11 +4,11 @@ import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
-import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
@@ -28,6 +28,7 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -39,13 +40,40 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class LeaseService {
+
+    /**
+     * A tenancy that is <em>living on</em> a unit, for every occupancy rule in this
+     * class (review I3).
+     *
+     * <p>ACTIVE and NOTICE_GIVEN, defined once. A lease on notice is a lease: the
+     * renter is still in the unit, still owes the remaining months, and its
+     * instruments are still banked — {@code ChequeService.COLLECTABLE},
+     * {@code LeaseTerminationService.TERMINABLE} and {@code NotificationScheduler}
+     * all treat it as running. Occupancy was the outlier, asking only about ACTIVE,
+     * and the two consequences were symmetrical and both bad: a second lease could
+     * be posted on a unit whose renter had given notice, and ending any overlapping
+     * lease vacated a unit somebody was still living in.</p>
+     *
+     * <p>Deliberately <em>not</em> a set of "statuses that mean the contract has not
+     * finished": RENEWED and EXPIRED leases are over as tenancies even though their
+     * money may still be moving. This set answers one question — who is in the flat.</p>
+     *
+     * <p>Public since the cut-over import (plan 4) asks the same question from
+     * another package: a workbook must not create a second tenancy on a unit that is
+     * already let, and it has to find that out at <em>validation</em> time, before
+     * anything is written. A copy of the set there would be the fourth definition
+     * this Javadoc exists to prevent.</p>
+     */
+    public static final Set<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
 
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;
@@ -60,7 +88,6 @@ public class LeaseService {
     private final ChequeRepository chequeRepository;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final AccountResolver accountResolver;
-    private final SettlementService settlementService;
     private final UnitListingService unitListingService;
     private final ApplicationEventPublisher events;
     private final LeaseAccessPolicy leaseAccessPolicy;
@@ -78,7 +105,6 @@ public class LeaseService {
                         ChequeRepository chequeRepository,
                         RentCollectionSettingsRepository rentCollectionSettingsRepository,
                         AccountResolver accountResolver,
-                        SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
                         ApplicationEventPublisher events,
                         LeaseAccessPolicy leaseAccessPolicy) {
@@ -95,7 +121,6 @@ public class LeaseService {
         this.chequeRepository = chequeRepository;
         this.rentCollectionSettingsRepository = rentCollectionSettingsRepository;
         this.accountResolver = accountResolver;
-        this.settlementService = settlementService;
         this.unitListingService = unitListingService;
         this.events = events;
         this.leaseAccessPolicy = leaseAccessPolicy;
@@ -220,7 +245,7 @@ public class LeaseService {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
 
-        boolean heldByAnother = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        boolean heldByAnother = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .anyMatch(other -> !other.getId().equals(lease.getId()));
         if (heldByAnother) {
             throw new BusinessRuleViolationException(
@@ -242,14 +267,27 @@ public class LeaseService {
      * in it. Overlaps should no longer be creatable, but production already
      * contains some, and this must not make those worse.
      */
+    /**
+     * Public door onto the same rule, for the one caller outside this class that
+     * has to give a unit back: {@code ImportedLeaseReverter}, undoing a cut-over
+     * import batch (spec §10.3). A re-import has to be able to create a lease on
+     * that flat again without tripping {@code ux_leases_one_active_per_unit}, and a
+     * second copy of "is anybody else living here" is how a unit comes to read
+     * VACANT with a renter in it.
+     */
+    @Transactional
+    public void releaseUnitIfNoOtherLiveLease(Lease lease) {
+        releaseUnitIfNoOtherActiveLease(lease);
+    }
+
     private void releaseUnitIfNoOtherActiveLease(Lease lease) {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());
 
-        List<Lease> stillActive = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        List<Lease> stillLive = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .filter(other -> !other.getId().equals(lease.getId()))
                 .toList();
-        if (!stillActive.isEmpty()) {
+        if (!stillLive.isEmpty()) {
             // Leave the unit as it is: another lease is live on it. Its own
             // termination will vacate the unit.
             return;
@@ -278,8 +316,42 @@ public class LeaseService {
                 || !predecessor.getUnit().getId().equals(unit.getId())) {
             return false;
         }
-        return leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+        return leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
                 .allMatch(other -> other.getId().equals(predecessor.getId()));
+    }
+
+    /**
+     * The lease row, locked FOR UPDATE and tenant-checked — what a status
+     * transition reads.
+     *
+     * <p>{@code findByIdForUpdate} is NOWAIT, so a contended row fails immediately
+     * with "try again" rather than parking a connection behind another clerk's open
+     * tab; the tenant check repeats {@link #findLeaseWithTenantCheck}'s because a
+     * locking query is JPQL and must not be trusted to have been scoped for us.</p>
+     *
+     * <p><b>"Try again" has to be a 400, not a 500</b> (review M-6). NOWAIT raises a
+     * {@code PessimisticLockingFailureException}, nothing handles that type, and
+     * {@code giveNotice} therefore promised a clean refusal in its own comment while
+     * delivering a server error — the very failure the lock was added to replace.
+     * {@code RowLockedException} is the register's convention for exactly this and
+     * is a {@code BusinessRuleViolationException}, so the HTTP answer is the 400 the
+     * clerk can act on; its distinct type is what lets a webhook tell a transient
+     * refusal from a deterministic one.</p>
+     */
+    private Lease lockLeaseForTransition(UUID leaseId) {
+        Lease lease;
+        try {
+            lease = leaseRepository.findByIdForUpdate(leaseId)
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+        } catch (PessimisticLockingFailureException e) {
+            throw new RowLockedException(
+                    "This lease is being updated by another request. Please try again.");
+        }
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
     }
 
     private Lease findLeaseWithTenantCheck(UUID id) {
@@ -713,6 +785,32 @@ public class LeaseService {
                 .toList();
     }
 
+    /**
+     * The object-level guard on its own, for a lease sub-resource served by a
+     * different service.
+     *
+     * <p>The recognition schedule hangs off a lease exactly as the lines do, and
+     * has to be scoped exactly as they are: a property manager assigned to one
+     * building may read their own leases' schedules and no others. The check
+     * cannot live in {@code RecognitionService} — its {@code scheduleFor} is also
+     * how one tenant proves it sees nothing of another's, and it is called from
+     * contexts with no authenticated caller at all, where the policy correctly
+     * fails closed. So the caller asks for the guard, here, where every other
+     * lease read already asks for it.</p>
+     *
+     * <p>{@code @Transactional} for the same reason {@link #getLines} is: the
+     * tenant filter only exists inside a transaction, and a check made outside one
+     * would happily find another organisation's lease.</p>
+     *
+     * @throws com.datagami.rentaxis.api.exception.NotFoundException if the lease is
+     *         another tenant's, or this caller's role does not reach it. Not
+     *         access-denied — a 403 on a lease id confirms the lease exists.
+     */
+    @Transactional(readOnly = true)
+    public void requireReadableLease(UUID leaseId) {
+        leaseAccessPolicy.requireReadable(findLeaseWithTenantCheck(leaseId));
+    }
+
     /** Amounts may legitimately be omitted (a zero-value line); null is not an error. */
     private static BigDecimal nonNull(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
@@ -869,23 +967,53 @@ public class LeaseService {
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {
+        return markActiveOnPosting(lease, notes, true);
+    }
+
+    /**
+     * The same, with a say in whether anybody is told.
+     *
+     * <p>{@code announce = false} is the cut-over's (spec §10.3): a batch of six
+     * hundred contracts that have been running for months is not six hundred
+     * tenancies starting today, and the landlord's first visible act on this system
+     * must not be an activation e-mail to every renter they have.
+     * {@code ContractImportPersistService} makes the same choice about
+     * LEASE_CREATED, and this is the other half of it — the import creates the
+     * lease, the bulk post activates it, and both are the same migration.</p>
+     *
+     * <p><b>Only the e-mail is suppressed.</b> The unit is still claimed and the
+     * event row is still written: the trail is how an accountant later explains why
+     * a contract went on the books in a closed month, and the occupancy is simply
+     * true.</p>
+     */
+    @Transactional
+    public Lease markActiveOnPosting(Lease lease, String notes, boolean announce) {
         LeaseStatus previousStatus = lease.getStatus();
         if (previousStatus != LeaseStatus.DRAFT && previousStatus != LeaseStatus.PENDING_SIGNATURE) {
             throw new BusinessRuleViolationException(
                     "Only a DRAFT or PENDING_SIGNATURE lease can become ACTIVE; this one is " + previousStatus);
         }
-        lease.setStatus(LeaseStatus.ACTIVE);
-
+        // The unit is claimed BEFORE the status flip, not after. Setting ACTIVE first
+        // leaves the lease dirty, and the very next query — the unit's own
+        // `findByIdForUpdate` inside claimUnitForLease — auto-flushes it: the UPDATE
+        // reaches `ux_leases_one_active_per_unit` (changeset 80, widened in 86) and
+        // the double-let is refused by the database as a DataIntegrityViolation
+        // before this method's own check can refuse it as a clean 400. Same outcome,
+        // far worse message, and only visible once a unit could be held by a lease
+        // that is not ACTIVE — see LIVE.
         claimUnitForLease(lease);
+        lease.setStatus(LeaseStatus.ACTIVE);
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, notes);
 
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.LEASE_ACTIVATED,
-                savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
-                "LEASE_ACTIVATED:" + savedLease.getId()));
+        if (announce) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.LEASE_ACTIVATED,
+                    savedLease.getTenantId(),
+                    buildLeasePayload(savedLease),
+                    "LEASE_ACTIVATED:" + savedLease.getId()));
+        }
 
         return savedLease;
     }
@@ -903,9 +1031,153 @@ public class LeaseService {
         recordEvent(lease, previous, next, notes);
     }
 
+    /**
+     * The renter has said they are leaving: ACTIVE → NOTICE_GIVEN.
+     *
+     * <p>A flag on the contract and nothing more — no journal, no cheque, no unit
+     * change. It is what the renewal worklist and the expiry sweep read to tell a
+     * tenancy that is winding down from one that is simply running, and the register
+     * treats a NOTICE_GIVEN lease exactly as it treats an ACTIVE one: the rent for
+     * the remaining months is still owed and its instruments are still banked.</p>
+     *
+     * <p><b>ACTIVE only.</b> Notice on a contract that has already ended is not a
+     * notice, it is a correction to history; and a lease that is still DRAFT has
+     * nothing to give notice on. A renter who changes their mind is handled by
+     * {@code LeaseRenewalService}, which admits NOTICE_GIVEN as renewable — there is
+     * deliberately no "withdraw notice" here, because the event trail should keep
+     * saying that notice was once given.</p>
+     */
     @Transactional
-    public LeaseDTO terminateLease(UUID leaseId, String notes) {
+    public LeaseDTO giveNotice(UUID leaseId, String notes, UUID byUser) {
+        // Locked, like every sibling transition (markExpired, markTerminated,
+        // finalizeSettlement, terminate). Without it a notice racing a termination
+        // is caught only by @Version, which surfaces as a 500-shaped optimistic-lock
+        // failure rather than the clean refusal below.
+        Lease lease = lockLeaseForTransition(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
+        if (lease.getStatus() != LeaseStatus.ACTIVE) {
+            throw new BusinessRuleViolationException(
+                    "Only an ACTIVE lease can be given notice; this one is " + lease.getStatus() + ".");
+        }
+
+        lease.setStatus(LeaseStatus.NOTICE_GIVEN);
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
+                notes != null && !notes.isBlank()
+                        ? "Notice given: " + notes.trim()
+                        : "Notice given",
+                byUser);
+        return mapToDTO(saved);
+    }
+
+    /**
+     * The nightly sweep's candidates: this tenant's running tenancies whose last
+     * day has passed (spec §9).
+     *
+     * <p>Ids rather than entities, and a transaction of its own rather than the
+     * flip's, so the sweep holds nothing open while it works through them and one
+     * lease's refusal cannot roll the rest back. {@code @Transactional} is what
+     * gives {@code TenantAspect} a session to enable the tenant filter on — without
+     * it the JPQL below has no tenant column and would answer with every
+     * landlord's contracts.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findLeasesToExpire(LocalDate today) {
+        return leaseRepository.findIdsToExpire(
+                List.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN), today);
+    }
+
+    /**
+     * Flip the contract to EXPIRED — {@link #markTerminated}'s sibling for the end
+     * the calendar decides.
+     *
+     * <p><b>It posts nothing and touches no cheque.</b> Expiry is a calendar fact:
+     * the term ran out. An instrument dated inside the term that nobody banked is
+     * still money the renter owes, and this job used to cancel exactly those on the
+     * way past — writing the debt off in the one direction that costs the landlord.
+     * Deciding what happens to uncleared paper belongs to the termination and
+     * settlement flow, where a human is looking at the contract. The recognition
+     * schedule is left alone for the mirror-image reason: its rows are earned rent
+     * and the month-end close posts them on their own.</p>
+     *
+     * <p><b>No {@code requireManageable}</b>, unlike its sibling, and that is the
+     * one thing to be careful about here: the caller is a scheduler with no
+     * principal at all, so the policy — which fails closed — would refuse every
+     * lease every night. {@link LeaseExpirationJob} is its only caller and the
+     * method is not reachable from any controller. The precondition below is what
+     * stands in for authorisation: it does nothing to a contract the calendar has
+     * not already ended.</p>
+     *
+     * @return whether this call expired it.
+     */
+    @Transactional
+    public boolean markExpired(UUID leaseId, LocalDate today) {
+        // Locked, because the sweep read its candidates in an earlier transaction
+        // and a clerk may have terminated or renewed this contract since.
+        Lease lease = lockLeaseForTransition(leaseId);
+        if (lease.getStatus() != LeaseStatus.ACTIVE && lease.getStatus() != LeaseStatus.NOTICE_GIVEN) {
+            // Not an error: the row was a candidate a moment ago and is not one now.
+            // A RENEWED predecessor in particular must never become EXPIRED — both
+            // mean "over", and only one of them says where the unit and the deposit
+            // went.
+            return false;
+        }
+        if (lease.getEndDate() == null || !lease.getEndDate().isBefore(today)) {
+            return false;
+        }
+
+        LeaseStatus previousStatus = lease.getStatus();
+        lease.setStatus(LeaseStatus.EXPIRED);
+
+        // Expiry and termination are the two ways out of a running lease and must
+        // leave the unit in the same state. This job used to set only the status, so
+        // the unit went VACANT while still advertising the departed renter's name
+        // and their rent as its actual_rent — skewing occupancy and revenue
+        // reporting until someone noticed. Changeset 68's second UPDATE is exactly
+        // this cleanup, run as a production backfill, and 70 describes the same
+        // drift. The rule that a unit held by another ACTIVE lease is not released
+        // lives in one place; this is that place.
+        releaseUnitIfNoOtherActiveLease(lease);
+
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, previousStatus, LeaseStatus.EXPIRED,
+                "Automatically transitioned to EXPIRED by system job (term ended " + lease.getEndDate() + ")");
+        return true;
+    }
+
+    /**
+     * Flip the contract to TERMINATED — the <em>last</em> step of a termination,
+     * never the whole of one.
+     *
+     * <p><b>Call this through {@code LeaseTerminationService.terminate} and nowhere
+     * else.</b> A termination is returning the uncleared paper, truncating the
+     * recognition schedule and reversing the unearned rent (spec §9.1); this method
+     * is only the status, the unit and the notifications, and on its own it
+     * produces exactly the state the old {@code terminateLease} left behind — a
+     * contract marked ended with its cheques still on the register and next
+     * September's rent still scheduled to be earned. It stays a separate method
+     * because the unit-occupancy rule below is subtle and worth one home, and
+     * because the termination service lives in another package.</p>
+     *
+     * <p>The cheque register is deliberately untouched here: what happens to a
+     * terminated lease's instruments is decided by the caller, one row at a time,
+     * through {@code ChequeService} — cancelling them behind its back would reverse
+     * registrations it had chosen to keep.</p>
+     *
+     * @param terminatedOn           {@code T}: what every termination journal is
+     *                               dated and what the rent was earned through.
+     * @param terminationJournalId   the {@code TCR}, or null when nothing was unearned.
+     * @param byUser                 stamped on the lease event, so the trail says who.
+     */
+    @Transactional
+    public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
+                                   UUID terminationJournalId, UUID byUser) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
+        // Object-level authorisation of its own, even though the one production
+        // caller has already asked the same question. A public method that ends a
+        // contract should not depend on every future caller remembering to; the
+        // policy answers "Lease not found" rather than a 403, for the usual reason.
+        leaseAccessPolicy.requireManageable(lease);
 
         if (lease.getStatus() == LeaseStatus.TERMINATED || lease.getStatus() == LeaseStatus.CLOSED) {
             throw new BusinessRuleViolationException("Lease is already terminated or closed");
@@ -913,16 +1185,18 @@ public class LeaseService {
 
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
+        lease.setTerminatedOn(terminatedOn);
+        lease.setTerminationNotes(notes);
+        lease.setTerminationJournalId(terminationJournalId);
 
         releaseUnitIfNoOtherActiveLease(lease);
 
-        // The cheque register is deliberately untouched. What happens to a
-        // terminated lease's uncleared instruments — handed back, banked, or held
-        // against a settlement — is the settlement flow's decision (spec §9.1),
-        // and cancelling them here would reverse registrations behind its back.
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
-                notes != null ? notes : "Lease terminated early");
+                notes != null && !notes.isBlank()
+                        ? "Terminated on " + terminatedOn + ": " + notes.trim()
+                        : "Terminated on " + terminatedOn,
+                byUser);
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_TERMINATED,
@@ -947,15 +1221,12 @@ public class LeaseService {
     // for the new window, posts a further TCO and registers the cheques that pay
     // for it (spec §6.7).
 
-    @Transactional
-    public LeaseDTO terminateWithSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
-        // Create settlement first (within same transaction)
-        if (dto != null && dto.getDeductions() != null && !dto.getDeductions().isEmpty()) {
-            settlementService.createSettlement(leaseId, dto, settledBy);
-        }
-        // Then terminate
-        return terminateLease(leaseId, dto != null ? dto.getNotes() : null);
-    }
+    // terminateWithSettlement is gone. It created a settlement out of a free-text
+    // deduction list and then flipped the status, which is neither of the two
+    // things spec §9.1 and §9.2 describe: a termination is dated, returns the
+    // uncleared paper and reverses the unearned rent
+    // (LeaseTerminationService.terminate), and a settlement is a statement drawn
+    // from the ledger afterwards. They are two acts on two screens now.
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
@@ -1035,12 +1306,17 @@ public class LeaseService {
     }
 
     private void recordEvent(Lease lease, LeaseStatus prev, LeaseStatus next, String notes) {
+        recordEvent(lease, prev, next, notes, null);
+    }
+
+    private void recordEvent(Lease lease, LeaseStatus prev, LeaseStatus next, String notes, UUID createdBy) {
         LeaseEvent event = new LeaseEvent();
         event.setLease(lease);
         event.setPreviousState(prev);
         event.setNewState(next);
         event.setNotes(notes);
         event.setCreatedAt(Instant.now());
+        event.setCreatedBy(createdBy);
         leaseEventRepository.save(event);
     }
 
@@ -1069,6 +1345,7 @@ public class LeaseService {
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
         dto.setContractNumber(lease.getContractNumber());
         dto.setDisplayContractNumber(displayContractNumber(property.getCode(), lease.getContractNumber()));
+        dto.setExternalContractRef(lease.getExternalContractRef());
         dto.setAgreementDate(lease.getAgreementDate());
         dto.setRentVatApplicable(lease.isRentVatApplicable());
 
@@ -1083,6 +1360,9 @@ public class LeaseService {
         dto.setIncomeAccountId(lease.getIncomeAccountId());
         dto.setPostingJournalId(lease.getPostingJournalId());
         dto.setPostedAt(lease.getPostedAt());
+        dto.setTerminatedOn(lease.getTerminatedOn());
+        dto.setTerminationJournalId(lease.getTerminationJournalId());
+        dto.setTerminationNotes(lease.getTerminationNotes());
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));

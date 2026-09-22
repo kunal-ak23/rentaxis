@@ -521,28 +521,51 @@ class MiftahNavBar extends StatelessWidget {
     required this.items,
     required this.currentIndex,
     required this.onTap,
-    required this.centreIcon,
-    required this.centreLabel,
-    required this.onCentreTap,
+    this.centreIcon,
+    this.centreLabel,
+    this.onCentreTap,
   });
 
-  /// Exactly four — two either side of the centre action.
+  /// Three or four, in the order they appear. Three is what a shell shows when
+  /// a capability behind one of the items is switched off for the tenant.
   final List<MiftahNavItem> items;
   final int currentIndex;
   final ValueChanged<int> onTap;
-  final IconData centreIcon;
-  final String centreLabel;
-  final VoidCallback onCentreTap;
+
+  /// The raised centre action. Omit all three to render a bar without one.
+  final IconData? centreIcon;
+  final String? centreLabel;
+  final VoidCallback? onCentreTap;
+
+  bool get _hasCentre => centreIcon != null && onCentreTap != null;
 
   @override
   Widget build(BuildContext context) {
-    assert(items.length == 4, 'MiftahNavBar expects four flanking items');
+    assert(
+      items.length == 3 || items.length == 4,
+      'MiftahNavBar expects three or four flanking items',
+    );
+    // Icon + tap without a label used to render a silently blank caption.
+    assert(
+      !_hasCentre || centreLabel != null,
+      'MiftahNavBar centre action needs a label',
+    );
+    // The raised gold circle only reads as *centred* when the slots either
+    // side of it weigh the same, and every slot is an equal-flex Expanded —
+    // so the total slot count has to be odd. Four items give 2 + centre + 2
+    // and need nothing (this is the layout the design was drawn against).
+    // Three items give 2 + centre + 1, which is off by one column: the circle
+    // would sit at 5/8 of the width. One empty trailing column restores the
+    // balance, so the bar ends in whitespace rather than a misplaced action.
+    // In RTL the Row flips with the Directionality, so the gap stays at the
+    // bar's end either way.
+    final leading = _hasCentre ? (items.length + 1) ~/ 2 : items.length;
+    final balance = _hasCentre ? 2 * leading - items.length : 0;
     final slots = <Widget>[
-      _slot(context, 0),
-      _slot(context, 1),
-      _centre(context),
-      _slot(context, 2),
-      _slot(context, 3),
+      for (var i = 0; i < leading; i++) _slot(context, i),
+      if (_hasCentre) _centre(context),
+      for (var i = leading; i < items.length; i++) _slot(context, i),
+      for (var i = 0; i < balance; i++) const SizedBox.shrink(),
     ];
     final m = context.miftah;
     return Container(
@@ -617,13 +640,13 @@ class MiftahNavBar extends StatelessWidget {
                 gradient: MiftahGradients.goldCompact,
                 boxShadow: MiftahShadows.gold,
               ),
-              child: Icon(centreIcon, size: 24, color: MiftahColors.ink),
+              child: Icon(centreIcon!, size: 24, color: MiftahColors.ink),
             ),
           ),
           Transform.translate(
             offset: const Offset(0, -26),
             child: Text(
-              centreLabel,
+              centreLabel ?? '',
               style: MiftahType.meta(
                 color: m.textMuted,
               ).copyWith(fontSize: 10.5, fontWeight: FontWeight.w600),

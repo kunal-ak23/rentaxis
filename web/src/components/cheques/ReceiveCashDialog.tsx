@@ -6,6 +6,7 @@ import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { todayIso } from "@/components/leases/leaseMath";
+import { leaseTakesNewRows } from "@/components/cheques/registerActions";
 import { ApiError, chequeApi, leaseApi, type Cheque, type ChequeMode, type LeaseDetail } from "@/lib/api/leasing";
 
 /**
@@ -15,8 +16,18 @@ import { ApiError, chequeApi, leaseApi, type Cheque, type ChequeMode, type Lease
  * one call), unlike the register's per-row "Receive" action, which confirms
  * an EXISTING REGISTERED CASH/TRANSFER row.
  *
+ * Because it creates a row, the lease it is taken against has to be one that
+ * still grows instalments: `ChequeService.POSTED` ({ACTIVE, NOTICE_GIVEN,
+ * RENEWED}), not the wider `COLLECTABLE` that merely lets an existing row move.
+ * The search therefore filters the page it gets back — `GET /leases/paged`
+ * takes a single-valued `status`, so three statuses cannot be asked for in one
+ * request — and says how many matches it dropped rather than silently shortening
+ * the list.
+ *
  * When opened with `initialLeaseId` (the lease page's own "Cash receipt"
- * entry point, via `?leaseId=`), the lease step is skipped.
+ * entry point, via `?leaseId=`), the lease step is skipped — but the same rule
+ * is checked, because a link is as capable of naming an ended contract as a
+ * search is.
  */
 
 const RECEIPT_MODES: ChequeMode[] = ["CASH", "TRANSFER"];
@@ -38,6 +49,8 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
 
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<LeaseDetail[]>([]);
+    /** How many of the page's matches `POSTED` excluded — shown, never hidden. */
+    const [filteredOut, setFilteredOut] = useState(0);
     const [searching, setSearching] = useState(false);
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [mode, setMode] = useState<ChequeMode>("CASH");
@@ -58,6 +71,7 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
         setError(null);
         setQuery("");
         setResults([]);
+        setFilteredOut(0);
         if (initialLeaseId) {
             leaseApi.get(initialLeaseId).then(setLease).catch(() => setLease(null));
         } else {
@@ -68,20 +82,34 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
     useEffect(() => {
         if (!open || lease || query.trim().length < 2) {
             setResults([]);
+            setFilteredOut(0);
             return;
         }
         setSearching(true);
         const timer = window.setTimeout(() => {
             leaseApi
                 .paged({ search: query.trim(), size: 8 })
-                .then(page => setResults(page.content))
-                .catch(() => setResults([]))
+                .then(page => {
+                    const usable = page.content.filter(l => leaseTakesNewRows(l.status));
+                    setResults(usable);
+                    setFilteredOut(page.content.length - usable.length);
+                })
+                .catch(() => {
+                    setResults([]);
+                    setFilteredOut(0);
+                })
                 .finally(() => setSearching(false));
         }, 250);
         return () => window.clearTimeout(timer);
     }, [open, lease, query]);
 
     if (!open) return null;
+
+    /**
+     * A lease reached through `?leaseId=` gets the same rule the search does.
+     * Null while `leaseApi.get` is still in flight, which is neither yes nor no.
+     */
+    const leaseTakesRow = lease == null ? null : leaseTakesNewRows(lease.status);
 
     const submit = async () => {
         if (!lease) return;
@@ -117,7 +145,7 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
             confirmText={t("cashReceipt")}
             cancelText={tl("cancel")}
             busy={busy}
-            confirmDisabled={!lease || amount <= 0}
+            confirmDisabled={!lease || leaseTakesRow !== true || amount <= 0}
             confirmTestId="cash-receipt-confirm"
         >
             <div className="space-y-3">
@@ -133,6 +161,11 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                             onChange={e => setQuery(e.target.value)}
                         />
                         {searching && <p className="text-[11px] text-muted mt-1">…</p>}
+                        {!searching && filteredOut > 0 && (
+                            <p className="text-[11px] text-muted mt-1" data-testid="cash-receipt-lease-filtered">
+                                {t("leaseSearchFiltered", { count: filteredOut })}
+                            </p>
+                        )}
                         {results.length > 0 && (
                             <ul className="mt-1.5 max-h-48 overflow-auto border border-border rounded-lg divide-y divide-border">
                                 {results.map(l => (
@@ -166,6 +199,16 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                             </button>
                         )}
                     </div>
+                )}
+
+                {leaseTakesRow === false && lease && (
+                    <p
+                        role="alert"
+                        data-testid="cash-receipt-not-posted"
+                        className="rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-[11px] text-warning"
+                    >
+                        {t("leaseNotPosted", { status: tl(`leaseStatus.${lease.status}`) })}
+                    </p>
                 )}
 
                 <div className="grid grid-cols-2 gap-3">

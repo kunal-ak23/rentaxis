@@ -113,12 +113,72 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     List<Lease> findByUnitIdAndStatus(UUID unitId, LeaseStatus status);
 
+    /**
+     * The leases that are <em>living on</em> a unit — the question every occupancy
+     * rule asks (see {@code LeaseService.LIVE}).
+     *
+     * <p>A tenancy on notice is still a tenancy: the renter is still there, still
+     * owes the remaining months and still has instruments on the register. Asking
+     * this by a single status was the bug review I3 found — a unit could be let
+     * twice, or vacated under a sitting renter, the day somebody recorded a
+     * notice.</p>
+     */
+    List<Lease> findByUnitIdAndStatusIn(UUID unitId, Collection<LeaseStatus> statuses);
+
+    /**
+     * Leases already holding a PACT contract reference in this organisation.
+     *
+     * <p>Explicitly tenant-scoped rather than relying on the Hibernate filter: the
+     * cut-over validator runs on the import executor's thread, and "is this
+     * reference free?" answered across organisations would refuse one landlord's
+     * contract because another landlord numbers theirs the same way.</p>
+     */
+    List<Lease> findByTenantIdAndExternalContractRef(UUID tenantId, String externalContractRef);
+
     List<Lease> findByRenterId(UUID renterId);
 
-    @Query("SELECT l FROM Lease l WHERE l.status IN :statuses AND l.endDate < :date")
-    List<Lease> findByStatusInAndEndDateBefore(
-            @Param("statuses") List<LeaseStatus> statuses,
-            @Param("date") LocalDate date);
+    /**
+     * Leases with their unit and property already loaded — one query for a page of
+     * rows that each need to say which building they belong to.
+     *
+     * <p>{@code join fetch}, not a projection, because the callers want the entity
+     * graph they already work with; and inner joins, because {@code leases.unit_id}
+     * is NOT NULL and a unit always has a property. The alternative is two lazy
+     * loads per row, which on the month-end page is hundreds of queries to render
+     * one grouped list.</p>
+     */
+    @Query("""
+        select l from Lease l
+        join fetch l.unit u
+        join fetch u.property p
+        where l.id in :ids
+        """)
+    List<Lease> findAllWithUnitAndPropertyByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * The nightly expiry sweep's candidates (spec §9): a running tenancy whose last
+     * day has passed and which no termination has claimed.
+     *
+     * <p><b>{@code terminated_on IS NULL} is the belt to the status filter's
+     * brace.</b> A row that is still ACTIVE and already carries a termination date
+     * is a termination somebody is in the middle of — or one that left drift behind
+     * — and expiring it would stamp a second ending on a contract that already has
+     * one and release a unit the termination has not finished with. The status
+     * filter alone would not see it.</p>
+     *
+     * <p>No tenant column: the Hibernate filter supplies it, which is why the
+     * caller must have a tenant in context <em>and</em> a transaction for
+     * {@code TenantAspect} to enable it in. {@link com.datagami.rentaxis.core.service.LeaseService#findLeasesToExpire}
+     * is that caller.</p>
+     */
+    @Query("""
+        SELECT l.id FROM Lease l
+        WHERE l.status IN :statuses
+          AND l.endDate < :date
+          AND l.terminatedOn IS NULL
+        """)
+    List<UUID> findIdsToExpire(@Param("statuses") Collection<LeaseStatus> statuses,
+                               @Param("date") LocalDate date);
 
     @Query("SELECT l FROM Lease l WHERE l.status = :status AND l.endDate BETWEEN :from AND :to")
     List<Lease> findByStatusAndEndDateBetween(
@@ -157,6 +217,24 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      */
     @Query("SELECT l FROM Lease l WHERE l.id = :id")
     Optional<Lease> findByIdScopedToTenant(@Param("id") UUID id);
+
+    /**
+     * The lease's status as the <em>database</em> has it, not as this transaction's
+     * first-level cache has it.
+     *
+     * <p>A scalar projection on purpose (review M-1). Loading the entity — however
+     * it is loaded, including through a locking finder — is answered from the
+     * persistence context when the row is already managed, so it hands back the
+     * status that was read the first time. {@code ChequeService}'s close hook is
+     * exactly that case: the lease arrives through {@code cheque.getLease()}, which
+     * may have been resolved before the transition began, and a lease read ACTIVE
+     * for a row that is now TERMINATED with its settlement finalised skips a close
+     * that should have happened. A scalar query is not resolved through the context,
+     * so this always sees the committed row, and it costs one cheap select instead
+     * of the row lock the hook only wants to take when the answer is interesting.</p>
+     */
+    @Query("SELECT l.status FROM Lease l WHERE l.id = :id")
+    Optional<LeaseStatus> findStatusById(@Param("id") UUID id);
 
     /**
      * Pessimistic write lock on the lease row, taken before posting reads its

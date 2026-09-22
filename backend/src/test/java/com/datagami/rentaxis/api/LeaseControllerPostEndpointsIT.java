@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
+import com.datagami.rentaxis.core.service.cutover.ImportBatchService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -78,6 +79,7 @@ class LeaseControllerPostEndpointsIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
+    @Autowired ImportBatchService importBatches;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 9, 16);
     private static final LocalDate START = LocalDate.of(2026, 10, 2);
@@ -241,6 +243,66 @@ class LeaseControllerPostEndpointsIT {
         }
 
         // And nothing they sent took effect.
+        assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * A contract that belongs to a DRAFT cut-over batch is posted through the batch,
+     * not through this door (review M4).
+     *
+     * <p>The lease here is otherwise perfectly postable — the grid is cut and the
+     * same call succeeds in {@link #accountantMayPostAndAmendTheLease} — so the
+     * refusal is the batch rule and nothing else. Posting an imported contract here
+     * came out wrong three ways at once: the journals carried no
+     * {@code import_batch_id}, so they sat outside both the period-lock exemption a
+     * pre-books contract needs and "Reverse batch" forever; the cheque replay was
+     * skipped, so the statuses and dates PACT exported were silently dropped; and
+     * afterwards the batch could be neither reversed nor discarded. Property
+     * managers cannot reach this door, but accountants and tenant admins can.</p>
+     */
+    @Test
+    void aContractBelongingToADraftImportBatchIsRefusedAndNamesTheBatch() {
+        generateGrid();
+        TenantContextHolder.setTenantId(fixtures.tenantId());
+        UUID batchId = importBatches.create(null, "September cut-over").getId();
+        importBatches.linkLease(batchId, leaseId);
+
+        ResponseEntity<Map> refused = body(accountant, HttpMethod.POST, postPath(), null);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) refused.getBody().get("message"))
+                .isEqualTo("This contract belongs to import batch " + batchId + "; post the batch instead.");
+        assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * And the dry run in front of that door says so too (ruling R28).
+     *
+     * <p>The lease is otherwise clean — {@link #dryRunReportsTheProblemsWithoutPosting}
+     * has the same lease with the same grid answering {@code ok: true} — so this is
+     * the batch rule and nothing else. A review step that said "yes, this will post"
+     * about a contract the very next click refuses is the one answer this endpoint
+     * must never give: an accountant reads it as permission, and the refusal that
+     * follows looks like a bug in the button rather than a rule about the
+     * contract.</p>
+     */
+    @Test
+    void theDryRunReportsTheImportBatchRefusalRatherThanAnsweringOk() {
+        generateGrid();
+        TenantContextHolder.setTenantId(fixtures.tenantId());
+        UUID batchId = importBatches.create(null, "September cut-over").getId();
+        importBatches.linkLease(batchId, leaseId);
+
+        ResponseEntity<Map> dry = body(accountant, HttpMethod.POST, postPath() + "?dryRun=true", null);
+
+        assertThat(dry.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(dry.getBody().get("ok")).isEqualTo(false);
+        // Exactly one, and it is the batch rule: the grid is cut, so nothing else is
+        // wrong with this contract.
+        List<?> errors = (List<?>) dry.getBody().get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0))
+                .isEqualTo("This contract belongs to import batch " + batchId + "; post the batch instead.");
         assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 

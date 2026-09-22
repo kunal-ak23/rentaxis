@@ -54,6 +54,26 @@ public class ChargeTypeService {
             new ChargeTypeDTO(null, "MAINTENANCE", "Maintenance Charges", "رسوم الصيانة",
                     AccountRole.MAINTENANCE_CHARGES, ChargeBehaviour.FEE, false, true, 70));
 
+    /**
+     * The default {@link #seedDefaults()} would create for this code, or null when
+     * the code is not one of them.
+     *
+     * <p>Exists for the cut-over import's validator. Validation runs before anything
+     * is written, and the persist phase seeds this catalogue as its first act (the
+     * v1 importer does the same), so a workbook naming {@code RENT} into a tenant
+     * that has never opened the leasing screens is importable — the code <em>will</em>
+     * exist by the time a line is built from it. Without this the validator would
+     * refuse the very first cut-over workbook of every new organisation, with an
+     * error message telling the accountant to go and seed a catalogue that the
+     * import was about to seed for them.</p>
+     */
+    public static ChargeTypeDTO seededDefault(String code) {
+        if (code == null) return null;
+        return DEFAULTS.stream()
+                .filter(d -> d.code().equalsIgnoreCase(code.trim()))
+                .findFirst().orElse(null);
+    }
+
     // ---------- validation ----------
 
     /**

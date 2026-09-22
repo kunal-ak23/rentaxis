@@ -33,6 +33,7 @@ export 'api/services/gate_pass_service.dart';
 export 'api/services/facility_service.dart';
 export 'api/services/promotion_service.dart';
 export 'api/services/app_version_service.dart';
+export 'api/services/tenant_feature_service.dart';
 
 // Models
 export 'models/auth_response.dart';
@@ -45,6 +46,7 @@ export 'providers/wishlist_provider.dart';
 export 'providers/theme_provider.dart';
 export 'providers/language_provider.dart';
 export 'providers/app_version_provider.dart';
+export 'providers/tenant_features_provider.dart';
 
 // Theme
 export 'theme/app_theme.dart';

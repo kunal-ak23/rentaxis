@@ -1,0 +1,4 @@
+# The first two columns are swapped. Field counts still add up, so only the header
+# check stops this fixture from being read account-for-date all the way down.
+entry_date,account,doc_type,particular,narration,debit,credit,balance
+2025-08-28,Rent Receivable Sample Tower,TCO,Advance Rent Sample Tower,,12000.00,0.00,12000.00

@@ -14,6 +14,7 @@ import type {
     ChequeStatus,
     GenerateChequesRequest,
     InstallmentDistribution,
+    LeaseStatus,
 } from "@/lib/api/leasing";
 import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { TYPEABLE_MODES, chequeRowsAreValid, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
@@ -96,6 +97,19 @@ type Props = {
      * `canManageCheques` that admits a property manager to the rest of the row.
      */
     canCancelCheques?: boolean;
+    /**
+     * The contract's own status. Every row action is a transition, and
+     * `requireCollectable` gates all of them on `ChequeService.COLLECTABLE` — so
+     * a grid that does not know its lease's status offers buttons the server
+     * always refuses. Omitted means "caller cannot know", and the row's own
+     * state machine answers alone.
+     */
+    leaseStatus?: LeaseStatus | null;
+    /**
+     * Whether this lease's settlement is FINALIZED — `requireSettlementUndisturbed`
+     * withholds the reversal verbs once it is.
+     */
+    settlementFinalized?: boolean | null;
     /** Shown above the grid when the backend dropped the draft rows. */
     notice?: string | null;
 };
@@ -115,6 +129,8 @@ export default function ChequeGrid({
     error,
     onRowAction,
     canCancelCheques = false,
+    leaseStatus,
+    settlementFinalized,
     notice,
 }: Props) {
     const t = useTranslations("Leasing");
@@ -148,8 +164,11 @@ export default function ChequeGrid({
         })),
     );
 
-    const showActions =
-        !editable && !!onRowAction && cheques.some(c => registerActionsFor(c.status, c.mode, canCancelCheques).length > 0);
+    /** One decision, made once and reused by the header, the cells and the colspans. */
+    const actionsOf = (c: Cheque) =>
+        registerActionsFor(c.status, c.mode, canCancelCheques, { status: leaseStatus, settlementFinalized });
+
+    const showActions = !editable && !!onRowAction && cheques.some(c => actionsOf(c).length > 0);
     const cols = 9 + (editable ? 0 : 1) + (showActions ? 1 : 0);
 
     return (
@@ -465,7 +484,7 @@ export default function ChequeGrid({
                                 {showActions && (
                                     <td className={td}>
                                         <div className="flex items-center gap-1.5">
-                                            {registerActionsFor(c.status, c.mode, canCancelCheques).map(a => (
+                                            {actionsOf(c).map(a => (
                                                 <button
                                                     key={a}
                                                     type="button"

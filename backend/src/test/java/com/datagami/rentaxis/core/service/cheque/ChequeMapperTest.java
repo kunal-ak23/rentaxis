@@ -10,6 +10,7 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -20,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * The register row's wire shape. A 35-component record built by positional
+ * The register row's wire shape. A 36-component record built by positional
  * construction has several runs of same-typed components — three labels, four
  * lifecycle dates, three journal ids — where a transposition compiles cleanly and
  * ships a cheque's bounce date in the "cleared on" column. Every value here is
@@ -58,6 +59,7 @@ class ChequeMapperTest {
 
         Lease lease = new Lease();
         lease.setId(leaseId);
+        lease.setStatus(LeaseStatus.TERMINATED);
 
         Account debitAccount = new Account();
         debitAccount.setId(debitAccountId);
@@ -106,6 +108,10 @@ class ChequeMapperTest {
 
         assertThat(dto.id()).isEqualTo(chequeId);
         assertThat(dto.leaseId()).isEqualTo(leaseId);
+        // Not the cheque's status, which is BOUNCED on this fixture: the two are
+        // adjacent enums on the wire and the register renders a different set of
+        // actions from each.
+        assertThat(dto.leaseStatus()).isEqualTo(LeaseStatus.TERMINATED);
         assertThat(dto.propertyId()).isEqualTo(propertyId);
         assertThat(dto.unitId()).isEqualTo(unitId);
         assertThat(dto.renterId()).isEqualTo(renterId);
@@ -147,6 +153,22 @@ class ChequeMapperTest {
         assertThat(dto.penaltyAssessmentId()).isEqualTo(penaltyId);
     }
 
+    /**
+     * The contract's own status travels with the row, because what a row still
+     * admits is a property of the lease and not of the instrument: a CLOSED tenancy
+     * refuses every transition, and a register that reads only {@code status} keeps
+     * offering Deposit and Clear on rows the server will turn down.
+     */
+    @Test
+    void theRowCarriesTheLeaseStatusItBelongsTo() {
+        Cheque c = fullyPopulated();
+        for (LeaseStatus status : LeaseStatus.values()) {
+            c.getLease().setStatus(status);
+            assertThat(ChequeMapper.toDto(c, TODAY, 0).leaseStatus())
+                    .as("a row on a " + status + " lease").isEqualTo(status);
+        }
+    }
+
     /** A cash receipt has no unit, no bank account and no replacement chain. */
     @Test
     void nullRelationsMapToNullRatherThanThrowing() {
@@ -165,6 +187,7 @@ class ChequeMapperTest {
         assertThat(dto.debitAccountName()).isNull();
         assertThat(dto.replacesId()).isNull();
         assertThat(dto.replacedById()).isNull();
+        assertThat(dto.leaseStatus()).as("still the lease's").isEqualTo(LeaseStatus.TERMINATED);
         // The rest of the row still maps.
         assertThat(dto.propertyName()).isEqualTo("L'Olivier");
         assertThat(dto.renterName()).isEqualTo("Prabhjot Singh");

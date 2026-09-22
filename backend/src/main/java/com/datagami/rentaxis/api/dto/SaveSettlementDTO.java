@@ -29,5 +29,12 @@ public class SaveSettlementDTO {
         private boolean autoCalculated;
         private LineItemType type; // enum: DEDUCTION (default) or ADDITION
         private String additionCategory; // required when type = ADDITION
+
+        /**
+         * Override the leaf this line posts to. Omit to let the category resolve
+         * it (spec §9.2). A deduction must name an active INCOME leaf of this
+         * tenant, an addition an INCOME or EXPENSE one; anything else is a 400.
+         */
+        private UUID accountId;
     }
 }

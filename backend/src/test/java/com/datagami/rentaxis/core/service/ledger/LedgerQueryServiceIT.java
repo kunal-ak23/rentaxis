@@ -208,13 +208,16 @@ class LedgerQueryServiceIT {
      */
     @Test
     void journalEntrySearchAcceptsBothFilteredAndAllNullParameters() {
-        assertThat(entries.search(JournalDocType.TCO, null, null, propertyId, null, PageRequest.of(0, 10)))
+        assertThat(entries.search(JournalDocType.TCO, null, null, propertyId, null, null, PageRequest.of(0, 10)))
                 .extracting(JournalEntry::getId).containsExactly(tcoId);
-        assertThat(entries.search(null, null, null, propertyId, null, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(3);
-        assertThat(entries.search(JournalDocType.PDR, null, null, propertyId, null, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(1);
-        assertThat(entries.search(JournalDocType.TCO, LocalDate.of(2026, 9, 12), null, propertyId, null, PageRequest.of(0, 10)).getTotalElements()).isZero();
-        assertThat(entries.search(JournalDocType.TCO, null, null, propertyId, UUID.randomUUID(), PageRequest.of(0, 10)).getTotalElements()).isZero();
+        assertThat(entries.search(null, null, null, propertyId, null, null, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(3);
+        assertThat(entries.search(JournalDocType.PDR, null, null, propertyId, null, null, PageRequest.of(0, 10)).getTotalElements()).isEqualTo(1);
+        assertThat(entries.search(JournalDocType.TCO, LocalDate.of(2026, 9, 12), null, propertyId, null, null, PageRequest.of(0, 10)).getTotalElements()).isZero();
+        assertThat(entries.search(JournalDocType.TCO, null, null, propertyId, UUID.randomUUID(), null, PageRequest.of(0, 10)).getTotalElements()).isZero();
+        // The cut-over drill-through (plan 4): the same cast rule applies to it, and
+        // a batch id nothing carries must match nothing rather than everything.
+        assertThat(entries.search(null, null, null, null, null, UUID.randomUUID(), PageRequest.of(0, 10)).getTotalElements()).isZero();
         // All-null filters match everything the caller can see, which is at least this test's three entries.
-        assertThat(entries.search(null, null, null, null, null, PageRequest.of(0, 1)).getTotalElements()).isGreaterThanOrEqualTo(3);
+        assertThat(entries.search(null, null, null, null, null, null, PageRequest.of(0, 1)).getTotalElements()).isGreaterThanOrEqualTo(3);
     }
 }

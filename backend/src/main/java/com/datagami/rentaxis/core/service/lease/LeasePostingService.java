@@ -22,6 +22,8 @@ import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
+import com.datagami.rentaxis.domain.entity.ImportBatch;
+import com.datagami.rentaxis.domain.entity.ImportBatchLease;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -30,6 +32,7 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
@@ -38,6 +41,8 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -54,6 +59,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -117,6 +123,15 @@ public class LeasePostingService {
     private final RenewalOpportunityService renewalOpportunities;
     private final ApplicationEventPublisher events;
 
+    /**
+     * Only for {@link #refuseIfItBelongsToADraftImportBatch}. Repositories rather
+     * than {@code ImportBatchService}: that service depends on {@code PostingService}
+     * and on the fiscal calendar, and the lease module has no business pulling the
+     * cut-over module in to answer one boolean.
+     */
+    private final ImportBatchLeaseRepository importBatchLeases;
+    private final ImportBatchRepository importBatches;
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -130,7 +145,9 @@ public class LeasePostingService {
                                LeaseAccessPolicy leaseAccessPolicy,
                                DepositCarryForward depositCarryForward,
                                RenewalOpportunityService renewalOpportunities,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events,
+                               ImportBatchLeaseRepository importBatchLeases,
+                               ImportBatchRepository importBatches) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -145,6 +162,8 @@ public class LeasePostingService {
         this.depositCarryForward = depositCarryForward;
         this.renewalOpportunities = renewalOpportunities;
         this.events = events;
+        this.importBatchLeases = importBatchLeases;
+        this.importBatches = importBatches;
     }
 
     // ------------------------------------------------------------------
@@ -154,6 +173,17 @@ public class LeasePostingService {
     /**
      * Post the lease: TCO, one PDR per cheque, ACTIVE, unit claimed.
      *
+     * <p><b>Refused for a contract that belongs to a DRAFT cut-over batch</b>
+     * (review M4). This door is reachable from the lease screen by anyone who may
+     * post, and an imported contract pushed through it comes out subtly wrong in
+     * three ways at once: its journals carry no {@code importBatchId}, so they are
+     * outside the period-lock exemption a pre-books contract needs and outside
+     * "Reverse batch" forever; the cheque replay is skipped, so the statuses and
+     * dates PACT exported are silently ignored and no {@code CRT}/{@code CBR} is
+     * written; and afterwards the batch can be neither reversed (its TCO carries no
+     * batch id) nor discarded (journals name the lease). The remedy is one sentence
+     * and one button, so it is said rather than guessed at.</p>
+     *
      * @throws UnmappedAccountRoleException when the only thing wrong is a role the
      *         property has no account for — a distinct type so the UI can offer to
      *         map it rather than just printing a sentence
@@ -162,22 +192,90 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId) {
+        draftImportBatchProblem(leaseId).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
+        return post(leaseId, null);
+    }
+
+    /**
+     * "This contract belongs to import batch X; post the batch instead." — or empty
+     * when this door is the right one.
+     *
+     * <p><b>A sentence rather than a throw</b>, because two callers need it in two
+     * shapes (ruling R28): {@link #post(UUID)} refuses with it, and {@link #dryRun}
+     * has to <em>report</em> it. A dry run that answered {@code ok: true} for a
+     * contract the very next click would refuse is the one answer that endpoint must
+     * never give — its whole purpose is that the review step gets every problem at
+     * once instead of one refusal per attempt.</p>
+     *
+     * <p>The link table carries no tenant column of its own — every reader has to
+     * resolve the batch and compare, which is what {@code ContractImportValidator}'s
+     * lookups do — so the batch is loaded through the filtered repository and
+     * compared again explicitly. Only a <b>DRAFT</b> batch blocks: once the batch has
+     * posted, its contracts are ACTIVE and the post's own status check refuses
+     * them anyway, and a REVERSED batch's contracts are back in DRAFT deliberately so
+     * that "Post again" can put them back — through the batch, which is the door this
+     * one points at.</p>
+     */
+    private Optional<String> draftImportBatchProblem(UUID leaseId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        for (ImportBatchLease link : importBatchLeases.findByLeaseId(leaseId)) {
+            ImportBatch batch = importBatches.findById(link.getBatchId()).orElse(null);
+            if (batch == null || batch.getStatus() != ImportBatchStatus.DRAFT) continue;
+            if (tenantId != null && !tenantId.equals(batch.getTenantId())) continue;
+            return Optional.of(
+                    "This contract belongs to import batch " + batch.getId() + "; post the batch instead.");
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The same post, as part of a cut-over import batch (spec §10.3, controller
+     * ruling R4).
+     *
+     * <p><b>Three things change, and all three follow from one fact:</b> a cut-over
+     * contract is dated before the day the client's books open, which is a period
+     * that is closed by definition.</p>
+     * <ul>
+     *   <li>The {@code TCO} and every {@code PDR} carry {@code importBatchId}, which
+     *       is what exempts them from the period lock in {@code PostingService} and
+     *       what lets "Reverse batch" find them again.</li>
+     *   <li>The period-lock <em>pre-check</em> is skipped. It is a courtesy that
+     *       turns a refusal buried in the fourth PDR into one the dry run can print;
+     *       applied to an import it would refuse every contract before the exemption
+     *       it is anticipating ever ran.</li>
+     *   <li>No activation e-mail. A cut-over is hundreds of tenancies that have been
+     *       running for months, and telling every renter their lease has just been
+     *       activated is the first visible effect the landlord's move would have.
+     *       {@code ContractImportPersistService} makes the same choice about
+     *       LEASE_CREATED, for the same reason.</li>
+     * </ul>
+     *
+     * <p>The recognition schedule is still built — {@code LeasePostedEvent} is
+     * published either way — because the catch-up that follows has nothing to post
+     * without it.</p>
+     *
+     * @param importBatchId non-null only for a cut-over bulk post.
+     */
+    @Transactional
+    public PostLeaseResponse post(UUID leaseId, UUID importBatchId) {
         Lease lease = lockLease(leaseId);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 
-        PostingPlan plan = validate(lease, lines, cheques);
+        PostingPlan plan = validate(lease, lines, cheques,
+                importBatchId == null ? Preconditions.FOR_POST : Preconditions.FOR_IMPORT_POST);
         plan.throwIfRefused(propertyIdOf(lease));
 
-        JournalEntry tco = postTco(lease, plan.pairs());
-        registerCheques(lease, cheques);
+        JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
+                importBatchId);
+        registerCheques(lease, cheques, importBatchId);
 
         // The renter's deposit follows them into the new contract (spec §6.6). It
         // has to happen inside this transaction and before the predecessor is
         // retired: the JV is subject to the same period lock as the TCO, and a
         // renewal that went on the books without the deposit that paid for it
         // would leave the money on a lease nothing will ever settle.
-        depositCarryForward.carry(lease);
+        depositCarryForward.carry(lease, importBatchId);
 
         // The predecessor is retired *before* the successor goes ACTIVE, and while
         // the successor's own row is still untouched — see markPredecessorRenewed.
@@ -187,7 +285,7 @@ public class LeasePostingService {
         lease.setPostedAt(Instant.now());
         lease.setPostedBy(currentUserId());
 
-        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber());
+        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), importBatchId == null);
         events.publishEvent(new LeasePostedEvent(lease.getTenantId(), lease.getId(), lease.getContractDate()));
 
         return response(lease, tco, cheques);
@@ -201,6 +299,13 @@ public class LeasePostingService {
      * It also rules out {@code TenantFiscalSettingsService.get()}, which creates
      * the settings row on first access — the period lock is read straight from the
      * repository instead, and an absent row simply means nothing is locked.</p>
+     *
+     * <p><b>It answers for the door it is standing in front of</b> (ruling R28). The
+     * batch rule {@link #post(UUID)} enforces is reported here too, first in the
+     * list: a dry run that said {@code ok: true} for an imported DRAFT contract and
+     * then watched the post refuse would be worse than no dry run, because the whole
+     * contract of this endpoint is that the review step sees every problem before the
+     * button rather than one refusal per attempt.</p>
      */
     @Transactional(readOnly = true)
     public PostLeaseDryRunResponse dryRun(UUID leaseId) {
@@ -211,7 +316,11 @@ public class LeasePostingService {
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 
         PostingPlan plan = validate(lease, lines, cheques);
-        List<String> errors = plan.errors(propertyIdOf(lease));
+        List<String> errors = new ArrayList<>();
+        // First, because it is the only one of these that is not about the contract's
+        // own contents: no amount of fixing the grid makes this door the right one.
+        draftImportBatchProblem(leaseId).ifPresent(errors::add);
+        errors.addAll(plan.errors(propertyIdOf(lease)));
         // What "carry the deposit forward" is actually worth today. Shown because
         // it is not the figure on last year's contract — a partly refunded deposit
         // carries only what is left — and an accountant approving the renewal
@@ -316,8 +425,7 @@ public class LeasePostingService {
             throw new BusinessRuleViolationException(
                     "Only an ACTIVE lease can have its lines amended; this one is " + lease.getStatus());
         }
-        UUID reversedJournalId = lease.getPostingJournalId();
-        if (reversedJournalId == null) {
+        if (lease.getPostingJournalId() == null) {
             throw new BusinessRuleViolationException("This lease has no posting journal to amend");
         }
         List<JournalEntry> contractEntries = postedContractEntries(leaseId);
@@ -343,8 +451,12 @@ public class LeasePostingService {
         plan.throwIfRefused(propertyIdOf(lease));
 
         LocalDate reversedOn = LocalDate.now();
+        // Collected as they are reversed, so the event names exactly the entries this
+        // amendment unwound — the contract's own TCO and one per extension.
+        List<UUID> reversedJournalIds = new ArrayList<>(contractEntries.size());
         for (JournalEntry contract : contractEntries) {
             postingService.reverse(contract.getId(), reversedOn, reason);
+            reversedJournalIds.add(contract.getId());
         }
         JournalEntry tco = postTco(lease, plan.pairs());
 
@@ -353,7 +465,7 @@ public class LeasePostingService {
         leaseService.recordLeaseEvent(lease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
                 "Lines amended, reposted as " + tco.getEntryNumber()
                         + (reason == null || reason.isBlank() ? "" : ": " + reason));
-        events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalId, tco.getId()));
+        events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalIds, tco.getId()));
 
         return response(lease, tco, cheques);
     }
@@ -411,9 +523,17 @@ public class LeasePostingService {
      * books. One shared flag hid that, and reading {@code validate(…, false)} at the
      * call site told you nothing about which rule was being waived.</p>
      */
-    private record Preconditions(boolean leaseMustBeUnposted, boolean chequesMustBeDraft) {
-        static final Preconditions FOR_POST = new Preconditions(true, true);
-        static final Preconditions FOR_AMEND = new Preconditions(false, false);
+    private record Preconditions(boolean leaseMustBeUnposted, boolean chequesMustBeDraft,
+                                 boolean periodLockApplies) {
+        static final Preconditions FOR_POST = new Preconditions(true, true, true);
+        static final Preconditions FOR_AMEND = new Preconditions(false, false, true);
+        /**
+         * A cut-over import: the same untouched-lease rules, and no period-lock
+         * pre-check. Its journals carry the batch id and {@code PostingService}
+         * exempts them, so checking the lock here would refuse a contract the
+         * ledger is about to accept — see {@link #post(UUID, UUID)}.
+         */
+        static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false);
     }
 
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks) {
@@ -479,7 +599,9 @@ public class LeasePostingService {
                     + money(gross) + ".");
         }
 
-        otherErrors.addAll(periodLockErrors(lease, cheques));
+        if (checks.periodLockApplies()) {
+            otherErrors.addAll(periodLockErrors(lease, cheques));
+        }
 
         return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, accountErrors, otherErrors);
     }
@@ -683,6 +805,10 @@ public class LeasePostingService {
         return postTco(lease, pairs, lease.getContractDate(), contractNarration(lease));
     }
 
+    JournalEntry postTco(Lease lease, List<Pair> pairs, LocalDate entryDate, String narration) {
+        return postTco(lease, pairs, entryDate, narration, null);
+    }
+
     /**
      * A {@code TCO} on this lease with a date and a narration of the caller's
      * choosing — what an extension posts (spec §6.7).
@@ -695,7 +821,8 @@ public class LeasePostingService {
      * it — {@code lease.postingJournalId} keeps naming the first TCO, the one an
      * amendment would reverse.</p>
      */
-    JournalEntry postTco(Lease lease, List<Pair> pairs, LocalDate entryDate, String narration) {
+    JournalEntry postTco(Lease lease, List<Pair> pairs, LocalDate entryDate, String narration,
+                         UUID importBatchId) {
         return postingService.post(PostingRequest.ofPairs(
                 JournalDocType.TCO,
                 entryDate,
@@ -703,7 +830,7 @@ public class LeasePostingService {
                 LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.LEASE,
                 lease.getId(),
-                null,
+                importBatchId,
                 pairs));
     }
 
@@ -720,9 +847,9 @@ public class LeasePostingService {
      * dimensions, same date rule, same receivable override — and two copies of that
      * would eventually differ on exactly the detail nobody re-reads.</p>
      */
-    private void registerCheques(Lease lease, List<Cheque> cheques) {
+    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId) {
         for (Cheque c : cheques) {
-            chequeRegistrar.register(lease, c);
+            chequeRegistrar.register(lease, c, importBatchId);
         }
     }
 

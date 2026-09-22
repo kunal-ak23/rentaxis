@@ -321,6 +321,36 @@ class LeaseLinesIT {
     }
 
     /**
+     * The migrated tenancy's own contract number (changeset 88, spec §10.3).
+     *
+     * <p>PACT identifies a contract as "TLP7/681"; {@code contractNumber} is a
+     * {@code Long} and the column our next contract number is generated from, so
+     * the imported reference gets a column of its own and the two live side by
+     * side. The lease screen has to be able to show both — an accountant
+     * reconciling against the old system looks the tenancy up by the old number —
+     * so the DTO carries it. Written here through the entity because that is what
+     * the cut-over import will do; nothing in any request body sets it.</p>
+     */
+    @Test
+    void theDtoCarriesTheMigratedContractReferenceAlongsideOurOwnNumber() {
+        LeaseDTO lease = draft(line("RENT", "51000"));
+        assertThat(lease.getExternalContractRef()).as("a lease created here has none").isNull();
+
+        tx.executeWithoutResult(status -> {
+            Lease row = leaseRepository.findById(lease.getId()).orElseThrow();
+            row.setExternalContractRef("TLP7/681");
+            row.setContractNumber(681L);
+            leaseRepository.save(row);
+        });
+
+        LeaseDTO reread = leaseService.getLeaseById(lease.getId());
+        assertThat(reread.getExternalContractRef()).isEqualTo("TLP7/681");
+        // ...and it has not been confused with our own sequence.
+        assertThat(reread.getContractNumber()).isEqualTo(681L);
+        assertThat(reread.getDisplayContractNumber()).isEqualTo(fixtures.property().getCode() + "/681");
+    }
+
+    /**
      * A charge type whose role is outside the credit allow-list is refused
      * outright when the caller names an explicit account.
      *

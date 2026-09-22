@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 import { PERMISSIONS, type UserRole } from "../rbac";
 import en from "../../../messages/en.json";
@@ -27,12 +29,32 @@ const EXPECTED: Record<string, UserRole[]> = {
     canProposePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
     // PenaltyAssessmentController#approve / #waive / #reverse
     canApprovePenalties: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
-    // LeaseController's four settlement endpoints, which is what "Terminate"
-    // opens. PROPERTY_MANAGER is in and ACCOUNTANT is out — the mirror image of
-    // canPostLeases, and the reason this cannot share canManageLeases.
-    canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"],
     // ChargeTypeController's method-level @PreAuthorize on POST / PUT
     canManageChargeTypes: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+
+    // ---- plan 3: recognition, termination, settlement ----
+    //
+    // canTerminateLeases used to read [SA, TA, PROPERTY_MANAGER], because
+    // "Terminate" opened the settlement flow and all four settlement endpoints
+    // admitted a manager. Plan 3 made termination its own act — it hands
+    // cheques back, truncates recognition and posts a TCR — and
+    // LeaseController#terminateLease is SA/TA/ACCOUNTANT. A manager keeps the
+    // read half through canPreviewTermination and canViewSettlement.
+    canTerminateLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // LeaseController#previewTermination
+    canPreviewTermination: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#giveNotice (LeaseController.java:250-251) — one role wider
+    // than canTerminateLeases on purpose: taking a renter's notice writes no
+    // journal and hands nothing back, so it is the building manager's job.
+    canGiveNotice: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#getSettlementStatement / #getSettlement
+    canViewSettlement: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
+    // LeaseController#saveSettlementDraft / #finalizeSettlement — PM removed
+    canSettleLeases: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // RecognitionController.FINANCE_ROLES on /finance/recognition/pending + /run
+    canRunRecognition: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"],
+    // RecognitionController#schedule on GET /leases/{id}/recognition
+    canViewRecognitionSchedule: ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"],
 };
 
 describe("accounting-v2 plan-2 permission roles", () => {
@@ -73,8 +95,16 @@ function flatten(obj: unknown, prefix = ""): Record<string, string> {
     return out;
 }
 
-describe("Leasing/Cheques i18n parity", () => {
-    for (const ns of ["Leasing", "Cheques"] as const) {
+/**
+ * A value that is legitimately the same in both locales. One entry so far: PACT
+ * is the outgoing system's name, and a name is not translated.
+ */
+const SAME_IN_BOTH_LOCALES = new Set(["Cutover.pactBalance"]);
+
+describe("accounting i18n parity", () => {
+    for (const ns of [
+        "Leasing", "Cheques", "Recognition", "Termination", "Settlement", "Vouchers", "Cutover",
+    ] as const) {
         it(`${ns}: every en.json key has a distinct ar.json translation`, () => {
             const enNs = flatten((en as Record<string, unknown>)[ns]);
             const arNs = flatten((ar as Record<string, unknown>)[ns]);
@@ -84,7 +114,10 @@ describe("Leasing/Cheques i18n parity", () => {
 
             expect(enKeys.filter((k) => !(k in arNs)), "keys absent from ar.json").toEqual([]);
             expect(Object.keys(arNs).filter((k) => !(k in enNs)), "keys absent from en.json").toEqual([]);
-            expect(enKeys.filter((k) => arNs[k] === enNs[k]), "keys still holding English text").toEqual([]);
+            expect(
+                enKeys.filter((k) => arNs[k] === enNs[k] && !SAME_IN_BOTH_LOCALES.has(`${ns}.${k}`)),
+                "keys still holding English text",
+            ).toEqual([]);
         });
     }
 
@@ -131,4 +164,61 @@ describe("Leasing/Cheques i18n parity", () => {
         expect(en.Cheques.onlinePaymentStatus.CAPTURED_UNAPPLIED).toBeTruthy();
         expect(ar.Cheques.onlinePaymentStatus.CAPTURED_UNAPPLIED).toBeTruthy();
     });
+});
+
+/**
+ * The other half of parity: a key that no source file names.
+ *
+ * Plan 4 left fourteen of them across `Vouchers` and `Cutover` — copy from
+ * before the bulk post existed ("Posting a batch to the ledger … is not
+ * available yet"), from before a REVERSED batch could be posted again, from
+ * screens that were merged into others. Nothing fails on a dead key: it is
+ * twenty-eight lines of translated English that quietly stop being true, and
+ * the next person to grep for the copy on screen finds two candidates.
+ *
+ * Whole-word over `src/`, tests excluded — a key mentioned only by the test that
+ * asserts it exists is still dead. The allowlist below is for keys composed at
+ * the point of use, which a literal search cannot see; each entry names the line
+ * that builds it, so an entry added without one is visible in review.
+ */
+const COMPOSED_AT_USE = new Map([
+    // import-batches/page.tsx: t(`outcome${r.outcome}`) over LeaseOutcomeStatus.
+    ["Cutover.outcomePOSTED", "t(`outcome${r.outcome}`)"],
+    ["Cutover.outcomeSKIPPED_ALREADY_POSTED", "t(`outcome${r.outcome}`)"],
+    ["Cutover.outcomeFAILED", "t(`outcome${r.outcome}`)"],
+]);
+
+/** Every non-test source file, read once. */
+function sourceText(): string {
+    const root = join(__dirname, "..", "..");
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+            const full = join(dir, e.name);
+            if (e.isDirectory()) {
+                if (e.name !== "__tests__") walk(full);
+            } else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) {
+                out.push(readFileSync(full, "utf8"));
+            }
+        }
+    };
+    walk(root);
+    return out.join("\n");
+}
+
+describe("accounting i18n: nothing in messages that nothing renders", () => {
+    const blob = sourceText();
+
+    for (const ns of ["Vouchers", "Cutover"] as const) {
+        it(`${ns}: every key is named by a source file`, () => {
+            const keys = Object.keys(flatten((en as Record<string, unknown>)[ns]));
+            expect(keys.length).toBeGreaterThan(0);
+            const dead = keys.filter(
+                k =>
+                    !COMPOSED_AT_USE.has(`${ns}.${k}`)
+                    && !new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(blob),
+            );
+            expect(dead, "keys in messages that no source file names").toEqual([]);
+        });
+    }
 });

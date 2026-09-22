@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
-    ArrowLeft, Ban, BookOpen, CalendarClock, CheckCircle, Download,
+    ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
     FileText, Loader2, Mail, Phone, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,10 +28,11 @@ import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
+import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
-    ApiError, chargeTypeApi, leaseApi,
-    type ChargeType, type Cheque, type LeaseDetail, type LeaseStatus,
+    ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
+    type ChargeType, type Cheque, type LeaseDetail, type LeaseStatus, type SettlementResponse,
 } from "@/lib/api/leasing";
 
 /**
@@ -50,11 +51,35 @@ import {
 type Renter = { id: string; nameEn: string; nameAr: string; email: string; phone: string; primaryLanguage: string };
 type Attachment = { id: string; name: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string };
 type Ticket = { id: string; title: string; status: string; priority: string; category: string; createdAt: string };
-type Settlement = {
-    id: string; status: string; depositAmount: number; totalDeductions: number;
-    totalAdditions?: number; refundAmount: number; notes: string;
-    settledBy: string; settledByName?: string; settledAt: string;
-};
+/**
+ * A contract that HAS a settlement to open — `SettlementService.SETTLEABLE`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/SettlementService.java:144-145,
+ * now {TERMINATED, EXPIRED, RENEWED}) **plus CLOSED**, which the server no
+ * longer lets anyone settle but whose finalised statement is exactly the
+ * document a closed contract is read for. The settlement page itself mirrors
+ * `SETTLEABLE` exactly and finalises only for the three.
+ *
+ * EXPIRED is here as well as TERMINATED: a tenancy that simply ran its course is
+ * settled by the same statement. RENEWED joined them when a predecessor that
+ * settles instead of carrying its deposit forward became a supported move
+ * (spec §6.6).
+ */
+const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
+
+/**
+ * `LeaseRenewalService.RENEWABLE`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/lease/LeaseRenewalService.java:74-75),
+ * checked at :136. Wider than Amend and Extend, which really are ACTIVE-only:
+ * renewal-after-expiry is the ordinary case in this domain, and NOTICE_GIVEN is
+ * a renter who said they were leaving and changed their mind.
+ */
+const RENEWABLE: LeaseStatus[] = ["ACTIVE", "EXPIRED", "NOTICE_GIVEN"];
+
+/**
+ * `LeaseTerminationService.TERMINABLE` (:83) — and `LeaseService.giveNotice`
+ * (:1016) is ACTIVE alone, one step earlier in the same lifecycle.
+ */
+const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
 
 const STATUS_COLORS: Record<string, string> = {
     ACTIVE: "bg-success/10 text-success border-success/20",
@@ -78,6 +103,22 @@ type Tab = typeof TABS[number];
 
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
 
+/**
+ * What the recognition schedule has to add back to.
+ *
+ * Σ of the RENT-behaviour lines' **net** amounts, which is exactly what
+ * `RecognitionService.build` (:714-738) cuts a segment from — only RENT
+ * behaviour, only `netAmount`, VAT excluded, a non-positive line skipped. A
+ * deposit or an admin fee is never recognised over time, so counting the
+ * contract value here would make every schedule look short by the deposit.
+ * Falls back to the header's own figure when the lines are not loaded.
+ */
+function rentOf(lease: LeaseDetail): number | null {
+    const rent = lease.lines.filter(l => l.behaviour === "RENT" && (l.netAmount ?? 0) > 0);
+    if (rent.length === 0) return lease.rentAmount;
+    return Math.round(rent.reduce((s, l) => s + (l.netAmount ?? 0), 0) * 100) / 100;
+}
+
 export default function LeaseDetailPage() {
     const params = useParams();
     const searchParams = useSearchParams();
@@ -88,6 +129,7 @@ export default function LeaseDetailPage() {
     const t = useTranslations("Leasing");
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
+    const tSettlement = useTranslations("Settlement");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -98,10 +140,15 @@ export default function LeaseDetailPage() {
     const canExtend = hasPermission(userRole, "canExtendLeases");
     const canCheques = hasPermission(userRole, "canManageCheques");
     const canCancelCheques = hasPermission(userRole, "canCancelCheques");
-    // Terminating opens the settlement flow, which admits PROPERTY_MANAGER.
-    // Gating it on canManageLeases (SA/TA) took the action away from the role
-    // that runs move-outs.
-    const canTerminate = hasPermission(userRole, "canTerminateLeases");
+    // The link opens the termination page, which prices the move-out before
+    // anything is written — a property manager may do that on their own
+    // buildings (`LeaseController#previewTermination`). The page itself hides
+    // the button that posts the journals from them (`canTerminateLeases`).
+    const canPreviewTermination = hasPermission(userRole, "canPreviewTermination");
+    // One role wider than terminating, and its own key: taking a notice writes
+    // no journal (`LeaseController` :250-251).
+    const canGiveNotice = hasPermission(userRole, "canGiveNotice");
+    const canViewSettlement = hasPermission(userRole, "canViewSettlement");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
@@ -110,7 +157,7 @@ export default function LeaseDetailPage() {
     const [renter, setRenter] = useState<Renter | null>(null);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [tickets, setTickets] = useState<Ticket[]>([]);
-    const [settlement, setSettlement] = useState<Settlement | null>(null);
+    const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [banner, setBanner] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -126,6 +173,8 @@ export default function LeaseDetailPage() {
     const [renewOpen, setRenewOpen] = useState(false);
     const [extendOpen, setExtendOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [noticeOpen, setNoticeOpen] = useState(false);
+    const [noticeBusy, setNoticeBusy] = useState(false);
     const [chequeAction, setChequeAction] = useState<{ action: ChequeAction; cheque: Cheque } | null>(null);
     const [chequeBusy, setChequeBusy] = useState(false);
     const [chequeError, setChequeError] = useState<string | null>(null);
@@ -181,9 +230,12 @@ export default function LeaseDetailPage() {
                 const res = await fetch(`/api/proxy/v1/tickets?unitId=${encodeURIComponent(detail.unitId)}`);
                 if (res.ok && !cancelled) setTickets(await res.json());
             }
-            if (detail && (detail.status === "TERMINATED" || detail.status === "CLOSED")) {
-                const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement`);
-                if (res.ok && !cancelled) setSettlement(await res.json());
+            // A 404 here is "no settlement yet", which is the normal state for
+            // a contract that ended last night — so the failure is swallowed
+            // and the summary simply does not render.
+            if (detail && HAS_SETTLEMENT.includes(detail.status)) {
+                const saved = await settlementApi.get(leaseId).catch(() => null);
+                if (saved && !cancelled) setSettlement(saved);
             }
             if (!cancelled) setLoading(false);
         })();
@@ -227,6 +279,28 @@ export default function LeaseDetailPage() {
             return;
         }
         setChequeAction({ action, cheque });
+    };
+
+    /**
+     * ACTIVE → NOTICE_GIVEN. No journal, nothing handed back, every instrument
+     * left where it was — but it changes the status three rule sets are keyed
+     * on (`LeaseService.LIVE`, `ChequeService.POSTED`/`COLLECTABLE`,
+     * `LeaseTerminationService.TERMINABLE`), so the page re-reads the lease
+     * rather than assuming what came back.
+     */
+    const handleGiveNotice = async () => {
+        setNoticeBusy(true);
+        setError(null);
+        try {
+            await terminationApi.notice(leaseId);
+            setNoticeOpen(false);
+            await loadLease();
+        } catch (e) {
+            setNoticeOpen(false);
+            setError(e instanceof ApiError ? e.message : t("saveFailed"));
+        } finally {
+            setNoticeBusy(false);
+        }
     };
 
     const handleDelete = async () => {
@@ -418,7 +492,16 @@ export default function LeaseDetailPage() {
                                 <RefreshCw size={14} /> {t("amendLines")}
                             </button>
                         )}
-                        {lease.status === "ACTIVE" && canRenew && (
+                        {/*
+                          Renew is wider than Amend and Extend on purpose:
+                          `LeaseRenewalService.RENEWABLE` is {ACTIVE, EXPIRED,
+                          NOTICE_GIVEN}. Renewal after a contract has run to
+                          term is the ordinary case here — the nightly
+                          `LeaseExpirationJob` turns it EXPIRED and
+                          `RENEWABLE_PREDECESSOR` exists to retire it when the
+                          successor posts.
+                        */}
+                        {RENEWABLE.includes(lease.status) && canRenew && (
                             <button
                                 onClick={() => setRenewOpen(true)}
                                 data-testid="lease-renew"
@@ -453,13 +536,38 @@ export default function LeaseDetailPage() {
                                 <Download size={14} /> {tMaster("downloadContract")}
                             </button>
                         )}
-                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && canTerminate && (
+                        {/*
+                          Terminate and settle are two acts now (spec §9.1, §9.2), so
+                          they are two links. Terminate opens the priced termination
+                          page; the deposit is settled afterwards, from the receivable
+                          the termination leaves behind — which is why Settle appears
+                          only once the contract has ended (`SettlementService.SETTLEABLE`).
+                        */}
+                        {lease.status === "ACTIVE" && canGiveNotice && (
+                            <button
+                                onClick={() => setNoticeOpen(true)}
+                                data-testid="lease-give-notice"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <BellRing size={14} /> {t("giveNotice")}
+                            </button>
+                        )}
+                        {TERMINABLE.includes(lease.status) && canPreviewTermination && (
                             <Link
-                                href={`/dashboard/leases/${leaseId}/settlement`}
+                                href={`/dashboard/leases/${leaseId}/terminate`}
                                 data-testid="lease-terminate"
                                 className="flex items-center gap-2 bg-error text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/90 transition-all"
                             >
                                 <Ban size={14} /> {t("terminate")}
+                            </Link>
+                        )}
+                        {HAS_SETTLEMENT.includes(lease.status) && canViewSettlement && (
+                            <Link
+                                href={`/dashboard/leases/${leaseId}/settlement`}
+                                data-testid="lease-settle"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all"
+                            >
+                                <Banknote size={14} /> {tSettlement("title")}
                             </Link>
                         )}
                         {drafting && canDraft && (
@@ -570,6 +678,12 @@ export default function LeaseDetailPage() {
                                         error={chequeError}
                                         onRowAction={canCheques ? openChequeAction : undefined}
                                         canCancelCheques={canCancelCheques}
+                                        // Every row action is a transition, and
+                                        // `requireCollectable` gates all of them
+                                        // on the LEASE's status. This page has it
+                                        // in hand, so it passes it.
+                                        leaseStatus={lease.status}
+                                        settlementFinalized={settlement?.status === "FINALIZED"}
                                     />
                                     {drafting && canCheques && !readOnly && cheques.length > 0 && (
                                         <button
@@ -603,8 +717,15 @@ export default function LeaseDetailPage() {
                 )}
 
                 {tab === "recognition" && (
-                    <div className="bg-surface border border-border rounded-xl px-5 py-8 text-center" data-testid="lease-recognition">
-                        <p className="text-xs text-muted">{t("recognitionPlaceholder")}</p>
+                    <div data-testid="lease-recognition">
+                        <RecognitionScheduleTab
+                            leaseId={leaseId}
+                            contractRent={rentOf(lease)}
+                            // A truncated schedule is meant to be shorter than
+                            // the contract's rent, so the tab reports progress
+                            // instead of flagging a mismatch that is not one.
+                            terminated={lease.terminatedOn != null}
+                        />
                     </div>
                 )}
 
@@ -757,12 +878,25 @@ export default function LeaseDetailPage() {
 
                 {tab === "interactions" && <LeaseInteractionsPanel leaseId={leaseId} />}
 
-                {settlement && settlement.status !== "DRAFT" && (
-                    <div className="bg-surface rounded-[var(--radius-lg)] border border-border px-5 py-4 space-y-2">
+                {settlement && settlement.status === "FINALIZED" && (
+                    <div
+                        className="bg-surface rounded-[var(--radius-lg)] border border-border px-5 py-4 space-y-2"
+                        data-testid="lease-settlement-summary"
+                    >
                         <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">{tMaster("settlementSummary")}</h2>
-                        <Detail label={tMaster("securityDeposit")} value={formatCurrency(settlement.depositAmount)} />
-                        <Detail label={tMaster("totalDeductions")} value={formatCurrency(settlement.totalDeductions)} />
-                        <Detail label={tMaster("refundToRenter")} value={formatCurrency(settlement.refundAmount)} />
+                        <Detail label={tSettlement("depositsHeld")} value={formatCurrency(settlement.depositsHeld ?? settlement.depositAmount)} />
+                        <Detail label={tSettlement("totalDeductions")} value={formatCurrency(settlement.totalDeductions)} />
+                        {/*
+                          Exactly one of these is ever non-zero — they are the two
+                          halves of `netRefund` (`SettlementResponseDTO`).
+                        */}
+                        <Detail
+                            label={(settlement.balanceDue ?? 0) > 0 ? tSettlement("balanceDue") : tSettlement("refundDue")}
+                            value={formatCurrency((settlement.balanceDue ?? 0) > 0 ? settlement.balanceDue : settlement.refundAmount)}
+                        />
+                        {settlement.journalNumber && (
+                            <Detail label={tSettlement("journalNumber")} value={settlement.journalNumber} />
+                        )}
                         <Link href={`/dashboard/leases/${leaseId}/settlement`} className="text-[10px] font-semibold text-primary hover:underline">
                             {tMaster("viewSettlement")}
                         </Link>
@@ -835,6 +969,18 @@ export default function LeaseDetailPage() {
                     }}
                 />
             )}
+
+            <ConfirmDialog
+                isOpen={noticeOpen}
+                onClose={() => setNoticeOpen(false)}
+                onConfirm={handleGiveNotice}
+                isLoading={noticeBusy}
+                title={t("giveNotice")}
+                description={t("giveNoticeConfirm")}
+                confirmText={t("giveNotice")}
+                cancelText={t("cancel")}
+                confirmTestId="lease-give-notice-confirm"
+            />
 
             <ConfirmDialog
                 isOpen={deleteOpen}

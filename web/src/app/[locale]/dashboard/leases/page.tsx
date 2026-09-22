@@ -28,6 +28,14 @@ const STATUSES: LeaseStatus[] = [
     "DRAFT", "PENDING_SIGNATURE", "ACTIVE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "EXPIRED", "CLOSED",
 ];
 
+/**
+ * `LeaseTerminationService.TERMINABLE`
+ * (backend/src/main/java/com/datagami/rentaxis/core/service/lease/LeaseTerminationService.java:83),
+ * the same set the detail page's Terminate link uses. Both list views read it,
+ * so the list and the detail page can no longer disagree about one contract.
+ */
+const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
+
 /** One row of the bulk-post run: what was attempted, and what came back. */
 type PostResult = { leaseId: string; label: string; ok: boolean; message: string };
 
@@ -107,6 +115,12 @@ export default function LeasesPage() {
     const canViewLeases = hasPermission(userRole, 'canViewLeases');
     const canManageLeases = hasPermission(userRole, 'canManageLeases');
     const canPostLeases = hasPermission(userRole, 'canPostLeases');
+    // The Terminate affordance opens the termination page, whose read gate is
+    // LeaseController#previewTermination (SA/TA/ACCOUNTANT/PM, :273-274) — not
+    // canManageLeases, which is the SA/TA draft-lease key and has nothing to do
+    // with ending a contract. The page itself re-gates the button that posts the
+    // journals on canTerminateLeases (:287-288).
+    const canPreviewTermination = hasPermission(userRole, 'canPreviewTermination');
 
     useEffect(() => {
         fetchUnits();
@@ -293,34 +307,18 @@ export default function LeasesPage() {
 
     const router = useRouter();
 
+    /**
+     * Termination is a priced decision now, not a confirm dialog (spec §9.1):
+     * `POST /leases/{id}/terminate` takes a date and a complete return/keep
+     * answer for every uncleared instrument, so there is nothing a list row can
+     * usefully send. It opens the termination page instead.
+     *
+     * What used to be here — `{notes: "…"}` posted straight at `/terminate`,
+     * unreachable behind an early `return` — was already dead, and its body is
+     * now a 400 ("A termination needs a date").
+     */
     const handleTerminate = (id: string) => {
-        // Redirect to lease detail page where the full settlement modal is available
-        router.push(`/dashboard/leases/${id}?action=terminate`);
-        return;
-        // Legacy direct terminate (kept for reference)
-        setConfirmConfig({
-            title: t("terminateLease"),
-            description: t("confirmTerminate"),
-            confirmText: t("terminate"),
-            isDestructive: true,
-            onConfirm: async () => {
-                setActionLoading('terminate');
-                try {
-                    const res = await fetch(`/api/proxy/v1/leases/${id}/terminate`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ notes: t("quickTerminationNote") }),
-                    });
-                    if (res.ok) fetchLeases();
-                } catch (err) {
-                    console.error(err);
-                } finally {
-                    setActionLoading(null);
-                    setConfirmOpen(false);
-                }
-            }
-        });
-        setConfirmOpen(true);
+        router.push(`/dashboard/leases/${id}/terminate`);
     };
 
     const handleGenerateContract = async (id: string) => {
@@ -569,10 +567,18 @@ export default function LeasesPage() {
                 {!compact && (lease.status === 'ACTIVE' || lease.status === 'NOTICE_GIVEN') && renderChequeProgress(lease.id)}
             </div>
 
-            {canManageLeases && (
+            {/*
+              The card's action bar used to hang off `canManageLeases` alone, so
+              every button inside it inherited the SA/TA draft-lease key —
+              including Terminate, which belongs to canPreviewTermination, and
+              Post, which belongs to canPostLeases. Each button now carries its
+              own gate and the bar shows when any of them would.
+            */}
+            {(canManageLeases || canPostLeases || canPreviewTermination) && (
                 <div onClick={(e) => e.stopPropagation()} className={cn("flex gap-2 border-t border-border mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
-                    {lease.status === 'DRAFT' && (
+                    {lease.status === 'DRAFT' && canManageLeases && (
                         <button
+                            data-testid={`lease-card-edit-${lease.id}`}
                             onClick={() => handleEditDraft(lease)}
                             className="flex items-center justify-center gap-2 bg-input text-foreground hover:bg-input/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
@@ -580,7 +586,7 @@ export default function LeasesPage() {
                             {t("edit")}
                         </button>
                     )}
-                    {lease.status === 'DRAFT' && (
+                    {lease.status === 'DRAFT' && canManageLeases && (
                         <button
                             onClick={() => handleDeleteDraft(lease.id)}
                             disabled={actionLoading === `delete-${lease.id}`}
@@ -590,7 +596,7 @@ export default function LeasesPage() {
                             {actionLoading === `delete-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                         </button>
                     )}
-                    {lease.status === 'DRAFT' && !lease.hasContract && (
+                    {lease.status === 'DRAFT' && !lease.hasContract && canManageLeases && (
                         <button
                             onClick={() => handleGenerateContract(lease.id)}
                             disabled={actionLoading === `generate-${lease.id}`}
@@ -609,7 +615,7 @@ export default function LeasesPage() {
                             {tl("postLease")}
                         </button>
                     )}
-                    {lease.status === 'PENDING_SIGNATURE' && (
+                    {lease.status === 'PENDING_SIGNATURE' && canManageLeases && (
                         <>
                             <button
                                 onClick={() => handleDownloadContract(lease.id)}
@@ -629,8 +635,9 @@ export default function LeasesPage() {
                             </button>
                         </>
                     )}
-                    {lease.status === 'ACTIVE' && (
+                    {TERMINABLE.includes(lease.status) && canPreviewTermination && (
                         <button
+                            data-testid={`lease-card-terminate-${lease.id}`}
                             onClick={() => handleTerminate(lease.id)}
                             className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
@@ -704,6 +711,7 @@ export default function LeasesPage() {
                     </select>
                     <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
                         <button
+                            data-testid="lease-view-table"
                             onClick={() => { setViewMode('table'); setCurrentPage(1); }}
                             className={cn(
                                 "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
@@ -714,6 +722,7 @@ export default function LeasesPage() {
                             {t("table")}
                         </button>
                         <button
+                            data-testid="lease-view-cards"
                             onClick={() => { setViewMode('cards'); setCurrentPage(1); }}
                             className={cn(
                                 "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
@@ -724,6 +733,7 @@ export default function LeasesPage() {
                             {t("cards")}
                         </button>
                         <button
+                            data-testid="lease-view-board"
                             onClick={() => setViewMode('board')}
                             className={cn(
                                 "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
@@ -898,8 +908,9 @@ export default function LeasesPage() {
                                                                 {actionLoading === `download-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />} PDF
                                                             </button>
                                                         )}
-                                                        {lease.status === 'ACTIVE' && canManageLeases && (
+                                                        {TERMINABLE.includes(lease.status) && canPreviewTermination && (
                                                             <button
+                                                                data-testid={`lease-list-terminate-${lease.id}`}
                                                                 onClick={() => handleTerminate(lease.id)}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors cursor-pointer"
                                                             >

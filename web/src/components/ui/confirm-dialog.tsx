@@ -13,6 +13,20 @@ interface ConfirmDialogProps {
     cancelText?: string;
     isDestructive?: boolean;
     isLoading?: boolean;
+    /**
+     * A stable hook for the confirm button. The dialog is where irreversible
+     * acts are actually committed, and a test (or a walkthrough) that clicks it
+     * by its visible label breaks the moment the label is translated.
+     */
+    confirmTestId?: string;
+    /**
+     * Refuse the confirmation from inside the dialog. Needed where the dialog
+     * itself collects a value that can be invalid — a voucher amendment's
+     * reversal date, which the server refuses inside a locked period — so the
+     * button says no where the reason is, rather than letting the request go and
+     * rendering the server's sentence afterwards.
+     */
+    confirmDisabled?: boolean;
     /** Extra fields the confirmation needs — rendered under the description. */
     children?: React.ReactNode;
 }
@@ -27,6 +41,8 @@ export function ConfirmDialog({
     cancelText = "Cancel",
     isDestructive = false,
     isLoading = false,
+    confirmTestId,
+    confirmDisabled = false,
     children,
 }: ConfirmDialogProps) {
     return (
@@ -65,7 +81,8 @@ export function ConfirmDialog({
                             </button>
                             <button
                                 onClick={onConfirm}
-                                disabled={isLoading}
+                                data-testid={confirmTestId}
+                                disabled={isLoading || confirmDisabled}
                                 className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${isDestructive
                                     ? "bg-error text-white hover:bg-error/90 shadow-error/20"
                                     : "bg-accent text-accent-foreground hover:brightness-110 shadow-accent/20"

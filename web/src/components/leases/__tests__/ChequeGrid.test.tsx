@@ -211,6 +211,53 @@ describe("ChequeGrid row actions", () => {
         expect(screen.queryByTestId("cheque-action-deposit-0")).not.toBeInTheDocument();
     });
 
+    it("offers nothing on a CLOSED contract — requireCollectable refuses every one", () => {
+        const cleared = cheque({ id: "c1", seqNo: 1, status: "CLEARED" });
+        renderGrid({
+            cheques: [cleared],
+            editable: false,
+            onRowAction: vi.fn(),
+            contractValueInclVat: 13700,
+            leaseStatus: "CLOSED",
+        });
+        // The reachable half of the twelve-cases defect: a cleared PDC on a
+        // closed contract still showed the late-return Bounce.
+        expect(screen.queryByTestId("cheque-action-bounce-0")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("cheque-action-receipt-0")).not.toBeInTheDocument();
+        // ...and the actions column disappears with them.
+        expect(screen.queryByText("Actions")).not.toBeInTheDocument();
+    });
+
+    it("keeps them on a TERMINATED contract, which COLLECTABLE admits", () => {
+        renderGrid({
+            cheques: [cheque({ id: "c1", seqNo: 1, status: "DEPOSITED" })],
+            editable: false,
+            onRowAction: vi.fn(),
+            contractValueInclVat: 13700,
+            leaseStatus: "TERMINATED",
+        });
+        expect(screen.getByTestId("cheque-action-clear-0")).toBeInTheDocument();
+        expect(screen.getByTestId("cheque-action-bounce-0")).toBeInTheDocument();
+    });
+
+    it("drops Cancel once the lease's settlement is finalised, keeping Replace", () => {
+        renderGrid({
+            cheques: [
+                cheque({ id: "c1", seqNo: 1, status: "REGISTERED" }),
+                cheque({ id: "c2", seqNo: 2, status: "BOUNCED" }),
+            ],
+            editable: false,
+            onRowAction: vi.fn(),
+            canCancelCheques: true,
+            contractValueInclVat: 27400,
+            leaseStatus: "TERMINATED",
+            settlementFinalized: true,
+        });
+        expect(screen.queryByTestId("cheque-action-cancel-0")).not.toBeInTheDocument();
+        expect(screen.getByTestId("cheque-action-deposit-0")).toBeInTheDocument();
+        expect(screen.getByTestId("cheque-action-replace-1")).toBeInTheDocument();
+    });
+
     it("shows the notice when the backend dropped the draft rows", () => {
         renderGrid({
             cheques: [],

@@ -16,6 +16,7 @@ import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
@@ -413,6 +414,36 @@ class ChequeControllerIT {
         assertThat(journalEntryCount()).isEqualTo(entriesBefore);
     }
 
+    /**
+     * A contract whose term has run out takes no counter receipt.
+     *
+     * <p>Review I2: this endpoint is the one user-facing door into
+     * {@code addRowToPostedLease}, and until now it admitted an EXPIRED lease — so a
+     * finance user could raise a CASH row, and a {@code PDR} with it, against a
+     * tenancy that had ended. Money owed on an expired lease is collected through
+     * its settlement (spec §9.2), which has its own internal door; approving a
+     * penalty on one still works and goes through that same door.</p>
+     */
+    @Test
+    void cashReceiptIsRefusedOnAnExpiredLease() {
+        long rowsBefore = registerSize();
+        long entriesBefore = journalEntryCount();
+        // The real path, not a status poke: the term ends 31 Jan 2027, so the
+        // nightly sweep run on 1 Feb expires it.
+        tx.executeWithoutResult(s -> leaseService.markExpired(leaseId, END.plusDays(1)));
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.EXPIRED);
+
+        ResponseEntity<Map> refused = map(accountant, HttpMethod.POST,
+                "/api/v1/cheques/lease/" + leaseId + "/cash-receipt",
+                Map.of("amount", 1500, "chequeDate", "2027-02-02", "mode", "CASH",
+                        "narration", "Last month, over the counter"));
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) refused.getBody().get("message")).contains("This lease is EXPIRED");
+        assertThat(registerSize()).as("no row").isEqualTo(rowsBefore);
+        assertThat(journalEntryCount()).as("and no PDR").isEqualTo(entriesBefore);
+    }
+
     /** A PDC is paper to be banked, not something that arrives over the counter. */
     @Test
     void cashReceiptRefusesAPdcRow() {
@@ -449,6 +480,15 @@ class ChequeControllerIT {
         assertThat(row.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(row.getBody().get("chequeNumber")).isEqualTo("100040");
         assertThat(row.getBody()).containsKeys("due", "overdue", "daysOverdue");
+        // The contract's status travels on the row, under exactly this name: the
+        // register decides which actions to offer from it, and the server refuses
+        // every transition on a lease that has been closed.
+        assertThat(row.getBody().get("leaseStatus"))
+                .as("leaseStatus on the wire")
+                .isEqualTo(LeaseStatus.ACTIVE.name());
+        assertThat(row.getBody().get("status"))
+                .as("and it is not the cheque's own status")
+                .isEqualTo(ChequeStatus.REGISTERED.name());
     }
 
     /** Per-lease stats arrive in one round trip rather than one per row of a table. */
