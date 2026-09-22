@@ -171,3 +171,15 @@ databaseChangeLog:
       file: db/changelog/changesets/81-ledger-core.yaml
   - include:
       file: db/changelog/changesets/82-drop-v1-finance.yaml
+  - include:
+      file: db/changelog/changesets/83-lease-posting-and-cheques.yaml
+  - include:
+      file: db/changelog/changesets/84-drop-v1-schedules.yaml
+  - include:
+      file: db/changelog/changesets/85-recognition-termination-settlement.yaml
+  - include:
+      file: db/changelog/changesets/86-rent-segment-lease-line-no-fk.yaml
+  - include:
+      file: db/changelog/changesets/87-vouchers.yaml
+  - include:
+      file: db/changelog/changesets/88-cutover.yaml

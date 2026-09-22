@@ -5,6 +5,17 @@
  * synthetic tenant recorded in tutorials/state. Existing customer data is never
  * queried or mutated. Progress is inferred from production state, so rerunning
  * after an interruption continues instead of importing duplicates.
+ *
+ * VERIFY: this spec drives `/v1/import/portfolio` (the bulk workbook
+ * importer), which is NOT part of accounting-v2 plan 2's brief and was not
+ * audited here — whether it now creates v2 `lines`-based leases (and, if
+ * so, whether each property's lease carries a RENT line only or also a
+ * SECURITY_DEPOSIT line that folds into cheque #1 by default) is unconfirmed.
+ * The filter below assumes four PDC cheques per lease are all ordinary rent
+ * rows with no deposit folded in; if the importer's leases carry a deposit
+ * line, `getScaleCheques` will pick up a heavier first cheque per property
+ * and the per-property "four rent rows" assumption breaks. Needs runtime
+ * confirmation in 17b.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'node:fs';
@@ -24,17 +35,16 @@ const EXPECTED_RENT_ROWS = EXPECTED_PROPERTIES * 4;
 
 type Json = Record<string, any>;
 type PropertyRecord = { id: string; nameEn: string; nameAr?: string | null; address?: string | null };
-type Payment = {
+/** ChequeDTO's own shape (`web/src/lib/api/leasing.ts`) — replaces v1's PaymentScheduleDTO. */
+type Cheque = {
   id: string;
   propertyId: string;
   propertyName: string;
-  installmentNumber: number;
-  dueDate: string;
+  seqNo: number;
+  chequeDate: string;
   amount: number;
   status: string;
-  isSecurityDeposit?: boolean;
-  isBookingDeposit?: boolean;
-  isCharge?: boolean;
+  mode: string;
 };
 
 function readJson<T>(file: string): T {
@@ -76,25 +86,21 @@ async function getProperties(ctx: ProdContext): Promise<PropertyRecord[]> {
   return normalizeProperties(await requestJson<unknown>(ctx, 'get', '/v1/properties'));
 }
 
-async function getScalePayments(ctx: ProdContext): Promise<Payment[]> {
-  const all: Payment[] = [];
+async function getScaleCheques(ctx: ProdContext): Promise<Cheque[]> {
+  const all: Cheque[] = [];
   for (let page = 0; ; page++) {
     const result = await requestJson<Json>(
       ctx,
       'get',
-      `/v1/payments?search=${encodeURIComponent('DT26')}&page=${page}&size=200&sort=dueDate,asc&sort=id,asc`,
+      `/v1/cheques?search=${encodeURIComponent('DT26')}&mode=PDC&page=${page}&size=200`,
     );
     all.push(...(result.content || []));
     if (page + 1 >= (result.totalPages || 1)) break;
   }
-  return all.filter((payment) =>
-    payment.propertyName?.startsWith(PREFIX)
-      && payment.installmentNumber >= 1
-      && payment.installmentNumber <= 4
-      && !payment.isSecurityDeposit
-      && !payment.isBookingDeposit
-      && !payment.isCharge,
-  );
+  // VERIFY: no isSecurityDeposit/isBookingDeposit/isCharge flags exist on
+  // ChequeDTO in v2 — every PDC row for a DT26 property is assumed to be an
+  // ordinary rent installment (see the file-level VERIFY above).
+  return all.filter((cheque) => cheque.propertyName?.startsWith(PREFIX) && cheque.seqNo >= 1 && cheque.seqNo <= 4);
 }
 
 async function mapLimited<T>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<void>) {
@@ -115,27 +121,20 @@ function plusDays(isoDate: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-async function transitionPayment(ctx: ProdContext, payment: Payment, target: string): Promise<void> {
-  let status = payment.status;
-  const chequeNumber = `DT26-${payment.propertyId.slice(0, 8).toUpperCase()}-${payment.installmentNumber}`;
-  if (status === 'PENDING') {
-    const collected = await requestJson<Json>(ctx, 'put', `/v1/payments/${payment.id}/collect`, {
-      chequeNumber,
-      bankName: ['Emirates NBD', 'First Abu Dhabi Bank', 'ADCB', 'Mashreq'][payment.installmentNumber - 1],
-      payerName: `Demo portfolio renter / مستأجر محفظة العرض`,
-      chequeDate: payment.dueDate,
-      effectiveDate: plusDays(payment.dueDate, 1),
-      notes: 'Synthetic Demo Tutorial history / سجل تعليمي اصطناعي',
-    });
-    status = collected.status;
-  }
-  if (target === 'COLLECTED') {
-    expect(status).toBe('COLLECTED');
+/**
+ * v2's register has no PENDING/"collect" step — every generated PDC row
+ * starts REGISTERED, cheque number already assigned at generation. Walk
+ * REGISTERED -> DEPOSITED -> CLEARED/BOUNCED via `/v1/cheques/{id}/...`.
+ */
+async function transitionCheque(ctx: ProdContext, cheque: Cheque, target: string): Promise<void> {
+  let status = cheque.status;
+  if (target === 'REGISTERED') {
+    expect(status).toBe('REGISTERED');
     return;
   }
-  if (status === 'COLLECTED') {
-    const deposited = await requestJson<Json>(ctx, 'put', `/v1/payments/${payment.id}/deposit`, {
-      effectiveDate: plusDays(payment.dueDate, 3),
+  if (status === 'REGISTERED') {
+    const deposited = await requestJson<Json>(ctx, 'put', `/v1/cheques/${cheque.id}/deposit`, {
+      date: plusDays(cheque.chequeDate, 1),
       notes: 'Synthetic historical deposit / إيداع تاريخي اصطناعي',
     });
     status = deposited.status;
@@ -146,19 +145,19 @@ async function transitionPayment(ctx: ProdContext, payment: Payment, target: str
   }
   if (target === 'BOUNCED') {
     if (status === 'DEPOSITED') {
-      const bounced = await requestJson<Json>(ctx, 'post', `/v1/payments/${payment.id}/mark-failed`, {
+      const bounced = await requestJson<Json>(ctx, 'put', `/v1/cheques/${cheque.id}/bounce`, {
         failureReason: 'BOUNCE',
         notes: 'Synthetic bounced-cheque example / مثال اصطناعي لشيك مرتجع',
-        effectiveDate: plusDays(payment.dueDate, 6),
+        date: plusDays(cheque.chequeDate, 6),
       });
-      status = bounced.schedule.status;
+      status = bounced.status;
     }
     expect(status).toBe('BOUNCED');
     return;
   }
   if (status === 'DEPOSITED') {
-    const cleared = await requestJson<Json>(ctx, 'put', `/v1/payments/${payment.id}/clear`, {
-      effectiveDate: plusDays(payment.dueDate, 5),
+    const cleared = await requestJson<Json>(ctx, 'put', `/v1/cheques/${cheque.id}/clear`, {
+      date: plusDays(cheque.chequeDate, 5),
       notes: 'Synthetic historical clearance / تسوية تاريخية اصطناعية',
     });
     status = cleared.status;
@@ -243,15 +242,15 @@ test('seed and verify the 504-property bilingual campus portfolio', async () => 
   const finalAssignments = await requestJson<string[]>(adminCtx, 'get', `/admin/users/${mainState.users.manager.id}/properties`);
   expect(scaleProperties.every((property) => finalAssignments.includes(property.id))).toBeTruthy();
 
-  const payments = await getScalePayments(adminCtx);
-  expect(payments.length).toBe(EXPECTED_RENT_ROWS);
-  const paymentsByProperty = new Map<string, Payment[]>();
-  for (const payment of payments) {
-    const rows = paymentsByProperty.get(payment.propertyId) || [];
-    rows.push(payment);
-    paymentsByProperty.set(payment.propertyId, rows);
+  const cheques = await getScaleCheques(adminCtx);
+  expect(cheques.length).toBe(EXPECTED_RENT_ROWS);
+  const chequesByProperty = new Map<string, Cheque[]>();
+  for (const cheque of cheques) {
+    const rows = chequesByProperty.get(cheque.propertyId) || [];
+    rows.push(cheque);
+    chequesByProperty.set(cheque.propertyId, rows);
   }
-  expect(paymentsByProperty.size).toBe(EXPECTED_PROPERTIES);
+  expect(chequesByProperty.size).toBe(EXPECTED_PROPERTIES);
 
   const superEmail = process.env.PROD_SUPERADMIN_EMAIL;
   const superPassword = process.env.PROD_SUPERADMIN_PASSWORD;
@@ -265,12 +264,12 @@ test('seed and verify the 504-property bilingual campus portfolio', async () => 
       progress: { propertiesImported: EXPECTED_PROPERTIES, managerAssignments: EXPECTED_PROPERTIES, paymentsTransitioned: 0 },
     });
     await mapLimited(scaleProperties, 10, async (property, propertyIndex) => {
-      const rows = (paymentsByProperty.get(property.id) || []).sort((a, b) => a.installmentNumber - b.installmentNumber);
+      const rows = (chequesByProperty.get(property.id) || []).sort((a, b) => a.seqNo - b.seqNo);
       expect(rows.length, `four rent rows required for ${property.nameEn}`).toBe(4);
-      await transitionPayment(adminCtx, rows[0], 'CLEARED');
-      if (propertyIndex % 20 === 0) await transitionPayment(adminCtx, rows[1], 'BOUNCED');
-      else if (propertyIndex % 20 === 1) await transitionPayment(adminCtx, rows[1], 'DEPOSITED');
-      else if (propertyIndex % 20 === 2) await transitionPayment(adminCtx, rows[1], 'COLLECTED');
+      await transitionCheque(adminCtx, rows[0], 'CLEARED');
+      if (propertyIndex % 20 === 0) await transitionCheque(adminCtx, rows[1], 'BOUNCED');
+      else if (propertyIndex % 20 === 1) await transitionCheque(adminCtx, rows[1], 'DEPOSITED');
+      else if (propertyIndex % 20 === 2) await transitionCheque(adminCtx, rows[1], 'REGISTERED');
       completed++;
       if (completed % 25 === 0) {
         writeScaleState({
@@ -284,15 +283,16 @@ test('seed and verify the 504-property bilingual campus portfolio', async () => 
     await superCtx.request.dispose();
   }
 
-  const verifiedPayments = await getScalePayments(adminCtx);
-  const statusCounts = verifiedPayments.reduce<Record<string, number>>((counts, payment) => {
-    counts[payment.status] = (counts[payment.status] || 0) + 1;
+  const verifiedCheques = await getScaleCheques(adminCtx);
+  const statusCounts = verifiedCheques.reduce<Record<string, number>>((counts, cheque) => {
+    counts[cheque.status] = (counts[cheque.status] || 0) + 1;
     return counts;
   }, {});
   expect(statusCounts.CLEARED).toBeGreaterThanOrEqual(EXPECTED_PROPERTIES);
   expect(statusCounts.BOUNCED).toBeGreaterThanOrEqual(20);
   expect(statusCounts.DEPOSITED).toBeGreaterThanOrEqual(20);
-  expect(statusCounts.COLLECTED).toBeGreaterThanOrEqual(20);
+  // v2 has no COLLECTED status — the third bucket is left untouched (REGISTERED).
+  expect(statusCounts.REGISTERED).toBeGreaterThanOrEqual(20);
 
   const managerCtx = await loginAsNextAuth(BASE_URL, mainState.users.manager.email, secrets.password);
   await setActiveTenant(managerCtx, mainState.tenant.id);
@@ -302,7 +302,7 @@ test('seed and verify the 504-property bilingual campus portfolio', async () => 
   const arabicSearch = await requestJson<Json>(
     adminCtx,
     'get',
-    `/v1/payments?search=${encodeURIComponent('حرم بوابة الشمال')}&page=0&size=25`,
+    `/v1/cheques?search=${encodeURIComponent('حرم بوابة الشمال')}&page=0&size=25`,
   );
   expect(arabicSearch.totalElements).toBeGreaterThan(0);
 
@@ -328,7 +328,7 @@ test('seed and verify the 504-property bilingual campus portfolio', async () => 
       unitCount: generator.unitCount,
       renterCount: generator.renterCount,
       activeLeaseCount: generator.leaseCount,
-      rentPaymentCount: verifiedPayments.length,
+      rentPaymentCount: verifiedCheques.length,
       paymentStatusCounts: statusCounts,
       managerVisiblePropertyCount: managerScaleProperties.length,
       representativePropertyId: scaleProperties[0].id,

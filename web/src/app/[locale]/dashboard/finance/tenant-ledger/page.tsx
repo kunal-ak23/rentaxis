@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { ShieldCheck, Users } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
+import { narrowLedgersToLease } from "@/components/finance/narrowLedger";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -23,7 +25,16 @@ export default function TenantLedgerPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const allowed = hasPermission(userRole, "canAccessFinance");
 
-    const initial: LedgerQuery = defaultLedgerRange();
+    // A contract's "Ledger" action links here with the renter and the lease
+    // already chosen. Without reading them the link landed on an empty prompt
+    // and the accountant re-picked, by hand, the tenant they had just clicked
+    // away from.
+    const searchParams = useSearchParams();
+    const initial: LedgerQuery = {
+        ...defaultLedgerRange(),
+        renterId: searchParams?.get("renterId") ?? undefined,
+        leaseId: searchParams?.get("leaseId") ?? undefined,
+    };
     const [draft, setDraft] = useState<LedgerQuery>(initial);
     const [applied, setApplied] = useState<LedgerQuery>(initial);
     const [ledgers, setLedgers] = useState<AccountLedger[]>([]);
@@ -44,7 +55,8 @@ export default function TenantLedgerPage() {
             setLoading(true);
             setLoadError(null);
             try {
-                setLedgers(await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to }));
+                const all = await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to });
+                setLedgers(narrowLedgersToLease(all, q.leaseId));
             } catch (err) {
                 setLedgers([]);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));

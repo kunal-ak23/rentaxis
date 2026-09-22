@@ -47,6 +47,7 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID
           and (cast(:to as LocalDate) is null or e.entryDate <= :to)
           and (cast(:propertyId as java.util.UUID) is null or e.propertyId = :propertyId)
           and (cast(:leaseId as java.util.UUID) is null or e.leaseId = :leaseId)
+          and (cast(:importBatchId as java.util.UUID) is null or e.importBatchId = :importBatchId)
         order by e.entryDate desc, e.createdAt desc
         """)
     Page<JournalEntry> search(@Param("docType") JournalDocType docType,
@@ -54,7 +55,21 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID
                               @Param("to") LocalDate to,
                               @Param("propertyId") UUID propertyId,
                               @Param("leaseId") UUID leaseId,
+                              @Param("importBatchId") UUID importBatchId,
                               Pageable pageable);
 
     List<JournalEntry> findByImportBatchIdOrderByCreatedAtAsc(UUID importBatchId);
+
+    /**
+     * How many entries name this lease — of any doc type, of any status, including
+     * the reversal mirrors.
+     *
+     * <p>Asked by the cut-over discard before it tries to delete an imported
+     * contract. {@code journal_entries.lease_id} is a restricting foreign key
+     * (changeset 81) and the rows behind it can be neither deleted nor re-pointed
+     * ({@code trg_journal_entries_immutable}), so a non-zero answer here means the
+     * lease is permanently in the ledger's history and the discard has to say so
+     * rather than fail on the constraint.</p>
+     */
+    long countByLeaseId(UUID leaseId);
 }

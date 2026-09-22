@@ -51,6 +51,10 @@ public class RentCollectionSettings extends BaseTenantEntity {
     @Column(name = "fine_per_day_rate")
     private BigDecimal finePerDayRate;
 
+    /** Null means "use the organisation's threshold" — the same override shape as the fine amounts. */
+    @Column(name = "bounces_before_penalty")
+    private Integer bouncesBeforePenalty;
+
     @Column(name = "online_payment_enabled")
     private Boolean onlinePaymentEnabled;
 

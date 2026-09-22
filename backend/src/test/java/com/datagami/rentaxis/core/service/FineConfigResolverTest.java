@@ -47,6 +47,9 @@ class FineConfigResolverTest {
         o.setFineAccountClosedAmount(new BigDecimal("1000"));
         o.setFineGraceDays(7);
         o.setFinePerDayRate(new BigDecimal("25"));
+        o.setBouncesBeforePenalty(2);
+        o.setAutoProposeChequeReturn(true);
+        o.setAutoProposeLatePayment(false);
         return o;
     }
 
@@ -57,6 +60,9 @@ class FineConfigResolverTest {
         o.setFineAccountClosedAmount(new BigDecimal("1000"));
         o.setFineGraceDays(7);
         o.setFinePerDayRate(new BigDecimal("25"));
+        o.setBouncesBeforePenalty(2);
+        o.setAutoProposeChequeReturn(true);
+        o.setAutoProposeLatePayment(false);
         return o;
     }
 
@@ -99,6 +105,52 @@ class FineConfigResolverTest {
         assertThat(cfg.graceDays()).isEqualTo(7);
         assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
         assertThat(cfg.source()).isEqualTo(FineConfig.Source.PROPERTY);
+    }
+
+    /**
+     * The penalty threshold coalesces like every other fine field, and the engine
+     * relies on that: {@code PenaltyRuleEngine.onBounce} reads
+     * {@code cfg.bouncesBeforePenalty()} and nothing else, so if the override did
+     * not arrive here a property that charges after four bounces would be fined
+     * after two.
+     */
+    @Test
+    void resolve_propertyOverridesTheBounceThreshold() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        RentCollectionSettings rcs = new RentCollectionSettings();
+        rcs.setBouncesBeforePenalty(4);
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(standardOrg(tenantId)));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.of(rcs));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bouncesBeforePenalty()).isEqualTo(4);
+        // The org's amounts are untouched, and the override alone marks the source.
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.PROPERTY);
+    }
+
+    /** The auto-propose switches are org-wide; no property column overrides them. */
+    @Test
+    void resolve_autoProposeFlagsComeFromTheOrganisation() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        LandlordOrgFineSettings org = standardOrg(tenantId);
+        org.setAutoProposeChequeReturn(false);
+        org.setAutoProposeLatePayment(true);
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(org));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.autoProposeChequeReturn()).isFalse();
+        assertThat(cfg.autoProposeLatePayment()).isTrue();
+        assertThat(cfg.bouncesBeforePenalty()).isEqualTo(2);
     }
 
     @Test
@@ -183,6 +235,7 @@ class FineConfigResolverTest {
                 new BigDecimal("1000"),
                 7,
                 BigDecimal.valueOf(25),
+                2, true, false,
                 FineConfig.Source.ORG
         );
 

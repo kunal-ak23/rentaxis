@@ -135,7 +135,10 @@ class FineSettingsControllerTest {
                 new BigDecimal("300"),
                 new BigDecimal("800"),
                 5,
-                new BigDecimal("20")
+                new BigDecimal("20"),
+                // The penalty fields omitted, as the settings page shipping today
+                // sends them: a save that names none must leave them alone.
+                null, null, null
         );
         LandlordOrgFineSettings existing = sampleSettings();
         when(repo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(existing));

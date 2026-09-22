@@ -1,31 +1,40 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit test for the dashboard "pending this month" calculation: only PENDING
- * schedules whose dueDate falls in the current calendar month count toward
- * pendingThisMonthAmount, while pendingAmount remains all-time PENDING.
+ * The dashboard's money tiles, read off the cheque register.
+ *
+ * <p>"Pending this month" is a date-bounded aggregate rather than a filter over
+ * every row the database holds: the register is the biggest table a landlord has
+ * and this is the first screen after login. The test therefore asserts that the
+ * service asks the right <em>question</em> — the outstanding statuses, the
+ * current month's window — and reports what comes back.</p>
  */
 class DashboardServicePendingThisMonthTest {
 
-    private PaymentScheduleRepository paymentScheduleRepository;
+    private ChequeRepository chequeRepository;
+    private LeaseAccessPolicy leaseAccessPolicy;
     private DashboardService service;
 
     @BeforeEach
@@ -33,26 +42,32 @@ class DashboardServicePendingThisMonthTest {
         PropertyRepository propertyRepository = mock(PropertyRepository.class);
         UnitRepository unitRepository = mock(UnitRepository.class);
         LeaseRepository leaseRepository = mock(LeaseRepository.class);
-        paymentScheduleRepository = mock(PaymentScheduleRepository.class);
+        chequeRepository = mock(ChequeRepository.class);
         when(propertyRepository.findAll()).thenReturn(List.of());
         when(unitRepository.findAll()).thenReturn(List.of());
         when(leaseRepository.findAll()).thenReturn(List.of());
-        service = new DashboardService(propertyRepository, unitRepository, leaseRepository, paymentScheduleRepository);
+        when(chequeRepository.findDue(any(), any(), anyBoolean(), any(), any())).thenReturn(Page.empty());
+        when(chequeRepository.findRecentlyChanged(anyBoolean(), any(), any())).thenReturn(List.of());
+        when(chequeRepository.sumClearedBetween(any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(BigDecimal.ZERO);
+        // Unrestricted by default: the scoping itself is ChequeQueryServiceIT's and
+        // DashboardServiceScopingIT's subject, not this test's.
+        leaseAccessPolicy = mock(LeaseAccessPolicy.class);
+        when(leaseAccessPolicy.visiblePropertyIds()).thenReturn(null);
+        service = new DashboardService(propertyRepository, unitRepository, leaseRepository,
+                chequeRepository, leaseAccessPolicy);
     }
 
     @Test
-    void pendingThisMonth_countsOnlyCurrentMonthPending() {
-        LocalDate today = LocalDate.now();
-        LocalDate thisMonth = today.withDayOfMonth(1).plusDays(4);
-        LocalDate lastMonth = today.withDayOfMonth(1).minusDays(5);
-        LocalDate nextMonth = today.withDayOfMonth(1).plusMonths(1).plusDays(3);
-
-        when(paymentScheduleRepository.findAll()).thenReturn(List.of(
-                pending(thisMonth, "1000"),   // counts in both
-                pending(lastMonth, "2000"),   // all-time pending only (overdue bucket)
-                pending(nextMonth, "500"),    // all-time pending only (future)
-                cleared(thisMonth, "9999")    // not pending
-        ));
+    void outstandingTilesComeFromTheRegistersStatusTotals() {
+        when(chequeRepository.totalsByStatus(eq(null), eq(true), any())).thenReturn(List.<Object[]>of(
+                new Object[]{ChequeStatus.REGISTERED, 3L, new BigDecimal("2500")},
+                new Object[]{ChequeStatus.DEPOSITED, 1L, new BigDecimal("1000")},
+                new Object[]{ChequeStatus.CLEARED, 2L, new BigDecimal("9999")},
+                // Not outstanding: the paper is back with the tenant.
+                new Object[]{ChequeStatus.RETURNED, 1L, new BigDecimal("4000")}));
+        when(chequeRepository.sumByStatusInAndChequeDateBetween(any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(new BigDecimal("1000"));
 
         DashboardSummaryDTO summary = service.getSummary();
 
@@ -61,20 +76,27 @@ class DashboardServicePendingThisMonthTest {
         assertThat(summary.getCollectedAmount()).isEqualByComparingTo("9999");
     }
 
-    private PaymentSchedule pending(LocalDate due, String amount) {
-        return schedule(due, amount, PaymentStatus.PENDING);
+    /**
+     * "This month" is the current calendar month, asked of the database as a
+     * half-open window over the date on the paper.
+     */
+    @Test
+    void pendingThisMonthAsksForTheCurrentMonthsOutstandingRows() {
+        when(chequeRepository.totalsByStatus(eq(null), eq(true), any())).thenReturn(List.of());
+        java.time.LocalDate monthStart = java.time.LocalDate.now().withDayOfMonth(1);
+        when(chequeRepository.sumByStatusInAndChequeDateBetween(
+                argThatContainsOutstanding(), eq(monthStart), eq(monthStart.plusMonths(1)),
+                anyBoolean(), any()))
+                .thenReturn(new BigDecimal("777"));
+
+        assertThat(service.getSummary().getPendingThisMonthAmount()).isEqualByComparingTo("777");
     }
 
-    private PaymentSchedule cleared(LocalDate due, String amount) {
-        return schedule(due, amount, PaymentStatus.CLEARED);
-    }
-
-    private PaymentSchedule schedule(LocalDate due, String amount, PaymentStatus status) {
-        PaymentSchedule s = new PaymentSchedule();
-        s.setDueDate(due);
-        s.setAmount(new BigDecimal(amount));
-        s.setStatus(status);
-        // statusChangedAt left null so it is skipped from recent-activity (no unit/property needed)
-        return s;
+    private static Collection<ChequeStatus> argThatContainsOutstanding() {
+        return org.mockito.ArgumentMatchers.argThat(statuses ->
+                statuses != null
+                        && statuses.contains(ChequeStatus.REGISTERED)
+                        && statuses.contains(ChequeStatus.DEPOSITED)
+                        && !statuses.contains(ChequeStatus.CLEARED));
     }
 }

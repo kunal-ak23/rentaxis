@@ -3,30 +3,32 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
+import { chequeApi, type Cheque } from "@/lib/api/leasing";
 
-type Payment = {
-  id: string;
-  leaseId: string;
-  renterName: string | null;
-  unitIdentifier: string | null;
-  amount: number;
-  dueDate: string;
-};
+/**
+ * `GET /cheques/due` returns every matured, unpaid row — due-today and
+ * overdue alike, each carrying its own `overdue` flag (spec §7.5). There is
+ * no server-side "overdue only" filter, so the widget fetches a bounded page
+ * (the same default sort as the register: nearest maturity first) and keeps
+ * the ones already past grace.
+ */
+const FETCH_SIZE = 50;
+const DISPLAY_LIMIT = 5;
 
 export default function OverduePaymentsWidget() {
   const t = useTranslations("Dashboard");
-  const [items, setItems] = useState<Payment[]>([]);
+  const [items, setItems] = useState<Cheque[]>([]);
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/proxy/v1/payments?overdue=true&page=0&size=5");
-      if (!res.ok) return;
-      const body = await res.json();
-      const list: Payment[] = Array.isArray(body) ? body : (body.content ?? []);
-      setItems(list);
-      setCount(Array.isArray(body) ? body.length : (body.totalElements ?? list.length));
-    })();
+    chequeApi
+      .due({ page: 0, size: FETCH_SIZE })
+      .then(page => {
+        const overdue = (page.content ?? []).filter(c => c.overdue);
+        setItems(overdue.slice(0, DISPLAY_LIMIT));
+        setCount(overdue.length);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -37,7 +39,7 @@ export default function OverduePaymentsWidget() {
         </h3>
         {count > 0 && (
           <Link
-            href="/dashboard/finance/payments?status=OVERDUE"
+            href="/dashboard/finance/cheques"
             className="text-[11px] font-medium text-primary hover:underline"
           >
             {t("viewAll")}
@@ -48,17 +50,17 @@ export default function OverduePaymentsWidget() {
         <p className="text-xs text-muted">{t("noOverduePayments")}</p>
       ) : (
         <ul className="space-y-2">
-          {items.map((p) => (
-            <li key={p.id} className="text-xs">
+          {items.map((c) => (
+            <li key={c.id} className="text-xs">
               <Link
-                href={`/dashboard/leases/${p.leaseId}`}
+                href={`/dashboard/leases/${c.leaseId}`}
                 className="flex items-center justify-between gap-2 hover:underline"
               >
                 <span className="truncate">
-                  {p.unitIdentifier ?? "—"} · {p.renterName ?? "—"}
+                  {c.unitIdentifier ?? "—"} · {c.renterName ?? "—"}
                 </span>
                 <span className="font-semibold text-error tabular-nums whitespace-nowrap">
-                  {formatCurrencyCompact(p.amount)}
+                  {formatCurrencyCompact(c.amount)}
                 </span>
               </Link>
             </li>

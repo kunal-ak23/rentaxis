@@ -5,13 +5,15 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
+import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +29,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -58,7 +61,9 @@ class PortfolioImportIT {
     @Autowired PortfolioImportService importService;
     @Autowired ImportJobRepository importJobRepository;
     @Autowired LeaseRepository leaseRepository;
-    @Autowired PaymentScheduleRepository paymentScheduleRepository;
+    @Autowired LeaseLineRepository leaseLineRepository;
+    @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepository;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueryService;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired UnitRepository unitRepository;
     @Autowired RenterRepository renterRepository;
@@ -116,6 +121,15 @@ class PortfolioImportIT {
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
 
+        // The Cheques sheet and the booking-deposit columns land on the register
+        // now, so neither is dropped and neither is warned about.
+        assertThat(details.getWarnings() == null
+                ? java.util.List.<com.datagami.rentaxis.api.dto.ImportErrorDTO>of()
+                : details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .noneSatisfy(m -> assertThat(m).contains("not imported"));
+        assertThat(details.getErrors()).isNullOrEmpty();
+
         // Persisted leases — read back via tenant-filtered repository.
         // Lease.unit and Lease.renter are LAZY @ManyToOne; the persistence context
         // closed when the async @Transactional ended, so we resolve associations
@@ -142,26 +156,60 @@ class PortfolioImportIT {
                 .filter(l -> tenant5RenterId.equals(l.getRenter().getId()))
                 .findFirst().orElseThrow();
         assertThat(scenario5.getRentAmount()).isEqualByComparingTo("60000");
-        assertThat(scenario5.getMonthlyRent()).isEqualByComparingTo("5000");
 
-        // Scenario 4: booking deposit row persisted with isBookingDeposit=true.
-        List<PaymentSchedule> bookings = paymentScheduleRepository.findAll().stream()
-                .filter(PaymentSchedule::isBookingDeposit)
-                .toList();
-        assertThat(bookings).hasSize(1);
-        assertThat(bookings.get(0).getAmount()).isEqualByComparingTo("10000");
+        // The sheet's money columns land as charge lines, and rentAmount /
+        // depositAmount on the lease are the derived mirrors of them. This
+        // replaces the old assertions on security-deposit and one-time-charge
+        // payment-schedule rows: those are lines now, and the table they lived in
+        // no longer exists (changeset 84).
+        List<LeaseLine> scenario5Lines = leaseLineRepository
+                .findByLease_IdOrderBySeqNoAsc(scenario5.getId());
+        assertThat(scenario5Lines).extracting(l -> l.getChargeType().getCode())
+                .startsWith("RENT").contains("SECURITY_DEPOSIT");
+        assertThat(scenario5Lines.get(0).getNetAmount()).isEqualByComparingTo("60000");
+        assertThat(scenario5Lines.get(0).getPeriodStart()).isEqualTo(scenario5.getStartDate());
+        assertThat(scenario5.getDepositAmount()).isEqualByComparingTo(
+                scenario5Lines.stream()
+                        .filter(l -> "SECURITY_DEPOSIT".equals(l.getChargeType().getCode()))
+                        .findFirst().orElseThrow().getNetAmount());
+        // Derived from the term, not from the sheet.
+        assertThat(scenario5.getTotalDays()).isEqualTo(365);
+        assertThat(scenario5.getChainId()).isEqualTo(scenario5.getId());
 
-        // Scenario 2: 4 cheque rows persisted from the Cheques sheet (not auto-distributed).
-        UUID tenant2LeaseId = leases.stream()
+        // Scenario 2's Cheques sheet fixes the instalment count, and its four rows
+        // are the lease's register: written as typed, not regenerated.
+        Lease tenant2Lease = leases.stream()
                 .filter(l -> tenant2RenterId.equals(l.getRenter().getId()))
-                .findFirst().orElseThrow().getId();
-        List<PaymentSchedule> chequeRows = paymentScheduleRepository.findAll().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
-                .filter(p -> tenant2LeaseId.equals(p.getLease().getId()))
-                .toList();
-        assertThat(chequeRows).hasSize(4);
-        assertThat(chequeRows).extracting(PaymentSchedule::getAmount)
-                .allMatch(a -> a.compareTo(new java.math.BigDecimal("15000")) == 0);
+                .findFirst().orElseThrow();
+        assertThat(tenant2Lease.getPaymentTerms()).isEqualTo(4);
+
+        // Every imported lease now carries instruments, and the job's counter says
+        // how many. The import used to create none at all.
+        assertThat(completed.getSchedulesCreated()).isPositive();
+
+        // They are DRAFT rows: the lease's *grid*, not its register. The import
+        // writes what the sheet said and posts nothing, so there is no PDR behind
+        // any of them — which is exactly why the register must not show them as
+        // instruments the landlord is holding.
+        assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(tenant2Lease.getId()))
+                .hasSize(4)
+                .allSatisfy(c -> {
+                    assertThat(c.getStatus()).isEqualTo(ChequeStatus.DRAFT);
+                    assertThat(c.getPdrJournalId()).isNull();
+                });
+        // A lease with no Cheques sheet gets the grid generated from its own lines
+        // and payment terms, exactly as the draft wizard would.
+        assertThat(leases).allSatisfy(l ->
+                assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(l.getId())).isNotEmpty());
+
+        // And none of it reaches the register — not the list, not a tile, not the
+        // per-lease stats — although the imported leases are ACTIVE.
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(chequeQueryService.search(null, null, null, null, null, null,
+                org.springframework.data.domain.PageRequest.of(0, 100)).getContent()).isEmpty();
+        assertThat(chequeQueryService.summary(null, LocalDate.now()).registeredCount()).isZero();
+        assertThat(chequeQueryService.statsByLeases(
+                leases.stream().map(Lease::getId).toList(), LocalDate.now())).isEmpty();
     }
 
     @Test

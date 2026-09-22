@@ -210,7 +210,8 @@ Seeded: Rent (RENT→ADVANCE_RENT), Security Deposit (DEPOSIT→SECURITY_DEPOSIT
 ### 6.3 Lease header changes
 
 Added: `contract_date` (document date; may differ from `start_date`), `total_days` (derived), `grace_period_days` (payment grace for overdue calculation), `contract_number` (per-property prefix + sequence, e.g. `GLA_B1/681`), `renewed_from_lease_id`, `chain_id` (root lease of the renewal chain — PACT's tracking number), `receivable_account_id` and `income_account_id` overrides (default from property mapping), `posting_journal_id`, `posted_at`, `posted_by`.
-Removed: `rent_amount`, `monthly_rent`, `deposit_amount`, `payment_terms`-driven schedule fields that live on the cheque grid now; `installment_distribution` moves to the generator input.
+Kept, but derived: `rent_amount` and `deposit_amount` stay on the lease as read-only mirrors of the RENT and DEPOSIT-behaviour lines, recomputed by `LeaseService.syncDerivedTotals` whenever the lines change and never accepted from a request body. Too much already reads them — reports, the unit's `actual_rent`, the renter portal — for removing them to be worth it, and as a mirror they cannot drift from the lines.
+Removed: `monthly_rent` (a second source of truth for the same money; a monthly figure is derived where it is displayed), and the `payment_terms`-driven schedule fields that live on the cheque grid now; `installment_distribution` moves to the generator input.
 
 Statuses: `DRAFT, PENDING_SIGNATURE, ACTIVE, RENEWED, NOTICE_GIVEN, TERMINATED, EXPIRED, CLOSED`.
 `DRAFT → ACTIVE` only via **Post**. `PENDING_SIGNATURE` and renter accept/reject stay a pre-post step. `ACTIVE → RENEWED` when the successor lease posts. `LeaseExpirationJob` continues to flip `ACTIVE/NOTICE_GIVEN → EXPIRED`.
@@ -413,6 +414,8 @@ Tenant setting `books_start_date = D`; `books_locked_through = D − 1`. Two loa
 2. **Opening-balance journal (`OB`)** — grid of every leaf with Dr/Cr as at D − 1, importable from PACT's trial-balance CSV (code, name, debit, credit). Accounts mapped to roles `RENT_RECEIVABLE, PDC_RECEIVABLE, ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, RENTAL_INCOME, ADMIN_FEE, *_PENALTY` are **excluded** from manual entry (derived by step 1). The difference posts to `OPENING_BALANCE_DIFFERENCE` (equity) so the books open balanced.
 
 **Reconciliation screen:** per account — derived balance, PACT figure (from the uploaded TB), difference.
+
+**Amendment 2026-09-22 (rulings R16–R17).** The `OB` journal posts the **delta**, not PACT's figure: for every account outside the derived-role exclusion the line is `PACT(X) − ours(X)`, where `ours` is what our own books hold as at `D − 1` with any live `OB` entry netted back out (an account we hold that PACT's file never names gets `−ours`). The exclusion list above names the roles step 1 *raises*; it is not closed under the accounts step 1 *writes to* — a cleared cheque's `CRT` debits BANK/CASH and a VAT-bearing `TCO` credits OUTPUT_VAT — so posting PACT gross counted bank and output VAT twice and parked the double count on `OPENING_BALANCE_DIFFERENCE`. With the delta the books at `D − 1` read PACT on every non-derived account, step 1's figure on every derived one, and the difference line is `Σ_derived (PACT − ours)`, the true unreconciled gap. It follows that **opening balances are the last step**: bulk post, **Reverse batch** and **Post again** are all refused while an `OB` journal is live ("Opening balances are posted. Reverse them first, then post them again after this step."), and a **Reverse batch** dates each mirror on the entry it reverses rather than on a day the caller supplies.
 
 ## 11. Web UI
 

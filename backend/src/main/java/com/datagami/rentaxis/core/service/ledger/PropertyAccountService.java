@@ -11,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.PropertyAccountMapping;
 import com.datagami.rentaxis.domain.entity.PropertyAccountTemplateRow;
 import com.datagami.rentaxis.domain.entity.TenantDefaultAccountMapping;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountTemplateRowRepository;
@@ -94,6 +95,10 @@ public class PropertyAccountService {
             template(AccountRole.MAINTENANCE_CHARGES, "Maintenance Charges - {property}", "C-01-02");
             template(AccountRole.RENT_PENALTY, "Rent Penalty - {property}", "C-01-02");
             template(AccountRole.CHEQUE_RETURN_PENALTY, "Cheque Return Penalty - {property}", "C-01-02");
+            // Where a penalty raised for neither of the above lands (spec §7.3,
+            // PenaltyReason.OTHER). Without a row here the "Other" reason exists in
+            // the UI and refuses on approval with an unmapped-role error.
+            template(AccountRole.OTHER_INCOME, "Other Income - {property}", "C-01-02");
         }
         defaultIfMissing(AccountRole.CASH, "A-02-05-001");
         defaultIfMissing(AccountRole.OUTPUT_VAT, "B-01-03-001");
@@ -190,18 +195,35 @@ public class PropertyAccountService {
         return out;
     }
 
+    /**
+     * The account type a leaf must carry to play {@code role} here, or null when the
+     * tenant's template says nothing about that role.
+     *
+     * <p>Taken from the template row's parent, which is where the chart itself
+     * decides whether "Advance Rent" is a liability. Public because the cut-over
+     * import validates a whole workbook of role → account-name pairs <em>before</em>
+     * writing anything: {@link #setMapping} throws on a mismatch, and an exception
+     * thrown halfway through a bulk import loses the workbook instead of reporting
+     * the cell. Both doors now ask this one question.</p>
+     */
+    @Transactional(readOnly = true)
+    public AccountType expectedAccountTypeFor(AccountRole role) {
+        return templateRepo.findByRole(role)
+                .map(row -> row.getParentAccount().getAccountType())
+                .orElse(null);
+    }
+
     @Transactional
     public RoleMappingDTO setMapping(UUID propertyId, AccountRole role, UUID accountId) {
         propertyRepo.findById(propertyId).orElseThrow(() -> new NotFoundException("Property not found"));
         if (accountId == null) throw new BusinessRuleViolationException("accountId is required");
         Account account = accountRepo.findById(accountId).orElseThrow(() -> new NotFoundException("Account not found"));
         if (account.isGroup()) throw new BusinessRuleViolationException("Cannot map a group account");
-        templateRepo.findByRole(role).ifPresent(row -> {
-            if (row.getParentAccount().getAccountType() != account.getAccountType()) {
-                throw new BusinessRuleViolationException(role + " expects an " + row.getParentAccount().getAccountType()
-                        + " account, got " + account.getAccountType());
-            }
-        });
+        AccountType expected = expectedAccountTypeFor(role);
+        if (expected != null && expected != account.getAccountType()) {
+            throw new BusinessRuleViolationException(role + " expects an " + expected
+                    + " account, got " + account.getAccountType());
+        }
         PropertyAccountMapping m = mappingRepo.findByPropertyIdAndRole(propertyId, role).orElseGet(PropertyAccountMapping::new);
         m.setPropertyId(propertyId);
         m.setRole(role);

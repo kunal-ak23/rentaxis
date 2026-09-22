@@ -9,6 +9,16 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * One gateway session against one register row (spec §9.3).
+ *
+ * <p><b>{@code cheque} is the row being paid</b>, and the only thing a payment
+ * can be about: the renter pays an instalment on the register, the capture clears
+ * that row with a {@code CRT}, and a receipt is the cleared row rendered as a PDF.
+ * Not nullable — changeset 84 deleted the pre-v2 rows that had a schedule instead
+ * (spec D4) and made the column NOT NULL, because a captured payment that settles
+ * nothing on the register is one no screen, receipt or journal can read.</p>
+ */
 @Entity
 @Table(name = "online_payments")
 @Getter
@@ -19,9 +29,10 @@ public class OnlinePayment extends BaseTenantEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
+    /** The register row this session is paying. */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "payment_schedule_id", nullable = false)
-    private PaymentSchedule paymentSchedule;
+    @JoinColumn(name = "cheque_id", nullable = false)
+    private Cheque cheque;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "gateway_id", nullable = false)

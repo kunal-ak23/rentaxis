@@ -1,0 +1,1018 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useLocale, useTranslations } from "next-intl";
+import {
+    AlertTriangle, CheckCircle2, Download, Info, Layers, Loader2, ShieldCheck, Trash2, Undo2, Upload,
+} from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { Pagination } from "@/components/ui/Pagination";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { ApiError } from "@/lib/api/facilities";
+import { Link } from "@/i18n/routing";
+import {
+    cutoverApi,
+    type ContractImportResult, type DiscardResult, type ImportBatch, type ImportBatchStatus,
+    type LeaseOutcome, type PostJob,
+} from "@/lib/api/cutover";
+import {
+    CONTRACT_IMPORT_ACCEPT, batchAction, canDiscardBatch, canDownloadImportTemplate, canReverseBatch,
+    contractImportRefusal, isBatchFinal, isBulkPostTerminal, isImportJobTerminal, isRepost,
+} from "@/lib/cutoverRules";
+import { findResumableJob, useImportJobPolling } from "@/hooks/useImportJobPolling";
+import { hasPermission, type UserRole } from "@/lib/rbac";
+
+/**
+ * The cut-over Import Batches screen (spec §10.3, §11): what has been imported,
+ * what it has done to the ledger, and every way back out of it.
+ *
+ * **One action per row, and it is the one the server would take.** Every gate
+ * here comes from `lib/cutoverRules.ts`, which names the Java it mirrors. Post
+ * on a DRAFT; Post again on a REVERSED one, which the server answers by writing
+ * a SUCCESSOR batch (`markPosted` refuses REVERSED → POSTED by design), so the
+ * dialog says a new row will appear; Retry on a POSTED one, but only once a run
+ * has actually reported a FAILED contract, because offering a retry nothing
+ * knows exists is a promise with nothing behind it. Reverse on a POSTED batch
+ * alone. Discard on a DRAFT alone — a REVERSED batch keeps its contracts, and
+ * the way back from it is to post them again, not to throw them away.
+ * DISCARDED offers nothing, and its badge says so.
+ *
+ * **The confirmations say what will happen in numbers**, because "reverse the
+ * batch" is thirty-six journals and twelve contracts, not one row.
+ *
+ * **What is deliberately absent.** The reversal takes no date: every mirror is
+ * dated on the journal it reverses, because `PostingService.reverse` exempts
+ * batch journals from `assertOpen` and a date the accountant picked was
+ * therefore accepted whatever it was, leaving the figures standing while the row
+ * read REVERSED. And the cut-over ORDER rule — bulk post, reverse and Post again
+ * are all refused while an opening-balance journal is live — is not mirrored as
+ * a disabled button, because nothing here knows that state without fetching the
+ * whole opening-balance grid; the server's own sentence is shown instead. Both
+ * are recorded in `lib/cutoverRules.ts`.
+ */
+
+const th = "text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider";
+const td = "px-5 py-3 text-xs text-foreground";
+const field =
+    "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
+const fieldLabel = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
+
+/** Twenty-five problems is a screenful; the rest are a page away, never dropped. */
+const ERRORS_PER_PAGE = 25;
+
+const STATUS_CLASS: Record<ImportBatchStatus, string> = {
+    DRAFT: "bg-input text-muted border-border",
+    POSTED: "bg-success/10 text-success border-success/30",
+    REVERSED: "bg-warning/10 text-warning border-warning/30",
+    DISCARDED: "bg-input text-muted border-border line-through",
+};
+
+/** Failures first: the rows that need doing something about lead the table. */
+const OUTCOME_ORDER: Record<LeaseOutcome["outcome"], number> = {
+    FAILED: 0,
+    POSTED: 1,
+    SKIPPED_ALREADY_POSTED: 2,
+};
+
+const RESULTS_PER_PAGE = 25;
+
+export default function ImportBatchesPage() {
+    const t = useTranslations("Cutover");
+    const tLedger = useTranslations("Ledger");
+    const tCommon = useTranslations("Common");
+    const locale = useLocale();
+    const { data: session } = useSession();
+    const userRole = session?.user?.role as UserRole | undefined;
+    const allowed = hasPermission(userRole, "canManageImportBatches");
+
+    /**
+     * One label per status, beside `STATUS_CLASS` and keyed the same way.
+     *
+     * It was a three-armed ternary over four statuses, so DISCARDED fell through
+     * to "Reversed" — a struck-through pill reading REVERSED next to "nothing
+     * left to do", on the two states whose recoveries are opposites
+     * (`canPostBatch` admits REVERSED and refuses DISCARDED). A
+     * `Record<ImportBatchStatus, string>` cannot lose an arm: a fifth status is a
+     * type error rather than a row that quietly misinforms.
+     */
+    const STATUS_LABEL: Record<ImportBatchStatus, string> = {
+        DRAFT: t("draft"),
+        POSTED: tLedger("posted"),
+        REVERSED: tLedger("reversed"),
+        DISCARDED: t("batchDiscarded"),
+    };
+
+    const [rows, setRows] = useState<ImportBatch[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [banner, setBanner] = useState<string | null>(null);
+    const [pending, setPending] = useState<ImportBatch | null>(null);
+    const [reason, setReason] = useState("");
+    const [reversing, setReversing] = useState(false);
+    const [reverseError, setReverseError] = useState<string | null>(null);
+    const [page, setPage] = useState(0);
+    const [size, setSize] = useState(25);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [errorPage, setErrorPage] = useState(0);
+    /**
+     * Scoped by tenant and user: an unscoped key meant a SUPER_ADMIN who started
+     * an import, switched organisation and reloaded rejoined the previous
+     * tenant's job.
+     */
+    const jobScope =
+        session?.user?.tenantId && session?.user?.id
+            ? { tenantId: session.user.tenantId, userId: session.user.id }
+            : null;
+
+    const importJob = useImportJobPolling<ContractImportResult>({
+        kind: "contract-import",
+        scope: jobScope,
+        fetchStatus: jobId => cutoverApi.contractImport.status(jobId),
+        isTerminal: job => isImportJobTerminal(job.status),
+    });
+
+    /**
+     * Which batch the post belongs to. STATE, not a ref, because it is part of
+     * the poll's storage key — `bulk-post:<batchId>` — which is what lets a
+     * reload rejoin a run in progress.
+     */
+    const [postBatchId, setPostBatchId] = useState<string | null>(null);
+
+    /** The same hook, a second job KIND — not a second implementation. */
+    const postJob = useImportJobPolling<PostJob>({
+        kind: `bulk-post:${postBatchId ?? ""}`,
+        scope: postBatchId ? jobScope : null,
+        fetchStatus: jobId => cutoverApi.batches.postStatus(postBatchId ?? "", jobId),
+        isTerminal: job => isBulkPostTerminal(job.status),
+    });
+
+    const [postError, setPostError] = useState<string | null>(null);
+    const [discard, setDiscard] = useState<DiscardResult | null>(null);
+    const [discardError, setDiscardError] = useState<string | null>(null);
+    const [resultPage, setResultPage] = useState(0);
+    const [confirmPost, setConfirmPost] = useState<ImportBatch | null>(null);
+    const [confirmDiscard, setConfirmDiscard] = useState<ImportBatch | null>(null);
+    /**
+     * Rejoin a bulk post left running by a reload. The job id lives under a key
+     * that carries its batch, so the batch is read back from there — setting it
+     * mounts the poller against the right status URL.
+     */
+    useEffect(() => {
+        if (!jobScope || postBatchId) return;
+        const found = findResumableJob("bulk-post", jobScope);
+        if (found) setPostBatchId(found.discriminator);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobScope?.tenantId, jobScope?.userId, postBatchId]);
+
+    const load = useCallback(() => {
+        setLoading(true);
+        setLoadError(null);
+        // No sort sent: ImportBatchService.list is findAllByOrderByCreatedAtAsc,
+        // so the batches already read oldest-first — the order they happened in,
+        // which is the order a cut-over is reasoned about.
+        return cutoverApi.batches
+            .list()
+            .then(setRows)
+            .catch(e => setLoadError(e instanceof ApiError ? e.message : tCommon("loadFailed")))
+            .finally(() => setLoading(false));
+    }, [tCommon]);
+
+    useEffect(() => {
+        // Nothing until NextAuth has answered: fetching with no role yet means
+        // fetching again when it arrives, and a PROPERTY_MANAGER means a 403 this
+        // page already knows it would get.
+        if (!userRole) return;
+        if (!allowed) {
+            setLoading(false);
+            return;
+        }
+        load();
+    }, [userRole, allowed, load]);
+
+    /**
+     * A finished import wrote a new DRAFT batch, so the table has to be re-read —
+     * the row it created is the whole point of the upload. Keyed on the batch id
+     * so it runs once per import rather than once per poll.
+     */
+    const importedBatchId = importJob.job?.importBatchId ?? null;
+    useEffect(() => {
+        if (!importedBatchId) return;
+        load();
+    }, [importedBatchId, load]);
+
+    /**
+     * Review item (e): the highlight survives dismissing the import panel. It is
+     * remembered separately, because `importJob.reset()` clears the panel and the
+     * accountant still needs to see which row the upload made.
+     */
+    const [highlightBatchId, setHighlightBatchId] = useState<string | null>(null);
+    useEffect(() => {
+        if (importedBatchId) setHighlightBatchId(importedBatchId);
+    }, [importedBatchId]);
+
+    /** A finished post changed the batch's status and its journal count. */
+    const postedBatchId = postJob.job?.result?.batchId ?? null;
+    useEffect(() => {
+        if (!postedBatchId) return;
+        load();
+    }, [postedBatchId, load]);
+
+    /**
+     * The outcomes of the last post of each batch, so a row offers a retry only
+     * when something is actually known to have failed. Keyed by the batch the
+     * result landed on — for a re-post that is the successor, not the row pressed.
+     */
+    const [lastOutcomes, setLastOutcomes] = useState<Record<string, LeaseOutcome[]>>({});
+    useEffect(() => {
+        const result = postJob.job?.result;
+        if (!result) return;
+        setLastOutcomes(prev => ({ ...prev, [result.batchId]: result.leases }));
+    }, [postJob.job]);
+
+    /** How many contracts of this batch the last run left FAILED. */
+    const failedCount = useCallback(
+        (batchId: string) => (lastOutcomes[batchId] ?? []).filter(o => o.outcome === "FAILED").length,
+        [lastOutcomes],
+    );
+
+    /** Failures first, then posted, then already-posted. */
+    const postResults = useMemo(() => {
+        const leases = postJob.job?.result?.leases ?? [];
+        return [...leases].sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome]);
+    }, [postJob.job]);
+
+    const startPost = (b: ImportBatch) => {
+        setPostError(null);
+        setDiscard(null);
+        setResultPage(0);
+        setConfirmPost(null);
+        setPostBatchId(b.id);
+        cutoverApi.batches
+            .post(b.id)
+            .then(({ jobId }) => postJob.start(jobId))
+            .catch(e => setPostError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
+
+    const runDiscard = (b: ImportBatch) => {
+        setDiscardError(null);
+        setConfirmDiscard(null);
+        cutoverApi.batches
+            .discard(b.id)
+            .then(async r => {
+                setDiscard(r);
+                await load();
+            })
+            .catch(e => setDiscardError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
+
+    const onWorkbook = (file: File) => {
+        const refused = contractImportRefusal(file);
+        if (refused) {
+            // Checked here rather than after a 10MB upload that can only fail.
+            setUploadError(t(refused));
+            return;
+        }
+        setUploadError(null);
+        setErrorPage(0);
+        cutoverApi.contractImport
+            .upload(file)
+            .then(({ jobId }) => importJob.start(jobId))
+            .catch(e => setUploadError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+    };
+
+    if (!userRole) {
+        return <div data-testid="import-batches-loading" className="bg-input rounded-xl h-14 animate-pulse" />;
+    }
+
+    if (!allowed) {
+        return (
+            <div className="max-w-4xl" data-testid="import-batches-access-denied">
+                <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
+                    <ShieldCheck size={48} className="mx-auto text-muted mb-4" />
+                    <h2 className="text-lg font-bold text-foreground mb-2">{tLedger("accessDeniedTitle")}</h2>
+                    <p className="text-sm text-muted">{t("notAllowed")}</p>
+                </div>
+            </div>
+        );
+    }
+
+    const openReverse = (b: ImportBatch) => {
+        setPending(b);
+        setReason("");
+        setReverseError(null);
+        setBanner(null);
+    };
+
+    const confirmReverse = async () => {
+        if (!pending) return;
+        setReversing(true);
+        setReverseError(null);
+        try {
+            await cutoverApi.batches.reverse(pending.id, { reason });
+            setPending(null);
+            setBanner(t("batchReversed"));
+            // Reloaded rather than patched in place: the status the row shows
+            // should be the one the server holds, not this screen's guess at it.
+            await load();
+        } catch (e) {
+            setReverseError(e instanceof ApiError ? e.message : tCommon("loadFailed"));
+        } finally {
+            setReversing(false);
+        }
+    };
+
+    const visible = rows.slice(page * size, page * size + size);
+
+    return (
+        <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={load} />}
+
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+                <div>
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">{t("importBatches")}</h1>
+                    <p className="text-sm text-muted max-w-2xl">{t("importBatchesDesc")}</p>
+                </div>
+                {/*
+                 * The SAME roles as the page: PortfolioImportController's
+                 * CUTOVER_ROLES (:109) admits ACCOUNTANT. (It was one narrower
+                 * while this linked the v1 `/template`, which is SA/TA — that
+                 * route is not used here any more.)
+                 */}
+                {canDownloadImportTemplate(userRole) && (
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/*
+                         * A plain <a>, not next/link: this is a file download from
+                         * the API proxy, not a route. next/link would client-side
+                         * navigate to a path with no page behind it. No `download`
+                         * attribute either — the controller sends
+                         * `Content-Disposition: attachment; filename=contract-import-template.xlsx`,
+                         * and `download` would override that with the URL's last
+                         * segment, saving the file as "template".
+                         *
+                         * The CUT-OVER template, not the v1 one: different route,
+                         * different role gate, and this is the workbook this page
+                         * accepts.
+                         */}
+                        <a
+                            href={cutoverApi.contractImport.templateUrl()}
+                            data-testid="download-template"
+                            className="border border-border px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer text-foreground"
+                        >
+                            <Download size={14} />
+                            {t("downloadCutoverTemplate")}
+                        </a>
+                        <label className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer">
+                            {importJob.polling ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            {t("uploadCutoverWorkbook")}
+                            <input
+                                type="file"
+                                data-testid="upload-cutover"
+                                aria-label={t("uploadCutoverWorkbook")}
+                                className="hidden"
+                                accept={CONTRACT_IMPORT_ACCEPT}
+                                // One job at a time, both ways: Post is disabled
+                                // during an upload, so an upload is disabled
+                                // during a post.
+                                disabled={importJob.polling || postJob.polling}
+                                onChange={e => {
+                                    const f = e.target.files?.[0];
+                                    if (f) onWorkbook(f);
+                                }}
+                            />
+                        </label>
+                    </div>
+                )}
+            </div>
+
+            {banner && (
+                <div
+                    role="status"
+                    data-testid="batch-reversed-banner"
+                    className="mb-4 bg-success/10 border border-success/30 text-success rounded-xl px-5 py-3 text-xs font-medium"
+                >
+                    {banner}
+                </div>
+            )}
+
+            {uploadError && (
+                <p role="alert" data-testid="import-upload-error" className="mb-4 text-xs font-semibold text-error">
+                    {uploadError}
+                </p>
+            )}
+
+            {importJob.gone && (
+                <p role="alert" data-testid="import-job-error" className="mb-4 text-xs font-semibold text-error">
+                    {t("importJobLost")}
+                </p>
+            )}
+
+            {importJob.timedOut && (
+                <p data-testid="import-timed-out" className="mb-4 text-xs font-semibold text-warning">
+                    {t("importTimedOut")}
+                </p>
+            )}
+
+            {importJob.job && (
+                <div
+                    data-testid="import-job-status"
+                    data-status={importJob.job.status}
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    {(importJob.job.status === "VALIDATING" || importJob.job.status === "PERSISTING") && (
+                        <p className="text-xs font-semibold text-muted flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin" />
+                            {importJob.job.status === "VALIDATING" ? t("importRunning") : t("importPersisting")}
+                        </p>
+                    )}
+
+                    {importJob.job.status === "COMPLETED" && (
+                        <div className="space-y-2">
+                            <p
+                                data-testid="import-success"
+                                className="text-xs font-semibold text-success flex items-center gap-2"
+                            >
+                                <CheckCircle2 size={14} className="shrink-0" />
+                                {t("importCompleted")}
+                            </p>
+                            <p data-testid="import-counts" className="text-xs text-muted tabular-nums">
+                                {t("importCounts", {
+                                    properties: importJob.job.propertiesCreated,
+                                    units: importJob.job.unitsCreated,
+                                    renters: importJob.job.rentersCreated,
+                                    leases: importJob.job.leasesCreated,
+                                    cheques: importJob.job.chequesCreated,
+                                })}
+                            </p>
+                        </div>
+                    )}
+
+                    {importJob.job.status === "FAILED" && (
+                        <p
+                            data-testid="import-failed"
+                            className="text-xs font-semibold text-error flex items-center gap-2"
+                        >
+                            <AlertTriangle size={14} className="shrink-0" />
+                            {t("importFailed")}
+                        </p>
+                    )}
+
+                    {/*
+                     * ContractImportPersistService writes the whole workbook in one
+                     * transaction, so a validation failure leaves NOTHING behind.
+                     * Said out loud, or the accountant goes hunting for
+                     * half-imported properties that do not exist.
+                     */}
+                    {importJob.job.status === "VALIDATION_FAILED" && (
+                        <p
+                            data-testid="import-validation-failed"
+                            className="text-xs font-semibold text-error flex items-start gap-2"
+                        >
+                            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                            {t("importValidationFailed")}
+                        </p>
+                    )}
+
+                    {importJob.job.errors.length > 0 && (
+                        <div className="mt-4">
+                            <p data-testid="import-errors-title" className="text-xs font-bold text-foreground mb-2">
+                                {t("importErrorsTitle", { n: importJob.job.errors.length })}
+                            </p>
+                            <div className="overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="import-errors-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("sheet")}</th>
+                                            <th className={`${th} text-end`}>{t("row")}</th>
+                                            <th className={th}>{t("column")}</th>
+                                            <th className={th}>{t("problem")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {importJob.job.errors
+                                            .slice(errorPage * ERRORS_PER_PAGE, errorPage * ERRORS_PER_PAGE + ERRORS_PER_PAGE)
+                                            .map((err, i) => {
+                                                const index = errorPage * ERRORS_PER_PAGE + i;
+                                                return (
+                                                    <tr key={index} data-testid={`import-error-${index}`}>
+                                                        <td className={td}>{err.sheet}</td>
+                                                        <td className={`${td} text-end tabular-nums`}>{err.row || "—"}</td>
+                                                        <td className={`${td} font-mono text-muted`}>{err.field || "—"}</td>
+                                                        <td className={td}>{err.message}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {importJob.job.errors.length > ERRORS_PER_PAGE && (
+                                <Pagination
+                                    currentPage={errorPage + 1}
+                                    totalItems={importJob.job.errors.length}
+                                    itemsPerPage={ERRORS_PER_PAGE}
+                                    onPageChange={p => setErrorPage(p - 1)}
+                                />
+                            )}
+                        </div>
+                    )}
+
+                    {!importJob.polling && (
+                        <button
+                            type="button"
+                            data-testid="import-dismiss"
+                            onClick={importJob.reset}
+                            className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                        >
+                            {t("dismissImportResult")}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* The implementer's notes, where they are needed: before the upload. */}
+            {!importJob.job && (
+                <div
+                    data-testid="cutover-help"
+                    className="mb-6 bg-input border border-border text-muted rounded-xl px-5 py-4 text-xs"
+                >
+                    <p className="font-bold text-foreground mb-2 flex items-center gap-2">
+                        <Info size={14} className="shrink-0" />
+                        {t("cutoverHelpTitle")}
+                    </p>
+                    <ul className="list-disc ms-5 space-y-1">
+                        <li>{t("cutoverHelpNewProperties")}</li>
+                        <li>{t("cutoverHelpAccounts")}</li>
+                        <li>{t("cutoverHelpCreditAccount")}</li>
+                        <li>{t("cutoverHelpEjari")}</li>
+                    </ul>
+                </div>
+            )}
+
+            {/*
+             * Review item (e): the panel is dismissible, the pointer to the batch
+             * it made is not. Dismissing "here is what your upload did" must not
+             * also take away "and here is the row it created".
+             */}
+            {highlightBatchId && (
+                <p className="mb-4 text-xs">
+                    <a
+                        href={`#batch-${highlightBatchId}`}
+                        data-testid={`import-view-batch-${highlightBatchId}`}
+                        className="font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                        {t("viewImportedBatch")}
+                    </a>
+                </p>
+            )}
+
+            {/*
+             * The bulk post's twin of the import's "job gone" banner. A resumed
+             * or stale job that 404s used to stop silently, leaving the screen
+             * looking like nothing was ever running.
+             */}
+            {postJob.gone && (
+                <div
+                    role="alert"
+                    data-testid="post-job-error"
+                    className="mb-4 flex items-center justify-between gap-3 bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3"
+                >
+                    <span className="text-xs font-semibold">{t("importJobLost")}</span>
+                    <button
+                        type="button"
+                        data-testid="post-job-error-dismiss"
+                        onClick={() => {
+                            postJob.reset();
+                            setPostBatchId(null);
+                        }}
+                        className="shrink-0 text-xs font-semibold hover:underline cursor-pointer"
+                    >
+                        {t("dismissImportResult")}
+                    </button>
+                </div>
+            )}
+
+            {importJob.polling && (
+                <p data-testid="post-blocked" className="mb-4 text-xs font-medium text-warning">
+                    {t("postBlockedByUpload")}
+                </p>
+            )}
+
+            {postJob.polling && (
+                <p data-testid="upload-blocked" className="mb-4 text-xs font-medium text-warning">
+                    {t("uploadBlockedByPost")}
+                </p>
+            )}
+
+            {postError && (
+                <p role="alert" data-testid="post-error" className="mb-4 text-xs font-semibold text-error">
+                    {postError}
+                </p>
+            )}
+            {discardError && (
+                <p role="alert" data-testid="discard-error" className="mb-4 text-xs font-semibold text-error">
+                    {discardError}
+                </p>
+            )}
+
+            {postJob.job && (
+                <div
+                    data-testid="post-job-status"
+                    data-status={postJob.job.status}
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    {!postJob.job.result && (
+                        <p data-testid="post-progress" className="text-xs font-semibold text-muted flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin shrink-0" />
+                            {postJob.job.total
+                                ? t("postingProgress", {
+                                      processed: postJob.job.processed ?? 0,
+                                      total: postJob.job.total,
+                                  })
+                                : t("postingStarting")}
+                        </p>
+                    )}
+
+                    {postJob.job.status === "FAILED" && !postJob.job.result && (
+                        <p data-testid="post-failed" className="mt-2 text-xs font-semibold text-error">
+                            {t("postBatchFailed")}
+                        </p>
+                    )}
+
+                    {/* Batch-level refusals only; a contract that failed is in the table. */}
+                    {postJob.job.errors.length > 0 && (
+                        <ul className="mt-2 list-disc ms-5 text-xs text-error space-y-0.5">
+                            {postJob.job.errors.map((e, i) => (
+                                <li key={i}>{e.message}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {postJob.job.result && (
+                        <>
+                            <p data-testid="post-summary" className="text-xs font-semibold text-foreground">
+                                {t("postBatchDone", {
+                                    posted: postJob.job.result.leasesPosted,
+                                    skipped: postJob.job.result.leasesSkipped,
+                                    failed: postJob.job.result.leasesFailed,
+                                    journals: postJob.job.result.journalsPosted,
+                                })}
+                            </p>
+                            {/* A re-post landed on a NEW batch; without this the row
+                                the accountant pressed still reads REVERSED. */}
+                            {postJob.job.result.repostOf && (
+                                <p data-testid="post-successor" className="mt-1 text-xs text-muted">
+                                    {t("postedAsSuccessor")}
+                                </p>
+                            )}
+
+                            <div className="mt-4 overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="post-results-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("contractRef")}</th>
+                                            <th className={th}>{t("outcome")}</th>
+                                            <th className={th}>{t("reason")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {postResults
+                                            .slice(resultPage * RESULTS_PER_PAGE, resultPage * RESULTS_PER_PAGE + RESULTS_PER_PAGE)
+                                            .map((r, i) => {
+                                                const index = resultPage * RESULTS_PER_PAGE + i;
+                                                return (
+                                                    <tr
+                                                        key={r.leaseId}
+                                                        data-testid={`post-result-${index}`}
+                                                        data-outcome={r.outcome}
+                                                        className={r.outcome === "FAILED" ? "bg-error/5" : undefined}
+                                                    >
+                                                        <td className={`${td} font-mono`}>
+                                                            {r.externalContractRef ?? r.leaseId.slice(0, 8)}
+                                                        </td>
+                                                        <td className={td}>{t(`outcome${r.outcome}`)}</td>
+                                                        <td className={`${td} text-muted`}>{r.reason ?? "—"}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {postResults.length > RESULTS_PER_PAGE && (
+                                <Pagination
+                                    currentPage={resultPage + 1}
+                                    totalItems={postResults.length}
+                                    itemsPerPage={RESULTS_PER_PAGE}
+                                    onPageChange={p => setResultPage(p - 1)}
+                                />
+                            )}
+                        </>
+                    )}
+
+                    {!postJob.polling && (
+                        <button
+                            type="button"
+                            data-testid="post-dismiss"
+                            onClick={postJob.reset}
+                            className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                        >
+                            {t("dismissImportResult")}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {discard && (
+                <div
+                    data-testid="discard-panel"
+                    className="mb-6 bg-surface border border-border rounded-xl shadow-sm p-5"
+                >
+                    <p data-testid="discard-summary" className="text-xs font-semibold text-foreground">
+                        {t("discardDone", {
+                            leases: discard.leasesDeleted,
+                            units: discard.unitsDeleted,
+                            buildings: discard.buildingsDeleted,
+                            renters: discard.rentersDeleted,
+                            properties: discard.propertiesDeleted,
+                        })}
+                    </p>
+                    {/* What survived, and why — a discard that silently left rows
+                        behind is one the next import will trip over. */}
+                    {discard.kept.length > 0 && (
+                        <div className="mt-3">
+                            <p className="text-xs text-muted mb-2">{t("discardKept", { n: discard.kept.length })}</p>
+                            <div className="overflow-x-auto border border-border rounded-lg">
+                                <table className="w-full" data-testid="discard-kept-table">
+                                    <thead className="bg-input/60 border-b border-border">
+                                        <tr>
+                                            <th className={th}>{t("keptType")}</th>
+                                            <th className={th}>{t("keptName")}</th>
+                                            <th className={th}>{t("keptReason")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {discard.kept.map((k, i) => (
+                                            <tr key={`${k.type}-${k.id}`} data-testid={`discard-kept-${i}`}>
+                                                <td className={td}>{k.type}</td>
+                                                <td className={td}>{k.name ?? k.id.slice(0, 8)}</td>
+                                                <td className={`${td} text-muted`}>{k.reason}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        data-testid="discard-dismiss"
+                        onClick={() => setDiscard(null)}
+                        className="mt-4 text-xs font-semibold text-muted hover:text-foreground cursor-pointer"
+                    >
+                        {t("dismissImportResult")}
+                    </button>
+                </div>
+            )}
+
+            {loading && (
+                <div className="space-y-3 animate-pulse">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="bg-input rounded-xl h-14" />
+                    ))}
+                </div>
+            )}
+
+            {!loading && rows.length === 0 && !loadError && (
+                <div
+                    data-testid="batches-empty"
+                    className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center"
+                >
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
+                        <Layers size={28} />
+                    </div>
+                    <h3 className="text-sm font-bold text-foreground mb-1">{t("noBatches")}</h3>
+                    <p className="text-xs text-muted font-medium max-w-md">{t("noBatchesDesc")}</p>
+                </div>
+            )}
+
+            {!loading && rows.length > 0 && (
+                <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full" data-testid="batches-table">
+                            <thead className="bg-input/60 border-b border-border">
+                                <tr>
+                                    <th className={th}>{t("batchLabel")}</th>
+                                    <th className={th}>{t("kind")}</th>
+                                    <th className={th}>{t("imported")}</th>
+                                    <th className={`${th} text-end`}>{t("leasesImported")}</th>
+                                    <th className={`${th} text-end`}>{t("journalsPosted")}</th>
+                                    <th className={th}>{tLedger("status")}</th>
+                                    <th className={`${th} text-end`} />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {visible.map(b => (
+                                    <tr
+                                        key={b.id}
+                                        id={`batch-${b.id}`}
+                                        data-testid={`batch-row-${b.id}`}
+                                        data-imported={b.id === highlightBatchId ? "true" : "false"}
+                                        className={
+                                            b.id === highlightBatchId
+                                                ? "bg-success/5 ring-1 ring-inset ring-success/30"
+                                                : "hover:bg-input/30 transition-colors"
+                                        }
+                                    >
+                                        <td className={`${td} font-medium`}>{b.label ?? b.id.slice(0, 8)}</td>
+                                        <td className={`${td} text-muted`}>{t(b.kind)}</td>
+                                        <td className={`${td} tabular-nums`}>{fmtIsoDate(b.createdAt, locale)}</td>
+                                        <td className={`${td} text-end tabular-nums`}>{b.leasesImported}</td>
+                                        <td className={`${td} text-end tabular-nums`}>{b.journalsPosted}</td>
+                                        <td className={td}>
+                                            <span
+                                                data-testid={`batch-status-${b.id}`}
+                                                data-status={b.status}
+                                                className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${STATUS_CLASS[b.status]}`}
+                                            >
+                                                {STATUS_LABEL[b.status]}
+                                            </span>
+                                        </td>
+                                        <td className={`${td} text-end whitespace-nowrap`}>
+                                            {isBatchFinal(b.status) ? (
+                                                // DISCARDED: the leases and the rows it created are
+                                                // gone, so there is nothing left to offer.
+                                                <span data-testid={`batch-final-${b.id}`} className="text-muted">
+                                                    {t("discardedBatchFinal")}
+                                                </span>
+                                            ) : (
+                                                <div className="inline-flex items-center gap-4">
+                                                    {b.journalsPosted > 0 && (
+                                                        <Link
+                                                            href={`/dashboard/finance/journals?importBatchId=${b.id}`}
+                                                            data-testid={`view-journals-${b.id}`}
+                                                            className="text-primary hover:underline cursor-pointer font-semibold"
+                                                        >
+                                                            {t("viewJournals")}
+                                                        </Link>
+                                                    )}
+                                                    {(() => {
+                                                        const action = batchAction(b.status, lastOutcomes[b.id] ?? null);
+                                                        if (!action) return null;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                data-testid={`post-batch-${b.id}`}
+                                                                // One job at a time: posting while a
+                                                                // workbook is still being validated
+                                                                // would have two runs writing to the
+                                                                // same batches at once.
+                                                                disabled={postJob.polling || importJob.polling}
+                                                                onClick={() => setConfirmPost(b)}
+                                                                className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {action === "repost"
+                                                                    ? t("postAgain")
+                                                                    : action === "retry"
+                                                                      ? t("retryFailed")
+                                                                      : t("postBatch")}
+                                                            </button>
+                                                        );
+                                                    })()}
+                                                    {canReverseBatch(b.status) && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`reverse-batch-${b.id}`}
+                                                            onClick={() => openReverse(b)}
+                                                            className="text-error hover:underline cursor-pointer inline-flex items-center gap-1.5 font-semibold"
+                                                        >
+                                                            <Undo2 size={12} />
+                                                            {t("reverseBatch")}
+                                                        </button>
+                                                    )}
+                                                    {canDiscardBatch(b.status) && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`discard-batch-${b.id}`}
+                                                            onClick={() => setConfirmDiscard(b)}
+                                                            className="text-error hover:underline cursor-pointer inline-flex items-center gap-1.5 font-semibold"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                            {t("discardBatch")}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {!loading && rows.length > 0 && (
+                <Pagination
+                    currentPage={page + 1}
+                    totalItems={rows.length}
+                    itemsPerPage={size}
+                    onPageChange={p => setPage(p - 1)}
+                    onItemsPerPageChange={n => {
+                        setSize(n);
+                        setPage(0);
+                    }}
+                />
+            )}
+
+            <ConfirmDialog
+                isOpen={!!confirmPost}
+                onClose={() => setConfirmPost(null)}
+                onConfirm={() => confirmPost && startPost(confirmPost)}
+                title={
+                    confirmPost && isRepost(confirmPost.status)
+                        ? t("postAgain")
+                        : confirmPost?.status === "POSTED"
+                          ? t("retryFailed")
+                          : t("postBatch")
+                }
+                description={
+                    confirmPost?.status === "POSTED"
+                        // The FAILED count, not the batch total: the copy says
+                        // "only the {n} that failed are tried again", and a
+                        // twelve-contract batch with one failure was offering to
+                        // retry twelve.
+                        ? t("confirmRetryFailed", { n: failedCount(confirmPost.id) })
+                        : t("confirmPostBatch", { n: confirmPost?.leasesImported ?? 0 })
+                }
+                confirmText={t("postBatch")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-post-batch"
+            >
+                {/* A re-post lands on a NEW batch — the row pressed stays REVERSED,
+                    which is confusing unless it is said here first. */}
+                {confirmPost && isRepost(confirmPost.status) && (
+                    <p className="text-xs text-warning">{t("confirmPostAgain")}</p>
+                )}
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                isOpen={!!confirmDiscard}
+                onClose={() => setConfirmDiscard(null)}
+                onConfirm={() => confirmDiscard && runDiscard(confirmDiscard)}
+                isDestructive
+                title={t("discardBatch")}
+                description={t("confirmDiscardBatch", { n: confirmDiscard?.leasesImported ?? 0 })}
+                confirmText={t("discardBatch")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-discard-batch"
+            />
+
+            <ConfirmDialog
+                isOpen={!!pending}
+                onClose={() => setPending(null)}
+                onConfirm={confirmReverse}
+                isLoading={reversing}
+                isDestructive
+                title={t("reverseBatch")}
+                description={t("confirmReverseBatch", {
+                    journals: pending?.journalsPosted ?? 0,
+                    leases: pending?.leasesImported ?? 0,
+                })}
+                confirmText={t("reverseBatch")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-reverse-batch"
+            >
+                {/*
+                 * No date field: `ReverseBatchDTO` is a reason and nothing else,
+                 * and every mirror is dated on the journal it reverses. It used
+                 * to be the accountant's to pick — and because
+                 * `PostingService.reverse` exempts a batch journal from
+                 * `assertOpen`, any date at all was accepted, while
+                 * `balancesAsOf` has no status predicate. A mirror dated later
+                 * therefore left the batch's figures standing at their own dates
+                 * with the row reading REVERSED. The hint says where the
+                 * reversal lands, because "reverse the batch" is thirty-six
+                 * journals on thirty-six days, not one entry today.
+                 */}
+                <p className="text-xs text-muted">{t("reverseBatchHint")}</p>
+                <div>
+                    <label className={fieldLabel} htmlFor="batch-reverse-reason">
+                        {tLedger("reverseReason")}
+                    </label>
+                    <input
+                        id="batch-reverse-reason"
+                        data-testid="batch-reverse-reason"
+                        className={field}
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                    />
+                </div>
+                {reverseError && (
+                    <p role="alert" data-testid="batch-reverse-error" className="text-xs font-semibold text-error">
+                        {reverseError}
+                    </p>
+                )}
+            </ConfirmDialog>
+        </div>
+    );
+}

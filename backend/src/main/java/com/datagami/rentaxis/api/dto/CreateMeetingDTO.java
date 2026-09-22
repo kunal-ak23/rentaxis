@@ -25,7 +25,8 @@ public class CreateMeetingDTO {
     private UUID leaseId;
     private UUID propertyId;
     private UUID unitId;
-    private UUID[] paymentScheduleIds;
+    @com.fasterxml.jackson.annotation.JsonAlias("paymentScheduleIds")
+    private UUID[] chequeIds;
     private LocalDate proposedStartDate;
     private LocalDate proposedEndDate;
     private BigDecimal proposedRentAmount;

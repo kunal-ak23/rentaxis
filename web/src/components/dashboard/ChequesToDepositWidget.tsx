@@ -3,31 +3,21 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
-
-type Payment = {
-  id: string;
-  leaseId: string;
-  renterName: string | null;
-  unitIdentifier: string | null;
-  amount: number;
-  chequeDate: string | null;
-  chequeNumber: string | null;
-};
+import { chequeApi, type Cheque } from "@/lib/api/leasing";
 
 export default function ChequesToDepositWidget() {
   const t = useTranslations("Dashboard");
-  const [items, setItems] = useState<Payment[]>([]);
+  const [items, setItems] = useState<Cheque[]>([]);
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/proxy/v1/payments/to-deposit?page=0&size=5");
-      if (!res.ok) return;
-      const body = await res.json();
-      const list: Payment[] = Array.isArray(body) ? body : (body.content ?? []);
-      setItems(list);
-      setCount(Array.isArray(body) ? body.length : (body.totalElements ?? list.length));
-    })();
+    chequeApi
+      .toDeposit({ page: 0, size: 5 })
+      .then(page => {
+        setItems(page.content ?? []);
+        setCount(page.totalElements ?? (page.content ?? []).length);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -38,7 +28,7 @@ export default function ChequesToDepositWidget() {
         </h3>
         {count > 0 && (
           <Link
-            href="/dashboard/finance/payments?status=TO_DEPOSIT"
+            href="/dashboard/finance/cheques/collection"
             className="text-[11px] font-medium text-primary hover:underline"
           >
             {t("viewAll")}
@@ -49,18 +39,18 @@ export default function ChequesToDepositWidget() {
         <p className="text-xs text-muted">{t("noChequesDueToday")}</p>
       ) : (
         <ul className="space-y-2">
-          {items.map((p) => (
-            <li key={p.id} className="text-xs">
+          {items.map((c) => (
+            <li key={c.id} className="text-xs">
               <Link
-                href={`/dashboard/leases/${p.leaseId}`}
+                href={`/dashboard/leases/${c.leaseId}`}
                 className="flex items-center justify-between gap-2 hover:underline"
               >
                 <span className="truncate">
-                  {p.unitIdentifier ?? "—"} · {p.renterName ?? "—"}
-                  {p.chequeNumber ? ` · #${p.chequeNumber}` : ""}
+                  {c.unitIdentifier ?? "—"} · {c.renterName ?? "—"}
+                  {c.chequeNumber ? ` · #${c.chequeNumber}` : ""}
                 </span>
                 <span className="font-semibold text-foreground tabular-nums whitespace-nowrap">
-                  {formatCurrencyCompact(p.amount)}
+                  {formatCurrencyCompact(c.amount)}
                 </span>
               </Link>
             </li>

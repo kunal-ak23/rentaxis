@@ -13,9 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Cheque emails must not print the word "null" at a renter.
  *
- * <p>A schedule row can carry payment method CHEQUE before the cheque has been
- * handed over, so {@code chequeNumber} is legitimately null when these emails
- * are built. The cheque_received and cheque_deposited templates interpolate it
+ * <p>A register row can exist before the paper is handed over, so
+ * {@code chequeNumber} is legitimately null when these emails are built. The cheque_received and cheque_deposited templates interpolate it
  * through {@code #{...body(${chequeNumber}, ...)}}, and MessageFormat renders a
  * null argument as the literal string "null".</p>
  *
@@ -27,7 +26,8 @@ class PayloadVarsExtractorChequeNumberTest {
 
     private ChequePayload chequePayload(String chequeNumber) {
         return new ChequePayload(
-                UUID.randomUUID(),
+                UUID.randomUUID(), // chequeId — the register row the mail is about
+
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 null,

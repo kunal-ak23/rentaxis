@@ -18,8 +18,10 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -175,6 +177,45 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<Map<String, Object>> handleMissingParameter(MissingServletRequestParameterException ex) {
         return clientError("Required parameter '" + ex.getParameterName() + "' is missing", ex);
+    }
+
+    /**
+     * The global {@code spring.servlet.multipart.max-file-size} limit (application.yml,
+     * 10MB) rejects an oversized upload before any controller code runs — a
+     * {@code MaxUploadSizeExceededException} that used to fall through to
+     * {@link #handleRuntime} as an opaque 500, because nothing here or in
+     * {@code VoucherController} handled it (security ruling, Task 5 fix round 1;
+     * contrast {@code ChequeExtractionController}, which already handles the same
+     * exception locally, only for its own endpoint and in a different body shape).
+     * Global, so every upload endpoint gets the same clean 400, not just this one.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        log.warn("Rejected an oversized upload: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", true,
+                "message", "File is larger than 10 MB",
+                "status", 400
+        ));
+    }
+
+    /**
+     * A file could not be read or written — the local disk copy failed, the
+     * requested attachment's file went missing from disk, or the client aborted
+     * the upload mid-stream. {@code VoucherController.upload}/{@code download}
+     * (and {@code DeductionAttachmentController}'s equivalents) declare
+     * {@code throws IOException} with nothing here to catch it, so it used to
+     * surface as Spring's bare default error page instead of this app's
+     * {@code {error,message,status}} shape.
+     */
+    @ExceptionHandler(IOException.class)
+    public ResponseEntity<Map<String, Object>> handleIOException(IOException ex) {
+        log.warn("I/O failure serving a request: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", true,
+                "message", "The file could not be read or written",
+                "status", 400
+        ));
     }
 
     /**

@@ -33,7 +33,7 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
      * waiting forever on the shared connection pool. Fails immediately (Postgres
      * SQLSTATE 55P03) instead. A bounded {@code lock_timeout} is deliberately not used
      * — it is not honored by this stack for row-lock waits under a locking select; see
-     * {@link PaymentScheduleRepository#findAllByIdForUpdate}.
+     * {@link ChequeRepository#findAllByIdForUpdate}.
      * Callers must catch {@link org.springframework.dao.PessimisticLockingFailureException}
      * (what Spring Data's exception translation actually throws — not the raw
      * {@link jakarta.persistence.PessimisticLockException}) and surface a "retry"

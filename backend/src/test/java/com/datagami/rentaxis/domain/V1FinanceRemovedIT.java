@@ -34,13 +34,8 @@ class V1FinanceRemovedIT {
         assertThat(n).isZero();
     }
 
-    @Test
-    void penaltyPaymentsNoLongerPointsAtTheV1Ledger() {
-        Integer n = jdbc.queryForObject(
-                "select count(*) from information_schema.columns "
-                        + "where table_schema = 'public' and table_name = 'penalty_payments' "
-                        + "and column_name = 'financial_transaction_id'",
-                Integer.class);
-        assertThat(n).isZero();
-    }
+    // penaltyPaymentsNoLongerPointsAtTheV1Ledger is gone: it counted columns named
+    // financial_transaction_id on penalty_payments, and changeset 84 drops that
+    // table outright, so it could no longer fail for the reason it was written for.
+    // V1SchedulesRemovedIT asserts the table itself is gone.
 }

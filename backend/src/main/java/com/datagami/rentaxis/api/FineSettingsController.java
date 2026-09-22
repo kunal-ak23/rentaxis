@@ -48,6 +48,11 @@ public class FineSettingsController {
                 .orElseGet(() -> {
                     LandlordOrgFineSettings n = new LandlordOrgFineSettings();
                     n.setLandlordOrgId(tenantId);
+                    // The penalty columns are NOT NULL, so a row created here has to
+                    // carry the same defaults the initializer seeds.
+                    n.setBouncesBeforePenalty(FineSettingsInitializer.DEFAULT_BOUNCES_BEFORE_PENALTY);
+                    n.setAutoProposeChequeReturn(FineSettingsInitializer.DEFAULT_AUTO_PROPOSE_CHEQUE_RETURN);
+                    n.setAutoProposeLatePayment(FineSettingsInitializer.DEFAULT_AUTO_PROPOSE_LATE_PAYMENT);
                     return n;
                 });
 
@@ -56,6 +61,12 @@ public class FineSettingsController {
         s.setFineAccountClosedAmount(body.accountClosedAmount());
         s.setFineGraceDays(body.graceDays());
         s.setFinePerDayRate(body.perDayRate());
+        // Only when named: the settings page shipping today sends the five amounts
+        // and nothing else, and reading a missing field as "off" would silently turn
+        // cheque-return proposals off for every landlord on the first save.
+        if (body.bouncesBeforePenalty() != null)    s.setBouncesBeforePenalty(body.bouncesBeforePenalty());
+        if (body.autoProposeChequeReturn() != null) s.setAutoProposeChequeReturn(body.autoProposeChequeReturn());
+        if (body.autoProposeLatePayment() != null)  s.setAutoProposeLatePayment(body.autoProposeLatePayment());
 
         LandlordOrgFineSettings saved = repo.save(s);
         return ResponseEntity.ok(toDto(saved));
@@ -71,7 +82,10 @@ public class FineSettingsController {
                 s.getFineSignatureMismatchAmount(),
                 s.getFineAccountClosedAmount(),
                 s.getFineGraceDays(),
-                s.getFinePerDayRate()
+                s.getFinePerDayRate(),
+                s.getBouncesBeforePenalty(),
+                s.getAutoProposeChequeReturn(),
+                s.getAutoProposeLatePayment()
         );
     }
 }

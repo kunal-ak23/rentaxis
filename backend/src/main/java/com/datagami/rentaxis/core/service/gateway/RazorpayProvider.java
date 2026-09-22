@@ -5,11 +5,13 @@ import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import com.razorpay.Utils;
 import org.json.JSONObject;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 
 @Component
+@ConditionalOnProperty(name = "rentaxis.gateway.stub.enabled", havingValue = "false", matchIfMissing = true)
 public class RazorpayProvider implements PaymentGatewayProvider {
 
     @Override
@@ -19,10 +21,13 @@ public class RazorpayProvider implements PaymentGatewayProvider {
 
     @Override
     public CreateOrderResponseDTO createOrder(BigDecimal amount, String currency, String receiptId, String apiKey, String apiSecret) {
+        // Converted before the try: an amount this cannot represent exactly is a
+        // bug in the caller, not a gateway failure, and wrapping it in "Failed to
+        // create Razorpay order" would send whoever reads the log to Razorpay.
+        long amountInSmallestUnit = PaymentGatewayProvider.minorUnits(amount);
         try {
             RazorpayClient client = new RazorpayClient(apiKey, apiSecret);
             JSONObject options = new JSONObject();
-            long amountInSmallestUnit = amount.multiply(BigDecimal.valueOf(100)).longValue();
             options.put("amount", amountInSmallestUnit);
             options.put("currency", currency);
             options.put("receipt", receiptId);

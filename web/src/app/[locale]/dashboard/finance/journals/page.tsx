@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
-import { Filter, Plus, Receipt, ShieldCheck } from "lucide-react";
+import { Filter, Plus, Receipt, ShieldCheck, X } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -23,7 +24,16 @@ type Filters = { docType: JournalDocType | ""; from: string; to: string; propert
 
 const emptyFilters: Filters = { docType: "", from: "", to: "", propertyId: "" };
 
+/** `useSearchParams` needs a Suspense boundary for `next build` to prerender the route. */
 export default function JournalsPage() {
+    return (
+        <Suspense fallback={null}>
+            <Journals />
+        </Suspense>
+    );
+}
+
+function Journals() {
     const t = useTranslations("Ledger");
     const tCommon = useTranslations("Common");
     const { data: session } = useSession();
@@ -32,6 +42,18 @@ export default function JournalsPage() {
     const canPost = hasPermission(userRole, "canPostJournals");
 
     const properties = useNameLookup("properties", allowed);
+
+    /**
+     * The cut-over drill-through: the Import Batches page links here with
+     * `?importBatchId=`, so the list shows only what one batch wrote. Held in its
+     * own state rather than in `Filters` because it is not something the filter
+     * bar edits — it arrives from a link and leaves through its chip.
+     */
+    const searchParams = useSearchParams();
+    const [importBatchId, setImportBatchId] = useState<string | null>(null);
+    useEffect(() => {
+        setImportBatchId(searchParams.get("importBatchId"));
+    }, [searchParams]);
 
     // `draft` is what the bar edits, `applied` is what the list shows — the same
     // split the ledger reports use, so typing a date does not re-query.
@@ -62,6 +84,7 @@ export default function JournalsPage() {
                     from: applied.from || undefined,
                     to: applied.to || undefined,
                     propertyId: applied.propertyId || undefined,
+                    importBatchId: importBatchId || undefined,
                     page: pageIndex,
                     size,
                 }),
@@ -72,7 +95,7 @@ export default function JournalsPage() {
         } finally {
             setLoading(false);
         }
-    }, [applied, pageIndex, size, tCommon]);
+    }, [applied, importBatchId, pageIndex, size, tCommon]);
 
     useEffect(() => {
         if (!allowed) {
@@ -173,6 +196,35 @@ export default function JournalsPage() {
                     </button>
                 </div>
             </div>
+
+            {/*
+             * The drill-through, said out loud and removable. A list quietly
+             * showing a fraction of the ledger with nothing explaining why is
+             * worse than no filter at all.
+             */}
+            {importBatchId && (
+                <div className="mb-4">
+                    <span
+                        data-testid="import-batch-chip"
+                        className="inline-flex items-center gap-2 bg-input border border-border rounded-full ps-3 pe-2 py-1 text-xs font-semibold text-foreground"
+                    >
+                        {t("importBatchFilter")}
+                        <span className="font-mono text-muted">{importBatchId.slice(0, 8)}</span>
+                        <button
+                            type="button"
+                            data-testid="import-batch-chip-remove"
+                            aria-label={t("removeFilter")}
+                            onClick={() => {
+                                setImportBatchId(null);
+                                setPageIndex(0);
+                            }}
+                            className="p-0.5 rounded-full text-muted hover:text-foreground cursor-pointer"
+                        >
+                            <X size={12} />
+                        </button>
+                    </span>
+                </div>
+            )}
 
             {loading ? (
                 <div className="space-y-3 animate-pulse">

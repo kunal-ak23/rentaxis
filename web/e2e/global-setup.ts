@@ -1,7 +1,7 @@
 import { test as setup } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { login, register, createTenant, listTenants, createUser, createProperty, createUnit, createRenter, createLease } from './helpers/api-client';
+import { login, register, createTenant, listTenants, createUser, createProperty, createUnit, createRenter, createLease, seedChartOfAccounts } from './helpers/api-client';
 
 const CONTEXT_PATH = path.join(__dirname, '.test-context.json');
 
@@ -70,6 +70,19 @@ setup('seed test data', async () => {
     }
   }
 
+  // 2b. Seed the chart of accounts (+ property account template + charge
+  //     types, chained server-side) before any property exists, so the
+  //     property created below gets its own generated account set and the
+  //     draft lease below has a RENT / SECURITY_DEPOSIT charge type to use.
+  //     accounting-v2 plan 2's `lines`-based leases need this; v1's flat
+  //     rentAmount/depositAmount body never did.
+  try {
+    await seedChartOfAccounts(adminId, adminRole, testTenantId);
+    console.log('Seeded chart of accounts');
+  } catch (e: any) {
+    console.log(`Chart of accounts seed failed (may already exist): ${e.message}`);
+  }
+
   // 3. Create test property
   let propertyId: string = '';
   try {
@@ -124,9 +137,19 @@ setup('seed test data', async () => {
   let leaseId: string = '';
   if (unitId && renterId) {
     try {
+      // The term STARTS IN THE PAST on purpose. Recognition only posts periods
+      // whose `period_end` has already passed (`RecognitionController
+      // #notInTheFuture`), so a contract that starts today has nothing to close
+      // and accounting-v2's month-end step is invisible to
+      // `finance/accounting-v2.spec.ts`, which walks THIS lease. Two months back
+      // leaves at least one closed period whatever day of the month the run is.
       const today = new Date();
-      const startDate = today.toISOString().split('T')[0];
-      const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate()).toISOString().split('T')[0];
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+      const startDate = isoOf(start);
+      // A one-year term: the day before the same date next year.
+      const endDate = isoOf(new Date(start.getFullYear() + 1, start.getMonth(), 0));
       const lease = await createLease(adminId, adminRole, testTenantId, {
         unitId,
         renterId,

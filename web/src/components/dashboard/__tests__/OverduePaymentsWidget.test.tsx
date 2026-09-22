@@ -10,11 +10,13 @@ vi.mock("@/i18n/routing", () => ({
   ),
 }));
 
-import OverduePaymentsWidget from "../OverduePaymentsWidget";
+const due = vi.fn();
+vi.mock("@/lib/api/leasing", async orig => {
+  const m = await orig<typeof import("@/lib/api/leasing")>();
+  return { ...m, chequeApi: { ...m.chequeApi, due: (...a: unknown[]) => due(...(a as [])) } };
+});
 
-function mockFetch(body: unknown) {
-  global.fetch = vi.fn(async () => ({ ok: true, json: async () => body })) as unknown as typeof fetch;
-}
+import OverduePaymentsWidget from "../OverduePaymentsWidget";
 
 afterEach(() => {
   cleanup();
@@ -22,12 +24,14 @@ afterEach(() => {
 });
 
 describe("OverduePaymentsWidget", () => {
-  it("lists overdue payments and links to the filtered payments page", async () => {
-    mockFetch({
+  it("keeps only the overdue rows from the due list and links to the register", async () => {
+    due.mockResolvedValue({
       content: [
-        { id: "p1", leaseId: "l1", renterName: "Jane Tenant", unitIdentifier: "A-101", amount: 5000, dueDate: "2026-05-01" },
+        { id: "p1", leaseId: "l1", renterName: "Jane Tenant", unitIdentifier: "A-101", amount: 5000, overdue: true },
+        // Due today but not yet overdue — must be excluded from the widget.
+        { id: "p2", leaseId: "l2", renterName: "Not Overdue", unitIdentifier: "A-102", amount: 1000, overdue: false },
+        { id: "p3", leaseId: "l3", renterName: "Second Overdue", unitIdentifier: "A-103", amount: 2000, overdue: true },
       ],
-      totalElements: 3,
     });
 
     render(
@@ -37,18 +41,19 @@ describe("OverduePaymentsWidget", () => {
         );
 
     await waitFor(() => expect(screen.getByText(/Jane Tenant/)).toBeTruthy());
-    // header shows the total count, not just the rendered page size
-    expect(screen.getByText(/Overdue payments \(3\)/)).toBeTruthy();
+    // header shows only the truly-overdue count (2), not every due row (3)
+    expect(screen.getByText(/Overdue payments \(2\)/)).toBeTruthy();
+    expect(screen.queryByText(/Not Overdue/)).toBeNull();
     // row links to the lease
     const rowLink = screen.getByText(/Jane Tenant/).closest("a");
     expect(rowLink).toHaveAttribute("href", "/dashboard/leases/l1");
-    // "View all" links to the overdue-filtered payments page
+    // "View all" links to the cheque register
     expect(screen.getByRole("link", { name: /view all/i }))
-      .toHaveAttribute("href", "/dashboard/finance/payments?status=OVERDUE");
+      .toHaveAttribute("href", "/dashboard/finance/cheques");
   });
 
   it("shows an empty state when there are no overdue payments", async () => {
-    mockFetch({ content: [], totalElements: 0 });
+    due.mockResolvedValue({ content: [] });
     render(
             <NextIntlClientProvider locale="en" messages={en}>
                 <OverduePaymentsWidget />

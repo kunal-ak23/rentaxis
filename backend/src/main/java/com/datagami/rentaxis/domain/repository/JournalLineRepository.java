@@ -102,6 +102,28 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
                                 @Param("propertyId") UUID propertyId, @Param("unitId") UUID unitId,
                                 @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId);
 
+    /**
+     * What one account still owes on one lease: Σcredit − Σdebit, credit-positive.
+     *
+     * <p>Signed the other way round from {@link #balanceBefore} on purpose. It
+     * exists for the deposit carry-forward (spec §6.6), and a deposit is a
+     * liability: the question being asked is "how much of this deposit is still
+     * held", which is a credit balance. Reporting it debit-positive would have
+     * every caller negate it, and one of them eventually would not.</p>
+     *
+     * <p>No date bound: this is the balance <em>now</em>. A deposit partly refunded
+     * last month carries forward at what is left of it, not at the figure the lease
+     * originally charged — which is the whole reason the line's nominal amount is
+     * not used.</p>
+     */
+    @Query(value = """
+        select coalesce(sum(l.credit),0) - coalesce(sum(l.debit),0)
+        from journal_lines l
+        where l.tenant_id = :tenantId and l.account_id = :accountId and l.lease_id = :leaseId
+        """, nativeQuery = true)
+    BigDecimal creditBalanceForLease(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId,
+                                     @Param("leaseId") UUID leaseId);
+
     @Query(value = """
         select l.account_id as accountId, coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id

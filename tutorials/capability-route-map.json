@@ -49,8 +49,8 @@
         ]
       },
       {
-        "tutorials": [10, 11, 12, 13, 14, 15],
-        "evidence": ["PR96:10-lease-create-ui.spec.ts", "PR96:10a-contract-signature-lifecycle.spec.ts", "PR96:10b-draft-lease-administration.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:14-lease-lifecycle-extended.spec.ts"],
+        "tutorials": [10, 11, 12, 13, 14, 15, 34],
+        "evidence": ["PR96:10-lease-create-ui.spec.ts", "PR96:10a-contract-signature-lifecycle.spec.ts", "PR96:10b-draft-lease-administration.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:14-lease-lifecycle-extended.spec.ts", "web/e2e/finance/cheques.spec.ts"],
         "routes": [
           "/[locale]/dashboard/leases",
           "/[locale]/dashboard/leases/[id]"
@@ -58,38 +58,106 @@
       },
       {
         "tutorials": [13],
-        "evidence": ["PR96:14-lease-lifecycle-extended.spec.ts"],
-        "routes": ["/[locale]/dashboard/leases/[id]/settlement"]
+        "evidence": [
+          "PR96:14-lease-lifecycle-extended.spec.ts",
+          "web/src/app/[locale]/dashboard/leases/[id]/terminate/__tests__/preview.test.tsx",
+          "web/src/app/[locale]/dashboard/leases/__tests__/terminate-gate.test.tsx"
+        ],
+        "routes": [
+          "/[locale]/dashboard/leases/[id]/settlement",
+          "/[locale]/dashboard/leases/[id]/terminate"
+        ]
       },
       {
         "tutorials": [17],
-        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/accounts"]
+        "evidence": ["web/e2e/finance/accounts.spec.ts", "web/e2e/finance/cutover.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/finance/accounts",
+          "/[locale]/dashboard/settings/account-template",
+          "/[locale]/dashboard/settings/fiscal"
+        ]
+      },
+      {
+        "tutorials": [18, 34],
+        "evidence": [
+          "web/e2e/finance/ledger.spec.ts",
+          "web/src/app/[locale]/dashboard/finance/journals/__tests__/new-journal.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/journals/__tests__/reverse-manual-only.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/journals/__tests__/import-batch-filter.test.tsx"
+        ],
+        "routes": [
+          "/[locale]/dashboard/finance/journals",
+          "/[locale]/dashboard/finance/journals/[id]",
+          "/[locale]/dashboard/finance/journals/new"
+        ]
+      },
+      {
+        "tutorials": [20, 37],
+        "evidence": [
+          "web/e2e/finance/ledger.spec.ts",
+          "web/e2e/finance/cheques.spec.ts",
+          "backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerTenantOneIT.java"
+        ],
+        "routes": [
+          "/[locale]/dashboard/finance/general-ledger",
+          "/[locale]/dashboard/finance/tenant-ledger",
+          "/[locale]/dashboard/finance/trial-balance"
+        ]
+      },
+      {
+        "tutorials": [15, 35],
+        "evidence": [
+          "web/e2e/finance/cheques.spec.ts",
+          "web/src/app/[locale]/dashboard/finance/cheques/__tests__/register-actions.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/cheques/collection/__tests__/batch.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/cheques/post-dated/__tests__/post-dated.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/penalties/__tests__/queue.test.tsx"
+        ],
+        "routes": [
+          "/[locale]/dashboard/finance/cheques",
+          "/[locale]/dashboard/finance/cheques/collection",
+          "/[locale]/dashboard/finance/cheques/return-replace",
+          "/[locale]/dashboard/finance/cheques/post-dated",
+          "/[locale]/dashboard/finance/penalties"
+        ]
+      },
+      {
+        "tutorials": [36],
+        "evidence": [
+          "web/e2e/finance/cheques.spec.ts",
+          "web/src/app/[locale]/dashboard/finance/recognition/__tests__/month-end.test.tsx"
+        ],
+        "routes": ["/[locale]/dashboard/finance/recognition"]
       },
       {
         "tutorials": [19],
-        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/bank-accounts"]
+        "evidence": [
+          "web/e2e-prod/tests/13-finance-and-settings.spec.ts",
+          "web/src/app/[locale]/dashboard/finance/vouchers/__tests__/voucher-list.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/vouchers/__tests__/voucher-pages.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/vendors/__tests__/error-surfacing.test.tsx"
+        ],
+        "routes": [
+          "/[locale]/dashboard/finance/vendors",
+          "/[locale]/dashboard/finance/bank-accounts",
+          "/[locale]/dashboard/finance/vouchers",
+          "/[locale]/dashboard/finance/vouchers/purchase-invoice",
+          "/[locale]/dashboard/finance/vouchers/payment"
+        ]
       },
       {
-        "tutorials": [15],
-        "evidence": ["PR96:02-cheque-lifecycle.spec.ts", "PR96:08-cheque-upload.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/payments"]
-      },
-      {
-        "tutorials": [20],
-        "evidence": ["PR96:04-reports.spec.ts", "PR96:13-finance-and-settings.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/reports"]
-      },
-      {
-        "tutorials": [18],
-        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/transactions"]
-      },
-      {
-        "tutorials": [19],
-        "evidence": ["PR96:03-vendor-and-interactions.spec.ts", "PR96:13-finance-and-settings.spec.ts"],
-        "routes": ["/[locale]/dashboard/finance/vendors"]
+        "tutorials": [8],
+        "evidence": [
+          "web/e2e/finance/cutover.spec.ts",
+          "web/src/app/[locale]/dashboard/finance/opening-balances/__tests__/opening-balances.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/reconciliation/__tests__/reconciliation.test.tsx",
+          "web/src/app/[locale]/dashboard/finance/import-batches/__tests__/import-batches.test.tsx"
+        ],
+        "routes": [
+          "/[locale]/dashboard/finance/opening-balances",
+          "/[locale]/dashboard/finance/reconciliation",
+          "/[locale]/dashboard/finance/import-batches"
+        ]
       },
       {
         "tutorials": [25],
@@ -133,7 +201,6 @@
         "tutorials": [13, 14, 16, 17],
         "evidence": ["PR96:13-finance-and-settings.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:13f-lease-renewals.spec.ts", "PR96:13g-payment-gateway-config.spec.ts"],
         "routes": [
-          "/[locale]/dashboard/settings/account-mappings",
           "/[locale]/dashboard/settings/fines",
           "/[locale]/dashboard/settings/gateway",
           "/[locale]/dashboard/settings/rent-settings"

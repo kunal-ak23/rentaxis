@@ -14,6 +14,28 @@ import java.util.UUID;
 @Repository
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 
+    /**
+     * Tenant-aware lookup by id, for an account id that arrived on a request body (a
+     * lease line's credit account, a lease's receivable override, an opening-balance
+     * row) — a caller in tenant A must not be able to point their books at a leaf
+     * belonging to tenant B.
+     *
+     * <p><b>Corrected:</b> this used to say that Spring Data's {@code findById}
+     * bypasses Hibernate filters and that this JPQL query was therefore the only safe
+     * finder. That is true of a plain Hibernate 7 mapping but <em>not</em> of ours:
+     * {@code BaseTenantEntity} declares {@code @FilterDef(..., applyToLoadByKey = true)}
+     * precisely so that primary-key loads are filtered too, which was measured — a
+     * mutation swapping this finder for {@code findById} in
+     * {@code OpeningBalanceService.setRow} fails no test, because both are filtered
+     * once the aspect has enabled the filter around the repository call.</p>
+     *
+     * <p>Prefer this one anyway. It is the finder that still scopes when the filter is
+     * <em>not</em> enabled — outside a transaction, or with an empty
+     * {@code TenantContextHolder} — and that costs nothing.</p>
+     */
+    @Query("SELECT a FROM Account a WHERE a.id = :id")
+    Optional<Account> findByIdScopedToTenant(@Param("id") UUID id);
+
     Optional<Account> findByCode(String code);
 
     Optional<Account> findByCodeAndTenantId(String code, UUID tenantId);

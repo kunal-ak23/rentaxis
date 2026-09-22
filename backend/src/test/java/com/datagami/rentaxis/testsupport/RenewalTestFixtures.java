@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.testsupport;
 
+import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -51,7 +52,8 @@ public class RenewalTestFixtures {
         lease.setTenantId(tenantId);
         lease.setStartDate(startDate);
         lease.setEndDate(endDate);
-        lease.setMonthlyRent(BigDecimal.valueOf(5000));
+        lease.setRentAmount(BigDecimal.valueOf(5000)
+                .multiply(BigDecimal.valueOf(DateMath.monthsInclusive(startDate, endDate))));
         lease.setStatus(LeaseStatus.ACTIVE);
         return leaseRepo.save(lease);
     }

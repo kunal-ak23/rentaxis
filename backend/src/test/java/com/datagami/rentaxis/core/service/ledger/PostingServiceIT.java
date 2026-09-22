@@ -51,6 +51,7 @@ class PostingServiceIT {
     @Autowired PropertyRepository propertyRepo;
     @Autowired AccountRepository accountRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.cutover.ImportBatchService batches;
 
     UUID tenantId; UUID propertyId;
     Account rentRecvLeaf, advanceRentLeaf, bankLeaf;
@@ -150,6 +151,19 @@ class PostingServiceIT {
         assertThatThrownBy(() -> posting.post(r)).isInstanceOf(UnmappedAccountRoleException.class).hasMessageContaining("SECURITY_DEPOSIT");
     }
 
+    /**
+     * A real cut-over batch row.
+     *
+     * <p>{@code journal_entries.import_batch_id} is a foreign key (changeset 88):
+     * the id that exempts an entry from the period lock and that "Reverse batch"
+     * finds it by has to name a batch that exists, or the entry is one nothing can
+     * ever reach. A synthetic UUID used to do here and no longer does, which is the
+     * constraint working.</p>
+     */
+    private UUID aRealBatch() {
+        return batches.create(null, "cut-over").getId();
+    }
+
     @Test
     void periodLockBlocksOrdinaryPostingsButNotOpeningBalancesOrImports() {
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));
@@ -158,9 +172,77 @@ class PostingServiceIT {
                 List.of(dr(bankLeaf.getId(), new BigDecimal("10")), cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
         assertThat(posting.post(ob).getEntryNumber()).startsWith("OB-26/");
         PostingRequest imported = new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "imported", Dimensions.ofProperty(propertyId),
-                JournalSourceType.IMPORT, UUID.randomUUID(), UUID.randomUUID(),
+                JournalSourceType.IMPORT, UUID.randomUUID(), aRealBatch(),
                 List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")), cr(AccountRole.ADVANCE_RENT, new BigDecimal("10"))));
         assertThat(posting.post(imported).getImportBatchId()).isNotNull();
+    }
+
+    /**
+     * The boundary of the reversal path's lock exemption
+     * ({@code PostingService.reverse}: {@code docType != OB && importBatchId == null}
+     * → {@code fiscal.assertOpen(date)}).
+     *
+     * <p>That line is the <em>only</em> period-lock guard on the reversal paths for
+     * penalties, cheques, lease reversal and recognition — none of them calls
+     * {@code assertOpen} for itself — so widening it would go unnoticed. These are the
+     * two halves it has to keep: an ordinary entry cannot be reversed <em>into</em> a
+     * locked period, and can be reversed on a date the lock leaves open. The guard is
+     * on the REVERSAL's date, not the original's, which is why the same entry answers
+     * both ways.</p>
+     */
+    @Test
+    void anOrdinaryEntryStillCannotBeReversedIntoALockedPeriod() {
+        JournalEntry contractEntry = posting.post(contract(new BigDecimal("61000.00")));
+        PostingRequest jvRequest = new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 11), "manual",
+                Dimensions.none(), JournalSourceType.MANUAL, null, null,
+                List.of(dr(bankLeaf.getId(), new BigDecimal("10")),
+                        cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
+        JournalEntry jv = posting.post(jvRequest);
+
+        fiscal.lockThrough(LocalDate.of(2026, 9, 30));
+
+        assertThatThrownBy(() -> posting.reverse(contractEntry.getId(), LocalDate.of(2026, 9, 12), "wrong unit"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("locked through 2026-09-30");
+        assertThatThrownBy(() -> posting.reverse(jv.getId(), LocalDate.of(2026, 9, 12), "wrong"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("locked through 2026-09-30");
+
+        // Both are still on the books: a refused reversal writes nothing.
+        assertThat(entries.findById(contractEntry.getId()).orElseThrow().getStatus()).isEqualTo(JournalStatus.POSTED);
+        assertThat(entries.findById(jv.getId()).orElseThrow().getStatus()).isEqualTo(JournalStatus.POSTED);
+
+        // …and the open period accepts exactly the same reversals.
+        assertThat(posting.reverse(contractEntry.getId(), LocalDate.of(2026, 10, 1), "wrong unit").getEntryDate())
+                .isEqualTo(LocalDate.of(2026, 10, 1));
+        assertThat(posting.reverse(jv.getId(), LocalDate.of(2026, 10, 1), "wrong").getEntryDate())
+                .isEqualTo(LocalDate.of(2026, 10, 1));
+    }
+
+    /**
+     * The exempt half of the same line, on the reversal path: an {@code OB} entry and a
+     * batch-carrying import entry can both be taken off inside the locked period. An
+     * entry that could be posted into a closed period has to be removable from it.
+     */
+    @Test
+    void anOpeningBalanceOrImportEntryCanBeReversedInsideTheLockedPeriod() {
+        PostingRequest obRequest = new PostingRequest(JournalDocType.OB, LocalDate.of(2026, 9, 11), "opening",
+                Dimensions.none(), JournalSourceType.OPENING_BALANCE, null, null,
+                List.of(dr(bankLeaf.getId(), new BigDecimal("10")),
+                        cr(accounts.getAccountByCode("F-01").getId(), new BigDecimal("10"))));
+        PostingRequest importedRequest = new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "imported",
+                Dimensions.ofProperty(propertyId), JournalSourceType.IMPORT, UUID.randomUUID(), aRealBatch(),
+                List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")),
+                        cr(AccountRole.ADVANCE_RENT, new BigDecimal("10"))));
+        JournalEntry ob = posting.post(obRequest);
+        JournalEntry imported = posting.post(importedRequest);
+
+        fiscal.lockThrough(LocalDate.of(2026, 9, 30));
+
+        assertThat(posting.reverse(ob.getId(), LocalDate.of(2026, 9, 11), "corrected").getEntryDate())
+                .isEqualTo(LocalDate.of(2026, 9, 11));
+        assertThat(posting.reverse(imported.getId(), LocalDate.of(2026, 9, 11), "re-import").getEntryDate())
+                .isEqualTo(LocalDate.of(2026, 9, 11));
     }
 
     @Test

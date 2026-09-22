@@ -74,6 +74,7 @@ public class TenantFeatureService {
             case EMAIL_NOTIFICATIONS -> "Email Notifications";
             case LEASE_RENEWALS -> "Lease Renewals & Reminders";
             case GATEPASS -> "Gate Passes & Security";
+            case MOBILE_FINANCE -> "Mobile finance screens";
         };
     }
 }

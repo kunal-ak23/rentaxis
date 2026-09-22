@@ -120,7 +120,7 @@ export function TopHeader() {
             const routes: Record<string, string> = {
                 TICKET: `/dashboard/tickets/${n.referenceId}`,
                 LEASE: `/dashboard/leases/${n.referenceId}`,
-                PAYMENT: `/dashboard/finance/payments`,
+                PAYMENT: `/dashboard/finance/cheques`,
             };
             const route = routes[n.referenceType];
             if (route) {
@@ -217,6 +217,9 @@ export function TopHeader() {
                         <div className="relative pl-3 border-l border-border">
                             <button
                                 ref={buttonRef}
+                                data-testid="profile-menu"
+                                aria-haspopup="menu"
+                                aria-expanded={isProfileOpen}
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg p-1 -m-1"
                             >
@@ -259,6 +262,7 @@ export function TopHeader() {
 
                                             {/* Logout */}
                                             <button
+                                                data-testid="logout"
                                                 onClick={() => signOut()}
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-error hover:bg-error/5 transition-colors cursor-pointer"
                                             >

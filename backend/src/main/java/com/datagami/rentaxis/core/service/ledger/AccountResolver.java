@@ -34,6 +34,23 @@ public class AccountResolver {
         return a;
     }
 
+    /**
+     * Same lookup, but an unmapped role is null rather than an exception — for
+     * callers to whom a missing mapping is an ordinary outcome, such as a lease
+     * line that is allowed to stay unmapped until posting.
+     *
+     * <p>Those callers must not use {@link #resolve} inside a try/catch. This
+     * class is proxied, so an exception thrown out of {@code resolve} propagates
+     * through the transaction interceptor and marks the caller's transaction
+     * rollback-only before the catch block ever runs; the caller then completes
+     * happily and the commit fails with "Transaction silently rolled back". A
+     * bulk import lost every lease in the workbook to exactly that.</p>
+     */
+    @Transactional(readOnly = true)
+    public Account resolveOrNull(AccountRole role, UUID propertyId) {
+        return tryResolve(role, propertyId);
+    }
+
     /** Resolves every role or throws once listing all that are missing — used by the lease posting guard. */
     @Transactional(readOnly = true)
     public Map<AccountRole, Account> resolveAll(Set<AccountRole> roles, UUID propertyId) {
