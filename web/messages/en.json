@@ -2321,6 +2321,8 @@
     "discardedBatchFinal": "Discarded — its contracts and the rows it created are gone",
     "derivedDebit": "Imported debit",
     "derivedCredit": "Imported credit",
+    "postDebit": "Posts debit",
+    "postCredit": "Posts credit",
     "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch.",
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
   }

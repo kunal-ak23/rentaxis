@@ -29,6 +29,17 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
  * Step 2 of the cut-over (spec §10.3): the opening-balance grid, PACT's trial
  * balance, and the OB journal that opens the books balanced.
  *
+ * **Three figures per row, and the subtraction between them is shown** (ruling
+ * R25). What our books already hold at D − 1 with the opening entry taken out;
+ * what PACT's trial balance says, which is the only one anybody types; and what
+ * a post would WRITE, which is the second less the first. On almost every row
+ * the first is nothing and the last two coincide — on the bank a cleared cheque
+ * reached, or the output VAT a contract raised, they do not, and posting PACT's
+ * figure gross there would count the cut-over twice. The footer totals and the
+ * difference sentence read the POST figures, because the footer is what the
+ * journal will do. An older backend sends no post figures and the screen falls
+ * back to the entered ones, which is exactly what that backend would post.
+ *
  * **Two read-only columns, for two different reasons.** A DERIVED account is one
  * the contract import produces, and `OpeningBalanceService.setRow` 400s a
  * hand-typed figure for it. The OPENING_BALANCE_DIFFERENCE account is worse than
@@ -195,28 +206,48 @@ export default function OpeningBalancesPage() {
      * laid over them — so the footer always agrees with the column above it.
      * Added in fils (`sumAmounts`), never as plain floats.
      */
+    /**
+     * The two figures this row contributes to the JOURNAL (ruling R25).
+     *
+     * `postDebit`/`postCredit` where the server sends them — PACT's figure less
+     * what our books already hold, and the balancing figure on the difference
+     * row. Where it does not, what is ON SCREEN: that is the older backend's
+     * meaning of the entered column, and reading the screen rather than
+     * `r.entered*` keeps the footer moving with an unsaved edit.
+     */
+    const postOf = useCallback(
+        (r: OpeningBalanceRow): Edit | { debit: number; credit: number } => {
+            if (r.postDebit !== undefined || r.postCredit !== undefined) {
+                return { debit: r.postDebit ?? 0, credit: r.postCredit ?? 0 };
+            }
+            return valueOf(r);
+        },
+        [valueOf],
+    );
+
     const totals = useMemo(() => {
         const rows = grid?.rows ?? [];
-        // `sumAmounts` skips what it cannot read, so an in-progress typo shows
-        // the total of the rest rather than "NaN"; `invalidCount` is what stops
-        // that total being saved or posted.
-        const debit = sumAmounts(rows.map(r => valueOf(r).debit));
-        const credit = sumAmounts(rows.map(r => valueOf(r).credit));
+        // The POST figures, not the entered ones: the footer is what the journal
+        // will do, and on the accounts the cut-over also writes to the two
+        // differ. `sumAmounts` skips what it cannot read, so an in-progress typo
+        // shows the total of the rest rather than "NaN"; `invalidCount` is what
+        // stops that total being saved or posted.
+        const debit = sumAmounts(rows.map(r => postOf(r).debit));
+        const credit = sumAmounts(rows.map(r => postOf(r).credit));
         return { debit, credit, difference: differenceOf(debit, credit) };
-    }, [grid, valueOf]);
+    }, [grid, postOf]);
 
     const unsavedCount = Object.keys(edits).length;
 
     /**
      * What the OB journal will put on the Opening Balance Difference account.
      *
-     * Read off the COMPUTED ROW, not off the gap between the two columns.
-     * `OpeningBalanceRowDTO` says it in as many words — that row's
-     * `enteredDebit`/`enteredCredit` "carry the figure the journal will post …
-     * which is why the rows on screen add up the way the journal does". So the
-     * columns always agree and the old `difference !== 0` warning, which keyed
-     * off their gap, could never appear at all: the one sentence explaining
-     * where an unbalanced trial balance goes was unreachable.
+     * Read off the COMPUTED ROW's post figures, not off the gap between the
+     * columns. That row carries the balancing figure — `OpeningBalanceRowDTO`
+     * says so in as many words — so the columns always agree and the old
+     * `difference !== 0` warning, which keyed off their gap, could never appear
+     * at all: the one sentence explaining where an unbalanced trial balance goes
+     * was unreachable.
      *
      * The fallback is that gap, for a grid with no computed row on screen — an
      * older backend, or a chart with no difference account, where what the
@@ -228,10 +259,10 @@ export default function OpeningBalancesPage() {
                 r.computed === true
                 || (computedSource.kind === "lookup" && computedSource.accountId === r.accountId),
         );
-        return computedRow
-            ? differenceOf(computedRow.enteredDebit, computedRow.enteredCredit)
-            : totals.difference;
-    }, [grid, computedSource, totals.difference]);
+        if (!computedRow) return totals.difference;
+        const post = postOf(computedRow);
+        return differenceOf(post.debit, post.credit);
+    }, [grid, computedSource, totals.difference, postOf]);
 
     /**
      * Does the server send what the posted cut-over contracts put on the derived
@@ -240,6 +271,16 @@ export default function OpeningBalancesPage() {
      */
     const showsImported = useMemo(
         () => (grid?.rows ?? []).some(r => r.derivedDebit !== undefined || r.derivedCredit !== undefined),
+        [grid],
+    );
+
+    /**
+     * And the same for what a post would WRITE. Shown on the same terms: where
+     * the server does not send it the fallback makes the column a copy of the
+     * entered one, and a column that restates its neighbour is noise.
+     */
+    const showsPost = useMemo(
+        () => (grid?.rows ?? []).some(r => r.postDebit !== undefined || r.postCredit !== undefined),
         [grid],
     );
 
@@ -633,6 +674,8 @@ export default function OpeningBalancesPage() {
                                         {showsImported && <th className={`${th} text-end`}>{t("derivedCredit")}</th>}
                                         <th className={`${th} text-end`}>{tLedger("debit")}</th>
                                         <th className={`${th} text-end`}>{tLedger("credit")}</th>
+                                        {showsPost && <th className={`${th} text-end`}>{t("postDebit")}</th>}
+                                        {showsPost && <th className={`${th} text-end`}>{t("postCredit")}</th>}
                                         <th className={th}>{t("source")}</th>
                                         <th className={`${th} text-end`} />
                                     </tr>
@@ -707,6 +750,26 @@ export default function OpeningBalancesPage() {
                                                         </td>
                                                     </>
                                                 )}
+                                                {showsPost && (
+                                                    <>
+                                                        {/* What the journal writes for this row:
+                                                            PACT's figure less what our books already
+                                                            hold. Read-only because it is the server's
+                                                            arithmetic, not an opinion. */}
+                                                        <td
+                                                            data-testid={`ob-post-debit-${r.accountId}`}
+                                                            className={`${td} text-end tabular-nums font-medium`}
+                                                        >
+                                                            {fmtAmount(r.postDebit ?? 0)}
+                                                        </td>
+                                                        <td
+                                                            data-testid={`ob-post-credit-${r.accountId}`}
+                                                            className={`${td} text-end tabular-nums font-medium`}
+                                                        >
+                                                            {fmtAmount(r.postCredit ?? 0)}
+                                                        </td>
+                                                    </>
+                                                )}
                                                 <td className={`${td} text-[10px] text-muted max-w-xs`}>
                                                     {editable ? (
                                                         t("manual")
@@ -755,7 +818,16 @@ export default function OpeningBalancesPage() {
                                 </tbody>
                                 <tfoot className="bg-input/60 border-t border-border sticky bottom-0">
                                     <tr>
-                                        <td className={`${td} font-bold`} colSpan={showsImported ? 4 : 2}>
+                                        {/*
+                                         * The totals sit under the LAST figure pair, which is the
+                                         * one they total: the post columns where the server sends
+                                         * them, the entered ones where it does not. Same rule, one
+                                         * span — code + name + whichever pairs come before.
+                                         */}
+                                        <td
+                                            className={`${td} font-bold`}
+                                            colSpan={2 + (showsImported ? 2 : 0) + (showsPost ? 2 : 0)}
+                                        >
                                             {tLedger("reportTotal")}
                                         </td>
                                         <td

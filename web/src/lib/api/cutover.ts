@@ -98,8 +98,28 @@ export type OpeningBalanceRow = {
      */
     derivedDebit?: number;
     derivedCredit?: number;
+    /**
+     * PACT's figure for this account, as uploaded or typed in. NOT what will be
+     * posted — see `postDebit`/`postCredit`, which is this less what our books
+     * already hold (ruling R17). The grid's input cells seed from these, because
+     * this is the figure the accountant owns and corrects.
+     */
     enteredDebit: number;
     enteredCredit: number;
+    /**
+     * What the opening journal will actually write for this account: the delta
+     * on a non-derived account, and the balancing figure on the difference row.
+     *
+     * Optional because an older backend does not send it, and when it is absent
+     * the screen falls back to `entered*` — which is exactly what that backend
+     * would post. The pair is shown as its own column rather than folded into
+     * the entered one: `entered − derived = post` is a subtraction the
+     * accountant is entitled to see all three sides of, and the two figures
+     * genuinely differ on the accounts the cut-over also writes to (the bank a
+     * cleared cheque reached, the output VAT a contract raised).
+     */
+    postDebit?: number;
+    postCredit?: number;
     /**
      * True for an account the server works out for itself — the
      * OPENING_BALANCE_DIFFERENCE row, which `postFresh` folds into its balancing

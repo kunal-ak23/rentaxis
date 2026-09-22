@@ -322,6 +322,58 @@ describe("opening balances — imported figures", () => {
         await screen.findByTestId("ob-row-a-rent");
         expect(screen.queryByTestId("ob-derived-debit-a-rent")).not.toBeInTheDocument();
     });
+
+    /**
+     * Ruling R25. Three figures, and the subtraction between them on screen:
+     * PACT says 250,000, our books already hold 31,000 at D − 1, so the journal
+     * writes 219,000. Posting PACT's figure gross would count the 31,000 the
+     * cut-over already put there a second time — which is precisely the bug the
+     * delta rule exists to prevent, and the accountant is entitled to see all
+     * three sides of the subtraction rather than be told an answer.
+     */
+    it("shows entered, derived and post figures, and totals the post ones", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                rows: [
+                    row({
+                        accountId: "a-bank", code: "110200", name: "ENBD Current",
+                        enteredDebit: 250000, derivedDebit: 31000, derivedCredit: 0,
+                        postDebit: 219000, postCredit: 0,
+                    }),
+                ],
+                totalDebit: 219000, totalCredit: 0, difference: 219000,
+            }),
+        );
+        renderPage();
+        const bank = await screen.findByTestId("ob-row-a-bank");
+        // PACT's figure, in the cell the accountant owns and corrects.
+        await waitFor(() => expect(within(bank).getByTestId("ob-debit-a-bank")).toHaveValue("250000"));
+        // What our books already hold.
+        expect(within(bank).getByTestId("ob-derived-debit-a-bank")).toHaveTextContent("31,000.00");
+        // What the journal will write.
+        expect(within(bank).getByTestId("ob-post-debit-a-bank")).toHaveTextContent("219,000.00");
+        expect(within(bank).getByTestId("ob-post-credit-a-bank")).toHaveTextContent("0.00");
+        // And the footer is the journal's, not the file's.
+        expect(screen.getByTestId("ob-total-debit")).toHaveTextContent("219,000.00");
+        expect(screen.getByTestId("ob-total-debit")).not.toHaveTextContent("250,000.00");
+    });
+
+    /** An older backend sends no post figures; entered IS what it would post. */
+    it("falls back to the entered figures when the server sends no post ones", async () => {
+        api.grid.mockResolvedValue(
+            grid({
+                rows: [
+                    row({ accountId: "a-bank", code: "110200", name: "ENBD Current", enteredDebit: 250000 }),
+                ],
+                totalDebit: 250000, totalCredit: 0, difference: 250000,
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("ob-row-a-bank");
+        // No column that would only restate the one beside it.
+        expect(screen.queryByTestId("ob-post-debit-a-bank")).not.toBeInTheDocument();
+        expect(screen.getByTestId("ob-total-debit")).toHaveTextContent("250,000.00");
+    });
 });
 
 describe("opening balances — new optional server fields", () => {
