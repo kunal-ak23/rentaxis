@@ -20,10 +20,17 @@ import java.util.UUID;
  * import derives and the difference account itself; that account's own row carries
  * the same figure, so the rows add up the way the journal does.</p>
  *
+ * <p><b>Every figure here is the delta</b> — PACT's trial balance less what our own
+ * books already hold as at the same day (ruling R17) — so {@code totalDebit},
+ * {@code totalCredit} and {@code difference} are the journal's, not the file's. The
+ * file's own sums live on the upload result.</p>
+ *
  * <p>{@code changedSincePosted} is true when the grid's postable lines no longer
  * match the live OB journal's. The snapshot stays editable after posting — that is
  * the Replace workflow — and this is how the screen knows to say "unposted changes".
- * It is false whenever nothing is posted.</p>
+ * It is false whenever nothing is posted. Because the lines are deltas it now also
+ * catches a cut-over bulk post or batch reverse that happened after the books were
+ * opened, which the gross form could not see at all.</p>
  *
  * <p>{@code problems} are faults the accountant has to fix, or facts they have to
  * know, before posting: an account role with no usable account behind it, or a PACT

@@ -89,6 +89,22 @@ import java.util.UUID;
  * off it. The number on the screen the accountant presses Post from is therefore the
  * number posted, by construction rather than by agreement.</p>
  *
+ * <p><b>And what it writes is the delta</b> — {@code PACT(X) − ours(X)} — not PACT's
+ * figure gross (review C2, ruling R17). The nine {@link #DERIVED_ROLES} are the
+ * accounts step 1 <em>raises</em>; they are not the only accounts step 1
+ * <em>touches</em>, and bank and output VAT are both. See {@link #postable} for the
+ * arithmetic and for why the gross form double-counted them. It follows that
+ * {@code enteredDebit}/{@code enteredCredit} on the grid are the figures that will
+ * post, which on an account our books already hold is PACT's figure less that
+ * holding; {@code derivedDebit}/{@code derivedCredit} beside them are the holding
+ * itself, so the accountant can see both halves of the subtraction.</p>
+ *
+ * <p><b>The opening balances are the LAST step.</b> Once an OB journal is live, a
+ * bulk post, a batch reverse and a Post-again would each move {@code ours} under a
+ * journal that was computed against the old value, so all three are refused while
+ * {@code TenantFiscalSettingsService.hasLiveOpeningBalance()} — reverse the opening
+ * balances, do the step, post them again. Spec §10.3 "Amendment 2026-09-22".</p>
+ *
  * <p><b>Matching PACT's rows to our chart.</b> By code, then by exact name
  * (trimmed, case-insensitive) within the tenant — the same rule the spec's
  * property-mapping sheet uses ("mappings by account-name match; unmatched names
@@ -147,6 +163,13 @@ public class OpeningBalanceService {
      * {@code computed} means we do — it is the opening-balance difference account,
      * whose figure is the balancing gap and is recomputed on every post. Both are
      * read-only on the screen and both are refused by {@link #setRow}.</p>
+     *
+     * <p>{@code derivedDebit}/{@code derivedCredit} are what our books already hold
+     * for the account as at D − 1; {@code enteredDebit}/{@code enteredCredit} are
+     * what a post would <em>write</em>, which is PACT's figure less that holding
+     * (ruling R17). On the overwhelming majority of rows our books hold nothing and
+     * the two readings coincide; where they do not — bank, output VAT — the pair
+     * shows the accountant both halves of the subtraction.</p>
      */
     public record OpeningBalanceRow(UUID accountId, String code, String name, String accountType, UUID propertyId,
                                     boolean derived, AccountRole derivedRole, boolean computed,
@@ -203,8 +226,8 @@ public class OpeningBalanceService {
     public OpeningBalanceGrid grid() {
         LocalDate asOf = asOf();
         DerivedRoles derived = derived();
-        Postable postable = postable(chartIndex(), derived.byAccount());
         Map<UUID, BigDecimal> ourBooks = derivedBalances(asOf);
+        Postable postable = postable(chartIndex(), derived.byAccount(), ourBooks);
 
         List<OpeningBalanceRow> rows = new ArrayList<>();
         for (Account a : accounts.findAll()) {
@@ -426,7 +449,10 @@ public class OpeningBalanceService {
 
     /** Builds and posts the journal. The caller holds the marker's lock and has checked it is free. */
     private JournalEntry postFresh(OpeningBalancePosting marker, LocalDate asOf) {
-        Postable postable = postable(chartIndex(), derived().byAccount());
+        // derivedBalances is read HERE, not by the caller: on the repost path the live
+        // opening journal has already been reversed above, so "what our books hold"
+        // means what they hold once that entry and its mirror have netted out.
+        Postable postable = postable(chartIndex(), derived().byAccount(), derivedBalances(asOf));
         // Resolved defensively and BEFORE anything is built: the default-account seed
         // is guarded by count() == 0 and can be left partial (issue #299), and an
         // unmapped role surfacing from inside PostingService would name the role
@@ -594,6 +620,38 @@ public class OpeningBalanceService {
      * Resolves the stored snapshot onto the chart and works out the lines and the
      * balancing figure — once, for the grid and the posting alike.
      *
+     * <h2>The line is the DELTA, not PACT's figure (review C2, ruling R17)</h2>
+     *
+     * <p>For every non-derived account X the line is <b>{@code PACT(X) − ours(X)}</b>,
+     * where {@code ours} is what our own books already hold as at D − 1 with the live
+     * opening entry taken back out ({@link #derivedBalances}). Posting PACT's figure
+     * gross was a real double count, and a large one: the {@link #DERIVED_ROLES}
+     * exclusion (spec §10.3) names the nine roles step 1 <em>raises</em>, but step 1
+     * also writes to accounts that are not in that set and that the accountant
+     * <em>does</em> type from PACT's trial balance —
+     * a cleared cheque's {@code CRT} debits <b>BANK/CASH</b>, and a VAT-bearing
+     * contract's {@code TCO} credits <b>OUTPUT_VAT</b>. Gross, the bank at D − 1 came
+     * out as "PACT's bank plus every cleared imported cheque" and output VAT as
+     * "PACT's VAT plus every imported contract's VAT", with the whole double count
+     * quietly parked on the equity difference line — balanced, and wrong by millions
+     * on a six-hundred-contract portfolio.</p>
+     *
+     * <p>With the delta: {@code TB(non-derived) = PACT} exactly, {@code TB(derived)}
+     * stays what step 1 produced, and the difference line becomes
+     * {@code Σ_derived (PACT − ours)} — the <em>true</em> unreconciled gap on the
+     * derived roles, zero when the contracts reconcile.</p>
+     *
+     * <p>{@code ours} already nets out a live OB journal, so {@link #repost} stays
+     * idempotent, and {@link #changedSincePosted} starts telling the truth about a
+     * bulk post or a batch reverse that happened <em>after</em> the books were
+     * opened — the screen says "Replace" instead of showing a figure nobody will
+     * post.</p>
+     *
+     * <p>An account our books hold a balance on that PACT's file never named gets a
+     * line of {@code −ours}: it is the same rule with {@code PACT(X) = 0}, and
+     * leaving it out would be the one case where the books do not end on PACT's
+     * figure.</p>
+     *
      * <p>Skipped, every one of them deliberately rather than by omission: rows that
      * match no account (PACT's trial balance legitimately carries accounts we do not
      * have), group and inactive accounts, accounts step 1 derives, and the difference
@@ -604,14 +662,17 @@ public class OpeningBalanceService {
      *
      * <p>Two PACT rows that resolve to the same account of ours (one by code, one by
      * name) are summed, so the grid and the journal agree on one line per account.</p>
+     *
+     * @param ours what our books hold per account as at {@code asOf}, debit-positive,
+     *             with the live opening entry's own lines removed.
      */
-    private Postable postable(ChartIndex index, Map<UUID, AccountRole> derived) {
+    private Postable postable(ChartIndex index, Map<UUID, AccountRole> derived, Map<UUID, BigDecimal> ours) {
         Account difference = resolver.resolveOrNull(AccountRole.OPENING_BALANCE_DIFFERENCE, null);
         List<String> problems = new ArrayList<>();
         if (difference == null) problems.add(noDifferenceAccountMessage());
 
-        LinkedHashMap<UUID, BigDecimal> byAccount = new LinkedHashMap<>();
-        BigDecimal totalDebit = ZERO, totalCredit = ZERO;
+        // What PACT says, per account of ours, in the file's own (code) order.
+        LinkedHashMap<UUID, BigDecimal> pact = new LinkedHashMap<>();
         for (OpeningBalanceSnapshotRow r : snapshots.findAllByOrderByAccountCodeAsc()) {
             Account a = index.match(r.getAccountCode(), r.getAccountName()).account();
             if (a == null || a.isGroup() || !a.isActive() || derived.containsKey(a.getId())) continue;
@@ -622,8 +683,30 @@ public class OpeningBalanceService {
                 }
                 continue;
             }
-            byAccount.merge(a.getId(), r.getDebit().subtract(r.getCredit()), BigDecimal::add);
+            pact.merge(a.getId(), r.getDebit().subtract(r.getCredit()), BigDecimal::add);
         }
+
+        LinkedHashMap<UUID, BigDecimal> byAccount = new LinkedHashMap<>();
+        for (Map.Entry<UUID, BigDecimal> e : pact.entrySet()) {
+            BigDecimal net = e.getValue().subtract(ours.getOrDefault(e.getKey(), ZERO));
+            // A zero line is not posted: PACT agrees with our books on that account and
+            // there is nothing to move.
+            if (net.signum() != 0) byAccount.put(e.getKey(), net);
+        }
+        // Accounts we carry a balance on that PACT's file never named: PACT(X) = 0, so
+        // the line is −ours(X). In file-code order, like everything above.
+        List<Account> unnamed = new ArrayList<>();
+        for (Map.Entry<UUID, BigDecimal> e : ours.entrySet()) {
+            if (pact.containsKey(e.getKey()) || e.getValue().signum() == 0) continue;
+            Account a = index.byId(e.getKey());
+            if (a == null || a.isGroup() || !a.isActive() || derived.containsKey(a.getId())) continue;
+            if (difference != null && difference.getId().equals(a.getId())) continue;
+            unnamed.add(a);
+        }
+        unnamed.sort(Comparator.comparing(Account::getCode, Comparator.nullsLast(String::compareTo)));
+        for (Account a : unnamed) byAccount.put(a.getId(), ours.get(a.getId()).negate());
+
+        BigDecimal totalDebit = ZERO, totalCredit = ZERO;
         for (BigDecimal net : byAccount.values()) {
             if (net.signum() > 0) totalDebit = totalDebit.add(net);
             else totalCredit = totalCredit.add(net.negate());
@@ -669,7 +752,14 @@ public class OpeningBalanceService {
      * <p>Built once per operation rather than queried per row: a PACT trial balance
      * is hundreds of rows against hundreds of accounts.</p>
      */
-    private record ChartIndex(List<Account> all, Map<String, Account> byCode, Map<String, List<Account>> byName) {
+    private record ChartIndex(List<Account> all, Map<UUID, Account> byId, Map<String, Account> byCode,
+                              Map<String, List<Account>> byName) {
+
+        /** The account behind an id our own books produced; null if it is not in the chart. */
+        Account byId(UUID id) {
+            return byId.get(id);
+        }
+
 
         /**
          * Code first, then exact name (trimmed, case-insensitive) — the same rule the
@@ -696,13 +786,15 @@ public class OpeningBalanceService {
 
     private ChartIndex chartIndex() {
         List<Account> all = accounts.findAll();
+        Map<UUID, Account> byId = new HashMap<>();
         Map<String, Account> byCode = new HashMap<>();
         Map<String, List<Account>> byName = new HashMap<>();
         for (Account a : all) {
+            byId.put(a.getId(), a);
             byCode.put(a.getCode(), a);
             byName.computeIfAbsent(ChartIndex.normalise(a.getName()), k -> new ArrayList<>()).add(a);
         }
-        return new ChartIndex(all, byCode, byName);
+        return new ChartIndex(all, byId, byCode, byName);
     }
 
     // ------------------------------------------------------------------

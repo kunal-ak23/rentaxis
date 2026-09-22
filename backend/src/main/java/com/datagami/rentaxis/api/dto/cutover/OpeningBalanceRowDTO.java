@@ -27,6 +27,15 @@ import java.util.UUID;
  * import produced and the reason the row is read-only; on a manual row it is
  * normally nothing, and anything else there is worth a second look. They were
  * always {@code 0.00} until the bulk post existed to fill them.</p>
+ *
+ * <p><b>{@code enteredDebit}/{@code enteredCredit} are what a post would write</b>,
+ * which is PACT's figure for the account <em>less</em> what our books already hold
+ * (ruling R17). On almost every row our books hold nothing and that is simply PACT's
+ * figure; on the two accounts the cut-over also writes to — the bank a cleared
+ * cheque reached, the output VAT a contract raised — it is the remainder, and
+ * posting PACT's figure gross there would have counted those twice. The pair
+ * {@code derived*} + {@code entered*} therefore adds up to PACT, which is what the
+ * screen should show.</p>
  */
 public record OpeningBalanceRowDTO(UUID accountId, String code, String name, String accountType, UUID propertyId,
                                    boolean derived, AccountRole derivedRole, boolean computed,
