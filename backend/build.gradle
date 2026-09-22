@@ -8,6 +8,19 @@ group = 'com.datagami'
 version = '0.2.0-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
+// Build info for /actuator/info: the git commit the jar was built from. Docker
+// builds have no .git in their context, so the sha arrives as -PgitSha.
+def gitSha = project.findProperty('gitSha') ?: {
+	try { 'git rev-parse --short=7 HEAD'.execute(null, projectDir).text.trim() ?: 'dev' } catch (ignored) { 'dev' }
+}()
+springBoot {
+	buildInfo {
+		properties {
+			additional = ['git.commit': gitSha]
+		}
+	}
+}
+
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)

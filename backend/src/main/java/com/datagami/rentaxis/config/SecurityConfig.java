@@ -46,7 +46,7 @@ public class SecurityConfig {
                         // anyRequest().authenticated() below. ApiSecurityFilter's own
                         // skip list is narrowed to match, or an authenticated caller
                         // would arrive here with no SecurityContext to be admitted by.
-                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health", "/error", "/api/v1/assets/serve/" + AssetController.PUBLIC_PREFIX + "/**", "/public/**", "/api/v1/public/**", "/api/v1/email/unsubscribe").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health", "/actuator/info", "/error", "/api/v1/assets/serve/" + AssetController.PUBLIC_PREFIX + "/**", "/public/**", "/api/v1/public/**", "/api/v1/email/unsubscribe").permitAll()
                         .anyRequest().authenticated())
                 // Order matters: rate limit MUST run before auth so abusive IPs are
                 // throttled before any token parsing / DB lookups happen.

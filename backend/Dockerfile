@@ -7,9 +7,10 @@ COPY gradle gradle
 COPY build.gradle settings.gradle ./
 RUN chmod +x gradlew && ./gradlew dependencies --no-daemon || true
 
-# Copy source and build
+# Copy source and build. GIT_SHA is stamped into /actuator/info (build.git.commit).
+ARG GIT_SHA=dev
 COPY src src
-RUN ./gradlew build -x test --no-daemon
+RUN ./gradlew build -x test --no-daemon -PgitSha=$GIT_SHA
 
 FROM eclipse-temurin:21-jre-alpine AS runner
 WORKDIR /app
