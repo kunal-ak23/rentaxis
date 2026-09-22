@@ -393,6 +393,15 @@ def main():
         )
     log("features enabled: LISTINGS, MEETINGS, EMAIL_NOTIFICATIONS, "
         "LEASE_RENEWALS, GATEPASS")
+    # Mobile finance/lease/cheque screens stay hidden until the apps are rewritten
+    # for accounting v2. Set explicitly rather than relying on the default, because
+    # this tenant is also the App Store reviewer's tenant and the flag is the one
+    # thing that decides what the reviewer sees.
+    sa.put(
+        f"/api/admin/tenants/{tenant_id}/features/MOBILE_FINANCE",
+        json={"enabled": False},
+    )
+    log("feature MOBILE_FINANCE explicitly off (mobile finance screens hidden)")
 
     try:
         sa.post(
