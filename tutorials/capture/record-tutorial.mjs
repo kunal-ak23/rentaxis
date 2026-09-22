@@ -200,6 +200,44 @@ async function goto(page, pathname) {
   await page.goto(`${baseURL}${pathname}`, { waitUntil: 'commit', timeout: 30_000 });
   await waitForApp(page);
   await clearRecordingIntro(page);
+  await applyCaptureStyles(page);
+}
+
+/**
+ * Rules that hold for a whole scene rather than only for its closing hold.
+ * Applying them from a scene body was not enough: a frame sampled while the
+ * scene was still clicking showed what the hold had not yet hidden.
+ *
+ * - The Next.js development indicator (the "Compiling…" pill a local
+ *   `next dev` pins to the bottom-left) is toolchain, not product. The element
+ *   does not exist on a production build, so the rule is inert there.
+ * - Capture policy (`tutorials/rentaxis-adapter.md`): a renter's phone number
+ *   never appears in a frame. The lease overview prints the renter's email and
+ *   phone in a card beside the charge lines, on a page short enough to fit a
+ *   1080-tall frame whole — there is nowhere to scroll them to. Those two rows
+ *   are hidden for the accounting tutorials, which are the ones that hold on
+ *   that page. The renter's NAME stays: it is what names the contract.
+ */
+const PRIVACY_SENSITIVE_TUTORIALS = new Set(['34', '35', '36', '37']);
+
+const CAPTURE_STYLE_RULES = [
+  'nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }',
+  ...(PRIVACY_SENSITIVE_TUTORIALS.has(tutorialId)
+    ? ['div.justify-between:has(> span > svg.lucide-mail),'
+       + ' div.justify-between:has(> span > svg.lucide-phone) { visibility: hidden !important; }']
+    : []),
+].join('\n');
+
+/**
+ * Applied once the app shell is up, not from an init script: a style appended
+ * before hydration does not survive it. Next replaces the head it streamed
+ * when the client takes over, and the element is simply gone by the time the
+ * page has rendered (measured against the lease overview). `addStyleTag` after
+ * `waitForApp` lands after that swap and stays for the whole scene — the
+ * window it does not cover is the loading shell, which has no data on it.
+ */
+async function applyCaptureStyles(page) {
+  await page.addStyleTag({ content: CAPTURE_STYLE_RULES }).catch(() => {});
 }
 
 function routeScene(pathname, title, body, afterNavigation, verifyTenantContext = true) {
@@ -246,6 +284,38 @@ const tenantSlug = seed.tenant?.slug;
 const parkingSpotNumber = 'TUTORIAL-B2-18';
 const bookingPreferredDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 if (!tenantSlug) throw new Error(`The tutorial tenant slug is missing from ${seedManifestPath}.`);
+
+// ── accounting v2 (tutorials 34–37) ──────────────────────────────────────────
+// The seed manifest is the contract between `scripts/seed_demo_tenant.py` and
+// these scenarios: the lease ids above, the renter ids, and the register rows
+// with the status the seed left each one in. Everything is read optionally —
+// this module is evaluated for every tutorial, including the ones recorded
+// against a manifest that predates these keys.
+const fatimaRenterId = seed.renterIds?.fatima;
+const advanceRentAccountId = seed.accounts?.tower?.ADVANCE_RENT;
+
+/** A seeded register row by contract key and sequence number, or undefined. */
+function chequeIdAt(leaseKey, seqNo) {
+  return seed.cheques?.[leaseKey]?.find((row) => row.seqNo === seqNo)?.id;
+}
+
+/** Filled by tutorial 35's collection scene and read by the clearing scene. */
+let bankedChequeIds = [];
+
+const isoDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+/**
+ * The furthest date recognition will accept. `RecognitionController#notInTheFuture`
+ * rejects a `to` past today, and a period that has not ended has nothing to
+ * close — so month-end close always means the end of LAST month, which is also
+ * what the storyboard narration says out loud.
+ */
+const lastMonthEnd = () => {
+  const now = new Date();
+  return isoDate(new Date(now.getFullYear(), now.getMonth(), 0));
+};
+/** These contracts are dated 1 January; the ledger filters open on this month. */
+const contractYearStart = () => `${new Date().getFullYear()}-01-01`;
+const todayIso = () => isoDate(new Date());
 
 async function suppressAutomaticOnboarding(context) {
   await context.addInitScript(() => {
@@ -843,6 +913,291 @@ const scenarios = {
       await page.waitForTimeout(350);
     }),
   ],
+
+  // ── Accounting v2 ──────────────────────────────────────────────────────────
+  // 34 posts the draft the seed deliberately leaves unposted, so it records
+  // first; 36 closes the periods that post opens up, and 37 reads the ledger
+  // all three of them wrote. Selectors are the ones
+  // `web/e2e/finance/accounting-v2.spec.ts` already proves against this build.
+  '34': [
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Open the draft contract',
+      'A tenancy contract starts as a draft. Nothing it holds has reached the ledger yet, so it can still be edited freely.', {
+      weight: 70,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-status').waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Read the charge lines',
+      'The security deposit and the rent are separate lines because each is credited to its own account and each behaves differently.', {
+      weight: 70,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-lines-grid').waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId('lease-lines-totals').waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Read the cheque grid',
+      'The grid records every cheque the renter handed over. It has to add up to the contract value or the contract will not post.', {
+      weight: 60,
+      afterNavigation: async (page) => {
+        await page.getByTestId('cheque-grid').waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId('cheque-grid-match').waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Post the contract',
+      'Posting writes the accounting entries and makes the contract active.', {
+      weight: 60,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-post').click();
+        // The dry run is the dialog's own answer to "would this post?" — the
+        // confirm button is only meaningful once it is on screen.
+        await page.getByTestId('post-dry-run-ok').waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId('post-lease-confirm').click();
+        await page.getByTestId('lease-posting-journal').waitFor({ state: 'visible', timeout: 30_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Read the journals it wrote',
+      'One tenancy contract journal, and one post-dated cheque journal for every row of the grid.', {
+      weight: 40,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-tab-journals').click();
+        await page.getByTestId('lease-journals-tab').locator('table').first()
+          .locator('tbody tr').filter({ hasText: 'TCO' }).first()
+          .waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${saraLeaseId}`, 'Read the planned recognition',
+      'The rent is already divided across the term by its real day count. None of it is posted yet.', {
+      weight: 30,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+  ],
+
+  '35': [
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques', 'Open the cheque register',
+      'Every cheque from every posted contract, with its status, its maturity date, the property and the renter.', {
+      weight: 65,
+      afterNavigation: async (page) => {
+        await page.getByTestId('cheque-summary-tiles').waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques', 'Filter to what matures now',
+      'Registered means the cheque is recorded and its journal is written, but the paper has not left the office.', {
+      weight: 50,
+      afterNavigation: async (page) => {
+        await page.getByTestId('cheque-status-filter').selectOption('REGISTERED');
+        await page.getByTestId('cheque-filter-apply').click();
+        await page.locator('[data-testid^="cheque-row-"]').first().waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques/collection', 'Bank a batch',
+      'Selecting rows and entering a deposit date moves them to deposited. Nothing is posted, because nothing has changed about what you are owed.', {
+      weight: 60,
+      afterNavigation: async (page) => {
+        // `GET /cheques/to-deposit` is REGISTERED **and matured**
+        // (`ChequeRepository#findToDeposit`: `chequeDate <= today`), so which of
+        // the seeded rows are bankable depends on the day the take is recorded.
+        // The first two rows the page offers are taken instead of named ids.
+        const boxes = page.locator('[data-testid^="collection-select-"]:not([data-testid="collection-select-all"])');
+        await boxes.first().waitFor({ state: 'visible', timeout: 20_000 });
+        bankedChequeIds = (await boxes.evaluateAll((els) => els.slice(0, 2)
+          .map((el) => el.getAttribute('data-testid').replace('collection-select-', ''))));
+        for (const id of bankedChequeIds) await page.getByTestId(`collection-select-${id}`).check();
+        await page.getByTestId('collection-deposit-selected').click();
+        await page.getByTestId('deposit-batch-total').waitFor({ state: 'visible', timeout: 15_000 });
+        await page.getByTestId('deposit-batch-confirm').click();
+        await page.getByTestId(`collection-select-${bankedChequeIds[0]}`).waitFor({ state: 'detached', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques', 'Clear a cheque',
+      'When the bank confirms, clearing debits your bank account and credits post-dated cheques receivable. That is when the money becomes yours.', {
+      weight: 55,
+      afterNavigation: async (page) => {
+        const id = bankedChequeIds[0];
+        await page.getByTestId(`cheque-row-action-clear-${id}`).click();
+        await page.getByTestId('cheque-clear-confirm').click();
+        // A cleared PDC may still be returned late, so its bounce action
+        // appearing in place of clear is the proof the clearing landed.
+        await page.getByTestId(`cheque-row-action-bounce-${id}`).waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques', 'Return a cheque the bank sent back',
+      'Bouncing a cleared cheque reverses the bank side: rent receivable is debited again and the bank credited. The amount is owed once more.', {
+      weight: 55,
+      afterNavigation: async (page) => {
+        const id = chequeIdAt('fatima', 2);
+        await page.getByTestId(`cheque-row-action-bounce-${id}`).click();
+        await page.getByTestId('bounce-failure-reason').waitFor({ state: 'visible', timeout: 15_000 });
+        await page.getByTestId('cheque-bounce-confirm').click();
+        await page.getByTestId(`cheque-row-action-replace-${id}`).waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/cheques/return-replace', 'Replace it with new paper',
+      'A returned cheque is usually settled with more than one replacement. Each one registers its own journal, and any shortfall stays on the renter.', {
+      weight: 55,
+      afterNavigation: async (page) => {
+        const id = chequeIdAt('fatima', 2);
+        await page.getByTestId(`cheque-row-action-replace-${id}`).click();
+        await page.getByTestId('replace-row-0').waitFor({ state: 'visible', timeout: 15_000 });
+        // Row 0 opens seeded with the whole returned amount, so splitting it
+        // across two instruments means halving row 0 before adding row 1.
+        const full = Number(await page.getByTestId('replace-row-0-amount').inputValue());
+        const first = Math.round(full * 0.6);
+        await page.getByTestId('replace-row-0-amount').fill(String(first));
+        await page.getByTestId('replace-row-0-number').fill(`RPL-${Date.now().toString().slice(-6)}-A`);
+        await page.getByTestId('replace-add-row').click();
+        await page.getByTestId('replace-row-1').waitFor({ state: 'visible' });
+        await page.getByTestId('replace-row-1-amount').fill(String(full - first));
+        await page.getByTestId('replace-row-1-number').fill(`RPL-${Date.now().toString().slice(-6)}-B`);
+        await page.getByTestId('replace-residual').waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/penalties', 'Penalties are never automatic',
+      'A returned cheque proposes a penalty. Finance approves, waives or reverses it from this queue.', {
+      weight: 30,
+    }),
+  ],
+
+  '36': [
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${ahmedLeaseId}`, 'Read the recognition schedule',
+      'The term is divided by its real day count to get a daily rate, then multiplied by the real number of days in each month.', {
+      weight: 75,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/leases/${ahmedLeaseId}`, 'A short first period and a rounding row',
+      'A contract that starts mid month opens short and closes short, and the last row absorbs the rounding so the schedule adds up exactly.', {
+      weight: 50,
+      afterNavigation: async (page) => {
+        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByTestId('recognition-schedule').locator('tbody tr').last().scrollIntoViewIfNeeded();
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/recognition', 'Preview the close',
+      'Entering a cut-off date lists every planned period that ends on or before it, with a total. Read the total before posting it.', {
+      weight: 70,
+      afterNavigation: async (page) => {
+        await page.getByTestId('recognition-to-date').fill(lastMonthEnd());
+        await page.getByTestId('recognition-future-warning').waitFor({ state: 'detached' }).catch(() => {});
+        await page.getByTestId('recognition-preview').click();
+        await page.getByTestId('recognition-result-title').waitFor({ state: 'visible', timeout: 40_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/recognition', 'Run it',
+      'Each period becomes one journal dated the last day of that period, debiting advance rent and crediting rental income.', {
+      weight: 55,
+      afterNavigation: async (page) => {
+        await page.getByTestId('recognition-to-date').fill(lastMonthEnd());
+        await page.getByTestId('recognition-preview').click();
+        await page.getByTestId('recognition-result-title').waitFor({ state: 'visible', timeout: 40_000 });
+        await page.getByTestId('recognition-run').click();
+        await page.getByTestId('recognition-run-confirm').click();
+        await page.getByTestId('recognition-result-title').waitFor({ state: 'visible', timeout: 60_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/general-ledger?accountId=${advanceRentAccountId}`, 'Watch advance rent fall',
+      'The advance rent balance drops by exactly what was recognised, and rental income rises by the same amount.', {
+      weight: 45,
+      afterNavigation: async (page) => {
+        // These contracts are dated 1 January and the filter opens on the
+        // current month, so the report is empty until the From box moves back.
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByRole('row').filter({ hasText: /CIL-/ }).first()
+          .waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/journals', 'It also runs nightly',
+      'A backdated contract catches up on its own. Running it by hand is for closing a period on purpose.', {
+      weight: 25,
+      afterNavigation: async (page) => {
+        await page.locator('#jv-doc-type').selectOption('CIL');
+        await page.locator('#jv-from').fill(contractYearStart());
+        await page.locator('#jv-to').fill(lastMonthEnd());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByRole('row').filter({ hasText: /CIL-/ }).first()
+          .waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+  ],
+
+  '37': [
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/tenant-ledger?renterId=${fatimaRenterId}`,
+      'Open a renter ledger',
+      'One block per account the renter has touched, and inside each one row per entry with its document, its counter account and a running balance.', {
+      weight: 75,
+      afterNavigation: async (page) => {
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByRole('link', { name: /^TCO-/ }).first().waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/tenant-ledger?renterId=${fatimaRenterId}`,
+      'Rent receivable and what is left on it',
+      'The contract debited the whole value and the cheque journals credited it back, so what the renter owes lives in the register, not here.', {
+      weight: 60,
+      afterNavigation: async (page) => {
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByText(/rent receivable/i).first().waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByText(/rent receivable/i).first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/tenant-ledger?renterId=${fatimaRenterId}`,
+      'Until a cheque comes back',
+      'A returned cheque debits rent receivable again. That balance is the only thing standing between this renter and a clean account.', {
+      weight: 50,
+      afterNavigation: async (page) => {
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        const returned = page.getByRole('row').filter({ has: page.getByRole('link', { name: /^CBR-/ }) }).first();
+        await returned.waitFor({ state: 'visible', timeout: 20_000 });
+        await returned.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/tenant-ledger?renterId=${fatimaRenterId}`,
+      'Post-dated cheques and advance rent',
+      'One block holds the paper you still have; the other winds down to zero as the rent is earned month by month.', {
+      weight: 50,
+      afterNavigation: async (page) => {
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByText(/advance rent/i).first().waitFor({ state: 'visible', timeout: 20_000 });
+        await page.getByText(/advance rent/i).first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/finance/tenant-ledger?renterId=${fatimaRenterId}`,
+      'Open the journal behind a row',
+      'A journal always balances, and it is never edited or deleted, only reversed, which writes a mirror entry and links the two.', {
+      weight: 45,
+      afterNavigation: async (page) => {
+        await page.locator('#ledger-from').fill(contractYearStart());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        await page.getByRole('link', { name: /^TCO-/ }).first().click();
+        await page.waitForURL(/\/dashboard\/finance\/journals\/[0-9a-f-]{36}/, { timeout: 20_000 });
+        // Not `reverse-journal`: that button is MANUAL-only by design
+        // (`journals/__tests__/reverse-manual-only.test.tsx`), and a tenancy
+        // contract journal is LEASE-sourced. The lines themselves are the point.
+        await page.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/finance/trial-balance', 'Check the whole ledger',
+      'Total debits equal total credits. That single check is what tells you the ledger behind every screen is sound.', {
+      weight: 30,
+      afterNavigation: async (page) => {
+        await page.locator('#tb-as-of').fill(todayIso());
+        await page.getByRole('button', { name: 'Apply' }).click();
+        const grand = page.locator('tr').filter({ hasText: 'Grand Total' }).first();
+        await grand.waitFor({ state: 'visible', timeout: 20_000 });
+        await grand.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      },
+    }),
+  ],
 };
 
 const roleByTutorial = {
@@ -874,6 +1229,10 @@ const roleByTutorial = {
   '26': 'tenantAdmin',
   '27': 'anonymous',
   '28': 'tenantAdmin',
+  '34': 'tenantAdmin',
+  '35': 'tenantAdmin',
+  '36': 'tenantAdmin',
+  '37': 'tenantAdmin',
 };
 
 const scenes = scenarios[tutorialId];
