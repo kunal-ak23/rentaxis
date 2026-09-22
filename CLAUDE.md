@@ -26,7 +26,7 @@ RentAxis is a **multi-tenant property management SaaS** for UAE landlords. Prope
 ## Critical Rules
 1. **Never bypass tenant isolation** — all queries must scope by `tenant_id`
 2. **Never store secrets in code** — use environment variables (`.env.*` files are gitignored)
-3. **Liquibase migrations are append-only** — never modify existing changesets (next: `89-*.yaml`; plan 4 owns 87/88)
+3. **Liquibase migrations are append-only** — never modify existing changesets (next: `90-*.yaml`; plan 4 owns 87/88, the release fix wave owns 89)
 4. **Multi-tenant data leaks are P0 bugs**
 5. **Arabic RTL support** — ensure UI works in both LTR and RTL
 6. **Frontend API calls** — use Next.js proxy rewrite; never hardcode backend URLs in client components
