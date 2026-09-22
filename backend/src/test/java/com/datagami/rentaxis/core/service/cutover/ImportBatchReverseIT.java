@@ -463,7 +463,7 @@ class ImportBatchReverseIT {
     }
 
     /**
-     * P0. {@code lockForWrite} loads the row with {@code EntityManager.find}, which
+     * P0. {@code lockForRun} loads the row with {@code EntityManager.find}, which
      * {@code TenantAspect} does not cover — the aspect enables the Hibernate filter
      * around {@code domain.repository..*} calls only, and none has run in the
      * transaction yet. The explicit tenant comparison is therefore the only guard on

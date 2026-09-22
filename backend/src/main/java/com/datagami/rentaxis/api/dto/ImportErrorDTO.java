@@ -72,10 +72,4 @@ public class ImportErrorDTO {
     public static ImportErrorDTO file(String sheet, String field, String message) {
         return new ImportErrorDTO(sheet, null, field, message);
     }
-
-    /** This row, marked WARNING. Returns {@code this}, so it reads inside a stream. */
-    public ImportErrorDTO asWarning() {
-        this.severity = Severity.WARNING;
-        return this;
-    }
 }

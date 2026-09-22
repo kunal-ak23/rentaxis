@@ -1016,7 +1016,7 @@ public class OpeningBalanceService {
      *
      * <p><b>{@code refresh} under the lock, not a {@code @Lock} finder</b>, for the
      * reason documented on {@code VoucherService#lockForWrite} and
-     * {@code ImportBatchService#lockForWrite}: a locking JPQL query hands back the
+     * {@code ImportBatchService#lockForRun}: a locking JPQL query hands back the
      * first-level-cache instance with its <em>stale</em> state, so the loser of the
      * race would take the lock and then decide on the pre-lock journal id — exactly
      * the bug the lock exists to prevent. {@code refresh} both takes the lock and
