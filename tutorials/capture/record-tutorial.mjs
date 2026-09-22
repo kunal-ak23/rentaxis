@@ -1132,12 +1132,15 @@ const scenarios = {
       'A backdated contract catches up on its own. Running it by hand is for closing a period on purpose.', {
       weight: 25,
       afterNavigation: async (page) => {
+        // Doc type alone, not a date window as well: each filter change is its
+        // own fetch, and a take was lost to the last of three still being in
+        // flight when the scene's hold began — the page held on an empty list
+        // with Apply greyed out. The CIL rows are the point, not the range.
         await page.locator('#jv-doc-type').selectOption('CIL');
-        await page.locator('#jv-from').fill(contractYearStart());
-        await page.locator('#jv-to').fill(lastMonthEnd());
         await page.getByRole('button', { name: 'Apply' }).click();
         await page.getByRole('row').filter({ hasText: /CIL-/ }).first()
-          .waitFor({ state: 'visible', timeout: 20_000 });
+          .waitFor({ state: 'visible', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
       },
     }),
   ],
