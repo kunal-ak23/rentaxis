@@ -26,12 +26,7 @@ final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
   return ref.watch(_leaseServiceProvider).getMyLeases();
 });
 
-/// The renter's cheque schedule. MOBILE_FINANCE gates it: accounting v2
-/// removed the /v1/payments/** family this reads, so while the flag is off the
-/// hero, the recent-activity list and the Cheques quick action are all hidden
-/// and there is nothing to fetch.
 final _myPaymentsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
-  if (!ref.watch(mobileFinanceEnabledProvider)) return Future.value(const []);
   return ref.watch(_paymentServiceProvider).getMyPayments();
 });
 
@@ -59,7 +54,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
     final leasesAsync = ref.watch(_myLeasesProvider);
     final paymentsAsync = ref.watch(_myPaymentsProvider);
     final auth = ref.watch(authProvider);
@@ -85,22 +79,16 @@ class HomeScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                // The hero is entirely next-cheque and schedule progress,
-                // so it goes with the flag even though the lease read behind
-                // it (/v1/leases/my-leases) still works.
-                if (financeEnabled)
-                  _MaybeHero(
-                    leasesAsync: leasesAsync,
-                    paymentsAsync: paymentsAsync,
-                  ),
-                // Penalties are NOT gated: PenaltyAssessmentController
-                // survived accounting v2 (ruling P5-R8).
+                _MaybeHero(
+                  leasesAsync: leasesAsync,
+                  paymentsAsync: paymentsAsync,
+                ),
                 if (penalties > 0) ...[
                   const SizedBox(height: MiftahSpacing.gap),
                   _PenaltyStrip(count: penalties),
                 ],
                 const SizedBox(height: MiftahSpacing.gap),
-                _QuickActions(financeEnabled: financeEnabled),
+                const _QuickActions(),
                 // No leading gap here on purpose: the strip is conditional and
                 // owns its own, exactly like the penalty strip above. Putting
                 // one on each side left 22px of dead air between quick actions
@@ -108,20 +96,18 @@ class HomeScreen extends ConsumerWidget {
                 const HomeAdsStrip(),
                 const SizedBox(height: MiftahSpacing.gap),
                 const _FacilitiesCard(),
-                if (financeEnabled) ...[
-                  const SizedBox(height: 18),
-                  const _RecentActivityHeader(),
-                  const SizedBox(height: 11),
-                  paymentsAsync.when(
-                    loading: () => const _ActivityShimmer(),
-                    // Surface the failure instead of a silent blank section.
-                    error: (_, _) => ErrorState(
-                      message: _L(context.isAr).activityLoadFailed,
-                      onRetry: refresh,
-                    ),
-                    data: (payments) => _RecentActivity(payments: payments),
+                const SizedBox(height: 18),
+                const _RecentActivityHeader(),
+                const SizedBox(height: 11),
+                paymentsAsync.when(
+                  loading: () => const _ActivityShimmer(),
+                  // Surface the failure instead of a silent blank section.
+                  error: (_, _) => ErrorState(
+                    message: _L(context.isAr).activityLoadFailed,
+                    onRetry: refresh,
                   ),
-                ],
+                  data: (payments) => _RecentActivity(payments: payments),
+                ),
               ],
             ),
           ),
@@ -657,17 +643,13 @@ class _PenaltyStrip extends StatelessWidget {
 // ─── Quick actions ──────────────────────────────────────────────────────────
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.financeEnabled});
-
-  final bool financeEnabled;
+  const _QuickActions();
 
   @override
   Widget build(BuildContext context) {
     final l = _L(context.isAr);
     final items = [
-      // Cheques lands on /payments, which the router redirects while the flag
-      // is off — a tile that bounces Home is worse than no tile.
-      if (financeEnabled) (Icons.receipt_long_rounded, l.cheques, '/payments'),
+      (Icons.receipt_long_rounded, l.cheques, '/payments'),
       (Icons.handyman_rounded, l.maintain, '/tickets'),
       (Icons.qr_code_2_rounded, l.visitors, '/gatepass'),
       (Icons.description_rounded, l.contract, '/profile'),

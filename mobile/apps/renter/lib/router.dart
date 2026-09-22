@@ -38,10 +38,6 @@ final routerProvider = Provider<GoRouter>((ref) {
   // and trigger Riverpod's "dependency changed before provider rebuilt"
   // assertion.
   final gateFuture = ref.read(gateProvider.future);
-  // Read at build time, not inside the redirect closure: ref.watch belongs to
-  // the provider's build. The flag reads false until the flags resolve, so the
-  // redirect below is live from the first frame.
-  final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
 
   return GoRouter(
     // Dev affordance: --dart-define=START_ROUTE=/payments boots straight to a
@@ -76,18 +72,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoading) return null;
       if (!isLoggedIn && !isLoginRoute) return '/login';
       if (isLoggedIn && isLoginRoute) return '/';
-
-      // MOBILE_FINANCE (default OFF) hides the Wallet: its screen reads the
-      // cheque schedule from /v1/payments/**, which accounting v2 removed.
-      // Hiding the tab is not enough — a deep link, a restored location or a
-      // stale notification must not reach a screen that 404s. Sending it Home
-      // keeps the rest of the app usable. /penalties is deliberately NOT here
-      // (its endpoints survived v2), and every GoRoute below stays declared.
-      if (isLoggedIn &&
-          !financeEnabled &&
-          isRenterFinanceLocation(state.matchedLocation)) {
-        return '/';
-      }
       return null;
     },
     routes: [
