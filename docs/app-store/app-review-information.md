@@ -33,7 +33,7 @@ continuous recording per app; the checklist is the order the reviewer will look 
 ### Miftah Resident (`com.rentaxis.renter`)
 1. Cold launch → login screen. Sign in with the **Resident** credentials below (email + password).
 2. Tap **Sign in with Apple** once and cancel, to show it exists (see §4 on why a reviewer's own Apple ID cannot create an account).
-3. Home → announcements, gate passes and services. (The Wallet — rent schedule, cheque status, receipts — is behind the organisation switch **Mobile finance**, which is OFF for this submission; see 5.6 §2. Do not record it.)
+3. Home → rent schedule, cheque status, receipts.
 4. Explore → browse listings; tap "near me" so the **location prompt** appears; decline it; show the list still works.
 5. Services → create a maintenance request; attach a photo so the **camera / photo prompt** appears.
 6. Services → create a visitor pass (QR + numeric code).
@@ -189,8 +189,9 @@ later than it did on review day; disclosing the mechanisms up front is the defen
    organisation** (email notifications only affects outbound email, not any screen); a
    disabled one of those returns an empty list, it hides no screen. **Mobile finance is OFF
    for every organisation in this release** — it hides the finance, lease-money and cheque
-   screens in Manager and the Wallet in Resident, because those screens are being rebuilt
-   against the new accounting engine; the web app carries that functionality today. It will
+   screens in the **Manager** app only (Resident's Wallet is unaffected), because those
+   Manager screens are being rebuilt against the new accounting engine; the web app carries
+   that functionality today. It will
    be turned on for customers only when the mobile screens ship, in a later App Store build
    that will disclose them. Nothing else is hidden by a flag; there are no A/B tests, no
    remote config, no time- or geo-triggered features.
