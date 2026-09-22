@@ -192,11 +192,12 @@ public class LandlordOrgService {
         }
 
         // The ledger cannot be cleared by the pass loop below — see purgeLedger.
-        purgeLedger(tenantId);
+        purgeLedger(tenantId, tenantedTables);
 
         jdbcTemplate.execute((java.sql.Connection conn) -> {
             List<String> remaining = new java.util.ArrayList<>(tenantedTables);
-            for (int pass = 1; pass <= 6 && !remaining.isEmpty(); pass++) {
+            boolean cyclesBroken = false;
+            for (int pass = 1; pass <= MAX_PURGE_PASSES && !remaining.isEmpty(); pass++) {
                 List<String> stillBlocked = new java.util.ArrayList<>();
                 for (String table : remaining) {
                     java.sql.Savepoint sp = conn.setSavepoint("del_" + table.replaceAll("\\W", "_"));
@@ -223,7 +224,16 @@ public class LandlordOrgService {
                     }
                 }
                 if (stillBlocked.size() == remaining.size()) {
-                    // No forward progress — bail rather than spin.
+                    // No forward progress. Once — and only once — because the
+                    // tables left are in a foreign-key cycle rather than merely in
+                    // the wrong order (issue #326, second round). Break it and let
+                    // the next pass try again; a second stall is a real one.
+                    if (!cyclesBroken) {
+                        cyclesBroken = true;
+                        breakCycles(conn, stillBlocked, tenantedTables, tenantId);
+                        remaining = stillBlocked;
+                        continue;
+                    }
                     throw new IllegalStateException(
                             "deleteTenant stalled after pass " + pass + " with tables: " + stillBlocked);
                 }
@@ -231,7 +241,8 @@ public class LandlordOrgService {
             }
             if (!remaining.isEmpty()) {
                 throw new IllegalStateException(
-                        "deleteTenant could not clear tables after 6 passes: " + remaining);
+                        "deleteTenant could not clear tables after " + MAX_PURGE_PASSES
+                                + " passes: " + remaining);
             }
             // Org row last.
             try (var ps = conn.prepareStatement("DELETE FROM landlord_org WHERE id = ?")) {
@@ -254,6 +265,13 @@ public class LandlordOrgService {
     private static final List<String> LEDGER_TABLES = List.of("journal_lines", "journal_entries");
 
     /**
+     * How many times the purge re-tries the tables a foreign key blocked. One pass
+     * per level of the dependency chain, plus room for the passes after a cycle has
+     * been broken; a run that needs more than this is not making progress.
+     */
+    private static final int MAX_PURGE_PASSES = 12;
+
+    /**
      * Clear this tenant's journal, which the pass loop provably cannot (issue #326).
      *
      * <p>Two separate obstacles, and the loop hits both at once — it retried
@@ -268,24 +286,39 @@ public class LandlordOrgService {
      *       pointers are NULLed first — discovered from {@code information_schema}
      *       rather than listed here, so a future table that references a journal
      *       (and carries a {@code tenant_id}) is handled the day it is added.</li>
-     *   <li><b>The immutability triggers</b> of changeset 81 refuse every DELETE on
+     *   <li><b>The append-only triggers</b> of changeset 81 refuse every DELETE on
      *       {@code journal_entries} and {@code journal_lines} — "reverse the entry
      *       instead" — which is the right answer for every caller except this one.
-     *       A tenant being erased has no books left to reverse into. They are
-     *       switched off for the length of the two DELETEs and switched straight
-     *       back on; both statements run inside {@code deleteTenant}'s own
-     *       transaction, so a failure anywhere later rolls the disable back with
-     *       everything else, and {@code ALTER TABLE} takes an ACCESS EXCLUSIVE lock
-     *       — no other session can write an unguarded journal through the window,
-     *       because no other session can write at all while it is open.</li>
+     *       A tenant being erased has no books left to reverse into. Changeset 89
+     *       gives those trigger functions one exemption: a DELETE passes when the
+     *       transaction has named the row's <em>own</em> tenant in
+     *       {@code rentaxis.purging_tenant}, which is what this sets below.</li>
      * </ol>
      *
+     * <p><b>Why a session variable rather than switching the triggers off.</b>
+     * {@code ALTER TABLE … DISABLE TRIGGER} — the first shape of this fix — takes an
+     * ACCESS EXCLUSIVE lock that Postgres holds until the transaction <em>commits</em>,
+     * not until the matching ENABLE. Since ACCESS EXCLUSIVE conflicts with ACCESS
+     * SHARE, every tenant's ledger reads and writes (dashboards, statements, trial
+     * balance, postings, the payment webhooks' {@code clearOnline}) would queue
+     * behind a super-admin's delete for the whole of it, after first waiting for
+     * every in-flight ledger query to finish. It also requires table ownership. The
+     * exemption takes no table lock, needs no DDL and no ownership, and is
+     * <em>narrower</em>: it admits one tenant's rows for one transaction, where
+     * disabling the triggers admits every row of every tenant for the window.</p>
+     *
+     * <p><b>Set once, never cleared.</b> {@code set_config(…, is_local => true)} is
+     * the function form of {@code SET LOCAL}: it reverts at commit or rollback on
+     * its own, and it must still be in scope <em>at</em> commit, because the balance
+     * check is a deferred constraint trigger whose events fire then — an entry whose
+     * lines this removed would otherwise fail it as "not balanced".</p>
+     *
      * <p>Tenant-scoped like every other statement here: both DELETEs carry
-     * {@code WHERE tenant_id = ?}, so another tenant's ledger is never in range
-     * even while the triggers are off.</p>
+     * {@code WHERE tenant_id = ?}, and the exemption itself names one tenant, so
+     * another tenant's journal is refused in the same words as always throughout.</p>
      */
-    private void purgeLedger(UUID tenantId) {
-        for (JournalReference reference : inboundJournalReferences()) {
+    private void purgeLedger(UUID tenantId, List<String> tenantedTables) {
+        for (ForeignKey reference : inboundJournalReferences(tenantedTables)) {
             int cleared = jdbcTemplate.update(
                     "UPDATE " + quote(reference.table()) + " SET " + quote(reference.column())
                             + " = NULL WHERE tenant_id = ? AND " + quote(reference.column()) + " IS NOT NULL",
@@ -296,24 +329,54 @@ public class LandlordOrgService {
             }
         }
 
+        // Bound: SET takes no bind parameters, set_config does, so the tenant id
+        // never reaches the statement as text this method assembled.
+        jdbcTemplate.queryForObject("SELECT set_config(?, ?, true)", String.class,
+                PURGE_SETTING, tenantId.toString());
+
         for (String table : LEDGER_TABLES) {
-            jdbcTemplate.execute("ALTER TABLE " + quote(table) + " DISABLE TRIGGER USER");
-        }
-        try {
-            for (String table : LEDGER_TABLES) {
-                int deleted = jdbcTemplate.update(
-                        "DELETE FROM " + quote(table) + " WHERE tenant_id = ?", tenantId);
-                log.debug("deleteTenant({}): deleted {} rows from {}", tenantId, deleted, table);
-            }
-        } finally {
-            for (String table : LEDGER_TABLES) {
-                jdbcTemplate.execute("ALTER TABLE " + quote(table) + " ENABLE TRIGGER USER");
-            }
+            int deleted = jdbcTemplate.update(
+                    "DELETE FROM " + quote(table) + " WHERE tenant_id = ?", tenantId);
+            log.debug("deleteTenant({}): deleted {} rows from {}", tenantId, deleted, table);
         }
     }
 
-    /** A tenanted column somewhere in the schema that points at a journal entry. */
-    private record JournalReference(String table, String column) {
+    /**
+     * The transaction-local setting changeset 89's trigger functions consult. Its
+     * value is the id of the one tenant whose journal may be deleted.
+     */
+    private static final String PURGE_SETTING = "rentaxis.purging_tenant";
+
+    /** One single-column foreign key in the public schema. */
+    private record ForeignKey(String table, String column, String referencedTable, boolean nullable) {
+    }
+
+    /**
+     * Every foreign-key column in the schema, with what it points at and whether it
+     * can be NULLed.
+     *
+     * <p><b>{@code pg_catalog}, not {@code information_schema}.</b> The SQL-standard
+     * views only show constraints on tables the current role owns or has privileges
+     * on, so under a least-privilege application role they answer "no foreign keys"
+     * and this purge would silently lose its ordering knowledge and fail on the
+     * first FK instead. The catalogue has no such filter.</p>
+     *
+     * <p>Composite keys come back as one row per column. NULLing any one column of a
+     * composite foreign key satisfies it (MATCH SIMPLE), so treating them
+     * column-wise is correct for the one thing this is used for.</p>
+     */
+    private List<ForeignKey> foreignKeys() {
+        return jdbcTemplate.query(
+                "SELECT src.relname, att.attname, tgt.relname, NOT att.attnotnull " +
+                        "FROM pg_constraint con " +
+                        "JOIN pg_class src ON src.oid = con.conrelid " +
+                        "JOIN pg_class tgt ON tgt.oid = con.confrelid " +
+                        "JOIN pg_namespace ns ON ns.oid = src.relnamespace " +
+                        "JOIN LATERAL unnest(con.conkey) AS k(attnum) ON true " +
+                        "JOIN pg_attribute att ON att.attrelid = src.oid AND att.attnum = k.attnum " +
+                        "WHERE con.contype = 'f' AND ns.nspname = 'public'",
+                (rs, rowNum) -> new ForeignKey(rs.getString(1), rs.getString(2),
+                        rs.getString(3), rs.getBoolean(4)));
     }
 
     /**
@@ -322,24 +385,66 @@ public class LandlordOrgService {
      * below, and {@code journal_entries}' self-references (a reversal and its
      * original) go in the one statement that deletes both.
      */
-    private List<JournalReference> inboundJournalReferences() {
-        return jdbcTemplate.query(
-                "SELECT tc.table_name, kcu.column_name " +
-                        "FROM information_schema.table_constraints tc " +
-                        "JOIN information_schema.key_column_usage kcu " +
-                        "  ON kcu.constraint_name = tc.constraint_name " +
-                        " AND kcu.constraint_schema = tc.constraint_schema " +
-                        "JOIN information_schema.constraint_column_usage ccu " +
-                        "  ON ccu.constraint_name = tc.constraint_name " +
-                        " AND ccu.constraint_schema = tc.constraint_schema " +
-                        "WHERE tc.constraint_type = 'FOREIGN KEY' " +
-                        "  AND tc.table_schema = 'public' " +
-                        "  AND ccu.table_name = 'journal_entries' " +
-                        "  AND tc.table_name NOT IN ('journal_entries', 'journal_lines') " +
-                        "  AND EXISTS (SELECT 1 FROM information_schema.columns c " +
-                        "              WHERE c.table_schema = 'public' AND c.table_name = tc.table_name " +
-                        "                AND c.column_name = 'tenant_id')",
-                (rs, rowNum) -> new JournalReference(rs.getString(1), rs.getString(2)));
+    private List<ForeignKey> inboundJournalReferences(List<String> tenantedTables) {
+        return foreignKeys().stream()
+                .filter(fk -> "journal_entries".equals(fk.referencedTable()))
+                .filter(fk -> !LEDGER_TABLES.contains(fk.table()))
+                .filter(fk -> tenantedTables.contains(fk.table()))
+                .toList();
+    }
+
+    /**
+     * Break the foreign-key cycle the pass loop is stuck in, by NULLing this
+     * tenant's pointers between the tables that are left (issue #326, second round).
+     *
+     * <p><b>Why the loop can stall at all.</b> Retrying blocked tables resolves an
+     * <em>ordering</em> problem; it cannot resolve a <em>cycle</em>.
+     * {@code cheques.penalty_assessment_id} points at {@code penalty_assessments}
+     * while {@code penalty_assessments.cheque_id} and
+     * {@code collection_cheque_id} point back at {@code cheques}, so neither can
+     * ever go first — and {@code leases}, {@code renters}, {@code units},
+     * {@code accounts} and {@code properties} queue behind {@code cheques}, with
+     * {@code users} behind {@code renters}. That is the whole of the production
+     * failure: "stalled after pass 4 with tables: [users, properties, units,
+     * renters, accounts, leases, cheques, penalty_assessments]". A tenant with no
+     * fine never met it, which is why the first round's lease-only test passed.
+     *
+     * <p><b>Only when stuck, only nullable columns, only this tenant's rows, only
+     * between the tables that are left.</b> A tenant whose tables the loop can
+     * order never reaches here; nothing that survives the transaction is
+     * modified, because everything touched is deleted moments later — and if the
+     * purge fails afterwards the whole transaction rolls back, pointers included.
+     * A cycle made of NOT NULL columns cannot be broken this way and stalls with
+     * the message it always did, naming the tables so the next person can see it.</p>
+     *
+     * <p>Discovered rather than listed: a future feature that adds a cycle is
+     * handled the day it is added, which is the same reason the journal pointers
+     * are discovered above.</p>
+     */
+    private void breakCycles(java.sql.Connection conn, List<String> blocked,
+                             List<String> tenantedTables, UUID tenantId) throws java.sql.SQLException {
+        List<ForeignKey> pointers = foreignKeys().stream()
+                .filter(ForeignKey::nullable)
+                .filter(fk -> blocked.contains(fk.table()))
+                .filter(fk -> blocked.contains(fk.referencedTable()))
+                .filter(fk -> tenantedTables.contains(fk.table()))
+                .toList();
+        if (pointers.isEmpty()) {
+            log.warn("deleteTenant({}): no nullable pointers to break between {}", tenantId, blocked);
+            return;
+        }
+        log.info("deleteTenant({}): breaking {} foreign-key pointers between the blocked tables {}",
+                tenantId, pointers.size(), blocked);
+        for (ForeignKey pointer : pointers) {
+            try (var ps = conn.prepareStatement(
+                    "UPDATE " + quote(pointer.table()) + " SET " + quote(pointer.column())
+                            + " = NULL WHERE tenant_id = ? AND " + quote(pointer.column()) + " IS NOT NULL")) {
+                ps.setObject(1, tenantId);
+                int cleared = ps.executeUpdate();
+                log.debug("  cleared {} {}.{} -> {} pointers",
+                        cleared, pointer.table(), pointer.column(), pointer.referencedTable());
+            }
+        }
     }
 
     /**

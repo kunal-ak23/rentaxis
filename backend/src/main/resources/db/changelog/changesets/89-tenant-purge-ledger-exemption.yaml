@@ -1,0 +1,160 @@
+databaseChangeLog:
+  # Issue #326. Deleting a tenant has to remove its journal, and changeset 81's
+  # append-only triggers refuse every DELETE on journal_entries and journal_lines
+  # — the right answer for every caller except the one erasing the tenant those
+  # rows belong to, which has no books left to reverse into.
+  #
+  # The first shape of that fix switched the triggers off with
+  # ALTER TABLE ... DISABLE TRIGGER USER. Postgres holds the ACCESS EXCLUSIVE lock
+  # that takes until the transaction COMMITS, not until the matching ENABLE, and
+  # ACCESS EXCLUSIVE conflicts with ACCESS SHARE: every tenant's ledger reads and
+  # writes — dashboards, statements, trial balance, postings, the payment
+  # webhooks' clearOnline — would have queued behind a super-admin's delete for
+  # its whole duration, after first waiting for every in-flight ledger query to
+  # finish. It also required table ownership.
+  #
+  # This is the narrower exemption. The trigger functions let a DELETE through
+  # only when the transaction has named the row's own tenant in
+  # `rentaxis.purging_tenant`, which LandlordOrgService sets with
+  # set_config(..., is_local => true): scoped to one transaction and to one
+  # tenant's rows, reverted automatically at commit or rollback, no DDL, no table
+  # lock, no ownership requirement. Every other row of every other tenant is
+  # still refused, in the same words, throughout.
+  #
+  # current_setting(..., missing_ok => true) answers NULL when nothing set it, and
+  # `NULL = anything` is NULL, so an ordinary transaction takes the same path it
+  # always did.
+  #
+  # CREATE OR REPLACE FUNCTION rather than an edit to changeset 81: the changelog
+  # stays append-only and the triggers themselves are untouched, so no table is
+  # locked by this migration either.
+  - changeSet:
+      id: 89-tenant-purge-ledger-exemption
+      author: claude
+      changes:
+        - sql:
+            comment: Let a tenant purge delete its own journal, and only its own
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION journal_entries_immutable() RETURNS trigger AS $$
+              BEGIN
+                IF TG_OP = 'DELETE' THEN
+                  IF current_setting('rentaxis.purging_tenant', true) = OLD.tenant_id::text THEN
+                    RETURN OLD;
+                  END IF;
+                  RAISE EXCEPTION 'journal entries are immutable; reverse the entry instead';
+                END IF;
+                IF NEW.entry_number IS DISTINCT FROM OLD.entry_number
+                   OR NEW.doc_type IS DISTINCT FROM OLD.doc_type
+                   OR NEW.entry_date IS DISTINCT FROM OLD.entry_date
+                   OR NEW.narration IS DISTINCT FROM OLD.narration
+                   OR NEW.property_id IS DISTINCT FROM OLD.property_id
+                   OR NEW.unit_id IS DISTINCT FROM OLD.unit_id
+                   OR NEW.lease_id IS DISTINCT FROM OLD.lease_id
+                   OR NEW.renter_id IS DISTINCT FROM OLD.renter_id
+                   OR NEW.source_type IS DISTINCT FROM OLD.source_type
+                   OR NEW.source_id IS DISTINCT FROM OLD.source_id
+                   OR NEW.reversal_of_id IS DISTINCT FROM OLD.reversal_of_id
+                   OR NEW.import_batch_id IS DISTINCT FROM OLD.import_batch_id
+                   OR NEW.posted_by IS DISTINCT FROM OLD.posted_by
+                   OR NEW.posted_at IS DISTINCT FROM OLD.posted_at
+                   OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+                  RAISE EXCEPTION 'journal entries are immutable; only status and reversed_by_id may change';
+                END IF;
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+
+              CREATE OR REPLACE FUNCTION journal_lines_immutable() RETURNS trigger AS $$
+              BEGIN
+                IF TG_OP = 'DELETE'
+                   AND current_setting('rentaxis.purging_tenant', true) = OLD.tenant_id::text THEN
+                  RETURN OLD;
+                END IF;
+                RAISE EXCEPTION 'journal lines are immutable; reverse the entry instead';
+              END;
+              $$ LANGUAGE plpgsql;
+
+              -- The balance check is a DEFERRABLE INITIALLY DEFERRED constraint
+              -- trigger, so its events fire during COMMIT — while the transaction,
+              -- and therefore the set_config(is_local => true) value, is still in
+              -- scope. Without the exemption every entry the purge emptied would
+              -- fail it at commit: zero lines is "not balanced".
+              CREATE OR REPLACE FUNCTION journal_lines_check_balanced() RETURNS trigger AS $$
+              DECLARE
+                v_entry uuid;
+                v_tenant uuid;
+                v_debit numeric;
+                v_credit numeric;
+                v_count int;
+              BEGIN
+                v_tenant := COALESCE(NEW.tenant_id, OLD.tenant_id);
+                IF current_setting('rentaxis.purging_tenant', true) = v_tenant::text THEN
+                  RETURN NULL;
+                END IF;
+                v_entry := COALESCE(NEW.journal_entry_id, OLD.journal_entry_id);
+                SELECT COALESCE(SUM(debit),0), COALESCE(SUM(credit),0), COUNT(*)
+                  INTO v_debit, v_credit, v_count
+                  FROM journal_lines WHERE journal_entry_id = v_entry;
+                IF v_count < 2 OR v_debit <> v_credit THEN
+                  RAISE EXCEPTION 'journal entry is not balanced (entry %, debit %, credit %, lines %)',
+                    v_entry, v_debit, v_credit, v_count;
+                END IF;
+                RETURN NULL;
+              END;
+              $$ LANGUAGE plpgsql;
+      rollback:
+        - sql:
+            comment: Back to changeset 81's functions, with no exemption
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION journal_entries_immutable() RETURNS trigger AS $$
+              BEGIN
+                IF TG_OP = 'DELETE' THEN
+                  RAISE EXCEPTION 'journal entries are immutable; reverse the entry instead';
+                END IF;
+                IF NEW.entry_number IS DISTINCT FROM OLD.entry_number
+                   OR NEW.doc_type IS DISTINCT FROM OLD.doc_type
+                   OR NEW.entry_date IS DISTINCT FROM OLD.entry_date
+                   OR NEW.narration IS DISTINCT FROM OLD.narration
+                   OR NEW.property_id IS DISTINCT FROM OLD.property_id
+                   OR NEW.unit_id IS DISTINCT FROM OLD.unit_id
+                   OR NEW.lease_id IS DISTINCT FROM OLD.lease_id
+                   OR NEW.renter_id IS DISTINCT FROM OLD.renter_id
+                   OR NEW.source_type IS DISTINCT FROM OLD.source_type
+                   OR NEW.source_id IS DISTINCT FROM OLD.source_id
+                   OR NEW.reversal_of_id IS DISTINCT FROM OLD.reversal_of_id
+                   OR NEW.import_batch_id IS DISTINCT FROM OLD.import_batch_id
+                   OR NEW.posted_by IS DISTINCT FROM OLD.posted_by
+                   OR NEW.posted_at IS DISTINCT FROM OLD.posted_at
+                   OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+                  RAISE EXCEPTION 'journal entries are immutable; only status and reversed_by_id may change';
+                END IF;
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+
+              CREATE OR REPLACE FUNCTION journal_lines_immutable() RETURNS trigger AS $$
+              BEGIN
+                RAISE EXCEPTION 'journal lines are immutable; reverse the entry instead';
+              END;
+              $$ LANGUAGE plpgsql;
+
+              CREATE OR REPLACE FUNCTION journal_lines_check_balanced() RETURNS trigger AS $$
+              DECLARE
+                v_entry uuid;
+                v_debit numeric;
+                v_credit numeric;
+                v_count int;
+              BEGIN
+                v_entry := COALESCE(NEW.journal_entry_id, OLD.journal_entry_id);
+                SELECT COALESCE(SUM(debit),0), COALESCE(SUM(credit),0), COUNT(*)
+                  INTO v_debit, v_credit, v_count
+                  FROM journal_lines WHERE journal_entry_id = v_entry;
+                IF v_count < 2 OR v_debit <> v_credit THEN
+                  RAISE EXCEPTION 'journal entry is not balanced (entry %, debit %, credit %, lines %)',
+                    v_entry, v_debit, v_credit, v_count;
+                END IF;
+                RETURN NULL;
+              END;
+              $$ LANGUAGE plpgsql;
