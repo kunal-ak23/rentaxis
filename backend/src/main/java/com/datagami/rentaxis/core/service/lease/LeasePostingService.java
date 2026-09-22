@@ -22,6 +22,8 @@ import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
+import com.datagami.rentaxis.domain.entity.ImportBatch;
+import com.datagami.rentaxis.domain.entity.ImportBatchLease;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -30,6 +32,7 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
@@ -38,6 +41,8 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
+import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -117,6 +122,15 @@ public class LeasePostingService {
     private final RenewalOpportunityService renewalOpportunities;
     private final ApplicationEventPublisher events;
 
+    /**
+     * Only for {@link #refuseIfItBelongsToADraftImportBatch}. Repositories rather
+     * than {@code ImportBatchService}: that service depends on {@code PostingService}
+     * and on the fiscal calendar, and the lease module has no business pulling the
+     * cut-over module in to answer one boolean.
+     */
+    private final ImportBatchLeaseRepository importBatchLeases;
+    private final ImportBatchRepository importBatches;
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -130,7 +144,9 @@ public class LeasePostingService {
                                LeaseAccessPolicy leaseAccessPolicy,
                                DepositCarryForward depositCarryForward,
                                RenewalOpportunityService renewalOpportunities,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events,
+                               ImportBatchLeaseRepository importBatchLeases,
+                               ImportBatchRepository importBatches) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -145,6 +161,8 @@ public class LeasePostingService {
         this.depositCarryForward = depositCarryForward;
         this.renewalOpportunities = renewalOpportunities;
         this.events = events;
+        this.importBatchLeases = importBatchLeases;
+        this.importBatches = importBatches;
     }
 
     // ------------------------------------------------------------------
@@ -154,6 +172,17 @@ public class LeasePostingService {
     /**
      * Post the lease: TCO, one PDR per cheque, ACTIVE, unit claimed.
      *
+     * <p><b>Refused for a contract that belongs to a DRAFT cut-over batch</b>
+     * (review M4). This door is reachable from the lease screen by anyone who may
+     * post, and an imported contract pushed through it comes out subtly wrong in
+     * three ways at once: its journals carry no {@code importBatchId}, so they are
+     * outside the period-lock exemption a pre-books contract needs and outside
+     * "Reverse batch" forever; the cheque replay is skipped, so the statuses and
+     * dates PACT exported are silently ignored and no {@code CRT}/{@code CBR} is
+     * written; and afterwards the batch can be neither reversed (its TCO carries no
+     * batch id) nor discarded (journals name the lease). The remedy is one sentence
+     * and one button, so it is said rather than guessed at.</p>
+     *
      * @throws UnmappedAccountRoleException when the only thing wrong is a role the
      *         property has no account for — a distinct type so the UI can offer to
      *         map it rather than just printing a sentence
@@ -162,7 +191,31 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId) {
+        refuseIfItBelongsToADraftImportBatch(leaseId);
         return post(leaseId, null);
+    }
+
+    /**
+     * "This contract belongs to import batch X; post the batch instead."
+     *
+     * <p>The link table carries no tenant column of its own — every reader has to
+     * resolve the batch and compare, which is what {@code ContractImportValidator}'s
+     * lookups do — so the batch is loaded through the filtered repository and
+     * compared again explicitly. Only a <b>DRAFT</b> batch blocks: once the batch has
+     * posted, its contracts are ACTIVE and this method's own status check refuses
+     * them anyway, and a REVERSED batch's contracts are back in DRAFT deliberately so
+     * that "Post again" can put them back — through the batch, which is the door this
+     * one points at.</p>
+     */
+    private void refuseIfItBelongsToADraftImportBatch(UUID leaseId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        for (ImportBatchLease link : importBatchLeases.findByLeaseId(leaseId)) {
+            ImportBatch batch = importBatches.findById(link.getBatchId()).orElse(null);
+            if (batch == null || batch.getStatus() != ImportBatchStatus.DRAFT) continue;
+            if (tenantId != null && !tenantId.equals(batch.getTenantId())) continue;
+            throw new BusinessRuleViolationException(
+                    "This contract belongs to import batch " + batch.getId() + "; post the batch instead.");
+        }
     }
 
     /**

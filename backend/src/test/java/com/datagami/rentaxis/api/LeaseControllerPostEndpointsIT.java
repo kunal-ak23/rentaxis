@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
+import com.datagami.rentaxis.core.service.cutover.ImportBatchService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -78,6 +79,7 @@ class LeaseControllerPostEndpointsIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
+    @Autowired ImportBatchService importBatches;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 9, 16);
     private static final LocalDate START = LocalDate.of(2026, 10, 2);
@@ -241,6 +243,35 @@ class LeaseControllerPostEndpointsIT {
         }
 
         // And nothing they sent took effect.
+        assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * A contract that belongs to a DRAFT cut-over batch is posted through the batch,
+     * not through this door (review M4).
+     *
+     * <p>The lease here is otherwise perfectly postable — the grid is cut and the
+     * same call succeeds in {@link #accountantMayPostAndAmendTheLease} — so the
+     * refusal is the batch rule and nothing else. Posting an imported contract here
+     * came out wrong three ways at once: the journals carried no
+     * {@code import_batch_id}, so they sat outside both the period-lock exemption a
+     * pre-books contract needs and "Reverse batch" forever; the cheque replay was
+     * skipped, so the statuses and dates PACT exported were silently dropped; and
+     * afterwards the batch could be neither reversed nor discarded. Property
+     * managers cannot reach this door, but accountants and tenant admins can.</p>
+     */
+    @Test
+    void aContractBelongingToADraftImportBatchIsRefusedAndNamesTheBatch() {
+        generateGrid();
+        TenantContextHolder.setTenantId(fixtures.tenantId());
+        UUID batchId = importBatches.create(null, "September cut-over").getId();
+        importBatches.linkLease(batchId, leaseId);
+
+        ResponseEntity<Map> refused = body(accountant, HttpMethod.POST, postPath(), null);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat((String) refused.getBody().get("message"))
+                .isEqualTo("This contract belongs to import batch " + batchId + "; post the batch instead.");
         assertThat(currentStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 
