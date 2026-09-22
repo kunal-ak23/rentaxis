@@ -2262,7 +2262,7 @@
     "unsavedEdits": "{n, plural, one {خانة واحدة غير محفوظة} two {خانتان غير محفوظتين} few {# خانات غير محفوظة} other {# خانة غير محفوظة}}. احفظها قبل التقييد كي يطابق القيد ما يظهر على الشاشة.",
     "reconciliation": "المطابقة",
     "reconciliationDesc": "رصيدنا كما في {date} مقابل ميزان مراجعة PACT الذي رفعته.",
-    "derivedBalance": "رصيدنا",
+    "derivedBalance": "في دفاترنا (دون القيد الافتتاحي)",
     "pactBalance": "PACT",
     "notInOurChart": "غير موجود في دليل حساباتنا",
     "reconciled": "كل الحسابات تطابق ميزان مراجعة PACT.",

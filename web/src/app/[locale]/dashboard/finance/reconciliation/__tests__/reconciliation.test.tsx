@@ -95,6 +95,19 @@ describe("reconciliation — the table", () => {
         expect(codes).toEqual(["rec-row-110100", "rec-row-120100", "rec-row-210100", "rec-row-9001"]);
     });
 
+    /**
+     * `derivedBalances` takes the LIVE opening journal's own lines back out, so
+     * the column is our books at D−1 WITHOUT the opening entry — not "our
+     * balance", which is what the header used to claim. Without the caveat the
+     * report reads as if the cut-over were wrong by the whole opening balance.
+     */
+    it("says the derived column excludes the opening entry", async () => {
+        renderPage();
+        await screen.findByTestId("rec-row-110100");
+        expect(screen.getByText(en.Cutover.derivedBalance)).toBeInTheDocument();
+        expect(en.Cutover.derivedBalance).toContain("excl. opening entry");
+    });
+
     it("renders both balances and the difference", async () => {
         renderPage();
         const rent = await screen.findByTestId("rec-row-120100");

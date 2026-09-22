@@ -2262,7 +2262,7 @@
     "unsavedEdits": "{n, plural, one {# unsaved cell} other {# unsaved cells}}. Save them before posting so the journal matches what is on screen.",
     "reconciliation": "Reconciliation",
     "reconciliationDesc": "Our balance as at {date} against the PACT trial balance you uploaded.",
-    "derivedBalance": "Our balance",
+    "derivedBalance": "On our books (excl. opening entry)",
     "pactBalance": "PACT",
     "notInOurChart": "Not in our chart of accounts",
     "reconciled": "Every account agrees with the PACT trial balance.",

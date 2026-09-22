@@ -219,6 +219,14 @@ export type ReverseObInput = { reason: string };
  * both sides and `difference` still means `derivedBalance - pactBalance`.
  * `accountId` is null for a PACT code our chart has no account for — the row is
  * kept so nothing is silently lost.
+ *
+ * **`derivedBalance` is our books as at D−1 with the LIVE opening journal's own
+ * lines taken back out** (`OpeningBalanceService.derivedBalances`), which is why
+ * the column is labelled "On our books (excl. opening entry)" rather than "Our
+ * balance". The opening journal is dated the same day this is read, so counting
+ * it would have every manually entered account reconcile against itself and the
+ * report would say the cut-over was perfect the moment it was posted. A reversed
+ * one is left in: the original and its mirror already net to zero.
  */
 export type ReconciliationRow = {
     accountId: string | null;
