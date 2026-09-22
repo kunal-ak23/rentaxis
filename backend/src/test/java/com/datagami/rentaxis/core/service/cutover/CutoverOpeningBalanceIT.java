@@ -1,12 +1,14 @@
 package com.datagami.rentaxis.core.service.cutover;
 
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.cutover.OpeningBalanceService.ReconciliationRow;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.AfterEach;
@@ -26,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The cut-over composed: import → bulk post → upload PACT's trial balance → open the
@@ -94,6 +97,7 @@ class CutoverOpeningBalanceIT {
     @Autowired ContractImportPersistService contractPersist;
     @Autowired ContractImportPostService postService;
     @Autowired OpeningBalanceService openingBalances;
+    @Autowired ImportBatchService batches;
     @Autowired AccountService accounts;
     @Autowired AccountResolver resolver;
     @Autowired LedgerQueryService ledger;
@@ -118,11 +122,14 @@ class CutoverOpeningBalanceIT {
     // plumbing
     // ------------------------------------------------------------------
 
-    private UUID importAndPost() throws Exception {
-        UUID batchId;
+    private UUID importTheTemplate() throws Exception {
         try (Workbook wb = fixture.template()) {
-            batchId = contractPersist.persist(wb, fixture.newJob()).batchId();
+            return contractPersist.persist(wb, fixture.newJob()).batchId();
         }
+    }
+
+    private UUID importAndPost() throws Exception {
+        UUID batchId = importTheTemplate();
         assertThat(postService.post(batchId).leasesFailed()).isZero();
         return batchId;
     }
@@ -264,6 +271,63 @@ class CutoverOpeningBalanceIT {
 
         assertThat(gapOnDerivedRoles).isEqualByComparingTo("1000.00");
         assertThat(balanceOf(differenceAccountName())).isEqualByComparingTo(gapOnDerivedRoles);
+    }
+
+    // ------------------------------------------------------------------
+    // the order rule: opening balances are the LAST step
+    // ------------------------------------------------------------------
+    //
+    // Ruling R17, spec §10.3 "Amendment 2026-09-22". Each of the three acts below
+    // would move `ours` under an opening journal that has already netted the old
+    // value out, leaving the books holding neither PACT's figure nor ours. All three
+    // are refused with one sentence, and none of them writes anything first.
+
+    @Test
+    void aBulkPostIsRefusedWhileTheOpeningBalancesAreLive() throws Exception {
+        UUID batchId = importTheTemplate();
+        uploadPactTrialBalance();
+        openingBalances.post();
+
+        assertThatThrownBy(() -> postService.post(batchId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(ImportBatchService.OPENING_BALANCES_ARE_LIVE);
+
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.DRAFT);
+        assertThat(balanceOf("PDC Receivable ST1")).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void aBatchReverseIsRefusedWhileTheOpeningBalancesAreLive() throws Exception {
+        UUID batchId = importAndPost();
+        uploadPactTrialBalance();
+        openingBalances.post();
+
+        assertThatThrownBy(() -> batches.reverse(batchId, "corrected workbook"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(ImportBatchService.OPENING_BALANCES_ARE_LIVE);
+
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
+        assertThat(balanceOf("PDC Receivable ST1")).isEqualByComparingTo("47050.00");
+    }
+
+    /**
+     * Post again — the successor-batch path — is the third door into the same
+     * problem, and the one an accountant is most likely to walk through: reverse,
+     * correct, open the books while waiting, then press Post.
+     */
+    @Test
+    void postingAReversedBatchAgainIsRefusedWhileTheOpeningBalancesAreLive() throws Exception {
+        UUID batchId = importAndPost();
+        batches.reverse(batchId, "corrected workbook");
+        uploadPactTrialBalance();
+        openingBalances.post();
+
+        assertThatThrownBy(() -> postService.post(batchId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(ImportBatchService.OPENING_BALANCES_ARE_LIVE);
+
+        assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
+        assertThat(batches.successorOf(batchId)).as("no successor batch was made either").isEmpty();
     }
 
     /**

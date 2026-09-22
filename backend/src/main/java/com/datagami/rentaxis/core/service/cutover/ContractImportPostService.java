@@ -168,6 +168,16 @@ public class ContractImportPostService {
 
     private BulkPostResult runUnderBatchLock(UUID batchId, Consumer<Progress> progress) {
         ImportBatch batch = batches.lockForRun(batchId, "posted");
+        // The opening balances are the LAST step of the cut-over (review C2, ruling
+        // R17; spec §10.3 "Amendment 2026-09-22"). The OB journal posts PACT's figure
+        // LESS what step 1 left on the books, so putting more of step 1 on the books
+        // underneath it — a first bulk post, or a Post-again of a reversed batch —
+        // leaves the books holding neither PACT's figure nor ours until somebody
+        // notices the grid say "Replace". Refused up front, under the batch lock,
+        // before one contract has been touched.
+        if (fiscal.hasLiveOpeningBalance()) {
+            throw new BusinessRuleViolationException(ImportBatchService.OPENING_BALANCES_ARE_LIVE);
+        }
         UUID repostOf = null;
         if (batch.getStatus() == ImportBatchStatus.REVERSED) {
             repostOf = batch.getId();

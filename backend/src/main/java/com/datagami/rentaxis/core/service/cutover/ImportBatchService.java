@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.ImportBatchEntity;
@@ -99,12 +100,37 @@ public class ImportBatchService {
     private final EntityManager entityManager;
 
     /**
+     * Only for {@link #OPENING_BALANCES_ARE_LIVE}'s guard. No cycle: the fiscal
+     * service reads its own repositories and knows nothing of this one.
+     */
+    private final TenantFiscalSettingsService fiscal;
+
+    /**
      * An {@code ObjectProvider}, not a direct dependency: the lease-side undo is
      * implemented by plan 4 Task 11 on {@code LeaseService}, and this service has to
      * start without it. Reversing a batch that created leases with no reverter
      * configured is a hard error, not a silent half-undo — see {@link #reverse}.
      */
     private final ObjectProvider<LeaseReverter> leaseReverter;
+
+    /**
+     * The one sentence every cut-over step says when the books have already been
+     * opened (review C2, ruling R17; spec §10.3 "Amendment 2026-09-22").
+     *
+     * <p><b>Why it is a rule and not a warning.</b> The opening journal posts
+     * {@code PACT − ours} per account, so it is computed against what step 1 left on
+     * the books. A bulk post, a batch reverse or a Post-again afterwards moves
+     * {@code ours} under a journal that already netted the old value out, and the
+     * books then hold neither PACT's figure nor ours until somebody notices and
+     * presses Replace. The opening balances are the <em>last</em> step of the
+     * cut-over, which is the order spec §10.3 puts them in; the remedy is two clicks
+     * and is named in the sentence.</p>
+     *
+     * <p>Shared with {@code ContractImportPostService} so the three refusals cannot
+     * drift into three different sentences.</p>
+     */
+    public static final String OPENING_BALANCES_ARE_LIVE =
+            "Opening balances are posted. Reverse them first, then post them again after this step.";
 
     @Transactional
     public ImportBatch create(UUID importJobId, String label) {
@@ -386,6 +412,12 @@ public class ImportBatchService {
         if (b.getStatus() != ImportBatchStatus.POSTED) {
             throw new BusinessRuleViolationException(
                     "Import batch is " + b.getStatus() + "; only a POSTED batch can be reversed");
+        }
+        // The opening balances are the LAST step (ruling R17). Taking the cut-over off
+        // the books underneath a live OB journal would leave that journal netting out a
+        // holding that is no longer there. Asked before anything is written.
+        if (fiscal.hasLiveOpeningBalance()) {
+            throw new BusinessRuleViolationException(OPENING_BALANCES_ARE_LIVE);
         }
 
         List<UUID> leases = links.findByBatchIdOrderByLeaseIdAsc(batchId).stream()

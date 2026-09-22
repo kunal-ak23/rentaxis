@@ -415,6 +415,8 @@ Tenant setting `books_start_date = D`; `books_locked_through = D − 1`. Two loa
 
 **Reconciliation screen:** per account — derived balance, PACT figure (from the uploaded TB), difference.
 
+**Amendment 2026-09-22 (rulings R16–R17).** The `OB` journal posts the **delta**, not PACT's figure: for every account outside the derived-role exclusion the line is `PACT(X) − ours(X)`, where `ours` is what our own books hold as at `D − 1` with any live `OB` entry netted back out (an account we hold that PACT's file never names gets `−ours`). The exclusion list above names the roles step 1 *raises*; it is not closed under the accounts step 1 *writes to* — a cleared cheque's `CRT` debits BANK/CASH and a VAT-bearing `TCO` credits OUTPUT_VAT — so posting PACT gross counted bank and output VAT twice and parked the double count on `OPENING_BALANCE_DIFFERENCE`. With the delta the books at `D − 1` read PACT on every non-derived account, step 1's figure on every derived one, and the difference line is `Σ_derived (PACT − ours)`, the true unreconciled gap. It follows that **opening balances are the last step**: bulk post, **Reverse batch** and **Post again** are all refused while an `OB` journal is live ("Opening balances are posted. Reverse them first, then post them again after this step."), and a **Reverse batch** dates each mirror on the entry it reverses rather than on a day the caller supplies.
+
 ## 11. Web UI
 
 Table-first, paginated, AR/EN, per the project UI standard. Mobile apps are not changed in v2; their finance/lease screens are hidden behind a "coming soon" flag until the web is stable.

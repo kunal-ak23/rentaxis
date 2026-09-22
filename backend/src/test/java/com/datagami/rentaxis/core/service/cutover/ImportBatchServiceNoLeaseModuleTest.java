@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.cutover;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.ImportBatchLease;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
@@ -47,12 +48,13 @@ class ImportBatchServiceNoLeaseModuleTest {
     private final JournalEntryRepository journals = mock(JournalEntryRepository.class);
     private final PostingService posting = mock(PostingService.class);
     private final EntityManager entityManager = mock(EntityManager.class);
+    private final TenantFiscalSettingsService fiscal = mock(TenantFiscalSettingsService.class);
 
     @SuppressWarnings("unchecked")
     private final ObjectProvider<LeaseReverter> noReverter = mock(ObjectProvider.class);
 
     private final ImportBatchService service =
-            new ImportBatchService(batches, links, entityLinks, journals, posting, entityManager, noReverter);
+            new ImportBatchService(batches, links, entityLinks, journals, posting, entityManager, fiscal, noReverter);
 
     private ImportBatch postedBatch(UUID id) {
         ImportBatch b = new ImportBatch();
