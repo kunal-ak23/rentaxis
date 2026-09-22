@@ -31,7 +31,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -359,18 +358,35 @@ public class ImportBatchService {
      * {@code PostingService.reverse} applies the same test, so a cut-over dated
      * inside the closed period can still be taken off.</p>
      *
+     * <p><b>Every mirror is dated on the entry it reverses, and the caller does not
+     * get a say</b> (review C1, ruling R16). This used to take a reversal date and
+     * the web defaulted it to <em>today</em>, which was a live accounting defect
+     * rather than a convenience: {@code PostingService.reverse} does not apply the
+     * period lock to an entry carrying a batch id, so any date was accepted, and
+     * {@code JournalLineRepository.balancesAsOf} has no status predicate — a
+     * REVERSED entry still counts towards the balances at its own date. A mirror
+     * dated later therefore left the whole cut-over standing as at D − 1 (the
+     * derived column, the reconciliation report and every opening balance computed
+     * from it), pushed the undo of history into the first live month's P&amp;L and
+     * bank position, and made "Post again" write the same journals a second time at
+     * their pre-D dates — <b>doubling</b> every derived balance at every date before
+     * the reversal. Pinning the mirror to the original's own day is also what keeps
+     * the lock exemption to the pre-books period it exists for: a caller-chosen date
+     * let an import mirror be written into any closed month.</p>
+     *
+     * <p>Same ruling, one class over, as {@code OpeningBalanceService.reverse}.</p>
+     *
      * <p>{@code PostingService.reverse} is the internal posting API, not
      * {@code JournalService.reverse}: the HTTP-facing one only reverses MANUAL
      * journals and would refuse every entry in the batch by design.</p>
      */
     @Transactional
-    public ImportBatch reverse(UUID batchId, LocalDate date, String reason) {
+    public ImportBatch reverse(UUID batchId, String reason) {
         ImportBatch b = lockForWrite(batchId);
         if (b.getStatus() != ImportBatchStatus.POSTED) {
             throw new BusinessRuleViolationException(
                     "Import batch is " + b.getStatus() + "; only a POSTED batch can be reversed");
         }
-        if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
 
         List<UUID> leases = links.findByBatchIdOrderByLeaseIdAsc(batchId).stream()
                 .map(ImportBatchLease::getLeaseId).toList();
@@ -408,7 +424,9 @@ public class ImportBatchService {
                         .toList());
         Collections.reverse(toReverse);
         for (JournalEntry e : toReverse) {
-            posting.reverse(e.getId(), date, reason == null || reason.isBlank() ? "Import batch reversed" : reason);
+            // The entry's OWN date, never a supplied one — see the method Javadoc.
+            posting.reverse(e.getId(), e.getEntryDate(),
+                    reason == null || reason.isBlank() ? "Import batch reversed" : reason);
         }
         for (UUID leaseId : leases) {
             reverter.revertToDraft(leaseId);

@@ -138,7 +138,12 @@ class ImportBatchReverseIT {
     }
 
     private BigDecimal balanceOf(Account account) {
-        return tx.execute(s -> ledger.trialBalance(REVERSAL_DATE, null).stream()
+        return balanceAt(account, REVERSAL_DATE);
+    }
+
+    /** The same, as at any date — a reverse has to be flat on every one of them. */
+    private BigDecimal balanceAt(Account account, LocalDate asOf) {
+        return tx.execute(s -> ledger.trialBalance(asOf, null).stream()
                 .filter(r -> r.accountId().equals(account.getId()))
                 .map(TrialBalanceRowDTO::balance)
                 .findFirst().orElse(BigDecimal.ZERO));
@@ -166,7 +171,7 @@ class ImportBatchReverseIT {
         JournalEntry e2 = importJournal(b.getId(), "45000.00", IN_THE_CLOSED_PERIOD.plusDays(1));
         batches.markPosted(b.getId(), 2);
 
-        ImportBatch reversed = batches.reverse(b.getId(), REVERSAL_DATE, "Re-import with corrected rents");
+        ImportBatch reversed = batches.reverse(b.getId(), "Re-import with corrected rents");
 
         assertThat(reversed.getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
         assertThat(reversed.getReversedAt()).isNotNull();
@@ -185,7 +190,7 @@ class ImportBatchReverseIT {
         batches.markPosted(b.getId(), 1);
         assertThat(balanceOf(receivable)).isEqualByComparingTo("61000.00");
 
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
         assertThat(balanceOf(receivable)).isEqualByComparingTo("0.00");
         assertThat(balanceOf(advanceRent)).isEqualByComparingTo("0.00");
@@ -199,7 +204,7 @@ class ImportBatchReverseIT {
         JournalEntry original = importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
         batches.markPosted(b.getId(), 1);
 
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
         List<JournalEntry> all = batchJournals(b.getId());
         assertThat(all).hasSize(2);
@@ -207,9 +212,10 @@ class ImportBatchReverseIT {
                 .satisfies(mirror -> {
                     assertThat(mirror.getReversalOfId()).isEqualTo(original.getId());
                     assertThat(mirror.getSourceType()).isEqualTo(JournalSourceType.REVERSAL);
-                    // A TCO's mirror is a TCR, and it is dated where the caller asked.
+                    // A TCO's mirror is a TCR, and it is dated on the entry it mirrors —
+                    // never on a day a caller picked (review C1, ruling R16).
                     assertThat(mirror.getDocType()).isEqualTo(JournalDocType.TCR);
-                    assertThat(mirror.getEntryDate()).isEqualTo(REVERSAL_DATE);
+                    assertThat(mirror.getEntryDate()).isEqualTo(IN_THE_CLOSED_PERIOD);
                 });
         assertTrialBalanceBalances();
     }
@@ -227,7 +233,7 @@ class ImportBatchReverseIT {
         JournalEntry third = importJournal(b.getId(), "300.00", IN_THE_CLOSED_PERIOD);
         batches.markPosted(b.getId(), 3);
 
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
         List<UUID> mirrorsInWriteOrder = batchJournals(b.getId()).stream()
                 .filter(e -> e.getReversalOfId() != null)
@@ -255,7 +261,7 @@ class ImportBatchReverseIT {
         posting.reverse(e1.getId(), REVERSAL_DATE, "taken off on its own");
         assertThat(batchJournals(b.getId())).as("two originals and one mirror").hasSize(3);
 
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
         // Only e2 still needed a mirror.
         assertThat(batchJournals(b.getId())).as("one more mirror, not three").hasSize(4);
@@ -269,9 +275,9 @@ class ImportBatchReverseIT {
         ImportBatch b = batches.create(null, "cut-over");
         importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
         batches.markPosted(b.getId(), 1);
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
-        assertThatThrownBy(() -> batches.reverse(b.getId(), REVERSAL_DATE, "again"))
+        assertThatThrownBy(() -> batches.reverse(b.getId(), "again"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("REVERSED");
         assertThat(batchJournals(b.getId())).hasSize(2);
@@ -281,22 +287,52 @@ class ImportBatchReverseIT {
     @Test
     void aDraftBatchHasNothingToReverse() {
         ImportBatch b = batches.create(null, "cut-over");
-        assertThatThrownBy(() -> batches.reverse(b.getId(), REVERSAL_DATE, "x"))
+        assertThatThrownBy(() -> batches.reverse(b.getId(), "x"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("DRAFT");
         verify(leaseReverter, times(0)).revertToDraft(any());
     }
 
+    /**
+     * Review C1 / ruling R16: every mirror is dated on the entry it reverses, and
+     * nothing of the undo lands in the open period.
+     *
+     * <p>The batch's two entries are on <em>different</em> days inside the locked
+     * period, so one reversal date cannot be right for both. Before this fix the
+     * caller supplied one and the web sent today: the books as at each entry's own
+     * day still carried the whole cut-over ({@code balancesAsOf} has no status
+     * predicate, so a REVERSED entry still counts at its own date) while the first
+     * live month carried the undo of history that never belonged to it.</p>
+     */
     @Test
-    void aReversalNeedsADate() {
+    void everyMirrorIsDatedOnItsOwnEntryAndNothingOfTheUndoReachesTheOpenPeriod() {
         ImportBatch b = batches.create(null, "cut-over");
-        importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
-        batches.markPosted(b.getId(), 1);
+        JournalEntry early = importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
+        JournalEntry late = importJournal(b.getId(), "2000.00", IN_THE_CLOSED_PERIOD.plusDays(4));
+        batches.markPosted(b.getId(), 2);
 
-        assertThatThrownBy(() -> batches.reverse(b.getId(), null, "x"))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("reversal date");
-        assertThat(batchJournals(b.getId())).hasSize(1);
+        batches.reverse(b.getId(), "redo");
+
+        List<JournalEntry> mirrors = batchJournals(b.getId()).stream()
+                .filter(e -> e.getReversalOfId() != null).toList();
+        assertThat(mirrors).hasSize(2);
+        assertThat(mirrors).filteredOn(m -> m.getReversalOfId().equals(early.getId()))
+                .singleElement()
+                .satisfies(m -> assertThat(m.getEntryDate()).isEqualTo(early.getEntryDate()));
+        assertThat(mirrors).filteredOn(m -> m.getReversalOfId().equals(late.getId()))
+                .singleElement()
+                .satisfies(m -> assertThat(m.getEntryDate()).isEqualTo(late.getEntryDate()));
+
+        // Flat on the day the FIRST entry was written, which is the assertion the old
+        // behaviour failed: at that date the second entry has not happened yet and the
+        // first one's mirror has to be there to cancel it.
+        assertThat(balanceAt(receivable, IN_THE_CLOSED_PERIOD)).isEqualByComparingTo("0.00");
+        assertThat(balanceAt(advanceRent, IN_THE_CLOSED_PERIOD)).isEqualByComparingTo("0.00");
+        assertThat(balanceOf(receivable)).isEqualByComparingTo("0.00");
+        // And nothing of the reverse is dated into the open period.
+        assertThat(batchJournals(b.getId()))
+                .allSatisfy(e -> assertThat(e.getEntryDate()).isBeforeOrEqualTo(REVERSAL_DATE));
+        assertTrialBalanceBalances();
     }
 
     /** A batch of opening balances alone has no leases, and reverses without a lease module. */
@@ -306,7 +342,7 @@ class ImportBatchReverseIT {
         importJournal(b.getId(), "5000.00", IN_THE_CLOSED_PERIOD);
         batches.markPosted(b.getId(), 1);
 
-        ImportBatch reversed = batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        ImportBatch reversed = batches.reverse(b.getId(), "redo");
 
         assertThat(reversed.getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
         verifyNoInteractions(leaseReverter);
@@ -328,7 +364,7 @@ class ImportBatchReverseIT {
         batches.markPosted(b.getId(), 1);
         doThrow(new IllegalStateException("lease module said no")).when(leaseReverter).revertToDraft(leaseA);
 
-        assertThatThrownBy(() -> batches.reverse(b.getId(), REVERSAL_DATE, "redo"))
+        assertThatThrownBy(() -> batches.reverse(b.getId(), "redo"))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(statusOf(e1.getId())).as("the journal was not reversed").isEqualTo(JournalStatus.POSTED);
@@ -359,7 +395,7 @@ class ImportBatchReverseIT {
                 TenantContextHolder.setTenantId(tenant);
                 try {
                     bothReady.await(10, TimeUnit.SECONDS);
-                    return batches.reverse(batchId, REVERSAL_DATE, "redo");
+                    return batches.reverse(batchId, "redo");
                 } catch (RuntimeException ex) {
                     return ex;
                 } finally {
@@ -405,7 +441,7 @@ class ImportBatchReverseIT {
         ImportBatch b = batches.create(null, "cut-over");
         importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
         batches.markPosted(b.getId(), 1);
-        batches.reverse(b.getId(), REVERSAL_DATE, "redo");
+        batches.reverse(b.getId(), "redo");
 
         assertThatThrownBy(() -> batches.markPosted(b.getId(), 1))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -423,7 +459,7 @@ class ImportBatchReverseIT {
         ImportBatch b = batches.create(null, "cut-over");
         importJournal(b.getId(), "1000.00", IN_THE_CLOSED_PERIOD);
         assertThat(batches.markPosted(b.getId(), 1).getPostedBy()).isEqualTo(userId);
-        assertThat(batches.reverse(b.getId(), REVERSAL_DATE, "redo").getReversedBy()).isEqualTo(userId);
+        assertThat(batches.reverse(b.getId(), "redo").getReversedBy()).isEqualTo(userId);
     }
 
     /**
@@ -451,7 +487,7 @@ class ImportBatchReverseIT {
         assertThatThrownBy(() -> batches.get(batchId)).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> batches.leaseIds(batchId)).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> batches.markPosted(batchId, 9)).isInstanceOf(NotFoundException.class);
-        assertThatThrownBy(() -> batches.reverse(batchId, REVERSAL_DATE, "not mine"))
+        assertThatThrownBy(() -> batches.reverse(batchId, "not mine"))
                 .isInstanceOf(NotFoundException.class);
         assertThat(batches.list()).as("tenant B's own batches").isEmpty();
 

@@ -133,9 +133,21 @@ class ImportBatchRoundTripIT {
 
     /** Account code → balance as at the cut-over, debit-positive, in code order. */
     private Map<String, BigDecimal> trialBalance() {
+        return trialBalanceAt(CutoverFixture.AS_OF);
+    }
+
+    /**
+     * The same, as at any date.
+     *
+     * <p>An undo has to be flat on <em>every</em> date, not only on the last one:
+     * the batch's journals are spread across the days the contracts were signed and
+     * the cheques cleared, and {@code balancesAsOf} has no status predicate, so a
+     * REVERSED entry still counts towards the balances at its own day.</p>
+     */
+    private Map<String, BigDecimal> trialBalanceAt(LocalDate asOf) {
         return tx.execute(s -> {
             Map<String, BigDecimal> out = new LinkedHashMap<>();
-            for (TrialBalanceRowDTO row : ledger.trialBalance(CutoverFixture.AS_OF, null)) {
+            for (TrialBalanceRowDTO row : ledger.trialBalance(asOf, null)) {
                 out.put(row.code(), row.balance().stripTrailingZeros());
             }
             return out;
@@ -174,7 +186,7 @@ class ImportBatchRoundTripIT {
         assertThat(leaseDimensionBalances(first).values())
                 .anySatisfy(v -> assertThat(v.signum()).isNotZero());
 
-        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+        batches.reverse(batchId, "corrected workbook");
 
         assertThat(leaseDimensionBalances(first).values())
                 .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
@@ -191,7 +203,7 @@ class ImportBatchRoundTripIT {
         UUID batchId = importTheTemplate();
         postService.post(batchId);
 
-        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+        batches.reverse(batchId, "corrected workbook");
 
         UUID first = leaseIdOf("SAMPLE-0001");
         tx.executeWithoutResult(s -> {
@@ -259,7 +271,7 @@ class ImportBatchRoundTripIT {
         Map<UUID, BigDecimal> firstLeaseTwo = leaseDimensionBalances(second);
         assertThat(firstTrialBalance).isNotEmpty();
 
-        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+        batches.reverse(batchId, "corrected workbook");
         BulkPostResult again = postService.post(batchId);
 
         assertThat(again.repostOf()).isEqualTo(batchId);
@@ -283,6 +295,46 @@ class ImportBatchRoundTripIT {
     }
 
     /**
+     * Review C1 / ruling R16, composed: the undo is flat on every date, and posting
+     * the batch again does not double anything.
+     *
+     * <p><b>Mid-September is the date that matters.</b> Both contracts are dated 11
+     * Sep and the cleared cheque reaches the bank on the 25th, so as at the 20th the
+     * books hold the two {@code TCO}s and the three {@code PDR}s and nothing else.
+     * While the reversal date was the caller's — and the web sent <em>today</em> —
+     * the mirrors all landed on one late day, so the books as at the 20th still
+     * carried the whole cut-over after it had supposedly been taken off, and "Post
+     * again" then wrote the same journals a second time at their own pre-D dates:
+     * every balance before the reversal date <b>doubled</b>, permanently. Pinning
+     * each mirror to its own entry's day is what makes both halves below true.</p>
+     */
+    @Test
+    void aReverseIsFlatOnEveryDateAndPostingAgainDoesNotDoubleTheBalances() throws Exception {
+        LocalDate midSeptember = LocalDate.of(2026, 9, 20);
+
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+        Map<String, BigDecimal> firstAtMidSeptember = trialBalanceAt(midSeptember);
+        Map<String, BigDecimal> firstAtCutOver = trialBalance();
+        assertThat(firstAtMidSeptember).as("the contracts are on the books by the 20th").isNotEmpty();
+
+        batches.reverse(batchId, "corrected workbook");
+
+        assertThat(trialBalanceAt(midSeptember).values())
+                .as("as at the 20th, the undo has to have happened too")
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+        assertThat(trialBalance().values()).allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+        assertThat(trialBalanceAt(LocalDate.of(2030, 1, 1)).values())
+                .as("and nothing of it is left in any later period")
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0.00"));
+
+        postService.post(batchId);
+
+        assertThat(trialBalanceAt(midSeptember)).isEqualTo(firstAtMidSeptember);
+        assertThat(trialBalance()).isEqualTo(firstAtCutOver);
+    }
+
+    /**
      * A re-post that dies after its first contract has committed (review I3).
      *
      * <p>This is the path the outer transaction's length actually endangers. The
@@ -301,7 +353,7 @@ class ImportBatchRoundTripIT {
     void aFailedRePostKeepsItsSuccessorBatchAndTheNextAttemptReusesIt() throws Exception {
         UUID batchId = importTheTemplate();
         postService.post(batchId);
-        batches.reverse(batchId, CutoverFixture.AS_OF, "corrected workbook");
+        batches.reverse(batchId, "corrected workbook");
 
         assertThatThrownBy(() -> postService.post(batchId, progress -> {
             if (progress.processed() == 1) throw new IllegalStateException("the connection went away");
@@ -341,7 +393,7 @@ class ImportBatchRoundTripIT {
         chequeService.deposit(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
         chequeService.clear(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
 
-        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+        assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("SAMPLE-0001")
                 .hasMessageContaining("100002")
@@ -364,7 +416,7 @@ class ImportBatchRoundTripIT {
         RecognitionService.RecognitionRunResult run = recognition.runTo(LocalDate.of(2026, 10, 31), false);
         assertThat(run.posted()).isGreaterThan(0);
 
-        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+        assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("month-end close after the cut-over");
         assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.POSTED);
@@ -384,7 +436,7 @@ class ImportBatchRoundTripIT {
             leaseRepo.save(lease);
         });
 
-        assertThatThrownBy(() -> batches.reverse(batchId, CutoverFixture.AS_OF, "oops"))
+        assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("SAMPLE-0001")
                 .hasMessageContaining("TERMINATED");

@@ -10,12 +10,14 @@ import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ImportBatch;
+import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,6 +36,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -73,6 +76,8 @@ class ImportBatchControllerIT {
     @Autowired ImportBatchService batches;
     @Autowired ContractImportPostJobService postJobs;
     @Autowired TenantFiscalSettingsService fiscal;
+    @Autowired JournalEntryRepository entries;
+    @Autowired TransactionTemplate tx;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
 
@@ -165,8 +170,12 @@ class ImportBatchControllerIT {
         return batches.markPosted(b.getId(), 1);
     }
 
-    private static Map<String, Object> reverseBody(String date, String reason) {
-        return Map.of("date", date, "reason", reason);
+    /**
+     * The body the endpoint takes now: a reason and nothing else. The mirror is
+     * always dated on the entry it reverses (review C1, ruling R16).
+     */
+    private static Map<String, Object> reverseBody(String reason) {
+        return Map.of("reason", reason);
     }
 
     // ------------------------------------------------------------------
@@ -192,7 +201,7 @@ class ImportBatchControllerIT {
 
         ResponseEntity<String> reversed = call(HttpMethod.POST,
                 "/api/v1/finance/import-batches/" + b.getId() + "/reverse", accountant,
-                reverseBody("2026-09-30", "Re-import with corrected rents"));
+                reverseBody("Re-import with corrected rents"));
         assertThat(reversed.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(json(reversed).get("status").asText()).isEqualTo("REVERSED");
         verify(leaseReverter).revertToDraft(leaseId);
@@ -212,19 +221,44 @@ class ImportBatchControllerIT {
         ImportBatch b = batches.create(null, "not posted yet");
         ResponseEntity<String> res = call(HttpMethod.POST,
                 "/api/v1/finance/import-batches/" + b.getId() + "/reverse", accountant,
-                reverseBody("2026-09-30", "x"));
+                reverseBody("x"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).contains("DRAFT");
     }
 
+    /**
+     * The reverse endpoint no longer takes a date (review C1, ruling R16), and a
+     * client that has not caught up must not break on it.
+     *
+     * <p>Spring Boot leaves Jackson's {@code FAIL_ON_UNKNOWN_PROPERTIES} off, so the
+     * stale field is ignored rather than rejected — which is what lets the web drop
+     * the reverse dialog's date picker in its own release instead of this one. The
+     * date sent here is in the OPEN period on purpose: if it were honoured the
+     * mirror would land there, and the assertion below would find it.</p>
+     */
     @Test
-    void aReversalWithNoDateIs400() {
+    void aReverseBodyStillCarryingTheOldDateFieldIsAcceptedAndTheDateIsIgnored() {
         ImportBatch b = postedBatch(UUID.randomUUID());
+
         ResponseEntity<String> res = call(HttpMethod.POST,
                 "/api/v1/finance/import-batches/" + b.getId() + "/reverse", accountant,
-                Map.of("reason", "x"));
-        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(batches.get(b.getId()).getStatus().name()).isEqualTo("POSTED");
+                Map.of("date", "2026-11-15", "reason", "x"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(json(res).get("status").asText()).isEqualTo("REVERSED");
+        List<JournalEntry> written = tx.execute(s -> entries.findByImportBatchIdOrderByCreatedAtAsc(b.getId()));
+        assertThat(written).hasSize(2)
+                .allSatisfy(e -> assertThat(e.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 11)));
+    }
+
+    /** An empty body is a reverse with no reason given, not a 400. */
+    @Test
+    void aReversalWithNoBodyIsAccepted() {
+        ImportBatch b = postedBatch(UUID.randomUUID());
+        ResponseEntity<String> res = call(HttpMethod.POST,
+                "/api/v1/finance/import-batches/" + b.getId() + "/reverse", accountant, Map.of());
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(batches.get(b.getId()).getStatus().name()).isEqualTo("REVERSED");
     }
 
     @ParameterizedTest
@@ -250,7 +284,7 @@ class ImportBatchControllerIT {
         assertThat(call(HttpMethod.GET, "/api/v1/finance/import-batches", caller, null).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(call(HttpMethod.POST, "/api/v1/finance/import-batches/" + UUID.randomUUID() + "/reverse",
-                caller, reverseBody("2026-09-30", "x")).getStatusCode())
+                caller, reverseBody("x")).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
@@ -273,7 +307,7 @@ class ImportBatchControllerIT {
 
         ResponseEntity<String> reverse = callWithoutTenant(HttpMethod.POST,
                 "/api/v1/finance/import-batches/" + UUID.randomUUID() + "/reverse", superAdmin,
-                reverseBody("2026-09-30", "x"));
+                reverseBody("x"));
         assertThat(reverse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(reverse.getBody()).contains("Select an organisation first");
     }

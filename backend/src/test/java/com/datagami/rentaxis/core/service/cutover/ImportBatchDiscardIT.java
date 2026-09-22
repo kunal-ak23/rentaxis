@@ -271,7 +271,7 @@ class ImportBatchDiscardIT {
     void aReversedBatchCannotBeDiscardedAndIsToldToPostAgain() throws Exception {
         UUID batchId = importTheTemplate();
         postService.post(batchId);
-        batches.reverse(batchId, CutoverFixture.AS_OF, "wrong workbook");
+        batches.reverse(batchId, "wrong workbook");
 
         assertThatThrownBy(() -> discardService.discard(batchId))
                 .isInstanceOf(BusinessRuleViolationException.class)

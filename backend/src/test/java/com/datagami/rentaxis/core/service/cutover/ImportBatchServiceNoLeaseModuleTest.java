@@ -13,7 +13,6 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -72,7 +71,7 @@ class ImportBatchServiceNoLeaseModuleTest {
                         new ImportBatchLease(batchId, UUID.randomUUID())));
         when(noReverter.getIfAvailable()).thenReturn(null);
 
-        assertThatThrownBy(() -> service.reverse(batchId, LocalDate.of(2026, 9, 30), "redo"))
+        assertThatThrownBy(() -> service.reverse(batchId, "redo"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("2 leases")
                 .hasMessageContaining("no lease module");
@@ -94,7 +93,7 @@ class ImportBatchServiceNoLeaseModuleTest {
         when(journals.findByImportBatchIdOrderByCreatedAtAsc(batchId)).thenReturn(List.of());
         when(batches.save(any(ImportBatch.class))).thenAnswer(i -> i.getArgument(0));
 
-        assertThatCode(() -> service.reverse(batchId, LocalDate.of(2026, 9, 30), "redo"))
+        assertThatCode(() -> service.reverse(batchId, "redo"))
                 .doesNotThrowAnyException();
         assertThat(b.getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
     }

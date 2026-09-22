@@ -13,8 +13,6 @@ import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +26,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -70,7 +67,21 @@ public class ImportBatchController {
     private final ImportJobRepository importJobs;
     private final ObjectMapper objectMapper;
 
-    public record ReverseBatchDTO(@NotNull LocalDate date, String reason) {}
+    /**
+     * Why the cut-over is being taken off the books. There is deliberately <b>no
+     * date</b>: every mirror is written on the day the entry it reverses carries.
+     *
+     * <p>It used to take one, and the web defaulted it to today — a live accounting
+     * defect (review C1, ruling R16) rather than a convenience. See
+     * {@code ImportBatchService#reverse} for the arithmetic; the field is gone
+     * rather than validated, because there was never a second right answer. A client
+     * that still sends {@code date} is unaffected: Spring Boot leaves Jackson's
+     * {@code FAIL_ON_UNKNOWN_PROPERTIES} off, so the stale field is ignored — which
+     * is what lets the web drop it in its own release rather than this one.
+     * {@code ImportBatchControllerIT#aReverseBodyStillCarryingTheOldDateFieldIsAccepted}
+     * holds that line.</p>
+     */
+    public record ReverseBatchDTO(String reason) {}
 
     /** What starting a bulk post answers with. A record, so the shape is the contract. */
     public record PostStartedDTO(UUID jobId, UUID batchId) {}
@@ -144,9 +155,9 @@ public class ImportBatchController {
 
     @PostMapping("/{id}/reverse")
     public ResponseEntity<ImportBatchDTO> reverse(@PathVariable UUID id,
-                                                  @Valid @RequestBody ReverseBatchDTO body) {
+                                                  @RequestBody(required = false) ReverseBatchDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(ImportBatchDTO.of(batches.reverse(id, body.date(), body.reason())));
+        return ResponseEntity.ok(ImportBatchDTO.of(batches.reverse(id, body == null ? null : body.reason())));
     }
 
     /**

@@ -649,7 +649,7 @@ class ContractImportPostIT {
         assertThat(again.leasesPosted()).isEqualTo(1);
         assertThat(again.status()).isEqualTo(ImportBatchStatus.POSTED);
         // And the whole thing is reversible, which is what "not stranded" means.
-        batches.reverse(batchId, CutoverFixture.AS_OF, "starting again");
+        batches.reverse(batchId, "starting again");
         assertThat(batches.get(batchId).getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
     }
 }
