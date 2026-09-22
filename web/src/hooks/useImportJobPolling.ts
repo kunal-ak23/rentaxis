@@ -42,6 +42,37 @@ export function importJobStorageKey(kind: string, scope: JobScope): string {
     return `rentaxis.cutover.job.${kind}.${scope.tenantId}.${scope.userId}`;
 }
 
+/**
+ * Find a stored job whose kind begins with `prefix`, for this tenant and user.
+ *
+ * A reload has no idea which batch was being posted — the bulk post's status URL
+ * is scoped by batch, so the job id alone is not enough to rejoin it. The key
+ * already carries the batch id (as `bulk-post:<batchId>`), so this reads it back
+ * rather than having callers parse a format they do not own.
+ *
+ * Returns the part of the kind AFTER `prefix:` together with the job id, or null
+ * when there is nothing of this kind to resume.
+ */
+export function findResumableJob(
+    prefix: string,
+    scope: JobScope,
+): { discriminator: string; jobId: string } | null {
+    const head = `rentaxis.cutover.job.${prefix}:`;
+    const tail = `.${scope.tenantId}.${scope.userId}`;
+    try {
+        for (let i = 0; i < window.sessionStorage.length; i++) {
+            const key = window.sessionStorage.key(i);
+            if (!key || !key.startsWith(head) || !key.endsWith(tail)) continue;
+            const jobId = window.sessionStorage.getItem(key);
+            if (!jobId) continue;
+            return { discriminator: key.slice(head.length, key.length - tail.length), jobId };
+        }
+    } catch {
+        // A browser that will not let us read storage simply cannot resume.
+    }
+    return null;
+}
+
 const FIRST_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 10_000;
 /** Roughly a quarter of an hour of backed-off polling. */

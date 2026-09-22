@@ -4,8 +4,8 @@ import {
     SNAPSHOT_ACCEPT, SNAPSHOT_MAX_BYTES, canDownloadImportTemplate, canEditOpeningBalanceRow,
     CONTRACT_IMPORT_ACCEPT, CONTRACT_IMPORT_MAX_BYTES, canPostOpeningBalances,
     canReplaceOpeningBalances, contractImportRefusal, gridDeclaresComputed, isBatchFinal,
-    canDiscardBatch, canPostBatch, isBulkPostTerminal, isImportJobTerminal, isReconciled,
-    canReverseBatch, isRepost, snapshotRefusal,
+    batchAction, canDiscardBatch, canPostBatch, isBulkPostTerminal, isImportJobTerminal,
+    isReconciled, canReverseBatch, isRepost, snapshotRefusal,
 } from "@/lib/cutoverRules";
 import type { OpeningBalanceGrid, OpeningBalanceRow } from "@/lib/api/cutover";
 import { hasPermission } from "@/lib/rbac";
@@ -421,6 +421,27 @@ describe("cutover rules", () => {
      * retry path (already-posted contracts come back SKIPPED_ALREADY_POSTED), and
      * a DISCARDED one is refused outright — "its leases have been deleted".
      */
+    /**
+     * Evidence, not optimism: "Retry failed contracts" is only offered when the
+     * last run actually left one FAILED. A POSTED batch with nothing to retry
+     * offers nothing at all, rather than a button that comes back "everything was
+     * already posted".
+     */
+    it("offers a retry only when a contract is known to have failed", () => {
+        const failed = [{ outcome: "FAILED" as const }, { outcome: "POSTED" as const }];
+        const clean = [{ outcome: "POSTED" as const }, { outcome: "SKIPPED_ALREADY_POSTED" as const }];
+
+        expect(batchAction("POSTED", failed)).toBe("retry");
+        expect(batchAction("POSTED", clean)).toBeNull();
+        // No result to go on yet — a posted batch promises nothing.
+        expect(batchAction("POSTED", null)).toBeNull();
+
+        expect(batchAction("DRAFT", null)).toBe("post");
+        expect(batchAction("DRAFT", failed)).toBe("post");
+        expect(batchAction("REVERSED", null)).toBe("repost");
+        expect(batchAction("DISCARDED", null)).toBeNull();
+    });
+
     it("allows a post on every status but DISCARDED", () => {
         expect(canPostBatch("DRAFT")).toBe(true);
         expect(canPostBatch("POSTED")).toBe(true);
@@ -436,14 +457,13 @@ describe("cutover rules", () => {
     });
 
     /**
-     * `ImportBatchDiscardService.requireDiscardable:215-222` and
-     * `ImportBatchService.markDiscarded:187-193`: "only a DRAFT or REVERSED batch
-     * can be discarded". A POSTED one has journals behind its leases — reverse it
-     * first.
+     * DRAFT only, by the controller ruling landing in the backend's current fix
+     * round: "A reversed batch keeps its contracts; post it again or leave it
+     * reversed." A POSTED one has journals behind its leases — reverse it first.
      */
-    it("allows a discard on DRAFT and REVERSED only", () => {
+    it("allows a discard on DRAFT alone", () => {
         expect(canDiscardBatch("DRAFT")).toBe(true);
-        expect(canDiscardBatch("REVERSED")).toBe(true);
+        expect(canDiscardBatch("REVERSED")).toBe(false);
         expect(canDiscardBatch("POSTED")).toBe(false);
         expect(canDiscardBatch("DISCARDED")).toBe(false);
     });

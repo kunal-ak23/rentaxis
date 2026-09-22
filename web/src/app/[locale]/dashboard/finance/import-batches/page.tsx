@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import {
@@ -18,10 +18,10 @@ import {
     type LeaseOutcome, type PostJob,
 } from "@/lib/api/cutover";
 import {
-    CONTRACT_IMPORT_ACCEPT, canDiscardBatch, canDownloadImportTemplate, canPostBatch, canReverseBatch,
+    CONTRACT_IMPORT_ACCEPT, batchAction, canDiscardBatch, canDownloadImportTemplate, canReverseBatch,
     contractImportRefusal, isBatchFinal, isBulkPostTerminal, isImportJobTerminal, isRepost,
 } from "@/lib/cutoverRules";
-import { useImportJobPolling } from "@/hooks/useImportJobPolling";
+import { findResumableJob, useImportJobPolling } from "@/hooks/useImportJobPolling";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /**
@@ -113,11 +113,18 @@ export default function ImportBatchesPage() {
         isTerminal: job => isImportJobTerminal(job.status),
     });
 
+    /**
+     * Which batch the post belongs to. STATE, not a ref, because it is part of
+     * the poll's storage key — `bulk-post:<batchId>` — which is what lets a
+     * reload rejoin a run in progress.
+     */
+    const [postBatchId, setPostBatchId] = useState<string | null>(null);
+
     /** The same hook, a second job KIND — not a second implementation. */
     const postJob = useImportJobPolling<PostJob>({
-        kind: "bulk-post",
-        scope: jobScope,
-        fetchStatus: jobId => cutoverApi.batches.postStatus(postBatchIdRef.current ?? "", jobId),
+        kind: `bulk-post:${postBatchId ?? ""}`,
+        scope: postBatchId ? jobScope : null,
+        fetchStatus: jobId => cutoverApi.batches.postStatus(postBatchId ?? "", jobId),
         isTerminal: job => isBulkPostTerminal(job.status),
     });
 
@@ -128,11 +135,16 @@ export default function ImportBatchesPage() {
     const [confirmPost, setConfirmPost] = useState<ImportBatch | null>(null);
     const [confirmDiscard, setConfirmDiscard] = useState<ImportBatch | null>(null);
     /**
-     * Which batch the running post belongs to — the status URL needs it. A ref,
-     * because the poll's fetcher must read the current value without the hook
-     * restarting every time it changes.
+     * Rejoin a bulk post left running by a reload. The job id lives under a key
+     * that carries its batch, so the batch is read back from there — setting it
+     * mounts the poller against the right status URL.
      */
-    const postBatchIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!jobScope || postBatchId) return;
+        const found = findResumableJob("bulk-post", jobScope);
+        if (found) setPostBatchId(found.discriminator);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobScope?.tenantId, jobScope?.userId, postBatchId]);
 
     const load = useCallback(() => {
         setLoading(true);
@@ -187,6 +199,18 @@ export default function ImportBatchesPage() {
         load();
     }, [postedBatchId, load]);
 
+    /**
+     * The outcomes of the last post of each batch, so a row offers a retry only
+     * when something is actually known to have failed. Keyed by the batch the
+     * result landed on — for a re-post that is the successor, not the row pressed.
+     */
+    const [lastOutcomes, setLastOutcomes] = useState<Record<string, LeaseOutcome[]>>({});
+    useEffect(() => {
+        const result = postJob.job?.result;
+        if (!result) return;
+        setLastOutcomes(prev => ({ ...prev, [result.batchId]: result.leases }));
+    }, [postJob.job]);
+
     /** Failures first, then posted, then already-posted. */
     const postResults = useMemo(() => {
         const leases = postJob.job?.result?.leases ?? [];
@@ -198,7 +222,7 @@ export default function ImportBatchesPage() {
         setDiscard(null);
         setResultPage(0);
         setConfirmPost(null);
-        postBatchIdRef.current = b.id;
+        setPostBatchId(b.id);
         cutoverApi.batches
             .post(b.id)
             .then(({ jobId }) => postJob.start(jobId))
@@ -514,6 +538,12 @@ export default function ImportBatchesPage() {
                 </p>
             )}
 
+            {importJob.polling && (
+                <p data-testid="post-blocked" className="mb-4 text-xs font-medium text-warning">
+                    {t("postBlockedByUpload")}
+                </p>
+            )}
+
             {postError && (
                 <p role="alert" data-testid="post-error" className="mb-4 text-xs font-semibold text-error">
                     {postError}
@@ -769,21 +799,29 @@ export default function ImportBatchesPage() {
                                                             {t("viewJournals")}
                                                         </Link>
                                                     )}
-                                                    {canPostBatch(b.status) && (
-                                                        <button
-                                                            type="button"
-                                                            data-testid={`post-batch-${b.id}`}
-                                                            disabled={postJob.polling}
-                                                            onClick={() => setConfirmPost(b)}
-                                                            className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50"
-                                                        >
-                                                            {isRepost(b.status)
-                                                                ? t("postAgain")
-                                                                : b.status === "POSTED"
-                                                                  ? t("retryFailed")
-                                                                  : t("postBatch")}
-                                                        </button>
-                                                    )}
+                                                    {(() => {
+                                                        const action = batchAction(b.status, lastOutcomes[b.id] ?? null);
+                                                        if (!action) return null;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                data-testid={`post-batch-${b.id}`}
+                                                                // One job at a time: posting while a
+                                                                // workbook is still being validated
+                                                                // would have two runs writing to the
+                                                                // same batches at once.
+                                                                disabled={postJob.polling || importJob.polling}
+                                                                onClick={() => setConfirmPost(b)}
+                                                                className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {action === "repost"
+                                                                    ? t("postAgain")
+                                                                    : action === "retry"
+                                                                      ? t("retryFailed")
+                                                                      : t("postBatch")}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                     {canReverseBatch(b.status) && (
                                                         <button
                                                             type="button"

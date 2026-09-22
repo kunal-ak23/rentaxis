@@ -180,11 +180,11 @@ describe("import batches list", () => {
      * Its leases are still there, so it offers "Post again" (which creates a
      * successor batch) and "Discard". Only DISCARDED offers nothing.
      */
-    it("still offers actions on a reversed batch", async () => {
+    it("offers a reversed batch Post again, and nothing else", async () => {
         renderPage();
         await screen.findByTestId("batch-row-b-reversed");
         expect(screen.getByTestId("post-batch-b-reversed")).toBeInTheDocument();
-        expect(screen.getByTestId("discard-batch-b-reversed")).toBeInTheDocument();
+        expect(screen.queryByTestId("discard-batch-b-reversed")).not.toBeInTheDocument();
         expect(screen.queryByTestId("batch-final-b-reversed")).not.toBeInTheDocument();
     });
 
@@ -544,13 +544,46 @@ describe("bulk post", () => {
         expect(screen.getByTestId("post-summary")).toHaveTextContent("412");
     });
 
-    /** Posting a POSTED batch is the retry path: already-posted contracts are skipped. */
-    it("offers Retry failed contracts on a posted batch that still has failures", async () => {
+    /**
+     * Evidence, not optimism: a POSTED batch offers nothing until a run of THIS
+     * batch has actually left a FAILED contract behind.
+     */
+    it("offers no action on a posted batch until a failure is known", async () => {
         renderPage();
         await screen.findByTestId("batch-row-b-posted");
-        fireEvent.click(screen.getByTestId("post-batch-b-posted"));
-        expect(await screen.findByTestId("confirm-post-batch")).toBeInTheDocument();
+        expect(screen.queryByTestId("post-batch-b-posted")).not.toBeInTheDocument();
+    });
+
+    it("offers Retry failed contracts once a run has reported one", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        // Post the draft; its result carries one FAILED contract.
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        await screen.findByTestId("post-results-table");
+
+        // The result is for b-posted (the job's batchId), so that row now offers a retry.
+        await waitFor(() => expect(screen.getByTestId("post-batch-b-posted")).toBeInTheDocument());
         expect(screen.getByTestId("post-batch-b-posted")).toHaveTextContent(en.Cutover.retryFailed);
+    });
+
+    it("offers nothing when the run left no failures", async () => {
+        api.postStatus.mockResolvedValue(
+            postJob({
+                result: {
+                    ...postJob().result, leasesFailed: 0,
+                    leases: [
+                        { leaseId: "l1", externalContractRef: "C-001", outcome: "POSTED", reason: null, journals: 4, chequesDeposited: 0, chequesCleared: 0, chequesBounced: 0, recognitionEntriesPosted: 0 },
+                    ],
+                },
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+        await screen.findByTestId("post-results-table");
+        expect(screen.queryByTestId("post-batch-b-posted")).not.toBeInTheDocument();
     });
 
     /** A REVERSED batch re-posts as a SUCCESSOR; the copy has to say so. */
@@ -587,12 +620,27 @@ describe("bulk post", () => {
 });
 
 describe("discard", () => {
-    it("offers Discard on DRAFT and REVERSED but not on POSTED", async () => {
+    /**
+     * Controller ruling landing now: "A reversed batch keeps its contracts; post
+     * it again or leave it reversed." DRAFT alone discards.
+     */
+    it("offers Discard on a DRAFT batch and on nothing else", async () => {
         renderPage();
         await screen.findByTestId("batch-row-b-draft");
         expect(screen.getByTestId("discard-batch-b-draft")).toBeInTheDocument();
-        expect(screen.getByTestId("discard-batch-b-reversed")).toBeInTheDocument();
+        expect(screen.queryByTestId("discard-batch-b-reversed")).not.toBeInTheDocument();
         expect(screen.queryByTestId("discard-batch-b-posted")).not.toBeInTheDocument();
+    });
+
+    it("surfaces the reversed-batch refusal if it ever arrives", async () => {
+        api.discard.mockRejectedValue(
+            new ApiError(400, "A reversed batch keeps its contracts; post it again or leave it reversed"),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("discard-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-discard-batch"));
+        expect(await screen.findByRole("alert")).toHaveTextContent("keeps its contracts");
     });
 
     it("discards behind a destructive confirmation and summarises what went and what stayed", async () => {
@@ -656,5 +704,32 @@ describe("carried review items", () => {
         await waitFor(() => expect(screen.queryByTestId("import-success")).not.toBeInTheDocument());
         expect(screen.getByTestId("batch-row-b-new")).toHaveAttribute("data-imported", "true");
         expect(screen.getByTestId("import-view-batch-b-new")).toBeInTheDocument();
+    });
+});
+
+describe("bulk post: resume and contention", () => {
+    /** (b) A reload rejoins the post, the way the workbook upload already does. */
+    it("resumes a running bulk post after a reload", async () => {
+        const { importJobStorageKey } = await import("@/hooks/useImportJobPolling");
+        window.sessionStorage.setItem(
+            importJobStorageKey("bulk-post:b-posted", { tenantId: "tenant-1", userId: "user-1" }),
+            "post-job-1",
+        );
+        api.postStatus.mockResolvedValue(postJob({ status: "POSTING", processed: 5, total: 38, result: null }));
+
+        renderPage();
+        await waitFor(() => expect(api.postStatus).toHaveBeenCalledWith("b-posted", "post-job-1"));
+        expect(await screen.findByTestId("post-progress")).toHaveTextContent("5");
+    });
+
+    /** (c) One job at a time: posting while a workbook is still validating is a trap. */
+    it("disables Post while an upload job is in flight", async () => {
+        api.status.mockResolvedValue(jobResult({ status: "VALIDATING", importBatchId: null }));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        pickWorkbook();
+
+        await waitFor(() => expect(screen.getByTestId("post-batch-b-draft")).toBeDisabled());
+        expect(screen.getByTestId("post-blocked")).toHaveTextContent(en.Cutover.postBlockedByUpload);
     });
 });

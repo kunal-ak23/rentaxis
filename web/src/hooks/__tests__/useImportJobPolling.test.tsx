@@ -23,7 +23,7 @@ vi.mock("@/lib/api/cutover", async orig => {
     };
 });
 
-import { importJobStorageKey, useImportJobPolling } from "@/hooks/useImportJobPolling";
+import { findResumableJob, importJobStorageKey, useImportJobPolling } from "@/hooks/useImportJobPolling";
 
 /** The scope a signed-in accountant of one organisation polls under. */
 const SCOPE = { tenantId: "tenant-1", userId: "user-1" };
@@ -251,6 +251,66 @@ describe("useImportJobPolling", () => {
         expect(hook.current.polling).toBe(false);
         expect(window.sessionStorage.getItem(KEY)).toBeNull();
         unmount();
+    });
+
+    /**
+     * The bulk-post poll needs its batch id (the status URL is scoped by batch),
+     * so the key carries it — that is what makes a reload able to rejoin.
+     */
+    it("carries a discriminator in the key so a per-batch job can be resumed", () => {
+        expect(importJobStorageKey("bulk-post:b-7", SCOPE)).toBe(
+            "rentaxis.cutover.job.bulk-post:b-7.tenant-1.user-1",
+        );
+        expect(importJobStorageKey("bulk-post:b-7", SCOPE)).not.toBe(
+            importJobStorageKey("bulk-post:b-8", SCOPE),
+        );
+    });
+
+    it("resumes a per-batch job on the next mount", async () => {
+        const fetchStatus = vi.fn(async () => ({ status: "POSTING" }));
+        const first = renderHook(() =>
+            useImportJobPolling<{ status: string }>({
+                kind: "bulk-post:b-7",
+                scope: SCOPE,
+                fetchStatus,
+                isTerminal: j => j.status === "COMPLETED",
+            }),
+        );
+        act(() => first.result.current.start("post-job-1"));
+        await until(() => window.sessionStorage.getItem(importJobStorageKey("bulk-post:b-7", SCOPE)) === "post-job-1");
+        first.unmount();
+
+        fetchStatus.mockClear();
+        const second = renderHook(() =>
+            useImportJobPolling<{ status: string }>({
+                kind: "bulk-post:b-7",
+                scope: SCOPE,
+                fetchStatus,
+                isTerminal: j => j.status === "COMPLETED",
+            }),
+        );
+        await until(() => fetchStatus.mock.calls.length >= 1);
+        expect(fetchStatus).toHaveBeenCalledWith("post-job-1");
+        second.unmount();
+    });
+
+    /**
+     * A reload has no idea which batch was posting. The key holds it, so the
+     * page asks the module that owns the key format rather than parsing it.
+     */
+    it("finds a resumable job by kind prefix and gives back its discriminator", () => {
+        expect(findResumableJob("bulk-post", SCOPE)).toBeNull();
+
+        window.sessionStorage.setItem(importJobStorageKey("bulk-post:b-7", SCOPE), "post-job-1");
+        expect(findResumableJob("bulk-post", SCOPE)).toEqual({ discriminator: "b-7", jobId: "post-job-1" });
+
+        // Another organisation's, or another user's, is not ours to resume.
+        window.sessionStorage.clear();
+        window.sessionStorage.setItem(
+            importJobStorageKey("bulk-post:b-7", { tenantId: "other", userId: "user-1" }),
+            "post-job-1",
+        );
+        expect(findResumableJob("bulk-post", SCOPE)).toBeNull();
     });
 
     it("does not persist anything when there is no scope yet", async () => {

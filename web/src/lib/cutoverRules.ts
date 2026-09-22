@@ -1,5 +1,6 @@
 import type {
-    ImportBatchStatus, ImportJobStatus, OpeningBalanceGrid, OpeningBalanceRow, ReconciliationRow,
+    ImportBatchStatus, ImportJobStatus, LeaseOutcomeStatus, OpeningBalanceGrid, OpeningBalanceRow,
+    ReconciliationRow,
 } from "@/lib/api/cutover";
 import { isZeroAmount } from "@/lib/money";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -66,13 +67,50 @@ export function isRepost(status: ImportBatchStatus): boolean {
 /**
  * May this batch be discarded?
  *
- * `ImportBatchDiscardService.requireDiscardable` (:215-222) and
- * `ImportBatchService.markDiscarded` (:187-193): "only a DRAFT or REVERSED batch
- * can be discarded". A POSTED one still has journals behind its leases and the
- * server says so — "Reverse it first — its contracts are on the books."
+ * **DRAFT alone.**
+ *
+ * `ImportBatchDiscardService.requireDiscardable` and
+ * `ImportBatchService.markDiscarded` allowed DRAFT *or* REVERSED when this screen
+ * was first written, and it offered both. A controller ruling in the backend's
+ * current fix round narrows it: a REVERSED batch keeps its contracts, so the way
+ * back is to post it again — not to throw the contracts away. The server refuses
+ * it with "A reversed batch keeps its contracts; post it again or leave it
+ * reversed", and the UI must not offer what the server refuses, so this changes
+ * ahead of the commit rather than after it.
+ *
+ * (When that commit lands, the Java to cite is the same two methods; until then
+ * this is deliberately stricter than the code in `main`.)
  */
 export function canDiscardBatch(status: ImportBatchStatus): boolean {
-    return status === "DRAFT" || status === "REVERSED";
+    return status === "DRAFT";
+}
+
+/** Just enough of a contract outcome to decide whether a retry has anything to do. */
+export type OutcomeLike = { outcome: LeaseOutcomeStatus };
+
+/**
+ * The one action this batch's row should offer, or null for none.
+ *
+ * `retry` is deliberately **evidence-based**. Posting a POSTED batch is a legal
+ * retry — the run walks the whole plan and already-posted contracts come back
+ * `SKIPPED_ALREADY_POSTED` — but offering it unconditionally promises a retry
+ * nothing knows exists, and pressing it on a clean batch just reports that
+ * everything was already posted. So it appears only when the last run left a
+ * FAILED contract behind. A batch whose contracts are all on the books offers
+ * nothing, which is the truth about it.
+ *
+ * @param lastResult the outcomes of the most recent post of THIS batch, or null
+ *                   when none has been seen in this session.
+ */
+export function batchAction(
+    status: ImportBatchStatus,
+    lastResult: OutcomeLike[] | null,
+): "post" | "repost" | "retry" | null {
+    if (!canPostBatch(status)) return null;
+    if (status === "DRAFT") return "post";
+    if (isRepost(status)) return "repost";
+    // POSTED: only if something is known to have failed.
+    return lastResult?.some(r => r.outcome === "FAILED") ? "retry" : null;
 }
 
 /**

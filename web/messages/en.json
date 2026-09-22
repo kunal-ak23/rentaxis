@@ -2328,6 +2328,7 @@
     "discardedBatchFinal": "Discarded — its contracts and the rows it created are gone",
     "derivedDebit": "Imported debit",
     "derivedCredit": "Imported credit",
-    "derivedFromPosted": "Derived figures come from {n, plural, one {# posted contract} other {# posted contracts}}."
+    "derivedFromPosted": "Derived figures come from {n, plural, one {# posted contract} other {# posted contracts}}.",
+    "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch."
   }
 }
