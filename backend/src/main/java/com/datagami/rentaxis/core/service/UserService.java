@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
@@ -92,7 +93,7 @@ public class UserService {
      */
     private static boolean getsTenantMembership(UserRole role) {
         return switch (role) {
-            case TENANT_ADMIN, PROPERTY_MANAGER, TENANT_USER, RENTER, SECURITY_GUARD -> true;
+            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER, SECURITY_GUARD -> true;
             case SUPER_ADMIN -> false;
         };
     }
@@ -384,10 +385,44 @@ public class UserService {
                 "PASSWORD_CHANGED:" + user.getId()));
     }
 
+    /**
+     * Every user the caller is entitled to see: their own tenant's when there is
+     * a tenant in context, and all of them when there is not.
+     *
+     * <p><b>The tenant predicate is written out rather than left to the filter
+     * (P0).</b> This was {@code userRepository.findAll()} with no
+     * {@code @Transactional}, serving {@code GET /api/admin/users} — the whole
+     * user directory, with names, emails, phone numbers and roles. Two separate
+     * things have to hold for that to mean "this landlord's users": the Hibernate
+     * tenant filter must be enabled (it is, per request — see below), and the
+     * query must run on the session it was enabled on. {@code TenantAspect}
+     * enables it on the session bound to the current transaction, and there was
+     * no transaction here, so the second one rested entirely on
+     * {@code spring.jpa.open-in-view} being left at its default. Spring Boot logs
+     * a warning at every boot asking for that default to be turned off. Tenant
+     * isolation is not something to hold with a setting we are being advised to
+     * change: {@code CrossTenantAdminSurfacesIT#aTenantAdminListingUsersSeesOnlyTheirOwnTenantsUsers}
+     * calls this method directly, outside any request, and it returned every
+     * landlord's users.</p>
+     *
+     * <p>No tenant in context means no narrowing, which is the SUPER_ADMIN
+     * directory and must keep working. A SUPER_ADMIN who <em>has</em> selected an
+     * organisation sends {@code X-Tenant-Id}, so they get that organisation's
+     * users — the same rule every other list endpoint in this codebase follows,
+     * rather than a second definition of "selected" that only this one has.</p>
+     */
+    @Transactional(readOnly = true)
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        UUID tenantId = TenantContextHolder.getTenantId();
+        return tenantId == null ? userRepository.findAll() : userRepository.findByTenantId(tenantId);
     }
 
+    /**
+     * {@code @Transactional} for the same reason as {@link #getAllUsers()},
+     * although this one names its tenant in the query and so never depended on
+     * the filter to be correct.
+     */
+    @Transactional(readOnly = true)
     public List<User> getUsersByTenantId(UUID tenantId) {
         return userRepository.findByTenantId(tenantId);
     }
@@ -555,6 +590,25 @@ public class UserService {
                 .toList();
     }
 
+    /**
+     * The users assigned to a property.
+     *
+     * <p>{@code @Transactional} for the third instance of the shape this hotfix is
+     * about: neither repository call names a tenant, and
+     * {@code user_property_assignments} is not a tenant-scoped entity at all, so
+     * the only thing that narrows the {@code findAllById} is the filter — which
+     * needs a session that outlives the call. It has one over HTTP today and
+     * nowhere else.
+     *
+     * <p><b>This does not make the endpoint above it safe.</b>
+     * {@code GET /api/v1/properties/{id}/managers} reaches here without checking
+     * that the property belongs to the caller's tenant, so a foreign property id
+     * still selects foreign assignment rows; what this annotation guarantees is
+     * only that the users those rows point at are not returned. The missing check
+     * belongs in {@code PropertyService} and is called out in the hotfix report
+     * rather than widened into here.
+     */
+    @Transactional(readOnly = true)
     public List<User> getAssignedManagers(UUID propertyId) {
         List<UUID> userIds = propertyAssignmentRepository.findByPropertyId(propertyId)
                 .stream()

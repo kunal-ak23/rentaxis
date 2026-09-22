@@ -104,6 +104,19 @@ public class AssetController {
         return "/api/v1/assets/serve/" + folder + "/" + fileName;
     }
 
+    /**
+     * Storage-key prefix that marks a file as never servable through this
+     * unauthenticated endpoint — see {@code VoucherAttachmentService}. This
+     * endpoint is {@code permitAll()} in {@code SecurityConfig} (no auth, no role,
+     * no tenant check at all), which is fine for logos and listing photos but is a
+     * P0 cross-tenant leak for a private document like a voucher's invoice scan:
+     * without this guard, anyone holding the storage key could fetch it directly,
+     * bypassing every guard the owning feature built (security ruling, Task 5 fix
+     * round 1; tracked platform-wide as issue #300 for deduction attachments and
+     * lease documents, which are not touched here).
+     */
+    static final String PRIVATE_PREFIX = "private";
+
     @GetMapping("/serve/**")
     public ResponseEntity<byte[]> serveAsset(jakarta.servlet.http.HttpServletRequest request) {
         String path = request.getRequestURI().replace("/api/v1/assets/serve/", "");
@@ -113,6 +126,17 @@ public class AssetController {
             if (!filePath.startsWith(baseDir)) {
                 log.warn("Path traversal attempt blocked: {}", path);
                 return ResponseEntity.status(403).build();
+            }
+            // Checked AFTER normalize()/startsWith(), so ".."-tricks and encoding
+            // games are already resolved into a canonical path relative to baseDir
+            // before this looks at its first segment; case-insensitive so a
+            // case-folding filesystem (macOS, Windows) cannot be used to spell
+            // around a case-sensitive check.
+            Path relative = baseDir.relativize(filePath);
+            if (relative.getNameCount() > 0 && relative.getName(0).toString().equalsIgnoreCase(PRIVATE_PREFIX)) {
+                // 404, not 403: this endpoint is unauthenticated, so a 403 would
+                // confirm a private file exists at this path to an anonymous caller.
+                return ResponseEntity.notFound().build();
             }
             if (!filePath.toFile().exists()) {
                 return ResponseEntity.notFound().build();

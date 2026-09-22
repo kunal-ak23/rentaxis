@@ -141,9 +141,14 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 // through with no TenantContext at all — which silently disables the
                 // tenantFilter on BaseTenantEntity. Guards get exactly the RENTER
                 // treatment: the requested tenant must equal their home tenant.
+                //
+                // ACCOUNTANT is here for the same reason: the finance controllers
+                // grant it via @PreAuthorize, but a role missing from this list never
+                // reaches them — it is refused here, before routing.
                 if ("SUPER_ADMIN".equals(userRole)) {
                     authorized = true;
                 } else if ("TENANT_ADMIN".equals(userRole) || "PROPERTY_MANAGER".equals(userRole)
+                        || "ACCOUNTANT".equals(userRole)
                         || "TENANT_USER".equals(userRole) || "RENTER".equals(userRole)
                         || "SECURITY_GUARD".equals(userRole)) {
                     if (requestedTenantId == null) {
@@ -154,7 +159,13 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                     }
                 }
 
-                if (!authorized && requestedTenantId != null) {
+                // No `&& requestedTenantId != null` here. With neither tenant header
+                // a tenant-scoped role used to fall through this check and reach the
+                // controllers with NO TenantContext at all, which disables the
+                // tenantFilter on BaseTenantEntity — a cross-tenant read, not a
+                // harmless unscoped one. SUPER_ADMIN is the only role that sets
+                // authorized without a tenant, so it still passes.
+                if (!authorized) {
                     response.sendError(HttpServletResponse.SC_FORBIDDEN, "Access to requested tenant is forbidden.");
                     return;
                 }
@@ -231,7 +242,9 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             authorized = true;
         }
 
-        if (!authorized && requestedTenantId != null) {
+        // Same shape as the legacy branch: a verified non-SUPER_ADMIN token with no
+        // home tenant and no X-Tenant-Id is refused rather than let through unscoped.
+        if (!authorized) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "Access to requested tenant is forbidden.");
             return;
         }

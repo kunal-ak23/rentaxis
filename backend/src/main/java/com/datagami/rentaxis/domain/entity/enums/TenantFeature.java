@@ -5,7 +5,8 @@ public enum TenantFeature {
     MEETINGS(false),             // premium — off by default for all tenants
     EMAIL_NOTIFICATIONS(false),  // off by default — flipped on per-tenant during phased rollout
     LEASE_RENEWALS(false),       // renewal reminders (90/60/30) + CRM — off by default, per-tenant rollout
-    GATEPASS(false);             // guest gate passes + guard app — off by default, per-tenant rollout
+    GATEPASS(false),             // guest gate passes + guard app — off by default, per-tenant rollout
+    MOBILE_FINANCE(false);       // mobile finance/lease/cheque screens — off until the apps are rewritten for accounting v2 (spec D7)
 
     private final boolean defaultEnabled;
 

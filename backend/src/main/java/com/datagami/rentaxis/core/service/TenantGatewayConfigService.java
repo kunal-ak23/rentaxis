@@ -2,8 +2,14 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PaymentGatewayDTO;
 import com.datagami.rentaxis.api.dto.TenantGatewayConfigDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.PaymentGateway;
 import com.datagami.rentaxis.domain.entity.TenantGatewayConfig;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.PaymentGatewayRepository;
 import com.datagami.rentaxis.domain.repository.TenantGatewayConfigRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,11 +27,12 @@ public class TenantGatewayConfigService {
 
     private final TenantGatewayConfigRepository tenantGatewayConfigRepository;
     private final PaymentGatewayRepository paymentGatewayRepository;
+    private final AccountRepository accountRepository;
     private final EncryptionService encryptionService;
 
     @Transactional(readOnly = true)
     public TenantGatewayConfigDTO getActiveConfig() {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             return null;
         }
@@ -38,7 +46,7 @@ public class TenantGatewayConfigService {
                 .orElseThrow(() -> new RuntimeException("Payment gateway not found"));
 
         TenantGatewayConfig config;
-        List<TenantGatewayConfig> existingConfigs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> existingConfigs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (!existingConfigs.isEmpty()) {
             config = existingConfigs.get(0);
         } else {
@@ -61,12 +69,44 @@ public class TenantGatewayConfigService {
         if (dto.getWebhookSecret() != null && !dto.getWebhookSecret().isEmpty()) {
             config.setWebhookSecretEncrypted(encryptionService.encrypt(dto.getWebhookSecret()));
         }
+        config.setSettlementAccount(settlementAccount(dto.getSettlementAccountId()));
         config.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : true);
         config.setIsTestMode(dto.getIsTestMode() != null ? dto.getIsTestMode() : true);
         config.setUpdatedAt(Instant.now());
 
         TenantGatewayConfig saved = tenantGatewayConfigRepository.save(config);
         return mapToDTO(saved);
+    }
+
+    /**
+     * The account a capture is allowed to debit, checked when it is nominated
+     * rather than when the money arrives.
+     *
+     * <p>Validated through {@link ChequeService#requireSettlementAccount} — the
+     * same rule the register applies to every other place cleared funds land — and
+     * then narrowed to BANK: a gateway settles by bank transfer, and an
+     * organisation that pointed Razorpay at the petty-cash leaf would have every
+     * online payment show up as cash in the drawer. Doing it here means a
+     * misconfiguration is a 400 on a settings screen instead of a failed capture
+     * with the renter's money already taken.</p>
+     */
+    private Account settlementAccount(UUID accountId) {
+        if (accountId == null) {
+            return null;
+        }
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new BusinessRuleViolationException("Account " + accountId + " does not exist"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(account.getTenantId())) {
+            // Another tenant's account, which to this one simply does not exist.
+            throw new BusinessRuleViolationException("Account " + accountId + " does not exist");
+        }
+        ChequeService.requireSettlementAccount(account);
+        if (account.getAccountSubType() != AccountSubType.BANK) {
+            throw new BusinessRuleViolationException(
+                    "Settlement account " + account.getCode() + " must be a bank account");
+        }
+        return account;
     }
 
     private boolean isNewCredentialValue(String value) {
@@ -77,7 +117,7 @@ public class TenantGatewayConfigService {
 
     @Transactional(readOnly = true)
     public String testConnection() {
-        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrue();
+        List<TenantGatewayConfig> configs = tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc();
         if (configs.isEmpty()) {
             return "No active gateway configuration found";
         }
@@ -126,6 +166,9 @@ public class TenantGatewayConfigService {
         dto.setHasWebhookSecret(config.getWebhookSecretEncrypted() != null && !config.getWebhookSecretEncrypted().isEmpty());
         dto.setIsActive(config.getIsActive());
         dto.setIsTestMode(config.getIsTestMode());
+        Account settlement = config.getSettlementAccount();
+        dto.setSettlementAccountId(settlement != null ? settlement.getId() : null);
+        dto.setSettlementAccountName(settlement != null ? settlement.getName() : null);
         return dto;
     }
 

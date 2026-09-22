@@ -1,0 +1,77 @@
+# The client's second General Ledger export for one contract, transcribed and anonymised.
+# Contract SAMPLE-26/001, dated 2026-09-16, term 2026-09-24 -> 2027-09-23 (365 days),
+# property "Sample Residences", renter "Sample Renter Two".
+# Only the AMOUNTS, DATES and DOCUMENT SEQUENCE come from the real export; every name
+# here is anonymised (rulings P5-R11 / P5-R13).
+#
+# Five accounts, and the point of this replay (ruling P5-R19, spec D2): THREE of them
+# are the per-property leaves PropertyAccountService's template patterns produce for a
+# property called "Sample Residences" —
+#   "Rent Receivable - {property}", "Advance Rent - {property}", "Rental Income {property}" —
+# and TWO are accounts created by hand and mapped onto the property's roles afterwards:
+#   PDC_RECEIVABLE -> "Shared PDC Receivable EIB"   (template would have said "PDC Receivable Sample Residences")
+#   ADMIN_FEE      -> "Shared Admin Fee"            (template would have said "Admin Fee - Sample Residences")
+# The export's own contract shares two generic tenant-wide accounts the same way; here
+# the sharing is expressed as a manual remap, which is the path spec D2 describes.
+#
+# Nothing ever clears or bounces on this contract: five post-dated cheques are
+# registered, each on its own posting date, and the whole 53,000.00 is still sitting in
+# PDC receivable at the cut-off. The admin-fee cheque is registered on 2026-09-11, five
+# days BEFORE the contract is dated — deviation D-d below.
+#
+# Deviations from the export, all authorised by the spec ("Deviations from PACT"):
+#   D-a  CIL amounts use the per-day rule (51,000 / 365 = 139.726027/day), not 30/360.
+#   D-b  CIL entry_date is period_end, not the 1st of the following month.
+#   D-d  the receivable's rows are in strict entry_date order, so the 2026-09-11 PDR
+#        leads the account; the export prints the post-dated receipts in a separate
+#        sub-block after the dated rows, so its running-balance column differs on those
+#        rows. The row set, the totals and the closing balance are identical.
+#   D-e  the export's Remarks cell is blank on every TCO row; we narrate them with the
+#        charge type's English name (ruling P5-R2). The blank narration below is what
+#        the export holds; LedgerDiff tolerates it on TCO only.
+#   D-f  the export's CIL Remarks cell reads "ADVANCE RENT ADJUSTMENT"; the fixture
+#        carries the product's own string, "Advance rent adjustment – Sep 2026" (en
+#        dash, month and year), which is compared to the character.
+# REPORT TOTAL: debit 157,000.00 = credit 157,000.00 (unchanged by D-a: the CIL rows
+# still sum to 51,000.00).
+account,entry_date,doc_type,particular,narration,debit,credit,balance
+Rent Receivable - Sample Residences,2026-09-11,PDR,Shared PDC Receivable EIB,Admin Fees,0.00,2000.00,-2000.00
+Rent Receivable - Sample Residences,2026-09-16,TCO,Advance Rent - Sample Residences,,51000.00,0.00,49000.00
+Rent Receivable - Sample Residences,2026-09-16,TCO,Shared Admin Fee,,2000.00,0.00,51000.00
+Rent Receivable - Sample Residences,2026-10-02,PDR,Shared PDC Receivable EIB,Rent - 1st Installment,0.00,12750.00,38250.00
+Rent Receivable - Sample Residences,2027-01-02,PDR,Shared PDC Receivable EIB,Rent - 2nd Installment,0.00,12750.00,25500.00
+Rent Receivable - Sample Residences,2027-04-02,PDR,Shared PDC Receivable EIB,Rent - 3rd Installment,0.00,12750.00,12750.00
+Rent Receivable - Sample Residences,2027-07-02,PDR,Shared PDC Receivable EIB,Rent - 4th Installment,0.00,12750.00,0.00
+Advance Rent - Sample Residences,2026-09-16,TCO,Rent Receivable - Sample Residences,,0.00,51000.00,-51000.00
+Advance Rent - Sample Residences,2026-09-30,CIL,Rental Income Sample Residences,Advance rent adjustment – Sep 2026,978.08,0.00,-50021.92
+Advance Rent - Sample Residences,2026-10-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Oct 2026,4331.51,0.00,-45690.41
+Advance Rent - Sample Residences,2026-11-30,CIL,Rental Income Sample Residences,Advance rent adjustment – Nov 2026,4191.78,0.00,-41498.63
+Advance Rent - Sample Residences,2026-12-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Dec 2026,4331.51,0.00,-37167.12
+Advance Rent - Sample Residences,2027-01-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Jan 2027,4331.51,0.00,-32835.61
+Advance Rent - Sample Residences,2027-02-28,CIL,Rental Income Sample Residences,Advance rent adjustment – Feb 2027,3912.33,0.00,-28923.28
+Advance Rent - Sample Residences,2027-03-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Mar 2027,4331.51,0.00,-24591.77
+Advance Rent - Sample Residences,2027-04-30,CIL,Rental Income Sample Residences,Advance rent adjustment – Apr 2027,4191.78,0.00,-20399.99
+Advance Rent - Sample Residences,2027-05-31,CIL,Rental Income Sample Residences,Advance rent adjustment – May 2027,4331.51,0.00,-16068.48
+Advance Rent - Sample Residences,2027-06-30,CIL,Rental Income Sample Residences,Advance rent adjustment – Jun 2027,4191.78,0.00,-11876.70
+Advance Rent - Sample Residences,2027-07-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Jul 2027,4331.51,0.00,-7545.19
+Advance Rent - Sample Residences,2027-08-31,CIL,Rental Income Sample Residences,Advance rent adjustment – Aug 2027,4331.51,0.00,-3213.68
+Advance Rent - Sample Residences,2027-09-23,CIL,Rental Income Sample Residences,Advance rent adjustment – Sep 2027,3213.68,0.00,0.00
+Shared PDC Receivable EIB,2026-09-11,PDR,Rent Receivable - Sample Residences,Admin Fees,2000.00,0.00,2000.00
+Shared PDC Receivable EIB,2026-10-02,PDR,Rent Receivable - Sample Residences,Rent - 1st Installment,12750.00,0.00,14750.00
+Shared PDC Receivable EIB,2027-01-02,PDR,Rent Receivable - Sample Residences,Rent - 2nd Installment,12750.00,0.00,27500.00
+Shared PDC Receivable EIB,2027-04-02,PDR,Rent Receivable - Sample Residences,Rent - 3rd Installment,12750.00,0.00,40250.00
+Shared PDC Receivable EIB,2027-07-02,PDR,Rent Receivable - Sample Residences,Rent - 4th Installment,12750.00,0.00,53000.00
+Rental Income Sample Residences,2026-09-30,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Sep 2026,0.00,978.08,-978.08
+Rental Income Sample Residences,2026-10-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Oct 2026,0.00,4331.51,-5309.59
+Rental Income Sample Residences,2026-11-30,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Nov 2026,0.00,4191.78,-9501.37
+Rental Income Sample Residences,2026-12-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Dec 2026,0.00,4331.51,-13832.88
+Rental Income Sample Residences,2027-01-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Jan 2027,0.00,4331.51,-18164.39
+Rental Income Sample Residences,2027-02-28,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Feb 2027,0.00,3912.33,-22076.72
+Rental Income Sample Residences,2027-03-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Mar 2027,0.00,4331.51,-26408.23
+Rental Income Sample Residences,2027-04-30,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Apr 2027,0.00,4191.78,-30600.01
+Rental Income Sample Residences,2027-05-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – May 2027,0.00,4331.51,-34931.52
+Rental Income Sample Residences,2027-06-30,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Jun 2027,0.00,4191.78,-39123.30
+Rental Income Sample Residences,2027-07-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Jul 2027,0.00,4331.51,-43454.81
+Rental Income Sample Residences,2027-08-31,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Aug 2027,0.00,4331.51,-47786.32
+Rental Income Sample Residences,2027-09-23,CIL,Advance Rent - Sample Residences,Advance rent adjustment – Sep 2027,0.00,3213.68,-51000.00
+Shared Admin Fee,2026-09-16,TCO,Rent Receivable - Sample Residences,,0.00,2000.00,-2000.00

@@ -1,0 +1,5 @@
+# A ledger fixture whose fourth line lost its narration column. The loader must refuse
+# it by line number rather than shift every column one to the left.
+account,entry_date,doc_type,particular,narration,debit,credit,balance
+Rent Receivable Sample Tower,2025-08-28,TCO,Advance Rent Sample Tower,,12000.00,0.00,12000.00
+Rent Receivable Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,0.00,3000.00,9000.00

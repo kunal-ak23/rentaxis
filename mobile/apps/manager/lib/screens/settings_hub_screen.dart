@@ -16,6 +16,12 @@ class SettingsHubScreen extends ConsumerWidget {
     // instead of offering a guaranteed 403.
     final role = ref.watch(authProvider).role;
     final isAdmin = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
+    // MOBILE_FINANCE: /v1/finance/account-mappings was removed by accounting
+    // v2, so the Account Mappings screen 404s. The router redirects
+    // /settings/mappings, but go_router applies redirect to push too — leaving
+    // the tile would PUSH the dashboard on top of Settings, which is worse
+    // than the dead link. Hidden AND redirected (ruling P5-R8).
+    final financeEnabled = ref.watch(mobileFinanceEnabledProvider);
 
     return Scaffold(
       backgroundColor: m.background,
@@ -42,7 +48,7 @@ class SettingsHubScreen extends ConsumerWidget {
                         subtitle: l.gatewayDesc,
                         onTap: () => context.push('/settings/gateway'),
                       ),
-                    if (isAdmin)
+                    if (isAdmin && financeEnabled)
                       _MenuRow(
                         icon: Icons.account_tree_outlined,
                         label: l.mappings,

@@ -9,13 +9,14 @@ import {
     ShieldCheck,
     BookOpen,
     Receipt,
-    BarChart3,
+    ReceiptText,
+    Layers,
+    GitCompare,
     Home,
     FileText,
     Contact,
     CreditCard,
     Sliders,
-    GitBranch,
     AlertTriangle,
     Landmark,
     UserCog,
@@ -26,6 +27,13 @@ import {
     ScanLine,
     CalendarCheck,
     Megaphone,
+    BookUser,
+    Scale,
+    NotebookText,
+    LayoutTemplate,
+    CalendarClock,
+    Banknote,
+    RefreshCcw,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -43,7 +51,7 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
-    const tPayments = useTranslations("Payments");
+    const tCheques = useTranslations("Cheques");
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tDashboard = useTranslations("Dashboard");
     const tVendors = useTranslations("Vendors");
@@ -52,6 +60,10 @@ export default function MvpSidebar() {
     const tGatePass = useTranslations("GatePass");
     const tBookings = useTranslations("Bookings");
     const tPromotions = useTranslations("Promotions");
+    const tLedger = useTranslations("Ledger");
+    const tRecognition = useTranslations("Recognition");
+    const tVouchers = useTranslations("Vouchers");
+    const tCutover = useTranslations("Cutover");
     // Nav labels that were previously plain English literals. They render on
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
@@ -73,6 +85,13 @@ export default function MvpSidebar() {
 
     // Build menu items based on role permissions
     const menuItems = [
+        // Leases sits on its own gate rather than inside canViewProperties.
+        // An ACCOUNTANT is the role that posts, amends and extends a contract,
+        // and the properties gate does not admit them — so the one role that
+        // owns posting had no link to the screen it posts from.
+        ...(hasPermission(userRole, 'canViewLeases') && !hasPermission(userRole, 'canViewProperties')
+            ? [{ name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' }]
+            : []),
         ...(hasPermission(userRole, 'canViewProperties')
             ? [
                 { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
@@ -109,25 +128,99 @@ export default function MvpSidebar() {
             : []),
     ];
 
-    const financeItems = hasPermission(userRole, 'canAccessFinance') ? [
-        { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
-        { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt, tourId: 'sidebar-transactions' },
-        { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3, tourId: 'sidebar-reports' },
-        { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
-        { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
-        { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
-    ] : [];
+    // The accounting-v2 ledger replaced the old transactions and reports pages:
+    // journal vouchers are where entries are read and posted, and the three
+    // ledger reports are what the old reports page only gestured at.
+    //
+    // Three gates, not one: the ledger pages admit ACCOUNTANT; the cheque
+    // register's own controller (ChequeController's STAFF group) admits
+    // ACCOUNTANT *and* PROPERTY_MANAGER, unlike the old Payments link, which sat
+    // behind canAccessFinanceOps (SA/TA only) because PaymentScheduleController
+    // refused an accountant. The remaining operational pages (vendors, bank
+    // accounts) still do not admit either role — their controllers stop at
+    // TENANT_ADMIN.
+    const financeItems = [
+        ...(hasPermission(userRole, 'canAccessFinance') ? [
+            { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
+            { name: tLedger("journals"), href: "/dashboard/finance/journals", icon: Receipt, tourId: 'sidebar-journals' },
+            { name: tLedger("generalLedger"), href: "/dashboard/finance/general-ledger", icon: NotebookText, tourId: 'sidebar-general-ledger' },
+            { name: tLedger("tenantLedger"), href: "/dashboard/finance/tenant-ledger", icon: BookUser, tourId: 'sidebar-tenant-ledger' },
+            { name: tLedger("trialBalance"), href: "/dashboard/finance/trial-balance", icon: Scale, tourId: 'sidebar-trial-balance' },
+        ] : []),
+        // Vouchers sit in this branch, not in canAccessFinanceOps, because
+        // VoucherController's single class-level @PreAuthorize is
+        // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT') — the same set
+        // canAccessFinance carries, and NOT the SA/TA-only set the operational
+        // pages below use. Its own gate all the same: canManageVouchers mirrors
+        // that one annotation, so a future widening of the ledger's roles is not
+        // silently a widening of the voucher screens'.
+        ...(hasPermission(userRole, 'canManageVouchers') ? [
+            { name: tVouchers("vouchers"), href: "/dashboard/finance/vouchers", icon: ReceiptText, tourId: 'sidebar-vouchers' },
+        ] : []),
+        // The cut-over. ImportBatchController is SA/TA/ACCOUNTANT — the same set
+        // as canAccessFinance, so it belongs in this branch and not in the
+        // SA/TA-only one below; its own key all the same, mirroring that one
+        // annotation. The cut-over template download ON the page is the same set
+        // (PortfolioImportController.CUTOVER_ROLES admits ACCOUNTANT) and is
+        // gated there, not here.
+        ...(hasPermission(userRole, 'canManageImportBatches') ? [
+            { name: tCutover("importBatches"), href: "/dashboard/finance/import-batches", icon: Layers, tourId: 'sidebar-import-batches' },
+        ] : []),
+        // OpeningBalanceController is SA/TA/ACCOUNTANT too, on its own annotation
+        // (OpeningBalanceController.java:57) — hence its own key rather than a
+        // reuse of the batches one. Both pages sit behind it: the reconciliation
+        // report is the same controller.
+        ...(hasPermission(userRole, 'canManageOpeningBalances') ? [
+            { name: tCutover("openingBalances"), href: "/dashboard/finance/opening-balances", icon: Scale, tourId: 'sidebar-opening-balances' },
+            { name: tCutover("reconciliation"), href: "/dashboard/finance/reconciliation", icon: GitCompare, tourId: 'sidebar-reconciliation' },
+        ] : []),
+        // The month-end close. Its own gate rather than canAccessFinance because
+        // the two endpoints behind the page (RecognitionController's
+        // /finance/recognition/pending and /run) are SA/TA/ACCOUNTANT — the same
+        // set today, but the rule the link mirrors is that one, not the ledger's.
+        ...(hasPermission(userRole, 'canRunRecognition') ? [
+            { name: tRecognition("title"), href: "/dashboard/finance/recognition", icon: CalendarCheck, tourId: 'sidebar-recognition' },
+        ] : []),
+        ...(hasPermission(userRole, 'canManageCheques') ? [
+            { name: tCheques("register"), href: "/dashboard/finance/cheques", icon: CreditCard, tourId: 'sidebar-cheques-register' },
+            { name: tCheques("collection"), href: "/dashboard/finance/cheques/collection", icon: Banknote, tourId: 'sidebar-cheques-collection' },
+            { name: tCheques("returnReplace"), href: "/dashboard/finance/cheques/return-replace", icon: RefreshCcw, tourId: 'sidebar-cheques-return-replace' },
+            { name: tCheques("postDated"), href: "/dashboard/finance/cheques/post-dated", icon: CalendarClock, tourId: 'sidebar-cheques-post-dated' },
+        ] : []),
+        // PenaltyAssessmentController#list/#propose — same role set as canManageCheques
+        // minus nothing: SA/TA/ACCOUNTANT/PM all see the queue, deciding is gated
+        // inside it (canApprovePenalties).
+        ...(hasPermission(userRole, 'canProposePenalties') ? [
+            { name: tCheques("penalties"), href: "/dashboard/finance/penalties", icon: AlertTriangle, tourId: 'sidebar-penalties' },
+        ] : []),
+        ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
+            { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
+            { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
+        ] : []),
+    ];
 
-    const hrItems = hasPermission(userRole, 'canAccessFinance') ? [
+    // StaffController is hasAnyRole('SUPER_ADMIN','TENANT_ADMIN') — same gate.
+    const hrItems = hasPermission(userRole, 'canAccessFinanceOps') ? [
         { name: tStaff("title"), href: "/dashboard/staff", icon: UserCog },
     ] : [];
 
-    const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
-        { name: tNav("accountMappings"), href: "/dashboard/settings/account-mappings", icon: GitBranch },
-        { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
-        { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
-        ...(canConfigureFines(userRole) ? [{ name: tNav("chequeFailureFines"), href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
-    ] : [];
+    // The accounting setup pages are gated by canManageAccountSetup, which admits
+    // ACCOUNTANT — a role canConfigureGateway deliberately excludes. Keeping the
+    // whole section behind the gateway check would have hidden the two pages from
+    // exactly the role that owns them, so each group now carries its own gate.
+    // Account mappings moved into the property's own Accounts tab and the
+    // tenant-wide template, so the standalone page is gone.
+    const settingsItems = [
+        ...(hasPermission(userRole, 'canManageAccountSetup') ? [
+            { name: tLedger("accountTemplate"), href: "/dashboard/settings/account-template", icon: LayoutTemplate },
+            { name: tLedger("fiscal"), href: "/dashboard/settings/fiscal", icon: CalendarClock },
+        ] : []),
+        ...(userRole && canConfigureGateway(userRole) ? [
+            { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
+            { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
+        ] : []),
+        ...(userRole && canConfigureFines(userRole) ? [{ name: tNav("chequeFailureFines"), href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
+    ];
 
     // Tenant user minimal items
     const tenantUserItems = userRole === 'TENANT_USER' ? [

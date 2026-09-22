@@ -18,6 +18,23 @@ import java.util.Optional;
 public interface UnitRepository extends JpaRepository<Unit, UUID> {
     List<Unit> findByPropertyId(UUID propertyId);
 
+    /**
+     * Unit counts per status within the caller's properties — the dashboard's
+     * occupancy tiles in one aggregate rather than a scan the service then walks.
+     *
+     * <p>Returns {@code [UnitStatus, Long count]}. Statuses with no units are
+     * absent; the caller zero-fills. Scoping is the register's shape, and a caller
+     * scoped to nothing is answered without a query, so {@code propertyIds} is
+     * never empty.</p>
+     */
+    @Query("""
+        select u.status, count(u) from Unit u
+        where (:unrestricted = true or u.property.id in :propertyIds)
+        group by u.status
+        """)
+    List<Object[]> countByStatusInScope(@Param("unrestricted") boolean unrestricted,
+                                        @Param("propertyIds") Collection<UUID> propertyIds);
+
     @EntityGraph(attributePaths = "property")
     List<Unit> findByIdIn(Collection<UUID> ids);
 

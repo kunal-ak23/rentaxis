@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Building2, FileText, Loader2, ReceiptText, Search, X } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { chequeApi } from "@/lib/api/leasing";
 import type { UserRole } from "@/lib/rbac";
 
 type SearchResult = {
@@ -23,14 +24,14 @@ type LeaseHit = {
     status: string;
 };
 
-type PaymentHit = {
+type ChequeHit = {
     id: string;
     chequeNumber: string | null;
     renterName: string | null;
     unitIdentifier: string | null;
     propertyName: string | null;
     status: string;
-    installmentNumber: number | null;
+    seqNo: number;
 };
 
 type TenantHit = { id: string; name: string; status?: string };
@@ -94,19 +95,18 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             };
 
             const encoded = encodeURIComponent(query.trim());
-            const [leasePayload, paymentPayload, tenantPayload] = await Promise.all([
+            const [leasePayload, chequePayload, tenantPayload] = await Promise.all([
                 safeJson(`/api/proxy/v1/leases/paged?search=${encoded}&page=0&size=6`),
-                // Server-side search across every payment row. Fetching a fixed
-                // window and filtering here instead would silently miss anything
-                // outside it — payments come back newest-dueDate-first, so an
-                // older cheque would render "No results" rather than an error.
-                safeJson(`/api/proxy/v1/payments/search?q=${encoded}&page=0&size=6`),
+                // Server-side search across the whole cheque register. Fetching a
+                // fixed window and filtering here instead would silently miss
+                // anything outside it — an older cheque would render "No results"
+                // rather than an error.
+                chequeApi.list({ search: query.trim(), page: 0, size: 6 }).catch(() => null),
                 role === "SUPER_ADMIN" ? safeJson("/api/proxy/admin/tenants") : Promise.resolve(null),
             ]);
             if (controller.signal.aborted) return;
 
             const leasePage = leasePayload as { content?: LeaseHit[] } | null;
-            const paymentPage = paymentPayload as { content?: PaymentHit[] } | PaymentHit[] | null;
             const tenantRows = tenantPayload as TenantHit[] | null;
             const next: SearchResult[] = [];
 
@@ -121,17 +121,17 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             }
 
             // Already filtered and capped server-side.
-            const paymentRows = Array.isArray(paymentPage) ? paymentPage : paymentPage?.content ?? [];
-            for (const payment of paymentRows) {
+            const chequeRows = (chequePayload?.content ?? []) as ChequeHit[];
+            for (const cheque of chequeRows) {
                 next.push({
-                    id: payment.id,
+                    id: cheque.id,
                     kind: "PAYMENT",
-                    title: payment.chequeNumber
-                        ? t("cheque", { number: payment.chequeNumber })
-                        : t("installment", { number: payment.installmentNumber ?? "" }),
-                    subtitle: [payment.renterName, payment.unitIdentifier, payment.status]
+                    title: cheque.chequeNumber
+                        ? t("cheque", { number: cheque.chequeNumber })
+                        : t("installment", { number: cheque.seqNo }),
+                    subtitle: [cheque.renterName, cheque.unitIdentifier, cheque.status]
                         .filter(Boolean).join(" · "),
-                    href: `/${locale}/dashboard/finance/payments?renterName=${encodeURIComponent(payment.renterName ?? "")}`,
+                    href: `/${locale}/dashboard/finance/cheques?search=${encoded}`,
                 });
             }
 
@@ -152,7 +152,7 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             // source errored and we found nothing, saying "no results" is the
             // same silent wrong answer this component was fixed to stop telling:
             // the user cannot tell "it isn't there" from "we couldn't look".
-            const anySourceFailed = leasePayload == null || paymentPayload == null
+            const anySourceFailed = leasePayload == null || chequePayload == null
                 || (role === "SUPER_ADMIN" && tenantPayload == null);
             setFailed(anySourceFailed && next.length === 0);
             setLoading(false);

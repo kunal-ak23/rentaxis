@@ -4,6 +4,11 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.JournalLineRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,13 +32,20 @@ import static org.mockito.Mockito.when;
 class AccountServiceTest {
 
     private AccountRepository repository;
+    private JournalLineRepository journalLineRepository;
+    private PropertyAccountMappingRepository propertyAccountMappingRepository;
+    private TenantDefaultAccountMappingRepository tenantDefaultAccountMappingRepository;
     private AccountService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(AccountRepository.class);
-        AccountMappingService mappingService = mock(AccountMappingService.class);
-        service = new AccountService(repository, mappingService);
+        journalLineRepository = mock(JournalLineRepository.class);
+        propertyAccountMappingRepository = mock(PropertyAccountMappingRepository.class);
+        tenantDefaultAccountMappingRepository = mock(TenantDefaultAccountMappingRepository.class);
+        service = new AccountService(repository, mock(TenantFiscalSettingsRepository.class),
+                mock(PropertyRepository.class), journalLineRepository, propertyAccountMappingRepository,
+                tenantDefaultAccountMappingRepository);
     }
 
     private Account account(boolean system) {
@@ -50,7 +62,7 @@ class AccountServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.updateAccount(id, new Account()))
+        assertThatThrownBy(() -> service.updateAccount(id, update(null, null)))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -59,36 +71,58 @@ class AccountServiceTest {
         Account system = account(true);
         when(repository.findById(system.getId())).thenReturn(Optional.of(system));
 
-        assertThatThrownBy(() -> service.updateAccount(system.getId(), new Account()))
+        assertThatThrownBy(() -> service.updateAccount(system.getId(), update(null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("System accounts cannot be modified");
         verify(repository, never()).save(any());
     }
 
+    /** An update carrying only the two fields under test; everything else is null. */
+    private AccountService.AccountUpdate update(Boolean active, Integer displayOrder) {
+        return new AccountService.AccountUpdate("Renamed", null, null, "LAND", null, null,
+                active, displayOrder, null);
+    }
+
     @Test
     void updateAccount_ignoresCodeTypeParentAndGroupChanges() {
         Account existing = account(false);
-        existing.setParentCode("D-01");
+        Account currentParent = account(false);
+        currentParent.setCode("D-01");
+        existing.setParent(currentParent);
         existing.setGroup(false);
         when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Account updates = new Account();
-        updates.setCode("Z-01");
-        updates.setParentCode("Z-00");
-        updates.setGroup(true);
-        updates.setName("Renamed");
-        updates.setActive(false);
-        updates.setDisplayOrder(9);
-
-        Account saved = service.updateAccount(existing.getId(), updates);
+        Account saved = service.updateAccount(existing.getId(), update(false, 9));
 
         assertThat(saved.getCode()).isEqualTo("D-99");
-        assertThat(saved.getParentCode()).isEqualTo("D-01");
+        assertThat(saved.getParentId()).isEqualTo(currentParent.getId());
         assertThat(saved.isGroup()).isFalse();
         assertThat(saved.getName()).isEqualTo("Renamed");
+        assertThat(saved.getAlias()).isEqualTo("LAND");
         assertThat(saved.isActive()).isFalse();
         assertThat(saved.getDisplayOrder()).isEqualTo(9);
+    }
+
+    /**
+     * A body that names neither field must leave both alone. With primitives on
+     * the request record this call deactivated the account and reset its
+     * ordering to 0, because that is what {@code boolean}/{@code int} deserialise
+     * to when the JSON omits them.
+     */
+    @Test
+    void updateAccount_nullActiveAndDisplayOrder_leaveThemUnchanged() {
+        Account existing = account(false);
+        existing.setActive(true);
+        existing.setDisplayOrder(7);
+        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.updateAccount(existing.getId(), update(null, null));
+
+        assertThat(saved.isActive()).isTrue();
+        assertThat(saved.getDisplayOrder()).isEqualTo(7);
+        assertThat(saved.getName()).isEqualTo("Renamed");
     }
 
     @Test
@@ -106,12 +140,87 @@ class AccountServiceTest {
     void deleteAccount_withChildren_throwsBusinessRuleViolation() {
         Account parent = account(false);
         when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
-        when(repository.existsByParentCode(parent.getCode())).thenReturn(true);
+        when(repository.existsByParent_Id(parent.getId())).thenReturn(true);
 
         assertThatThrownBy(() -> service.deleteAccount(parent.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Cannot delete account with child accounts");
         verify(repository, never()).delete(any());
+    }
+
+    /**
+     * The in-use guard. v1 asked financial_transactions "any row for this
+     * account?"; the ledger of record is now journal_lines, and an account a
+     * mapping points at is in use even with nothing posted to it yet.
+     *
+     * <p>Each case also asserts {@code repository.delete} was never reached:
+     * the guard has to fire BEFORE any delete or detach work, or a half-applied
+     * delete is what the caller gets back with their 400.
+     */
+    @Test
+    void deleteAccount_withPostedJournalLines_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void deleteAccount_referencedByAPropertyMapping_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * tenant_default_account_mappings.account_id is NOT NULL under
+     * fk_tdam_account (changeset 81). Leaving this table out of the guard did
+     * not let the delete through — it turned a 400 carrying this message into a
+     * raw constraint violation the caller had to decode.
+     */
+    @Test
+    void deleteAccount_referencedByATenantDefaultMapping_throwsAndDeletesNothing() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(tenantDefaultAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteAccount(leaf.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account has posted journal lines or mappings");
+
+        verify(repository, never()).delete(any());
+        verify(repository, never()).save(any());
+    }
+
+    /** The other side of the guard: an unused, non-system leaf still deletes. */
+    @Test
+    void deleteAccount_unusedLeaf_deletes() {
+        Account leaf = account(false);
+        when(repository.findById(leaf.getId())).thenReturn(Optional.of(leaf));
+        when(repository.existsByParent_Id(leaf.getId())).thenReturn(false);
+        when(journalLineRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(propertyAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+        when(tenantDefaultAccountMappingRepository.existsByAccount_Id(leaf.getId())).thenReturn(false);
+
+        service.deleteAccount(leaf.getId());
+
+        verify(repository).delete(leaf);
     }
 
     @Test
@@ -121,5 +230,71 @@ class AccountServiceTest {
 
         assertThatThrownBy(() -> service.getAccountById(id))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    // ---- createAccount: a leaf's type must agree with the group it hangs under ----
+
+    private Account group(com.datagami.rentaxis.domain.entity.enums.AccountType type) {
+        Account g = new Account();
+        g.setId(UUID.randomUUID());
+        g.setCode("A-02");
+        g.setName("Current Assets");
+        g.setGroup(true);
+        g.setAccountType(type);
+        return g;
+    }
+
+    private Account childOf(Account parent, com.datagami.rentaxis.domain.entity.enums.AccountType type) {
+        Account child = new Account();
+        child.setName("New leaf");
+        child.setCode("100500");
+        child.setAccountType(type);
+        Account ref = new Account();
+        ref.setId(parent.getId());
+        child.setParent(ref);
+        return child;
+    }
+
+    /**
+     * A leaf typed differently from its group used to be saved as submitted: the
+     * inherit-when-null branch simply did not fire. The trial balance groups and
+     * sub-totals off each leaf's own accountType, so an EXPENSE leaf under Current
+     * Assets silently moved money between two sections of the report.
+     */
+    @Test
+    void createAccount_typeContradictingTheParentGroup_throwsBusinessRuleViolation() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+
+        assertThatThrownBy(() -> service.createAccount(
+                childOf(parent, com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Account type must match parent group: ASSET");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createAccount_omittedTypeIsInheritedFromTheParentGroup() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.LIABILITY);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.createAccount(childOf(parent, null), null);
+
+        assertThat(saved.getAccountType())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.LIABILITY);
+    }
+
+    @Test
+    void createAccount_typeMatchingTheParentGroupIsAccepted() {
+        Account parent = group(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+        when(repository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(repository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Account saved = service.createAccount(
+                childOf(parent, com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET), null);
+
+        assertThat(saved.getAccountType())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
     }
 }

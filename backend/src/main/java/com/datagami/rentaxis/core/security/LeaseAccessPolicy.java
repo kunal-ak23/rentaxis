@@ -5,6 +5,7 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -80,6 +81,23 @@ public class LeaseAccessPolicy {
     }
 
     /**
+     * Whether a real, authenticated principal is on the SecurityContext.
+     *
+     * <p>Spring Security's {@code AnonymousAuthenticationFilter} installs an
+     * {@link AnonymousAuthenticationToken} on every request that carries no
+     * credentials, so {@code getAuthentication() != null} is TRUE even for the
+     * gateway webhook, which is unauthenticated by design and vouched for by its
+     * signature instead. A caller asking "is there a user here to authorise?"
+     * must ask this, not the context directly — reading the context naively
+     * makes the webhook look like a logged-in stranger, and the lease guard
+     * answers "Lease not found" for a payment the renter has already made.</p>
+     */
+    public boolean hasAuthenticatedCaller() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
+    }
+
+    /**
      * Whether the caller is scoped to a subset at all.
      *
      * <p>Lets a caller keep database-side pagination for the unrestricted case
@@ -93,6 +111,70 @@ public class LeaseAccessPolicy {
     public boolean canRead(Lease lease) {
         Caller caller = currentCaller();
         return caller.seesEverything() || canRead(lease, caller);
+    }
+
+    /**
+     * The properties a restricted caller may see, or {@code null} when they see
+     * everything.
+     *
+     * <p>{@link #filterReadable} and {@link #canRead} answer per lease, which is
+     * the wrong shape for a <em>paged</em> list hanging off a property: filtering
+     * a page after the database produced it reports a total that counts rows the
+     * caller may not see and hands back short pages. So a caller that pages by
+     * property pushes this into its own query instead.</p>
+     *
+     * <p>Fails closed exactly as {@link #canRead} does: a renter, a tenant user or
+     * an unauthenticated caller gets an empty list, which selects nothing — not
+     * an absent restriction, which would select everything.</p>
+     */
+    public List<UUID> visiblePropertyIds() {
+        Caller caller = currentCaller();
+        if (caller.seesEverything()) {
+            return null;
+        }
+        return caller.isPropertyManager() ? caller.assignedPropertyIds() : List.of();
+    }
+
+    /**
+     * Guard for <em>changing</em> a lease or anything hanging off it — a cheque
+     * moving through the register, a termination, a settlement.
+     *
+     * <p>Reading and writing are different questions and were being answered by
+     * one method. A renter passes {@link #requireReadable} for their own lease,
+     * which is correct: it is their tenancy contract. It is emphatically not a
+     * licence to mark their own cheque cleared. So finance actions ask this
+     * instead, and the split is: tenant-wide roles pass, a property manager
+     * passes for the buildings they were actually assigned — exactly the set
+     * {@link #canRead} gives them, since a manager who may see a lease is a
+     * manager who may run its collections — and renters and tenant users are
+     * refused outright.</p>
+     *
+     * <p>{@link NotFoundException} again rather than access-denied, for the same
+     * reason: a 403 on a lease id confirms the lease exists.</p>
+     */
+    public void requireManageable(Lease lease) {
+        if (!canManage(lease)) {
+            throw new NotFoundException("Lease not found");
+        }
+    }
+
+    public boolean canManage(Lease lease) {
+        return canManage(lease, currentCaller());
+    }
+
+    private boolean canManage(Lease lease, Caller caller) {
+        if (lease == null) {
+            return false;
+        }
+        if (caller.seesEverything()) {
+            return true;
+        }
+        if (caller.isPropertyManager()) {
+            return canRead(lease, caller);
+        }
+        // Renters, tenant users, unrecognised roles and unauthenticated callers:
+        // they may be entitled to look at the contract, never to move its money.
+        return false;
     }
 
     private boolean canRead(Lease lease, Caller caller) {
@@ -123,8 +205,16 @@ public class LeaseAccessPolicy {
                 .map(GrantedAuthority::getAuthority)
                 .toList();
 
-        if (roles.contains("ROLE_SUPER_ADMIN") || roles.contains("ROLE_TENANT_ADMIN")) {
+        if (roles.contains("ROLE_SUPER_ADMIN") || roles.contains("ROLE_TENANT_ADMIN")
+                || roles.contains("ROLE_ACCOUNTANT")) {
             // Tenant-wide by design; the Hibernate tenant filter is the boundary.
+            //
+            // ACCOUNTANT is here because the role is tenant-wide finance access,
+            // not a property assignment: it already reads every property, unit and
+            // renter (plan 1), and a lease is the source document behind the
+            // journals it reconciles. Without this it fell through to "nobody" and
+            // the cheque-grid endpoints it is explicitly granted answered "Lease
+            // not found" for every lease in the organisation.
             return Caller.seesAll();
         }
 

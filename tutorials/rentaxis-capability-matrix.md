@@ -82,6 +82,15 @@ mobile evidence classifications.
 | 32. Renter mobile services | Renter mobile | Renter | Browse/wishlist, promotions, meetings, facilities, gate passes and approvals | 25 declared routes audited; integration inventory covers browse/listing detail, wishlist, meetings/create/detail, facilities/requests, gate-pass list/create/detail, and resident approvals; promotions have unit/widget coverage but still need device capture; resident approval is explicitly classified as mutating |
 | 33. Security app | Security mobile | Guard/security | Phone/OTP login, QR scanning, result/admission, approvals, walk-ins and status | 94/94 security unit/widget tests pass on exact deployed main `0aba0c3`, with a clean analyzer; 9 declared routes audited; integration inventory covers four login presentation modes, guard board, numeric-code scan/verdict, walk-in detail/admission, and session restore; scan/admission mutate live state, physical-camera QR and live Firebase SMS remain manual-device checks |
 
+## Accounting v2
+
+| Tutorial | Surfaces | Roles | Route | Behavior |
+|---|---|---|---|---|
+| 34. Post a tenancy contract | Web | TENANT_ADMIN, ACCOUNTANT | `/dashboard/leases/[id]` | Draft contract with lines and a cheque grid posts one TCO and one PDR per cheque; status becomes Active and the recognition schedule is planned |
+| 35. Register and clear cheques | Web | PROPERTY_MANAGER, ACCOUNTANT | `/dashboard/finance/cheques` | A cheque banks, clears with a CRT, is returned with a CBR, and is replaced by two rows that each register their own PDR |
+| 36. Month-end recognition | Web | ACCOUNTANT | `/dashboard/finance/recognition` | Running to a cut-off posts one CIL per planned period, dated the period end; advance rent falls and rental income rises by the same total |
+| 37. Tenant ledger | Web | TENANT_ADMIN, ACCOUNTANT | `/dashboard/finance/tenant-ledger` | A posted contract's renter ledger nets to zero on rent receivable; a returned cheque reopens it; trial balance debits equal credits |
+
 ## Coverage summary
 
 - Route completeness is machine-checked by [verify-capability-routes.mjs](./verify-capability-routes.mjs): 57 web, 43 Manager, 26 Renter, and 10 Security routes (136 total) are mapped exactly once to tutorials 01–33 in [capability-route-map.json](./capability-route-map.json). The verifier fails on a newly shipped unmapped route, a stale/duplicate mapping, missing evidence, an invalid tutorial number, or an unexplained system-only route. The three additional mobile routes are the merged `/update-required` version-gate screens.

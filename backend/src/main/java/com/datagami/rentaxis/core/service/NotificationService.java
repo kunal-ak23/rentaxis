@@ -7,11 +7,11 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
 import com.datagami.rentaxis.core.notification.PushNotificationEvent;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.DeviceToken;
 import com.datagami.rentaxis.domain.entity.Notification;
-import com.datagami.rentaxis.domain.entity.PaymentPenalty;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
-import com.datagami.rentaxis.domain.entity.PenaltyPayment;
+import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
+import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -147,81 +147,63 @@ public class NotificationService {
     }
 
     /**
-     * Cheque-failure penalty was just incurred — fired alongside PAYMENT_BOUNCED
-     * by {@code PaymentScheduleService.markFailed}. Body restates the amount,
-     * reason, and installment so the renter knows exactly what they owe and
-     * why. Wrapped in a try/catch by the caller — best-effort.
+     * A penalty has actually been charged (spec §7.3).
+     *
+     * <p><b>Fired from {@code PenaltyAssessmentService.approve} and nowhere else.</b>
+     * A {@code PROPOSED} assessment is finance deliberating about whether to fine
+     * this renter, and some of those end up waived; telling the renter about one
+     * would turn "we are thinking about it" into "you owe this". Only the approval
+     * is a fact about their balance.</p>
+     *
+     * <p><b>Its own transaction, and no catch inside it.</b> A failed notification
+     * row must not take a posted penalty down with it, and the obvious shape — call
+     * {@code notify} and swallow what it throws — does the opposite: {@code notify}
+     * is a self-invocation, so it bypasses the proxy and joins the approval's
+     * transaction, a failed insert marks that transaction rollback-only, and the
+     * approval then dies at commit with an {@code UnexpectedRollbackException}.
+     *
+     * <p>So the propagation lives here, on a method {@code PenaltyAssessmentService}
+     * calls across the bean boundary where the proxy actually applies, and the
+     * failure is allowed to escape: the inner transaction rolls back cleanly and
+     * <em>the caller</em> catches. This is the same mechanism
+     * {@code ChequeService.notifyRenter} reaches through {@code notifyInAppInNewTx},
+     * arranged so the catch sits outside the new transaction rather than inside
+     * it.</p>
+     *
+     * <p>The in-app row only. The structured {@code PENALTY_INCURRED} email is
+     * published by the outbox pipeline, and going through {@code notify}'s legacy
+     * mapping as well would send the renter a second copy.</p>
      */
-    public void sendPenaltyIncurred(PaymentSchedule schedule, ChequeFailureReason reason,
-                                     BigDecimal fineAmount, UUID penaltyId) {
-        UUID renterUserId = schedule.getLease() != null && schedule.getLease().getRenter() != null
-                ? schedule.getLease().getRenter().getUserId()
-                : null;
-        if (renterUserId == null) {
-            log.warn("PENALTY_INCURRED notification skipped — no renter user id for penalty {}", penaltyId);
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void sendPenaltyIncurred(PenaltyAssessment assessment) {
+        if (assessment == null) {
             return;
         }
-        UUID tenantId = TenantContextHolder.getTenantId();
-        String body = "A " + fineAmount + " AED penalty has been added for installment #"
-                + schedule.getInstallmentNumber() + " (" + reason
+        Renter renter = assessment.getRenter();
+        UUID renterUserId = renter != null ? renter.getUserId() : null;
+        if (renterUserId == null) {
+            log.warn("PENALTY_INCURRED notification skipped — no renter user id for penalty {}",
+                    assessment.getId());
+            return;
+        }
+        UUID tenantId = assessment.getTenantId() != null
+                ? assessment.getTenantId() : TenantContextHolder.getTenantId();
+        Cheque cheque = assessment.getCheque();
+        String about = cheque != null
+                ? " for instalment #" + cheque.getSeqNo()
+                : "";
+        String body = "A " + assessment.getAmount() + " AED penalty has been added" + about
+                + " (" + assessment.getReason().label()
                 + "). Please clear it via bank transfer, cheque, or cash.";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
-                    body, "PENALTY", penaltyId);
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_INCURRED notification for penalty {}: {}", penaltyId, e.getMessage());
-        }
+        saveNotificationRow(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
+                body, "PENALTY", assessment.getId());
     }
 
-    /**
-     * Penalty has been fully cleared by a payment receipt (bank transfer, cheque,
-     * or cash). The body confirms the receipt + amount so the renter has a clear
-     * paper trail in their notification feed / email.
-     */
-    public void sendPenaltyCleared(PaymentPenalty penalty, PenaltyPayment receipt) {
-        UUID tenantId = penalty.getTenantId() != null
-                ? penalty.getTenantId()
-                : TenantContextHolder.getTenantId();
-        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
-                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
-                .orElse(null);
-        if (renterUserId == null) {
-            log.warn("PENALTY_CLEARED notification skipped — no renter user id for penalty {}", penalty.getId());
-            return;
-        }
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been cleared after receipt of "
-                + receipt.getAmount() + " AED via " + receipt.getPaymentMethod() + ".";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_CLEARED", "Penalty Cleared",
-                    body, "PENALTY", penalty.getId());
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_CLEARED notification for penalty {}: {}", penalty.getId(), e.getMessage());
-        }
-    }
-
-    /**
-     * Penalty has been waived by the property manager. Body explains the
-     * goodwill / reason so the renter understands why the fine is gone.
-     */
-    public void sendPenaltyWaived(PaymentPenalty penalty, String reason) {
-        UUID tenantId = penalty.getTenantId() != null
-                ? penalty.getTenantId()
-                : TenantContextHolder.getTenantId();
-        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
-                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
-                .orElse(null);
-        if (renterUserId == null) {
-            log.warn("PENALTY_WAIVED notification skipped — no renter user id for penalty {}", penalty.getId());
-            return;
-        }
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been waived. Reason: " + reason + ".";
-        try {
-            notify(tenantId, renterUserId, "PENALTY_WAIVED", "Penalty Waived",
-                    body, "PENALTY", penalty.getId());
-        } catch (Exception e) {
-            log.warn("Failed to send PENALTY_WAIVED notification for penalty {}: {}", penalty.getId(), e.getMessage());
-        }
-    }
+    // sendPenaltyCleared / sendPenaltyWaived went with the v1 penalty tables
+    // (changeset 84). Neither has a v2 counterpart yet: a waiver is an internal
+    // decision the renter was never told about anyway, and a fine is now collected
+    // through its register row, so "your penalty cleared" is the same event as the
+    // receipt for that row rather than a message of its own.
 
     @Transactional(readOnly = true)
     public List<NotificationDTO> getNotifications(UUID userId, int page, int size, boolean unreadOnly) {

@@ -5,7 +5,15 @@ vi.mock("next-intl", () => ({
     useTranslations: () => (key: string) => key,
     useLocale: () => "en",
 }));
-vi.mock("@/components/vendors/VendorPaymentDialog", () => ({ default: () => null }));
+// next-intl's locale-aware Link pulls in next/navigation, which vitest cannot
+// resolve outside a Next runtime.
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+        <a href={href} {...rest}>
+            {children}
+        </a>
+    ),
+}));
 vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => null }));
 // Render a plain confirm button so tests can trigger onConfirm without framer-motion.
 vi.mock("@/components/ui/confirm-dialog", () => ({

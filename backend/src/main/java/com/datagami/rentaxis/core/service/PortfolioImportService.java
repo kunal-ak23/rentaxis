@@ -1,6 +1,9 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.cutover.ContractImportPersistService;
+import com.datagami.rentaxis.core.service.cutover.ContractImportValidator;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -31,6 +34,8 @@ public class PortfolioImportService {
     private final PropertyRepository propertyRepository;
     private final RenterRepository renterRepository;
     private final PortfolioImportPersistService persistService;
+    private final ContractImportValidator contractValidator;
+    private final ContractImportPersistService contractPersistService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -38,8 +43,17 @@ public class PortfolioImportService {
 
     /**
      * Full validation pass. Returns hard errors (block import) and warnings (informational only).
+     *
+     * <p>A workbook carrying a {@code Contracts} sheet is an accounting-v2 cut-over
+     * import (spec §10.3) and goes to {@link ContractImportValidator}: same job row,
+     * same async executor, same {@link ImportErrorDTO} shape and the same polling
+     * endpoint — only the sheet set and the persist target differ. There is one
+     * importer, with two sheet dialects, rather than two importers.</p>
      */
     public ValidationOutcome validateAll(Workbook workbook) {
+        if (ContractImportValidator.isV2Workbook(workbook)) {
+            return contractValidator.validate(workbook);
+        }
         List<ImportErrorDTO> errors = new ArrayList<>();
         List<ImportErrorDTO> warnings = new ArrayList<>();
 
@@ -48,10 +62,10 @@ public class PortfolioImportService {
         Sheet rentersSheet = workbook.getSheet("Renters");
         Sheet leasesSheet = workbook.getSheet("Leases");
 
-        if (propertiesSheet == null) errors.add(new ImportErrorDTO("Properties", 0, "", "Sheet 'Properties' is missing"));
-        if (unitsSheet == null) errors.add(new ImportErrorDTO("Units", 0, "", "Sheet 'Units' is missing"));
-        if (rentersSheet == null) errors.add(new ImportErrorDTO("Renters", 0, "", "Sheet 'Renters' is missing"));
-        if (leasesSheet == null) errors.add(new ImportErrorDTO("Leases", 0, "", "Sheet 'Leases' is missing"));
+        if (propertiesSheet == null) errors.add(ImportErrorDTO.file("Properties", "Sheet", "Sheet 'Properties' is missing"));
+        if (unitsSheet == null) errors.add(ImportErrorDTO.file("Units", "Sheet", "Sheet 'Units' is missing"));
+        if (rentersSheet == null) errors.add(ImportErrorDTO.file("Renters", "Sheet", "Sheet 'Renters' is missing"));
+        if (leasesSheet == null) errors.add(ImportErrorDTO.file("Leases", "Sheet", "Sheet 'Leases' is missing"));
 
         if (!errors.isEmpty()) return new ValidationOutcome(errors, warnings);
 
@@ -202,7 +216,7 @@ public class PortfolioImportService {
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
                                      Set<String> renterEmails,
                                      Map<String, LeaseRowSummary> leaseIndex) {
-        HeaderIndex hi = new HeaderIndex(sheet);
+        SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
@@ -433,7 +447,7 @@ public class PortfolioImportService {
                                        Map<String, LeaseRowSummary> leaseIndex,
                                        List<ImportErrorDTO> errors,
                                        List<ImportErrorDTO> warnings) {
-        HeaderIndex hi = new HeaderIndex(sheet);
+        SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
 
         // Per-lease state: installments seen (for dup detection) and running sum (for total check).
         Map<String, Set<Integer>> seenInstallments = new HashMap<>();
@@ -552,7 +566,7 @@ public class PortfolioImportService {
             BigDecimal sum = sumByLease.getOrDefault(key, BigDecimal.ZERO);
             BigDecimal totalRent = leaseIndex.get(key).totalRent();
             if (sum.subtract(totalRent).abs().compareTo(tolerance) > 0) {
-                errors.add(new ImportErrorDTO("Cheques", 0, "Amount",
+                errors.add(ImportErrorDTO.file("Cheques", "Amount",
                         "Sum of cheques (" + sum + ") does not match lease total rent ("
                                 + totalRent + ") for " + key));
             }
@@ -587,7 +601,7 @@ public class PortfolioImportService {
                 // Wording updated: "in this tenant" is accurate; the old
                 // "in the system" was misleading regardless of which path
                 // produced it.
-                errors.add(new ImportErrorDTO("Properties", 0, "PropertyName", "Property '" + name + "' already exists in this tenant"));
+                errors.add(ImportErrorDTO.file("Properties", "PropertyName", "Property '" + name + "' already exists in this tenant"));
             }
         }
 
@@ -600,7 +614,7 @@ public class PortfolioImportService {
 
         for (String email : renterEmails) {
             if (existingEmails.contains(email.toLowerCase())) {
-                errors.add(new ImportErrorDTO("Renters", 0, "Email", "Renter with email '" + email + "' already exists in this tenant"));
+                errors.add(ImportErrorDTO.file("Renters", "Email", "Renter with email '" + email + "' already exists in this tenant"));
             }
         }
     }
@@ -611,7 +625,11 @@ public class PortfolioImportService {
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
         // Set tenant context for this async thread
         TenantContextHolder.setTenantId(tenantId);
-        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(fileBytes))) {
+        // Through WorkbookGuard, never `new XSSFWorkbook` directly: an uploaded
+        // spreadsheet is an untrusted file parsed in-process, and an OOM here would
+        // take the whole service down rather than fail the job. See that class for
+        // each limit and why it is set where it is.
+        try (Workbook workbook = WorkbookGuard.open(fileBytes)) {
 
             // Phase 1: Validate
             job.setStatus("VALIDATING");
@@ -631,7 +649,11 @@ public class PortfolioImportService {
             job.setStatus("PERSISTING");
             importJobRepository.save(job);
 
-            persistService.persistWorkbook(workbook, job, outcome.warnings());
+            if (ContractImportValidator.isV2Workbook(workbook)) {
+                contractPersistService.persist(workbook, job, outcome.warnings());
+            } else {
+                persistService.persistWorkbook(workbook, job, outcome.warnings());
+            }
 
             job.setStatus("COMPLETED");
             job.setCompletedAt(Instant.now());
@@ -640,6 +662,23 @@ public class PortfolioImportService {
             log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={}",
                     job.getId(), job.getPropertiesCreated(), job.getUnitsCreated(),
                     job.getLeasesCreated(), job.getSchedulesCreated());
+        } catch (BusinessRuleViolationException e) {
+            // A workbook this import will not accept at all — not an .xlsx, macro
+            // enabled, password protected, or past a size limit. It is a statement
+            // about the FILE, so it is reported the way every other statement about
+            // the file is: a validation failure the screen already knows how to
+            // show, rather than a FAILED job with a stack trace behind it.
+            log.warn("Portfolio import refused: jobId={}, reason={}", job.getId(), e.getMessage());
+            job.setStatus("VALIDATION_FAILED");
+            try {
+                job.setErrors(objectMapper.writeValueAsString(
+                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
+            } catch (Exception jsonEx) {
+                job.setErrors("[{\"sheet\":\"General\",\"row\":null,\"field\":\"File\","
+                        + "\"message\":\"This workbook was refused\"}]");
+            }
+            job.setCompletedAt(Instant.now());
+            importJobRepository.save(job);
         } catch (Exception e) {
             log.error("Portfolio import failed: jobId={}", job.getId(), e);
             job.setStatus("FAILED");
@@ -651,9 +690,12 @@ public class PortfolioImportService {
             job.setRentersCreated(0);
             job.setLeasesCreated(0);
             job.setSchedulesCreated(0);
+            // The persist transaction rolled back, so the batch row it created is
+            // gone too; a job still pointing at it would send the web to a 404.
+            job.setImportBatchId(null);
             try {
                 job.setErrors(objectMapper.writeValueAsString(
-                        List.of(new ImportErrorDTO("General", 0, "", e.getMessage()))));
+                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
             } catch (Exception jsonEx) {
                 job.setErrors("[{\"sheet\":\"General\",\"row\":0,\"field\":\"\",\"message\":\"Import failed\"}]");
             }
@@ -670,76 +712,21 @@ public class PortfolioImportService {
         return LocalDate.parse(value.trim());
     }
 
+    // The three readers and the header index now live in SheetCells, so the
+    // cut-over validator in core.service.cutover reads the identical cell the
+    // identical way. These stay as one-line delegates purely so the ~30 call
+    // sites above are untouched by that move.
+
     private String getCellString(Row row, int col) {
-        Cell cell = row.getCell(col);
-        if (cell == null) return "";
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> {
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    yield cell.getLocalDateTimeCellValue().toLocalDate().toString();
-                }
-                double val = cell.getNumericCellValue();
-                if (val == Math.floor(val) && !Double.isInfinite(val)) {
-                    yield String.valueOf((long) val);
-                }
-                yield String.valueOf(val);
-            }
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> {
-                try { yield cell.getStringCellValue().trim(); }
-                catch (Exception e) { yield String.valueOf(cell.getNumericCellValue()); }
-            }
-            default -> "";
-        };
+        return SheetCells.getCellString(row, col);
     }
 
     private boolean isRowEmpty(Row row) {
-        for (int i = 0; i < row.getLastCellNum(); i++) {
-            if (!getCellString(row, i).isEmpty()) return false;
-        }
-        return true;
+        return SheetCells.isRowEmpty(row);
     }
 
     /** Reads a cell by header name. Returns "" when the header is absent. */
-    private String cell(Row row, HeaderIndex hi, String header) {
-        int c = hi.col(header);
-        return c < 0 ? "" : getCellString(row, c);
-    }
-
-    /**
-     * Maps header names (case-insensitive, trimmed) to column indexes for a sheet.
-     * Lets us read columns by name so appending new columns in
-     * PortfolioTemplateService doesn't break old workbooks that omit them.
-     */
-    static final class HeaderIndex {
-        private final Map<String, Integer> byName;
-
-        HeaderIndex(Sheet sheet) {
-            Map<String, Integer> m = new HashMap<>();
-            Row header = sheet.getRow(sheet.getFirstRowNum());
-            if (header == null) header = sheet.getRow(0);
-            if (header != null) {
-                for (int c = 0; c < header.getLastCellNum(); c++) {
-                    Cell cell = header.getCell(c);
-                    if (cell == null) continue;
-                    String v = cell.getCellType() == CellType.STRING
-                            ? cell.getStringCellValue().trim()
-                            : "";
-                    if (!v.isEmpty()) m.put(v.toLowerCase(Locale.ROOT), c);
-                }
-            }
-            this.byName = m;
-        }
-
-        /** -1 when the header isn't present (old template). */
-        int col(String name) {
-            Integer v = byName.get(name.toLowerCase(Locale.ROOT));
-            return v == null ? -1 : v;
-        }
-
-        boolean has(String name) {
-            return byName.containsKey(name.toLowerCase(Locale.ROOT));
-        }
+    private String cell(Row row, SheetCells.HeaderIndex hi, String header) {
+        return SheetCells.cell(row, hi, header);
     }
 }

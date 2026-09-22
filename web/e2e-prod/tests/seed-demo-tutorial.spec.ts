@@ -115,11 +115,13 @@ test('seed isolated bilingual Miftah Demo Tutorial tenant', async () => {
     nameEn: 'Lina Haddad', nameAr: 'لينا حداد', email: renterEmail, phone: '+971501234567', primaryLanguage: 'EN', createPortalAccount: true,
   });
   expect(renter.userId).toBeTruthy();
-  const lease = await api.createLease(adminCtx, {
+  // accounting-v2 plan 2: a lease becomes ACTIVE via draft (lines) -> generate
+  // cheques -> post; `PUT /leases/{id}/activate` is gone.
+  const activeLease = await api.postLeaseFlow(adminCtx, {
     unitId: leasedUnit.id, renterId: renter.id, startDate: new Date().toISOString().slice(0, 10),
     endDate: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().slice(0, 10), rentAmount: 98000, paymentTerms: 4,
   });
-  const activeLease = await api.activateLease(adminCtx, lease.id);
+  const lease = activeLease;
   await api.logInteraction(adminCtx, lease.id, { type: 'CALL', direction: 'OUTBOUND', summary: 'Welcome call completed / تم إكمال مكالمة الترحيب' });
 
   const managerCtx = await loginAsNextAuth(BASE_URL, managerEmail, password);

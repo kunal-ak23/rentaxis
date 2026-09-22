@@ -4,16 +4,23 @@
  * Drives the actual 5-step wizard in
  * web/src/app/[locale]/dashboard/leases/LeaseWizard.tsx:
  *
- *   1. parties  — pick unit + renter
- *   2. terms    — startDate, endDate, rentAmount, depositAmount
- *   3. charges  — accept defaults
- *   4. plan     — accept defaults (paymentTerms=4, CHEQUE)
- *   5. finalize — click "Save draft", confirm lease created
+ *   1. parties — pick unit + renter
+ *   2. terms   — contract/start/end dates, grace period, instalments
+ *   3. charges — the lease lines, cut from the tenant's charge-type
+ *                catalogue; "Save draft" here is what POSTs /v1/leases
+ *   4. cheques — the grid generated against the draft
+ *   5. review  — the dry run, and Post
+ *
+ * accounting-v2 rebuilt steps 2–5 (`STEPS` in the component): the money is
+ * no longer two boxes on the terms step — a rent amount is a LINE now, and
+ * the draft is saved from the lines step rather than from a final "finalize"
+ * step. The old flow filled `input[type="number"]` 0 and 1 on step 2, which
+ * in the v2 layout are Grace Period and Number of cheques, and then waited
+ * for a POST that the terms step never makes.
  *
  * This catches integration bugs the API spec misses: wizard step
  * navigation, dropdown population (the unit picker filters to VACANT-only),
- * date input formatting, and the post-save state where the button morphs
- * to "Open lease detail".
+ * date input formatting, and the charge-type catalogue reaching the grid.
  *
  * Provisions its own fresh property + unit + renter via API so the unit
  * is genuinely VACANT (01-provision's unit is occupied by an active lease).
@@ -81,32 +88,30 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
 
   await wizardDialog.getByRole('button', { name: /^next$/i }).click();
 
-  // Step 2: terms — fill start/end dates + amounts.
+  // Step 2: terms. The dates carry test ids of their own — positional
+  // `input[type="date"]` would pick up Contract Date, which the step renders
+  // first and pre-fills with today.
   const today = new Date();
   const startDate = today.toISOString().slice(0, 10);
   const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate())
     .toISOString()
     .slice(0, 10);
-  // Scope everything to the dialog so we don't pick up unrelated date inputs
-  // elsewhere on the page (e.g., a Search/Filter date in the leases table).
-  await wizardDialog.locator('input[type="date"]').nth(0).fill(startDate);
-  await wizardDialog.locator('input[type="date"]').nth(1).fill(endDate);
-  // Rent + deposit. First two number inputs on this step.
-  await wizardDialog.locator('input[type="number"]').nth(0).fill('60000');
-  // The payment scheduler caps the largest cheque at the deposit amount.
-  // A 13-month inclusive lease at AED 60,000/month split quarterly needs a
-  // deposit of at least AED 195,000 for the default LAST_LARGER strategy.
-  await wizardDialog.locator('input[type="number"]').nth(1).fill('195000');
+  await wizardDialog.getByTestId('wizard-start-date').fill(startDate);
+  await wizardDialog.getByTestId('wizard-end-date').fill(endDate);
 
   await wizardDialog.getByRole('button', { name: /^next$/i }).click();
 
-  // Step 3 (charges): accept defaults, advance.
-  await wizardDialog.getByRole('button', { name: /^next$/i }).click();
+  // Step 3: charges. The grid opens on one blank line; a draft cannot be
+  // saved until it names a charge type and an amount (`stepError('lines')`).
+  // "Rent" is one of the seven particulars `ChargeTypeService.seedDefaults`
+  // puts in every tenant's catalogue.
+  await expect(wizardDialog.getByTestId('lease-lines-grid')).toBeVisible();
+  await wizardDialog.getByTestId('lease-line-type-0').selectOption({ label: 'Rent' });
+  await wizardDialog.getByTestId('lease-line-amount-0').fill('60000');
+  await expect(wizardDialog.getByTestId('lease-lines-contract-value')).toContainText('60,000');
 
-  // Step 4 (plan): accept defaults, advance.
-  await wizardDialog.getByRole('button', { name: /^next$/i }).click();
-
-  // Step 5 (finalize): Save draft.
+  // The lines step's forward button is "Save draft", and it is the call that
+  // creates the lease.
   const [createLeaseResponse] = await Promise.all([
     // Match path-with-or-without query string — endsWith('/leases') would
     // break the moment the wizard adds e.g. ?action=draft to the request.
@@ -131,11 +136,11 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
   };
   fs.writeFileSync(CONTEXT_FILE, JSON.stringify(ctx, null, 2));
 
-  // After save, the wizard reveals "Open lease detail" and "Generate contract"
-  // buttons — that's our success signal.
-  await expect(wizardDialog.getByRole('button', { name: /open lease detail/i })).toBeVisible({
-    timeout: 10_000,
-  });
+  // Saving the draft steps the wizard into the cheque grid (`saveLines` ends
+  // on `setStepIdx(3)`) — that is the success signal now, in place of the v1
+  // wizard's post-save "Open lease detail" button.
+  await expect(wizardDialog.getByTestId('wizard-save-cheques')).toBeVisible({ timeout: 10_000 });
+  await expect(wizardDialog).toContainText(/Step 4 of 5/);
 
   await browserCtx.close();
 });

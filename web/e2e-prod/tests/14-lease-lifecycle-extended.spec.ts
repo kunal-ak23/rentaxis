@@ -31,13 +31,47 @@ test('tenant admin previews contract, extends, and settles the active lease', as
   extendedEndDate.setMonth(extendedEndDate.getMonth() + 2);
   const newEndDate = extendedEndDate.toISOString().slice(0, 10);
 
-  const extended = await api.extendLease(taCtx, ctx.lease.id, newEndDate);
-  expect(extended.status).toBe('ACTIVE');
-  expect(extended.endDate).toBe(newEndDate);
+  // accounting-v2 plan 2's extend posts a fresh TCO for the extension's own
+  // `lines`, and the cheques registered for it must total the SAME
+  // VAT-inclusive figure (ExtendLeaseDialog's own `matches` gate) — unlike
+  // v1's single-field `{ newEndDate }` body. One RENT line of 50,000, one
+  // PDC cheque of 50,000: RENT's `vatApplicableDefault` is false, so gross
+  // and VAT-inclusive coincide and the two figures need no separate VAT calc.
+  const extended = await api.extendLease(taCtx, ctx.lease.id, newEndDate, 50_000);
+  expect(extended.lease.status).toBe('ACTIVE');
+  expect(extended.lease.endDate).toBe(newEndDate);
 
-  const settlementPreview = await api.getSettlementPreview(taCtx, ctx.lease.id);
-  expect(settlementPreview.depositAmount).toBeGreaterThan(0);
-  expect(settlementPreview.unpaidRentTotal).toBeGreaterThanOrEqual(0);
+  // ── accounting-v2 plan 3: terminate first, settle afterwards ─────────────
+  //
+  // Terminating and settling are two acts now. `POST /settlement/finalize` no
+  // longer ends the contract (it refused an ACTIVE lease outright:
+  // "Terminate the lease before settling it"), the old `SettlementPreviewDTO`
+  // (`depositAmount` / `unpaidRentTotal` / `penaltyTotal` / `suggestedRefund`)
+  // is gone, and UNPAID_RENT / PENALTIES / PREPAID_RENT / UTILITY_OVERPAYMENT
+  // are refused as settlement lines because they are already inside
+  // `receivableBalance`.
+  const today = new Date().toISOString().slice(0, 10);
+
+  const terminationPreview = await api.previewTermination(taCtx, ctx.lease.id, today);
+  expect(terminationPreview.terminationDate).toBe(today);
+  expect(terminationPreview.earnedRentThroughDate).toBeGreaterThanOrEqual(0);
+  const terminated = await api.terminateLease(taCtx, ctx.lease.id, {
+    terminationDate: today,
+    returnChequeIds: terminationPreview.chequesToReturn.map((c) => c.id),
+    keepChequeIds: terminationPreview.chequesToKeep.map((c) => c.id),
+    notes: `TEST-E2E move-out ${ctx.runSuffix}`,
+  });
+  expect(terminated.status).toBe('TERMINATED');
+  expect(terminated.terminatedOn).toBe(today);
+
+  // The truncation plans a slice ending on the termination date; the statement
+  // is only honest once the close has posted it.
+  await api.runRecognition(taCtx, today);
+
+  const statement = await api.getSettlementPreview(taCtx, ctx.lease.id);
+  expect(statement.unrecognisedEntries).toBe(0);
+  expect(statement.depositsHeld).toBeGreaterThanOrEqual(0);
+  expect(statement.asOf).toBeTruthy();
 
   const draft = await api.saveSettlementDraft(taCtx, ctx.lease.id, {
     notes: `TEST-E2E settlement ${ctx.runSuffix}`,
@@ -50,11 +84,13 @@ test('tenant admin previews contract, extends, and settles the active lease', as
         type: 'DEDUCTION',
       },
       {
-        description: 'TEST-Prepaid utility credit',
+        // DEPOSIT_INTEREST, not UTILITY_OVERPAYMENT: the latter is a credit the
+        // receivable already carries and the server refuses it as a line.
+        description: 'TEST-Deposit interest',
         amount: 25,
         autoCalculated: false,
         type: 'ADDITION',
-        additionCategory: 'UTILITY_OVERPAYMENT',
+        additionCategory: 'DEPOSIT_INTEREST',
       },
     ],
   });
@@ -76,28 +112,51 @@ test('tenant admin previews contract, extends, and settles the active lease', as
   await adminPage.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
   await adminPage.goto(`/en/dashboard/leases/${ctx.lease.id}/settlement`);
   await expect(adminPage.getByRole('heading', { level: 1, name: 'Settlement' })).toBeVisible();
-  await expect(adminPage.getByText('DRAFT', { exact: true })).toBeVisible();
-  await expect(adminPage.getByPlaceholder('Settlement notes (optional)...')).toHaveValue(
+  await expect(adminPage.getByTestId('settlement-status')).toHaveText('Draft');
+  await expect(adminPage.getByTestId('settlement-notes')).toHaveValue(
     `TEST-E2E settlement ${ctx.runSuffix}`,
   );
-  const descriptions = adminPage.getByPlaceholder('Description (optional)');
-  await expect(descriptions.nth(0)).toHaveValue('TEST-Exit cleaning');
-  await expect(descriptions.nth(1)).toHaveValue('TEST-Prepaid utility credit');
-  await expect(adminPage.getByText('Total Deductions', { exact: true })).toBeVisible();
-  await expect(adminPage.getByText('Total Additions', { exact: true })).toBeVisible();
+  await expect(adminPage.getByTestId('settlement-description-0')).toHaveValue('TEST-Exit cleaning');
+  await expect(adminPage.getByTestId('settlement-description-1')).toHaveValue('TEST-Deposit interest');
+  await expect(adminPage.getByTestId('settlement-total-deductions')).toContainText('50.00');
+  await expect(adminPage.getByTestId('settlement-total-additions')).toContainText('25.00');
 
-  await adminPage.getByRole('button', { name: 'Finalize & Terminate' }).click();
-  await expect(adminPage.getByRole('heading', { name: 'Finalize Settlement?' })).toBeVisible();
-  const [finalizeResponse] = await Promise.all([
-    adminPage.waitForResponse((response) =>
-      response.url().endsWith(`/leases/${ctx.lease.id}/settlement/finalize`),
-    ),
-    adminPage.getByRole('button', { name: 'Yes, Finalize & Terminate' }).click(),
-  ]);
-  expect(finalizeResponse.ok()).toBeTruthy();
-  await adminPage.waitForURL(new RegExp(`/dashboard/leases/${ctx.lease.id}$`));
-  await expect(adminPage.getByText('TERMINATED', { exact: true })).toBeVisible();
-  expect((await api.getLease(taCtx, ctx.lease.id)).status).toBe('TERMINATED');
+  // Finalise through the API: the bank a refund is paid from and the
+  // acknowledgement a refund over outstanding paper needs are both conditional
+  // on figures only the statement knows, and this suite runs against whatever
+  // 01-provision left on the register.
+  const priced = await api.getSettlementPreview(taCtx, ctx.lease.id);
+  const refunds = priced.netRefund > 0;
+  let refundBankAccountId: string | null = null;
+  if (refunds) {
+    const accounts = await api.getAccounts(taCtx);
+    const bank = accounts.find(
+      (a) =>
+        a.accountType === 'ASSET'
+        && a.group === false
+        && a.active !== false
+        && (a.accountSubType === 'BANK' || a.accountSubType === 'CASH'),
+    );
+    expect(bank, 'a refund needs an active bank or cash leaf to pay from').toBeTruthy();
+    refundBankAccountId = bank!.id;
+  }
+  const finalized = await api.finalizeSettlement(taCtx, ctx.lease.id, {
+    settlementDate: today,
+    refundBankAccountId,
+    acknowledgeOutstanding: refunds && priced.instrumentsOutstanding > 0,
+  });
+  expect(finalized.status).toBe('FINALIZED');
+  expect(finalized.journalNumber).toMatch(/^STL/);
+
+  await adminPage.reload();
+  await expect(adminPage.getByTestId('settlement-status')).toHaveText('Finalized');
+  await expect(adminPage.getByTestId('settlement-journal')).toContainText('STL');
+
+  // Finalise does not close the contract; the register does. `LeaseClosureService`
+  // closes it only once nothing is left to collect, so the expected status is
+  // derived from what the statement says is still out rather than assumed.
+  const after = await api.getLease(taCtx, ctx.lease.id);
+  expect(after.status).toBe(priced.instrumentsOutstanding > 0 ? 'TERMINATED' : 'CLOSED');
 
   const events = await api.getLeaseEvents(taCtx, ctx.lease.id);
   expect(events.some((event) => event.notes.includes('Lease extended'))).toBeTruthy();

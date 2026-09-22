@@ -32,6 +32,7 @@ public class PropertyController {
         Property property = new Property();
         property.setNameEn(dto.getNameEn());
         property.setNameAr(dto.getNameAr());
+        property.setCode(blankToNull(dto.getCode()));
         property.setType(dto.getType());
         property.setEmirate(dto.getEmirate());
         property.setAddress(dto.getAddress());
@@ -42,14 +43,24 @@ public class PropertyController {
         return ResponseEntity.ok(service.createProperty(property));
     }
 
+    /**
+     * The uniqueness index on {@code (tenant_id, code)} is partial — {@code WHERE
+     * code IS NOT NULL} — so an empty string is not "no code": two properties
+     * submitted with a blank code would collide on {@code ''}. Normalising it to
+     * null here is what keeps the form's "leave it empty" behaving as intended.
+     */
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<PropertyStatsDTO>> getAllProperties() {
         return ResponseEntity.ok(service.getAllPropertiesWithStats());
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<Property> getPropertyById(@PathVariable UUID id) {
         return ResponseEntity.ok(service.getPropertyById(id));
     }

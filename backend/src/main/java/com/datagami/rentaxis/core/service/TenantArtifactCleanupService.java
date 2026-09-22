@@ -35,8 +35,8 @@ public class TenantArtifactCleanupService {
     static final String LOCAL_ASSET = "LOCAL_ASSET";
 
     private static final String CAPTURE_SQL = """
-            SELECT 'CHEQUE' source, cheque_image_blob_path blob_path, cheque_image_url url
-              FROM payment_schedules WHERE tenant_id = ?
+            SELECT 'CHEQUE' source, image_blob_path blob_path, image_url url
+              FROM cheques WHERE tenant_id = ?
             UNION ALL
             SELECT 'LISTING_MEDIA', m.blob_path, m.url
               FROM unit_listing_media m
@@ -76,7 +76,7 @@ public class TenantArtifactCleanupService {
 
     private static final String SURVIVING_REFERENCE_SQL = """
             SELECT
-                EXISTS (SELECT 1 FROM payment_schedules WHERE cheque_image_url = ?) OR
+                EXISTS (SELECT 1 FROM cheques WHERE image_url = ?) OR
                 EXISTS (SELECT 1 FROM unit_listing_media WHERE url = ?) OR
                 EXISTS (SELECT 1 FROM gate_visitor_profiles WHERE photo_url = ?) OR
                 EXISTS (SELECT 1 FROM gate_passes WHERE guest_photo_url = ?) OR
@@ -91,7 +91,7 @@ public class TenantArtifactCleanupService {
             """;
 
     private static final String SURVIVING_URLS_SQL = """
-            SELECT cheque_image_url url FROM payment_schedules WHERE cheque_image_url IS NOT NULL
+            SELECT image_url url FROM cheques WHERE image_url IS NOT NULL
             UNION ALL SELECT url FROM unit_listing_media WHERE url IS NOT NULL
             UNION ALL SELECT photo_url FROM gate_visitor_profiles WHERE photo_url IS NOT NULL
             UNION ALL SELECT guest_photo_url FROM gate_passes WHERE guest_photo_url IS NOT NULL

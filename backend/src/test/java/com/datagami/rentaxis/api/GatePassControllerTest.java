@@ -107,11 +107,11 @@ class GatePassControllerTest {
     private static final AtomicInteger IP_SEQ = new AtomicInteger();
 
     /** Distinctive enough that finding it in a response body can only mean a leak. */
-    private static final BigDecimal MONTHLY_RENT_SENTINEL = BigDecimal.valueOf(918273);
+    private static final BigDecimal RENT_AMOUNT_SENTINEL = BigDecimal.valueOf(918273);
 
     /**
      * The property's own financial field, which SOW §3.1 keeps away from the Security
-     * role. Distinct from {@link #MONTHLY_RENT_SENTINEL} so a leak names which payload
+     * role. Distinct from {@link #RENT_AMOUNT_SENTINEL} so a leak names which payload
      * it came through.
      */
     private static final BigDecimal FIXED_EXPENSES_SENTINEL = BigDecimal.valueOf(736451);
@@ -197,7 +197,7 @@ class GatePassControllerTest {
         // A sentinel rather than a plausible rent: scanResponseCarriesNoRenterOrFinancialFields
         // greps the raw JSON for this value, and a round number like 5000 collides with
         // digits in the guest phone, which made that assertion fail for the wrong reason.
-        lease.setMonthlyRent(MONTHLY_RENT_SENTINEL);
+        lease.setRentAmount(RENT_AMOUNT_SENTINEL);
         lease.setStatus(LeaseStatus.ACTIVE);
         leaseRepo.save(lease);
 
@@ -514,7 +514,7 @@ class GatePassControllerTest {
         assertThat(raw).doesNotContain(f.renterUser().getEmail());
         assertThat(raw).doesNotContain(f.renter().getId().toString());
         // No lease or financial data.
-        assertThat(raw).doesNotContain(MONTHLY_RENT_SENTINEL.toPlainString());
+        assertThat(raw).doesNotContain(RENT_AMOUNT_SENTINEL.toPlainString());
         assertThat(raw).doesNotContainIgnoringCase("lease");
         assertThat(raw).doesNotContainIgnoringCase("rent");
         // Not even the pass's own identifiers/credentials — the guard scanned the code,

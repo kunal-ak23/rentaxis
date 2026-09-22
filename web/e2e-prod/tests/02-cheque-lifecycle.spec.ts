@@ -1,17 +1,27 @@
 /**
- * 02 — Cheque state transitions on payment-schedule rows.
+ * 02 — A property manager moves cheques through the register.
  *
- * Covers: collect → deposit. Both `clear` AND `bounce` emit
- * FinancialTransaction rows against bank/cash/rental-income accounts that
- * require tenant-specific account mappings (chart of accounts) to be
- * configured. A freshly-provisioned tenant doesn't have them, so both
- * actions return 500 with "Bank/Cash account (A-01-01) not found" or
- * "Rental Income account (C-01-01) not found." Configuring the
- * chart-of-accounts via API is out of scope for a single-spec smoke —
- * covered by separate ops procedures.
+ * The full accounting lifecycle (post, deposit, clear, bounce, replace,
+ * recognise, reconcile) lives in 13h-accounting-v2.spec.ts, on a contract of
+ * its own and as the role that owns the books. This one keeps the check that
+ * was always its real reason for existing: cheque collection is a
+ * PROPERTY_MANAGER job in the product
+ * (web/src/app/[locale]/dashboard/finance/cheques/collection/page.tsx), so a
+ * PM-only restriction on ChequeController has to surface somewhere, and a
+ * spec that banks cheques as an admin would never see it.
  *
- * The four lifecycle endpoints are PUT /v1/payments/{id}/{collect|deposit|bounce|clear}
- * and all accept an UpdatePaymentStatusDTO body.
+ * It deposits two rows rather than one because 13a-cheques-and-penalties
+ * clears one of them and bounces the other; that spec's own preconditions say
+ * so.
+ *
+ * There is no PENDING/"collect" step any more: 01-provision's `postLeaseFlow`
+ * already generated and posted the cheque grid, so every rent cheque on the
+ * lease starts REGISTERED, and the transitions are PUT /v1/cheques/{id}/...
+ *
+ * The v1 note about a fresh tenant lacking account mappings — which is why
+ * this spec used to stop before `clear` — is obsolete: `PropertyService`
+ * calls `generateMissing` on create, so a property owns its account set from
+ * the moment it exists (spec §5.1).
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -20,61 +30,33 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('cheque state transitions — collect + deposit on two rows', async () => {
+test('a property manager deposits two registered cheques', async () => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.lease?.id, '01-provision must run first').toBeTruthy();
   expect(ctx.pmEmail, '01-provision must have created a PROPERTY_MANAGER').toBeTruthy();
 
-  // Cheque collection is performed by a PROPERTY_MANAGER in the real
-  // product — see web/src/app/[locale]/dashboard/finance/payments/page.tsx.
-  // Login as PM (a role we'd otherwise never exercise) so any PM-only
-  // restriction on the payments controller surfaces here.
   const pctx = await loginAsNextAuth(ctx.baseURL, ctx.pmEmail, ctx.pmPassword);
   await setActiveTenant(pctx, ctx.tenant.id);
 
-  const schedule = await api.getPaymentScheduleForLease(pctx, ctx.lease.id);
-  expect(schedule.length, 'lease activation should have created a payment schedule').toBeGreaterThan(0);
+  const cheques = await api.getLeaseCheques(pctx, ctx.lease.id);
+  expect(cheques.length, 'lease posting should have registered a cheque grid').toBeGreaterThan(0);
 
-  const pending = schedule.filter((r) => /PENDING|SCHEDULED/i.test(r.status));
-  expect(pending.length, 'expected at least 2 unpaid scheduled rows').toBeGreaterThanOrEqual(2);
-  const [happyRow, bounceRow] = pending;
+  const registered = cheques.filter((c) => c.status === 'REGISTERED' && c.mode === 'PDC');
+  expect(registered.length, 'expected at least 2 REGISTERED PDC rows').toBeGreaterThanOrEqual(2);
+  const [happyRow, bounceRow] = registered;
 
-  const todayISO = new Date().toISOString().slice(0, 10);
-
-  // Match the EXACT collect payload the finance/payments page sends — see
-  // submitCollect() in web/src/app/[locale]/dashboard/finance/payments/page.tsx.
-  // No `notes` field; cheque image fields are empty strings (not undefined).
-  const collectPayload = (chequeNumber: string, payerName: string) => ({
-    chequeNumber,
-    bankName: 'TEST Bank',
-    payerName,
-    chequeDate: todayISO,
-    chequeImageUrl: '',
-    chequeImageBlobPath: '',
-    chequeImageUploadedAt: '',
-  });
-
-  // Row 1: collect → deposit, leave at DEPOSITED.
-  const collected1 = await api.collectPayment(
-    pctx, happyRow.id,
-    collectPayload(`TST-${ctx.runSuffix}-A`, `TEST-Renter ${ctx.runSuffix}`),
-  );
-  expect(collected1.status).toMatch(/COLLECTED|RECEIVED/i);
-
-  // Deposit sends empty body in the product (see handleDeposit on the
-  // lease detail page).
-  const deposited1 = await api.depositPayment(pctx, happyRow.id, {});
+  const deposited1 = await api.depositCheque(pctx, happyRow.id, { notes: 'TEST-E2E cheque deposited' });
   expect(deposited1.status).toMatch(/DEPOSITED/i);
 
-  // Row 2: collect → deposit (bounce omitted — emits ledger, requires
-  // account mappings).
-  const collected2 = await api.collectPayment(
-    pctx, bounceRow.id,
-    collectPayload(`TST-${ctx.runSuffix}-B`, `TEST-Renter ${ctx.runSuffix}`),
-  );
-  expect(collected2.status).toMatch(/COLLECTED|RECEIVED/i);
-  const deposited2 = await api.depositPayment(pctx, bounceRow.id, {});
+  const deposited2 = await api.depositCheque(pctx, bounceRow.id, { notes: 'TEST-E2E cheque deposited' });
   expect(deposited2.status).toMatch(/DEPOSITED/i);
+
+  // Read the register back rather than trusting the two responses: what the
+  // next spec reaches for is the state of the grid, not the value a PUT
+  // happened to echo.
+  const afterwards = await api.getLeaseCheques(pctx, ctx.lease.id);
+  const depositedIds = afterwards.filter((c) => c.status === 'DEPOSITED').map((c) => c.id).sort();
+  expect(depositedIds).toEqual([happyRow.id, bounceRow.id].sort());
 
   await pctx.request.dispose();
 });

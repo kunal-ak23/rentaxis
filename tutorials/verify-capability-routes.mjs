@@ -142,7 +142,7 @@ function mappedRoutes(surface) {
       failures.push(`${surface}[${index}]: system group needs a reason`);
     }
     for (const tutorial of tutorials) {
-      if (!Number.isInteger(tutorial) || tutorial < 1 || tutorial > 33) {
+      if (!Number.isInteger(tutorial) || tutorial < 1 || tutorial > 37) {
         failures.push(`${surface}[${index}]: invalid tutorial ${tutorial}`);
       }
     }
@@ -175,7 +175,7 @@ const tutorialCoverage = new Set(
     .flat()
     .flatMap((group) => group.tutorials ?? []),
 );
-const missingTutorials = Array.from({ length: 33 }, (_, index) => index + 1)
+const missingTutorials = Array.from({ length: 37 }, (_, index) => index + 1)
   .filter((tutorial) => !tutorialCoverage.has(tutorial));
 if (missingTutorials.length) {
   failures.push(`Tutorials have no mapped route: ${missingTutorials.join(', ')}`);
@@ -187,5 +187,5 @@ if (failures.length) {
   process.exitCode = 1;
 } else {
   const total = Object.values(discovered).reduce((sum, routes) => sum + routes.length, 0);
-  console.log(`\nCapability-route verification passed: ${total} shipped routes mapped to tutorials 01–33.`);
+  console.log(`\nCapability-route verification passed: ${total} shipped routes mapped to tutorials 01–37.`);
 }

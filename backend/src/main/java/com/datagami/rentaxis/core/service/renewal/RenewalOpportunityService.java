@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -93,12 +94,38 @@ public class RenewalOpportunityService {
     /** Manual close from the PM via mark-renewed endpoint. */
     @Transactional
     public RenewalOpportunity markRenewed(UUID leaseId) {
-        RenewalOpportunity o = opportunityRepository
-                .findByLeaseIdAndStageIn(leaseId, OPEN_STAGES)
+        return markRenewedIfOpen(leaseId)
                 .orElseThrow(() -> new NotFoundException("No open renewal opportunity for lease " + leaseId));
-        o.setStage(RenewalStage.CLOSED_WON);
-        o.setOutcome(RenewalOutcome.RENEWED);
-        o.setClosedAt(Instant.now());
-        return opportunityRepository.save(o);
+    }
+
+    /**
+     * The same close, for the caller that does not know whether an opportunity
+     * exists — and must not be derailed if it does not.
+     *
+     * <p>This is what {@code LeasePostingService} calls when a renewal's successor
+     * posts (spec §6.6): the funnel closes the moment the new contract is on the
+     * books, not when the PM remembers to tick it. Most leases have an open
+     * opportunity by then, because the scheduler opens one 90 days out — but a
+     * lease renewed early, or one whose opportunity was already closed by hand, has
+     * none, and that is not an error worth failing a posting over.</p>
+     *
+     * <p>It returns an empty {@link Optional} rather than throwing, and the
+     * distinction is not cosmetic: this bean is a {@code @Transactional} proxy, so
+     * a {@code NotFoundException} thrown out of {@link #markRenewed} marks the
+     * <em>caller's</em> transaction rollback-only on its way through the
+     * interceptor. A {@code try/catch} around it at the call site would swallow the
+     * exception and still lose the whole post at commit time with "Transaction
+     * silently rolled back" — the same trap {@code AccountResolver.resolveOrNull}
+     * exists for.</p>
+     */
+    @Transactional
+    public Optional<RenewalOpportunity> markRenewedIfOpen(UUID leaseId) {
+        return opportunityRepository.findByLeaseIdAndStageIn(leaseId, OPEN_STAGES)
+                .map(o -> {
+                    o.setStage(RenewalStage.CLOSED_WON);
+                    o.setOutcome(RenewalOutcome.RENEWED);
+                    o.setClosedAt(Instant.now());
+                    return opportunityRepository.save(o);
+                });
     }
 }

@@ -35,13 +35,13 @@ public class UnitController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Unit>> getAllUnits() {
         return ResponseEntity.ok(service.getAllUnits());
     }
 
     @GetMapping("/property/{propertyId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Unit>> getUnitsByProperty(@PathVariable UUID propertyId) {
         return ResponseEntity.ok(service.getUnitsByProperty(propertyId));
     }

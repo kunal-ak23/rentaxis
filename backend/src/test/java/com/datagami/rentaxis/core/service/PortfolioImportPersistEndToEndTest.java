@@ -1,6 +1,9 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -48,10 +51,10 @@ class PortfolioImportPersistEndToEndTest {
     @Mock UnitRepository unitRepository;
     @Mock RenterRepository renterRepository;
     @Mock LeaseRepository leaseRepository;
-    @Mock PaymentScheduleService paymentScheduleService;
-    @Mock PaymentScheduleRepository paymentScheduleRepository;
-    @Mock LeaseChargeRepository leaseChargeRepository;
     @Mock ImportJobRepository importJobRepository;
+    @Mock LeaseService leaseService;
+    @Mock ChargeTypeService chargeTypeService;
+    @Mock ChequeGenerationService chequeGenerationService;
 
     PortfolioImportPersistService service;
 
@@ -59,18 +62,16 @@ class PortfolioImportPersistEndToEndTest {
     void setUp() {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
-                renterRepository, leaseRepository, paymentScheduleService,
-                paymentScheduleRepository, leaseChargeRepository, importJobRepository);
+                renterRepository, leaseRepository, importJobRepository,
+                leaseService, chargeTypeService, chequeGenerationService);
+        lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(java.util.List.of());
+        lenient().when(chequeGenerationService.saveRowsForSystemImport(any(), any())).thenReturn(java.util.List.of());
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(buildingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(unitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(renterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(leaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(paymentScheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(leaseChargeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(importJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(paymentScheduleService.generateScheduleForLease(any()))
-                .thenAnswer(inv -> Collections.emptyList());
     }
 
     @Test
@@ -105,31 +106,26 @@ class PortfolioImportPersistEndToEndTest {
         assertThat(unitCap.getAllValues())
                 .anyMatch(u -> u.getStatus() == UnitStatus.OCCUPIED);
 
-        // Booking deposit + Cheques rows (scenarios 2 and 4) + security-deposit rows.
-        ArgumentCaptor<PaymentSchedule> scheduleCap = ArgumentCaptor.forClass(PaymentSchedule.class);
-        verify(paymentScheduleRepository, atLeastOnce()).save(scheduleCap.capture());
-        long bookingCount = scheduleCap.getAllValues().stream()
-                .filter(PaymentSchedule::isBookingDeposit).count();
-        long chequeRowsFromSheet = scheduleCap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge()).count();
-        long securityDepositRows = scheduleCap.getAllValues().stream()
-                .filter(PaymentSchedule::isSecurityDeposit).count();
-        assertThat(bookingCount).isEqualTo(1);
-        assertThat(chequeRowsFromSheet).isEqualTo(4);  // 4 cheque rows for scenario 2
-        // Every scenario has a positive deposit → one SD schedule row each (5 leases).
-        assertThat(securityDepositRows).isEqualTo(5);
+        // Every scenario has a positive deposit, so every lease gets a RENT line and
+        // a SECURITY_DEPOSIT line. These used to be a LeaseCharge row plus a
+        // security-deposit payment-schedule row; the money is now described once.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<LeaseLineInput>> lineCap = ArgumentCaptor.forClass(List.class);
+        verify(leaseService, org.mockito.Mockito.times(5)).applyLines(any(Lease.class), lineCap.capture());
+        assertThat(lineCap.getAllValues()).hasSize(5).allSatisfy(lines ->
+                assertThat(lines).extracting(LeaseLineInput::chargeTypeCode)
+                        .startsWith("RENT").contains("SECURITY_DEPOSIT"));
+        verify(leaseService, org.mockito.Mockito.times(5)).syncDerivedTotals(any(Lease.class));
 
-        // Counters serialized into the JSONB column.
+        // Counters serialized into the JSONB column. chequesFromSheet counts the
+        // sheet's rows (scenario 2's four); schedulesCreated now counts the register
+        // rows the import wrote — those four plus scenario 4's booking cheque.
         assertThat(job.getErrors()).startsWith("{");
         PortfolioImportJobDetailsDTO details = new ObjectMapper()
                 .readValue(job.getErrors(), PortfolioImportJobDetailsDTO.class);
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
-
-        // Auto-distribute scenarios (1, 3, 4, 5 = 4 leases) trigger generateScheduleForLease.
-        // Scenario 2 has cheque rows → does NOT trigger generateScheduleForLease.
-        verify(paymentScheduleService, org.mockito.Mockito.times(4))
-                .generateScheduleForLease(any(Lease.class));
+        assertThat(job.getSchedulesCreated()).isEqualTo(5);
 
         // Job summary counters.
         assertThat(job.getLeasesCreated()).isEqualTo(5);

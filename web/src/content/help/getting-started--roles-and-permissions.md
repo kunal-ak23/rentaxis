@@ -26,7 +26,7 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 **Tenant Admin** has access to:
 - Create and manage properties, buildings, and units
 - Create and manage leases and renters
-- Full financial module (accounts, transactions, reports)
+- Full accounting module: chart of accounts, journal vouchers, general ledger, tenant ledger and trial balance
 - Staff management and settings configuration
 - Payment gateway and rent settings
 

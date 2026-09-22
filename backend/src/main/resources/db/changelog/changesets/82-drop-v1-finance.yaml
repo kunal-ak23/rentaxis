@@ -1,0 +1,24 @@
+databaseChangeLog:
+  # Accounting v2 plan 1, final step: the one-legged v1 ledger and the
+  # nature-based mapping table are replaced by journal_entries/journal_lines
+  # (81) and role mappings. Wipe-and-reseed was agreed (spec D4) — there is
+  # no data migration. transaction_splits live inside financial_transactions
+  # (parent_transaction_id / is_split_parent) and go with it.
+  #
+  # penalty_payments.financial_transaction_id (47) is the only column on
+  # another table that points at financial_transactions; every other
+  # reference in 06/14/19/20/21/33/44 is a column, index or FK ON
+  # financial_transactions itself, which DROP TABLE ... CASCADE takes with it.
+  - changeSet:
+      id: 82-drop-v1-finance
+      author: claude
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE IF EXISTS penalty_payments DROP COLUMN IF EXISTS financial_transaction_id;
+              DROP TABLE IF EXISTS financial_transactions CASCADE;
+              DROP TABLE IF EXISTS account_mappings CASCADE;
+      rollback:
+        - sql:
+            # No rollback: v1 finance is retired.
+            sql: "SELECT 1"

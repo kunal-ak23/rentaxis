@@ -5,24 +5,26 @@ import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { autoMapChequesToSchedules } from "./autoMapChequesToSchedules";
-import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
-import DueDateDelta from "@/components/payments/DueDateDelta";
+import { autoMapChequesToRows } from "./autoMapChequesToRows";
+import { useBulkChequeExtract, buildItemsFromFiles } from "./useBulkChequeExtract";
+import DueDateDelta from "./DueDateDelta";
+import type { Cheque } from "@/lib/api/leasing";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
-type Schedule = {
-  id: string;
-  installmentNumber: number;
-  dueDate: string;
-  amount: string | number;
-  status: string; // "PENDING" only enters the dropdown
-  isCharge?: boolean;
-  isSecurityDeposit?: boolean;
-  isBookingDeposit?: boolean;
-};
+/**
+ * Bulk-attach scanned cheque images onto a lease's own register rows.
+ *
+ * Accounting-v2 replaced payment schedules with the lease's cheque grid
+ * (`GET /leases/{id}/cheques`), and `POST /leases/{id}/cheques/bulk-attach`
+ * targets a cheque row by id (`chequeId`, aliased from the old `scheduleId`
+ * on the wire — see `BulkAttachChequeItem`). Only a REGISTERED, PDC-mode row
+ * has a cheque number to fill in; a DRAFT row belongs to the editable grid,
+ * and CASH/TRANSFER/ONLINE rows have no physical instrument to scan.
+ */
 
 type Props = {
   leaseId: string;
-  schedules: Schedule[]; // ALL schedules for the lease, server-fetched
+  rows: Cheque[]; // ALL cheques for the lease, server-fetched
   onSuccess: () => void; // called after successful bulk-attach
   onClose: () => void;
 };
@@ -34,26 +36,27 @@ type RowState = {
   payerName: string;
   chequeDate: string | null;
   amount: number | null;
-  scheduleId: string | null;
+  rowId: string | null;
   pinned: boolean;
 };
 
 type Step = 1 | 2 | 3;
 
-export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, onClose }: Props) {
+export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose }: Props) {
   const t = useTranslations("bulkChequeUpload");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const extract = useBulkChequeExtract();
   const [step, setStep] = useState<Step>(1);
-  const [rows, setRows] = useState<RowState[]>([]);
+  const [tableRows, setTableRows] = useState<RowState[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [rejectedCount, setRejectedCount] = useState(0);
 
-  const pendingSchedules = useMemo(
-    () => schedules.filter(s => s.status === "PENDING").sort((a, b) => a.installmentNumber - b.installmentNumber),
-    [schedules]
+  // Only a REGISTERED, PDC row has a cheque number to attach a scan to.
+  const eligibleRows = useMemo(
+    () => rows.filter(c => c.status === "REGISTERED" && c.mode === "PDC").sort((a, b) => a.seqNo - b.seqNo),
+    [rows],
   );
 
   // Suppress exhaustive-deps: cleanup runs only on unmount
@@ -123,17 +126,10 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const hasPending = extract.items.some(it => it.status === "extracting" || it.status === "extracted");
-    if (!hasPending) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Modern browsers ignore custom messages but show a generic prompt when preventDefault is called.
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [extract.items]);
+  // Shared with the opening-balance grid; see useUnsavedChangesWarning.
+  useUnsavedChangesWarning(
+    extract.items.some(it => it.status === "extracting" || it.status === "extracted"),
+  );
 
   const onPick = (files: FileList | null) => {
     if (!files) return;
@@ -141,6 +137,12 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     setRejectedCount(built.rejectedCount);
     extract.setItems(built.items);
   };
+
+  const remap = (candidates: RowState[]) =>
+    autoMapChequesToRows(
+      candidates.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, amount: r.amount, pinned: r.pinned, assignedRowId: r.rowId })),
+      eligibleRows.map(c => ({ id: c.id, dueDate: c.postingDate, amount: c.amount })),
+    );
 
   const goExtract = async () => {
     setStep(2);
@@ -155,46 +157,38 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
         payerName: ex?.payerName ?? "",
         chequeDate: ex?.chequeDate ?? null,
         amount: ex?.amount ?? null,
-        scheduleId: null,
+        rowId: null,
         pinned: false,
       };
     });
-    const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
-    const map = autoMapChequesToSchedules(
-      initialRows.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-      rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
-    );
-    setRows(initialRows.map(r => ({ ...r, scheduleId: map.get(r.itemId) ?? null })));
+    const map = remap(initialRows);
+    setTableRows(initialRows.map(r => ({ ...r, rowId: map.get(r.itemId) ?? null })));
     setStep(3);
   };
 
   const updateRow = (itemId: string, patch: Partial<RowState>) => {
-    setRows(prev => {
+    setTableRows(prev => {
       const next = prev.map(r => (r.itemId === itemId ? { ...r, ...patch } : r));
       // If this was a non-pin date change, re-run auto-map for non-pinned rows.
       if ("chequeDate" in patch && !next.find(r => r.itemId === itemId)?.pinned) {
-        const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
-        const map = autoMapChequesToSchedules(
-          next.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-          rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
-        );
-        return next.map(r => (r.pinned ? r : { ...r, scheduleId: map.get(r.itemId) ?? null }));
+        const map = remap(next);
+        return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
       }
       return next;
     });
   };
 
-  const pickSchedule = (itemId: string, scheduleId: string | null) => {
-    setRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, scheduleId, pinned: scheduleId !== null } : r)));
+  const pickRow = (itemId: string, rowId: string | null) => {
+    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, rowId, pinned: rowId !== null } : r)));
   };
 
   const togglePin = (itemId: string) => {
-    setRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, pinned: !r.pinned } : r)));
+    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, pinned: !r.pinned } : r)));
   };
 
   const removeRow = (itemId: string) => {
     extract.removeItem(itemId);
-    setRows(prev => prev.filter(r => r.itemId !== itemId));
+    setTableRows(prev => prev.filter(r => r.itemId !== itemId));
   };
 
   const counts = useMemo(() => {
@@ -203,34 +197,34 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     let needsBank = 0;
     let duplicateNumber = 0;
     const numberSeen = new Map<string, number>();
-    for (const r of rows) {
+    for (const r of tableRows) {
       if (!r.chequeDate) needsDate++;
-      if (!r.scheduleId) noSchedule++;
+      if (!r.rowId) noSchedule++;
       if (!r.bankName.trim()) needsBank++;
       if (r.chequeNumber.trim()) numberSeen.set(r.chequeNumber.trim(), (numberSeen.get(r.chequeNumber.trim()) ?? 0) + 1);
     }
     for (const v of numberSeen.values()) if (v > 1) duplicateNumber += v;
     // A row is "ready" only if it individually passes every check. The bucket
-    // counts above OVERLAP (one empty row needs date AND bank AND installment),
+    // counts above OVERLAP (one empty row needs date AND bank AND a target row),
     // so `total - sum(buckets)` over-subtracts and can even go negative — count
     // the genuinely-complete rows directly instead.
     let ready = 0;
-    for (const r of rows) {
+    for (const r of tableRows) {
       const num = r.chequeNumber.trim();
-      if (r.chequeDate && r.scheduleId && r.bankName.trim() && num && (numberSeen.get(num) ?? 0) === 1) {
+      if (r.chequeDate && r.rowId && r.bankName.trim() && num && (numberSeen.get(num) ?? 0) === 1) {
         ready++;
       }
     }
     return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
-  }, [rows]);
+  }, [tableRows]);
 
   const canApprove =
-    rows.length > 0 &&
+    tableRows.length > 0 &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
     counts.needsBank === 0 &&
     counts.duplicateNumber === 0 &&
-    rows.every(r => {
+    tableRows.every(r => {
       if (!r.chequeNumber.trim()) return false;
       const item = extract.items.find(it => it.id === r.itemId);
       return item?.response?.image != null;
@@ -240,10 +234,10 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const items = rows.map(r => {
+      const items = tableRows.map(r => {
         const ex = extract.items.find(it => it.id === r.itemId);
         return {
-          scheduleId: r.scheduleId,
+          chequeId: r.rowId,
           chequeNumber: r.chequeNumber.trim(),
           chequeDate: r.chequeDate,
           bankName: r.bankName.trim(),
@@ -382,11 +376,11 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(row => {
+                  {tableRows.map(row => {
                     const item = extract.items.find(it => it.id === row.itemId);
                     if (!item) return null;
-                    const sched = pendingSchedules.find(s => s.id === row.scheduleId) ?? null;
-                    const usedSchedIds = new Set(rows.filter(r => r.itemId !== row.itemId && r.scheduleId).map(r => r.scheduleId));
+                    const target = eligibleRows.find(s => s.id === row.rowId) ?? null;
+                    const usedRowIds = new Set(tableRows.filter(r => r.itemId !== row.itemId && r.rowId).map(r => r.rowId));
                     return (
                       <tr key={row.itemId} className="border-t border-border align-top">
                         <td className="py-1 pr-2">
@@ -434,31 +428,31 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                         </td>
                         <td className="pr-2">
                           <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
-                          {sched && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(sched.amount) * 100) && (
+                          {target && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(target.amount) * 100) && (
                             <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-                              {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(sched.amount)) })}
+                              {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(target.amount)) })}
                             </span>
                           )}
                         </td>
                         <td className="pr-2">
                           <select
-                            value={row.scheduleId ?? ""}
-                            onChange={e => pickSchedule(row.itemId, e.target.value || null)}
+                            value={row.rowId ?? ""}
+                            onChange={e => pickRow(row.itemId, e.target.value || null)}
                             className="rounded border border-border px-1 py-0.5"
                           >
                             <option value="">{t("pickInstallment")}</option>
-                            {pendingSchedules
-                              .filter(s => !usedSchedIds.has(s.id) || s.id === row.scheduleId)
+                            {eligibleRows
+                              .filter(s => !usedRowIds.has(s.id) || s.id === row.rowId)
                               .map(s => (
                                 <option key={s.id} value={s.id}>
-                                  #{s.installmentNumber} · {formatDate(s.dueDate)}
+                                  #{s.seqNo} · {formatDate(s.postingDate)}
                                 </option>
                               ))}
                           </select>
                         </td>
                         <td className="pr-2">
-                          {sched && row.chequeDate && (
-                            <DueDateDelta dueDate={sched.dueDate} chequeDate={row.chequeDate} />
+                          {target && row.chequeDate && (
+                            <DueDateDelta dueDate={target.postingDate} chequeDate={row.chequeDate} />
                           )}
                         </td>
                         <td className="pr-2 text-right">
@@ -488,7 +482,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
               <div className="flex items-center justify-between text-xs">
                 <p className="text-muted">
                   {t("statusCounts", {
-                    total: rows.length,
+                    total: tableRows.length,
                     needsDate: counts.needsDate,
                     noSchedule: counts.noSchedule,
                     needsBank: counts.needsBank,
@@ -503,7 +497,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                   className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50"
                 >
                   {submitting ? <Loader2 size={12} className="inline animate-spin" /> : <Check size={12} className="inline" />}{" "}
-                  {t("approveAll", { ready: counts.ready, total: rows.length })}
+                  {t("approveAll", { ready: counts.ready, total: tableRows.length })}
                 </button>
               </div>
             </div>

@@ -202,7 +202,7 @@ class GateWalkInControllerTest {
         lease.setTenantId(org.getId());
         lease.setStartDate(LocalDate.now().minusMonths(1));
         lease.setEndDate(LocalDate.now().plusMonths(11));
-        lease.setMonthlyRent(java.math.BigDecimal.valueOf(1000));
+        lease.setRentAmount(java.math.BigDecimal.valueOf(12000));
         lease.setStatus(LeaseStatus.ACTIVE);
         return lease;
     }

@@ -171,7 +171,7 @@ export default function NotificationsPage() {
             const routes: Record<string, string> = {
                 TICKET: `/dashboard/tickets/${n.referenceId}`,
                 LEASE: `/dashboard/leases/${n.referenceId}`,
-                PAYMENT: `/dashboard/finance/payments`,
+                PAYMENT: `/dashboard/finance/cheques`,
             };
             const route = routes[n.referenceType];
             if (route) {

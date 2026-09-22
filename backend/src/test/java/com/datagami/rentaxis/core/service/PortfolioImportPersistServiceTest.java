@@ -2,6 +2,10 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.domain.repository.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -43,10 +47,10 @@ class PortfolioImportPersistServiceTest {
     @Mock UnitRepository unitRepository;
     @Mock RenterRepository renterRepository;
     @Mock LeaseRepository leaseRepository;
-    @Mock PaymentScheduleService paymentScheduleService;
-    @Mock PaymentScheduleRepository paymentScheduleRepository;
-    @Mock LeaseChargeRepository leaseChargeRepository;
     @Mock ImportJobRepository importJobRepository;
+    @Mock LeaseService leaseService;
+    @Mock ChargeTypeService chargeTypeService;
+    @Mock ChequeGenerationService chequeGenerationService;
 
     PortfolioImportPersistService service;
 
@@ -54,8 +58,12 @@ class PortfolioImportPersistServiceTest {
     void setUp() {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
-                renterRepository, leaseRepository, paymentScheduleService,
-                paymentScheduleRepository, leaseChargeRepository, importJobRepository);
+                renterRepository, leaseRepository, importJobRepository,
+                leaseService, chargeTypeService, chequeGenerationService);
+        // The grid itself is ChequeGenerationServiceIT's subject; here the question
+        // is only which rows the import hands it.
+        lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(List.of());
+        lenient().when(chequeGenerationService.saveRowsForSystemImport(any(), any())).thenReturn(List.of());
 
         // save(...) → return the input entity, simulating ID assignment.
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -63,18 +71,25 @@ class PortfolioImportPersistServiceTest {
         lenient().when(unitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(renterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(leaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(paymentScheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(leaseChargeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(importJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(paymentScheduleService.generateScheduleForLease(any()))
-                .thenReturn(Collections.emptyList());
     }
 
-    /** Capture every LeaseCharge passed to leaseChargeRepository.save(). */
-    private List<LeaseCharge> captureSavedCharges() {
-        ArgumentCaptor<LeaseCharge> cap = ArgumentCaptor.forClass(LeaseCharge.class);
-        verify(leaseChargeRepository, atLeastOnce()).save(cap.capture());
-        return cap.getAllValues();
+    /**
+     * The lines the import handed to {@link LeaseService#applyLines}. The import
+     * no longer writes charge or schedule rows of its own — it builds the same
+     * line inputs the draft wizard does and lets the lease service validate them,
+     * so the inputs are what these tests can assert on.
+     */
+    @SuppressWarnings("unchecked")
+    private List<LeaseLineInput> captureSavedLines() {
+        ArgumentCaptor<List<LeaseLineInput>> cap = ArgumentCaptor.forClass(List.class);
+        verify(leaseService, atLeastOnce()).applyLines(any(Lease.class), cap.capture());
+        return cap.getValue();
+    }
+
+    private static LeaseLineInput lineOf(List<LeaseLineInput> lines, String code) {
+        return lines.stream().filter(l -> code.equals(l.chargeTypeCode())).findFirst()
+                .orElseThrow(() -> new AssertionError("expected a " + code + " line; got " + lines));
     }
 
     @Test
@@ -94,18 +109,18 @@ class PortfolioImportPersistServiceTest {
         assertThat(saved.getAgreementDate()).isEqualTo(LocalDate.parse("2026-05-01"));
         assertThat(saved.getDepositPaymentMethod()).isEqualTo(PaymentMethod.BANK_TRANSFER);
 
-        // AdminFee / ParkingRemoteFee columns now map to one-time LeaseCharge rows
-        // with their VAT intent carried from the per-fee VAT columns.
-        List<LeaseCharge> charges = captureSavedCharges();
-        assertThat(charges).extracting(LeaseCharge::getName)
-                .containsExactlyInAnyOrder("Admin Fee", "Parking / Remote");
-        LeaseCharge admin = charges.stream().filter(c -> c.getName().equals("Admin Fee")).findFirst().orElseThrow();
-        LeaseCharge parking = charges.stream().filter(c -> c.getName().equals("Parking / Remote")).findFirst().orElseThrow();
-        assertThat(admin.getAmount()).isEqualByComparingTo("500");
-        assertThat(admin.isVatApplicable()).isTrue();
-        assertThat(admin.getFrequency()).isEqualTo(ChargeFrequency.ONE_TIME);
-        assertThat(parking.getAmount()).isEqualByComparingTo("100");
-        assertThat(parking.isVatApplicable()).isFalse();
+        // Every money column on the sheet becomes a charge line, named by
+        // catalogue code, with its VAT intent carried from the per-fee column.
+        List<LeaseLineInput> lines = captureSavedLines();
+        assertThat(lines).extracting(LeaseLineInput::chargeTypeCode)
+                .containsExactly("RENT", "SECURITY_DEPOSIT", "ADMIN_FEE", "PARKING_FEE");
+        assertThat(lineOf(lines, "ADMIN_FEE").grossAmount()).isEqualByComparingTo("500");
+        assertThat(lineOf(lines, "ADMIN_FEE").vatApplicable()).isTrue();
+        assertThat(lineOf(lines, "PARKING_FEE").grossAmount()).isEqualByComparingTo("100");
+        assertThat(lineOf(lines, "PARKING_FEE").vatApplicable()).isFalse();
+        // The rent line covers the term, which is what per-day recognition divides by.
+        assertThat(lineOf(lines, "RENT").periodStart()).isEqualTo(saved.getStartDate());
+        assertThat(lineOf(lines, "RENT").periodEnd()).isEqualTo(saved.getEndDate());
     }
 
     @Test
@@ -151,15 +166,17 @@ class PortfolioImportPersistServiceTest {
 
         service.persistWorkbook(wb, newJob());
 
-        Lease saved = captureSavedLease();
-        assertThat(saved.getMonthlyRent()).isEqualByComparingTo("5000");
         // End-date inclusive: Jan 1 → Dec 31 counts as 12 months; totalRent = 5000 * 12 = 60000.
-        assertThat(saved.getRentAmount()).isEqualByComparingTo("60000");
+        // The rent line carries that same total — the lease's own rentAmount is a
+        // derived mirror of it, recomputed by syncDerivedTotals.
+        assertThat(captureSavedLease().getRentAmount()).isEqualByComparingTo("60000");
+        assertThat(lineOf(captureSavedLines(), "RENT").grossAmount()).isEqualByComparingTo("60000");
     }
 
     @Test
-    void persist_rentAmount_computesMonthlyCorrectly_independentOfPaymentTerms() {
-        // BUG FIX: monthly should be RentAmount / months, NOT RentAmount / paymentTerms.
+    void persist_rentAmount_isTakenAsTheTotal_independentOfPaymentTerms() {
+        // A RentAmount column is the contract total for the term. paymentTerms says
+        // how many instalments it is collected in and must not divide it.
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .rentAmount("60000")
                 .paymentTerms("4")
@@ -168,32 +185,44 @@ class PortfolioImportPersistServiceTest {
 
         service.persistWorkbook(wb, newJob());
 
-        Lease saved = captureSavedLease();
-        // End-date inclusive: Jan 1 → Dec 31 counts as 12 months; monthlyRent = 60000 / 12 = 5000.
-        assertThat(saved.getRentAmount()).isEqualByComparingTo("60000");
-        assertThat(saved.getMonthlyRent())
-                .as("monthly rent must be totalRent/months, NOT totalRent/paymentTerms")
-                .isEqualByComparingTo("5000");
+        assertThat(captureSavedLease().getRentAmount()).isEqualByComparingTo("60000");
+        assertThat(lineOf(captureSavedLines(), "RENT").grossAmount()).isEqualByComparingTo("60000");
     }
 
+    /**
+     * The booking cheque is an instrument the renter handed over, so it becomes a
+     * row on the register like any other — number, bank and date included. It used
+     * to be read, validated, counted and then thrown away with a warning.
+     */
     @Test
-    void persist_bookingDeposit_savesBookingPaymentScheduleRow() {
+    void persist_bookingDeposit_becomesARegisterRow() throws Exception {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .bookingDeposit("10000", "BD-001", "2026-02-15", "Emirates NBD"));
+        ImportJob job = newJob();
 
-        service.persistWorkbook(wb, newJob());
+        service.persistWorkbook(wb, job);
 
-        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
-        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
-        PaymentSchedule booking = cap.getAllValues().stream()
-                .filter(PaymentSchedule::isBookingDeposit)
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("expected a booking-deposit row to be saved"));
-        assertThat(booking.getAmount()).isEqualByComparingTo("10000");
-        assertThat(booking.getChequeNumber()).isEqualTo("BD-001");
-        assertThat(booking.getChequeDate()).isEqualTo(LocalDate.parse("2026-02-15"));
-        assertThat(booking.getBankName()).isEqualTo("Emirates NBD");
-        assertThat(booking.getPurposeLabel()).isEqualTo("BOOKING RECEIVED");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
+        verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
+        assertThat(rows.getValue()).singleElement().satisfies(r -> {
+            assertThat(r.chequeNumber()).isEqualTo("BD-001");
+            assertThat(r.payeeBank()).isEqualTo("Emirates NBD");
+            assertThat(r.chequeDate()).isEqualTo(java.time.LocalDate.of(2026, 2, 15));
+            assertThat(r.amount()).isEqualByComparingTo("10000");
+            assertThat(r.narration()).isEqualTo("Booking Deposit");
+        });
+
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
+        assertThat(job.getSchedulesCreated()).isEqualTo(1);
+        // Nothing was dropped, so nothing is warned about.
+        assertThat(details.getWarnings() == null ? List.<com.datagami.rentaxis.api.dto.ImportErrorDTO>of()
+                : details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .noneSatisfy(m -> assertThat(m).contains("not imported"));
     }
 
     @Test
@@ -207,9 +236,13 @@ class PortfolioImportPersistServiceTest {
 
         Lease saved = captureSavedLease();
         assertThat(saved.isRentVatApplicable()).isTrue();
-        // Charge VAT defaults to the commercial flag when the per-fee VAT column is blank.
-        List<LeaseCharge> charges = captureSavedCharges();
-        assertThat(charges).allSatisfy(c -> assertThat(c.isVatApplicable()).isTrue());
+        // Fee VAT defaults to the commercial flag when the per-fee VAT column is
+        // blank. The deposit never carries VAT, whatever the property type.
+        List<LeaseLineInput> lines = captureSavedLines();
+        assertThat(lineOf(lines, "RENT").vatApplicable()).isTrue();
+        assertThat(lineOf(lines, "ADMIN_FEE").vatApplicable()).isTrue();
+        assertThat(lineOf(lines, "PARKING_FEE").vatApplicable()).isTrue();
+        assertThat(lineOf(lines, "SECURITY_DEPOSIT").vatApplicable()).isFalse();
     }
 
     @Test
@@ -223,22 +256,22 @@ class PortfolioImportPersistServiceTest {
 
         Lease saved = captureSavedLease();
         assertThat(saved.isRentVatApplicable()).isFalse();
-        List<LeaseCharge> charges = captureSavedCharges();
-        assertThat(charges).allSatisfy(c -> assertThat(c.isVatApplicable()).isFalse());
+        assertThat(captureSavedLines()).allSatisfy(l -> assertThat(l.vatApplicable()).isFalse());
     }
 
     @Test
-    void persist_noChequesSheet_delegatesToPaymentScheduleService() {
+    void persist_noChequesSheet_keepsTheSheetsPaymentTerms() {
         Workbook wb = buildWorkbookWithOneLease(b -> b.paymentTerms("4"));
 
         service.persistWorkbook(wb, newJob());
 
-        // Auto-distribution is delegated; we verify the contract (call), not the math.
-        verify(paymentScheduleService).generateScheduleForLease(any(Lease.class));
+        // Nothing generates a plan at import time any more; the lease simply says
+        // how many instalments it is to be collected in.
+        assertThat(captureSavedLease().getPaymentTerms()).isEqualTo(4);
     }
 
     @Test
-    void persist_chequesSheet_overridesPaymentTermsAndPersistsRowsDirectly() {
+    void persist_chequesSheet_overridesPaymentTerms() {
         Workbook wb = buildWorkbookWithOneLease(b -> b.paymentTerms("4"));
         addChequesSheet(wb,
                 cheque("Marina Heights", "101", "ahmed@email.com",
@@ -254,28 +287,22 @@ class PortfolioImportPersistServiceTest {
 
         service.persistWorkbook(wb, newJob());
 
-        // generateScheduleForLease must NOT run when cheque rows exist.
-        verify(paymentScheduleService, never()).generateScheduleForLease(any(Lease.class));
-
-        // 5 cheque rows (no booking deposit in this fixture; SD/charge rows excluded).
-        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
-        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
-        List<PaymentSchedule> rows = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
-                .toList();
-        assertThat(rows).hasSize(5);
-        assertThat(rows).extracting(PaymentSchedule::getInstallmentNumber)
-                .containsExactlyInAnyOrder(1, 2, 3, 4, 5);
-
-        // Lease.paymentTerms overridden to match cheque count (5, not the workbook's 4).
+        // A Cheques sheet fixes the instalment count — 5, not the workbook's 4 —
+        // which is the one thing the cheque generator (Task 5) needs from it. The
+        // rows themselves are no longer materialised as payment schedules.
         ArgumentCaptor<Lease> leaseCap = ArgumentCaptor.forClass(Lease.class);
         verify(leaseRepository, atLeastOnce()).save(leaseCap.capture());
         Lease lastSaved = leaseCap.getAllValues().get(leaseCap.getAllValues().size() - 1);
         assertThat(lastSaved.getPaymentTerms()).isEqualTo(5);
     }
 
+    /**
+     * The Cheques sheet is a statement of the instruments the renter handed over,
+     * so every column of it lands on the register: the date on the paper, its
+     * number, its bank, and the mode the Method column names.
+     */
     @Test
-    void persist_chequesSheet_perRowMethodAndChequeDetailsPreserved() {
+    void persist_chequesSheet_becomesTheLeasesGrid() throws Exception {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .paymentTerms("3")
                 .startDate("2026-01-01").endDate("2026-12-31"));
@@ -286,28 +313,70 @@ class PortfolioImportPersistServiceTest {
                         "2", "2026-05-01", "", "", "", "20000", "CASH"),
                 cheque("Marina Heights", "101", "ahmed@email.com",
                         "3", "2026-09-01", "2026-09-01", "TXN-99", "Mashreq", "20000", "BANK_TRANSFER"));
+        ImportJob job = newJob();
 
-        service.persistWorkbook(wb, newJob());
+        service.persistWorkbook(wb, job);
 
-        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
-        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
-        List<PaymentSchedule> rows = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
-                .sorted((a, b) -> Integer.compare(a.getInstallmentNumber(), b.getInstallmentNumber()))
-                .toList();
-        assertThat(rows).hasSize(3);
-        assertThat(rows.get(0).getPaymentMethod()).isEqualTo("CHEQUE");
-        assertThat(rows.get(0).getChequeNumber()).isEqualTo("C-1");
-        assertThat(rows.get(1).getPaymentMethod()).isEqualTo("CASH");
-        assertThat(rows.get(2).getPaymentMethod()).isEqualTo("BANK_TRANSFER");
-        assertThat(rows.get(2).getChequeNumber()).isEqualTo("TXN-99");
-        assertThat(rows.get(2).getBankName()).isEqualTo("Mashreq");
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getChequesFromSheet()).isEqualTo(3);
+        assertThat(job.getSchedulesCreated()).isEqualTo(3);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
+        verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
+        assertThat(rows.getValue()).hasSize(3);
+        assertThat(rows.getValue()).extracting(ChequeRowInput::mode)
+                .containsExactly(ChequeMode.PDC, ChequeMode.CASH, ChequeMode.TRANSFER);
+        // ChequeOrPaymentDate when the sheet gives one, else the instalment's DueDate.
+        assertThat(rows.getValue()).extracting(ChequeRowInput::chequeDate)
+                .containsExactly(java.time.LocalDate.of(2026, 1, 1),
+                        java.time.LocalDate.of(2026, 5, 1),
+                        java.time.LocalDate.of(2026, 9, 1));
+        // A cheque number is a PDC's; a cash row has none and a transfer's
+        // reference is not one, which ChequeRowRules would refuse outright.
+        assertThat(rows.getValue()).extracting(ChequeRowInput::chequeNumber)
+                .containsExactly("C-1", null, null);
+        // Nothing is generated when the sheet says what the instruments are.
+        verify(chequeGenerationService, never()).generateForSystemImport(any(), any());
+    }
+
+    /**
+     * A sheet row the shared rules refuse is an import error, not an exception
+     * that kills the workbook: the admin gets the rest of their portfolio and a
+     * line telling them which lease to fix.
+     */
+    @Test
+    void persist_chequesSheetRowBreakingTheRowRules_isReportedAndTheGridIsSkipped() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b
+                .paymentTerms("2")
+                .startDate("2026-01-01").endDate("2026-12-31"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "20000", "CHEQUE"),
+                // The same cheque number twice on one lease.
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "2", "2026-07-01", "2026-07-01", "C-1", "Emirates NBD", "20000", "CHEQUE"));
+        ImportJob job = newJob();
+
+        service.persistWorkbook(wb, job);
+
+        verify(chequeGenerationService, never()).saveRowsForSystemImport(any(), any());
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getErrors())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .anySatisfy(m -> assertThat(m).contains("C-1"));
+        // The lease itself still landed.
+        assertThat(job.getLeasesCreated()).isEqualTo(1);
     }
 
     @Test
-    void persist_chequesSheet_installmentLabelsArePlain_andChargeRowEmitted() {
-        // Imported rent installment labels are now plain (no /ADMIN/SD/REMOTE
-        // suffix); the admin fee becomes its own one-time charge schedule row.
+    void persist_feeColumns_becomeTheirOwnLinesAlongsideRent() {
+        // The admin fee used to be a one-time charge schedule row beside the rent
+        // instalments. It is a charge line now — same money, one representation.
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .adminFee("500"));
         addChequesSheet(wb,
@@ -318,25 +387,11 @@ class PortfolioImportPersistServiceTest {
 
         service.persistWorkbook(wb, newJob());
 
-        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
-        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
-        PaymentSchedule first = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isCharge() && !p.isSecurityDeposit())
-                .filter(p -> p.getInstallmentNumber() == 1)
-                .findFirst().orElseThrow();
-        PaymentSchedule second = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit() && !p.isCharge() && !p.isSecurityDeposit())
-                .filter(p -> p.getInstallmentNumber() == 2)
-                .findFirst().orElseThrow();
-        assertThat(first.getPurposeLabel()).isEqualTo("RENT - 1ST INSTALLMENT");
-        assertThat(second.getPurposeLabel()).isEqualTo("RENT - 2ND INSTALLMENT");
-
-        // The Admin Fee charge schedule row exists (residential → no VAT → 500.00).
-        PaymentSchedule adminRow = cap.getAllValues().stream()
-                .filter(PaymentSchedule::isCharge)
-                .findFirst().orElseThrow(() -> new AssertionError("expected an Admin Fee charge row"));
-        assertThat(adminRow.getPurposeLabel()).isEqualTo("Admin Fee");
-        assertThat(adminRow.getAmount()).isEqualByComparingTo("500");
+        List<LeaseLineInput> lines = captureSavedLines();
+        // Residential property, blank VAT column → no VAT on the fee.
+        assertThat(lineOf(lines, "ADMIN_FEE").grossAmount()).isEqualByComparingTo("500");
+        assertThat(lineOf(lines, "ADMIN_FEE").vatApplicable()).isFalse();
+        assertThat(lines).extracting(LeaseLineInput::chargeTypeCode).contains("RENT");
     }
 
     @Test
@@ -398,10 +453,17 @@ class PortfolioImportPersistServiceTest {
 
     // ----- Helpers -----
 
+    /**
+     * The last state the lease was saved in. A lease is now saved more than once —
+     * once to get an id, again to stamp its own chain id, again after its derived
+     * totals are recomputed — so this takes the final value rather than insisting
+     * on a single save.
+     */
     private Lease captureSavedLease() {
         ArgumentCaptor<Lease> cap = ArgumentCaptor.forClass(Lease.class);
-        verify(leaseRepository).save(cap.capture());
-        return cap.getValue();
+        verify(leaseRepository, atLeastOnce()).save(cap.capture());
+        List<Lease> all = cap.getAllValues();
+        return all.get(all.size() - 1);
     }
 
     private Unit captureLastSavedUnit() {

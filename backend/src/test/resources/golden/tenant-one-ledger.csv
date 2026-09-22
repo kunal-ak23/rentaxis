@@ -1,0 +1,85 @@
+# The client's General Ledger export for one contract, transcribed and anonymised.
+# Contract SAMPLE-25/001, dated 2025-08-28, term 2025-09-05 -> 2026-09-04 (365 days),
+# property "Sample Tower", renter "Sample Renter One", unit 1206.
+# Only the AMOUNTS, DATES and DOCUMENT SEQUENCE come from the real export; every name
+# here is anonymised (rulings P5-R11 / P5-R13) and every account name is what
+# PropertyAccountService's own template patterns produce for a property called
+# "Sample Tower" ("Rent Receivable - {property}", "Advance Rent - {property}",
+# "Rental Income {property}", "PDC Receivable {property}", "Emirates Islamic - {property}",
+# "Security Deposit {property}", "Admin Fee - {property}").
+#
+# Deviations from the export, all authorised by the spec ("Deviations from PACT"):
+#   D-a  CIL amounts use the per-day rule (55,000 / 365 = 150.684932/day), not 30/360.
+#   D-b  CIL entry_date is period_end, not the 1st of the following month.
+#   D-c  the export wrote the PDC registrations as IRV; spec 3 names the doc type PDR.
+#   D-e  the export's Remarks cell is blank on every TCO row; we narrate them with the
+#        charge type's English name (ruling P5-R2). The blank narration below is what
+#        the export holds; LedgerDiff tolerates it on TCO only, and the IT asserts the
+#        product's own narration directly.
+# REPORT TOTAL: debit 248,150.00 = credit 248,150.00 (unchanged by D-a: the CIL rows
+# still sum to 55,000.00).
+account,entry_date,doc_type,particular,narration,debit,credit,balance
+Security Deposit Sample Tower,2025-08-28,TCO,Rent Receivable - Sample Tower,,0.00,2750.00,-2750.00
+Rent Receivable - Sample Tower,2025-08-28,TCO,Security Deposit Sample Tower,,2750.00,0.00,2750.00
+Rent Receivable - Sample Tower,2025-08-28,TCO,Advance Rent - Sample Tower,,55000.00,0.00,57750.00
+Rent Receivable - Sample Tower,2025-08-28,TCO,Admin Fee - Sample Tower,,300.00,0.00,58050.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 1st Installment,0.00,9300.00,48750.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Security Deposit,0.00,2750.00,46000.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 2nd Installment,0.00,9000.00,37000.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 3rd Installment,0.00,9000.00,28000.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 4th Installment,0.00,9000.00,19000.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 5th Installment,0.00,9000.00,10000.00
+Rent Receivable - Sample Tower,2025-08-28,PDR,PDC Receivable Sample Tower,Rent - 6th Installment,0.00,10000.00,0.00
+Rent Receivable - Sample Tower,2026-05-05,CBR,Emirates Islamic - Sample Tower,Rent - 5th Installment,9000.00,0.00,9000.00
+Rent Receivable - Sample Tower,2026-07-06,CBR,Emirates Islamic - Sample Tower,Rent - 6th Installment,10000.00,0.00,19000.00
+Advance Rent - Sample Tower,2025-08-28,TCO,Rent Receivable - Sample Tower,,0.00,55000.00,-55000.00
+Advance Rent - Sample Tower,2025-09-30,CIL,Rental Income Sample Tower,Advance rent adjustment – Sep 2025,3917.81,0.00,-51082.19
+Advance Rent - Sample Tower,2025-10-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Oct 2025,4671.23,0.00,-46410.96
+Advance Rent - Sample Tower,2025-11-30,CIL,Rental Income Sample Tower,Advance rent adjustment – Nov 2025,4520.55,0.00,-41890.41
+Advance Rent - Sample Tower,2025-12-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Dec 2025,4671.23,0.00,-37219.18
+Advance Rent - Sample Tower,2026-01-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Jan 2026,4671.23,0.00,-32547.95
+Advance Rent - Sample Tower,2026-02-28,CIL,Rental Income Sample Tower,Advance rent adjustment – Feb 2026,4219.18,0.00,-28328.77
+Advance Rent - Sample Tower,2026-03-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Mar 2026,4671.23,0.00,-23657.54
+Advance Rent - Sample Tower,2026-04-30,CIL,Rental Income Sample Tower,Advance rent adjustment – Apr 2026,4520.55,0.00,-19136.99
+Advance Rent - Sample Tower,2026-05-31,CIL,Rental Income Sample Tower,Advance rent adjustment – May 2026,4671.23,0.00,-14465.76
+Advance Rent - Sample Tower,2026-06-30,CIL,Rental Income Sample Tower,Advance rent adjustment – Jun 2026,4520.55,0.00,-9945.21
+Advance Rent - Sample Tower,2026-07-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Jul 2026,4671.23,0.00,-5273.98
+Advance Rent - Sample Tower,2026-08-31,CIL,Rental Income Sample Tower,Advance rent adjustment – Aug 2026,4671.23,0.00,-602.75
+Advance Rent - Sample Tower,2026-09-04,CIL,Rental Income Sample Tower,Advance rent adjustment – Sep 2026,602.75,0.00,0.00
+Rental Income Sample Tower,2025-09-30,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Sep 2025,0.00,3917.81,-3917.81
+Rental Income Sample Tower,2025-10-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Oct 2025,0.00,4671.23,-8589.04
+Rental Income Sample Tower,2025-11-30,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Nov 2025,0.00,4520.55,-13109.59
+Rental Income Sample Tower,2025-12-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Dec 2025,0.00,4671.23,-17780.82
+Rental Income Sample Tower,2026-01-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Jan 2026,0.00,4671.23,-22452.05
+Rental Income Sample Tower,2026-02-28,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Feb 2026,0.00,4219.18,-26671.23
+Rental Income Sample Tower,2026-03-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Mar 2026,0.00,4671.23,-31342.46
+Rental Income Sample Tower,2026-04-30,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Apr 2026,0.00,4520.55,-35863.01
+Rental Income Sample Tower,2026-05-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – May 2026,0.00,4671.23,-40534.24
+Rental Income Sample Tower,2026-06-30,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Jun 2026,0.00,4520.55,-45054.79
+Rental Income Sample Tower,2026-07-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Jul 2026,0.00,4671.23,-49726.02
+Rental Income Sample Tower,2026-08-31,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Aug 2026,0.00,4671.23,-54397.25
+Rental Income Sample Tower,2026-09-04,CIL,Advance Rent - Sample Tower,Advance rent adjustment – Sep 2026,0.00,602.75,-55000.00
+Emirates Islamic - Sample Tower,2025-09-03,CRT,PDC Receivable Sample Tower,Rent - 1st Installment,9300.00,0.00,9300.00
+Emirates Islamic - Sample Tower,2025-10-06,CRT,PDC Receivable Sample Tower,Security Deposit,2750.00,0.00,12050.00
+Emirates Islamic - Sample Tower,2025-11-05,CRT,PDC Receivable Sample Tower,Rent - 2nd Installment,9000.00,0.00,21050.00
+Emirates Islamic - Sample Tower,2026-01-05,CRT,PDC Receivable Sample Tower,Rent - 3rd Installment,9000.00,0.00,30050.00
+Emirates Islamic - Sample Tower,2026-03-05,CRT,PDC Receivable Sample Tower,Rent - 4th Installment,9000.00,0.00,39050.00
+Emirates Islamic - Sample Tower,2026-05-05,CRT,PDC Receivable Sample Tower,Rent - 5th Installment,9000.00,0.00,48050.00
+Emirates Islamic - Sample Tower,2026-05-05,CBR,Rent Receivable - Sample Tower,Rent - 5th Installment,0.00,9000.00,39050.00
+Emirates Islamic - Sample Tower,2026-07-06,CRT,PDC Receivable Sample Tower,Rent - 6th Installment,10000.00,0.00,49050.00
+Emirates Islamic - Sample Tower,2026-07-06,CBR,Rent Receivable - Sample Tower,Rent - 6th Installment,0.00,10000.00,39050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 1st Installment,9300.00,0.00,9300.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Security Deposit,2750.00,0.00,12050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 2nd Installment,9000.00,0.00,21050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 3rd Installment,9000.00,0.00,30050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 4th Installment,9000.00,0.00,39050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 5th Installment,9000.00,0.00,48050.00
+PDC Receivable Sample Tower,2025-08-28,PDR,Rent Receivable - Sample Tower,Rent - 6th Installment,10000.00,0.00,58050.00
+PDC Receivable Sample Tower,2025-09-03,CRT,Emirates Islamic - Sample Tower,Rent - 1st Installment,0.00,9300.00,48750.00
+PDC Receivable Sample Tower,2025-10-06,CRT,Emirates Islamic - Sample Tower,Security Deposit,0.00,2750.00,46000.00
+PDC Receivable Sample Tower,2025-11-05,CRT,Emirates Islamic - Sample Tower,Rent - 2nd Installment,0.00,9000.00,37000.00
+PDC Receivable Sample Tower,2026-01-05,CRT,Emirates Islamic - Sample Tower,Rent - 3rd Installment,0.00,9000.00,28000.00
+PDC Receivable Sample Tower,2026-03-05,CRT,Emirates Islamic - Sample Tower,Rent - 4th Installment,0.00,9000.00,19000.00
+PDC Receivable Sample Tower,2026-05-05,CRT,Emirates Islamic - Sample Tower,Rent - 5th Installment,0.00,9000.00,10000.00
+PDC Receivable Sample Tower,2026-07-06,CRT,Emirates Islamic - Sample Tower,Rent - 6th Installment,0.00,10000.00,0.00
+Admin Fee - Sample Tower,2025-08-28,TCO,Rent Receivable - Sample Tower,,0.00,300.00,-300.00

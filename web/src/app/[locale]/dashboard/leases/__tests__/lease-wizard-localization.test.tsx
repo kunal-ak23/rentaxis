@@ -11,22 +11,31 @@ vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push: vi.fn() }),
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
-vi.mock("@/components/cheques/ChequeScanner", () => ({ default: () => null }));
-vi.mock("@/components/cheques/BulkChequeUploadFlow", () => ({ default: () => null }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/hooks/useLeasePartyOptions", () => ({
     useLeasePartyOptions: () => ({ unitOptions: [], renterOptions: [], loading: false }),
 }));
+vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-testid="account-picker" /> }));
 
 import LeaseWizard from "../LeaseWizard";
 
 /**
- * The lease wizard and its payment-schedule editor are the flow this product is
- * demoed on, and neither had a single useTranslations call — every label, step
- * name, validation message and button was an English literal.
+ * The contract wizard is the screen this product is demoed on, and every label
+ * in it has to reach Arabic. It used to talk to the `LeaseWizard` namespace,
+ * which described a payment-plan flow that no longer exists; it now speaks
+ * `Leasing`, alongside the grids and the detail page.
+ *
+ * The old version of this file also grepped the source for bare English
+ * literals. That heuristic reads `=> Promise<Cheque[]>` as the English word
+ * "Promise" between a `>` and a `<`, so it fails on any file with a generic in
+ * a return type. The assertion that matters — no English on an Arabic page —
+ * is made by rendering, which cannot be fooled that way. What is still read
+ * from the source is the list of keys the file calls, because a key that
+ * resolves in English and is missing in Arabic renders English without
+ * throwing.
  */
 
 const WIZARD = path.join(__dirname, "..", "LeaseWizard.tsx");
-const EDITOR = path.join(__dirname, "..", "PaymentScheduleEditor.tsx");
 
 function renderWizard(locale: "en" | "ar") {
     return render(
@@ -37,7 +46,7 @@ function renderWizard(locale: "en" | "ar") {
 }
 
 beforeEach(() => {
-    global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as unknown as typeof fetch;
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] })) as unknown as typeof fetch;
 });
 
 afterEach(() => {
@@ -45,31 +54,24 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describe("lease wizard localization", () => {
-    it("renders its title, steps and controls in Arabic", async () => {
-        // Step labels render as "1. <label>", so the text is split across nodes
-        // and an exact-string matcher never finds them.
+describe("contract wizard localization", () => {
+    it("renders its title, every step and its controls in Arabic", async () => {
         const { container } = renderWizard("ar");
-        await waitFor(() => expect(container.textContent).toContain(ar.LeaseWizard.stepParties));
+        await waitFor(() => expect(container.textContent).toContain(ar.Leasing.stepParties));
 
         const text = container.textContent ?? "";
-        expect(text).toContain(ar.LeaseWizard.stepTerms);
-        expect(text).toContain(ar.LeaseWizard.stepPaymentPlan);
-        expect(text).toContain(ar.LeaseWizard.titlePrefix);
-        expect(text).toContain(ar.LeaseWizard.unitRequired);
-        expect(text).toContain(ar.LeaseWizard.renterRequired);
-        expect(screen.getByLabelText(ar.LeaseWizard.closeWizard)).toBeInTheDocument();
+        for (const key of ["stepTerms", "stepLines", "stepCheques", "stepReview", "newContract", "next", "back"] as const) {
+            expect(text, `${key} should render in Arabic`).toContain(ar.Leasing[key]);
+        }
+        expect(screen.getByLabelText(ar.Leasing.close)).toBeInTheDocument();
     });
 
     it("leaves no English wizard literal on an Arabic page", async () => {
         const { container } = renderWizard("ar");
-        await waitFor(() => expect(container.textContent).toContain(ar.LeaseWizard.stepParties));
+        await waitFor(() => expect(container.textContent).toContain(ar.Leasing.stepParties));
         const text = container.textContent ?? "";
 
-        for (const literal of [
-            "Parties", "Terms", "Charges & VAT", "Payment plan", "Schedule & finalize",
-            "New Lease", "Unit *", "Renter *", "Next", "Back",
-        ]) {
+        for (const literal of ["Parties", "Terms", "Charges", "Cheques", "Review", "New Contract", "Next", "Back"]) {
             expect(text, `"${literal}" should not appear in the Arabic wizard`).not.toContain(literal);
         }
     });
@@ -77,38 +79,24 @@ describe("lease wizard localization", () => {
     it("still renders English in the English locale", async () => {
         const { container } = renderWizard("en");
         await waitFor(() => expect(container.textContent).toContain("Parties"));
-        expect(container.textContent).toContain("Payment plan");
-        expect(container.textContent).toContain("Unit *");
+        expect(container.textContent).toContain("New Contract");
+        expect(container.textContent).toContain("Review");
     });
 
-    it("resolves every key both files call, in both catalogues", () => {
-        const cases: [string, string, Record<string, string>, Record<string, string>][] = [
-            ["LeaseWizard", WIZARD, en.LeaseWizard, ar.LeaseWizard],
-            ["PaymentSchedule", EDITOR, en.PaymentSchedule, ar.PaymentSchedule],
-        ];
+    it("resolves every Leasing key it calls, in both catalogues", () => {
+        const source = fs.readFileSync(WIZARD, "utf8");
+        const keys = [...new Set([...source.matchAll(/\bt(?:\.rich)?\("([^"]+)"/g)].map(m => m[1]))]
+            // Template keys (`mode.${m}`) are covered by the grids' own tests.
+            .filter(k => !k.includes("${"));
+        expect(keys.length, "expected the wizard to call translations").toBeGreaterThan(20);
 
-        for (const [ns, file, enNs, arNs] of cases) {
-            const source = fs.readFileSync(file, "utf8");
-            const keys = [...new Set(
-                [...source.matchAll(/\bt(?:\.rich)?\("([^"]+)"/g)].map((m) => m[1]),
-            )];
-            expect(keys.length, `${ns}: expected the file to call translations`).toBeGreaterThan(10);
-
-            expect(keys.filter((k) => !(k in enNs)), `${ns}: keys absent from en.json`).toEqual([]);
-            expect(keys.filter((k) => !(k in arNs)), `${ns}: keys absent from ar.json`).toEqual([]);
-            // A key present but still holding the English string renders English.
-            expect(keys.filter((k) => arNs[k] === enNs[k]), `${ns}: keys still holding English`).toEqual([]);
-        }
-    });
-
-    it("has no bare English literal left in either source file", () => {
-        for (const file of [WIZARD, EDITOR]) {
-            const source = fs.readFileSync(file, "utf8");
-            const jsxText = [...source.matchAll(/>\s*([A-Z][A-Za-z0-9 ,&.'%/()#*—:-]{2,70}?)\s*</g)]
-                .map((m) => m[1]);
-            const attrs = [...source.matchAll(/(?:placeholder|title|aria-label|label)="([^"]{3,70})"/g)]
-                .map((m) => m[1]);
-            expect([...jsxText, ...attrs], `${path.basename(file)} still has English literals`).toEqual([]);
-        }
+        const enNs = en.Leasing as Record<string, unknown>;
+        const arNs = ar.Leasing as Record<string, unknown>;
+        expect(keys.filter(k => !(k.split(".")[0] in enNs)), "keys absent from en.json").toEqual([]);
+        expect(keys.filter(k => !(k.split(".")[0] in arNs)), "keys absent from ar.json").toEqual([]);
+        expect(
+            keys.filter(k => typeof enNs[k] === "string" && arNs[k] === enNs[k]),
+            "keys still holding English",
+        ).toEqual([]);
     });
 });

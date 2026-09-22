@@ -35,6 +35,12 @@ public class TenantFeatureController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Boolean>> getEnabledFeatures() {
         UUID tenantId = TenantContextHolder.getTenantId();
+        // A SUPER_ADMIN with no organisation selected has no tenant to look up features for; answer with defaults.
+        if (tenantId == null) {
+            Map<String, Boolean> defaults = Arrays.stream(TenantFeature.values())
+                    .collect(Collectors.toMap(TenantFeature::name, TenantFeature::isDefaultEnabled));
+            return ResponseEntity.ok(defaults);
+        }
         Map<String, Boolean> result = Arrays.stream(TenantFeature.values())
                 .collect(Collectors.toMap(
                         TenantFeature::name,
@@ -51,6 +57,10 @@ public class TenantFeatureController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, String>> getTenantInfo() {
         UUID tenantId = TenantContextHolder.getTenantId();
+        // A SUPER_ADMIN with no organisation selected has no tenant to look up; answer with an empty slug/name.
+        if (tenantId == null) {
+            return ResponseEntity.ok(Map.of("slug", "", "name", ""));
+        }
         return landlordOrgService.findById(tenantId)
                 .map(org -> ResponseEntity.ok(Map.of(
                         "slug", org.getSlug() != null ? org.getSlug() : "",

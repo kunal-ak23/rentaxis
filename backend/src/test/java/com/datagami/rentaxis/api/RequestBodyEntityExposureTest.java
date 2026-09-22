@@ -19,9 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * An entity used as a request body must not let a client set its id.
  *
- * <p>Six controllers bind the JPA entity directly as the request DTO, so the
- * writable surface is whatever the entity happens to expose rather than what
- * the operation intends. The sharp edge is the id: several create methods are
+ * <p>Several controllers bind the JPA entity directly as the request DTO, so
+ * the writable surface is whatever the entity happens to expose rather than
+ * what the operation intends. The sharp edge is the id: several create methods are
  * a bare {@code repository.save(entity)}, and Hibernate treats a save with an
  * id present as an update — so POSTing a body carrying an existing id turns
  * "create" into "silently overwrite a different row in my own tenant".</p>
@@ -41,16 +41,6 @@ class RequestBodyEntityExposureTest {
 
     private static final Path API = Paths.get("src/main/java/com/datagami/rentaxis/api");
     private static final Path ENTITIES = Paths.get("src/main/java/com/datagami/rentaxis/domain/entity");
-
-    /**
-     * Entities whose id is protected by an explicit service-layer rejection
-     * instead of READ_ONLY, because for these silently ignoring a supplied id
-     * is worse than refusing it: a client echoing back a fetched transaction
-     * would quietly create a duplicate ledger entry instead of getting an
-     * error. The exemption is not taken on trust — a test below asserts the
-     * rejection actually exists.
-     */
-    private static final Set<String> REJECTS_SUPPLIED_ID = Set.of("FinancialTransaction");
 
     /** `@RequestBody Foo foo`, with optional annotations such as @Valid in between. */
     private static final Pattern REQUEST_BODY = Pattern.compile(
@@ -84,8 +74,6 @@ class RequestBodyEntityExposureTest {
 
         List<String> unprotected = new ArrayList<>();
         for (String entity : bound) {
-            if (REJECTS_SUPPLIED_ID.contains(entity)) continue;
-
             String source = Files.readString(ENTITIES.resolve(entity + ".java"));
             int idAt = source.indexOf("@Id");
             if (idAt < 0) continue;
@@ -101,26 +89,6 @@ class RequestBodyEntityExposureTest {
         assertThat(unprotected)
                 .as("these entities are bound as request bodies with a client-writable id")
                 .isEmpty();
-    }
-
-    /**
-     * The exemption above has to be earned. If the rejection is removed,
-     * FinancialTransaction is left with a client-writable id and nothing
-     * catching it — so this fails rather than the exemption quietly becoming a
-     * hole.
-     */
-    @Test
-    void theServiceLevelExemptionIsRealAndNotJustAnAllowlistEntry() throws IOException {
-        Path service = Paths.get(
-                "src/main/java/com/datagami/rentaxis/core/service/FinancialTransactionService.java");
-        String source = Files.readString(service);
-
-        assertThat(source)
-                .as("FinancialTransactionService must refuse a client-supplied transaction id")
-                .contains("txn.getId() != null");
-        assertThat(source)
-                .as("and it must throw rather than silently ignore it")
-                .contains("A transaction id cannot be supplied when posting to the ledger");
     }
 
     @Test

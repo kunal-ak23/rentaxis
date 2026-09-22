@@ -44,11 +44,11 @@ continuous recording per app; the checklist is the order the reviewer will look 
 ### Miftah Manager (`com.rentaxis.manager`)
 1. Cold launch → login screen → sign in with the **Manager** credentials.
 2. Sign in with Apple shown and cancelled, as above.
-3. Dashboard → properties → a unit → its lease → payment schedule.
-4. Cheques → scan a cheque (**camera prompt**; a printed sample cheque image is fine).
+3. Dashboard → properties → a unit. (The lease, cheque and finance screens are behind the organisation switch **Mobile finance**, OFF for this submission; see 5.6 §2. Do not record them.)
+4. Tickets → attach a photo to a ticket (**camera prompt**). (Cheque scanning is part of the Mobile-finance surface and is not reachable in this submission.)
 5. Tickets, Listings (publish/edit), Meetings, Renters, Staff.
 6. More → Gate pass approvals, Security guards, Gate access policy.
-7. More → Finance (accounts, bank accounts, vendors, reports).
+7. More → Vendors; Gate pass approvals. (Finance reports and accounts are behind Mobile finance — not reachable in this submission.)
 8. Arabic switch; More → Privacy Policy / Terms; Profile → **Delete account** flow with the disposable reviewer account.
 
 ### Miftah Security (`com.rentaxis.security`)
@@ -183,12 +183,18 @@ later than it did on review day; disclosing the mechanisms up front is the defen
    (Resident: renter; Manager: administrator vs property manager — a property manager does
    not see Finance or Staff; Security: guard). The review Manager account is an
    *administrator* and therefore sees the complete Manager app.
-2. **Per-organisation feature switches.** The backend has five organisation-level
+2. **Per-organisation feature switches.** The backend has six organisation-level
    toggles an operator can turn on for a customer: Listings, Meetings, Email notifications,
-   Lease renewals, Gate pass. **All five are enabled on the review organisation** (email
-   notifications only affects outbound email, not any screen). No screen is hidden by a
-   flag — a disabled feature returns an empty list. There are no A/B tests, no remote
-   config, no time- or geo-triggered features.
+   Lease renewals, Gate pass, Mobile finance. **The first five are enabled on the review
+   organisation** (email notifications only affects outbound email, not any screen); a
+   disabled one of those returns an empty list, it hides no screen. **Mobile finance is OFF
+   for every organisation in this release** — it hides the finance, lease-money and cheque
+   screens in the **Manager** app only (Resident's Wallet is unaffected), because those
+   Manager screens are being rebuilt against the new accounting engine; the web app carries
+   that functionality today. It will
+   be turned on for customers only when the mobile screens ship, in a later App Store build
+   that will disclose them. Nothing else is hidden by a flag; there are no A/B tests, no
+   remote config, no time- or geo-triggered features.
 3. **Minimum-version gate.** On launch each app asks `GET /api/v1/public/app-version`
    whether the installed build is still supported. It fails open (any error or timeout =
    proceed) and is currently inert (minimum build = 0). If a future release ever sets a

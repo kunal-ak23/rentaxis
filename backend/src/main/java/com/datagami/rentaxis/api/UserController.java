@@ -205,20 +205,41 @@ public class UserController {
         return tenantId;
     }
 
-    /** A caller may assign a target role only at or below their own privilege level. */
-    private static boolean canAssignRole(UserRole caller, UserRole target) {
+    /**
+     * A caller may assign a target role only at or below their own privilege level.
+     *
+     * <p>Package-private so {@code UserControllerRoleRankTest} can lock the table
+     * down directly. Going through the endpoints would prove far less: the whole
+     * controller is {@code @PreAuthorize}d to SUPER_ADMIN/TENANT_ADMIN, so the
+     * interesting rows — what a PROPERTY_MANAGER may assign — are unreachable
+     * from outside and the rank table is defence in depth, not the first gate.
+     */
+    static boolean canAssignRole(UserRole caller, UserRole target) {
         return privilegeRank(target) >= privilegeRank(caller);
     }
 
-    /** Lower rank == more privileged. Kept explicit so it never depends on enum ordinal order. */
-    private static int privilegeRank(UserRole role) {
+    /**
+     * Lower rank == more privileged. Kept explicit so it never depends on enum ordinal order.
+     *
+     * <p>ACCOUNTANT ranks ABOVE PROPERTY_MANAGER deliberately. An accountant posts
+     * journal entries, so a property manager must not be able to create one, and
+     * the comparison here is {@code >=} — equal ranks would have let a
+     * PROPERTY_MANAGER assign ACCOUNTANT exactly as it may already assign another
+     * PROPERTY_MANAGER. Strictly above TENANT_ADMIN is the only placement that
+     * leaves the role assignable by TENANT_ADMIN and SUPER_ADMIN alone.
+     *
+     * <p>Every other role keeps its previous relative position; only ACCOUNTANT
+     * was inserted, which is why the numbers below TENANT_ADMIN all shift by one.
+     */
+    static int privilegeRank(UserRole role) {
         return switch (role) {
             case SUPER_ADMIN -> 0;
             case TENANT_ADMIN -> 1;
-            case PROPERTY_MANAGER -> 2;
-            case TENANT_USER -> 3;
-            case RENTER -> 4;
-            case SECURITY_GUARD -> 5;
+            case ACCOUNTANT -> 2;
+            case PROPERTY_MANAGER -> 3;
+            case TENANT_USER -> 4;
+            case RENTER -> 5;
+            case SECURITY_GUARD -> 6;
         };
     }
 }

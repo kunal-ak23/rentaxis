@@ -2,15 +2,15 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
 import com.datagami.rentaxis.api.dto.MonthlyCollectionDTO;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
+import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
+import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
-import com.datagami.rentaxis.domain.entity.Property;
-import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
-import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,172 +18,207 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
-    /** Tenant-facing timezone — RentAxis serves UAE landlords. */
-    private static final ZoneId UAE_ZONE = ZoneId.of("Asia/Dubai");
+    /**
+     * Money the landlord is still waiting for: the instrument exists and the funds
+     * have not arrived. A bounced cheque is not here — it has been superseded or is
+     * about to be, and it is counted as overdue instead.
+     */
+    private static final Set<ChequeStatus> OUTSTANDING =
+            EnumSet.of(ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED, ChequeStatus.ONLINE_PENDING);
+
+    /** How many rows the activity feed shows. */
+    private static final int RECENT_ACTIVITY_ROWS = 10;
 
     private final PropertyRepository propertyRepository;
     private final UnitRepository unitRepository;
     private final LeaseRepository leaseRepository;
-    private final PaymentScheduleRepository paymentScheduleRepository;
+    private final ChequeRepository chequeRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
+    /**
+     * The whole dashboard, for whoever is asking.
+     *
+     * <p><b>One scope, every tile.</b> A property manager is assigned buildings, and
+     * every number on this screen is about those buildings and no others — the
+     * portfolio counts and the occupancy rate as much as the money. An unscoped
+     * headline above a scoped list is two faults at once: the tile is somebody
+     * else's estate, and the screen contradicts the pages it links to, which is how
+     * a manager learns to trust neither.</p>
+     *
+     * <p><b>Counted in the database.</b> Each block is an aggregate over the
+     * caller's properties rather than a {@code findAll()} the service then walks:
+     * this is the first screen after login, and the tables behind it are the largest
+     * the system has.</p>
+     */
     @Transactional(readOnly = true)
     public DashboardSummaryDTO getSummary() {
         DashboardSummaryDTO summary = new DashboardSummaryDTO();
+        Scope scope = scope();
+        LocalDate today = LocalDate.now();
 
         // --- Portfolio ---
-        List<Property> properties = propertyRepository.findAll();
-        summary.setTotalProperties(properties.size());
+        summary.setTotalProperties(scope.blocked() ? 0
+                : (int) propertyRepository.countInScope(scope.unrestricted(), scope.propertyIds()));
 
-        List<Unit> units = unitRepository.findAll();
-        summary.setTotalUnits(units.size());
-
-        int occupiedCount = 0;
-        int vacantCount = 0;
-        for (Unit unit : units) {
-            if (unit.getStatus() == UnitStatus.OCCUPIED) {
-                occupiedCount++;
-            } else if (unit.getStatus() == UnitStatus.VACANT) {
-                vacantCount++;
+        long totalUnits = 0;
+        long occupiedCount = 0;
+        long vacantCount = 0;
+        if (!scope.blocked()) {
+            for (Object[] row : unitRepository.countByStatusInScope(
+                    scope.unrestricted(), scope.propertyIds())) {
+                UnitStatus status = (UnitStatus) row[0];
+                long count = ((Number) row[1]).longValue();
+                totalUnits += count;
+                if (status == UnitStatus.OCCUPIED) {
+                    occupiedCount = count;
+                } else if (status == UnitStatus.VACANT) {
+                    vacantCount = count;
+                }
             }
         }
-        summary.setOccupiedUnits(occupiedCount);
-        summary.setVacantUnits(vacantCount);
-        summary.setOccupancyRate(units.isEmpty() ? 0.0
-                : (double) occupiedCount / units.size() * 100.0);
+        summary.setTotalUnits((int) totalUnits);
+        summary.setOccupiedUnits((int) occupiedCount);
+        summary.setVacantUnits((int) vacantCount);
+        // Of the units the caller can see. A manager's occupancy is their own
+        // buildings' occupancy; averaging in the rest of the estate would tell them
+        // nothing about the one thing they are answerable for.
+        summary.setOccupancyRate(totalUnits == 0 ? 0.0
+                : (double) occupiedCount / totalUnits * 100.0);
 
         // --- Leases ---
-        List<Lease> allLeases = leaseRepository.findAll();
-
-        int activeCount = 0;
-        int draftCount = 0;
-        int expiringCount = 0;
+        long activeCount = 0;
+        long draftCount = 0;
         BigDecimal totalRentRevenue = BigDecimal.ZERO;
-        LocalDate today = LocalDate.now();
-        LocalDate thirtyDaysFromNow = today.plusDays(30);
-
-        for (Lease lease : allLeases) {
-            if (lease.getStatus() == LeaseStatus.ACTIVE) {
-                activeCount++;
-                totalRentRevenue = totalRentRevenue.add(
-                        lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
-
-                // Expiring = ACTIVE leases where endDate is within 30 days from today
-                if (lease.getEndDate() != null
-                        && !lease.getEndDate().isAfter(thirtyDaysFromNow)
-                        && !lease.getEndDate().isBefore(today)) {
-                    expiringCount++;
+        if (!scope.blocked()) {
+            for (Object[] row : leaseRepository.countAndRentByStatusInScope(
+                    scope.unrestricted(), scope.propertyIds())) {
+                LeaseStatus status = (LeaseStatus) row[0];
+                if (status == LeaseStatus.ACTIVE) {
+                    activeCount = ((Number) row[1]).longValue();
+                    // Contracted rent on live tenancies only: a draft is a proposal
+                    // and a terminated one is over.
+                    totalRentRevenue = nz((BigDecimal) row[2]);
+                } else if (status == LeaseStatus.DRAFT) {
+                    draftCount = ((Number) row[1]).longValue();
                 }
-            } else if (lease.getStatus() == LeaseStatus.DRAFT) {
-                draftCount++;
             }
         }
-
-        summary.setActiveLeases(activeCount);
-        summary.setDraftLeases(draftCount);
-        summary.setExpiringLeases(expiringCount);
+        summary.setActiveLeases((int) activeCount);
+        summary.setDraftLeases((int) draftCount);
+        // Expiring = ACTIVE leases ending within 30 days, today included.
+        summary.setExpiringLeases(scope.blocked() ? 0
+                : (int) leaseRepository.countExpiringInScope(today, today.plusDays(30),
+                        scope.unrestricted(), scope.propertyIds()));
         summary.setTotalRentRevenue(totalRentRevenue);
 
-        // --- Financial (payments) ---
-        List<PaymentSchedule> allPayments = paymentScheduleRepository.findAll();
-
-        BigDecimal clearedAmount = BigDecimal.ZERO;
-        BigDecimal pendingAmount = BigDecimal.ZERO;
-        BigDecimal pendingThisMonthAmount = BigDecimal.ZERO;
-        BigDecimal overdueAmount = BigDecimal.ZERO;
-
+        // --- Financial (the cheque register) ---
+        //
+        // Cheques on unsigned leases and DRAFT grid rows are proposals rather than
+        // money owed, and every query here excludes them. A property manager's
+        // totals have to equal what they see on /api/v1/cheques for the same
+        // properties, which is why the scope resolved above is the one used here.
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate nextMonthStart = monthStart.plusMonths(1);
 
-        List<PaymentSchedule> recentPayments = new ArrayList<>();
-
-        for (PaymentSchedule ps : allPayments) {
-            // Unsigned leases (DRAFT / PENDING_SIGNATURE) have schedules too,
-            // but no money is owed until the lease is signed — keep them out
-            // of every financial aggregate.
-            LeaseStatus leaseStatus = ps.getLease() != null ? ps.getLease().getStatus() : null;
-            if (leaseStatus == LeaseStatus.DRAFT || leaseStatus == LeaseStatus.PENDING_SIGNATURE) {
-                continue;
-            }
-            switch (ps.getStatus()) {
-                case CLEARED -> clearedAmount = clearedAmount.add(ps.getAmount());
-                case PENDING -> {
-                    pendingAmount = pendingAmount.add(ps.getAmount());
-                    // Pending due within the current calendar month (excludes prior
-                    // unpaid months — those surface under "overdue").
-                    LocalDate due = ps.getDueDate();
-                    if (due != null && !due.isBefore(monthStart) && due.isBefore(nextMonthStart)) {
-                        pendingThisMonthAmount = pendingThisMonthAmount.add(ps.getAmount());
-                    }
-                }
-                default -> { }
-            }
-
-            // Overdue: PENDING/COLLECTED past due, or already flagged OVERDUE
-            // by the penalty batch job.
-            if ((ps.getStatus() == PaymentStatus.PENDING
-                    || ps.getStatus() == PaymentStatus.COLLECTED
-                    || ps.getStatus() == PaymentStatus.OVERDUE)
-                    && ps.getDueDate() != null
-                    && ps.getDueDate().isBefore(today)) {
-                overdueAmount = overdueAmount.add(ps.getAmount());
-            }
-
-            // Collect payments that have statusChangedAt for recent activity
-            if (ps.getStatusChangedAt() != null) {
-                recentPayments.add(ps);
+        Map<ChequeStatus, BigDecimal> byStatus = new EnumMap<>(ChequeStatus.class);
+        if (!scope.blocked()) {
+            for (Object[] row : chequeRepository.totalsByStatus(null, scope.unrestricted(), scope.propertyIds())) {
+                byStatus.put((ChequeStatus) row[0], nz((BigDecimal) row[2]));
             }
         }
+        BigDecimal outstanding = BigDecimal.ZERO;
+        for (ChequeStatus s : OUTSTANDING) {
+            outstanding = outstanding.add(byStatus.getOrDefault(s, BigDecimal.ZERO));
+        }
 
-        summary.setCollectedAmount(clearedAmount);
-        summary.setPendingAmount(pendingAmount);
-        summary.setPendingThisMonthAmount(pendingThisMonthAmount);
+        summary.setCollectedAmount(byStatus.getOrDefault(ChequeStatus.CLEARED, BigDecimal.ZERO));
+        summary.setPendingAmount(outstanding);
+        // Maturing inside the current calendar month. Earlier unpaid instalments
+        // are not here — they surface under "overdue".
+        summary.setPendingThisMonthAmount(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumByStatusInAndChequeDateBetween(
+                        OUTSTANDING, monthStart, nextMonthStart,
+                        scope.unrestricted(), scope.propertyIds())));
+
+        // Overdue is ChequeDueRules over the register's due rows, not "past its
+        // date": grace is a per-lease number and a dashboard that ignored it would
+        // show a renter as late days before their own contract says they are.
+        BigDecimal overdueAmount = BigDecimal.ZERO;
+        if (!scope.blocked()) {
+            for (Cheque c : chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.Pageable.unpaged()).getContent()) {
+                Lease lease = c.getLease();
+                if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
+                    overdueAmount = overdueAmount.add(nz(c.getAmount()));
+                }
+            }
+        }
         summary.setOverdueAmount(overdueAmount);
 
-        // --- Cash received this month / last month (by status-change time) ---
-        // Anchor month windows to UAE local time, not the JVM default (the
-        // prod VM runs UTC; without this, receipts in the first 4h of a UAE
-        // month would bucket into the previous month).
-        ZoneId zone = UAE_ZONE;
-        YearMonth currentMonth = YearMonth.from(today);
-        Instant receiptsFrom = currentMonth.atDay(1).atStartOfDay(zone).toInstant();
-        Instant receiptsTo = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
-        Instant prevReceiptsFrom = currentMonth.minusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
-        summary.setReceivedThisMonth(
-                paymentScheduleRepository.sumReceivedBetween(receiptsFrom, receiptsTo));
-        summary.setReceivedLastMonth(
-                paymentScheduleRepository.sumReceivedBetween(prevReceiptsFrom, receiptsFrom));
+        // --- Cash actually banked this month / last month ---
+        // By clearedAt, which is a date rather than a timestamp, so the old
+        // UAE-timezone correction around month boundaries no longer applies:
+        // "the day the money landed" is already the landlord's local day.
+        summary.setReceivedThisMonth(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumClearedBetween(monthStart, nextMonthStart, null,
+                        scope.unrestricted(), scope.propertyIds())));
+        summary.setReceivedLastMonth(scope.blocked() ? BigDecimal.ZERO
+                : nz(chequeRepository.sumClearedBetween(monthStart.minusMonths(1), monthStart, null,
+                        scope.unrestricted(), scope.propertyIds())));
 
         // --- Recent Activity ---
-        recentPayments.sort(Comparator.comparing(PaymentSchedule::getStatusChangedAt).reversed());
-        List<PaymentSchedule> topRecent = recentPayments.stream().limit(10).toList();
-
         List<DashboardSummaryDTO.RecentActivityItem> activityItems = new ArrayList<>();
-        for (PaymentSchedule ps : topRecent) {
-            DashboardSummaryDTO.RecentActivityItem item = new DashboardSummaryDTO.RecentActivityItem();
-            item.setType("PAYMENT_" + ps.getStatus().name());
-            item.setDescription(buildPaymentDescription(ps));
-            item.setTimestamp(ps.getStatusChangedAt().toString());
-            activityItems.add(item);
+        if (!scope.blocked()) {
+            for (Cheque c : chequeRepository.findRecentlyChanged(scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.PageRequest.of(0, RECENT_ACTIVITY_ROWS))) {
+                DashboardSummaryDTO.RecentActivityItem item = new DashboardSummaryDTO.RecentActivityItem();
+                item.setType("PAYMENT_" + c.getStatus().name());
+                item.setDescription(buildChequeDescription(c));
+                item.setTimestamp(c.getStatusChangedAt().toString());
+                activityItems.add(item);
+            }
         }
         summary.setRecentActivity(activityItems);
 
         return summary;
+    }
+
+    /**
+     * Who is looking at the dashboard, resolved once.
+     *
+     * <p>The same three answers {@code ChequeQueryService} works from: everything,
+     * these properties, or nothing. {@code blocked} is the last of those — a renter,
+     * a tenant user, or a manager assigned to no building — and it short-circuits
+     * every query rather than asking Postgres to match an empty {@code in} list.</p>
+     */
+    private Scope scope() {
+        List<java.util.UUID> visible = leaseAccessPolicy.visiblePropertyIds();
+        if (visible == null) {
+            return new Scope(true, List.of(), false);
+        }
+        if (visible.isEmpty()) {
+            return new Scope(false, List.of(), true);
+        }
+        return new Scope(false, visible, false);
+    }
+
+    private record Scope(boolean unrestricted, List<java.util.UUID> propertyIds, boolean blocked) {
     }
 
     /**
@@ -198,8 +233,11 @@ public class DashboardService {
         LocalDate from = start.atDay(1);
         LocalDate toExclusive = current.plusMonths(1).atDay(1);
 
+        Scope scope = scope();
         Map<String, BigDecimal[]> byYm = new HashMap<>();
-        for (Object[] row : paymentScheduleRepository.aggregateMonthlyCollection(from, toExclusive)) {
+        for (Object[] row : scope.blocked() ? List.<Object[]>of()
+                : chequeRepository.aggregateMonthly(from, toExclusive,
+                        scope.unrestricted(), scope.propertyIds())) {
             String ym = (String) row[0];
             BigDecimal expected = row[1] != null ? (BigDecimal) row[1] : BigDecimal.ZERO;
             BigDecimal collected = row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO;
@@ -217,14 +255,18 @@ public class DashboardService {
         return series;
     }
 
-    private String buildPaymentDescription(PaymentSchedule ps) {
-        String unitNumber = ps.getUnit() != null ? ps.getUnit().getUnitNumber() : "N/A";
-        String propertyName = ps.getProperty() != null ? ps.getProperty().getNameEn() : "N/A";
+    private String buildChequeDescription(Cheque c) {
+        String unitNumber = c.getUnit() != null ? c.getUnit().getUnitNumber() : "N/A";
+        String propertyName = c.getProperty() != null ? c.getProperty().getNameEn() : "N/A";
         return String.format("Payment #%d %s - Unit %s, %s (AED %s)",
-                ps.getInstallmentNumber(),
-                ps.getStatus().name().toLowerCase(),
+                c.getSeqNo(),
+                c.getStatus().name().toLowerCase(),
                 unitNumber,
                 propertyName,
-                ps.getAmount().toPlainString());
+                nz(c.getAmount()).toPlainString());
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

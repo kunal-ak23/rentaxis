@@ -37,8 +37,38 @@ public class Account extends BaseTenantEntity {
     @Column(name = "account_type", nullable = false, length = 20)
     private AccountType accountType;
 
-    @Column(name = "parent_code", length = 20)
-    private String parentCode;
+    /**
+     * The tree is by id, not by code: {@code parent_code} was a string with no
+     * foreign key, so a typo or a renamed code silently orphaned a whole branch
+     * and nothing in the database noticed.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Account parent;
+
+    /** Serialized as parentId for the web; never bound from a request body (the controller takes parentId on its request record). */
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public UUID getParentId() {
+        return parent == null ? null : parent.getId();
+    }
+
+    /** Set on leaves that belong to exactly one building, so a property's ledger can be sliced out. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "property_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Property property;
+
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public UUID getPropertyId() {
+        return property == null ? null : property.getId();
+    }
+
+    /** Short label the accountant recognises the account by, independent of its name. */
+    @Column(length = 255)
+    private String alias;
 
     @Column(columnDefinition = "text")
     private String description;
@@ -86,9 +116,6 @@ public class Account extends BaseTenantEntity {
 
     @Column(name = "name_ar")
     private String nameAr;
-
-    @Column(name = "hierarchy_level")
-    private int hierarchyLevel = 1;
 
     @Column(name = "is_group")
     private boolean isGroup = false;

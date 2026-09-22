@@ -25,6 +25,16 @@ public class Property extends BaseTenantEntity {
     @Column(name = "name_ar")
     private String nameAr;
 
+    /**
+     * Short building code the landlord uses on paper — "GLA_B1". Prefixed to the
+     * contract number on documents ("GLA_B1/681") so a number is unambiguous
+     * across a portfolio. Nullable, and unique per tenant when present
+     * ({@code ux_properties_tenant_code}, changeset 83); a duplicate surfaces as
+     * a 409 through {@code GlobalExceptionHandler}.
+     */
+    @Column(length = 20)
+    private String code;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Emirate emirate;

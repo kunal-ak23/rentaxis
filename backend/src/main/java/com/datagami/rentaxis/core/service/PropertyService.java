@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.BulkPropertyImportResultDTO;
 import com.datagami.rentaxis.api.dto.PropertyStatsDTO;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Building;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -45,16 +46,19 @@ public class PropertyService {
     private final BuildingRepository buildingRepository;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
     private final UserService userService;
+    private final PropertyAccountService propertyAccountService;
 
     public PropertyService(PropertyRepository repository, UnitRepository unitRepository,
             BuildingRepository buildingRepository,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
-            UserService userService) {
+            UserService userService,
+            PropertyAccountService propertyAccountService) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.buildingRepository = buildingRepository;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
         this.userService = userService;
+        this.propertyAccountService = propertyAccountService;
     }
 
     @Transactional
@@ -65,7 +69,13 @@ public class PropertyService {
         // controllers can surface a 400 with a clear message instead of a
         // 500 with a Postgres error string.
         try {
-            return repository.save(property);
+            Property saved = repository.save(property);
+            // Spec §5.3: a new building gets its own ledger accounts the moment it
+            // exists, from the tenant's template. No-ops with a warning when the
+            // tenant has no template yet, so a property can still be created
+            // before the chart of accounts is seeded.
+            propertyAccountService.generateMissing(saved.getId());
+            return saved;
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
             String msg = e.getMostSpecificCause() != null
                     ? e.getMostSpecificCause().getMessage() : "";
@@ -209,6 +219,10 @@ public class PropertyService {
         property.setMakaniNumber(makaniNumber);
         property = repository.save(property);
         result.setPropertyId(property.getId());
+        // Same as createProperty: give the imported property its ledger accounts
+        // immediately, rather than leaving it invisible to the CoA until someone
+        // opens it once. No-ops with a warning if the tenant has no template yet.
+        propertyAccountService.generateMissing(property.getId());
 
         // Create buildings
         Map<String, Building> buildingMap = new HashMap<>();

@@ -836,10 +836,12 @@ export default function PropertiesPage() {
                                                     </span>
                                                 </h4>
                                                 <div className="space-y-1">
-                                                    {(portfolioResult.warnings as Array<{ sheet: string; row: number; field: string; message: string }>).map((w, i) => (
+                                                    {(portfolioResult.warnings as Array<{ sheet: string; row: number | null; field: string; message: string }>).map((w, i) => (
                                                         <div key={i} className="flex items-start gap-2 text-xs bg-warning/5 border border-warning/20 rounded-lg px-3 py-2">
                                                             <span className="text-[10px] font-mono text-muted shrink-0">{w.sheet}</span>
-                                                            {w.row > 0 && <span className="text-[10px] font-mono text-muted shrink-0">Row {w.row}</span>}
+                                                            <span className="text-[10px] font-mono text-muted shrink-0">
+                                                                {w.row == null ? "File" : `Row ${w.row}`}
+                                                            </span>
                                                             {w.field && <span className="text-[10px] font-semibold text-warning shrink-0">{w.field}:</span>}
                                                             <span className="text-foreground">{w.message}</span>
                                                         </div>
@@ -870,8 +872,8 @@ export default function PropertiesPage() {
                                             <div className="mb-6 max-h-64 overflow-y-auto">
                                                 {/* Group errors by sheet */}
                                                 {Object.entries(
-                                                    (portfolioResult.errors as Array<{ sheet: string; row: number; field: string; message: string }>)
-                                                        .reduce((acc: Record<string, Array<{ row: number; field: string; message: string }>>, err) => {
+                                                    (portfolioResult.errors as Array<{ sheet: string; row: number | null; field: string; message: string }>)
+                                                        .reduce((acc: Record<string, Array<{ row: number | null; field: string; message: string }>>, err) => {
                                                             (acc[err.sheet] = acc[err.sheet] || []).push(err);
                                                             return acc;
                                                         }, {})
@@ -880,12 +882,15 @@ export default function PropertiesPage() {
                                                         <h4 className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
                                                             <FileSpreadsheet size={12} className="text-muted" />
                                                             {sheet}
-                                                            <span className="text-[10px] text-error font-medium">({(errors as Array<{ row: number; field: string; message: string }>).length} {(errors as Array<{ row: number; field: string; message: string }>).length === 1 ? 'error' : 'errors'})</span>
+                                                            <span className="text-[10px] text-error font-medium">({(errors as Array<{ row: number | null; field: string; message: string }>).length} {(errors as Array<{ row: number | null; field: string; message: string }>).length === 1 ? 'error' : 'errors'})</span>
                                                         </h4>
                                                         <div className="space-y-1">
-                                                            {(errors as Array<{ row: number; field: string; message: string }>).map((err, i) => (
+                                                            {(errors as Array<{ row: number | null; field: string; message: string }>).map((err, i) => (
                                                                 <div key={i} className="flex items-start gap-2 text-xs bg-error/5 border border-error/10 rounded-lg px-3 py-2">
-                                                                    {err.row > 0 && <span className="text-[10px] font-mono text-muted shrink-0">Row {err.row}</span>}
+                                                                    {/* Null is a file-level problem, not row zero. */}
+                                                                    <span className="text-[10px] font-mono text-muted shrink-0">
+                                                                        {err.row == null ? "File" : `Row ${err.row}`}
+                                                                    </span>
                                                                     {err.field && <span className="text-[10px] font-semibold text-error shrink-0">{err.field}:</span>}
                                                                     <span className="text-foreground">{err.message}</span>
                                                                 </div>

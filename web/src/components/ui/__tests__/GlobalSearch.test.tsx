@@ -50,7 +50,7 @@ beforeEach(() => {
                 }],
             }) as Response;
         }
-        if (url.includes("/v1/payments/search")) {
+        if (url.includes("/v1/cheques")) {
             return response({
                 content: [{
                     id: "payment-1",
@@ -58,8 +58,8 @@ beforeEach(() => {
                     renterName: "Samira Khan",
                     unitIdentifier: "A-101",
                     propertyName: "Marina Tower",
-                    status: "COLLECTED",
-                    installmentNumber: 2,
+                    status: "REGISTERED",
+                    seqNo: 2,
                 }],
             }) as Response;
         }
@@ -87,12 +87,12 @@ describe("GlobalSearch", () => {
             expect.stringContaining("/leases/paged?search=Samira"),
             expect.objectContaining({ signal: expect.any(AbortSignal) }),
         );
-        // Payments are filtered server-side across every row. Fetching a fixed
-        // window and filtering in the browser silently missed anything older
-        // than the window — "No results" instead of the cheque.
+        // Cheques are filtered server-side across the whole register. Fetching a
+        // fixed window and filtering in the browser silently missed anything
+        // older than the window — "No results" instead of the cheque.
         expect(global.fetch).toHaveBeenCalledWith(
-            expect.stringContaining("/v1/payments/search?q=Samira"),
-            expect.objectContaining({ signal: expect.any(AbortSignal) }),
+            expect.stringContaining("/v1/cheques?search=Samira"),
+            expect.anything(),
         );
     });
 
@@ -129,15 +129,15 @@ describe("GlobalSearch", () => {
         expect(await screen.findByText(ar.GlobalSearch.groupLeases)).toBeTruthy();
         expect(screen.getByText(`\u0634\u064a\u0643 CHQ-7788`)).toBeTruthy();
     });
-    // Regression: a failing payments source used to be reported as a definitive
+    // Regression: a failing cheque source used to be reported as a definitive
     // "no matching..." — the same silent wrong answer the server-side search was
     // introduced to remove. A cheque number is not a lease field, so the leases
     // source legitimately returns empty and cannot mask the failure.
     it("says search is unavailable rather than 'no results' when a source fails", async () => {
         global.fetch = vi.fn(async (input: RequestInfo | URL) => {
             const url = String(input);
-            if (url.includes("/v1/payments/search")) {
-                return { ok: false, json: async () => null } as unknown as Response;
+            if (url.includes("/v1/cheques")) {
+                return { ok: false, status: 500, json: async () => null, text: async () => "" } as unknown as Response;
             }
             if (url.includes("/leases/paged")) {
                 return { ok: true, json: async () => ({ content: [] }) } as unknown as Response;

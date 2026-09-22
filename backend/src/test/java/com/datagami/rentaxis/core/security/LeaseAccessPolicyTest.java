@@ -11,6 +11,7 @@ import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -225,6 +226,72 @@ class LeaseAccessPolicyTest {
         assertThat(policy.filterReadable(List.of(lease(assignedPropertyId, myRenterId)))).isEmpty();
     }
 
+    // ---- manage, which is not read -----------------------------------------
+
+    /**
+     * Reading a lease and moving its money are different questions, and for a
+     * renter they have different answers: a renter passes {@code requireReadable}
+     * for their own tenancy contract, which is correct, and must not therefore be
+     * able to mark their own cheque cleared or bounce it off their statement.
+     */
+    @Test
+    void aRenterMayReadTheirOwnLeaseButNeverManageIt() {
+        authenticateAs("RENTER");
+        renterRecord(myRenterId);
+        Lease mine = lease(assignedPropertyId, myRenterId);
+
+        assertThat(policy.canRead(mine)).isTrue();
+        assertThat(policy.canManage(mine)).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(mine))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Lease not found");
+    }
+
+    @Test
+    void aTenantUserCannotManageEither() {
+        authenticateAs("TENANT_USER");
+        renterRecord(myRenterId);
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isFalse();
+    }
+
+    @Test
+    void tenantWideRolesManageEveryLease() {
+        for (String role : List.of("SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT")) {
+            authenticateAs(role);
+            assertThatCode(() -> policy.requireManageable(lease(otherPropertyId, otherRenterId)))
+                    .as(role)
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    /** A manager manages exactly the buildings they were assigned — the same set they read. */
+    @Test
+    void aPropertyManagerManagesOnlyTheirAssignedProperties() {
+        authenticateAs("PROPERTY_MANAGER");
+        assignedTo(assignedPropertyId);
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isTrue();
+        assertThat(policy.canManage(lease(otherPropertyId, otherRenterId))).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(lease(otherPropertyId, otherRenterId)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void anUnauthenticatedCallerManagesNothing() {
+        SecurityContextHolder.clearContext();
+
+        assertThat(policy.canManage(lease(assignedPropertyId, myRenterId))).isFalse();
+    }
+
+    @Test
+    void aNullLeaseIsNotManageable() {
+        authenticateAs("TENANT_ADMIN");
+
+        assertThat(policy.canManage(null)).isFalse();
+        assertThatThrownBy(() -> policy.requireManageable(null)).isInstanceOf(NotFoundException.class);
+    }
+
     @Test
     void aLeaseWithNoUnitIsNotReadableByAManager() {
         // Defensive: a malformed lease must not become universally readable.
@@ -235,5 +302,41 @@ class LeaseAccessPolicyTest {
         orphan.setId(UUID.randomUUID());
 
         assertThat(policy.filterReadable(List.of(orphan))).isEmpty();
+    }
+
+    // ---- who counts as a caller at all ---------------------------------
+
+    /**
+     * The gateway webhook is unauthenticated by design — its signature is the
+     * guard — and the services that clear a paid instalment decide "is there a
+     * user to authorise here?" before consulting this policy. They must not ask
+     * the SecurityContext directly: Spring Security's anonymous filter puts an
+     * AnonymousAuthenticationToken on every credential-less request, so a naive
+     * null check is FALSE for the webhook and the capture is refused with
+     * "Lease not found" while the renter's money sits captured at the gateway.
+     */
+    @Test
+    void anAnonymousTokenIsNotAnAuthenticatedCaller() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new AnonymousAuthenticationToken("key", "anonymousUser",
+                        List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThat(policy.hasAuthenticatedCaller())
+                .as("an anonymous token is the absence of a caller, not a caller")
+                .isFalse();
+    }
+
+    @Test
+    void anEmptyContextIsNotAnAuthenticatedCaller() {
+        SecurityContextHolder.clearContext();
+
+        assertThat(policy.hasAuthenticatedCaller()).isFalse();
+    }
+
+    @Test
+    void aSignedInUserIsAnAuthenticatedCaller() {
+        authenticateAs("TENANT_ADMIN");
+
+        assertThat(policy.hasAuthenticatedCaller()).isTrue();
     }
 }

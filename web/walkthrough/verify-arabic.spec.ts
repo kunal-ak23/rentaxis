@@ -34,7 +34,7 @@ test('Arabic dashboard shell and properties page are localized on production', a
 
   const shell = page.locator('body');
   await expect(shell).toContainText(ar.Navigation.tickets);
-  await expect(shell).toContainText(ar.Navigation.accountMappings);
+  await expect(shell).toContainText(ar.Ledger.accountTemplate);
   await expect(shell).toContainText(ar.TenantSwitcher.organization);
   // Section headers, not just the items under them.
   await expect(shell).toContainText(ar.Navigation.sectionWorkspace);
@@ -43,7 +43,7 @@ test('Arabic dashboard shell and properties page are localized on production', a
 
   // The literals that used to be hardcoded must be gone from the Arabic page.
   const shellText = (await shell.innerText()).toLowerCase();
-  for (const literal of ['tickets', 'account mappings', 'organization', 'workspace', 'operations', 'help & guides']) {
+  for (const literal of ['tickets', 'property account template', 'organization', 'workspace', 'operations', 'help & guides']) {
     expect(shellText, `"${literal}" should not appear on the Arabic dashboard`).not.toContain(literal);
   }
   await page.screenshot({ path: path.join(__dirname, 'takes', 'ar-dashboard.png'), fullPage: false });

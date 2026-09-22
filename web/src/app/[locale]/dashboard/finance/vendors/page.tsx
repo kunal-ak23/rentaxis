@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, Wallet, AlertCircle } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen } from "lucide-react";
+import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
@@ -46,7 +46,6 @@ const emptyForm = {
     bankName: "",
     bankAccountNumber: "",
     iban: "",
-    payableAccountId: "",
     notes: "",
     active: true,
 };
@@ -56,7 +55,6 @@ export default function VendorsPage() {
     const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [vendors, setVendors] = useState<Vendor[]>([]);
-    const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
@@ -73,14 +71,11 @@ export default function VendorsPage() {
         isDestructive: boolean;
         onConfirm: () => void;
     } | null>(null);
-    const [paymentVendor, setPaymentVendor] = useState<Vendor | null>(null);
-    const [paymentBanner, setPaymentBanner] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
     useEffect(() => {
         fetchVendors();
-        fetchAccounts();
     }, []);
 
     const fetchVendors = async () => {
@@ -99,22 +94,6 @@ export default function VendorsPage() {
             console.error(err);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const fetchAccounts = async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/finance/accounts");
-            if (res.ok) {
-                const data: Account[] = await res.json();
-                setAccounts(data.filter((a) => a.accountType === "LIABILITY"));
-            } else {
-                // A non-2xx used to leave the state at its initial empty
-                // value, so a failed request rendered as "nothing here".
-                setLoadError(tCommon("loadFailedVendors"));
-            }
-        } catch (err) {
-            console.error(err);
         }
     };
 
@@ -139,7 +118,6 @@ export default function VendorsPage() {
             bankName: vendor.bankName || "",
             bankAccountNumber: vendor.bankAccountNumber || "",
             iban: vendor.iban || "",
-            payableAccountId: vendor.payableAccount?.id || "",
             notes: vendor.notes || "",
             active: vendor.active,
         });
@@ -167,9 +145,6 @@ export default function VendorsPage() {
                 notes: formData.notes,
                 active: formData.active,
             };
-            if (formData.payableAccountId) {
-                body.payableAccount = { id: formData.payableAccountId };
-            }
 
             const url = editingVendor
                 ? `/api/proxy/v1/vendors/${editingVendor.id}`
@@ -244,7 +219,6 @@ export default function VendorsPage() {
     const reload = () => {
         setLoadError(null);
         fetchVendors();
-        fetchAccounts();
     };
 
     return (
@@ -367,16 +341,14 @@ export default function VendorsPage() {
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => setPaymentVendor(vendor)}
-                                                    disabled={!vendor.active}
-                                                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    aria-label={t("vendorPayment")}
-                                                    title={vendor.active ? t("vendorPayment") : t("inactive")}
+                                                <Link
+                                                    href={`/dashboard/finance/general-ledger?vendorId=${vendor.id}`}
+                                                    className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
+                                                    aria-label={t("viewLedger")}
+                                                    title={t("viewLedger")}
                                                 >
-                                                    <Wallet size={12} />
-                                                    {t("payVendor")}
-                                                </button>
+                                                    <BookOpen size={14} />
+                                                </Link>
                                                 <button
                                                     onClick={() => openEditModal(vendor)}
                                                     className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
@@ -576,27 +548,19 @@ export default function VendorsPage() {
                                     }
                                 />
                             </div>
+                            {/* The payable account is created and remapped by the ledger
+                                itself, so it is shown here but never chosen by hand —
+                                repointing a vendor's payable mid-life orphans its posted
+                                entries. */}
                             <div>
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("payableAccount")}
                                 </label>
-                                <select
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
-                                    value={formData.payableAccountId}
-                                    onChange={(ev) =>
-                                        setFormData({
-                                            ...formData,
-                                            payableAccountId: ev.target.value,
-                                        })
-                                    }
-                                >
-                                    <option value="">-- Select Account --</option>
-                                    {accounts.map((a) => (
-                                        <option key={a.id} value={a.id}>
-                                            {a.code} - {a.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                <p className="w-full border border-border rounded-lg bg-input p-3 text-xs text-muted">
+                                    {editingVendor?.payableAccount
+                                        ? `${editingVendor.payableAccount.code} - ${editingVendor.payableAccount.name}`
+                                        : t("payableAccountManaged")}
+                                </p>
                             </div>
                             <div className="flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -670,22 +634,6 @@ export default function VendorsPage() {
                 confirmText={confirmDialog?.confirmText || "Confirm"}
                 isDestructive={confirmDialog?.isDestructive || false}
             />
-
-            <VendorPaymentDialog
-                open={paymentVendor !== null}
-                vendor={paymentVendor}
-                onClose={() => setPaymentVendor(null)}
-                onSuccess={() => {
-                    setPaymentBanner(t("paymentSaved"));
-                    setPaymentVendor(null);
-                    setTimeout(() => setPaymentBanner(null), 3500);
-                }}
-            />
-            {paymentBanner && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-success/10 border border-success/30 text-success px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
-                    {paymentBanner}
-                </div>
-            )}
             {errorBanner && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-error/10 border border-error/30 text-error px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
                     {errorBanner}

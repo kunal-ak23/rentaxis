@@ -24,6 +24,7 @@ public enum AccountSubType {
     DIRECT_EXPENSE,
     INDIRECT_EXPENSE,
     SALARY_EXPENSE,
+    OTHER_EXPENSE,
 
     // EQUITY sub-types
     CAPITAL,

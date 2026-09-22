@@ -6,7 +6,13 @@ test.describe('Login Page', () => {
   });
 
   test('renders login form correctly', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible();
+    // The card has no heading element: it opens with the brand logo (an <img>
+    // with alt="RentAxis") over the tagline. The old "Welcome back" heading
+    // was dropped from web/src/app/[locale]/auth/login/page.tsx (#330); assert
+    // what the page actually renders instead of re-adding a heading for the
+    // test's benefit.
+    await expect(page.getByRole('img', { name: 'RentAxis' })).toBeVisible();
+    await expect(page.getByText(/property management portal/i)).toBeVisible();
     await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeVisible();

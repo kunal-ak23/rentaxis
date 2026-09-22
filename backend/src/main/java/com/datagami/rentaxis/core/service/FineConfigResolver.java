@@ -29,15 +29,22 @@ public class FineConfigResolver {
         BigDecimal closed  = coalesce(rcs == null ? null : rcs.getFineAccountClosedAmount(),      org.getFineAccountClosedAmount());
         Integer    grace   = coalesce(rcs == null ? null : rcs.getFineGraceDays(),                org.getFineGraceDays());
         BigDecimal rate    = coalesce(rcs == null ? null : rcs.getFinePerDayRate(),               org.getFinePerDayRate());
+        Integer    bounces = coalesce(rcs == null ? null : rcs.getBouncesBeforePenalty(),         org.getBouncesBeforePenalty());
 
         boolean overridden = rcs != null && (
                 rcs.getFineBounceAmount() != null
              || rcs.getFineSignatureMismatchAmount() != null
              || rcs.getFineAccountClosedAmount() != null
              || rcs.getFineGraceDays() != null
-             || rcs.getFinePerDayRate() != null);
+             || rcs.getFinePerDayRate() != null
+             || rcs.getBouncesBeforePenalty() != null);
 
-        return new FineConfig(bounce, sign, closed, grace, rate,
+        // The auto-propose flags are org-wide on purpose: "does this landlord let
+        // the system raise fines by itself" is a policy decision, not a per-building
+        // one, and there is no rent_collection_settings column to override them.
+        return new FineConfig(bounce, sign, closed, grace, rate, bounces,
+                Boolean.TRUE.equals(org.getAutoProposeChequeReturn()),
+                Boolean.TRUE.equals(org.getAutoProposeLatePayment()),
                 overridden ? FineConfig.Source.PROPERTY : FineConfig.Source.ORG);
     }
 
