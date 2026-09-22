@@ -56,7 +56,7 @@ def draw(num, dd, mm, yyyy, memo, idx):
         d.text((x + 8, 117), ch, font=f(COURIER_B, 26), fill=INK)
 
     d.text((40, 180), "PAY TO THE ORDER OF", font=f(ARIAL, 16), fill=INK)
-    d.text((40, 210), "Al Ashram Properties LLC", font=f(ARIAL_B, 34), fill=INK)
+    d.text((40, 210), "Sample Properties LLC", font=f(ARIAL_B, 34), fill=INK)
     d.line([(40, 252), (W - 380, 252)], fill=INK, width=2)
 
     d.text((40, 280), "THE SUM OF", font=f(ARIAL, 16), fill=INK)
