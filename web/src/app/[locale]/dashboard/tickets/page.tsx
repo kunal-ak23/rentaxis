@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
@@ -81,6 +82,7 @@ const CATEGORIES = [
 // ── Page Component ─────────────────────────────────────────────────────────
 
 export default function TicketsPage() {
+    const t = useTranslations("Tickets");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -535,7 +537,7 @@ export default function TicketsPage() {
 
                             {/* Reported date — for a complaint taken by phone and logged later */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Reported On</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("reportedOn")}</label>
                                 <input
                                     type="date"
                                     value={form.reportedDate}
