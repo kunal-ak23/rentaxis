@@ -119,26 +119,40 @@ public class MaintenanceTicketService {
     }
 
     /** Staff roles a ticket can be assigned to. There is no technician role. */
-    private static final Set<UserRole> ASSIGNABLE_ROLES = Set.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
+    private static final Set<String> ASSIGNABLE_ROLES =
+            Set.of(UserRole.TENANT_ADMIN.name(), UserRole.PROPERTY_MANAGER.name());
 
     /**
-     * The assignee must be an ACTIVE tenant admin or property manager of this
-     * tenant, and a property manager must run the ticket's building (otherwise
-     * they could not even open what they were given). Anyone else is 404 when not
-     * a user of this tenant at all, 400 when a user who cannot take the ticket.
+     * The assignee must be ACTIVE and belong to the ticket's tenant as a tenant
+     * admin or property manager — by home tenant or by a
+     * {@code user_tenant_memberships} row, so a multi-tenant admin working in a
+     * secondary organisation can be given its tickets. A property manager must run
+     * the ticket's building (otherwise they could not even open what they were
+     * given).
+     *
+     * <p>A SUPER_ADMIN belongs to no tenant, so they qualify only as the caller
+     * themselves ("Assign to Me") while acting in this tenant: organisations run
+     * by the platform team have no staff of their own to hand a ticket to.</p>
+     *
+     * <p>Anyone else is 404 when not a user of this tenant at all, 400 when a user
+     * who cannot take the ticket.</p>
      */
-    private User requireAssignableStaff(MaintenanceTicket ticket, UUID assignTo) {
+    private UserRepository.StaffCandidate requireAssignableStaff(MaintenanceTicket ticket, UUID assignTo) {
         if (assignTo == null) {
             throw new BusinessRuleViolationException("assignTo is required");
         }
-        UUID tenantId = ticket.getTenantId();
-        User assignee = userRepository.findByTenantIdAndIdIn(tenantId, List.of(assignTo)).stream()
-                .findFirst()
+        UserRepository.StaffCandidate assignee = userRepository.findStaffCandidateInTenant(assignTo, ticket.getTenantId())
                 .orElseThrow(() -> new NotFoundException("User not found"));
-        if (!ASSIGNABLE_ROLES.contains(assignee.getRole()) || assignee.getStatus() != UserStatus.ACTIVE) {
+        boolean superAdmin = UserRole.SUPER_ADMIN.name().equals(assignee.getRole());
+        if (superAdmin && !(assignTo.equals(callerUserId()) && callerHasRole("SUPER_ADMIN"))) {
+            // Another person's super-admin account is not "a user of this tenant".
+            throw new NotFoundException("User not found");
+        }
+        if ((!superAdmin && !ASSIGNABLE_ROLES.contains(assignee.getRole()))
+                || !UserStatus.ACTIVE.name().equals(assignee.getStatus())) {
             throw new BusinessRuleViolationException("Tickets can be assigned only to active admins and property managers");
         }
-        if (assignee.getRole() == UserRole.PROPERTY_MANAGER) {
+        if (UserRole.PROPERTY_MANAGER.name().equals(assignee.getRole())) {
             UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
             if (propertyId == null || !propertyAssignmentRepository.existsByUserIdAndPropertyId(assignee.getId(), propertyId)) {
                 throw new BusinessRuleViolationException("That property manager is not assigned to this ticket's property");
@@ -442,7 +456,7 @@ public class MaintenanceTicketService {
     @Transactional
     public MaintenanceTicketDTO assignTicket(UUID ticketId, UUID assignTo, UUID performedBy) {
         MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
-        User assignee = requireAssignableStaff(ticket, assignTo);
+        UserRepository.StaffCandidate assignee = requireAssignableStaff(ticket, assignTo);
 
         UUID previousAssignee = ticket.getAssignedTo();
         String previousStatus = ticket.getStatus() != null ? ticket.getStatus().name() : null;

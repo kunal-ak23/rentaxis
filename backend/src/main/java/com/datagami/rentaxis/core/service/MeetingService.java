@@ -13,7 +13,6 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Meeting;
 import com.datagami.rentaxis.domain.entity.MeetingDetail;
-import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.MeetingPurpose;
 import com.datagami.rentaxis.domain.entity.enums.MeetingStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -420,11 +419,23 @@ public class MeetingService {
 
     // ---- Access ----
 
+    /**
+     * The host must be ACTIVE and belong to this tenant as a tenant admin or
+     * property manager — by home tenant or by a {@code user_tenant_memberships}
+     * row (the tenant filter on {@code users} used to hide a multi-tenant admin
+     * working in a secondary organisation, so they could not be booked there). A
+     * SUPER_ADMIN, who belongs to no tenant, qualifies only as the caller acting
+     * in this tenant: an organisation run by the platform team has no other staff.
+     */
     private void requireEligibleHost(UUID hostUserId) {
         UUID tenantId = TenantContextHolder.getTenantId();
-        User host = hostUserId == null ? null : userRepository.findById(hostUserId).orElse(null);
-        if (host == null || tenantId == null || !tenantId.equals(host.getTenantId())
-                || !HOST_ROLES.contains(host.getRole()) || host.getStatus() != UserStatus.ACTIVE) {
+        UserRepository.StaffCandidate host = hostUserId == null || tenantId == null ? null
+                : userRepository.findStaffCandidateInTenant(hostUserId, tenantId).orElse(null);
+        boolean eligible = host != null && UserStatus.ACTIVE.name().equals(host.getStatus())
+                && (HOST_ROLES.stream().anyMatch(r -> r.name().equals(host.getRole()))
+                    || (UserRole.SUPER_ADMIN.name().equals(host.getRole())
+                        && hostUserId.equals(callerIdOrNull()) && callerHasRole("SUPER_ADMIN")));
+        if (!eligible) {
             throw new NotFoundException("Host user not found");
         }
     }
@@ -513,6 +524,12 @@ public class MeetingService {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    private static boolean callerHasRole(String role) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> ("ROLE_" + role).equals(a.getAuthority()));
     }
 
     /** JPQL {@code IN ()} is not valid SQL; an unmatchable id stands in for "nothing". */

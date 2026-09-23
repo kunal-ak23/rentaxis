@@ -70,6 +70,40 @@ class MeetingHostEligibilityIT extends AbstractPostgresIT {
         assertThat(defaultHost(renter)).isEqualTo(oldestActivePm.getId().toString());
     }
 
+    // ---------------------------------------------------- who may be a host
+
+    /** A multi-tenant admin works here through a membership row; their home is elsewhere. */
+    @Test
+    void aMembershipAdminIsABookableHost() {
+        UUID home = org("MHE-HOME");
+        User memberAdmin = user(home, UserRole.TENANT_ADMIN, UserStatus.ACTIVE, 0);
+        User homeOnlyAdmin = user(home, UserRole.TENANT_ADMIN, UserStatus.ACTIVE, 0);
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
+                memberAdmin.getId(), tenantId);
+
+        assertThat(slots(renter, memberAdmin).getStatusCode().value()).isEqualTo(200);
+        assertThat(slots(renter, homeOnlyAdmin).getStatusCode().value()).isEqualTo(404);
+
+        jdbc.update("UPDATE users SET status = 'INACTIVE' WHERE id = ?", memberAdmin.getId());
+        assertThat(slots(renter, memberAdmin).getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** A super admin running an org with no staff hosts in it, as themselves only. */
+    @Test
+    void aSuperAdminHostsOnlyAsThemselves() {
+        User superAdmin = user(null, UserRole.SUPER_ADMIN, UserStatus.ACTIVE, 0);
+        User otherSuperAdmin = user(null, UserRole.SUPER_ADMIN, UserStatus.ACTIVE, 0);
+
+        assertThat(slots(superAdmin, superAdmin).getStatusCode().value()).isEqualTo(200);
+        assertThat(slots(superAdmin, otherSuperAdmin).getStatusCode().value()).isEqualTo(404);
+        assertThat(slots(renter, superAdmin).getStatusCode().value()).isEqualTo(404);
+    }
+
+    private ResponseEntity<String> slots(User caller, User host) {
+        return call(caller, tenantId, HttpMethod.GET, "/api/v1/meetings/slots?hostUserId=" + host.getId()
+                + "&date=" + java.time.LocalDate.now().plusDays(1));
+    }
+
     // ------------------------------------------------------------- plumbing
 
     private String defaultHost(User caller) {

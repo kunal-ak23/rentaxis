@@ -126,6 +126,37 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByRole(UserRole role);
 
+    /** A user as a staff candidate: identity, role and status, and nothing else. */
+    interface StaffCandidate {
+        UUID getId();
+        String getName();
+        String getRole();
+        String getStatus();
+    }
+
+    /**
+     * The user, when they belong to {@code tenantId} — home tenant, or a
+     * {@code user_tenant_memberships} row — or are a SUPER_ADMIN (who belongs to
+     * no tenant and may act in any). Role and status are left to the caller to
+     * judge, so "not one of ours" (empty) stays distinct from "one of ours who
+     * cannot take this".
+     *
+     * <p>Native on purpose: the tenant filter on {@code users} hides a
+     * multi-tenant admin whose home tenant is another organisation, which is
+     * exactly the user this has to find. The tenant is the explicit argument.</p>
+     */
+    @Query(value = """
+            SELECT u.id AS id, u.name AS name, u.role AS role, u.status AS status
+            FROM users u
+            WHERE u.id = :userId
+              AND (u.tenant_id = :tenantId
+                   OR u.role = 'SUPER_ADMIN'
+                   OR EXISTS (SELECT 1 FROM user_tenant_memberships m
+                              WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
+            """, nativeQuery = true)
+    Optional<StaffCandidate> findStaffCandidateInTenant(@Param("userId") UUID userId,
+                                                        @Param("tenantId") UUID tenantId);
+
     /**
      * ACTIVE users of {@code role} who belong to {@code tenantId} (home tenant or
      * membership), oldest account first, id as the tie-break — a deterministic

@@ -163,6 +163,59 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
         assertThat(assignTo(admin.getId()).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    /**
+     * A multi-tenant admin works in this organisation through a
+     * user_tenant_memberships row; their home tenant is another one. The tenant
+     * filter used to hide their user row, so they could not be given a ticket
+     * here. A membership property manager still needs the building.
+     */
+    @Test
+    void aMembershipAdminCanBeAssignedAndAMembershipManagerNeedsTheBuilding() {
+        UUID home = org("TRS-HOME");
+        User memberAdmin = user(home, UserRole.TENANT_ADMIN, "Member Admin");
+        User memberPm = user(home, UserRole.PROPERTY_MANAGER, "Member PM");
+        User homeOnlyAdmin = user(home, UserRole.TENANT_ADMIN, "Home Only");
+        for (User u : List.of(memberAdmin, memberPm)) {
+            jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)", u.getId(), tenantId);
+        }
+
+        ResponseEntity<String> ok = assignTo(memberAdmin.getId());
+        assertThat(ok.getStatusCode()).as(ok.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(body(ok).get("assigneeName").asText()).isEqualTo("Member Admin");
+
+        assertThat(assignTo(memberPm.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assign(memberPm);
+        assertThat(assignTo(memberPm.getId()).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // No membership here: not one of this tenant's users.
+        assertThat(assignTo(homeOnlyAdmin.getId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        jdbc.update("UPDATE users SET status = 'INACTIVE' WHERE id = ?", memberAdmin.getId());
+        assertThat(assignTo(memberAdmin.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * An organisation the platform team runs has no staff of its own (prod
+     * TUTORIAL-MIFTAH-2Y): the super admin takes the ticket themselves. Only
+     * themselves — another super admin's account is not a user of this tenant,
+     * and a tenant admin cannot hand a ticket to one.
+     */
+    @Test
+    void aSuperAdminCanAssignATicketToThemselvesOnly() {
+        User superAdmin = user(null, UserRole.SUPER_ADMIN, "Platform Admin");
+        User otherSuperAdmin = user(null, UserRole.SUPER_ADMIN, "Other Platform Admin");
+
+        ResponseEntity<String> self = callIn(superAdmin, tenantId, HttpMethod.PUT,
+                "/api/v1/tickets/" + otherTicket + "/assign", Map.of("assignTo", superAdmin.getId().toString()));
+        assertThat(self.getStatusCode()).as(self.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(body(self).get("assigneeName").asText()).isEqualTo("Platform Admin");
+
+        assertThat(callIn(superAdmin, tenantId, HttpMethod.PUT, "/api/v1/tickets/" + otherTicket + "/assign",
+                Map.of("assignTo", otherSuperAdmin.getId().toString())).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(assignTo(superAdmin.getId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     // -------------------------------------------------------------- plumbing
 
     private ResponseEntity<String> assignTo(UUID userId) {
@@ -220,6 +273,17 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
                 .header("X-User-Role", caller.getRole().name())
                 .header("X-Tenant-Id", caller.getTenantId().toString())
                 .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        if (body != null) spec = spec.contentType(MediaType.APPLICATION_JSON).body(body);
+        return spec.retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
+    }
+
+    /** A caller acting in {@code activeTenant}; a super admin has no home tenant. */
+    private ResponseEntity<String> callIn(User caller, UUID activeTenant, HttpMethod method, String path, Object body) {
+        RestClient.RequestBodySpec spec = RestClient.builder().baseUrl("http://localhost:" + port).build()
+                .method(method).uri(path)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name())
+                .header("X-Tenant-Id", activeTenant.toString());
         if (body != null) spec = spec.contentType(MediaType.APPLICATION_JSON).body(body);
         return spec.retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
     }
