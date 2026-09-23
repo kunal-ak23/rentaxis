@@ -2357,5 +2357,37 @@
   },
   "Tickets": {
     "reportedOn": "Reported On"
+  },
+  "RenterHome": {
+    "renterFallback": "Renter",
+    "nextPayment": "Next payment",
+    "daysOverdue": "{count, plural, one {# day overdue} other {# days overdue}}",
+    "dueToday": "Due today",
+    "dueInDays": "{count, plural, one {Due in # day} other {Due in # days}}",
+    "dueOn": "Due {date}",
+    "viewAllPayments": "View all payments",
+    "allPaymentsUpToDate": "All payments up to date",
+    "noPendingPayments": "No pending payments at this time.",
+    "rent": "Rent",
+    "start": "Start",
+    "end": "End",
+    "ejari": "Ejari",
+    "noLeasesHint": "Your leases will appear here once your landlord creates them.",
+    "acceptTitle": "Accept Lease",
+    "acceptDescription": "Are you sure you want to accept this lease? This action cannot be undone.",
+    "rejectTitle": "Reject Lease",
+    "rejectDescription": "Are you sure you want to reject this lease? This action cannot be undone.",
+    "confirm": "Confirm",
+    "myMeetings": "My Meetings",
+    "myMeetingsDesc": "View and manage your scheduled meetings",
+    "requestMeeting": "Request Meeting",
+    "noMeetingsYet": "No meetings yet",
+    "noMeetingsHint": "Request a meeting with your property manager.",
+    "colDateTime": "Date & Time",
+    "colPurpose": "Purpose",
+    "colProperty": "Property",
+    "colStatus": "Status",
+    "unitLabel": "Unit {unit}",
+    "pageOf": "Page {page} of {total}"
   }
 }

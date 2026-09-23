@@ -2357,5 +2357,37 @@
   },
   "Tickets": {
     "reportedOn": "تاريخ البلاغ"
+  },
+  "RenterHome": {
+    "renterFallback": "المستأجر",
+    "nextPayment": "الدفعة التالية",
+    "daysOverdue": "{count, plural, zero {متأخرة # يوم} one {متأخرة يومًا واحدًا} two {متأخرة يومين} few {متأخرة # أيام} many {متأخرة # يومًا} other {متأخرة # يوم}}",
+    "dueToday": "مستحقة اليوم",
+    "dueInDays": "{count, plural, zero {مستحقة خلال # يوم} one {مستحقة خلال يوم واحد} two {مستحقة خلال يومين} few {مستحقة خلال # أيام} many {مستحقة خلال # يومًا} other {مستحقة خلال # يوم}}",
+    "dueOn": "تستحق في {date}",
+    "viewAllPayments": "عرض جميع الدفعات",
+    "allPaymentsUpToDate": "جميع الدفعات مسددة",
+    "noPendingPayments": "لا توجد دفعات مستحقة حاليًا.",
+    "rent": "الإيجار",
+    "start": "البداية",
+    "end": "النهاية",
+    "ejari": "إيجاري",
+    "noLeasesHint": "ستظهر عقودك هنا بمجرد أن ينشئها المالك.",
+    "acceptTitle": "قبول العقد",
+    "acceptDescription": "هل أنت متأكد من قبول هذا العقد؟ لا يمكن التراجع عن هذا الإجراء.",
+    "rejectTitle": "رفض العقد",
+    "rejectDescription": "هل أنت متأكد من رفض هذا العقد؟ لا يمكن التراجع عن هذا الإجراء.",
+    "confirm": "تأكيد",
+    "myMeetings": "اجتماعاتي",
+    "myMeetingsDesc": "اعرض اجتماعاتك المجدولة وأدِرها",
+    "requestMeeting": "طلب اجتماع",
+    "noMeetingsYet": "لا توجد اجتماعات بعد",
+    "noMeetingsHint": "اطلب اجتماعًا مع مدير العقار.",
+    "colDateTime": "التاريخ والوقت",
+    "colPurpose": "الغرض",
+    "colProperty": "العقار",
+    "colStatus": "الحالة",
+    "unitLabel": "الوحدة {unit}",
+    "pageOf": "صفحة {page} من {total}"
   }
 }
