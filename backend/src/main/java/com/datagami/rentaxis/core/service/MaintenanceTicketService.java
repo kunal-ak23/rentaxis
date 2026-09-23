@@ -54,6 +54,7 @@ public class MaintenanceTicketService {
     private final NotificationService notificationService;
     private final ApplicationEventPublisher events;
     private final com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumberService;
+    private final com.datagami.rentaxis.domain.repository.RenterRepository renterRepository;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -65,6 +66,13 @@ public class MaintenanceTicketService {
     private String localStoragePath;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private static boolean callerIsRenter() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_RENTER".equals(a.getAuthority()));
+    }
 
     /** The journal_entry_sequences series for ticket references (#20). */
     static final String TICKET_SERIES = "TKT";
@@ -111,6 +119,21 @@ public class MaintenanceTicketService {
         }
 
         ticket.setOnBehalfOf(dto.getOnBehalfOf());
+        if (dto.getOnBehalfOfRenterId() != null) {
+            // #19: a renter picked from the org's list. Staff only — a renter
+            // reports for themselves — and resolved in the ticket's tenant, so a
+            // foreign renter id is the same 404 as a missing one.
+            if (callerIsRenter()) {
+                throw new BusinessRuleViolationException("Only staff can log a ticket on a renter's behalf");
+            }
+            com.datagami.rentaxis.domain.entity.Renter onBehalf = renterRepository.findById(dto.getOnBehalfOfRenterId())
+                    .filter(r -> r.getTenantId() != null && r.getTenantId().equals(property.getTenantId()))
+                    .orElseThrow(() -> new NotFoundException("Renter not found"));
+            ticket.setOnBehalfOfRenterId(onBehalf.getId());
+            // The legacy text column still carries the name, for readers that only
+            // know it (the manager app, older exports).
+            ticket.setOnBehalfOf(onBehalf.getNameEn());
+        }
 
         // The day the tenant reported it — for a complaint logged after the fact,
         // the operator sets an earlier date. A future date is refused: a ticket
@@ -646,6 +669,7 @@ public class MaintenanceTicketService {
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());
+        dto.setOnBehalfOfRenterId(ticket.getOnBehalfOfRenterId());
         dto.setReportedDate(ticket.getReportedDate());
         dto.setCreatedAt(ticket.getCreatedAt());
         dto.setUpdatedAt(ticket.getUpdatedAt());

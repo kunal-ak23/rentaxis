@@ -28,6 +28,8 @@ public class MaintenanceTicketDTO {
     private Integer satisfactionRating;
     private String satisfactionComment;
     private String onBehalfOf;
+    /** The renter the ticket was logged for (#19); null on legacy free-text rows. */
+    private UUID onBehalfOfRenterId;
     private java.time.LocalDate reportedDate;
     private Instant createdAt;
     private Instant updatedAt;

@@ -2450,6 +2450,10 @@
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
   },
   "Tickets": {
+    "onBehalfOfRenter": "On behalf of renter (optional)",
+    "onBehalfOfNone": "Nobody — staff reported it",
+    "onBehalfOfHint": "Pick the renter who phoned or messaged, so the ticket appears in their record.",
+    "onBehalfOfLabel": "On behalf of: {name}",
     "reportedOn": "Reported On"
   },
   "RenterHome": {

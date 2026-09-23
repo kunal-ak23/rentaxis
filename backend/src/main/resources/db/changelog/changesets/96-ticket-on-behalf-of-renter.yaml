@@ -1,0 +1,27 @@
+databaseChangeLog:
+  # #19: "on behalf of" was free text, so a complaint phoned in for a renter
+  # never reached that renter's record, and spelling variants made invisible
+  # duplicates. The renter it was logged for is now stored by id. on_behalf_of
+  # (text) stays for legacy rows and is still filled with the renter's name, so
+  # readers that only know the text (the manager app) keep working.
+  #
+  # No foreign key, deliberately: tickets outlive renter rows in the purge and
+  # account-deletion paths, which do not know about this column, and a
+  # dangling id simply reads as the legacy text. The id is resolved inside the
+  # caller's tenant at write time.
+  - changeSet:
+      id: 96-ticket-on-behalf-of-renter
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: on_behalf_of_renter_id
+                  type: uuid
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_on_behalf_of_renter
+            columns:
+              - column:
+                  name: on_behalf_of_renter_id

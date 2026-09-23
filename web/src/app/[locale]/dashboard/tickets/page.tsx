@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
@@ -30,6 +30,8 @@ type Ticket = {
     reporterName: string;
     assigneeName: string | null;
     onBehalfOf: string | null;
+    /** #19: the renter the ticket was logged for; null on legacy free-text rows. */
+    onBehalfOfRenterId?: string | null;
     createdAt: string;
     updatedAt: string;
 };
@@ -85,6 +87,7 @@ const CATEGORIES = [
 
 export default function TicketsPage() {
     const t = useTranslations("Tickets");
+    const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -114,7 +117,7 @@ export default function TicketsPage() {
         unitId: "",
         category: "OTHER",
         priority: "MEDIUM",
-        onBehalfOf: "",
+        onBehalfOfRenterId: "",
         reportedDate: businessTodayIso(),
     });
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
@@ -135,6 +138,17 @@ export default function TicketsPage() {
         try {
             const res = await fetch("/api/proxy/v1/properties");
             if (res.ok) setProperties(await res.json());
+        } catch { /* ignore */ }
+    }, [isRenter]);
+
+    // #19: the org's renters, for the "on behalf of" picker. Staff only; the
+    // endpoint is not open to a renter, and a renter reports for themselves.
+    const [renters, setRenters] = useState<{ id: string; nameEn: string; nameAr: string | null; phone: string | null }[]>([]);
+    const fetchRenters = useCallback(async () => {
+        if (isRenter) return;
+        try {
+            const res = await fetch("/api/proxy/v1/renters");
+            if (res.ok) setRenters(await res.json());
         } catch { /* ignore */ }
     }, [isRenter]);
 
@@ -165,8 +179,8 @@ export default function TicketsPage() {
     }, [isRenter]);
 
     useEffect(() => {
-        Promise.all([fetchTickets(), fetchProperties(), fetchUnits(), fetchRenterLeases()]).finally(() => setLoading(false));
-    }, [fetchTickets, fetchProperties, fetchUnits, fetchRenterLeases]);
+        Promise.all([fetchTickets(), fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => setLoading(false));
+    }, [fetchTickets, fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
 
     // ── Filtering ───────────────────────────────────────────────────────
 
@@ -217,7 +231,7 @@ export default function TicketsPage() {
                     unitId: form.unitId || undefined,
                     category: form.category,
                     priority: form.priority,
-                    onBehalfOf: form.onBehalfOf || undefined,
+                    onBehalfOfRenterId: form.onBehalfOfRenterId || undefined,
                     reportedDate: form.reportedDate || undefined,
                 }),
             });
@@ -234,7 +248,7 @@ export default function TicketsPage() {
                     });
                 }
                 setShowForm(false);
-                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "", reportedDate: businessTodayIso() });
+                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOfRenterId: "", reportedDate: businessTodayIso() });
                 setAttachmentFiles([]);
                 fetchTickets();
             } else {
@@ -366,7 +380,13 @@ export default function TicketsPage() {
                                     <td className="px-4 py-2.5 max-w-[200px]">
                                         <div className="text-xs font-medium text-foreground truncate">{ticket.title}</div>
                                         {ticket.onBehalfOf && (
-                                            <div className="text-[10px] text-muted truncate">on behalf of: {ticket.onBehalfOf}</div>
+                                            <div className="text-[10px] text-muted truncate">
+                                                {ticket.onBehalfOfRenterId ? (
+                                                    <Link href={`/dashboard/renters/${ticket.onBehalfOfRenterId}`} className="hover:text-primary hover:underline" data-testid="ticket-on-behalf-of-link">
+                                                        {t("onBehalfOfLabel", { name: ticket.onBehalfOf })}
+                                                    </Link>
+                                                ) : t("onBehalfOfLabel", { name: ticket.onBehalfOf })}
+                                            </div>
                                         )}
                                     </td>
                                     <td className="px-4 py-2.5 text-xs text-muted">
@@ -526,17 +546,26 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* On Behalf Of (PM/Admin only) */}
+                            {/* On behalf of (staff only) — #19: a renter picked from the org's
+                                renters, stored by id, so a phoned-in complaint reaches that
+                                renter's record instead of living as free text. */}
                             {!isRenter && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">On Behalf Of (optional)</label>
-                                    <input
-                                        type="text"
-                                        value={form.onBehalfOf || ""}
-                                        onChange={(e) => setForm({ ...form, onBehalfOf: e.target.value })}
-                                        placeholder="Renter name if reporting on their behalf"
+                                    <label htmlFor="ticket-on-behalf-of" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("onBehalfOfRenter")}</label>
+                                    <select
+                                        id="ticket-on-behalf-of"
+                                        value={form.onBehalfOfRenterId || ""}
+                                        onChange={(e) => setForm({ ...form, onBehalfOfRenterId: e.target.value })}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                                    />
+                                    >
+                                        <option value="">{t("onBehalfOfNone")}</option>
+                                        {renters.map((r) => (
+                                            <option key={r.id} value={r.id}>
+                                                {(locale === "ar" && r.nameAr) ? r.nameAr : r.nameEn}{r.phone ? ` · ${r.phone}` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[10px] text-muted mt-1">{t("onBehalfOfHint")}</p>
                                 </div>
                             )}
 

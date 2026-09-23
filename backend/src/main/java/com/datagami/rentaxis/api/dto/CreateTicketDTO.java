@@ -15,6 +15,12 @@ public class CreateTicketDTO {
     private String category;
     private String priority;
     private String onBehalfOf;
+    /**
+     * #19: the renter a staff member is logging this for, picked from the org's
+     * renters. Resolved in the caller's tenant; when set, it wins over the
+     * free-text {@code onBehalfOf}, which is filled with the renter's name.
+     */
+    private UUID onBehalfOfRenterId;
 
     /** When the tenant reported it; defaults to today if the caller omits it. */
     private LocalDate reportedDate;

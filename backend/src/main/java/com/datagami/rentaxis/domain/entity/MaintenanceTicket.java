@@ -78,6 +78,10 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "on_behalf_of")
     private String onBehalfOf;
 
+    /** The renter this was logged for, when staff picked one (#19); null on legacy free-text rows. */
+    @Column(name = "on_behalf_of_renter_id")
+    private UUID onBehalfOfRenterId;
+
     /** Human reference, "TKT-yy/n" per tenant and calendar year (#20); set at creation. */
     @Column(name = "reference", length = 20)
     private String reference;

@@ -2450,6 +2450,10 @@
     "uploadBlockedByPost": "يجري تقييد دفعة الآن. انتظر انتهاءها قبل رفع ملف آخر."
   },
   "Tickets": {
+    "onBehalfOfRenter": "نيابةً عن المستأجر (اختياري)",
+    "onBehalfOfNone": "لا أحد — أبلغ عنه الموظفون",
+    "onBehalfOfHint": "اختر المستأجر الذي اتصل أو راسل، لتظهر التذكرة في سجله.",
+    "onBehalfOfLabel": "نيابةً عن: {name}",
     "reportedOn": "تاريخ البلاغ"
   },
   "RenterHome": {
