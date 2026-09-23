@@ -49,12 +49,12 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
 | M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
 | M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | planned |
-| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | blocked → unblocked by PR #338 (Add charge); rerun pending |
+| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | proven (on the year-2 lease, after PR #338) |
 | M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
 | M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
 | M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
 | M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | planned |
-| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | in progress (renter side done 23 Sep 2026) |
+| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | in progress (bookings approved, ticket in progress; gate pass not on web — see M12 note) |
 | M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | proven |
 | M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | proven |
 
@@ -174,6 +174,23 @@ closed here rather than left pending:
   P0 class that was hotfixed separately).
 
 Green: `LeaseAccessPolicyTest`, `ApiSecurityFilterTest`, `RenterRenewalControllerTest`.
+
+**M07 · Feb 2026 — Ahmed's second car (rerun after PR #338).** Ahmed asked for bay B1-01
+from the renter portal; it was approved from *Bookings* — which, correctly, touches nothing
+financial. The charge went on through the new **Add charge** on his active year-2 lease:
+Parking Fee 3,750 (15 Feb → 30 Sep 2026), paid by PDC 200205, Ejari left blank. A first try
+with cheque 200201 was refused — *"already used on this lease"* — which is right. Posted as
+**ADD-26/1 / TCO-26/1** dated 10/02/2026: Rent Receivable Dr 3,750, Additional Parking Cr
+3,750. Contract value 91,800 → **95,550**, cheques 4 → 5, end date unchanged, the contract's
+own TCO untouched. The addenda panel showed *Ejari pending* until `EJ-2026-100177` was
+recorded against it. #15 and #17 are proven on production.
+
+**M12 · Sep 2026 — self-service, staff side.** Ahmed's pool booking (3 Oct) and bay request
+were approved with notes; his HVAC ticket was assigned, answered and moved to In Progress.
+The activity history attributed both staff actions to *"System"* (#42). Visitor gate passes
+have no web surface — the renter's gate-pass flow lives in the mobile app — so that half of
+M12 is left to the mobile run. The renter's meeting request dead-ended with no explanation
+because the org has no staff host (#41, fixed in PR #338).
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
