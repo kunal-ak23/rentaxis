@@ -1719,6 +1719,18 @@
     "amendFailed": "The amendment could not be posted.",
     "renewFailed": "The renewal could not be created.",
     "extendFailed": "The extension could not be posted.",
+    "addCharge": "Add charge",
+    "addChargeFailed": "The addendum could not be posted.",
+    "addendumLines": "Addendum charges",
+    "addendumCheques": "Cheques for the addendum",
+    "effectiveFrom": "Effective from",
+    "addendumReason": "Reason",
+    "ejariNumberOptional": "Ejari number (optional)",
+    "addenda": "Addenda",
+    "noAddenda": "No addenda on this lease.",
+    "ejariPending": "Ejari pending",
+    "recordEjari": "Record Ejari",
+    "recordEjariFailed": "The Ejari number could not be saved.",
     "journalsFailed": "The journals for this contract could not be loaded.",
     "copyLines": "Copy the charge lines from this contract",
     "currentEndDate": "Current End Date",
@@ -1796,7 +1808,7 @@
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
     "cancel": "Cancel",
     "noPenalties": "No penalties raised against this contract.",
-    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot re-price the contract. Change the cheque grid first, or keep the total as it is."
+    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone."
   },
   "Cheques": {
     "register": "Cheque Register",
