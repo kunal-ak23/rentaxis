@@ -16,7 +16,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
-import { blankLine, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type DraftLeaseInput, type DraftPaymentMethod,
@@ -310,6 +310,15 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setTerms(prev => ({ ...prev, ...next }));
         setError(null);
     };
+    // #54: the header's "Rent carries VAT" flag drives every RENT line's VAT
+    // box — when the flag changes, and when a line is pointed at a RENT charge.
+    // Ticking a line's own box afterwards still wins for that line.
+    const setRentVat = (rentVatApplicable: boolean) => {
+        patch({ rentVatApplicable });
+        setRows(prev => withRentVat(prev, chargeTypes, rentVatApplicable));
+    };
+    const onLinesChange = (next: LineRow[]) =>
+        setRows(prev => followRentVat(prev, next, chargeTypes, terms.rentVatApplicable));
 
     const goNext = () => {
         const e = stepError(stepIdx);
@@ -385,7 +394,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     onChange={id => {
                                         setUnitId(id);
                                         const u = units.find(x => x.id === id);
-                                        patch({ rentVatApplicable: u?.property?.type === "COMMERCIAL" });
+                                        setRentVat(u?.property?.type === "COMMERCIAL");
                                     }}
                                     placeholder={t("unit")}
                                     searchPlaceholder={t("unit")}
@@ -480,7 +489,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 <input className={field} value={terms.paymentReferenceNumber} onChange={e => patch({ paymentReferenceNumber: e.target.value })} />
                             </Field>
                             <label className="flex items-end gap-2 text-xs text-foreground pb-3">
-                                <input type="checkbox" checked={terms.rentVatApplicable} onChange={e => patch({ rentVatApplicable: e.target.checked })} />
+                                <input type="checkbox" data-testid="wizard-rent-vat" checked={terms.rentVatApplicable} onChange={e => setRentVat(e.target.checked)} />
                                 {t("rentVat")}
                             </label>
                         </div>
@@ -493,7 +502,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 chargeTypes={chargeTypes}
                                 propertyId={selectedUnit?.property?.id ?? null}
                                 editable
-                                onChange={setRows}
+                                onChange={onLinesChange}
                                 errors={serverErrors}
                             />
                             {bannerErrors.length > 0 && (

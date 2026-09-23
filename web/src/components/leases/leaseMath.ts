@@ -111,6 +111,40 @@ export function renewalRows(lines: LeaseLine[], termStart: string): LineRow[] {
 }
 
 /**
+ * #54: the lease header's "Rent carries VAT" flag is what a RENT line's VAT box
+ * starts from — the catalogue default describes the charge type, not this
+ * contract. `withRentVat` re-applies the flag to every RENT row (the header
+ * flag changed); deposits never carry VAT whatever their flag says, so only
+ * RENT rows are touched.
+ */
+export function withRentVat(rows: LineRow[], chargeTypes: ChargeType[], rentVat: boolean): LineRow[] {
+    const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
+    return rows.map(r => (isRent(r.chargeTypeId) && r.vatApplicable !== rentVat ? { ...r, vatApplicable: rentVat } : r));
+}
+
+/**
+ * A grid edit, with #54 applied: a row whose charge type has just been set to a
+ * RENT-behaviour type takes the header's rent-VAT flag. Any other edit —
+ * including the operator ticking or unticking a RENT line's own VAT box — is
+ * left exactly as the grid made it, so an explicit per-line choice wins.
+ */
+export function followRentVat(
+    prev: LineRow[],
+    next: LineRow[],
+    chargeTypes: ChargeType[],
+    rentVat: boolean,
+): LineRow[] {
+    const before = new Map(prev.map(r => [r.key, r]));
+    return next.map(r => {
+        const was = before.get(r.key);
+        const typeChanged = !was || was.chargeTypeId !== r.chargeTypeId;
+        if (!typeChanged || !r.chargeTypeId) return r;
+        const type = chargeTypes.find(c => c.id === r.chargeTypeId);
+        return type?.behaviour === "RENT" ? { ...r, vatApplicable: rentVat } : r;
+    });
+}
+
+/**
  * A renewal's explicit lines, as sent. When the old deposit is carried
  * forward, any DEPOSIT-behaviour line is dropped: sending one as well would
  * charge the renter a second deposit while the first is JV-moved across — the

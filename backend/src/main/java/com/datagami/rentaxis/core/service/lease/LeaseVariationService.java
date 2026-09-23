@@ -149,7 +149,7 @@ public class LeaseVariationService {
         // ---- stage 1: the request, with nothing written -------------------
         List<LeaseLineInput> inputs = charges.dated(r.lines(), effectiveFrom, lease.getEndDate(),
                 AdditionalCharges.Act.ADDENDUM);
-        BigDecimal charged = charges.valueOf(inputs);
+        BigDecimal charged = charges.valueOf(inputs, lease);
         List<ChequeRowInput> rows = r.cheques() == null ? List.of() : r.cheques();
         charges.requireCovered(rows, charged, AdditionalCharges.Act.ADDENDUM);
 

@@ -678,8 +678,7 @@ public class LeaseService {
             // Validated by requireAddendaAllowed before this point: null except on
             // an amend, where it names an addendum of this very lease.
             line.setAddendumId(in.addendumId());
-            line.setVatApplicable(in.vatApplicable() != null
-                    ? in.vatApplicable() : type.isVatApplicableDefault());
+            line.setVatApplicable(vatApplicableFor(in, type, lease.isRentVatApplicable()));
             line.setCreditAccount(resolveCreditAccount(in, type, propertyId, seqNo));
 
             // Rent covers the term unless the caller says otherwise — a stub
@@ -696,6 +695,25 @@ public class LeaseService {
         }
         leaseLineRepository.flush();
         return List.copyOf(written);
+    }
+
+    /**
+     * A line's VAT flag when the caller does not say (#54). An explicit
+     * {@code vatApplicable} on the input always wins. Otherwise a RENT line
+     * follows the lease header's {@code rentVatApplicable} — "Rent carries VAT"
+     * is a property of this contract (a commercial tenancy), which the charge
+     * type's catalogue default cannot know — and any other line takes the charge
+     * type's default. A DEPOSIT line may come out flagged here, but
+     * {@code LeaseVat} never taxes one whatever its flag says.
+     *
+     * <p>Shared with {@code AdditionalCharges.valueOf} so the figure the cheques
+     * must cover is computed with the same flag the written line will carry.</p>
+     */
+    public static boolean vatApplicableFor(LeaseLineInput in, ChargeType type, boolean rentVatApplicable) {
+        if (in.vatApplicable() != null) {
+            return in.vatApplicable();
+        }
+        return type.getBehaviour() == ChargeBehaviour.RENT ? rentVatApplicable : type.isVatApplicableDefault();
     }
 
     /**
