@@ -6,6 +6,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { todayIso } from "@/components/leases/leaseMath";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
@@ -110,7 +111,7 @@ export default function TicketsPage() {
         category: "OTHER",
         priority: "MEDIUM",
         onBehalfOf: "",
-        reportedDate: new Date().toISOString().slice(0, 10),
+        reportedDate: todayIso(),
     });
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
@@ -226,7 +227,7 @@ export default function TicketsPage() {
                     });
                 }
                 setShowForm(false);
-                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "", reportedDate: new Date().toISOString().slice(0, 10) });
+                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "", reportedDate: todayIso() });
                 setAttachmentFiles([]);
                 fetchTickets();
             } else {
@@ -538,7 +539,7 @@ export default function TicketsPage() {
                                 <input
                                     type="date"
                                     value={form.reportedDate}
-                                    max={new Date().toISOString().slice(0, 10)}
+                                    max={todayIso()}
                                     onChange={(e) => setForm({ ...form, reportedDate: e.target.value })}
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                 />
