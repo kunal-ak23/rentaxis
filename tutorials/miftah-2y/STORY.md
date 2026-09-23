@@ -66,7 +66,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | proven |
 | M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | proven |
 | M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | proven (discount, not a true rent-free period — #50) |
-| M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
+| M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | lock proven; year-end close missing (#53) |
 | M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | proven (on Omar; Sara's lease had already expired) |
 | M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
 | M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
@@ -256,6 +256,13 @@ The finalized page still offered *Terminate contract* (#51). Then a fresh A-201 
 (105,000 rent, a new 10,500 deposit, 1,050 fee; 116,550; PDCs 600201–600204) posted from
 01/04/2026. That is the whole of "transfer": there is none (#52), so the renter paid an exit
 fee to stay.
+
+**M19 · Jan 2026 — 2025 closed, as far as the product goes.** With recognition posted to
+August 2026 and nothing left to back-date into 2025, the books were locked through
+31/12/2025. The carry-forward check found the gap instead: the trial balance on 31/12/2025
+and on 01/01/2026 is the same report — Rental Income 331,979.81 Cr on both — because
+nothing closes income into equity at a year-end and there is no Retained Earnings account
+to close it into (#53).
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
