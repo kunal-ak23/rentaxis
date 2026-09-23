@@ -425,7 +425,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         patch(
                                             contractDateTouched
                                                 ? { agreementDate: value }
-                                                : { agreementDate: value, contractDate: value },
+                                                : { agreementDate: value, contractDate: value || todayIso() },
                                         );
                                     }}
                                 />

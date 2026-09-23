@@ -86,4 +86,17 @@ describe("lease wizard contract date default (#45)", () => {
         await waitFor(() => expect(screen.getByTestId("wizard-contract-date")).toBeInTheDocument());
         expect(screen.getByTestId("wizard-contract-date")).toHaveValue("2026-01-15");
     });
+
+    it("falls back to today, not blank, when the agreement date is cleared (m3)", async () => {
+        renderWizard();
+        await goToTermsStep();
+        fireEvent.click(screen.getByText("Back"));
+        fireEvent.change(screen.getByTestId("wizard-agreement-date"), { target: { value: "" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(screen.getByTestId("wizard-contract-date")).toBeInTheDocument());
+        const today = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        expect(screen.getByTestId("wizard-contract-date"))
+            .toHaveValue(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
+    });
 });
