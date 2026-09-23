@@ -373,6 +373,14 @@ which returned a 500 before (#67). A unit posted against a property outside the 
 refused, "Property not found" (404) (#70). The ITs prove the cross-tenant case for units,
 buildings, staff and bank accounts.
 
+**Renter session · 24 Sep 2026 — Ahmed signs in (after PR #342's deploy).**
+- **X01, live:** Ahmed's session gets 403/404 on Rajesh's and Omar's leases, cheques and contracts, on the staff lease list, the trial balance, the renters list and the org list. He sees only his three A-101 leases and his own tickets.
+- **Contract download (#38) fails:** it returns 500 on all his leases (#75). The home also lists the ACTIVE lease below two RENEWED ones (#76).
+- **Arabic portal:** the renter home, My Payments and My Penalties are fully Arabic and RTL (#36 verified). The shared Tickets and Meetings pages are still English (#77).
+- **M04 (renter half):** Ahmed raised **TKT-26/3** "Kitchen sink leaking under the cabinet" (Plumbing, High). It got its reference at once (#20), and his list shows only his own two tickets. The resolve → code → close → rate loop needs staff and renter sessions alternating.
+- **M12 (renter half):** he requested the pool for 10/10/2026 (Pending). His earlier requests show as approved: the pool on 3 Oct and bay B1-01, whose note says the annual fee will be charged. The year-3 renewal carries no parking charge (#78).
+- **M21:** the promotions feed serves him the Gulf Brew "Residents get 20% off" ad, targeted to Miftah Residences. The meeting request correctly explains there's no host, since the org has no staff (#41).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
