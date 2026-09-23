@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,10 @@ export function Pagination({
     onItemsPerPageChange,
     itemsPerPageOptions = [10, 25, 50, 100],
 }: PaginationProps) {
+    // This footer sits under every list in the product, and it was the last
+    // English text left on an Arabic page — "Showing 1-5 of 5" and "25 per page"
+    // rendered untranslated and in LTR word order.
+    const t = useTranslations("Common");
     const totalPages = Math.ceil(totalItems / itemsPerPage);
     const startItem = (currentPage - 1) * itemsPerPage + 1;
     const endItem = Math.min(currentPage * itemsPerPage, totalItems);
@@ -43,7 +48,7 @@ export function Pagination({
     return (
         <div className="flex items-center justify-between gap-4 pt-4 border-t border-border mt-4">
             <div className="flex items-center gap-2 text-xs text-muted">
-                <span>Showing {startItem}-{endItem} of {totalItems}</span>
+                <span>{t("paginationShowing", { start: startItem, end: endItem, total: totalItems })}</span>
                 {onItemsPerPageChange && (
                     <>
                         <span className="text-border">|</span>
@@ -53,7 +58,7 @@ export function Pagination({
                             className="bg-surface border border-border rounded-md px-2 py-1 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                         >
                             {itemsPerPageOptions.map((n) => (
-                                <option key={n} value={n}>{n} per page</option>
+                                <option key={n} value={n}>{t("paginationPerPage", { count: n })}</option>
                             ))}
                         </select>
                     </>

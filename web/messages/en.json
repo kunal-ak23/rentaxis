@@ -1919,6 +1919,8 @@
     "releaseOnlineHint": "The online payment session was never completed. Releasing puts the cheque back on the register as Registered, so it can be collected another way."
   },
   "Common": {
+    "paginationShowing": "Showing {start}-{end} of {total}",
+    "paginationPerPage": "{count} per page",
     "loadFailed": "Couldn't load this. Please try again.",
     "loadFailedGatePasses": "Couldn't load gate passes. Please try again.",
     "loadFailedLeases": "Couldn't load leases. Please try again.",

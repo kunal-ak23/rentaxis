@@ -1919,6 +1919,8 @@
     "releaseOnlineHint": "لم تكتمل جلسة الدفع الإلكتروني. الإلغاء يعيد الشيك إلى السجل بحالة «مسجّل» ليتم تحصيله بطريقة أخرى."
   },
   "Common": {
+    "paginationShowing": "عرض {start}-{end} من {total}",
+    "paginationPerPage": "{count} لكل صفحة",
     "loadFailed": "تعذّر التحميل. يرجى المحاولة مرة أخرى.",
     "loadFailedGatePasses": "تعذّر تحميل تصاريح الدخول. يرجى المحاولة مرة أخرى.",
     "loadFailedLeases": "تعذّر تحميل العقود. يرجى المحاولة مرة أخرى.",

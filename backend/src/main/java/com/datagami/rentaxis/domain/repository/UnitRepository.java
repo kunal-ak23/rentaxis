@@ -16,7 +16,17 @@ import java.util.Optional;
 
 @Repository
 public interface UnitRepository extends JpaRepository<Unit, UUID> {
-    List<Unit> findByPropertyId(UUID propertyId);
+    /**
+     * A property's units, in the order a human reads a building: by unit number.
+     *
+     * <p>The ordering is stated here rather than left to the database, which
+     * returned them in insertion-adjacent but effectively arbitrary order —
+     * creating A-101 … A-302 in sequence listed back as A-101, A-201, A-102,
+     * A-103, A-203, A-202, A-301, A-302. Unusable for a tower of any size, and
+     * it also made the list jump around as rows were updated.</p>
+     */
+    @Query("select u from Unit u where u.property.id = :propertyId order by u.unitNumber asc")
+    List<Unit> findByPropertyId(@Param("propertyId") UUID propertyId);
 
     /**
      * Unit counts per status within the caller's properties — the dashboard's
