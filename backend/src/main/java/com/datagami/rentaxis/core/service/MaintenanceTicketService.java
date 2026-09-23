@@ -453,6 +453,25 @@ public class MaintenanceTicketService {
         return mapToDTO(ticket, requesterId);
     }
 
+    /** One person the ticket can be handed to. */
+    public record AssigneeOption(UUID id, String name, String role) {}
+
+    /**
+     * Who this ticket can be assigned to, for the "Assign To..." picker: the
+     * people {@link #requireAssignableStaff} would accept — ACTIVE tenant admins,
+     * and ACTIVE property managers of the ticket's building, by home tenant or
+     * membership. Only for a caller who could assign it (write reach: an admin,
+     * or a manager of the building); anyone else gets the ticket's 404.
+     */
+    @Transactional(readOnly = true)
+    public List<AssigneeOption> eligibleAssignees(UUID ticketId) {
+        MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
+        UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
+        return userRepository.findTicketAssignees(ticket.getTenantId(), propertyId).stream()
+                .map(u -> new AssigneeOption(u.getId(), u.getName(), u.getRole()))
+                .toList();
+    }
+
     @Transactional
     public MaintenanceTicketDTO assignTicket(UUID ticketId, UUID assignTo, UUID performedBy) {
         MaintenanceTicket ticket = lockedVisibleTicket(ticketId);

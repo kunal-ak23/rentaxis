@@ -2,8 +2,9 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Covers three audited contract bugs on the ticket detail page:
-// 1. GET /api/admin/users is SUPER_ADMIN/TENANT_ADMIN only (UserController) —
-//    the page must not fire it for PROPERTY_MANAGER (guaranteed 403).
+// 1. The "Assign To..." picker lists GET /v1/tickets/{id}/assignees — the people
+//    the assign call accepts for THIS ticket's building — not the org-wide
+//    /api/admin/users (admin-only, and it offered other buildings' managers).
 // 2. The ETA row must read the DTO's estimatedResolutionHours field
 //    (MaintenanceTicketDTO), not a non-existent estimatedHours.
 // 3. Failed status actions (400 with a {message} body) must surface the
@@ -83,7 +84,16 @@ beforeEach(() => {
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("/admin/users")) {
-            return jsonRes([{ id: "s1", name: "PM One", email: "pm@x.com", role: "PROPERTY_MANAGER" }]);
+            return jsonRes([{ id: "s9", name: "PM Other Building", email: "pm9@x.com", role: "PROPERTY_MANAGER" }]);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}/assignees`)) {
+            return jsonRes([
+                { id: "a1", name: "Admin One", role: "TENANT_ADMIN" },
+                { id: "s1", name: "PM This Building", role: "PROPERTY_MANAGER" },
+            ]);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}/assign`)) {
+            return jsonRes({ ...ticket, status: "ASSIGNED", assignedTo: "s1", assigneeName: "PM This Building" });
         }
         if (u.includes("/replies") || u.includes("/attachments") || u.includes("/history")) {
             return jsonRes([]);
@@ -111,23 +121,35 @@ afterEach(() => {
 });
 
 describe("TicketDetailPage API contract", () => {
-    it("does not request /api/admin/users for PROPERTY_MANAGER (endpoint would 403)", async () => {
-        sessionUser.role = "PROPERTY_MANAGER";
-        render(<TicketDetailPage />);
-
-        expect(await screen.findByText("Leaking tap")).toBeTruthy();
+    it("never requests the org-wide /api/admin/users list", async () => {
+        for (const role of ["PROPERTY_MANAGER", "TENANT_ADMIN"]) {
+            sessionUser.role = role;
+            ticket.status = "OPEN";
+            render(<TicketDetailPage />);
+            expect(await screen.findByText("Assign To...")).toBeTruthy();
+            cleanup();
+        }
         const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
         expect(calls.some((u) => u.includes("/admin/users"))).toBe(false);
     });
 
-    it("loads the staff list for TENANT_ADMIN and offers Assign To...", async () => {
-        sessionUser.role = "TENANT_ADMIN";
+    it("offers exactly the ticket's eligible assignees and assigns the one picked", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
         ticket.status = "OPEN";
         render(<TicketDetailPage />);
 
-        expect(await screen.findByText("Assign To...")).toBeTruthy();
-        const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
-        expect(calls.some((u) => u.includes("/admin/users"))).toBe(true);
+        fireEvent.click(await screen.findByText("Assign To..."));
+        expect(screen.getByText("Admin One")).toBeTruthy();
+        expect(screen.getByText("PM This Building")).toBeTruthy();
+        expect(screen.queryByText("PM Other Building")).toBeNull();
+
+        await act(async () => {
+            fireEvent.click(screen.getByText("PM This Building"));
+        });
+        const assign = (global.fetch as ReturnType<typeof vi.fn>).mock.calls
+            .find((c) => String(c[0]).endsWith(`/v1/tickets/${TICKET_ID}/assign`));
+        expect(assign).toBeTruthy();
+        expect(JSON.parse(String((assign![1] as RequestInit).body))).toEqual({ assignTo: "s1" });
     });
 
     it("renders the ETA row from the DTO's estimatedResolutionHours", async () => {

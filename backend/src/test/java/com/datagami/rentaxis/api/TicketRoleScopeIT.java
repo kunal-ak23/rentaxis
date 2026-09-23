@@ -216,6 +216,49 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
         assertThat(assignTo(superAdmin.getId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    /**
+     * The "Assign To..." picker lists exactly who the assign call accepts: active
+     * admins (home or membership) and active managers of the ticket's building.
+     * A manager of another building cannot even ask.
+     */
+    @Test
+    void theAssigneePickerListsOnlyWhoTheTicketCanBeAssignedTo() {
+        UUID foreignTenant = org("TRS-FOREIGN");
+        User foreignAdmin = user(foreignTenant, UserRole.TENANT_ADMIN);
+        User memberAdmin = user(foreignTenant, UserRole.TENANT_ADMIN);
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
+                memberAdmin.getId(), tenantId);
+        TenantContextHolder.setTenantId(tenantId);
+        User renter = user(tenantId, UserRole.RENTER);
+        User inactivePm = user(tenantId, UserRole.PROPERTY_MANAGER);
+        inactivePm.setStatus(UserStatus.INACTIVE);
+        userRepo.save(inactivePm);
+        assign(inactivePm);
+        User pmElsewhere = user(tenantId, UserRole.PROPERTY_MANAGER);
+        User pmHere = user(tenantId, UserRole.PROPERTY_MANAGER);
+        assign(pmHere);
+        User accountant = user(tenantId, UserRole.ACCOUNTANT);
+        TenantContextHolder.clear();
+
+        String path = "/api/v1/tickets/" + otherTicket + "/assignees";
+        ResponseEntity<String> res = call(admin, HttpMethod.GET, path, null);
+        assertThat(res.getStatusCode()).as(res.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(ids(res)).containsExactlyInAnyOrder(
+                admin.getId().toString(), memberAdmin.getId().toString(), pmHere.getId().toString());
+        assertThat(ids(res)).doesNotContain(foreignAdmin.getId().toString(), renter.getId().toString(),
+                inactivePm.getId().toString(), pmElsewhere.getId().toString(), tenantUser.getId().toString());
+
+        // Every name offered is accepted.
+        for (String id : ids(res)) {
+            assertThat(assignTo(UUID.fromString(id)).getStatusCode()).as(id).isEqualTo(HttpStatus.OK);
+        }
+
+        assertThat(ids(call(pmHere, HttpMethod.GET, path, null))).contains(pmHere.getId().toString());
+        assertThat(status(pmElsewhere, HttpMethod.GET, path)).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(status(accountant, HttpMethod.GET, path)).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(status(tenantUser, HttpMethod.GET, path)).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
     // -------------------------------------------------------------- plumbing
 
     private ResponseEntity<String> assignTo(UUID userId) {
