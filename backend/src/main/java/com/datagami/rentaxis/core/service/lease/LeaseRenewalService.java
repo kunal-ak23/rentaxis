@@ -83,6 +83,7 @@ public class LeaseRenewalService {
     private final LeaseChequeRegistrar chequeRegistrar;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
+    private final AdditionalCharges charges;
 
     public LeaseRenewalService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
@@ -92,7 +93,8 @@ public class LeaseRenewalService {
                                ChequeGenerationService chequeGeneration,
                                LeaseChequeRegistrar chequeRegistrar,
                                LeaseAccessPolicy leaseAccessPolicy,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events,
+                               AdditionalCharges charges) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -102,6 +104,7 @@ public class LeaseRenewalService {
         this.chequeRegistrar = chequeRegistrar;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.events = events;
+        this.charges = charges;
     }
 
     // ------------------------------------------------------------------
@@ -284,18 +287,12 @@ public class LeaseRenewalService {
         LocalDate windowStart = previousEnd.plusDays(1);
 
         // ---- stage 1: the request, with nothing written -------------------
-        List<LeaseLineInput> inputs = datedLines(r.lines(), windowStart, r.newEndDate());
-        BigDecimal charged = extensionValue(inputs);
+        List<LeaseLineInput> inputs = charges.dated(r.lines(), windowStart, r.newEndDate(),
+                AdditionalCharges.Act.EXTENSION);
+        BigDecimal charged = charges.valueOf(inputs);
 
         List<ChequeRowInput> rows = r.cheques() == null ? List.of() : r.cheques();
-        BigDecimal collected = BigDecimal.ZERO;
-        for (ChequeRowInput row : rows) {
-            if (row != null && row.amount() != null) collected = collected.add(row.amount());
-        }
-        if (collected.compareTo(charged) != 0) {
-            throw new BusinessRuleViolationException("Cheque rows total " + LeasePostingService.money(collected)
-                    + " but the extension charges " + LeasePostingService.money(charged) + ".");
-        }
+        charges.requireCovered(rows, charged, AdditionalCharges.Act.EXTENSION);
 
         List<String> lockErrors = postingService.periodLockErrors(entryDate, List.of());
         if (!lockErrors.isEmpty()) {
@@ -343,80 +340,5 @@ public class LeaseRenewalService {
 
         return postingService.response(lease, tco,
                 chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()));
-    }
-
-    /**
-     * The extension's lines with their window pinned on.
-     *
-     * <p>A RENT line covers the extension window and nothing else. Leaving it to
-     * {@code LeaseService}'s defaults would give it the lease's <em>whole</em>
-     * term, which per-day recognition would then charge from the original start
-     * date — every month of the original term recognised a second time. A caller
-     * may name a narrower window inside the extension (two rent lines at different
-     * rates, say), but never one that reaches outside it.</p>
-     *
-     * <p>A DEPOSIT line is refused outright. The deposit is held for the tenancy
-     * and the tenancy has not changed; charging another one because the term got
-     * longer would be collecting a second deposit for one set of keys. A renter who
-     * genuinely owes more deposit is charged it as a separate act, not smuggled
-     * into a date change.</p>
-     */
-    private List<LeaseLineInput> datedLines(List<LeaseLineInput> inputs, LocalDate windowStart, LocalDate windowEnd) {
-        if (inputs == null || inputs.isEmpty()) {
-            throw new BusinessRuleViolationException("At least one line is required");
-        }
-        List<LeaseLineInput> out = new ArrayList<>(inputs.size());
-        int seqNo = 0;
-        for (LeaseLineInput in : inputs) {
-            seqNo++;
-            if (in == null) {
-                throw new BusinessRuleViolationException("Line " + seqNo + " is empty");
-            }
-            ChargeType type = leaseService.chargeTypeOf(in, seqNo);
-            String where = "Line " + seqNo + " (" + type.getCode() + ")";
-            if (type.getBehaviour() == ChargeBehaviour.DEPOSIT) {
-                throw new BusinessRuleViolationException(where
-                        + ": an extension cannot charge a deposit — the tenancy's deposit is already held.");
-            }
-            if (type.getBehaviour() != ChargeBehaviour.RENT) {
-                // A fee carries no period; it is charged for the act of extending.
-                out.add(in);
-                continue;
-            }
-            LocalDate from = in.periodStart() != null ? in.periodStart() : windowStart;
-            LocalDate to = in.periodEnd() != null ? in.periodEnd() : windowEnd;
-            if (from.isBefore(windowStart) || to.isAfter(windowEnd) || to.isBefore(from)) {
-                throw new BusinessRuleViolationException(where + ": a rent line must cover part of the extension ("
-                        + windowStart + " to " + windowEnd + "), not " + from + " to " + to + ".");
-            }
-            out.add(new LeaseLineInput(in.chargeTypeId(), in.chargeTypeCode(), in.grossAmount(),
-                    in.discountAmount(), in.narration(), in.vatApplicable(), in.creditAccountId(), from, to));
-        }
-        return out;
-    }
-
-    /**
-     * What the extension charges, VAT included — the figure Σ cheques must equal.
-     *
-     * <p>Computed through {@link LeaseVat} on transient {@code LeaseLine} objects
-     * rather than by multiplying by 5% here. It is the same object the post's own
-     * guard measures, so the two arithmetics cannot round differently, and the
-     * deposit rule and the per-line rounding come along with it for free.</p>
-     */
-    private BigDecimal extensionValue(List<LeaseLineInput> dated) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (int i = 0; i < dated.size(); i++) {
-            LeaseLineInput in = dated.get(i);
-            ChargeType type = leaseService.chargeTypeOf(in, i + 1);
-            BigDecimal gross = in.grossAmount() == null ? BigDecimal.ZERO : in.grossAmount();
-            BigDecimal discount = in.discountAmount() == null ? BigDecimal.ZERO : in.discountAmount();
-
-            LeaseLine probe = new LeaseLine();
-            probe.setChargeType(type);
-            probe.setNetAmount(gross.subtract(discount));
-            probe.setVatApplicable(in.vatApplicable() != null ? in.vatApplicable() : type.isVatApplicableDefault());
-            total = total.add(LeaseVat.grossOf(probe));
-        }
-        return total;
     }
 }
