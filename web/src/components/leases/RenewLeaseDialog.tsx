@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { linesAreValid, renewalRows, splitLineErrors, toInputs, todayIso, type LineRow } from "./leaseMath";
+import { linesAreValid, renewalInputs, renewalRows, splitLineErrors, todayIso, type LineRow } from "./leaseMath";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail } from "@/lib/api/leasing";
 
 /**
@@ -80,7 +80,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 contractDate: contractDate || null,
                 startDate,
                 endDate,
-                lines: copyLines ? null : toInputs(rows, { keepPeriods: false }),
+                lines: copyLines ? null : renewalInputs(rows, chargeTypes, carryDeposit),
                 carryDepositForward: carryDeposit,
             });
             onRenewed(successor);

@@ -95,6 +95,10 @@ export function toRows(lines: LeaseLine[]): LineRow[] {
  * (`LeaseRenewalService.copiedLines`): an addendum's charge and an
  * extension's rent belonged to the old term only and are left out, and a RENT
  * line's narration is cleared because it names the old term's dates (#49).
+ *
+ * The server's third rule — no DEPOSIT line when the deposit is carried
+ * forward — depends on a checkbox that can change after these rows are built,
+ * so it is applied at submit time by `renewalInputs`, not here.
  */
 export function renewalRows(lines: LeaseLine[], termStart: string): LineRow[] {
     return lines
@@ -104,6 +108,24 @@ export function renewalRows(lines: LeaseLine[], termStart: string): LineRow[] {
             const row = toRow(l, i);
             return l.behaviour === "RENT" ? { ...row, narration: "" } : row;
         });
+}
+
+/**
+ * A renewal's explicit lines, as sent. When the old deposit is carried
+ * forward, any DEPOSIT-behaviour line is dropped: sending one as well would
+ * charge the renter a second deposit while the first is JV-moved across — the
+ * server refuses that combination (`LeaseRenewalService.renew`).
+ */
+export function renewalInputs(
+    rows: LineRow[],
+    chargeTypes: ChargeType[],
+    carryDepositForward: boolean,
+): LeaseLineInput[] {
+    const depositTypes = new Set(chargeTypes.filter(c => c.behaviour === "DEPOSIT").map(c => c.id));
+    const kept = carryDepositForward
+        ? rows.filter(r => !(r.chargeTypeId && depositTypes.has(r.chargeTypeId)))
+        : rows;
+    return toInputs(kept, { keepPeriods: false });
 }
 
 /**

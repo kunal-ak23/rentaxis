@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LeaseLine } from "@/lib/api/leasing";
-import { blankLine, fmtIsoDate, linesAreValid, renewalRows, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
+import type { ChargeType, LeaseLine } from "@/lib/api/leasing";
+import { blankLine, fmtIsoDate, linesAreValid, renewalInputs, renewalRows, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
 
 /**
  * `linesAreValid` is the one gate the amend/renew/extend dialogs and the
@@ -213,5 +213,33 @@ describe("renewalRows", () => {
     it("leaves out an addendum's charge and an extension's rent, as the server copy does", () => {
         const rows = renewalRows([base, fee, addendum, extension], "2024-10-01");
         expect(rows.map((r) => r.id)).toEqual(["line-1", "line-2"]);
+    });
+});
+
+describe("renewalInputs (I2: no second deposit when the old one is carried forward)", () => {
+    const types = [
+        { id: "ct-rent", behaviour: "RENT" },
+        { id: "ct-dep", behaviour: "DEPOSIT" },
+        { id: "ct-fee", behaviour: "FEE" },
+    ] as unknown as ChargeType[];
+    const row = (key: number, chargeTypeId: string, grossAmount: number): LineRow => ({
+        ...blankLine(key), chargeTypeId, grossAmount,
+        periodStart: "2024-10-01", periodEnd: "2025-09-30", addendumId: null,
+    });
+    const rows = [row(0, "ct-rent", 48000), row(1, "ct-dep", 5000), row(2, "ct-fee", 500)];
+
+    it("drops the DEPOSIT line when the deposit is carried forward", () => {
+        const out = renewalInputs(rows, types, true);
+        expect(out.map((l) => l.chargeTypeId)).toEqual(["ct-rent", "ct-fee"]);
+    });
+
+    it("keeps it when the deposit is not carried forward (a fresh deposit is charged)", () => {
+        const out = renewalInputs(rows, types, false);
+        expect(out.map((l) => l.chargeTypeId)).toEqual(["ct-rent", "ct-dep", "ct-fee"]);
+    });
+
+    it("sends no periods or addendum tie, like any renewal", () => {
+        const out = renewalInputs(rows, types, true);
+        expect(out.every((l) => l.periodStart === null && l.periodEnd === null && l.addendumId === null)).toBe(true);
     });
 });
