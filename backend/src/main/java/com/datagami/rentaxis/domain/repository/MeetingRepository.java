@@ -22,6 +22,37 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     Page<Meeting> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /** A property manager's meetings: their own, plus those on their buildings (round 5, audit P1-6). */
+    @Query(value = "SELECT m FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds)",
+           countQuery = "SELECT COUNT(m) FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds)")
+    Page<Meeting> findScoped(@Param("tenantId") UUID tenantId,
+                             @Param("userId") UUID userId,
+                             @Param("propertyIds") java.util.Collection<UUID> propertyIds,
+                             Pageable pageable);
+
+    @Query(value = "SELECT m FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId " +
+           "AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds)",
+           countQuery = "SELECT COUNT(m) FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId " +
+           "AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds)")
+    Page<Meeting> findScopedInRange(@Param("tenantId") UUID tenantId,
+                                    @Param("userId") UUID userId,
+                                    @Param("propertyIds") java.util.Collection<UUID> propertyIds,
+                                    @Param("rangeStart") Instant rangeStart,
+                                    @Param("rangeEnd") Instant rangeEnd,
+                                    Pageable pageable);
+
     @Query("SELECT m FROM Meeting m WHERE m.tenantId = :tenantId AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd")
     Page<Meeting> findByTenantIdAndDateRange(@Param("tenantId") UUID tenantId,
                                               @Param("rangeStart") Instant rangeStart,

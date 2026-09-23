@@ -15,10 +15,6 @@ import com.datagami.rentaxis.domain.entity.enums.UnitType;
 import com.datagami.rentaxis.domain.repository.BuildingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
-import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -45,19 +41,19 @@ public class PropertyService {
     private final PropertyRepository repository;
     private final UnitRepository unitRepository;
     private final BuildingRepository buildingRepository;
-    private final UserPropertyAssignmentRepository propertyAssignmentRepository;
+    private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
     private final UserService userService;
     private final PropertyAccountService propertyAccountService;
 
     public PropertyService(PropertyRepository repository, UnitRepository unitRepository,
             BuildingRepository buildingRepository,
-            UserPropertyAssignmentRepository propertyAssignmentRepository,
+            com.datagami.rentaxis.core.security.PropertyScope propertyScope,
             UserService userService,
             PropertyAccountService propertyAccountService) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.buildingRepository = buildingRepository;
-        this.propertyAssignmentRepository = propertyAssignmentRepository;
+        this.propertyScope = propertyScope;
         this.userService = userService;
         this.propertyAccountService = propertyAccountService;
     }
@@ -95,6 +91,20 @@ public class PropertyService {
     public List<Property> getAllProperties() {
         List<Property> all = repository.findAll();
         return filterByRole(all);
+    }
+
+    /**
+     * {@code GET /properties/{id}}: {@link #getPropertyById} plus the caller's
+     * scope. A property manager reads only the buildings assigned to them, as
+     * their list already did (audit D-F7); anything else is "not found".
+     */
+    @Transactional(readOnly = true)
+    public Property getVisibleProperty(UUID id) {
+        Property property = getPropertyById(id);
+        if (filterByRole(List.of(property)).isEmpty()) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Property not found");
+        }
+        return property;
     }
 
     @Transactional(readOnly = true)
@@ -262,28 +272,7 @@ public class PropertyService {
      * PROPERTY_MANAGER only sees assigned properties.
      */
     private List<Property> filterByRole(List<Property> properties) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null)
-            return properties;
-
-        boolean isPropertyManager = auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(a -> a.equals("ROLE_PROPERTY_MANAGER"));
-
-        if (isPropertyManager) {
-            String userId = (String) auth.getPrincipal();
-            UUID userUUID = UUID.fromString(userId);
-            List<UUID> assignedPropertyIds = propertyAssignmentRepository.findByUserId(userUUID)
-                    .stream()
-                    .map(a -> a.getPropertyId())
-                    .toList();
-
-            return properties.stream()
-                    .filter(p -> assignedPropertyIds.contains(p.getId()))
-                    .collect(Collectors.toList());
-        }
-
-        return properties;
+        return propertyScope.filter(properties, Property::getId);
     }
 
     private PropertyStatsDTO calculateStats(Property property) {

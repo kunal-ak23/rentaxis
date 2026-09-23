@@ -51,6 +51,8 @@ public class LeaseAttachmentService {
     public LeaseAttachmentDTO uploadAttachment(UUID leaseId, String docName, MultipartFile file) throws IOException {
         Lease lease = leaseRepository.findById(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
+        // Upload is a write: a manager only on their buildings (audit P1-4).
+        leaseAccessPolicy.requireManageable(lease);
 
         byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
@@ -112,6 +114,9 @@ public class LeaseAttachmentService {
     public void deleteAttachment(UUID attachmentId) {
         LeaseAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        if (!leaseAccessPolicy.canManage(attachment.getLease())) {
+            throw new NotFoundException("Attachment not found");
+        }
         attachmentRepository.delete(attachment);
     }
 

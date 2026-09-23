@@ -1,11 +1,11 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.api.dto.BookingCreateRequest;
 import com.datagami.rentaxis.api.dto.BookingDetailDTO;
 import com.datagami.rentaxis.api.dto.BookingRequestDTO;
 import com.datagami.rentaxis.api.dto.DecisionRequest;
 import com.datagami.rentaxis.api.dto.MyFacilitiesDTO;
-import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.BookingService;
@@ -29,7 +29,6 @@ import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
-import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -79,7 +78,7 @@ public class BookingController {
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;
     private final UserRepository userRepository;
-    private final UserPropertyAssignmentRepository assignmentRepository;
+    private final PropertyScope propertyScope;
     private final PropertyAmenityRepository amenityRepository;
     private final PropertyRepository propertyRepository;
     private final ParkingSpotRepository parkingSpotRepository;
@@ -91,7 +90,7 @@ public class BookingController {
                              LeaseRepository leaseRepository,
                              UnitRepository unitRepository,
                              UserRepository userRepository,
-                             UserPropertyAssignmentRepository assignmentRepository,
+                             PropertyScope propertyScope,
                              PropertyAmenityRepository amenityRepository,
                              PropertyRepository propertyRepository,
                              ParkingSpotRepository parkingSpotRepository,
@@ -102,7 +101,7 @@ public class BookingController {
         this.leaseRepository = leaseRepository;
         this.unitRepository = unitRepository;
         this.userRepository = userRepository;
-        this.assignmentRepository = assignmentRepository;
+        this.propertyScope = propertyScope;
         this.amenityRepository = amenityRepository;
         this.propertyRepository = propertyRepository;
         this.parkingSpotRepository = parkingSpotRepository;
@@ -119,13 +118,8 @@ public class BookingController {
             @RequestParam(required = false) BookingResourceType resourceType,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         Page<BookingRequest> page;
-        if (isPropertyManager() && propertyId == null) {
-            List<UUID> assignedPropertyIds = assignmentRepository
-                    .findByUserId(currentUserId())
-                    .stream()
-                    .map(a -> a.getPropertyId())
-                    .distinct()
-                    .toList();
+        if (propertyScope.isScoped() && propertyId == null) {
+            List<UUID> assignedPropertyIds = propertyScope.scopedPropertyIds();
             page = bookingService.searchAssignedProperties(
                     tenantId(), assignedPropertyIds, status, resourceType, pageable);
         } else {
@@ -301,23 +295,13 @@ public class BookingController {
         return lease.getUnit();
     }
 
-    /** UnitListingController.checkPropertyManagerAccess / AmenityController pattern, keyed on propertyId. */
+    /**
+     * PROPERTY_MANAGER only on their assigned properties, through the shared
+     * {@link PropertyScope} (404 out of scope). A manager must name a property.
+     */
     private void checkPropertyManagerAccess(UUID propertyId) {
-        if (!isPropertyManager()) return;
-
-        if (propertyId == null) {
-            throw new AccessDeniedException("propertyId is required for property managers");
-        }
-        UUID userId = currentUserId();
-        if (!assignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
-            throw new AccessDeniedException("You are not assigned to this property");
-        }
-    }
-
-    private boolean isPropertyManager() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
+        propertyScope.requirePropertyNamedByManager(propertyId);
+        propertyScope.requireCanAccessProperty(propertyId);
     }
 
     private boolean isRenter() {

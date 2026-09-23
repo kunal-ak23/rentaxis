@@ -2,7 +2,9 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DeductionAttachmentDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
 import com.datagami.rentaxis.domain.entity.SettlementDeductionAttachment;
@@ -39,6 +41,8 @@ public class DeductionAttachmentService {
     private final SettlementDeductionAttachmentRepository attachmentRepository;
     private final LeaseSettlementDeductionRepository deductionRepository;
     private final LeaseSettlementRepository settlementRepository;
+    private final LeaseRepository leaseRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
     private static final int MAX_ATTACHMENTS_PER_DEDUCTION = 10;
     private static final long MAX_FILE_SIZE = 250L * 1024 * 1024; // 250MB
@@ -71,8 +75,7 @@ public class DeductionAttachmentService {
             throw new NotFoundException("Deduction not found");
         }
 
-        settlementRepository.findById(deduction.getSettlementId())
-                .orElseThrow(() -> new NotFoundException("Settlement not found"));
+        requireLeaseManageable(deduction);
 
         long count = attachmentRepository.countByDeductionId(deductionId);
         if (count >= MAX_ATTACHMENTS_PER_DEDUCTION) {
@@ -119,6 +122,7 @@ public class DeductionAttachmentService {
         if (currentTenantId != null && !currentTenantId.equals(deduction.getTenantId())) {
             throw new NotFoundException("Deduction not found");
         }
+        requireLeaseManageable(deduction);
 
         return attachmentRepository.findByDeductionIdOrderByUploadedAtAsc(deductionId).stream()
                 .map(this::mapToDTO)
@@ -134,6 +138,7 @@ public class DeductionAttachmentService {
         if (currentTenantId != null && !currentTenantId.equals(attachment.getTenantId())) {
             throw new NotFoundException("Attachment not found");
         }
+        requireLeaseManageable(attachment);
 
         return mapToDTO(attachment);
     }
@@ -155,6 +160,7 @@ public class DeductionAttachmentService {
         if (currentTenantId != null && !currentTenantId.equals(attachment.getTenantId())) {
             throw new NotFoundException("Attachment not found");
         }
+        requireLeaseManageable(attachment);
 
         String url = attachment.getFileUrl();
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
@@ -177,8 +183,7 @@ public class DeductionAttachmentService {
 
         LeaseSettlementDeduction deduction = deductionRepository.findById(attachment.getDeductionId())
                 .orElseThrow(() -> new NotFoundException("Deduction not found"));
-        LeaseSettlement settlement = settlementRepository.findById(deduction.getSettlementId())
-                .orElseThrow(() -> new NotFoundException("Settlement not found"));
+        LeaseSettlement settlement = requireLeaseManageable(deduction);
 
         if (settlement.getStatus() == SettlementStatus.FINALIZED) {
             throw new IllegalStateException("Cannot delete attachments from a finalized settlement");
@@ -256,5 +261,29 @@ public class DeductionAttachmentService {
         dto.setFileSize(a.getFileSize());
         dto.setUploadedAt(a.getUploadedAt());
         return dto;
+    }
+
+    /**
+     * Deduction evidence belongs to a settlement, which belongs to a lease: a
+     * property manager may touch it only on a lease of a building they manage
+     * (audit B-F4). Tenant-wide roles pass. 404, never 403.
+     */
+    private LeaseSettlement requireLeaseManageable(LeaseSettlementDeduction deduction) {
+        LeaseSettlement settlement = settlementRepository.findById(deduction.getSettlementId())
+                .orElseThrow(() -> new NotFoundException("Settlement not found"));
+        if (!leaseAccessPolicy.canManage(leaseRepository.findById(settlement.getLeaseId()).orElse(null))) {
+            throw new NotFoundException("Deduction not found");
+        }
+        return settlement;
+    }
+
+    private void requireLeaseManageable(SettlementDeductionAttachment attachment) {
+        LeaseSettlementDeduction deduction = deductionRepository.findById(attachment.getDeductionId())
+                .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        try {
+            requireLeaseManageable(deduction);
+        } catch (NotFoundException e) {
+            throw new NotFoundException("Attachment not found");
+        }
     }
 }

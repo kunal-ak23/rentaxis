@@ -77,6 +77,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GatePassControllerTest extends AbstractPostgresIT {
 
     @LocalServerPort int port;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository userPropertyAssignmentRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -130,6 +131,18 @@ class GatePassControllerTest extends AbstractPostgresIT {
         LandlordOrg org = new LandlordOrg();
         org.setName("GatePass-" + UUID.randomUUID());
         return orgRepo.save(org);
+    }
+
+    /** A property manager acts only on the buildings assigned to them (round 5, #72). */
+    private void assignIfManager(User user, Property... properties) {
+        if (user.getRole() != UserRole.PROPERTY_MANAGER) return;
+        for (Property p : properties) {
+            com.datagami.rentaxis.domain.entity.UserPropertyAssignment a =
+                    new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+            a.setUserId(user.getId());
+            a.setPropertyId(p.getId());
+            userPropertyAssignmentRepo.save(a);
+        }
     }
 
     private User makeUser(LandlordOrg org, UserRole role) {
@@ -842,7 +855,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
      */
     @ParameterizedTest
     @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
-    void approvalsAreScopedForGuardsButTenantWideForManagers(UserRole managerRole) {
+    void approvalsAreScopedForGuardsAndManagersButTenantWideForAdmins(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property assigned = makeProperty(org);
         Property other = makeProperty(org);
@@ -859,8 +872,15 @@ class GatePassControllerTest extends AbstractPostgresIT {
         assertThat(guardView.get(0).get("guestName").asText()).isEqualTo("Guest Assigned");
 
         User manager = makeUser(org, managerRole);
+        assignIfManager(manager, assigned);
         JsonNode managerView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", manager, null));
-        assertThat(managerView).hasSize(2);
+        // A tenant admin sees the tenant; a property manager the buildings they manage (round 5).
+        if (managerRole == UserRole.PROPERTY_MANAGER) {
+            assertThat(managerView).hasSize(1);
+            assertThat(managerView.get(0).get("guestName").asText()).isEqualTo("Guest Assigned");
+        } else {
+            assertThat(managerView).hasSize(2);
+        }
     }
 
     @Test
@@ -883,6 +903,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
         Fixture f = makeFixture();
         UUID id = UUID.fromString(createPass(f, "Guest Kappa", "RECURRING").get("id").asText());
         User manager = makeUser(f.org(), managerRole);
+        assignIfManager(manager, f.property());
 
         JsonNode res = json(call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/approval", manager,
                 Map.of("approved", true)));
@@ -911,6 +932,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
         assertThat(guardView.get(0).get("guestName").asText()).isEqualTo("Guest Recurring");
 
         User manager = makeUser(f.org(), managerRole);
+        assignIfManager(manager, f.property());
         JsonNode managerView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", manager, null));
         assertThat(managerView).hasSize(1);
         assertThat(managerView.get(0).get("guestName").asText()).isEqualTo("Guest Recurring");
@@ -988,6 +1010,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
         call(HttpMethod.POST, "/api/v1/gatepass/scan", guard, scanBody(pass.get("qrToken").asText(), null, "ENTRY"));
 
         User admin = makeUser(f.org(), managerRole);
+        assignIfManager(admin, f.property());
         String window = "?from=" + Instant.now().minus(1, ChronoUnit.HOURS) + "&to="
                 + Instant.now().plus(1, ChronoUnit.HOURS);
         JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/report" + window, admin, null));
@@ -1135,6 +1158,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
         Property p1 = makeProperty(org);
         Property p2 = makeProperty(org);
         User admin = makeUser(org, managerRole);
+        assignIfManager(admin, p1, p2);
         User guard = makeGuard(org, p1);
 
         // Replace-all: p1 is kept (exercising the delete/insert flush ordering against

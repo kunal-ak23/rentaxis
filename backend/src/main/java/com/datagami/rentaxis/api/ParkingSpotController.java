@@ -1,10 +1,10 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.api.dto.ParkingSpotBulkCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotDTO;
 import com.datagami.rentaxis.api.dto.ParkingSpotUpdateRequest;
-import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.core.service.BookingService;
 import com.datagami.rentaxis.core.service.FacilityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -13,7 +13,6 @@ import com.datagami.rentaxis.domain.entity.ParkingSpotBuildingScope;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotBuildingScopeRepository;
-import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,7 +21,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,18 +46,18 @@ public class ParkingSpotController {
     private final BookingService bookingService;
     private final BookingRequestRepository bookingRequestRepository;
     private final ParkingSpotBuildingScopeRepository spotScopeRepository;
-    private final UserPropertyAssignmentRepository assignmentRepository;
+    private final PropertyScope propertyScope;
 
     public ParkingSpotController(FacilityService facilityService,
                                  BookingService bookingService,
                                  BookingRequestRepository bookingRequestRepository,
                                  ParkingSpotBuildingScopeRepository spotScopeRepository,
-                                 UserPropertyAssignmentRepository assignmentRepository) {
+                                 PropertyScope propertyScope) {
         this.facilityService = facilityService;
         this.bookingService = bookingService;
         this.bookingRequestRepository = bookingRequestRepository;
         this.spotScopeRepository = spotScopeRepository;
-        this.assignmentRepository = assignmentRepository;
+        this.propertyScope = propertyScope;
     }
 
     @GetMapping
@@ -130,19 +128,13 @@ public class ParkingSpotController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * PROPERTY_MANAGER only on their assigned properties, through the shared
+     * {@link PropertyScope} (404 out of scope). A manager must name a property.
+     */
     private void checkPropertyManagerAccess(UUID propertyId) {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean isPm = auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
-        if (!isPm) return;
-
-        if (propertyId == null) {
-            throw new AccessDeniedException("propertyId is required for property managers");
-        }
-        UUID userId = UUID.fromString(auth.getName());
-        if (!assignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
-            throw new AccessDeniedException("You are not assigned to this property");
-        }
+        propertyScope.requirePropertyNamedByManager(propertyId);
+        propertyScope.requireCanAccessProperty(propertyId);
     }
 
     /**

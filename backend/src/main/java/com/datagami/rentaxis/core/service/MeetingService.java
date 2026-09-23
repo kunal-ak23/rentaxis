@@ -7,7 +7,9 @@ import com.datagami.rentaxis.api.dto.SlotDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Meeting;
 import com.datagami.rentaxis.domain.entity.MeetingDetail;
 import com.datagami.rentaxis.domain.entity.User;
@@ -51,6 +53,11 @@ public class MeetingService {
     private final PropertyRepository propertyRepository;
     private final UnitRepository unitRepository;
     private final NotificationService notificationService;
+    private final PropertyScope propertyScope;
+
+    /** Roles that manage meetings tenant-wide (a property manager: within their buildings). */
+    private static final java.util.Set<String> MANAGER_ROLES =
+            java.util.Set.of("PROPERTY_MANAGER", "TENANT_ADMIN", "SUPER_ADMIN");
 
     // ---- Create ----
 
@@ -156,6 +163,7 @@ public class MeetingService {
     public MeetingDTO approveMeeting(UUID meetingId, UUID approverUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, approverUserId);
 
         if (meeting.getStatus() != MeetingStatus.REQUESTED) {
             throw new BusinessRuleViolationException(
@@ -187,9 +195,7 @@ public class MeetingService {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
 
-        boolean isManager = "PROPERTY_MANAGER".equals(role) || "TENANT_ADMIN".equals(role) || "SUPER_ADMIN".equals(role);
-        boolean isInvolved = meeting.getRequesterUserId().equals(cancelledByUserId) || meeting.getHostUserId().equals(cancelledByUserId);
-        if (!isManager && !isInvolved) {
+        if (!canSee(meeting, cancelledByUserId, role)) {
             throw new NotFoundException("Meeting not found");
         }
 
@@ -224,6 +230,7 @@ public class MeetingService {
     public MeetingDTO completeMeeting(UUID meetingId, UUID performedByUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, performedByUserId);
 
         if (meeting.getStatus() != MeetingStatus.APPROVED) {
             throw new BusinessRuleViolationException(
@@ -254,6 +261,7 @@ public class MeetingService {
     public MeetingDTO noShowMeeting(UUID meetingId, UUID performedByUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, performedByUserId);
 
         if (meeting.getStatus() != MeetingStatus.APPROVED) {
             throw new BusinessRuleViolationException(
@@ -284,9 +292,7 @@ public class MeetingService {
     public MeetingDTO getMeeting(UUID meetingId, UUID userId, String role) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
-        boolean isManager = role.equals("PROPERTY_MANAGER") || role.equals("TENANT_ADMIN") || role.equals("SUPER_ADMIN");
-        boolean isInvolved = meeting.getRequesterUserId().equals(userId) || meeting.getHostUserId().equals(userId);
-        if (!isManager && !isInvolved) {
+        if (!canSee(meeting, userId, role)) {
             throw new NotFoundException("Meeting not found");
         }
         return mapToDTO(meeting);
@@ -294,6 +300,14 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> listMeetings(Pageable pageable) {
+        List<UUID> scope = propertyScope.scopedPropertyIds();
+        if (scope != null) {
+            // A property manager: meetings they host or requested, and meetings on
+            // the buildings they manage (audit P1-6). Scoped in the query so the
+            // page and its total agree.
+            return meetingRepository.findScoped(TenantContextHolder.getTenantId(), callerIdOrNull(),
+                    nonEmpty(scope), pageable).map(this::mapToDTO);
+        }
         return meetingRepository.findByTenantId(TenantContextHolder.getTenantId(), pageable).map(this::mapToDTO);
     }
 
@@ -307,6 +321,11 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> getCalendarMeetings(Instant rangeStart, Instant rangeEnd, Pageable pageable) {
+        List<UUID> scope = propertyScope.scopedPropertyIds();
+        if (scope != null) {
+            return meetingRepository.findScopedInRange(TenantContextHolder.getTenantId(), callerIdOrNull(),
+                    nonEmpty(scope), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
+        }
         return meetingRepository.findByTenantIdAndDateRange(TenantContextHolder.getTenantId(), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
     }
 
@@ -373,6 +392,60 @@ public class MeetingService {
         }
 
         return null; // No slots available within 14 days
+    }
+
+    // ---- Access ----
+
+    /** Who may read or cancel: the two parties, and managers within their reach. */
+    private boolean canSee(Meeting meeting, UUID userId, String role) {
+        boolean isInvolved = meeting.getRequesterUserId().equals(userId) || meeting.getHostUserId().equals(userId);
+        if (isInvolved) {
+            return true;
+        }
+        return role != null && MANAGER_ROLES.contains(role) && inManagerScope(meeting);
+    }
+
+    /** approve / complete / no-show: the host, or a manager whose buildings it concerns. */
+    private void requireManagerReach(Meeting meeting, UUID actorUserId) {
+        if (meeting.getHostUserId().equals(actorUserId)) {
+            return;
+        }
+        if (!inManagerScope(meeting)) {
+            throw new NotFoundException("Meeting not found");
+        }
+    }
+
+    private boolean inManagerScope(Meeting meeting) {
+        if (!propertyScope.isScoped()) {
+            return true;
+        }
+        UUID propertyId = propertyOf(meeting);
+        return propertyId != null && propertyScope.canAccessProperty(propertyId);
+    }
+
+    private static UUID propertyOf(Meeting m) {
+        if (m.getProperty() != null) return m.getProperty().getId();
+        if (m.getUnit() != null && m.getUnit().getProperty() != null) return m.getUnit().getProperty().getId();
+        return propertyOf(m.getLease());
+    }
+
+    private static UUID propertyOf(Lease lease) {
+        return lease != null && lease.getUnit() != null && lease.getUnit().getProperty() != null
+                ? lease.getUnit().getProperty().getId() : null;
+    }
+
+    private static UUID callerIdOrNull() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            return auth == null ? null : UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** JPQL {@code IN ()} is not valid SQL; an unmatchable id stands in for "nothing". */
+    private static List<UUID> nonEmpty(List<UUID> ids) {
+        return ids.isEmpty() ? List.of(new UUID(0L, 0L)) : ids;
     }
 
     private String formatSlotForDisplay(Instant slotStart) {

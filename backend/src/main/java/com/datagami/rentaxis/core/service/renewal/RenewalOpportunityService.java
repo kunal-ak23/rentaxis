@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service.renewal;
 
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.RenewalOpportunity;
@@ -32,6 +33,7 @@ public class RenewalOpportunityService {
 
     private final LeaseRepository leaseRepository;
     private final RenewalOpportunityRepository opportunityRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
 
     /** Phase 1: open opportunities for ACTIVE leases entering the 90-day window. */
     @Transactional
@@ -94,6 +96,11 @@ public class RenewalOpportunityService {
     /** Manual close from the PM via mark-renewed endpoint. */
     @Transactional
     public RenewalOpportunity markRenewed(UUID leaseId) {
+        // A manager may close only the renewals of the buildings they manage
+        // (audit B-F3). markRenewedIfOpen stays unchecked: it is the posting path's
+        // internal close, reached only after the posting itself was authorised.
+        leaseAccessPolicy.requireManageable(leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found")));
         return markRenewedIfOpen(leaseId)
                 .orElseThrow(() -> new NotFoundException("No open renewal opportunity for lease " + leaseId));
     }

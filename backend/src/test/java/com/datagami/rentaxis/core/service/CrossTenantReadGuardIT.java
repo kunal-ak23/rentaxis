@@ -98,6 +98,12 @@ class CrossTenantReadGuardIT extends AbstractPostgresIT {
     @Test
     void anotherTenantsDeductionAttachmentCannotBeDownloaded() throws Exception {
         TenantContextHolder.setTenantId(tenantA);
+        // Evidence now also follows its lease's building (round 5, B-F4), so the
+        // reader is somebody: a tenant admin, who sees every building of their own.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        UUID.randomUUID().toString(), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
         Path dir = Path.of(storagePath, "settlement-deductions", "xt-test");
         Files.createDirectories(dir);
         uploaded = dir.resolve(UUID.randomUUID() + ".txt");
@@ -158,7 +164,7 @@ class CrossTenantReadGuardIT extends AbstractPostgresIT {
                 settlement, tenantId, lease);
         jdbc.update("INSERT INTO lease_settlement_deductions (id, settlement_id, tenant_id, category, amount)"
                         + " VALUES (?,?,?,?,?)",
-                deduction, settlement, tenantId, "DAMAGE", new java.math.BigDecimal("100.00"));
+                deduction, settlement, tenantId, "PROPERTY_DAMAGE", new java.math.BigDecimal("100.00"));
         return deduction;
     }
 

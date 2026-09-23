@@ -61,13 +61,13 @@ public class PropertyContactController {
         contact.setAddress(dto.getAddress());
         contact.setNotes(dto.getNotes());
         contact.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
-        return ResponseEntity.ok(service.update(id, contact));
+        return ResponseEntity.ok(service.update(propertyId, id, contact));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<Void> deleteContact(@PathVariable UUID propertyId, @PathVariable UUID id) {
-        service.delete(id);
+        service.delete(propertyId, id);
         return ResponseEntity.noContent().build();
     }
 }

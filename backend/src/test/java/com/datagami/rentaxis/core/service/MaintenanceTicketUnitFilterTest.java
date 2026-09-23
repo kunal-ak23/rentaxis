@@ -71,7 +71,10 @@ class MaintenanceTicketUnitFilterTest {
                 mock(NotificationService.class),
                 mock(ApplicationEventPublisher.class),
                 mock(com.datagami.rentaxis.core.service.ledger.EntryNumberService.class),
-                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class));
+                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class),
+                new com.datagami.rentaxis.core.security.PropertyScope(
+                        new com.datagami.rentaxis.core.security.LeaseAccessPolicy(propertyAssignmentRepository,
+                                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
         when(ticketRepository.findByUnitId(any())).thenReturn(List.of(ticket()));
@@ -92,6 +95,11 @@ class MaintenanceTicketUnitFilterTest {
         t.setTitle("Leaky tap");
         t.setStatus(TicketStatus.OPEN);
         return t;
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -133,6 +141,11 @@ class MaintenanceTicketUnitFilterTest {
 
     @Test
     void propertyManagerWithAUnitIsStillScopedToAssignedProperties() {
+        // The role scope comes from the principal (PropertyScope), as it does over HTTP.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        userId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
         UUID propertyId = UUID.randomUUID();
         UserPropertyAssignment assignment = new UserPropertyAssignment();
         assignment.setUserId(userId);
@@ -149,6 +162,11 @@ class MaintenanceTicketUnitFilterTest {
     /** A manager with no assignments sees nothing, unit filter or not. */
     @Test
     void propertyManagerWithNoAssignmentsQueriesNothing() {
+        // The role scope comes from the principal (PropertyScope), as it does over HTTP.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        userId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
         when(propertyAssignmentRepository.findByUserId(userId)).thenReturn(List.of());
 
         assertThat(service.getTickets(userId, "PROPERTY_MANAGER", unitId)).isEmpty();

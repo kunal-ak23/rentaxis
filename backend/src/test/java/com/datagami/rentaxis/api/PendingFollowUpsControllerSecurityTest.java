@@ -3,8 +3,6 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.config.SecurityConfig;
 import com.datagami.rentaxis.core.security.ApiSecurityFilter;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
-import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.security.PublicRateLimitFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,8 +33,7 @@ class PendingFollowUpsControllerSecurityTest {
 
     @Autowired MockMvc mockMvc;
 
-    @MockitoBean LeaseInteractionRepository interactionRepository;
-    @MockitoBean UserRepository userRepository;
+    @MockitoBean com.datagami.rentaxis.core.service.LeaseInteractionService interactionService;
     @MockitoBean ApiSecurityFilter apiSecurityFilter;
     @MockitoBean PublicRateLimitFilter publicRateLimitFilter;
 
@@ -45,7 +42,7 @@ class PendingFollowUpsControllerSecurityTest {
     @BeforeEach
     void setUp() throws Exception {
         tenantId = UUID.randomUUID();
-        when(interactionRepository.findPendingFollowUps(eq(tenantId), any(LocalDate.class)))
+        when(interactionService.pendingFollowUps(eq(tenantId), any(LocalDate.class)))
                 .thenReturn(List.of());
         doAnswer(invocation -> {
             // Stands in for ApiSecurityFilter, so it does that filter's job of
@@ -75,7 +72,7 @@ class PendingFollowUpsControllerSecurityTest {
         mockMvc.perform(get("/api/v1/renewals/follow-ups").with(withTenant()))
                 .andExpect(status().isOk());
 
-        verify(interactionRepository).findPendingFollowUps(eq(tenantId), any(LocalDate.class));
+        verify(interactionService).pendingFollowUps(eq(tenantId), any(LocalDate.class));
     }
 
     @Test

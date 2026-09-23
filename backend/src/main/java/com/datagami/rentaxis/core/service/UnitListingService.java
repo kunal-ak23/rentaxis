@@ -99,6 +99,17 @@ public class UnitListingService {
     @Transactional(readOnly = true)
     public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter,
                                   UUID propertyId, String q, Pageable pageable) {
+        return list(tenantId, statusFilter, propertyId, null, q, pageable);
+    }
+
+    /**
+     * @param propertyScope the properties the caller is limited to (a property
+     *        manager's assignments), or {@code null} for no limit. Empty selects nothing.
+     */
+    @Transactional(readOnly = true)
+    public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter,
+                                  UUID propertyId, java.util.Collection<UUID> propertyScope,
+                                  String q, Pageable pageable) {
         Specification<UnitListing> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -117,6 +128,18 @@ public class UnitListingService {
                 unitIds.select(unitRoot.get("id"))
                         .where(cb.equal(unitRoot.get("property").get("id"), propertyId));
                 predicates.add(root.get("unitId").in(unitIds));
+            }
+
+            if (propertyScope != null) {
+                if (propertyScope.isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    var scopedUnits = query.subquery(UUID.class);
+                    var scopedRoot = scopedUnits.from(Unit.class);
+                    scopedUnits.select(scopedRoot.get("id"))
+                            .where(scopedRoot.get("property").get("id").in(propertyScope));
+                    predicates.add(root.get("unitId").in(scopedUnits));
+                }
             }
 
             if (q != null && !q.isBlank()) {

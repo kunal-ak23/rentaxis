@@ -59,8 +59,12 @@ class UnitListingControllerTest {
     @Mock
     UnitRepository unitRepository;
 
-    @Mock
-    UserPropertyAssignmentRepository assignmentRepository;
+    /** The real shared scope; a tenant admin (set below) is unscoped. */
+    @org.mockito.Spy
+    com.datagami.rentaxis.core.security.PropertyScope propertyScope =
+            new com.datagami.rentaxis.core.security.PropertyScope(new com.datagami.rentaxis.core.security.LeaseAccessPolicy(
+                    org.mockito.Mockito.mock(UserPropertyAssignmentRepository.class),
+                    org.mockito.Mockito.mock(com.datagami.rentaxis.domain.repository.RenterRepository.class)));
 
     @InjectMocks
     UnitListingController controller;
@@ -101,7 +105,7 @@ class UnitListingControllerTest {
     void list_returns200WithPage() {
         UUID id = UUID.randomUUID();
         Page<UnitListing> page = new PageImpl<>(List.of(sampleListing(id)));
-        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class))).thenReturn(page);
+        when(service.list(eq(tenantId), any(), any(), any(), any(), any(Pageable.class))).thenReturn(page);
 
         ResponseEntity<?> response = controller.list(null, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 20));
@@ -114,14 +118,14 @@ class UnitListingControllerTest {
     void list_forwardsPropertyIdAndQToService() {
         UUID propertyId = UUID.randomUUID();
         Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
-        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class)))
+        when(service.list(eq(tenantId), any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         controller.list(ListingStatus.PUBLISHED, propertyId, "marina", pageable);
 
         // The dashboard search box and property filter depend on these reaching
         // the service — they used to be accepted but silently dropped.
-        verify(service).list(tenantId, ListingStatus.PUBLISHED, propertyId, "marina", pageable);
+        verify(service).list(tenantId, ListingStatus.PUBLISHED, propertyId, null, "marina", pageable);
     }
 
     @Test
@@ -131,7 +135,7 @@ class UnitListingControllerTest {
         java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 2, 1, 9, 0);
         listing.setCreatedAt(created);
 
-        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class)))
+        when(service.list(eq(tenantId), any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(listing)));
         when(service.getSummaryData(List.of(listing))).thenReturn(Map.of(
                 id,

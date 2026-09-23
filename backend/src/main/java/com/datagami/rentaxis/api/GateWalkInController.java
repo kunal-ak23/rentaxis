@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.GatePassDtos.ApprovalDecision;
 import com.datagami.rentaxis.api.dto.GateWalkInDtos.*;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.GatePassService;
 import com.datagami.rentaxis.core.service.GatePassScanService;
 import com.datagami.rentaxis.core.service.GateWalkInService;
@@ -48,6 +49,7 @@ public class GateWalkInController {
     private final UnitRepository unitRepository;
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
+    private final PropertyScope propertyScope;
 
     @GetMapping("/walk-in/destinations")
     @PreAuthorize("hasRole('SECURITY_GUARD')")
@@ -112,6 +114,8 @@ public class GateWalkInController {
         if (hasRole("SECURITY_GUARD")) {
             requireAssignedProperty(pass.getPropertyId());
         }
+        // A property manager sees visitor photos of their own buildings only (audit P1-6).
+        propertyScope.requireCanAccessProperty(pass.getPropertyId(), "Visitor photo not found");
         if (pass.getGuestPhotoBlobPath() == null) {
             throw new NotFoundException("Visitor photo not found");
         }
@@ -219,6 +223,7 @@ public class GateWalkInController {
         Unit unit = unitRepository.findById(request.unitId())
                 .filter(u -> tenantId().equals(u.getTenantId()))
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
+        propertyScope.requireCanAccessUnit(unit, "Unit not found");
         walkInService.registerForUnit(tenantId(), profileId, unit.getId(),
                 request.validFrom(), request.validTo(), request.active());
     }
@@ -230,6 +235,7 @@ public class GateWalkInController {
         if (!propertyRepository.existsByIdAndTenantId(request.propertyId(), tenantId())) {
             throw new NotFoundException("Property not found");
         }
+        propertyScope.requireCanAccessProperty(request.propertyId());
         GateVisitorProfile profile = walkInService.upsertRegisteredVisitor(
                 tenantId(), request.propertyId(), request.unitId(), request.name(), request.phone(),
                 request.visitorType(), request.validFrom(), request.validTo(), request.active());
@@ -270,6 +276,9 @@ public class GateWalkInController {
         if (!propertyRepository.existsByIdAndTenantId(propertyId, tenantId())) {
             throw new NotFoundException("Property not found");
         }
+        // Gate policy is a building's security setting: a property manager changes
+        // (or reads) it only where they manage (audit P1-6).
+        propertyScope.requireCanAccessProperty(propertyId);
         if (buildingId != null) {
             Building building = buildingRepository.findById(buildingId)
                     .orElseThrow(() -> new NotFoundException("Tower not found"));

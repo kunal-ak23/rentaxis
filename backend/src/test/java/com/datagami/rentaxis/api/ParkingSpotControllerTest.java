@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.ParkingSpotCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotDTO;
 import com.datagami.rentaxis.api.dto.ParkingSpotUpdateRequest;
 import com.datagami.rentaxis.api.exception.AccessDeniedException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.BookingService;
 import com.datagami.rentaxis.core.service.FacilityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -18,7 +19,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -69,7 +69,6 @@ class ParkingSpotControllerTest {
     @Mock
     UserPropertyAssignmentRepository assignmentRepository;
 
-    @InjectMocks
     ParkingSpotController controller;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -79,6 +78,7 @@ class ParkingSpotControllerTest {
 
     @BeforeEach
     void setUp() {
+        controller = new ParkingSpotController(facilityService, bookingService, bookingRequestRepository, spotScopeRepository, propertyScope());
         TenantContextHolder.setTenantId(tenantId);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(adminUserId.toString(), null,
@@ -181,13 +181,13 @@ class ParkingSpotControllerTest {
     }
 
     @Test
-    void create_pmWithoutAssignment_throwsAccessDenied() {
+    void create_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.create(
                 new ParkingSpotCreateRequest(propertyId, "B1-07", "B1", null, null)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -225,19 +225,19 @@ class ParkingSpotControllerTest {
     }
 
     @Test
-    void bulk_pmWithoutAssignment_throwsAccessDenied() {
+    void bulk_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.bulkCreate(
                 new ParkingSpotBulkCreateRequest(propertyId, List.of("B1-01", "B1-02"), null, null, null)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
     void bulk_pmWithAssignment_allowed() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(true);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(assignedTo(propertyId));
         List<ParkingSpot> created = List.of(spot("B1-01"), spot("B1-02"));
         when(facilityService.bulkCreateParkingSpots(eq(tenantId), any())).thenReturn(created);
         when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), any(BookingRequestStatus.class)))
@@ -252,15 +252,15 @@ class ParkingSpotControllerTest {
     }
 
     @Test
-    void update_pmWithoutAssignmentOnSpotProperty_throwsAccessDenied() {
+    void update_pmWithoutAssignmentOnSpotProperty_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
         ParkingSpot s = spot("B1-07");
         when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.update(s.getId(),
                 new ParkingSpotUpdateRequest(null, null, null, false, null)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -290,13 +290,27 @@ class ParkingSpotControllerTest {
     }
 
     @Test
-    void delete_pmWithoutAssignment_throwsAccessDenied() {
+    void delete_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
         ParkingSpot s = spot("B1-07");
         when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.deactivate(s.getId()))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    /** The real shared scope over the mocked assignment table: the assignment check is what is under test. */
+    private com.datagami.rentaxis.core.security.PropertyScope propertyScope() {
+        return new com.datagami.rentaxis.core.security.PropertyScope(
+                new com.datagami.rentaxis.core.security.LeaseAccessPolicy(assignmentRepository, scopeRenterRepository));
+    }
+
+    @Mock com.datagami.rentaxis.domain.repository.RenterRepository scopeRenterRepository;
+
+    private static List<com.datagami.rentaxis.domain.entity.UserPropertyAssignment> assignedTo(UUID propertyId) {
+        var a = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        a.setPropertyId(propertyId);
+        return List.of(a);
     }
 }

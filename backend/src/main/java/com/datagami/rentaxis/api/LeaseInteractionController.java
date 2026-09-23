@@ -36,14 +36,15 @@ public class LeaseInteractionController {
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
-    public InteractionDTO update(@PathVariable UUID id, @Valid @RequestBody UpdateInteractionRequest req) {
-        return service.update(id, req);
+    public InteractionDTO update(@PathVariable UUID leaseId, @PathVariable UUID id,
+                                 @Valid @RequestBody UpdateInteractionRequest req) {
+        return service.update(leaseId, id, req);
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        service.softDelete(id);
+    public ResponseEntity<Void> delete(@PathVariable UUID leaseId, @PathVariable UUID id) {
+        service.softDelete(leaseId, id);
         return ResponseEntity.noContent().build();
     }
 }

@@ -90,6 +90,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
 
     @LocalServerPort int port;
     @Autowired LandlordOrgRepository orgRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository userPropertyAssignmentRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired PropertyRepository propertyRepo;
@@ -137,6 +138,18 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
         LandlordOrg org = new LandlordOrg();
         org.setName("WalkIn-" + UUID.randomUUID());
         return orgRepo.save(org);
+    }
+
+    /** A property manager acts only on the buildings assigned to them (round 5, #72). */
+    private void assignIfManager(User user, Property... properties) {
+        if (user.getRole() != UserRole.PROPERTY_MANAGER) return;
+        for (Property p : properties) {
+            com.datagami.rentaxis.domain.entity.UserPropertyAssignment a =
+                    new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+            a.setUserId(user.getId());
+            a.setPropertyId(p.getId());
+            userPropertyAssignmentRepo.save(a);
+        }
     }
 
     private User makeUser(LandlordOrg org, UserRole role) {
@@ -507,6 +520,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
 
         // The manager marks them as a standing vendor for that unit...
         User manager = makeUser(f.org(), UserRole.PROPERTY_MANAGER);
+        assignIfManager(manager, f.property());
         UUID profileId = UUID.fromString(before.get("id").asText());
         assertThat(call(HttpMethod.PUT, "/api/v1/gatepass/visitors/" + profileId + "/registration", manager,
                 Map.of("unitId", f.unit().getId().toString(), "active", true)).getStatusCode())
@@ -840,6 +854,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
         LandlordOrg org = makeOrg();
         Property property = makeProperty(org);
         User manager = makeUser(org, managerRole);
+        assignIfManager(manager, property);
         String query = "?propertyId=" + property.getId();
 
         JsonNode written = json(call(HttpMethod.PUT, "/api/v1/gatepass/policies" + query, manager,
@@ -946,6 +961,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
         // Strangers wait; the point of the registration is that this one does not.
         approvalGate(f);
         User manager = makeUser(f.org(), UserRole.PROPERTY_MANAGER);
+        assignIfManager(manager, f.property());
         User guard = makeGuard(f.org(), f.property());
 
         JsonNode created = json(call(HttpMethod.POST, "/api/v1/gatepass/visitors/registration", manager,

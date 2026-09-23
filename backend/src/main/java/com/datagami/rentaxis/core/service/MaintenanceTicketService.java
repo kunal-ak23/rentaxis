@@ -56,6 +56,7 @@ public class MaintenanceTicketService {
     private final ApplicationEventPublisher events;
     private final com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumberService;
     private final com.datagami.rentaxis.domain.repository.RenterRepository renterRepository;
+    private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -115,11 +116,33 @@ public class MaintenanceTicketService {
         throw new NotFoundException("Ticket not found");
     }
 
-    /** The ticket, when it exists in the tenant and the caller may reach it. */
+    /** Reading a ticket, or changing it. Some roles may do the first and not the second. */
+    private enum Access { READ, WRITE }
+
+    /**
+     * Whether the caller may reach this ticket at all. One place for every role:
+     * a renter reaches their own (#342); a property manager the tickets of their
+     * assigned properties (audit #72); tenant-wide roles everything.
+     * Out of reach is the same 404 as a ticket that does not exist.
+     */
+    private void requireCanReach(MaintenanceTicket ticket, Access access) {
+        if (callerIsRenter()) {
+            requireRenterOwns(ticket);
+            return;
+        }
+        UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
+        propertyScope.requireCanAccessProperty(propertyId, "Ticket not found");
+    }
+
+    /** The ticket, when it exists in the tenant and the caller may read it. */
     private MaintenanceTicket visibleTicket(UUID ticketId) {
+        return visibleTicket(ticketId, Access.READ);
+    }
+
+    private MaintenanceTicket visibleTicket(UUID ticketId, Access access) {
         MaintenanceTicket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
-        requireRenterOwns(ticket);
+        requireCanReach(ticket, access);
         return ticket;
     }
 
@@ -132,7 +155,7 @@ public class MaintenanceTicketService {
      */
     private MaintenanceTicket lockedVisibleTicket(UUID ticketId) {
         MaintenanceTicket ticket = lockedTicket(ticketId);
-        requireRenterOwns(ticket);
+        requireCanReach(ticket, Access.WRITE);
         return ticket;
     }
 
@@ -141,9 +164,9 @@ public class MaintenanceTicketService {
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
     }
 
-    /** For the sub-resource reads: a renter must own the ticket first. */
-    private void requireRenterOwns(UUID ticketId) {
-        if (callerIsRenter()) visibleTicket(ticketId);
+    /** For the sub-resource reads: the caller must be able to reach the ticket first. */
+    private void requireCanRead(UUID ticketId) {
+        visibleTicket(ticketId, Access.READ);
     }
 
     /** The journal_entry_sequences series for ticket references (#20). */
@@ -160,6 +183,7 @@ public class MaintenanceTicketService {
         }
         Property property = propertyRepository.findById(dto.getPropertyId())
                 .orElseThrow(() -> new NotFoundException("Property not found"));
+        propertyScope.requireCanAccessProperty(property.getId());
 
         MaintenanceTicket ticket = new MaintenanceTicket();
         ticket.setProperty(property);
@@ -334,10 +358,8 @@ public class MaintenanceTicketService {
             }
         } else if ("PROPERTY_MANAGER".equals(role)) {
             // Property managers see tickets for their assigned properties
-            List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByUserId(userId);
-            List<UUID> propertyIds = assignments.stream()
-                    .map(UserPropertyAssignment::getPropertyId)
-                    .collect(Collectors.toList());
+            List<UUID> propertyIds = propertyScope.scopedPropertyIds();
+            if (propertyIds == null) propertyIds = List.of(); // role/principal disagree: fail closed
             if (propertyIds.isEmpty()) {
                 tickets = List.of();
             } else {
@@ -362,7 +384,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO assignTicket(UUID ticketId, UUID assignTo, UUID performedBy) {
-        MaintenanceTicket ticket = lockedTicket(ticketId);
+        MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
         UUID previousAssignee = ticket.getAssignedTo();
         String previousStatus = ticket.getStatus() != null ? ticket.getStatus().name() : null;
@@ -737,12 +759,8 @@ public class MaintenanceTicketService {
 
     /** False only for a property manager not assigned to the ticket's property. */
     private boolean propertyManagerAssigned(MaintenanceTicket ticket) {
-        if (!callerHasRole("PROPERTY_MANAGER")) return true;
-        UUID caller = callerUserId();
-        if (caller == null) return false;
         UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
-        return propertyAssignmentRepository.findByUserId(caller).stream()
-                .anyMatch(a -> a.getPropertyId().equals(propertyId));
+        return propertyScope.canAccessProperty(propertyId);
     }
 
     /** The caller's user id from the verified principal, or {@code null}. */
@@ -821,7 +839,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO setEstimate(UUID ticketId, Integer hours) {
-        MaintenanceTicket ticket = lockedTicket(ticketId);
+        MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
         ticket.setEstimatedResolutionHours(hours);
         MaintenanceTicket saved = ticketRepository.save(ticket);
@@ -852,7 +870,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public TicketReplyDTO addReply(UUID ticketId, UUID userId, String message) {
-        MaintenanceTicket ticket = visibleTicket(ticketId);
+        MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
 
         // Resolve user name from ID (filter-bypassing: superadmins have
         // tenant_id = NULL and are invisible to the tenant-filtered findById)
@@ -884,7 +902,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public List<TicketReplyDTO> getReplies(UUID ticketId) {
-        requireRenterOwns(ticketId);
+        requireCanRead(ticketId);
         return replyRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
                 .map(this::mapReplyToDTO)
                 .collect(Collectors.toList());
@@ -894,7 +912,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public java.util.List<TicketAttachmentDTO> getAttachments(UUID ticketId) {
-        requireRenterOwns(ticketId);
+        requireCanRead(ticketId);
         return attachmentRepository.findByTicketId(ticketId).stream()
                 .map(this::mapAttachmentToDTO)
                 .collect(Collectors.toList());
@@ -904,7 +922,7 @@ public class MaintenanceTicketService {
     public void deleteAttachment(UUID attachmentId) {
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
-        requireRenterOwnsAttachment(attachment);
+        requireCanReachAttachment(attachment, Access.WRITE);
         // A renter deletes only what they uploaded, never staff's evidence
         // photos or invoices on their ticket (PR #342 review r3 M8).
         if (callerIsRenter() && !Objects.equals(attachment.getUploadedBy(), callingRenterUserId())) {
@@ -917,7 +935,7 @@ public class MaintenanceTicketService {
     public byte[] downloadAttachment(UUID attachmentId) {
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
-        requireRenterOwnsAttachment(attachment);
+        requireCanReachAttachment(attachment, Access.READ);
         String url = attachment.getFileUrl();
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
             String marker = ".blob.core.windows.net/";
@@ -944,7 +962,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
-        MaintenanceTicket ticket = visibleTicket(ticketId);
+        MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
 
         byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
@@ -968,11 +986,10 @@ public class MaintenanceTicketService {
         return mapAttachmentToDTO(attachmentRepository.save(attachment));
     }
 
-    /** An attachment on a ticket the renter does not own is "not found" to them. */
-    private void requireRenterOwnsAttachment(TicketAttachment attachment) {
-        if (!callerIsRenter()) return;
+    /** An attachment on a ticket the caller cannot reach is "not found" to them. */
+    private void requireCanReachAttachment(TicketAttachment attachment, Access access) {
         try {
-            requireRenterOwns(attachment.getTicket());
+            requireCanReach(attachment.getTicket(), access);
         } catch (NotFoundException e) {
             throw new NotFoundException("Attachment not found");
         }
@@ -999,7 +1016,12 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public TicketReportDTO getReport(UUID propertyId, java.time.LocalDate startDate, java.time.LocalDate endDate) {
-        List<MaintenanceTicket> allTickets = ticketRepository.findAll();
+        if (propertyId != null) {
+            propertyScope.requireCanAccessProperty(propertyId);
+        }
+        // A property manager's report covers their buildings, not the tenant.
+        List<MaintenanceTicket> allTickets = propertyScope.filter(ticketRepository.findAll(),
+                t -> t.getProperty() != null ? t.getProperty().getId() : null);
 
         // Apply filters
         if (propertyId != null) {
@@ -1251,7 +1273,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public java.util.List<TicketHistoryDTO> getHistory(UUID ticketId) {
-        requireRenterOwns(ticketId);
+        requireCanRead(ticketId);
         return historyRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
                 .map(this::mapHistoryToDTO)
                 .collect(java.util.stream.Collectors.toList());

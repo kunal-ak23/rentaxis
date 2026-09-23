@@ -65,7 +65,10 @@ class MaintenanceTicketServiceTest {
                 userRepository, propertyAssignmentRepository, historyRepository,
                 landlordOrgRepository, notificationService, events,
                 mock(com.datagami.rentaxis.core.service.ledger.EntryNumberService.class),
-                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class));
+                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class),
+                new com.datagami.rentaxis.core.security.PropertyScope(
+                        new com.datagami.rentaxis.core.security.LeaseAccessPolicy(propertyAssignmentRepository,
+                                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
     }
@@ -227,6 +230,8 @@ class MaintenanceTicketServiceTest {
         attachment.setUploadedAt(Instant.parse("2026-08-01T10:00:00Z"));
 
         when(attachmentRepository.findByTicketId(ticketId)).thenReturn(List.of(attachment));
+        // Every role now resolves the ticket first: the reach check is not renter-only.
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(t));
 
         List<TicketAttachmentDTO> dtos = service.getAttachments(ticketId);
 
