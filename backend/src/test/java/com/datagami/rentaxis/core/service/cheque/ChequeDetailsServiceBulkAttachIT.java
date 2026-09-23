@@ -412,6 +412,73 @@ class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
         assertThat(reread().get(1).getImageBlobPath()).isNull();
     }
 
+    @jakarta.persistence.PersistenceContext
+    jakarta.persistence.EntityManager em;
+
+    /**
+     * The scan a cheque holds now is locked up front with the scans being
+     * claimed (one statement, blob-path order), not updated blind by the
+     * release. When another transaction holds it past the lock timeout, the
+     * attach is a 409 that says to retry, not a 500, and nothing is written.
+     */
+    @Test
+    void aHeldScanThatCannotBeLockedIsAConflictAndNothingIsWritten() throws Exception {
+        UUID cheque = register.get(0).getId();
+        BulkAttachChequeItem first = item(cheque, "C-1");
+        details.bulkAttach(leaseId, List.of(first));
+        String held = first.getImageBlobPath();
+
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<?> holder = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    tx.executeWithoutResult(s -> {
+                        imageUploads.findByTenantIdAndBlobPathForUpdate(tenantId, held).orElseThrow();
+                        locked.countDown();
+                        try {
+                            release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+            assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            BulkAttachChequeItem replace = item(cheque, "C-1");
+            try {
+                assertThatThrownBy(() -> tx.executeWithoutResult(s -> {
+                    em.createNativeQuery("set local lock_timeout = '300ms'").executeUpdate();
+                    details.bulkAttach(leaseId, List.of(replace));
+                }))
+                        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                        .satisfies(e -> {
+                            var rse = (org.springframework.web.server.ResponseStatusException) e;
+                            assertThat(rse.getStatusCode().value()).isEqualTo(409);
+                            assertThat(rse.getReason()).isEqualTo(ChequeDetailsService.SCANS_BEING_UPDATED);
+                        });
+            } finally {
+                release.countDown();
+            }
+            holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+            assertThat(reread().get(0).getImageBlobPath()).isEqualTo(held);
+            assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, held).orElseThrow().getChequeId())
+                    .isEqualTo(cheque);
+            assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, replace.getImageBlobPath()).orElseThrow()
+                    .getChequeId()).isNull();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     /** Replacing a cheque's scan releases the old one: one cheque, one claim (changeset 105). */
     @Test
     void replacingAScanReleasesTheOldClaim() {

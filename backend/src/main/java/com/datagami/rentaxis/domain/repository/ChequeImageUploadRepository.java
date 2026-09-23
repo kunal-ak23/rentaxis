@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,6 +29,23 @@ public interface ChequeImageUploadRepository extends JpaRepository<ChequeImageUp
     @Query("select u from ChequeImageUpload u where u.tenantId = :tenantId and u.blobPath = :blobPath")
     Optional<ChequeImageUpload> findByTenantIdAndBlobPathForUpdate(@Param("tenantId") UUID tenantId,
                                                                     @Param("blobPath") String blobPath);
+
+    /**
+     * Every scan a bulk-attach will write, locked in one statement in blob-path
+     * order: the scans being claimed ({@code paths}) and the scans the target
+     * cheques hold now ({@code chequeIds}), which the attach may release.
+     *
+     * <p>One ordered statement, so two concurrent attaches take the row locks in
+     * the same order and cannot deadlock on each other; and the release updates
+     * then touch only rows this transaction already holds. Waits (no NOWAIT), for
+     * the reason {@link #findByTenantIdAndBlobPathForUpdate} gives.</p>
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from ChequeImageUpload u where u.tenantId = :tenantId"
+            + " and (u.blobPath in :paths or u.chequeId in :chequeIds) order by u.blobPath")
+    List<ChequeImageUpload> lockForAttach(@Param("tenantId") UUID tenantId,
+                                          @Param("paths") Collection<String> paths,
+                                          @Param("chequeIds") Collection<UUID> chequeIds);
 
     /**
      * Releases every scan a cheque holds except {@code keepId}, so the cheque can

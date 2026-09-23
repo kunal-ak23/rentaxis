@@ -17,8 +17,10 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -67,6 +70,9 @@ public class ChequeDetailsService {
 
     private static final String BEING_UPDATED =
             "This cheque is being updated by another request. Please try again.";
+
+    static final String SCANS_BEING_UPDATED =
+            "These cheques or their scans are being updated by another request. Nothing was saved; please try again.";
 
     private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;
@@ -142,6 +148,17 @@ public class ChequeDetailsService {
      */
     @Transactional
     public List<ChequeDTO> bulkAttach(UUID leaseId, List<BulkAttachChequeItem> items) {
+        try {
+            return doBulkAttach(leaseId, items);
+        } catch (PessimisticLockingFailureException e) {
+            // A lock wait that timed out, or a deadlock Postgres broke by aborting
+            // this transaction (CannotAcquireLockException is a subtype). Either
+            // way nothing was written; the same request a moment later succeeds.
+            throw new ResponseStatusException(HttpStatus.CONFLICT, SCANS_BEING_UPDATED);
+        }
+    }
+
+    private List<ChequeDTO> doBulkAttach(UUID leaseId, List<BulkAttachChequeItem> items) {
         if (items == null || items.isEmpty()) {
             throw new BulkAttachValidationException("items must not be empty");
         }
@@ -223,6 +240,28 @@ public class ChequeDetailsService {
         // deletes whatever path a cheque carries, so a client-chosen path was a
         // delete-any-blob-in-the-tenant primitive. Keeping the path the row
         // already has is always allowed (rows scanned before this check existed).
+        //
+        // Locked: "not yet claimed" must still hold when this call claims it. The
+        // scans to claim and the scans the target cheques hold now (which the
+        // write below may release) are locked together, in blob-path order, so
+        // two overlapping attaches cannot deadlock and every row the release
+        // updates touch is already this transaction's.
+        Set<String> pathsToClaim = new TreeSet<>();
+        for (BulkAttachChequeItem it : items) {
+            Cheque c = byId.get(it.targetId());
+            String path = blankToNull(it.getImageBlobPath());
+            if (c != null && path != null && !path.equals(c.getImageBlobPath())) {
+                pathsToClaim.add(path);
+            }
+        }
+        Map<String, com.datagami.rentaxis.domain.entity.ChequeImageUpload> lockedScans = new HashMap<>();
+        if (!byId.isEmpty()) {
+            // "" never names a scan; it stands in for an empty IN list.
+            for (var u : imageUploads.lockForAttach(tenantId,
+                    pathsToClaim.isEmpty() ? List.of("") : pathsToClaim, byId.keySet())) {
+                lockedScans.put(u.getBlobPath(), u);
+            }
+        }
         Map<UUID, com.datagami.rentaxis.domain.entity.ChequeImageUpload> issuedImages = new HashMap<>();
         Set<String> seenPaths = new HashSet<>();
         for (BulkAttachChequeItem it : items) {
@@ -235,8 +274,7 @@ public class ChequeDetailsService {
             if (c == null || path == null || path.equals(c.getImageBlobPath())) {
                 continue;
             }
-            // Locked: "not yet claimed" must still hold when this call claims it.
-            var issued = imageUploads.findByTenantIdAndBlobPathForUpdate(tenantId, path).orElse(null);
+            var issued = lockedScans.get(path);
             if (issued == null || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
                 bad.add(new BulkAttachErrorRow(it.targetId(), "image_not_issued"));
             } else {
