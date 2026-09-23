@@ -477,11 +477,28 @@ describe("Which contracts may be settled", () => {
         expect(screen.getByTestId("settlement-finalize")).toBeInTheDocument();
     });
 
-    it("reads a CLOSED contract's statement without offering to finalise it", async () => {
+    it("reads a CLOSED contract's statement without offering to finalise or terminate it", async () => {
         api.lease.mockResolvedValue({ ...LEASE, status: "CLOSED" });
         renderPage();
-        expect(await screen.findByTestId("settlement-not-settleable")).toHaveTextContent("this one is Closed");
+        await screen.findByTestId("settlement-earned-rent");
         expect(screen.queryByTestId("settlement-finalize")).toBeNull();
+        // Gap #51: a CLOSED contract has nothing left to terminate.
+        expect(screen.queryByTestId("settlement-not-settleable")).toBeNull();
+        expect(screen.queryByTestId("settlement-terminate-link")).toBeNull();
+    });
+
+    it("drops the terminate-first prompt once the settlement is finalized (#51)", async () => {
+        api.lease.mockResolvedValue({ ...LEASE, status: "ACTIVE" });
+        api.get.mockResolvedValue(
+            stored({
+                status: "FINALIZED", settledAt: "2026-04-05T09:00:00Z", settledByName: "System Admin",
+                settlementDate: "2026-04-05", journalId: "j9", journalNumber: "STL-26/1",
+            }),
+        );
+        renderPage();
+        expect(await screen.findByTestId("settlement-read-only")).toBeInTheDocument();
+        expect(screen.queryByTestId("settlement-not-settleable")).toBeNull();
+        expect(screen.queryByTestId("settlement-terminate-link")).toBeNull();
     });
 });
 
