@@ -335,6 +335,22 @@ they rest on the integration tests that pin each rule:
 - **X01:** `LeaseAccessPolicyTest` (21/21): a renter sees only their own lease, is refused
   anyone else's, and the refusal does not reveal that the lease exists.
 
+**M28 · 23 Sep 2026 — Ahmed renews for year 3 (the #49 fix, live).** Ahmed's 2025–26
+contract ends 30/09 and still carries the stale narration "Annual rent 01 Oct 2024 - 30
+Sep 2025" from his first renewal, the #49 bug itself. *Renew* with "copy the charge lines"
+and "carry deposit forward" produced a draft for 01/10/2026–30/09/2027:
+- The RENT line has a **blank** narration (91,800, re-dated to the new term).
+- The mid-term parking addendum line was **left out**, and the deposit was carried, not
+  copied.
+- The cheque generator defaulted to the lease's own LAST_LARGER distribution (#46): four
+  ADCB PDCs of 22,950, 200301–200304.
+- The review showed 91,800, no VAT (residential) and a 22,000 deposit carried forward.
+  Posted as **TCO-26/4**; its lines read "Rent", and the year-2 lease is RENEWED.
+- Rent is unchanged at 91,800 because there is still no escalation on renewal (#24).
+
+An invented lease id (`/leases/b4880f85`) now shows the friendly "Contract not found"
+panel (#47, generalised in #339).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
