@@ -1720,6 +1720,7 @@
     "removeFilter": "Remove this filter"
   },
   "Leasing": {
+    "renewCopiedChargesNotice": "{count, plural, one {This charge will} other {These charges will}} be copied to the new term: {list}. Untick “Copy the charge lines” to edit {count, plural, one {it} other {them}}.",
     "noticeGivenBy": "Given by",
     "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
     "noticeDate": "Notice date",

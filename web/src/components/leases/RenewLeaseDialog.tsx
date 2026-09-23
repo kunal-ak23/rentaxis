@@ -5,7 +5,19 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
 import { linesAreValid, renewalRows, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
-import { ApiError, leaseApi, type ChargeType, type LeaseDetail } from "@/lib/api/leasing";
+import { ApiError, leaseApi, type ChargeType, type LeaseDetail, type LeaseLine } from "@/lib/api/leasing";
+import { fmtAmount } from "@/lib/api/ledger";
+
+/**
+ * The lines "copy the charge lines" will carry into the new term that are not
+ * rent or deposit — the one-off charges, like an admin fee (#23). Mirrors
+ * `LeaseRenewalService.copiedLines`, which skips addendum lines and copies every
+ * other FEE line unchanged. What gets copied is a pending product decision; this
+ * only makes sure nobody re-bills a signing fee without seeing it.
+ */
+export function copiedOneOffCharges(lines: LeaseLine[]): LeaseLine[] {
+    return lines.filter(l => l.behaviour === "FEE" && !l.addendumId);
+}
 
 /**
  * Next year's contract, drafted from this one.
@@ -53,6 +65,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [copyLines, setCopyLines] = useState(true);
+    const oneOffs = copiedOneOffCharges(lease.lines ?? []);
     const [carryDeposit, setCarryDeposit] = useState(true);
     const [rows, setRows] = useState<LineRow[]>([]);
     const [busy, setBusy] = useState(false);
@@ -166,6 +179,19 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     />
                     {t("carryDepositForward")}
                 </label>
+
+                {copyLines && oneOffs.length > 0 && (
+                    <p
+                        role="note"
+                        data-testid="renew-copied-charges"
+                        className="text-[11px] text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2"
+                    >
+                        {t("renewCopiedChargesNotice", {
+                            count: oneOffs.length,
+                            list: oneOffs.map(l => `${l.chargeTypeName} ${fmtAmount(l.netAmount)}`).join(", "),
+                        })}
+                    </p>
+                )}
 
                 {!copyLines && (
                     <LeaseLinesGrid

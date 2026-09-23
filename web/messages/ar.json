@@ -1720,6 +1720,7 @@
     "removeFilter": "إزالة هذا المرشّح"
   },
   "Leasing": {
+    "renewCopiedChargesNotice": "{count, plural, one {سيُنسخ هذا الرسم} two {سيُنسخ هذان الرسمان} few {ستُنسخ هذه الرسوم} many {ستُنسخ هذه الرسوم} other {ستُنسخ هذه الرسوم}} إلى المدة الجديدة: {list}. ألغِ تحديد «نسخ بنود الرسوم» لتعديل{count, plural, one {ه} two {هما} other {ها}}.",
     "noticeGivenBy": "مقدَّم من",
     "noticeParty": {"RENTER": "المستأجر", "LANDLORD": "المالك"},
     "noticeDate": "تاريخ الإشعار",
