@@ -332,6 +332,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(tenantId: tenantId);
   }
 
+  /// Swaps in the replacement bearer token the backend issues when it revokes
+  /// the current one (password change). Identity keys are unchanged.
+  Future<void> replaceAuthToken(String token) async {
+    await _storage.write(key: 'authToken', value: token);
+  }
+
   Future<void> logout() async {
     await _clearStorage();
     TenantContext.currentTenantId = null;

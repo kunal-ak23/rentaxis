@@ -205,10 +205,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isChangingPassword = true);
     try {
       final service = ref.read(_authServiceProvider);
-      await service.changePassword(
+      final newToken = await service.changePassword(
         _currentPasswordController.text,
         _newPasswordController.text,
       );
+      // The old token was revoked with the old password; keep this device
+      // signed in with the replacement.
+      if (newToken != null) {
+        await ref.read(authProvider.notifier).replaceAuthToken(newToken);
+      }
       if (mounted) {
         _currentPasswordController.clear();
         _newPasswordController.clear();
