@@ -204,6 +204,39 @@ public class MaintenanceTicketService {
      */
     @Transactional(readOnly = true)
     public List<MaintenanceTicketDTO> getTickets(UUID userId, String role, UUID unitId) {
+        return getTickets(userId, role, unitId, null);
+    }
+
+    /**
+     * @param renterId optional (web review I3). Narrows the caller's list to one
+     *        renter's record — tickets logged on their behalf, raised on one of
+     *        their contracts, or reported from their portal account — so the
+     *        renter page no longer downloads the tenant's whole maintenance
+     *        history to filter it in the browser. The renter is resolved in the
+     *        caller's tenant (a foreign or unknown id is a 404), and the role
+     *        scope below still applies: it narrows, it never widens.
+     */
+    @Transactional(readOnly = true)
+    public List<MaintenanceTicketDTO> getTickets(UUID userId, String role, UUID unitId, UUID renterId) {
+        List<MaintenanceTicket> tickets = scopedTickets(userId, role, unitId);
+        if (renterId != null) {
+            Renter renter = renterRepository.findById(renterId)
+                    .filter(r -> TenantContextHolder.getTenantId() == null
+                            || TenantContextHolder.getTenantId().equals(r.getTenantId()))
+                    .orElseThrow(() -> new NotFoundException("Renter not found"));
+            Set<UUID> ofRenter = (renter.getUserId() != null
+                    ? ticketRepository.findForRenterRecord(renter.getId(), renter.getUserId())
+                    : ticketRepository.findForRenterRecordWithoutAccount(renter.getId()))
+                    .stream().map(MaintenanceTicket::getId).collect(Collectors.toSet());
+            tickets = tickets.stream().filter(t -> ofRenter.contains(t.getId())).toList();
+        }
+        return tickets.stream()
+                .map(t -> mapToDTO(t, userId))
+                .collect(Collectors.toList());
+    }
+
+    /** The tickets the caller's role may see, optionally narrowed to one unit. */
+    private List<MaintenanceTicket> scopedTickets(UUID userId, String role, UUID unitId) {
         List<MaintenanceTicket> tickets;
 
         if ("RENTER".equals(role) || "TENANT_USER".equals(role)) {
@@ -240,10 +273,7 @@ public class MaintenanceTicketService {
                     ? ticketRepository.findByUnitId(unitId)
                     : ticketRepository.findAll();
         }
-
-        return tickets.stream()
-                .map(t -> mapToDTO(t, userId))
-                .collect(Collectors.toList());
+        return tickets;
     }
 
     @Transactional(readOnly = true)

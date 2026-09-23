@@ -65,7 +65,10 @@ beforeEach(() => {
         if (u.endsWith("/v1/renters/r1/leases")) return res(leasesStatus, leaseRows);
         if (u.includes("/leases/L1/cheques")) return jsonRes(cheques);
         if (u.includes("/leases/L2/cheques")) return res(chequesStatus, []);
-        if (u.includes("/v1/tickets")) return res(ticketsStatus, tickets);
+        // The server filters by renter (GET /tickets?renterId=); "t-other" is
+        // what an unfiltered list would add.
+        if (u.endsWith("/v1/tickets?renterId=r1")) return res(ticketsStatus, tickets.filter(tk => tk.id !== "t-other"));
+        if (u.endsWith("/v1/tickets")) return res(ticketsStatus, tickets);
         return jsonRes({}, false, 404);
     }) as unknown as typeof fetch;
 });
@@ -85,6 +88,10 @@ describe("RenterDetailPage", () => {
         expect(screen.getByText("Leaking tap")).toBeTruthy();
         expect(screen.getByText("AC noise")).toBeTruthy();
         expect(screen.queryByText("Someone else")).toBeNull();
+        // One renter's tickets are asked for by id, never the whole tenant's list.
+        const urls = (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(c => String(c[0]));
+        expect(urls).toContain("/api/proxy/v1/tickets?renterId=r1");
+        expect(urls).not.toContain("/api/proxy/v1/tickets");
         expect(screen.getByTestId("renter-ledger").getAttribute("href")).toBe("/dashboard/finance/tenant-ledger?renterId=r1");
         expect(screen.getByText("resend")).toBeTruthy();
     });

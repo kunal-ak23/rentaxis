@@ -19,10 +19,10 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
  * One renter, for staff (#8): their profile, their contracts, the cheques on
  * those contracts, their tickets, and the way into their ledger.
  *
- * Built on endpoints that already existed plus one: `GET /renters/{id}`,
- * `GET /renters/{id}/leases` (tenant-scoped, and narrowed to a property
- * manager's own buildings by LeaseAccessPolicy), `GET /leases/{id}/cheques`
- * per contract, and the ticket list the caller can already see.
+ * Built on `GET /renters/{id}`, `GET /renters/{id}/leases` (tenant-scoped, and
+ * narrowed to a property manager's own buildings by LeaseAccessPolicy),
+ * `GET /leases/{id}/cheques` per contract, and `GET /tickets?renterId=`, the
+ * caller's own ticket scope narrowed to this renter on the server.
  */
 
 type Renter = {
@@ -156,20 +156,15 @@ export default function RenterDetailPage() {
                     setChequesFailed(perLease.some(p => !p.ok));
                 }
 
-                // The ticket list is already scoped to what the caller may see;
-                // a ticket is this renter's when they reported it, it was raised
-                // on one of their contracts, or it was logged on their behalf.
+                // Filtered server-side (web review I3): tickets this renter
+                // reported, raised on one of their contracts, or logged on their
+                // behalf, inside the caller's own ticket scope. This used to pull
+                // every ticket in the tenant and filter here.
                 try {
-                    const tr = await fetch("/api/proxy/v1/tickets");
+                    const tr = await fetch(`/api/proxy/v1/tickets?renterId=${encodeURIComponent(loaded.id)}`);
                     if (!tr.ok) throw new Error(String(tr.status));
-                    const leaseIds = new Set(ls.map(l => l.id));
-                    const all: Ticket[] = await tr.json();
-                    if (!cancelled) {
-                        setTickets(all.filter(tk =>
-                            (loaded.userId && tk.reportedBy === loaded.userId)
-                            || (tk.leaseId && leaseIds.has(tk.leaseId))
-                            || tk.onBehalfOfRenterId === loaded.id));
-                    }
+                    const mine: Ticket[] = await tr.json();
+                    if (!cancelled) setTickets(mine);
                 } catch {
                     if (!cancelled) setTicketsFailed(true);
                 }

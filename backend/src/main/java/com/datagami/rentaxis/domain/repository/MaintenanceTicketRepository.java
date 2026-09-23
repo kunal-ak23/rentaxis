@@ -42,6 +42,17 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
 
     long countByStatus(TicketStatus status);
 
+    // One renter's record, for staff (web review I3): tickets logged for them,
+    // raised on one of their contracts, or reported from their portal account.
+    // The caller's role scope is applied on top of this, never instead of it.
+    @Query("SELECT t FROM MaintenanceTicket t LEFT JOIN t.lease l"
+            + " WHERE t.onBehalfOfRenterId = :renterId OR l.renter.id = :renterId OR t.reportedBy = :userId")
+    List<MaintenanceTicket> findForRenterRecord(@Param("renterId") UUID renterId, @Param("userId") UUID userId);
+
+    @Query("SELECT t FROM MaintenanceTicket t LEFT JOIN t.lease l"
+            + " WHERE t.onBehalfOfRenterId = :renterId OR l.renter.id = :renterId")
+    List<MaintenanceTicket> findForRenterRecordWithoutAccount(@Param("renterId") UUID renterId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM MaintenanceTicket t WHERE t.id = :id")
     java.util.Optional<MaintenanceTicket> findByIdForUpdate(@Param("id") UUID id);

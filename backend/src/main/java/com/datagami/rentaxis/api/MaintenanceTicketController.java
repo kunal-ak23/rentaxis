@@ -33,8 +33,9 @@ public class MaintenanceTicketController {
     public ResponseEntity<List<MaintenanceTicketDTO>> listTickets(
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") String role,
-            @RequestParam(required = false) UUID unitId) {
-        return ResponseEntity.ok(ticketService.getTickets(userId, role, unitId));
+            @RequestParam(required = false) UUID unitId,
+            @RequestParam(required = false) UUID renterId) {
+        return ResponseEntity.ok(ticketService.getTickets(userId, role, unitId, renterId));
     }
 
     @GetMapping("/{id}")
