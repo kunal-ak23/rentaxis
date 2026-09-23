@@ -93,6 +93,34 @@ describe("RentersPage create form", () => {
         expect(screen.queryByText(/password/i)).toBeNull();
     });
 
+    // Web review M3: unticking "Create Portal Account" with an email filled in
+    // is a choice, not a missing email.
+    it("says the portal account was skipped by choice when the box is unticked", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByRole("checkbox"));
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("noPortalOptedOutBody")).toBeTruthy();
+        expect(screen.getByText("savedTitle")).toBeTruthy();
+        expect(screen.queryByText("noPortalBody")).toBeNull();
+    });
+
+    it("says no email was given when that is why there is no portal account", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("noPortalBody")).toBeTruthy();
+    });
+
     it("offers Resend invite for a renter whose invite is pending", async () => {
         listBody = [
             { id: "r1", nameEn: "Pending", nameAr: "", email: "p@x.com", phone: "", primaryLanguage: "EN", userId: "u1", invitePending: true },

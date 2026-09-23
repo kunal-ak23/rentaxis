@@ -2504,6 +2504,9 @@
     "sentTitle": "Invite sent",
     "sentBody": "An invite with a link to set their own password is on its way to {email}. Invites are sent even when email notifications are turned off for your organisation. The link is valid for 7 days; if it expires or never arrives, use Resend invite on the renter's page.",
     "noPortalBody": "The renter was saved without a portal account because no email was given.",
+    "savedTitle": "Renter saved",
+    "noPortalOptedOutBody": "The renter was saved without a portal account, as you chose.",
+    "noInviteBody": "The renter was saved, but no portal invite was sent.",
     "passwordNotNeeded": "No password is set here. The user gets an email invite to choose their own, even when email notifications are turned off.",
     "passwordRequired": "Super admins are not invited by email, so a password is required.",
     "done": "Done"

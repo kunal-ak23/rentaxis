@@ -81,7 +81,10 @@ export default function RentersPage() {
 
     // #7: after creating a renter we confirm the emailed invite. There is no
     // password to show: the backend neither generates nor returns one.
-    const [inviteNotice, setInviteNotice] = useState<{ email: string; invited: boolean } | null>(null);
+    // Why the renter has (or has no) portal invite, so the notice never gives a
+    // reason that is not the real one (web review M3).
+    type InviteOutcome = "invited" | "optedOut" | "noEmail" | "notInvited";
+    const [inviteNotice, setInviteNotice] = useState<{ email: string; outcome: InviteOutcome } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
 
     const handleSubmit = async (ev: React.FormEvent) => {
@@ -100,7 +103,11 @@ export default function RentersPage() {
             setShowForm(false);
             fetchRenters();
 
-            setInviteNotice({ email: formData.email, invited: !!data.invitePending });
+            const outcome: InviteOutcome = data.invitePending ? "invited"
+                : !formData.createPortalAccount ? "optedOut"
+                : !formData.email.trim() ? "noEmail"
+                : "notInvited";
+            setInviteNotice({ email: formData.email, outcome });
 
             setFormData({
                 nameEn: "",
@@ -402,10 +409,13 @@ export default function RentersPage() {
                             <MailCheck size={18} />
                         </div>
                         <h2 className="text-lg font-bold text-foreground mb-2">
-                            {inviteNotice.invited ? tInv("sentTitle") : t("addRenter")}
+                            {inviteNotice.outcome === "invited" ? tInv("sentTitle") : tInv("savedTitle")}
                         </h2>
                         <p className="text-sm text-muted mb-6">
-                            {inviteNotice.invited ? tInv("sentBody", { email: inviteNotice.email }) : tInv("noPortalBody")}
+                            {inviteNotice.outcome === "invited" ? tInv("sentBody", { email: inviteNotice.email })
+                                : inviteNotice.outcome === "optedOut" ? tInv("noPortalOptedOutBody")
+                                : inviteNotice.outcome === "noEmail" ? tInv("noPortalBody")
+                                : tInv("noInviteBody")}
                         </p>
                         <button
                             onClick={() => setInviteNotice(null)}
