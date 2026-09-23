@@ -231,6 +231,9 @@ export default function MvpSidebar() {
     const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
         { name: tNav("myLeases"), href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
+        // The penalties page explains an approved fine; without a link a renter
+        // with one had no way to find it (gap #39).
+        { name: tNav("myPenalties"), href: "/dashboard/renter-portal/penalties", icon: AlertTriangle, tourId: 'sidebar-my-penalties' },
         { name: tNav("myTickets"), href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
         ...(isEnabled('LISTINGS') && tenantSlug ? [{ name: tNav("listings"), href: `/marketplace/${tenantSlug}`, icon: Building2, tourId: 'sidebar-listings' }] : []),
         ...(isEnabled('MEETINGS') ? [{ name: tNav("meetings"), href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),

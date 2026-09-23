@@ -178,3 +178,16 @@ describe("sidebar finance gating", () => {
         expect(screen.getByText(en.Ledger.journals)).toBeInTheDocument();
     });
 });
+
+describe("sidebar renter portal", () => {
+    /** Gap #39: `/dashboard/renter-portal/penalties` worked, but nothing linked to it. */
+    it("offers a renter the penalties page next to leases and payments", () => {
+        const { container } = renderAs("RENTER");
+        expect(hrefs(container)).toEqual(expect.arrayContaining([
+            "/dashboard/renter-portal",
+            "/dashboard/renter-portal/payments",
+            "/dashboard/renter-portal/penalties",
+        ]));
+        expect(screen.getByText(en.Navigation.myPenalties)).toBeInTheDocument();
+    });
+});
