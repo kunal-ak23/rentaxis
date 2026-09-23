@@ -315,6 +315,13 @@ export type LeaseAddendum = {
   value: number;
   tcoJournalId: string;
   tcoEntryNumber: string;
+  /**
+   * True once `amendLines` has reversed this addendum's own TCO while
+   * rebuilding the lease's ledger from a fresh set of lines. The addendum row
+   * is not rewritten by an amend, so this is the only way the page can tell
+   * its `tcoEntryNumber` is no longer the live entry.
+   */
+  superseded: boolean;
   createdAt: string;
 };
 

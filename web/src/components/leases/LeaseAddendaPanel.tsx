@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { fmtAmount } from "@/lib/api/ledger";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ApiError, leaseApi, type LeaseAddendum } from "@/lib/api/leasing";
 
 /**
@@ -22,6 +23,7 @@ type Props = {
 
 export default function LeaseAddendaPanel({ leaseId, addenda, canRecordEjari, onChanged }: Props) {
     const t = useTranslations("Leasing");
+    const locale = useLocale();
     const [drafts, setDrafts] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
 
@@ -42,21 +44,38 @@ export default function LeaseAddendaPanel({ leaseId, addenda, canRecordEjari, on
                 <p className="px-3 pb-3 text-xs text-muted">{t("noAddenda")}</p>
             ) : (
                 <table className="w-full min-w-[640px]">
+                    <thead>
+                        <tr className="border-t border-border">
+                            <th className={`${td} text-start font-semibold text-muted uppercase tracking-wider`}>{t("addendumNo")}</th>
+                            <th className={`${td} text-start font-semibold text-muted uppercase tracking-wider`}>{t("effectiveFrom")}</th>
+                            <th className={`${td} text-start font-semibold text-muted uppercase tracking-wider`}>{t("addendumReason")}</th>
+                            <th className={`${td} text-end font-semibold text-muted uppercase tracking-wider`}>{t("addendumValue")}</th>
+                            <th className={`${td} text-start font-semibold text-muted uppercase tracking-wider`}>{t("addendumEntry")}</th>
+                            <th className={`${td} text-start font-semibold text-muted uppercase tracking-wider`}>{t("addendumEjari")}</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {addenda.map(a => (
                             <tr key={a.id} className="border-t border-border">
                                 <td className={`${td} font-semibold`}>{a.addendumNumber}</td>
-                                <td className={td}>{a.effectiveFrom}</td>
+                                <td className={td}>{fmtIsoDate(a.effectiveFrom, locale)}</td>
                                 <td className={td}>{a.reason ?? ""}</td>
                                 <td className={`${td} text-end tabular-nums`}>{fmtAmount(a.value)}</td>
-                                <td className={td}>{a.tcoEntryNumber}</td>
+                                <td className={td}>
+                                    {a.tcoEntryNumber}
+                                    {a.superseded && (
+                                        <span className="ms-2 inline-block px-2 py-0.5 rounded-full bg-input text-muted text-[10px] font-semibold">
+                                            {t("addendumSuperseded")}
+                                        </span>
+                                    )}
+                                </td>
                                 <td className={td}>
                                     {a.ejariPending ? (
                                         <span className="inline-flex items-center gap-2">
                                             <span className="px-2 py-0.5 rounded-full bg-warning/15 text-warning text-[10px] font-semibold">
                                                 {t("ejariPending")}
                                             </span>
-                                            {canRecordEjari && (
+                                            {canRecordEjari && !a.superseded && (
                                                 <>
                                                     <input
                                                         data-testid={`addendum-ejari-${a.id}`}

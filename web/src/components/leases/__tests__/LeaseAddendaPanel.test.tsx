@@ -14,15 +14,19 @@ import LeaseAddendaPanel from "../LeaseAddendaPanel";
 const PENDING = {
     id: "a1", addendumNumber: "ADD-27/1", effectiveFrom: "2027-02-15", contractDate: "2027-02-10",
     ejariNumber: null, ejariPending: true, reason: "Parking", value: 6000,
-    tcoJournalId: "j1", tcoEntryNumber: "TCO-27/9", createdAt: "2027-02-10T00:00:00Z",
+    tcoJournalId: "j1", tcoEntryNumber: "TCO-27/9", superseded: false, createdAt: "2027-02-10T00:00:00Z",
+};
+
+const SUPERSEDED = {
+    ...PENDING, id: "a2", addendumNumber: "ADD-27/2", tcoEntryNumber: "TCO-27/11", superseded: true,
 };
 
 afterEach(() => { cleanup(); recordAddendumEjari.mockReset(); });
 
-function renderPanel(canRecord: boolean, onChanged = vi.fn()) {
+function renderPanel(canRecord: boolean, onChanged = vi.fn(), addenda = [PENDING]) {
     render(
         <NextIntlClientProvider locale="en" messages={en}>
-            <LeaseAddendaPanel leaseId="lease-1" addenda={[PENDING]} canRecordEjari={canRecord} onChanged={onChanged} />
+            <LeaseAddendaPanel leaseId="lease-1" addenda={addenda} canRecordEjari={canRecord} onChanged={onChanged} />
         </NextIntlClientProvider>,
     );
     return onChanged;
@@ -44,5 +48,20 @@ describe("LeaseAddendaPanel", () => {
     it("shows no record control to a role that cannot post", () => {
         renderPanel(false);
         expect(screen.queryByTestId("addendum-ejari-a1")).not.toBeInTheDocument();
+    });
+
+    it("flags a superseded addendum and hides its record-Ejari control", () => {
+        renderPanel(true, vi.fn(), [SUPERSEDED]);
+        expect(screen.getByText("ADD-27/2")).toBeInTheDocument();
+        expect(screen.getByText("TCO-27/11")).toBeInTheDocument();
+        expect(screen.getByText("Superseded by amendment")).toBeInTheDocument();
+        // Its own TCO was reversed by the amend; re-registering Ejari for it makes no sense.
+        expect(screen.queryByTestId("addendum-ejari-a2")).not.toBeInTheDocument();
+    });
+
+    it("still offers the record control to a live (non-superseded) pending addendum", () => {
+        renderPanel(true);
+        expect(screen.queryByText("Superseded by amendment")).not.toBeInTheDocument();
+        expect(screen.getByTestId("addendum-ejari-a1")).toBeInTheDocument();
     });
 });
