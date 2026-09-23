@@ -265,8 +265,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     }
   }
 
-  /// Locale-aware renter display name; CreateTicketDTO's onBehalfOf is a
-  /// free-text name (web sends the typed name), not a renter id.
+  /// Locale-aware renter display name, for the legacy free-text onBehalfOf.
+  /// The renter's id travels as onBehalfOfRenterId (#19): it makes the renter,
+  /// not the staff member logging the ticket, the closure-OTP holder.
   String _renterDisplayName(dynamic r, _L l) =>
       ((l.ar ? (r['nameAr'] ?? r['nameEn']) : r['nameEn']) ?? r['email'] ?? '')
           .toString();
@@ -297,6 +298,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         if (_selectedPropertyId != null) 'propertyId': _selectedPropertyId,
         if (_selectedUnitId != null) 'unitId': _selectedUnitId,
         if (onBehalfOf.isNotEmpty) 'onBehalfOf': onBehalfOf,
+        if (selectedRenter != null) 'onBehalfOfRenterId': _selectedRenterId,
       });
 
       final ticketId = ticket['id'];
