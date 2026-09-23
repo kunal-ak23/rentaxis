@@ -401,6 +401,11 @@ buildings, staff and bank accounts.
   - The security deposit is 28,400 Cr (22,000 carried + 6,400 new).
   - The carry-forward narration shows a raw UUID (#86).
 
+**Post-deploy check · PR #343 (1d6e4585) on production.**
+- The backend started under the new renewal-secret start guard (health 200).
+- As Ahmed, all three of his contract downloads return a real PDF (47–48 KB, `%PDF-`), including the two renewals that returned 500 (#75). Rajesh's contract is 404 to him. The home shows his two ACTIVE contracts first, with "Past contracts (2)" collapsed (#76).
+- As the super admin, leases, tickets, trial balance, orgs, `/auth/me` and the new ticket-assignees endpoint all return 200. Gate approvals return 403 to a super admin, but that predates this PR (#88).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
