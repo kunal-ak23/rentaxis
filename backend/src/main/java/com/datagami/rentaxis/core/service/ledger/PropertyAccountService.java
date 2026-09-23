@@ -50,6 +50,60 @@ public class PropertyAccountService {
             "Insurance",
             "Management Fees");
 
+    /**
+     * Arabic for each direct-expense category, same order as the English list. A
+     * category missing here gets a leaf with no Arabic name (the web falls back
+     * to English).
+     */
+    private static final Map<String, String> DIRECT_EXPENSE_CATEGORIES_AR = Map.of(
+            "Repairs & Maintenance", "الإصلاح والصيانة",
+            "Cleaning", "التنظيف",
+            "Security", "الأمن والحراسة",
+            "Utilities", "المرافق",
+            "Insurance", "التأمين على المبنى",
+            "Management Fees", "رسوم الإدارة");
+
+    /**
+     * The Arabic label a property leaf is named with, per role (gap #68).
+     *
+     * <p>Not the group's Arabic name alone: several roles share a group (Rental
+     * Income, Admin Fee and Additional Parking all sit under C-01-01; four income
+     * roles under C-01-02), so naming a leaf after its group would give four
+     * different accounts the same Arabic name. Generic on purpose: the English
+     * pattern is tenant-editable ("Emirates Islamic - {property}" is only the
+     * seed), so the label says what the account is, not which bank. A role not
+     * listed falls back to the group's Arabic name.</p>
+     */
+    private static final Map<AccountRole, String> ROLE_LABEL_AR = Map.ofEntries(
+            Map.entry(AccountRole.RENT_RECEIVABLE, "إيجارات مستحقة"),
+            Map.entry(AccountRole.ADVANCE_RENT, "إيجار مقدم"),
+            Map.entry(AccountRole.RENTAL_INCOME, "إيرادات الإيجار"),
+            Map.entry(AccountRole.PDC_RECEIVABLE, "شيكات مؤجلة مستحقة"),
+            Map.entry(AccountRole.BANK, "الحساب البنكي"),
+            Map.entry(AccountRole.SECURITY_DEPOSIT, "تأمين الإيجار"),
+            Map.entry(AccountRole.ADMIN_FEE, "الرسوم الإدارية"),
+            Map.entry(AccountRole.PARKING_INCOME, "مواقف إضافية"),
+            Map.entry(AccountRole.PARKING_DEPOSIT, "تأمين المواقف"),
+            Map.entry(AccountRole.COOLING_CHARGES, "رسوم التبريد"),
+            Map.entry(AccountRole.MAINTENANCE_CHARGES, "رسوم الصيانة"),
+            Map.entry(AccountRole.RENT_PENALTY, "غرامة تأخير الإيجار"),
+            Map.entry(AccountRole.CHEQUE_RETURN_PENALTY, "غرامة الشيكات المرتجعة"),
+            Map.entry(AccountRole.OTHER_INCOME, "إيرادات أخرى"));
+
+    /**
+     * "label - property", the Arabic counterpart of the English leaf name. The
+     * property's Arabic name when it has one, else its English name: a building's
+     * name is a proper noun, and an Arabic reader is better served by an Arabic
+     * account label next to a Latin building name than by an all-English line.
+     * Null when there is no Arabic label at all.
+     */
+    static String arabicLeafName(String labelAr, Property property) {
+        if (labelAr == null || labelAr.isBlank()) return null;
+        String building = property.getNameAr() != null && !property.getNameAr().isBlank()
+                ? property.getNameAr() : property.getNameEn();
+        return labelAr + " - " + building;
+    }
+
     private final PropertyAccountTemplateRowRepository templateRepo;
     private final PropertyAccountMappingRepository mappingRepo;
     private final TenantDefaultAccountMappingRepository defaultRepo;
@@ -177,8 +231,10 @@ public class PropertyAccountService {
         for (PropertyAccountTemplateRow row : rows) {
             if (mappingRepo.findByPropertyIdAndRole(propertyId, row.getRole()).isPresent()) continue;
             String name = row.getNamePattern().replace("{property}", property.getNameEn());
+            String nameAr = arabicLeafName(
+                    ROLE_LABEL_AR.getOrDefault(row.getRole(), row.getParentAccount().getNameAr()), property);
             Account leaf = accountRepo.findByNameAndParent_Id(name, row.getParentAccount().getId())
-                    .orElseGet(() -> accountService.createLeaf(name, row.getParentAccount(), propertyId));
+                    .orElseGet(() -> accountService.createLeaf(name, nameAr, row.getParentAccount(), propertyId));
             if (leaf.getProperty() == null) {
                 leaf.setProperty(property);
                 accountRepo.save(leaf);
@@ -229,7 +285,8 @@ public class PropertyAccountService {
             if (accountRepo.existsByParent_IdAndProperty_IdAndNameStartingWith(parent.get().getId(), propertyId, prefix)) {
                 continue;
             }
-            accountService.createLeaf(name, parent.get(), propertyId);
+            accountService.createLeaf(name,
+                    arabicLeafName(DIRECT_EXPENSE_CATEGORIES_AR.get(category), property), parent.get(), propertyId);
         }
     }
 

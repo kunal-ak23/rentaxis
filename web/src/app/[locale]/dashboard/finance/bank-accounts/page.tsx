@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Landmark, Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { accountName } from "@/lib/api/ledger";
 
 type Account = {
     id: string;
     code: string;
     name: string;
+    nameAr?: string | null;
     accountType: string;
     accountSubType?: string;
     group?: boolean;
@@ -336,7 +338,7 @@ export default function BankAccountsPage() {
                                         </td>
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {ba.coaAccount
-                                                ? `${ba.coaAccount.code} - ${ba.coaAccount.name}`
+                                                ? `${ba.coaAccount.code} - ${accountName(ba.coaAccount, locale)}`
                                                 : "\u2014"}
                                         </td>
                                         <td className="px-5 py-3">
@@ -503,12 +505,12 @@ export default function BankAccountsPage() {
                                     {editingAccount?.coaAccount &&
                                         !accounts.some((a) => a.id === editingAccount.coaAccount?.id) && (
                                             <option value={editingAccount.coaAccount.id}>
-                                                {editingAccount.coaAccount.code} - {editingAccount.coaAccount.name}
+                                                {editingAccount.coaAccount.code} - {accountName(editingAccount.coaAccount, locale)}
                                             </option>
                                         )}
                                     {accounts.map((a) => (
                                         <option key={a.id} value={a.id}>
-                                            {a.code} - {a.name}
+                                            {a.code} - {accountName(a, locale)}
                                         </option>
                                     ))}
                                 </select>

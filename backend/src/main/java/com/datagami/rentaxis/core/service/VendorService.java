@@ -40,7 +40,7 @@ public class VendorService {
         if (vendor.getPayableAccount() == null) {
             try {
                 Account vendorsGroup = accountService.getAccountByCode("B-01-04");
-                vendor.setPayableAccount(accountService.createLeaf(vendor.getNameEn(), vendorsGroup, null));
+                vendor.setPayableAccount(accountService.createLeaf(vendor.getNameEn(), vendor.getNameAr(), vendorsGroup, null));
             } catch (NotFoundException e) {
                 log.warn("No Vendors account group (B-01-04) for tenant; creating vendor without a ledger account");
             }

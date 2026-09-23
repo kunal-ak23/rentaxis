@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle, Loader2, Receipt, RotateCcw, ShieldCheck } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -11,7 +11,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { journalStatusClass } from "@/components/finance/journalStatus";
 import { ApiError } from "@/lib/api/facilities";
-import { fmtAmount, ledgerApi, type JournalEntry } from "@/lib/api/ledger";
+import { accountName, fmtAmount, ledgerApi, type JournalEntry } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -46,6 +46,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function JournalDetail() {
     const t = useTranslations("Ledger");
+    const locale = useLocale();
     const tCommon = useTranslations("Common");
     const tVouchers = useTranslations("Vouchers");
     const params = useParams<{ id: string }>();
@@ -293,7 +294,7 @@ function JournalDetail() {
                                             <td className={`${td} text-muted tabular-nums`}>{l.lineNo}</td>
                                             <td className={td}>
                                                 <span className="font-mono text-muted me-2">{l.accountCode}</span>
-                                                {l.accountName}
+                                                {accountName(l, locale)}
                                             </td>
                                             <td className={`${td} text-end tabular-nums`}>{l.debit ? fmtAmount(l.debit) : ""}</td>
                                             <td className={`${td} text-end tabular-nums`}>{l.credit ? fmtAmount(l.credit) : ""}</td>

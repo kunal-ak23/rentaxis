@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Download, Filter, Info, Scale, ShieldCheck } from "lucide-react";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
-import { fmtAmount, ledgerApi, type TrialBalanceRow } from "@/lib/api/ledger";
+import { accountName, fmtAmount, ledgerApi, type TrialBalanceRow } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 const TYPE_ORDER = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"] as const;
@@ -31,6 +31,7 @@ const todayIso = () => {
 
 export default function TrialBalancePage() {
     const t = useTranslations("Ledger");
+    const locale = useLocale();
     const tCommon = useTranslations("Common");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -255,7 +256,7 @@ export default function TrialBalancePage() {
                 {group.items.map(r => (
                     <tr key={r.accountId} className="border-t border-border hover:bg-input/30">
                         <td className={`${td} font-mono text-muted`}>{r.code}</td>
-                        <td className={td}>{r.name}</td>
+                        <td className={td}>{accountName(r, locale)}</td>
                         <td className={`${td} text-muted`}>{typeLabel(r.accountType)}</td>
                         <td className={num}>{fmtAmount(r.debit)}</td>
                         <td className={num}>{fmtAmount(r.credit)}</td>

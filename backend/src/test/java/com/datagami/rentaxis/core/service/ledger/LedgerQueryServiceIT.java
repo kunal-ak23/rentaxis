@@ -42,6 +42,7 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired JournalEntryRepository entries;
+    @Autowired JournalService journals;
 
     UUID propertyId, renterId, leaseId, tcoId;
 
@@ -190,6 +191,26 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
         assertThat(adv.balance()).isEqualByComparingTo("-61000"); // credit balance, signed debit-positive
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 10), null)).isEmpty();
         assertThat(ledger.trialBalance(LocalDate.of(2026, 9, 30), UUID.randomUUID())).isEmpty();
+    }
+
+    /**
+     * Gap #68: the trial balance, an account ledger and a journal's lines carry the
+     * account's Arabic name next to the English one, so the Arabic UI can show it.
+     */
+    @Test
+    void reportsCarryTheAccountsArabicName() {
+        Account adv = resolver.resolve(AccountRole.ADVANCE_RENT, propertyId);
+        assertThat(adv.getNameAr()).isNotBlank();
+        TrialBalanceRowDTO row = ledger.trialBalance(LocalDate.of(2026, 9, 30), null).stream()
+                .filter(r -> r.accountId().equals(adv.getId())).findFirst().orElseThrow();
+        assertThat(row.nameAr()).isEqualTo(adv.getNameAr());
+        AccountLedgerDTO l = ledger.accountLedger(adv.getId(), new LedgerQueryService.LedgerFilter(
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), null, null, null, null));
+        assertThat(l.accountNameAr()).isEqualTo(adv.getNameAr());
+        assertThat(journals.get(tcoId).lines()).anySatisfy(line -> {
+            assertThat(line.accountId()).isEqualTo(adv.getId());
+            assertThat(line.accountNameAr()).isEqualTo(adv.getNameAr());
+        });
     }
 
     /**

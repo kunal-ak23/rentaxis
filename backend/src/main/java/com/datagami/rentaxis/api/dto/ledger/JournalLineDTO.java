@@ -15,4 +15,6 @@ public record JournalLineDTO(
         UUID unitId,
         UUID leaseId,
         UUID renterId,
-        UUID chequeId) {}
+        UUID chequeId,
+        /** The account's Arabic name, null when it has none. */
+        String accountNameAr) {}

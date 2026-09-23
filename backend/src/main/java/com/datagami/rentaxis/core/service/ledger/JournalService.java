@@ -226,7 +226,8 @@ public class JournalService {
                 total = total.add(l.getDebit());
                 ls.add(new JournalLineDTO(l.getLineNo(), l.getAccount().getId(), l.getAccount().getCode(),
                         l.getAccount().getName(), l.getDebit(), l.getCredit(), l.getNarration(),
-                        l.getPropertyId(), l.getUnitId(), l.getLeaseId(), l.getRenterId(), l.getChequeId()));
+                        l.getPropertyId(), l.getUnitId(), l.getLeaseId(), l.getRenterId(), l.getChequeId(),
+                        l.getAccount().getNameAr()));
             }
         } else {
             // A list row still shows an amount, and one aggregate beats loading every line.

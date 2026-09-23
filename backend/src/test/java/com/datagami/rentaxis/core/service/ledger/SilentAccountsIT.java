@@ -48,6 +48,15 @@ class SilentAccountsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void vendorLeafTakesTheVendorsArabicName() {
+        Vendor v = new Vendor(); v.setNameEn("Al Noor Cleaning"); v.setNameAr("النور للتنظيف");
+        v = vendors.createVendor(v);
+        assertThat(v.getPayableAccount().getNameAr()).isEqualTo("النور للتنظيف");
+        Vendor noAr = new Vendor(); noAr.setNameEn("Blue Pest");
+        assertThat(vendors.createVendor(noAr).getPayableAccount().getNameAr()).isNull();
+    }
+
+    @Test
     void renamingAndDeactivatingAVendorFollowsThroughToItsLeaf() {
         Vendor v = new Vendor(); v.setNameEn("Old Name"); v = vendors.createVendor(v);
         Vendor upd = new Vendor(); upd.setNameEn("New Name"); upd.setActive(false);

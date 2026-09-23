@@ -89,7 +89,7 @@ public class LedgerQueryService {
                     r.getPropertyId(), r.getUnitId(), r.getLeaseId(), r.getRenterId(), r.getChequeId()));
         }
         return new AccountLedgerDTO(account.getId(), account.getCode(), account.getName(), account.getAccountType().name(),
-                opening, rows, totalDr, totalCr, running, truncated);
+                opening, rows, totalDr, totalCr, running, truncated, account.getNameAr());
     }
 
     /**
@@ -136,7 +136,7 @@ public class LedgerQueryService {
 
     private static AccountLedgerDTO truncate(AccountLedgerDTO l) {
         return new AccountLedgerDTO(l.accountId(), l.accountCode(), l.accountName(), l.accountType(),
-                l.openingBalance(), l.rows(), l.totalDebit(), l.totalCredit(), l.closingBalance(), true);
+                l.openingBalance(), l.rows(), l.totalDebit(), l.totalCredit(), l.closingBalance(), true, l.accountNameAr());
     }
 
     public AccountLedgerDTO vendorLedger(UUID vendorId, LocalDate from, LocalDate to) {
@@ -166,7 +166,8 @@ public class LedgerQueryService {
                 .map(b -> {
                     Account a = byId.get(b.getAccountId());
                     return new TrialBalanceRowDTO(a.getId(), a.getCode(), a.getName(), a.getAccountType().name(),
-                            a.getParentId(), a.getPropertyId(), b.getDebit(), b.getCredit(), b.getDebit().subtract(b.getCredit()));
+                            a.getParentId(), a.getPropertyId(), b.getDebit(), b.getCredit(), b.getDebit().subtract(b.getCredit()),
+                            a.getNameAr());
                 })
                 .sorted(Comparator.comparing(TrialBalanceRowDTO::code)).toList();
     }

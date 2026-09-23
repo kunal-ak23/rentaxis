@@ -147,10 +147,20 @@ public class AccountService {
      */
     @Transactional
     public Account createLeaf(String name, Account parent, UUID propertyId) {
+        return createLeaf(name, null, parent, propertyId);
+    }
+
+    /**
+     * As {@link #createLeaf(String, Account, UUID)}, with an Arabic name. Null when
+     * there is none to give; the web then falls back to the English name (gap #68).
+     */
+    @Transactional
+    public Account createLeaf(String name, String nameAr, Account parent, UUID propertyId) {
         Account a = new Account();
         a.setCode(nextLeafCode());
         a.setName(name);
         a.setNameEn(name);
+        a.setNameAr(nameAr == null || nameAr.isBlank() ? null : nameAr);
         a.setAccountType(parent.getAccountType());
         a.setAccountSubType(parent.getAccountSubType());
         a.setParent(parent);
