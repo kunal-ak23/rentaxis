@@ -8,8 +8,9 @@ import ar from "../../../../../../../messages/ar.json";
  * `[id]` catches `/dashboard/leases/new` — a guessable URL and the one a user
  * bookmarking "new lease" would try. Before #47, that reached
  * `GET /leases/new` and rendered the backend's raw "Invalid value for
- * parameter 'id'". A lease id is always a UUID, so a non-UUID id must never
- * reach the API and must instead land on the page's existing not-found panel.
+ * parameter 'id'". The literal "new" never reaches the API; any other bad id
+ * does, and the backend's 400 (malformed) or 404 (unknown) must land on the
+ * page's existing not-found panel rather than show the raw message.
  */
 
 let routeId = "new";
@@ -40,6 +41,7 @@ vi.mock("@/lib/api/leasing", async orig => {
 });
 
 import LeaseDetailPage from "../page";
+import { ApiError } from "@/lib/api/leasing";
 
 function renderPage(locale: "en" | "ar" = "en") {
     return render(
@@ -61,7 +63,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("A non-UUID lease id (#47)", () => {
-    it("never calls the API for a non-UUID id like 'new'", async () => {
+    it("never calls the API for the literal id 'new'", async () => {
         renderPage();
         await waitFor(() => expect(screen.getByText(en.Leasing.notFound)).toBeInTheDocument());
         expect(api.get).not.toHaveBeenCalled();
@@ -91,5 +93,20 @@ describe("A non-UUID lease id (#47)", () => {
         });
         renderPage();
         await waitFor(() => expect(api.get).toHaveBeenCalledWith(routeId));
+    });
+
+    it.each([
+        [400, "Invalid value for parameter 'id'"],
+        [404, "Lease not found: abc"],
+    ])("maps a %i for an id like 'abc' to the friendly not-found panel", async (status, message) => {
+        routeId = "abc";
+        api.get.mockImplementation(async () => {
+            throw new ApiError(status, message);
+        });
+        renderPage();
+        await waitFor(() => expect(api.get).toHaveBeenCalledWith("abc"));
+        await waitFor(() => expect(screen.getByText(en.Leasing.notFound)).toBeInTheDocument());
+        expect(screen.queryByText(message)).not.toBeInTheDocument();
+        expect(screen.getByText(en.Leasing.backToLeases).closest("a")).toHaveAttribute("href", "/dashboard/leases");
     });
 });

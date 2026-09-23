@@ -79,7 +79,8 @@ const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOS
  * This intentionally does not validate the general id shape (e.g. requiring
  * a UUID) — ids elsewhere in this app's fixtures/tests are plain strings,
  * and the backend, not this page, is the source of truth for what a real
- * lease id looks like.
+ * lease id looks like. Any other bad id reaches the API, and `loadLease`
+ * maps its 400/404 to the same not-found panel.
  */
 function looksLikeMissingRouteSegment(id: string): boolean {
     return id.trim().toLowerCase() === "new";
@@ -224,6 +225,12 @@ export default function LeaseDetailPage() {
         } catch (e) {
             if (e instanceof ApiError && e.status === 403) {
                 setForbidden(true);
+            } else if (e instanceof ApiError && (e.status === 400 || e.status === 404)) {
+                // #47: a malformed id (`/leases/abc`, a truncated UUID from a
+                // pasted link) is a 400 from the backend and an unknown one a
+                // 404 — to the reader both mean "no such lease", not the raw
+                // "Invalid value for parameter 'id'".
+                setError(t("notFound"));
             } else {
                 setError(e instanceof ApiError ? e.message : t("notFound"));
             }
