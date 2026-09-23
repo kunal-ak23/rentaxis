@@ -202,10 +202,12 @@ public class LeaseRenewalService {
      * Last year's charges, ready to be edited.
      *
      * <p>What carries over is what the charge <em>is</em>: the type, the account it
-     * credits, the amounts, the narration and the VAT flag. What does not is the
+     * credits, the amounts, a fee's narration and the VAT flag. What does not is the
      * period, because a period is about a term and this is a different term — RENT
      * lines are re-dated to the new one, and a fee's old window would be a date
-     * range from a contract that has ended.</p>
+     * range from a contract that has ended. A RENT line's narration goes too: it
+     * names the old term ("Annual rent 01 Oct 2024 - 30 Sep 2025"), and the TCO,
+     * the contract PDF and the renter's ledger would print it under the new dates.</p>
      *
      * <p>When the deposit is being carried forward, no DEPOSIT line is copied. It
      * would otherwise charge the renter a second deposit and collect it on the
@@ -251,7 +253,7 @@ public class LeaseRenewalService {
                     null,
                     line.getGrossAmount(),
                     line.getDiscountAmount(),
-                    line.getNarration(),
+                    rent ? null : line.getNarration(),
                     line.isVatApplicable(),
                     line.getCreditAccount() != null ? line.getCreditAccount().getId() : null,
                     rent ? r.startDate() : null,

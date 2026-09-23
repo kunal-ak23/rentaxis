@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaseLine } from "@/lib/api/leasing";
-import { blankLine, fmtIsoDate, linesAreValid, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
+import { blankLine, fmtIsoDate, linesAreValid, renewalRows, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
 
 /**
  * `linesAreValid` is the one gate the amend/renew/extend dialogs and the
@@ -176,5 +176,42 @@ describe("line addendum tie", () => {
     it("drops the addendum when the term is being (re)set, as a renewal or draft does", () => {
         const [input] = toInputs([toRow(tied, 0)], { keepPeriods: false });
         expect(input.addendumId ?? null).toBeNull();
+    });
+});
+
+describe("renewalRows", () => {
+    const base: LeaseLine = {
+        id: "line-1",
+        seqNo: 1,
+        chargeTypeId: "ct-rent",
+        chargeTypeCode: "RENT",
+        chargeTypeName: "Rent",
+        behaviour: "RENT",
+        creditAccountId: "acc-1",
+        creditAccountCode: "2100",
+        creditAccountName: "Advance rent",
+        grossAmount: 48000,
+        discountAmount: 0,
+        netAmount: 48000,
+        narration: "Annual rent 01 Oct 2024 - 30 Sep 2025",
+        vatApplicable: false,
+        periodStart: "2024-10-01",
+        periodEnd: "2025-09-30",
+        addendumId: null,
+    };
+    const fee: LeaseLine = { ...base, id: "line-2", seqNo: 2, chargeTypeCode: "ADMIN_FEE",
+        behaviour: "FEE", narration: "Contract admin fee", periodStart: null, periodEnd: null };
+    const addendum: LeaseLine = { ...fee, id: "line-3", seqNo: 3, narration: "Parking bay", addendumId: "add-1" };
+    const extension: LeaseLine = { ...base, id: "line-4", seqNo: 4, narration: "Extension to 2025-12-31",
+        periodStart: "2025-10-01", periodEnd: "2025-12-31" };
+
+    it("clears a rent line's narration and keeps a fee's", () => {
+        const rows = renewalRows([base, fee], "2024-10-01");
+        expect(rows.map((r) => r.narration)).toEqual(["", "Contract admin fee"]);
+    });
+
+    it("leaves out an addendum's charge and an extension's rent, as the server copy does", () => {
+        const rows = renewalRows([base, fee, addendum, extension], "2024-10-01");
+        expect(rows.map((r) => r.id)).toEqual(["line-1", "line-2"]);
     });
 });

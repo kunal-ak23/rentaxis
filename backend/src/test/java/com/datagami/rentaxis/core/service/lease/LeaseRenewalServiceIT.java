@@ -305,6 +305,28 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
     }
 
     /**
+     * A rent line's narration names its term ("Annual rent 01 Oct 2024 - 30 Sep
+     * 2025"), and the TCO, the contract PDF and the renter's ledger all print it.
+     * The period is re-dated, so the words must not survive to contradict it; a
+     * fee's narration says what the fee is and carries over (gap #49).
+     */
+    @Test
+    void renewDropsTheRentLinesNarrationButKeepsAFeesNarration() {
+        UUID firstId = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(
+                new LeaseLineInput(null, "RENT", new java.math.BigDecimal("51000"), java.math.BigDecimal.ZERO,
+                        "Annual rent for last year's term", null, null, null, null),
+                new LeaseLineInput(null, "ADMIN_FEE", new java.math.BigDecimal("2000"), java.math.BigDecimal.ZERO,
+                        "Contract admin fee", null, null, null, null)), 4, null).lease().getId();
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).narration()).isNull();
+        assertThat(copied.get(1).narration()).isEqualTo("Contract admin fee");
+    }
+
+    /**
      * Posting the successor retires the predecessor. The unit is never vacated in
      * between: the renter has not moved out, and a moment of VACANT is a moment the
      * unit is lettable to somebody else (spec §6.6).

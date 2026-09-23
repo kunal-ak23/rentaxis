@@ -90,6 +90,23 @@ export function toRows(lines: LeaseLine[]): LineRow[] {
 }
 
 /**
+ * Last year's lines as a renewal's editable starting point — the same copy
+ * rules the server applies when the renewal sends no lines
+ * (`LeaseRenewalService.copiedLines`): an addendum's charge and an
+ * extension's rent belonged to the old term only and are left out, and a RENT
+ * line's narration is cleared because it names the old term's dates (#49).
+ */
+export function renewalRows(lines: LeaseLine[], termStart: string): LineRow[] {
+    return lines
+        .filter((l) => !l.addendumId
+            && !(l.behaviour === "RENT" && l.periodStart != null && l.periodStart > termStart))
+        .map((l, i) => {
+            const row = toRow(l, i);
+            return l.behaviour === "RENT" ? { ...row, narration: "" } : row;
+        });
+}
+
+/**
  * The wire shape. Blank narrations go over as null, not "". A line's period goes
  * with it, so an amend does not stretch an addendum's rent back to the lease start.
  */
