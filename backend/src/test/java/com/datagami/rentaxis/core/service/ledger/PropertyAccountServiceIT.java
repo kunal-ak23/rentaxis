@@ -10,15 +10,12 @@ import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,11 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-@Testcontainers
-class PropertyAccountServiceIT {
+class PropertyAccountServiceIT extends AbstractPostgresIT {
 
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired PropertyAccountService service;
     @Autowired PropertyService properties;
@@ -92,6 +86,119 @@ class PropertyAccountServiceIT {
         // the existing "Emirates Islamic - Belle Vue" leaf is reused, not duplicated
         assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
         assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Belle Vue");
+    }
+
+    /**
+     * D-01 describes itself as holding "building running costs, one leaf per
+     * property per category" and used to ship with no children, which left a new
+     * tenant with nothing but Rounding Off, Discount Allowed and Bank Charges to
+     * code a supplier invoice to.
+     */
+    @Test
+    void creatingAPropertyGeneratesItsDirectExpenseLeaves() {
+        Property p = newProperty("Nakheel Court");
+        Account directExpense = accounts.getAccountByCode("D-01");
+
+        assertThat(accountRepo.findByProperty_Id(p.getId()))
+                .filteredOn(a -> a.getParent() != null
+                        && a.getParent().getId().equals(directExpense.getId()))
+                .extracting(Account::getName)
+                .contains("Repairs & Maintenance - Nakheel Court",
+                        "Cleaning - Nakheel Court",
+                        "Security - Nakheel Court",
+                        "Utilities - Nakheel Court",
+                        "Insurance - Nakheel Court",
+                        "Management Fees - Nakheel Court");
+        assertThat(accountRepo.findByProperty_Id(p.getId()))
+                .filteredOn(a -> a.getName().startsWith("Repairs & Maintenance"))
+                .singleElement()
+                .satisfies(a -> assertThat(a.getAccountType()).isEqualTo(AccountType.EXPENSE));
+    }
+
+    /** A second generation run must not duplicate the expense leaves. */
+    @Test
+    void regeneratingDoesNotDuplicateDirectExpenseLeaves() {
+        Property p = newProperty("Nakheel Court 2");
+        int before = accountRepo.findByProperty_Id(p.getId()).size();
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
+    }
+
+    /**
+     * A leaf under D-01 that belongs to nobody must not stop a property of the
+     * same name getting its own six leaves.
+     *
+     * <p>Property names are unique per tenant ({@code ux_properties_tenant_name_en_lower}),
+     * so two <em>live</em> properties can never share a {@code nameEn} within one
+     * tenant — but an account's name is not similarly protected. A discarded
+     * import batch clears {@code accounts.property_id} back to null and leaves
+     * the row (and its name) behind — see
+     * {@code ImportBatchDiscardService#deleteProperty} — so a leaf named
+     * "Repairs & Maintenance - Nakheel Court" can already exist with no property
+     * at all by the time a property newly named "Nakheel Court" is created. The
+     * old dedup looked the leaf up by {@code (name, parent)} alone, found that
+     * orphan, decided the category was "already generated" and created nothing
+     * for the new property — which then had no leaf to code a supplier invoice
+     * to, silently, with nothing in the response saying so.</p>
+     */
+    @Test
+    void aLeafThatBelongsToNoPropertyDoesNotStopANewPropertyGettingItsOwn() {
+        Account directExpense = accounts.getAccountByCode("D-01");
+        String propertyName = "Nakheel Court Reimport " + UUID.randomUUID().toString().substring(0, 8);
+        // A leftover from a discarded import batch: same name this property's
+        // leaves will need, but property = null.
+        Account orphan = accounts.createLeaf("Repairs & Maintenance - " + propertyName, directExpense, null);
+        assertThat(orphan.getPropertyId()).isNull();
+
+        Property p = newProperty(propertyName);
+
+        List<Account> leaves = accountRepo.findByProperty_Id(p.getId()).stream()
+                .filter(a -> a.getParent() != null && a.getParent().getId().equals(directExpense.getId())).toList();
+        assertThat(leaves).hasSize(6);
+        assertThat(leaves).extracting(Account::getId).doesNotContain(orphan.getId());
+        assertThat(leaves).allSatisfy(a -> assertThat(a.getPropertyId()).isEqualTo(p.getId()));
+    }
+
+    /**
+     * The dedup looked for any leaf of this property under D-01 whose name merely
+     * starts with the category, so a hand-made "Security Deposit Refunds" leaf
+     * passed for the generated "Security - X" and the property never got one.
+     */
+    @Test
+    void aHandMadeLeafSharingACategorysFirstWordDoesNotStopItsLeaf() {
+        Property p = newProperty("Nakheel Court Security");
+        Account directExpense = accounts.getAccountByCode("D-01");
+        removeGeneratedLeaf(p, "Security - Nakheel Court Security");
+        accounts.createLeaf("Security Deposit Refunds", directExpense, p.getId());
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName)
+                .contains("Security - Nakheel Court Security", "Security Deposit Refunds");
+    }
+
+    /** Two such leaves made the single-result finder throw and the whole generation fail. */
+    @Test
+    void twoHandMadeLeavesSharingACategorysFirstWordDoNotBreakGeneration() {
+        Property p = newProperty("Nakheel Court Guards");
+        Account directExpense = accounts.getAccountByCode("D-01");
+        removeGeneratedLeaf(p, "Security - Nakheel Court Guards");
+        accounts.createLeaf("Security Deposit Refunds", directExpense, p.getId());
+        accounts.createLeaf("Security Guard Wages", directExpense, p.getId());
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName)
+                .contains("Security - Nakheel Court Guards");
+    }
+
+    private void removeGeneratedLeaf(Property p, String name) {
+        Account generated = accountRepo.findByProperty_Id(p.getId()).stream()
+                .filter(a -> a.getName().equals(name)).findFirst().orElseThrow();
+        accountRepo.delete(generated);
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName).doesNotContain(name);
     }
 
     @Test

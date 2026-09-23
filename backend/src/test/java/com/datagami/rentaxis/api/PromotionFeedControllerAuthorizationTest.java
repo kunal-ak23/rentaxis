@@ -1,15 +1,12 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.UUID;
 
@@ -26,11 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * would resolve targeting against an admin's non-existent leases.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class PromotionFeedControllerAuthorizationTest {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class PromotionFeedControllerAuthorizationTest extends AbstractPostgresIT {
 
     @LocalServerPort int port;
 

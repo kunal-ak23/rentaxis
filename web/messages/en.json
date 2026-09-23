@@ -15,7 +15,7 @@
     "activate": "Activate",
     "activateLease": "Activate Lease",
     "active": "Active",
-    "actualRent": "Actual Rent",
+    "actualRent": "Actual Rent (AED/year)",
     "addProject": "Add Project",
     "addProjectDescription": "Create a new Project (Portfolio Group).",
     "addProjectFirst": "Please add a project first before adding a property.",
@@ -67,7 +67,7 @@
     "email": "Email",
     "emirate": "Emirate",
     "endDate": "End Date",
-    "expectedRent": "Expected Rent",
+    "expectedRent": "Expected Rent (AED/year)",
     "failedDeleteDraft": "Failed to delete the draft. Please try again.",
     "failedGenerateContract": "Failed to generate contract. Please try again.",
     "fixedExpenses": "Fixed Expenses",
@@ -130,6 +130,7 @@
     "renter": "Renter",
     "renterPortal": "Renter Portal",
     "renterPortalDesc": "View your leases, download contracts, and manage your tenancy.",
+    "renterPortalNoTenancy": "The renter portal shows your own tenancy. This account does not have one.",
     "renters": "Renters",
     "reports": "Reports",
     "retry": "Retry",
@@ -725,6 +726,7 @@
     "leaseRenewal": "Lease Renewal",
     "list": "List",
     "newMeeting": "New Meeting",
+    "noHostAvailable": "Your landlord hasn't set anyone up to take meetings yet. Please contact the property office directly.",
     "noMeetings": "No meetings found",
     "noShow": "Mark No Show",
     "noSlotsAvailable": "No slots available on this date",
@@ -735,6 +737,7 @@
     "propertyViewing": "Property Viewing",
     "propertyVisit": "Property Visit",
     "requester": "Requester",
+    "retry": "Retry",
     "selectDate": "Select Date",
     "selectLease": "Select Lease",
     "selectProperty": "Select Property",
@@ -742,6 +745,7 @@
     "selectSlot": "Select Time Slot",
     "selectType": "Select Meeting Type",
     "slotConflict": "This slot is already booked. Next available slot:",
+    "slotsLoadError": "Couldn't load available times. Please try again.",
     "status": {
       "REQUESTED": "Requested",
       "APPROVED": "Approved",
@@ -1718,6 +1722,23 @@
     "amendFailed": "The amendment could not be posted.",
     "renewFailed": "The renewal could not be created.",
     "extendFailed": "The extension could not be posted.",
+    "addCharge": "Add charge",
+    "addChargeFailed": "The addendum could not be posted.",
+    "addendumLines": "Addendum charges",
+    "addendumCheques": "Cheques for the addendum",
+    "effectiveFrom": "Effective from",
+    "addendumReason": "Reason",
+    "ejariNumberOptional": "Ejari number (optional)",
+    "addenda": "Addenda",
+    "noAddenda": "No addenda on this lease.",
+    "ejariPending": "Ejari pending",
+    "recordEjari": "Record Ejari",
+    "recordEjariFailed": "The Ejari number could not be saved.",
+    "addendumSuperseded": "Superseded by amendment",
+    "addendumNo": "No.",
+    "addendumValue": "Value",
+    "addendumEntry": "Entry",
+    "addendumEjari": "Ejari",
     "journalsFailed": "The journals for this contract could not be loaded.",
     "copyLines": "Copy the charge lines from this contract",
     "currentEndDate": "Current End Date",
@@ -1795,7 +1816,7 @@
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
     "cancel": "Cancel",
     "noPenalties": "No penalties raised against this contract.",
-    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot re-price the contract. Change the cheque grid first, or keep the total as it is."
+    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone."
   },
   "Cheques": {
     "register": "Cheque Register",
@@ -1830,6 +1851,8 @@
     "deposit": "Deposit",
     "depositBatch": "Deposit Batch",
     "depositDate": "Deposit Date",
+    "clearingDate": "Clearing Date",
+    "receiptDate": "Receipt Date",
     "clear": "Clear",
     "receive": "Receive",
     "bounce": "Bounce",
@@ -1917,6 +1940,8 @@
     "releaseOnlineHint": "The online payment session was never completed. Releasing puts the cheque back on the register as Registered, so it can be collected another way."
   },
   "Common": {
+    "paginationShowing": "Showing {start}-{end} of {total}",
+    "paginationPerPage": "{count} per page",
     "loadFailed": "Couldn't load this. Please try again.",
     "loadFailedGatePasses": "Couldn't load gate passes. Please try again.",
     "loadFailedLeases": "Couldn't load leases. Please try again.",
@@ -2008,7 +2033,7 @@
     "receivableAfter": "Receivable after",
     "receivableAfterHint": "Recomputed as you flip a row; the server checks it again when you confirm.",
     "uncleared": "Uncleared instruments",
-    "unclearedHint": "Every row must be either returned or kept. Returned rows have their registration reversed and the money stops being owed.",
+    "unclearedHint": "Every row must be either returned or kept. Returning a row reverses its registration and hands the instrument back \u2014 the amount goes back to rent receivable and is still owed.",
     "noUncleared": "No uncleared instruments on this contract.",
     "seq": "#",
     "chequeNo": "Cheque no.",
@@ -2325,5 +2350,8 @@
     "postCredit": "Posts credit",
     "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch.",
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
+  },
+  "Tickets": {
+    "reportedOn": "Reported On"
   }
 }

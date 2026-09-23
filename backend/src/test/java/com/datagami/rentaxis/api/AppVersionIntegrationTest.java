@@ -1,17 +1,14 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 import java.util.UUID;
@@ -40,12 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which sidesteps the RestClient message-converter entirely.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class AppVersionIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class AppVersionIntegrationTest extends AbstractPostgresIT {
 
     @LocalServerPort
     int port;

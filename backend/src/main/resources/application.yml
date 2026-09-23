@@ -16,6 +16,11 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       leak-detection-threshold: 60000
+      # The JVM runs on app.time-zone (Asia/Dubai); the database session stays
+      # on UTC. Zone-less timestamp columns filled by now() defaults have always
+      # been written in UTC, and pgjdbc would otherwise open each session in the
+      # JVM's zone. Instants are unaffected either way — Hibernate binds them in UTC.
+      connection-init-sql: SET TIME ZONE 'UTC'
   jpa:
     hibernate:
       ddl-auto: validate
@@ -104,6 +109,9 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
 
 app:
+  # The zone "today" is read in, app-wide (LocalDate.now(), the Clock bean).
+  # Applied as the JVM default time zone — see AppTimeZone.
+  time-zone: ${APP_TIME_ZONE:Asia/Dubai}
   auth:
     # HS256 secret for bearer-token issuance/verification (>= 32 bytes when set).
     # The EMPTY default is deliberate: blank => token auth disabled, login

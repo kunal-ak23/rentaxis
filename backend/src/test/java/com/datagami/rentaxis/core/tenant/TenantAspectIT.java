@@ -16,6 +16,7 @@ import com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
 import org.junit.jupiter.api.AfterEach;
@@ -23,12 +24,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,11 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * renters and leases only, so this class can be cherry-picked onto any branch.</p>
  */
 @SpringBootTest
-@Testcontainers
-class TenantAspectIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class TenantAspectIT extends AbstractPostgresIT {
 
     @Autowired MaintenanceTicketRepository tickets;
     @Autowired LeaseRepository leases;

@@ -31,18 +31,15 @@ import com.datagami.rentaxis.domain.repository.OpeningBalanceSnapshotRowReposito
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
@@ -84,11 +81,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * transaction.</p>
  */
 @SpringBootTest
-@Testcontainers
-class OpeningBalanceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class OpeningBalanceIT extends AbstractPostgresIT {
 
     @Autowired OpeningBalanceService ob;
     @Autowired AccountService accounts;

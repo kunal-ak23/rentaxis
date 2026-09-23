@@ -14,15 +14,12 @@ import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -61,12 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Requires Docker on the host.
  */
 @SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=40")
-@Testcontainers
-class PromotionClickCapConcurrencyIT {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+class PromotionClickCapConcurrencyIT extends AbstractPostgresIT {
 
     private static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
     private static final int CONCURRENT_CLICKS = 32;

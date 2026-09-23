@@ -246,6 +246,25 @@ export function assignableRoles(role: UserRole | undefined): UserRole[] {
 }
 
 /**
+ * Roles the staff-provisioning screen offers, before `assignableRoles` narrows
+ * them to what the signed-in user may actually grant.
+ *
+ * <p>Every role except RENTER belongs here: a renter is created from the Renters
+ * screen, which also builds their portal account, so offering RENTER on the
+ * staff form would make a login with no tenancy behind it.</p>
+ *
+ * <p>ACCOUNTANT was missing from this list until the two-year simulation tried
+ * to staff a finance function and could not. The role could be granted through
+ * the API but never from the UI, while accounting v2 gates journals, opening
+ * balances, the period lock and penalty approval on exactly that role — so the
+ * finance module was unreachable by anyone but a tenant admin. Derived from
+ * ROLE_RANK so a role added there can never silently go missing here again.
+ */
+export const PROVISIONABLE_ROLES: UserRole[] = (Object.keys(ROLE_RANK) as UserRole[])
+    .filter((r) => r !== 'RENTER')
+    .sort((a, b) => ROLE_RANK[a] - ROLE_RANK[b]);
+
+/**
  * Check if a role has a specific permission
  */
 export function hasPermission(role: UserRole | undefined, permission: Permission): boolean {

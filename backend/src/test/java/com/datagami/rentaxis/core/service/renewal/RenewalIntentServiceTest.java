@@ -14,15 +14,12 @@ import com.datagami.rentaxis.domain.entity.enums.ReminderStatus;
 import com.datagami.rentaxis.domain.entity.enums.RenewalIntent;
 import com.datagami.rentaxis.domain.entity.enums.RenewalStage;
 import com.datagami.rentaxis.domain.repository.*;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.RenewalTestFixtures;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.PageRequest;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -33,11 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-@Testcontainers
-class RenewalIntentServiceTest {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class RenewalIntentServiceTest extends AbstractPostgresIT {
 
     @Autowired RenewalIntentService service;
     @Autowired LeaseRepository leaseRepo;

@@ -31,7 +31,6 @@ import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
 import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
-import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
@@ -704,8 +703,14 @@ public class SettlementService {
         // Filled rather than left blank: the field has existed since v1 and the
         // settlement screen renders it, so an id with no name beside it is a gap
         // the reader has to go and look up.
+        //
+        // findDisplayNameById, not the tenant-filtered findById: a SUPER_ADMIN
+        // acting inside a pivoted tenant has tenant_id = NULL, so the filtered
+        // lookup can't see them and the name degraded to the bare UUID on the
+        // finalized statement — a legal move-out document that gets shown to a
+        // departing tenant and may be produced in a rental dispute.
         response.setSettledByName(settlement.getSettledBy() == null ? null
-                : userRepository.findById(settlement.getSettledBy()).map(User::getName).orElse(null));
+                : userRepository.findDisplayNameById(settlement.getSettledBy()).orElse(null));
         response.setSettledAt(settlement.getSettledAt());
         response.setCreatedAt(settlement.getCreatedAt());
 

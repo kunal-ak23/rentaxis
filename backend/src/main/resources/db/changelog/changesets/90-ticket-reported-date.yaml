@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # A maintenance ticket had no reported date — only created_at, the instant the
+  # row was typed. Complaints taken by phone or WhatsApp and logged later, and any
+  # history migrated from another system, all collapsed onto the day of entry,
+  # which destroys SLA measurement and the maintenance record a landlord needs at
+  # renewal or in a dispute. reported_date captures when the tenant actually
+  # raised it, distinct from when staff recorded it.
+  #
+  # Backfilled to the date-portion of created_at so existing rows keep a sensible
+  # value, and NOT NULL thereafter — every ticket was reported on some day.
+  - changeSet:
+      id: 90-ticket-reported-date
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: reported_date
+                  type: date
+        - sql:
+            sql: UPDATE maintenance_tickets SET reported_date = (created_at AT TIME ZONE 'UTC')::date WHERE reported_date IS NULL
+        - addNotNullConstraint:
+            tableName: maintenance_tickets
+            columnName: reported_date
+            columnDataType: date

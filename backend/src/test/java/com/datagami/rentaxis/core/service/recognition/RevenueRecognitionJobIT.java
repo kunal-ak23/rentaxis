@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.recognition;
 
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -22,14 +23,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -74,9 +71,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rest drive {@link RevenueRecognitionJob#runFor(LocalDate)} underneath it.</p>
  */
 @SpringBootTest
-@Testcontainers
 @Import(RevenueRecognitionJobIT.FixedClockConfig.class)
-class RevenueRecognitionJobIT {
+class RevenueRecognitionJobIT extends AbstractPostgresIT {
 
     /** 2026-12-01, so September, October and November have ended and December has not. */
     static final LocalDate TODAY = LocalDate.of(2026, 12, 1);
@@ -94,9 +90,6 @@ class RevenueRecognitionJobIT {
             return Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).plusHours(3).toInstant(), ZoneOffset.UTC);
         }
     }
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired RevenueRecognitionJob job;
     @Autowired RecognitionService recognition;
@@ -252,6 +245,11 @@ class RevenueRecognitionJobIT {
     @Test
     void theScheduledEntryPointUsesTheClockAndHoldsItsShedLock() {
         assertThat(LocalDate.now(clock)).isEqualTo(TODAY);
+        // The lock table is shared with every other class on the test database, and
+        // a run elsewhere within the last minute would still hold this lock — run()
+        // would then skip silently and this test would assert on a close that never
+        // happened. Start from a free lock; what is asserted is that run() takes it.
+        jdbc.update("delete from shedlock where name = 'revenue-recognition'");
 
         job.run();
 
@@ -297,13 +295,11 @@ class RevenueRecognitionJobIT {
     @Test
     void aSecondPassIsANoOp() {
         job.runFor(TODAY);
-        long after = jdbc.queryForObject(
-                "select count(*) from journal_entries where doc_type = 'CIL'", Long.class);
+        long after = cilNumbersOf(alpha.tenantId()).size() + cilNumbersOf(beta.tenantId()).size();
 
         job.runFor(TODAY);
 
-        assertThat(jdbc.queryForObject(
-                "select count(*) from journal_entries where doc_type = 'CIL'", Long.class))
+        assertThat(cilNumbersOf(alpha.tenantId()).size() + cilNumbersOf(beta.tenantId()).size())
                 .isEqualTo(after);
         assertThat(as(alpha.tenantId(), () -> recognition.scheduleFor(alphaLease)).stream()
                 .filter(r -> r.status() == RecognitionStatus.POSTED).count()).isEqualTo(3);

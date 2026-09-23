@@ -10,17 +10,14 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
@@ -87,11 +84,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * asserts as an identity rather than as a constant.</p>
  */
 @SpringBootTest
-@Testcontainers
-class CutoverOpeningBalanceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class CutoverOpeningBalanceIT extends AbstractPostgresIT {
 
     @Autowired CutoverFixture fixture;
     @Autowired ContractImportPersistService contractPersist;

@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    FileText, Loader2, Mail, Phone, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    FileText, Loader2, Mail, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
@@ -26,13 +26,15 @@ import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
+import AddChargeDialog from "@/components/leases/AddChargeDialog";
+import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
-    type ChargeType, type Cheque, type LeaseDetail, type LeaseStatus, type SettlementResponse,
+    type ChargeType, type Cheque, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
 } from "@/lib/api/leasing";
 
 /**
@@ -172,6 +174,8 @@ export default function LeaseDetailPage() {
     const [amendOpen, setAmendOpen] = useState(false);
     const [renewOpen, setRenewOpen] = useState(false);
     const [extendOpen, setExtendOpen] = useState(false);
+    const [addChargeOpen, setAddChargeOpen] = useState(false);
+    const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
     const [noticeBusy, setNoticeBusy] = useState(false);
@@ -194,6 +198,7 @@ export default function LeaseDetailPage() {
             const detail = await leaseApi.get(leaseId);
             setLease(detail);
             setCheques(await leaseApi.cheques(leaseId));
+            leaseApi.addenda(leaseId).then(setAddenda).catch(() => setAddenda([]));
             if (detail.renterId) {
                 const r = await fetch(`/api/proxy/v1/renters/${detail.renterId}`);
                 if (r.ok) setRenter(await r.json());
@@ -519,6 +524,15 @@ export default function LeaseDetailPage() {
                                 <CalendarClock size={14} /> {t("extend")}
                             </button>
                         )}
+                        {lease.status === "ACTIVE" && canExtend && (
+                            <button
+                                onClick={() => setAddChargeOpen(true)}
+                                data-testid="lease-add-charge"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <PlusCircle size={14} /> {t("addCharge")}
+                            </button>
+                        )}
                         {posted && (
                             <Link
                                 href={`/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}`}
@@ -709,6 +723,10 @@ export default function LeaseDetailPage() {
                                 </div>
                             </div>
                         </div>
+
+                        {(addenda.length > 0 || canExtend) && (
+                            <LeaseAddendaPanel leaseId={lease.id} addenda={addenda} canRecordEjari={canExtend} onChanged={loadLease} />
+                        )}
                     </div>
                 )}
 
@@ -946,6 +964,17 @@ export default function LeaseDetailPage() {
                 onClose={() => setExtendOpen(false)}
                 onExtended={async () => {
                     setExtendOpen(false);
+                    await loadLease();
+                }}
+            />
+
+            <AddChargeDialog
+                open={addChargeOpen}
+                lease={lease}
+                chargeTypes={chargeTypes}
+                onClose={() => setAddChargeOpen(false)}
+                onAdded={async () => {
+                    setAddChargeOpen(false);
                     await loadLease();
                 }}
             />

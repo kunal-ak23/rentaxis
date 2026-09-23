@@ -182,7 +182,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         paymentReferenceNumber: terms.paymentReferenceNumber || null,
         agreementDate: terms.agreementDate || null,
         rentVatApplicable: terms.rentVatApplicable,
-        lines: toInputs(rows),
+        lines: toInputs(rows, { keepPeriods: false }),
     });
 
     const stepError = (idx: number): string | null => {

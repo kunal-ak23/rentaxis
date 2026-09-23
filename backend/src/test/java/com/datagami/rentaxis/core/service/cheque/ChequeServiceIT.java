@@ -42,18 +42,15 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -85,11 +82,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
 @SpringBootTest
-@Testcontainers
-class ChequeServiceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class ChequeServiceIT extends AbstractPostgresIT {
 
     @Autowired ChequeService service;
     @Autowired LeasePostingService posting;
@@ -121,6 +114,13 @@ class ChequeServiceIT {
     private static final LocalDate END = LocalDate.of(2027, 10, 1);
     private static final LocalDate DEPOSIT_DATE = LocalDate.of(2026, 10, 5);
     private static final LocalDate CLEAR_DATE = LocalDate.of(2026, 10, 8);
+    /**
+     * A day after the last row of {@link #posted()}'s grid falls due (2027-07-02).
+     * A test that banks the whole grid in one call needs a date on which every row
+     * is payable, because a post-dated cheque may not be presented before its date.
+     */
+    private static final LocalDate WHOLE_GRID_DEPOSIT_DATE = LocalDate.of(2027, 7, 5);
+    private static final LocalDate WHOLE_GRID_CLEAR_DATE = LocalDate.of(2027, 7, 8);
     private static final LocalDate BOUNCE_DATE = LocalDate.of(2026, 10, 12);
     private static final LocalDate REPLACE_DATE = LocalDate.of(2026, 10, 15);
 
@@ -271,18 +271,71 @@ class ChequeServiceIT {
         assertThat(reread(chequeId).getStatusChangedAt()).isNotNull();
     }
 
+    /**
+     * The clue is in the name. A bank refuses a post-dated cheque presented before
+     * its date, so a register that accepted one would carry cash in transit that
+     * could not exist and a CRT dated before the instrument was payable.
+     */
+    @Test
+    void aPostDatedChequeCannotBeBankedBeforeItsDate() {
+        PostLeaseResponse r = posted();
+        // Row 1 falls due a quarter after row 0, so DEPOSIT_DATE is early for it.
+        ChequeDTO notYetDue = r.cheques().get(1);
+
+        assertThatThrownBy(() -> service.deposit(notYetDue.id(), ChequeActionRequest.on(DEPOSIT_DATE)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("may not be presented before its date");
+
+        assertThat(reread(notYetDue.id()).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(reread(notYetDue.id()).getDepositedAt()).isNull();
+    }
+
+    /**
+     * One date covers the whole selection, so a clerk banking October's pile can
+     * sweep up a January cheque without noticing. The run names the row and banks
+     * nothing.
+     */
+    @Test
+    void depositBatchRefusesARowThatIsNotYetPayableAndBanksNothing() {
+        PostLeaseResponse r = posted();
+        List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
+
+        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(ids, DEPOSIT_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("may not be presented before its date");
+
+        for (UUID id : ids) {
+            assertThat(reread(id).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+            assertThat(reread(id).getDepositedAt()).isNull();
+        }
+    }
+
+    /** Banking on the day the cheque falls due is the ordinary case, not an edge. */
+    @Test
+    void aChequeCanBeBankedOnItsOwnDate() {
+        PostLeaseResponse r = posted();
+        Cheque first = reread(r.cheques().get(0).id());
+
+        ChequeDTO deposited = service.deposit(first.getId(),
+                ChequeActionRequest.on(first.getChequeDate()));
+
+        assertThat(deposited.status()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(deposited.depositedAt()).isEqualTo(first.getChequeDate());
+    }
+
     @Test
     void depositBatchBanksEveryTickedRowAgainstTheChosenBank() {
         PostLeaseResponse r = posted();
         Account mashreq = otherBank();
         List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
 
-        List<ChequeDTO> deposited = service.depositBatch(new DepositBatchRequest(ids, DEPOSIT_DATE, mashreq.getId()));
+        List<ChequeDTO> deposited = service.depositBatch(
+                new DepositBatchRequest(ids, WHOLE_GRID_DEPOSIT_DATE, mashreq.getId()));
 
         assertThat(deposited).hasSize(5);
         assertThat(deposited).allSatisfy(c -> {
             assertThat(c.status()).isEqualTo(ChequeStatus.DEPOSITED);
-            assertThat(c.depositedAt()).isEqualTo(DEPOSIT_DATE);
+            assertThat(c.depositedAt()).isEqualTo(WHOLE_GRID_DEPOSIT_DATE);
             assertThat(c.debitAccountId()).isEqualTo(mashreq.getId());
         });
     }
@@ -296,9 +349,10 @@ class ChequeServiceIT {
     void depositBatchIsAllOrNothing() {
         PostLeaseResponse r = posted();
         List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
-        service.deposit(ids.get(1), ChequeActionRequest.on(DEPOSIT_DATE));
+        service.deposit(ids.get(1), ChequeActionRequest.on(WHOLE_GRID_DEPOSIT_DATE));
 
-        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(ids, DEPOSIT_DATE, null)))
+        assertThatThrownBy(() -> service.depositBatch(
+                new DepositBatchRequest(ids, WHOLE_GRID_DEPOSIT_DATE, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("100041 is DEPOSITED")
                 .hasMessageContaining("nothing was deposited");
@@ -473,7 +527,7 @@ class ChequeServiceIT {
         Account rentReceivable = leaf(AccountRole.RENT_RECEIVABLE);
 
         assertThatThrownBy(() -> service.depositBatch(
-                new DepositBatchRequest(ids, DEPOSIT_DATE, rentReceivable.getId())))
+                new DepositBatchRequest(ids, WHOLE_GRID_DEPOSIT_DATE, rentReceivable.getId())))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("must be a bank or cash account");
 
@@ -673,8 +727,10 @@ class ChequeServiceIT {
     @Test
     void returnToTenantReversesThePdrFromRegisteredAndFromDeposited() {
         PostLeaseResponse r = posted();
-        ChequeDTO registered = r.cheques().get(0);
-        ChequeDTO toDeposit = r.cheques().get(1);
+        // Row 0 is the only one already payable on DEPOSIT_DATE, so it is the one
+        // that gets banked; row 1 falls due a quarter later and stays REGISTERED.
+        ChequeDTO registered = r.cheques().get(1);
+        ChequeDTO toDeposit = r.cheques().get(0);
         service.deposit(toDeposit.id(), ChequeActionRequest.on(DEPOSIT_DATE));
 
         ChequeDTO a = service.returnToTenant(registered.id(), BOUNCE_DATE, "Termination");
@@ -1072,9 +1128,9 @@ class ChequeServiceIT {
         UUID leaseId = r.lease().getId();
         List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
 
-        service.depositBatch(new DepositBatchRequest(ids, DEPOSIT_DATE, null));
+        service.depositBatch(new DepositBatchRequest(ids, WHOLE_GRID_DEPOSIT_DATE, null));
         for (UUID id : ids) {
-            service.clear(id, ChequeActionRequest.on(CLEAR_DATE));
+            service.clear(id, ChequeActionRequest.on(WHOLE_GRID_CLEAR_DATE));
         }
 
         assertThat(balance(leaf(AccountRole.PDC_RECEIVABLE), leaseId)).isEqualByComparingTo("0");

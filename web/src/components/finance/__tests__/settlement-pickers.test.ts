@@ -18,7 +18,7 @@ const SRC = path.join(__dirname, "..", "..", "..");
 /** The files that own a cheque's debit account. */
 const CHEQUE_FORMS = [
     "components/leases/ChequeGrid.tsx",
-    "components/leases/ExtendLeaseDialog.tsx",
+    "components/cheques/ChequeRowsEditor.tsx",
     "components/cheques/ChequeActionDialog.tsx",
     "components/cheques/ReplaceChequeDialog.tsx",
     "components/cheques/ReceiveCashDialog.tsx",

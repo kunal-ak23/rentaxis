@@ -22,17 +22,14 @@ import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -58,11 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * can highlight them together rather than reporting the first one five times.</p>
  */
 @SpringBootTest
-@Testcontainers
-class ChequeDetailsServiceBulkAttachIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
 
     @Autowired ChequeDetailsService details;
     @Autowired LeasePostingService posting;

@@ -5,15 +5,12 @@ import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserTenantMembershipRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.UUID;
 
@@ -32,11 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * added to the enum is covered without anyone remembering to come back here.
  */
 @SpringBootTest
-@Testcontainers
-class UserServiceTenantMembershipTest {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class UserServiceTenantMembershipTest extends AbstractPostgresIT {
 
     @Autowired UserService userService;
     @Autowired UserTenantMembershipRepository membershipRepository;

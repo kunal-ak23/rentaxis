@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
+import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
@@ -10,6 +11,7 @@ import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
+import com.datagami.rentaxis.core.service.lease.LeaseVariationService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -21,19 +23,16 @@ import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -44,6 +43,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.chequeRow;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,11 +65,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * behind would orphan journals against a landlord_org that no longer exists.</p>
  */
 @SpringBootTest
-@Testcontainers
-class TenantDeletionPostedLeaseIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class TenantDeletionPostedLeaseIT extends AbstractPostgresIT {
 
     @Autowired LandlordOrgService service;
     @Autowired LandlordOrgRepository orgRepo;
@@ -83,6 +79,7 @@ class TenantDeletionPostedLeaseIT {
     @Autowired LeaseService leaseService;
     @Autowired ChequeGenerationService generation;
     @Autowired LeasePostingService posting;
+    @Autowired LeaseVariationService variations;
     @Autowired ChequeService cheques;
     @Autowired PenaltyAssessmentService penalties;
     @Autowired TransactionTemplate tx;
@@ -203,6 +200,36 @@ class TenantDeletionPostedLeaseIT {
         for (String table : List.of("journal_entries", "journal_lines", "leases", "cheques",
                 "penalty_assessments", "accounts", "users", "renters", "properties", "units",
                 "lease_lines", "rent_segments", "recognition_entries", "lease_events")) {
+            assertThat(rows(table, tenantId)).as("rows surviving in %s", table).isZero();
+        }
+    }
+
+    /**
+     * A lease that took an addendum. {@code lease_addenda.tco_journal_id} points at
+     * the addendum's TCO, so {@code purgeLedger} NULLs it with every other
+     * tenant-scoped journal pointer before the journal goes — which a NOT NULL
+     * column refuses (23502), rolling the whole delete back.
+     */
+    @Test
+    void deletesATenantWhoseLeaseTookAnAddendum() {
+        PostLeaseResponse posted = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")), 4, "100040");
+        UUID leaseId = posted.lease().getId();
+        UUID tenantId = fixtures.tenantId();
+
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2027, 2, 15), LocalDate.of(2027, 2, 10),
+                null, "Parking bay P-12", List.of(line("PARKING_FEE", "6000")),
+                List.of(chequeRow("6000", LocalDate.of(2027, 3, 1)))));
+        assertThat(rows("lease_addenda", tenantId)).isEqualTo(1);
+
+        LandlordOrg org = orgRepo.findById(tenantId).orElseThrow();
+        TenantContextHolder.clear();
+
+        service.deleteTenant(tenantId, org.getName());
+
+        assertThat(orgRepo.findById(tenantId)).isEmpty();
+        for (String table : List.of("lease_addenda", "journal_entries", "journal_lines", "leases",
+                "cheques", "lease_lines", "rent_segments")) {
             assertThat(rows(table, tenantId)).as("rows surviving in %s", table).isZero();
         }
     }

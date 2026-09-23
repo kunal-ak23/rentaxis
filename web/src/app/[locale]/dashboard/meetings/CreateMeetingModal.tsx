@@ -112,6 +112,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const [pmUsers, setPmUsers] = useState<PMUser[]>([]);
     const [selectedPmId, setSelectedPmId] = useState("");
     const [defaultHostId, setDefaultHostId] = useState<string>("");
+    const [defaultHostStatus, setDefaultHostStatus] = useState<"idle" | "loading" | "ok" | "not_found" | "error">("idle");
 
     // Step 4 — Details
     const [notes, setNotes] = useState("");
@@ -140,6 +141,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setPmUsers([]);
             setSelectedPmId("");
             setDefaultHostId("");
+            setDefaultHostStatus("idle");
             setNotes("");
             setChequeNotes("");
             setRenewalMonths("");
@@ -283,15 +285,38 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         if (propertyId) fetchPmUsers(propertyId);
     }, [step, meetingType, selectedPropertyId, selectedLeaseId, leases, needsPmPicker, fetchPmUsers]);
 
-    // For renters: fetch the default host when entering step 3 (no PM picker shown)
-    useEffect(() => {
-        if (step === 3 && isRenter && !defaultHostId) {
-            fetch("/api/proxy/v1/meetings/default-host")
-                .then(r => r.ok ? r.json() : null)
-                .then(data => { if (data?.userId) setDefaultHostId(data.userId); })
-                .catch(() => {});
+    // For renters: fetch the default host when entering step 3 (no PM picker shown).
+    // The backend 404s when the org has no TENANT_ADMIN/PROPERTY_MANAGER to assign —
+    // that must surface as an explanation, not a silently dead slot grid.
+    const fetchDefaultHost = useCallback(async () => {
+        setDefaultHostStatus("loading");
+        try {
+            const res = await fetch("/api/proxy/v1/meetings/default-host");
+            if (res.status === 404) {
+                setDefaultHostStatus("not_found");
+                return;
+            }
+            if (!res.ok) {
+                setDefaultHostStatus("error");
+                return;
+            }
+            const data = await res.json();
+            if (data?.userId) {
+                setDefaultHostId(data.userId);
+                setDefaultHostStatus("ok");
+            } else {
+                setDefaultHostStatus("error");
+            }
+        } catch {
+            setDefaultHostStatus("error");
         }
-    }, [step, isRenter, defaultHostId]);
+    }, []);
+
+    useEffect(() => {
+        if (step === 3 && isRenter && defaultHostStatus === "idle") {
+            fetchDefaultHost();
+        }
+    }, [step, isRenter, defaultHostStatus, fetchDefaultHost]);
 
     useEffect(() => {
         const hostId = deriveHostUserId();
@@ -308,7 +333,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             if (meetingType === "OFFICE_VISIT") return officePurpose !== "" && selectedLeaseId !== "";
             if (meetingType === "PROPERTY_VISIT") return selectedPropertyId !== "";
         }
-        if (step === 3) return selectedSlot !== null;
+        if (step === 3) {
+            if (isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) return false;
+            return selectedSlot !== null;
+        }
         if (step === 4) return true;
         return false;
     };
@@ -570,20 +598,42 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 </div>
                             )}
 
+                            {/* Renter: no host available to meet with — replace the picker with an explanation */}
+                            {isRenter && defaultHostStatus === "not_found" && (
+                                <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3">
+                                    <p className="text-xs text-start text-warning">{t("noHostAvailable")}</p>
+                                </div>
+                            )}
+
+                            {isRenter && defaultHostStatus === "error" && (
+                                <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 space-y-2">
+                                    <p className="text-xs text-start text-error">{t("slotsLoadError")}</p>
+                                    <button
+                                        type="button"
+                                        onClick={fetchDefaultHost}
+                                        className="text-[10px] font-semibold text-error underline underline-offset-2 cursor-pointer"
+                                    >
+                                        {t("retry")}
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Date */}
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Preferred Date *</label>
-                                <input
-                                    type="date"
-                                    value={selectedDate}
-                                    min={new Date().toISOString().split("T")[0]}
-                                    onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(null); }}
-                                    className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
-                                />
-                            </div>
+                            {!(isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) && (
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Preferred Date *</label>
+                                    <input
+                                        type="date"
+                                        value={selectedDate}
+                                        min={new Date().toISOString().split("T")[0]}
+                                        onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(null); }}
+                                        className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
+                                    />
+                                </div>
+                            )}
 
                             {/* Slot Grid */}
-                            {selectedDate && (
+                            {selectedDate && !(isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">
                                         Available Slots

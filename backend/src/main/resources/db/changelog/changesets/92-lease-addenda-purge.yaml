@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # Deleting a tenant whose lease took an addendum rolled back (fix wave I-1).
+  # LandlordOrgService.purgeLedger breaks the ledger's foreign-key knot by
+  # NULLing every tenant-scoped column that points at journal_entries before it
+  # deletes the journal; changeset 91 made lease_addenda.tco_journal_id NOT NULL,
+  # so that UPDATE failed with 23502 and deleteTenant never got past the ledger.
+  # The service still sets the TCO on every addendum it writes — the column is
+  # nullable only so the purge can let go of it on the way out, exactly like
+  # leases.posting_journal_id.
+  #
+  # Also indexes lease_lines.addendum_id (review M-4): Postgres does not index a
+  # foreign-key column, so every delete of a lease_addenda row (a tenant purge
+  # removes them all) would otherwise scan lease_lines to check the reference.
+  - changeSet:
+      id: 92-lease-addenda-purge
+      author: rentaxis-system
+      changes:
+        - dropNotNullConstraint:
+            tableName: lease_addenda
+            columnName: tco_journal_id
+            columnDataType: uuid
+        - createIndex:
+            tableName: lease_lines
+            indexName: ix_lease_lines_addendum
+            columns:
+              - column: { name: addendum_id }

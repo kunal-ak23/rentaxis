@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -78,7 +78,9 @@ public class RenterRenewalController {
                                 r.getSlot(),
                                 r.getStatus().name(),
                                 r.getSentAt() != null
-                                        ? r.getSentAt().atOffset(ZoneOffset.UTC).toLocalDate()
+                                        // The app zone (Asia/Dubai), like LocalDate.now() above:
+                                        // a reminder sent at 21:00 UTC went out the next day in Dubai.
+                                        ? LocalDate.ofInstant(r.getSentAt(), ZoneId.systemDefault())
                                         : null)));
             }
             views.add(new LeaseRenewalView(

@@ -31,6 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -106,6 +107,15 @@ public class MaintenanceTicketService {
         }
 
         ticket.setOnBehalfOf(dto.getOnBehalfOf());
+
+        // The day the tenant reported it — for a complaint logged after the fact,
+        // the operator sets an earlier date. A future date is refused: a ticket
+        // cannot have been reported tomorrow. Absent, it is today.
+        LocalDate reportedDate = dto.getReportedDate() != null ? dto.getReportedDate() : LocalDate.now();
+        if (reportedDate.isAfter(LocalDate.now())) {
+            throw new BusinessRuleViolationException("A ticket cannot be reported in the future");
+        }
+        ticket.setReportedDate(reportedDate);
 
         MaintenanceTicket saved = ticketRepository.save(ticket);
         log.info("Created maintenance ticket {} for property {}", saved.getId(), property.getId());
@@ -625,6 +635,7 @@ public class MaintenanceTicketService {
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());
+        dto.setReportedDate(ticket.getReportedDate());
         dto.setCreatedAt(ticket.getCreatedAt());
         dto.setUpdatedAt(ticket.getUpdatedAt());
 

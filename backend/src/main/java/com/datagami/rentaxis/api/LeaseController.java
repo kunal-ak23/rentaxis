@@ -5,14 +5,18 @@ import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
+import com.datagami.rentaxis.api.dto.lease.AddendumResponse;
 import com.datagami.rentaxis.api.dto.lease.AmendLeaseLinesRequest;
 import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequeNumbersRequest;
 import com.datagami.rentaxis.api.dto.lease.GiveNoticeRequest;
 import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
+import com.datagami.rentaxis.api.dto.lease.LeaseAddendumDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
+import com.datagami.rentaxis.api.dto.lease.RecordEjariRequest;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminationPreviewDTO;
@@ -24,6 +28,7 @@ import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
 import com.datagami.rentaxis.core.service.lease.LeaseTerminationService;
+import com.datagami.rentaxis.core.service.lease.LeaseVariationService;
 import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.SettlementService;
@@ -68,6 +73,7 @@ public class LeaseController {
     private final LeasePostingService leasePostingService;
     private final LeaseRenewalService leaseRenewalService;
     private final LeaseTerminationService leaseTerminationService;
+    private final LeaseVariationService leaseVariationService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -400,6 +406,33 @@ public class LeaseController {
     public ResponseEntity<PostLeaseResponse> extendLease(@PathVariable UUID id,
                                                          @Valid @RequestBody ExtendLeaseRequest request) {
         return ResponseEntity.ok(leaseRenewalService.extend(id, request));
+    }
+
+    /**
+     * Add a charge to a posted lease mid-term, as a numbered addendum: a further
+     * TCO for the new lines, the cheques that pay for it registered on the spot.
+     * Finance roles only, like /extend — it posts immediately.
+     */
+    @PostMapping("/{id}/addenda")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<AddendumResponse> addCharge(@PathVariable UUID id,
+                                                      @Valid @RequestBody AddChargeRequest request) {
+        return ResponseEntity.ok(leaseVariationService.addCharge(id, request));
+    }
+
+    @GetMapping("/{id}/addenda")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<LeaseAddendumDTO>> listAddenda(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseVariationService.list(id));
+    }
+
+    /** Fill in the Ejari a variation was re-registered under; blank until then ("Ejari pending"). */
+    @PatchMapping("/{id}/addenda/{addendumId}/ejari")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<LeaseAddendumDTO> recordAddendumEjari(@PathVariable UUID id,
+                                                               @PathVariable UUID addendumId,
+                                                               @Valid @RequestBody RecordEjariRequest request) {
+        return ResponseEntity.ok(leaseVariationService.recordEjari(id, addendumId, request.ejariNumber()));
     }
 
     @GetMapping("/{id}/events")

@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.recognition;
 import com.datagami.rentaxis.core.service.lease.LeaseAmendedEvent;
 import com.datagami.rentaxis.core.service.lease.LeaseExtendedEvent;
 import com.datagami.rentaxis.core.service.lease.LeasePostedEvent;
+import com.datagami.rentaxis.core.service.lease.LeaseVariedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -51,6 +52,15 @@ public class RecognitionEventListener {
 
     @EventListener
     public void onLeaseExtended(LeaseExtendedEvent event) {
+        recognition.appendForExtension(event.leaseId(), event.lineIds());
+    }
+
+    /**
+     * An addendum's RENT lines get a segment each over their own window, exactly
+     * as an extension's do; its fees have no schedule.
+     */
+    @EventListener
+    public void onLeaseVaried(LeaseVariedEvent event) {
         recognition.appendForExtension(event.leaseId(), event.lineIds());
     }
 }

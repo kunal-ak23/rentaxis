@@ -20,7 +20,7 @@ async function get<T>(path: string): Promise<T> {
   await throwIfNotOk(res);
   return res.json();
 }
-async function send<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -174,6 +174,8 @@ export type LeaseLine = {
   vatApplicable: boolean;
   periodStart: string | null;
   periodEnd: string | null;
+  /** The addendum that charged this line; null for the contract's own lines and an extension's. */
+  addendumId?: string | null;
 };
 
 /** LeaseLineInput — one line as the caller submits it (create, update, renew, extend, amend). */
@@ -187,6 +189,8 @@ export type LeaseLineInput = {
   creditAccountId?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
+  /** Honoured on an amend only; must name an addendum of the same lease. */
+  addendumId?: string | null;
 };
 
 /** CreateLeaseDTO — create/update body for a draft lease. */
@@ -292,6 +296,41 @@ export type ExtendLeaseInput = {
   lines: LeaseLineInput[];
   cheques: ChequeRowInput[];
 };
+
+/** AddChargeRequest — a mid-term charge on a posted lease, as an addendum. */
+export type AddChargeInput = {
+  effectiveFrom: string;
+  contractDate?: string | null;
+  ejariNumber?: string | null;
+  reason?: string | null;
+  lines: LeaseLineInput[];
+  cheques: ChequeRowInput[];
+};
+
+/** LeaseAddendumDTO. `ejariPending` is true until an Ejari number is recorded. */
+export type LeaseAddendum = {
+  id: string;
+  addendumNumber: string;
+  effectiveFrom: string;
+  contractDate: string;
+  ejariNumber: string | null;
+  ejariPending: boolean;
+  reason: string | null;
+  value: number;
+  tcoJournalId: string;
+  tcoEntryNumber: string;
+  /**
+   * True once `amendLines` has reversed this addendum's own TCO while
+   * rebuilding the lease's ledger from a fresh set of lines. The addendum row
+   * is not rewritten by an amend, so this is the only way the page can tell
+   * its `tcoEntryNumber` is no longer the live entry.
+   */
+  superseded: boolean;
+  createdAt: string;
+};
+
+/** AddendumResponse. */
+export type AddendumResponse = { addendum: LeaseAddendum; posting: PostLeaseResponse };
 
 /** GenerateChequesRequest — every field optional, the service fills in the lease's own defaults. */
 export type GenerateChequesRequest = {
@@ -890,6 +929,10 @@ export const leaseApi = {
   amendLines: (id: string, body: AmendLeaseLinesInput) => send<PostLeaseResponse>("POST", `/leases/${id}/amend-lines`, body),
   renew: (id: string, body: RenewLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/renew`, body),
   extend: (id: string, body: ExtendLeaseInput) => send<PostLeaseResponse>("POST", `/leases/${id}/extend`, body),
+  addCharge: (id: string, body: AddChargeInput) => send<AddendumResponse>("POST", `/leases/${id}/addenda`, body),
+  addenda: (id: string) => get<LeaseAddendum[]>(`/leases/${id}/addenda`),
+  recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
+    send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
   generateCheques: (id: string, req?: GenerateChequesRequest) =>
     send<Cheque[]>("POST", `/leases/${id}/cheques/generate`, req),

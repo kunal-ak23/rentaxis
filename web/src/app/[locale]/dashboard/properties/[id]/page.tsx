@@ -737,8 +737,8 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                         <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent</label>
-                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
+                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Building</label>

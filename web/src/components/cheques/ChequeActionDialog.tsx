@@ -184,7 +184,18 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                 {action !== "details" && (
                     <div>
                         <label className={label} htmlFor="cheque-action-date">
-                            {action === "bounce" ? t("bounceDate") : t("depositDate")}
+                            {/*
+                              * Every non-bounce action used to read "Deposit Date",
+                              * including Clear — where the field is not the deposit
+                              * date at all but the value date of the CRT that moves
+                              * the money into the bank. An accountant reading it as
+                              * "when it went to the bank" was choosing which period
+                              * the cash lands in without knowing.
+                              */}
+                            {action === "bounce" ? t("bounceDate")
+                                : action === "clear" ? t("clearingDate")
+                                : action === "receive" ? t("receiptDate")
+                                : t("depositDate")}
                         </label>
                         <input
                             id="cheque-action-date"

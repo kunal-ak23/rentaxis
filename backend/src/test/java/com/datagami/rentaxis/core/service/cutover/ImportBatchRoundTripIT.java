@@ -26,17 +26,14 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -67,11 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * month-end close standing on journals that no longer exist.</p>
  */
 @SpringBootTest
-@Testcontainers
-class ImportBatchRoundTripIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class ImportBatchRoundTripIT extends AbstractPostgresIT {
 
     @Autowired CutoverFixture fixture;
     @Autowired ContractImportPersistService contractPersist;
@@ -390,11 +383,14 @@ class ImportBatchRoundTripIT {
         postService.post(batchId);
         int journals = batchJournals(batchId).size();
 
-        UUID outstanding = tx.execute(s -> chequeRepo
+        // Banked on the cheque's own date: a post-dated cheque may not be
+        // presented early, and this is an ordinary action taken after the cut-over.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
-        chequeService.deposit(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.clear(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID outstanding = row.getId();
+        chequeService.deposit(outstanding, ChequeActionRequest.on(row.getChequeDate()));
+        chequeService.clear(outstanding, ChequeActionRequest.on(row.getChequeDate().plusDays(1)));
 
         assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)

@@ -185,3 +185,9 @@ databaseChangeLog:
       file: db/changelog/changesets/88-cutover.yaml
   - include:
       file: db/changelog/changesets/89-tenant-purge-ledger-exemption.yaml
+  - include:
+      file: db/changelog/changesets/90-ticket-reported-date.yaml
+  - include:
+      file: db/changelog/changesets/91-lease-addenda.yaml
+  - include:
+      file: db/changelog/changesets/92-lease-addenda-purge.yaml

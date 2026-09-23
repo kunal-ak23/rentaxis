@@ -57,13 +57,13 @@ import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,9 +71,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -103,11 +100,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
 @SpringBootTest
-@Testcontainers
-class PenaltyAssessmentServiceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
 
     @Autowired PenaltyAssessmentService service;
     @Autowired ChequeService chequeService;
@@ -740,8 +733,11 @@ class PenaltyAssessmentServiceIT {
         assertThat(assessmentRows()).isZero();
 
         // Second bounce on a different instrument: the threshold is crossed.
-        UUID second = r.cheques().get(1).id();
-        chequeService.deposit(second, ChequeActionRequest.on(DEPOSIT_DATE));
+        ChequeDTO secondRow = r.cheques().get(1);
+        UUID second = secondRow.id();
+        // Banked on its own date: this row falls due a quarter after the first,
+        // and a post-dated cheque may not be presented before its date.
+        chequeService.deposit(second, ChequeActionRequest.on(secondRow.chequeDate()));
         chequeService.bounce(second,
                 new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.SIGNATURE_MISMATCH, null));
 
@@ -785,20 +781,20 @@ class PenaltyAssessmentServiceIT {
         // Flag off: six days late by the lease's grace, and nothing is proposed.
         fineSettings(2, true, false);
         UUID first = cheques.get(0).id();
-        chequeService.deposit(first, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(first, ChequeActionRequest.on(cheques.get(0).chequeDate()));
         chequeService.clear(first, ChequeActionRequest.on(cheques.get(0).chequeDate().plusDays(6)));
         assertThat(assessmentRows()).isZero();
 
         // Flag on, cleared on the last acceptable day (chequeDate + 5): still nothing.
         fineSettings(2, true, true);
         UUID second = cheques.get(1).id();
-        chequeService.deposit(second, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(second, ChequeActionRequest.on(cheques.get(1).chequeDate()));
         chequeService.clear(second, ChequeActionRequest.on(cheques.get(1).chequeDate().plusDays(5)));
         assertThat(assessmentRows()).isZero();
 
         // One day past it: one proposal, one day at 50.
         UUID third = cheques.get(2).id();
-        chequeService.deposit(third, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(third, ChequeActionRequest.on(cheques.get(2).chequeDate()));
         chequeService.clear(third, ChequeActionRequest.on(cheques.get(2).chequeDate().plusDays(6)));
 
         List<PenaltyAssessment> raised = assessmentsOf(leaseId);

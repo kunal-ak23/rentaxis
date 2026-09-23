@@ -3,13 +3,10 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.UUID;
 
@@ -29,11 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * what fails if someone later adds a constraint that quietly breaks the next flag.
  */
 @SpringBootTest
-@Testcontainers
-class TenantFeatureGatePassIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class TenantFeatureGatePassIT extends AbstractPostgresIT {
 
     @Autowired TenantFeatureService service;
     @Autowired LandlordOrgRepository orgRepo;

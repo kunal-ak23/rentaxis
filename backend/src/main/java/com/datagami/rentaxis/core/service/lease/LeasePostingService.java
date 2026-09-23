@@ -441,7 +441,7 @@ public class LeasePostingService {
             }
         }
 
-        leaseService.applyLines(lease, newLines);
+        leaseService.applyAmendedLines(lease, newLines);
         leaseService.syncDerivedTotals(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 

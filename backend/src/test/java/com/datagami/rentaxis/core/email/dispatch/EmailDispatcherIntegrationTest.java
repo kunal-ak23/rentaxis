@@ -14,15 +14,12 @@ import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.UUID;
@@ -30,11 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Testcontainers
-class EmailDispatcherIntegrationTest {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+class EmailDispatcherIntegrationTest extends AbstractPostgresIT {
 
     @Autowired ApplicationEventPublisher publisher;
     @Autowired EmailOutboxRepository outboxRepo;
@@ -71,7 +64,11 @@ class EmailDispatcherIntegrationTest {
                     "USER_INVITED:user=" + userId));
         });
 
-        List<EmailOutbox> rows = outboxRepo.findAll();
+        // This recipient's rows only: the outbox is shared with every other class on
+        // the test database, as the sibling tests below already assume.
+        List<EmailOutbox> rows = outboxRepo.findAll().stream()
+                .filter(r -> userId.equals(r.getRecipientUserId()))
+                .toList();
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).getRecipientUserId()).isEqualTo(userId);
         assertThat(rows.get(0).getEventType()).isEqualTo("USER_INVITED");

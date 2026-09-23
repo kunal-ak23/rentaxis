@@ -9,16 +9,13 @@ import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.UUID;
 
@@ -41,11 +38,7 @@ import static org.mockito.Mockito.when;
  * path already resets them.</p>
  */
 @SpringBootTest
-@Testcontainers
-class ContractImportFailurePathIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class ContractImportFailurePathIT extends AbstractPostgresIT {
 
     @Autowired PortfolioImportService importService;
     @Autowired PortfolioTemplateService templates;

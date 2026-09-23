@@ -19,16 +19,13 @@ import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 import java.util.Objects;
@@ -59,12 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * rows survive and the failed interest is left ACTIVE for a future retry.
  */
 @SpringBootTest
-@Testcontainers
-class ListingNotificationPerRecipientTxIT {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+class ListingNotificationPerRecipientTxIT extends AbstractPostgresIT {
 
     @Autowired ListingNotificationService listingNotificationService;
     @Autowired LandlordOrgRepository landlordOrgRepository;

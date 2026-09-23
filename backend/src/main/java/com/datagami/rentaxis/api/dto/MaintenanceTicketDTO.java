@@ -26,6 +26,7 @@ public class MaintenanceTicketDTO {
     private Integer satisfactionRating;
     private String satisfactionComment;
     private String onBehalfOf;
+    private java.time.LocalDate reportedDate;
     private Instant createdAt;
     private Instant updatedAt;
 

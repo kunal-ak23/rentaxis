@@ -35,19 +35,16 @@ import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -75,12 +72,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * it is the precondition for both.</p>
  */
 @SpringBootTest
-@Testcontainers
 @Import(ContractImportPostIT.EmailRecorder.class)
-class ContractImportPostIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class ContractImportPostIT extends AbstractPostgresIT {
 
     /**
      * Every renter-facing email the run publishes, recorded in the thread that
@@ -256,17 +249,22 @@ class ContractImportPostIT {
         postService.post(batchId);
         int imported = batchJournals(batchId).size();
 
-        UUID registered = tx.execute(s -> chequeRepo
+        // The imported row keeps its own cheque date, and a post-dated cheque may
+        // not be banked before it — so the date the clerk would actually use is
+        // the cheque's own, not a fixed one.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID registered = row.getId();
+        LocalDate payableOn = row.getChequeDate();
 
-        chequeService.deposit(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.clear(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+        chequeService.deposit(registered, ChequeActionRequest.on(payableOn));
+        chequeService.clear(registered, ChequeActionRequest.on(payableOn.plusDays(1)));
 
         assertThat(batchJournals(batchId)).hasSize(imported);
         tx.executeWithoutResult(s -> assertThat(entries.findAll())
                 .filteredOn(e -> e.getDocType() == JournalDocType.CRT
-                        && e.getEntryDate().isEqual(LocalDate.of(2026, 10, 6)))
+                        && e.getEntryDate().isEqual(payableOn.plusDays(1)))
                 .singleElement()
                 .satisfies(e -> assertThat(e.getImportBatchId()).isNull()));
     }
@@ -319,11 +317,16 @@ class ContractImportPostIT {
         UUID batchId = importTheTemplate();
         postService.post(batchId);
 
-        UUID registered = tx.execute(s -> chequeRepo
+        // The imported row keeps its own cheque date, and a post-dated cheque may
+        // not be banked before it — so the date the clerk would actually use is
+        // the cheque's own, not a fixed one.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
-        chequeService.deposit(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.bounce(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID registered = row.getId();
+        LocalDate payableOn = row.getChequeDate();
+        chequeService.deposit(registered, ChequeActionRequest.on(payableOn));
+        chequeService.bounce(registered, ChequeActionRequest.on(payableOn.plusDays(1)));
 
         tx.executeWithoutResult(s -> assertThat(penalties.findAll()).hasSize(1));
     }

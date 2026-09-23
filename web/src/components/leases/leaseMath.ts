@@ -38,6 +38,20 @@ export type LineRow = {
     creditAccountId: string | null;
     creditAccountCode?: string | null;
     creditAccountName?: string | null;
+    /**
+     * The window a persisted line covers — an addendum's or an extension's rent
+     * runs over its own dates, not the lease's. Not editable in the grid; carried
+     * so an amend re-sends it (review I-2), because the server defaults a RENT line
+     * with no period to the whole term. A new blank line has none.
+     */
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    /**
+     * The addendum that charged a persisted line. Carried, like the period, so an
+     * amend re-sends it: without it the re-inserted line loses its tie and a later
+     * renewal copies the addendum's part-term charge onto a new year.
+     */
+    addendumId?: string | null;
 };
 
 export function blankLine(key: number): LineRow {
@@ -65,6 +79,9 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         creditAccountId: line.creditAccountId,
         creditAccountCode: line.creditAccountCode,
         creditAccountName: line.creditAccountName,
+        periodStart: line.periodStart ?? null,
+        periodEnd: line.periodEnd ?? null,
+        addendumId: line.addendumId ?? null,
     };
 }
 
@@ -72,7 +89,10 @@ export function toRows(lines: LeaseLine[]): LineRow[] {
     return lines.map((l, i) => toRow(l, i));
 }
 
-/** The wire shape. Blank narrations go over as null, not "". */
+/**
+ * The wire shape. Blank narrations go over as null, not "". A line's period goes
+ * with it, so an amend does not stretch an addendum's rent back to the lease start.
+ */
 export function toInput(row: LineRow): LeaseLineInput {
     return {
         chargeTypeId: row.chargeTypeId,
@@ -81,11 +101,27 @@ export function toInput(row: LineRow): LeaseLineInput {
         narration: row.narration.trim() || null,
         vatApplicable: row.vatApplicable,
         creditAccountId: row.creditAccountId,
+        periodStart: row.periodStart ?? null,
+        periodEnd: row.periodEnd ?? null,
+        addendumId: row.addendumId ?? null,
     };
 }
 
-export function toInputs(rows: LineRow[]): LeaseLineInput[] {
-    return rows.map(toInput);
+/**
+ * `keepPeriods: false` is for a caller that is (re)setting the term the lines
+ * belong to — a draft whose dates can be edited alongside its lines, or a
+ * renewal's new lease. A period read from the old term would pin the rent to
+ * dates that no longer apply; sent without one, the server re-defaults it to
+ * the term being saved, which is what those screens always relied on. The
+ * addendum tie goes with the periods: only an amend may send one (the server
+ * refuses it anywhere else), and a renewal or draft must not carry it over.
+ */
+export function toInputs(rows: LineRow[], opts: { keepPeriods?: boolean } = {}): LeaseLineInput[] {
+    const keepPeriods = opts.keepPeriods ?? true;
+    return rows.map(r => {
+        const input = toInput(r);
+        return keepPeriods ? input : { ...input, periodStart: null, periodEnd: null, addendumId: null };
+    });
 }
 
 export function behaviourOf(row: LineRow, chargeTypes: ChargeType[]): ChargeBehaviour | null {
@@ -188,16 +224,36 @@ export function splitLineErrors(errors: string[]): { bySeq: Map<number, string[]
 }
 
 /**
- * `new Date("2026-09-11")` parses as UTC midnight, so west of Greenwich
- * `toLocaleDateString` renders the day before — a cheque grid that shifts every
- * date by one day is worse than no dates at all. Built from the parts, the Date
- * lands on local midnight.
+ * Renders either a bare `yyyy-MM-dd` date or a full ISO timestamp as a date.
+ *
+ * <p>The two need opposite handling, and conflating them was the "same instant,
+ * two dates" bug: a lease's `postedAt` (an {@code Instant}) showed 22/09 on the
+ * header while the ticket history showed 23/09 for the same action, because this
+ * used to slice the first ten characters — the *UTC* calendar date — off every
+ * value. West of the date line that disagrees with any screen rendering the same
+ * instant in local time.</p>
+ *
+ * <ul>
+ *   <li>A full timestamp (has a {@code T}) is an instant with a real time zone:
+ *       convert it to the viewer's local date, so it agrees everywhere.</li>
+ *   <li>A bare {@code yyyy-MM-dd} has no time zone. {@code new Date("2026-09-11")}
+ *       parses as UTC midnight, so east or west of Greenwich {@code toLocale…}
+ *       could render the neighbouring day — a cheque grid that shifts every date
+ *       is worse than no dates. Built from the parts, the Date lands on local
+ *       midnight and the day is preserved.</li>
+ * </ul>
  */
 export function fmtIsoDate(iso: string | null | undefined, locale: string): string {
     if (!iso) return "—";
+    const target = locale === "ar" ? "ar-AE" : "en-GB";
+    if (iso.includes("T")) {
+        const instant = new Date(iso);
+        if (Number.isNaN(instant.getTime())) return iso;
+        return instant.toLocaleDateString(target);
+    }
     const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
     if (!y || !m || !d) return iso;
-    return new Date(y, m - 1, d).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-GB");
+    return new Date(y, m - 1, d).toLocaleDateString(target);
 }
 
 /** Today in the `yyyy-MM-dd` shape every date input and date field expects. */

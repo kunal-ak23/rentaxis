@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -23,10 +24,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
@@ -51,12 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * case so missing infra is obvious.</p>
  */
 @SpringBootTest
-@Testcontainers
-class PortfolioImportIT {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+class PortfolioImportIT extends AbstractPostgresIT {
 
     @Autowired PortfolioImportService importService;
     @Autowired ImportJobRepository importJobRepository;
@@ -72,14 +64,24 @@ class PortfolioImportIT {
 
     @BeforeEach
     void setUp() {
-        // Each test gets its own tenant. Multi-tenant isolation in the schema
-        // means we don't need DB cleanup between tests — repository reads are
-        // already scoped by TenantContextHolder.
+        // Each test gets its own tenant, and every read-back below is scoped to it
+        // explicitly: these reads run outside a transaction, where TenantAspect has
+        // not enabled the Hibernate tenant filter, so a bare findAll() would see
+        // every organisation in the shared test database.
         LandlordOrg org = new LandlordOrg();
         org.setName("IT-Tenant-" + UUID.randomUUID());
         org = landlordOrgRepository.save(org);
         this.tenantId = org.getId();
         TenantContextHolder.setTenantId(tenantId);
+    }
+
+    private List<Lease> leasesOfThisTenant() {
+        return leaseRepository.findAll().stream().filter(l -> tenantId.equals(l.getTenantId())).toList();
+    }
+
+    private UUID renterOfThisTenant(String email) {
+        return renterRepository.findByEmailIn(List.of(email)).stream()
+                .filter(r -> tenantId.equals(r.getTenantId())).findFirst().orElseThrow().getId();
     }
 
     @AfterEach
@@ -134,13 +136,11 @@ class PortfolioImportIT {
         // Lease.unit and Lease.renter are LAZY @ManyToOne; the persistence context
         // closed when the async @Transactional ended, so we resolve associations
         // explicitly via repos instead of traversing proxies.
-        List<Lease> leases = leaseRepository.findAll();
+        List<Lease> leases = leasesOfThisTenant();
         assertThat(leases).hasSize(5);
 
-        UUID tenant5RenterId = renterRepository.findByEmailIn(List.of("tenant5@email.com"))
-                .stream().findFirst().orElseThrow().getId();
-        UUID tenant2RenterId = renterRepository.findByEmailIn(List.of("tenant2@email.com"))
-                .stream().findFirst().orElseThrow().getId();
+        UUID tenant5RenterId = renterOfThisTenant("tenant5@email.com");
+        UUID tenant2RenterId = renterOfThisTenant("tenant2@email.com");
 
         // Scenario 3: Status=DRAFT must leave its unit VACANT.
         Lease draft = leases.stream()
@@ -238,7 +238,7 @@ class PortfolioImportIT {
         ImportJob terminal = pollUntilTerminal(saved.getId());
         assertThat(terminal.getStatus()).isEqualTo("VALIDATION_FAILED");
         // Phase 2 never ran → no persisted leases for this tenant.
-        assertThat(leaseRepository.findAll()).isEmpty();
+        assertThat(leasesOfThisTenant()).isEmpty();
         // Errors persisted in legacy array form (leading '[').
         assertThat(terminal.getErrors()).startsWith("[");
     }

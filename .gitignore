@@ -62,3 +62,6 @@ web/walkthrough/takes/
 
 # Screenshot proof runs — regenerate with proof-shots.spec.ts, don't commit binaries
 web/walkthrough/proof/
+
+# Tutorial/demo seed state containing login credentials (never commit)
+*secrets.local.json

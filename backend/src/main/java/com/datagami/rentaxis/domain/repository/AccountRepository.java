@@ -53,6 +53,27 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     List<Account> findByProperty_Id(UUID propertyId);
 
     /**
+     * A leaf already generated for this exact property under this parent, found
+     * by its category prefix rather than its full name.
+     *
+     * <p>{@code generateDirectExpenseLeaves} used to dedup by
+     * {@code (name, parent)} alone, where {@code name} is
+     * {@code category + " - " + property.getNameEn()}. Two properties that
+     * share a display name — not unusual for "Building A" style naming — then
+     * shared one leaf: the second property's generation found the first
+     * property's "Repairs & Maintenance - Building A" by name, saw it already
+     * existed, and skipped creating its own. Scoping the lookup to this
+     * property's own id closes that: a same-named leaf belonging to a
+     * <em>different</em> property no longer counts as "already generated".</p>
+     *
+     * <p>An existence check, not a single-result finder: the caller passes
+     * {@code category + " - "}, and a user may still have made more than one
+     * leaf under that prefix by hand — which must mean "already there", not an
+     * {@code IncorrectResultSizeDataAccessException} failing the whole run.</p>
+     */
+    boolean existsByParent_IdAndProperty_IdAndNameStartingWith(UUID parentId, UUID propertyId, String namePrefix);
+
+    /**
      * Highest numeric code in this tenant (codes like "A-02-01" are ignored).
      * Native query: the Hibernate tenant filter does not apply to it, so the
      * scoping is the explicit {@code tenant_id = :tenantId} in the SQL below —

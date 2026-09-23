@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { businessTodayIso } from "@/lib/businessDate";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
@@ -80,6 +82,7 @@ const CATEGORIES = [
 // ── Page Component ─────────────────────────────────────────────────────────
 
 export default function TicketsPage() {
+    const t = useTranslations("Tickets");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -110,6 +113,7 @@ export default function TicketsPage() {
         category: "OTHER",
         priority: "MEDIUM",
         onBehalfOf: "",
+        reportedDate: businessTodayIso(),
     });
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
@@ -209,6 +213,7 @@ export default function TicketsPage() {
                     category: form.category,
                     priority: form.priority,
                     onBehalfOf: form.onBehalfOf || undefined,
+                    reportedDate: form.reportedDate || undefined,
                 }),
             });
             if (res.ok) {
@@ -224,7 +229,7 @@ export default function TicketsPage() {
                     });
                 }
                 setShowForm(false);
-                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "" });
+                setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "", reportedDate: businessTodayIso() });
                 setAttachmentFiles([]);
                 fetchTickets();
             } else {
@@ -529,6 +534,18 @@ export default function TicketsPage() {
                                     />
                                 </div>
                             )}
+
+                            {/* Reported date — for a complaint taken by phone and logged later */}
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("reportedOn")}</label>
+                                <input
+                                    type="date"
+                                    value={form.reportedDate}
+                                    max={businessTodayIso()}
+                                    onChange={(e) => setForm({ ...form, reportedDate: e.target.value })}
+                                    className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                                />
+                            </div>
 
                             {/* Category & Priority row */}
                             <div className="grid grid-cols-2 gap-3">

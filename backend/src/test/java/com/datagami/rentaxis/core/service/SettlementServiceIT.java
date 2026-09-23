@@ -59,17 +59,14 @@ import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -119,11 +116,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * only inside one, so every read-back goes through {@link #tx}.</p>
  */
 @SpringBootTest
-@Testcontainers
-class SettlementServiceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class SettlementServiceIT extends AbstractPostgresIT {
 
     @Autowired SettlementService settlement;
     @Autowired LeaseTerminationService termination;
@@ -564,6 +557,43 @@ class SettlementServiceIT {
      * and the deposit: anything left in either is money the books still think is
      * moving between a landlord and a renter who have settled.</p>
      */
+    /**
+     * The finalized statement carries the settler's name, not a bare id.
+     *
+     * <p>The move-out statement is a legal document — shown to the departing tenant
+     * and admissible in a dispute — so the "Finalized … by …" line must name the
+     * person. This guards that the mapping populates {@code settledByName} for the
+     * actual settler.</p>
+     *
+     * <p><b>Scope note:</b> the production defect only bit a SUPER_ADMIN acting
+     * inside a pivoted tenant, whose {@code tenant_id} is NULL and who the
+     * tenant-filtered {@code findById} therefore missed; the fix swaps to the
+     * native {@code findDisplayNameById}. This test cannot reproduce that half —
+     * the tenant Hibernate filter is not engaged in this harness, so a plain
+     * {@code findById} would resolve the name here too. It does lock in that the
+     * name is resolved at all, which catches a mapping that stops populating it.</p>
+     */
+    @Test
+    void finalizeCarriesTheSettlersNameOnTheStatement() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        UUID bank = leaf(AccountRole.BANK).getId();
+
+        com.datagami.rentaxis.domain.entity.User settler = new com.datagami.rentaxis.domain.entity.User();
+        settler.setName("Kunal (Platform Admin)");
+        settler.setEmail("platform-admin-" + UUID.randomUUID() + "@example.invalid");
+        settler.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.SUPER_ADMIN);
+        settler.setPasswordHash("x");
+        settler.setTenantId(null);
+        UUID settlerId = userRepo.saveAndFlush(settler).getId();
+
+        SettlementResponseDTO response = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(SETTLED_ON, bank, false), settlerId);
+
+        assertThat(response.getSettledBy()).isEqualTo(settlerId);
+        assertThat(response.getSettledByName()).isEqualTo("Kunal (Platform Admin)");
+    }
+
     @Test
     void finalizeRefundPostsStlAndClosesLease() {
         UUID leaseId = terminatedGalah();

@@ -83,6 +83,7 @@ public class LeaseService {
     private final LeaseAttachmentRepository leaseAttachmentRepository;
     private final LeaseInteractionRepository leaseInteractionRepository;
     private final LeaseLineRepository leaseLineRepository;
+    private final LeaseAddendumRepository leaseAddendumRepository;
     private final ChargeTypeRepository chargeTypeRepository;
     private final AccountRepository accountRepository;
     private final ChequeRepository chequeRepository;
@@ -100,6 +101,7 @@ public class LeaseService {
                         LeaseAttachmentRepository leaseAttachmentRepository,
                         LeaseInteractionRepository leaseInteractionRepository,
                         LeaseLineRepository leaseLineRepository,
+                        LeaseAddendumRepository leaseAddendumRepository,
                         ChargeTypeRepository chargeTypeRepository,
                         AccountRepository accountRepository,
                         ChequeRepository chequeRepository,
@@ -116,6 +118,7 @@ public class LeaseService {
         this.leaseAttachmentRepository = leaseAttachmentRepository;
         this.leaseInteractionRepository = leaseInteractionRepository;
         this.leaseLineRepository = leaseLineRepository;
+        this.leaseAddendumRepository = leaseAddendumRepository;
         this.chargeTypeRepository = chargeTypeRepository;
         this.accountRepository = accountRepository;
         this.chequeRepository = chequeRepository;
@@ -539,14 +542,58 @@ public class LeaseService {
      */
     @Transactional
     public void applyLines(Lease lease, List<LeaseLineInput> inputs) {
+        replaceLines(lease, inputs, false);
+    }
+
+    /**
+     * {@link #applyLines} for an amendment of a posted lease: the one path that
+     * re-sends lines an addendum charged, and so the one path that may carry an
+     * {@code addendumId} back in. Without it the re-inserted line loses its tie
+     * and a later renewal copies the addendum's part-term charge onto a new year.
+     *
+     * <p>The id arrives from the client, so each one must name an addendum of
+     * <em>this</em> lease — checked before anything is deleted.</p>
+     */
+    @Transactional
+    public void applyAmendedLines(Lease lease, List<LeaseLineInput> inputs) {
+        replaceLines(lease, inputs, true);
+    }
+
+    private void replaceLines(Lease lease, List<LeaseLineInput> inputs, boolean mayNameAddendum) {
         if (inputs == null || inputs.isEmpty()) {
             throw new BusinessRuleViolationException("At least one line is required");
         }
+        requireAddendaAllowed(lease, inputs, mayNameAddendum, 0);
 
         leaseLineRepository.deleteByLease_Id(lease.getId());
         leaseLineRepository.flush();
 
         insertLines(lease, inputs, 0);
+    }
+
+    /**
+     * Refuses an {@code addendumId} on a path that may not set one, and on the
+     * amend path one that does not belong to this lease. Only an addendum ties a
+     * new line to itself (it sets the id after writing); an amend merely keeps an
+     * existing tie.
+     */
+    private void requireAddendaAllowed(Lease lease, List<LeaseLineInput> inputs, boolean mayNameAddendum,
+                                       int startingSeq) {
+        int seqNo = startingSeq;
+        for (LeaseLineInput in : inputs) {
+            seqNo++;
+            if (in == null || in.addendumId() == null) {
+                continue;
+            }
+            if (!mayNameAddendum) {
+                throw new BusinessRuleViolationException("Line " + seqNo
+                        + " names an addendum; only an amend may name an addendum on a line");
+            }
+            if (leaseAddendumRepository.findByIdAndLease_Id(in.addendumId(), lease.getId()).isEmpty()) {
+                throw new BusinessRuleViolationException("Line " + seqNo
+                        + " names an addendum that is not on this lease");
+            }
+        }
     }
 
     /**
@@ -576,6 +623,7 @@ public class LeaseService {
         }
         int lastSeq = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
                 .mapToInt(LeaseLine::getSeqNo).max().orElse(0);
+        requireAddendaAllowed(lease, inputs, false, lastSeq);
         return insertLines(lease, inputs, lastSeq);
     }
 
@@ -627,6 +675,9 @@ public class LeaseService {
             line.setDiscountAmount(discount);
             line.setNetAmount(gross.subtract(discount));
             line.setNarration(in.narration());
+            // Validated by requireAddendaAllowed before this point: null except on
+            // an amend, where it names an addendum of this very lease.
+            line.setAddendumId(in.addendumId());
             line.setVatApplicable(in.vatApplicable() != null
                     ? in.vatApplicable() : type.isVatApplicableDefault());
             line.setCreditAccount(resolveCreditAccount(in, type, propertyId, seqNo));
@@ -1403,7 +1454,8 @@ public class LeaseService {
                 l.getNarration(),
                 l.isVatApplicable(),
                 l.getPeriodStart(),
-                l.getPeriodEnd());
+                l.getPeriodEnd(),
+                l.getAddendumId());
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

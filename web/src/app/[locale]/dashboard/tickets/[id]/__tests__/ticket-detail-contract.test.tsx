@@ -16,6 +16,10 @@ const sessionUser = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
 vi.mock("next/navigation", () => ({
     useParams: () => ({ id: "11111111-1111-1111-1111-111111111111" }),
 }));
+vi.mock("next-intl", () => ({
+    useTranslations: () => (key: string) => key,
+    useLocale: () => "en",
+}));
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: sessionUser.role, id: "99999999-9999-9999-9999-999999999999" } } }),
 }));
@@ -123,6 +127,17 @@ describe("TicketDetailPage API contract", () => {
         render(<TicketDetailPage />);
 
         expect(await screen.findByText("5 hours")).toBeTruthy();
+    });
+
+    it("labels the reported-on row through the translation key, not hard-coded English", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        (ticket as typeof baseTicket & { reportedDate: string }).reportedDate = "2026-09-11";
+        render(<TicketDetailPage />);
+
+        await screen.findByText("Leaking tap");
+        // The mocked useTranslations returns the key itself — this fails if the
+        // label ever reverts to a literal "Reported On" string.
+        expect(screen.getByText("reportedOn")).toBeTruthy();
     });
 
     it("surfaces the backend message when a status action fails", async () => {

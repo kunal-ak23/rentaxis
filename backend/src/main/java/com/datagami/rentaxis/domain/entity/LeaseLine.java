@@ -80,4 +80,8 @@ public class LeaseLine extends BaseTenantEntity {
 
     @Column(name = "period_end")
     private LocalDate periodEnd;
+
+    /** The addendum that charged this line; null for the contract's own lines and an extension's. */
+    @Column(name = "addendum_id")
+    private UUID addendumId;
 }

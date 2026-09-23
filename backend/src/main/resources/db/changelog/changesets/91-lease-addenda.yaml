@@ -1,0 +1,45 @@
+databaseChangeLog:
+  # A mid-term charge on a posted lease (findings #15/#17): a parking bay sold in
+  # February, a storage room, an extra chiller line. The ledger already supports
+  # it additively — new lines, a further TCO, the cheques that pay for it — and
+  # this is the document that says so: its own ADD-yy/n number, the Ejari it was
+  # registered under (blank until re-registration, which is how "Ejari pending"
+  # is known), and the TCO it posted.
+  #
+  # lease_lines.addendum_id ties each line to the addendum that charged it, so the
+  # lease page can say which charges came later. Nullable: a contract's own lines
+  # and an extension's have none. An amendment rewrites the whole line set and
+  # clears it, which is right — the amended lines belong to the reposted contract.
+  - changeSet:
+      id: 91-lease-addenda
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: lease_addenda
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_addenda_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: addendum_number, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: effective_from, type: date, constraints: { nullable: false } }
+              - column: { name: contract_date, type: date, constraints: { nullable: false } }
+              - column: { name: ejari_number, type: varchar(255) }
+              - column: { name: reason, type: text }
+              - column: { name: value, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: tco_journal_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_addenda_tco, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: tco_entry_number, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: created_by, type: uuid }
+        - addUniqueConstraint:
+            tableName: lease_addenda
+            columnNames: tenant_id, addendum_number
+            constraintName: uq_lease_addenda_number
+        - createIndex:
+            tableName: lease_addenda
+            indexName: ix_lease_addenda_lease
+            columns:
+              - column: { name: lease_id }
+        - addColumn:
+            tableName: lease_lines
+            columns:
+              - column: { name: addendum_id, type: uuid, constraints: { foreignKeyName: fk_lease_lines_addendum, referencedTableName: lease_addenda, referencedColumnNames: id } }

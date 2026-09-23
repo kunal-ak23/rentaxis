@@ -2,6 +2,10 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
+import com.datagami.rentaxis.api.dto.lease.AddendumResponse;
+import com.datagami.rentaxis.api.dto.lease.LeaseAddendumDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
@@ -49,18 +53,15 @@ import com.datagami.rentaxis.domain.repository.RenewalOpportunityRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -87,14 +88,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
 @SpringBootTest
-@Testcontainers
-class LeaseRenewalServiceIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;
     @Autowired LeasePostingService posting;
+    @Autowired LeaseVariationService variations;
     @Autowired ChequeGenerationService cheques;
     @Autowired LeaseService leaseService;
     @Autowired LedgerQueryService ledger;
@@ -1114,5 +1112,147 @@ class LeaseRenewalServiceIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("cheque number 100041 is already used on this lease");
         assertThat(leaseLines(leaseId)).hasSize(2);
+    }
+
+    // ------------------------------------------------------------------
+    // renew: only the contract's own lines are copied
+    // ------------------------------------------------------------------
+
+    /**
+     * A mid-term addendum's line is a charge for part of the old term, priced for
+     * that part. Copied into a renewal it would be charged again over a whole year
+     * at its fragment price; the renewal carries only the contract's own lines.
+     */
+    @Test
+    void renewAfterAnAddendumCopiesOnlyTheOriginalLines() {
+        UUID leaseId = postedWithFee();
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2027, 2, 15), LocalDate.of(2027, 2, 10),
+                null, "Storage room", List.of(line("RENT", "4000"), line("PARKING_FEE", "1500")),
+                List.of(chequeRow("5500", LocalDate.of(2027, 3, 1)))));
+        assertThat(leaseLines(leaseId)).hasSize(4);
+
+        LeaseDTO successor = renewal.renew(leaseId, renewRequest(false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
+        assertThat(copied.get(0).periodStart()).isEqualTo(RENEWAL_START);
+        assertThat(copied.get(0).periodEnd()).isEqualTo(RENEWAL_END);
+        assertThat(copied.get(1).netAmount()).isEqualByComparingTo("2000");
+    }
+
+    /**
+     * An extension's rent covers only the extension window. Re-dated to a whole
+     * new term it would charge the extension's price a second time as if it were
+     * a year's rent, next to the contract's own rent line.
+     */
+    @Test
+    void renewAfterAnExtensionCopiesOnlyTheOriginalLines() {
+        UUID leaseId = postedWithFee();
+        renewal.extend(leaseId, extension("12000", "12000"));
+        assertThat(leaseLines(leaseId)).hasSize(3);
+
+        LocalDate start = NEW_END.plusDays(1);
+        LocalDate end = start.plusYears(1).minusDays(1);
+        LeaseDTO successor = renewal.renew(leaseId,
+                new RenewLeaseRequest(LocalDate.of(2027, 12, 15), start, end, null, false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
+        assertThat(copied.get(0).periodStart()).isEqualTo(start);
+        assertThat(copied.get(0).periodEnd()).isEqualTo(end);
+    }
+
+    // ------------------------------------------------------------------
+    // amend keeps an addendum's tie (re-review round 3, finding 1)
+    // ------------------------------------------------------------------
+
+    /** Every current line re-sent exactly as it stands — period and addendum included. */
+    private static LeaseLineInput resendTied(LeaseLineDTO l) {
+        return new LeaseLineInput(l.chargeTypeId(), null, l.grossAmount(), l.discountAmount(),
+                l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(),
+                l.addendumId());
+    }
+
+    private AddendumResponse parkingAddendum(UUID leaseId) {
+        return variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2027, 2, 15),
+                LocalDate.of(2027, 2, 10), null, "Parking bay P-12", List.of(line("PARKING_FEE", "1500")),
+                List.of(chequeRow("1500", LocalDate.of(2027, 3, 1)))));
+    }
+
+    /**
+     * amendLines deletes and re-inserts every line. Without the addendum id on
+     * the way back in, the parking fee lost its tie and the next renewal copied
+     * it onto a whole new year at its part-term price.
+     */
+    @Test
+    void anAmendKeepsAnAddendumsLineTiedSoARenewalDoesNotCopyIt() {
+        UUID leaseId = postedWithFee();
+        AddendumResponse added = parkingAddendum(leaseId);
+        UUID addendumId = added.addendum().id();
+
+        List<LeaseLineInput> same = leaseLines(leaseId).stream().map(LeaseRenewalServiceIT::resendTied).toList();
+        fixtures.asTenantAdmin();
+        posting.amendLines(leaseId, same, "Narration correction");
+
+        List<LeaseLineDTO> after = leaseLines(leaseId);
+        assertThat(after).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE", "PARKING_FEE");
+        assertThat(after.get(2).addendumId()).isEqualTo(addendumId);
+        assertThat(after.get(0).addendumId()).isNull();
+        assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::id)
+                .containsExactly(addendumId);
+
+        LeaseDTO successor = renewal.renew(leaseId, renewRequest(false));
+        assertThat(leaseLines(successor.getId())).extracting(LeaseLineDTO::chargeTypeCode)
+                .containsExactly("RENT", "ADMIN_FEE");
+    }
+
+    /**
+     * The addendum id comes from the client. One naming another lease's addendum
+     * is refused, and the amend changes nothing.
+     */
+    @Test
+    void anAmendNamingAnotherLeasesAddendumIsRefused() {
+        UUID leaseA = postedWithFee();
+        UUID leaseB = fixtures.postedLease(fixtures.createUnit(fixtures.property(), "102"),
+                fixtures.createRenter("Second Renter"), CONTRACT_DATE, START, END,
+                List.of(line("RENT", "24000"), line("ADMIN_FEE", "1000")), 2, null).lease().getId();
+        UUID foreign = parkingAddendum(leaseB).addendum().id();
+
+        List<LeaseLineDTO> before = leaseLines(leaseA);
+        List<LeaseLineInput> hijack = new java.util.ArrayList<>(
+                before.stream().map(LeaseRenewalServiceIT::resendTied).toList());
+        LeaseLineInput fee = hijack.get(1);
+        hijack.set(1, new LeaseLineInput(fee.chargeTypeId(), null, fee.grossAmount(), fee.discountAmount(),
+                fee.narration(), fee.vatApplicable(), fee.creditAccountId(), fee.periodStart(), fee.periodEnd(),
+                foreign));
+        long journalsBefore = journalEntryRows();
+
+        fixtures.asTenantAdmin();
+        assertThatThrownBy(() -> posting.amendLines(leaseA, hijack, "Hijack"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Line 2 names an addendum that is not on this lease");
+
+        List<LeaseLineDTO> after = leaseLines(leaseA);
+        assertThat(after).extracting(LeaseLineDTO::id).containsExactlyElementsOf(
+                before.stream().map(LeaseLineDTO::id).toList());
+        assertThat(after).extracting(LeaseLineDTO::addendumId).containsOnlyNulls();
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+    }
+
+    /** Only an amend may carry an addendum id; a new addendum line naming one is refused. */
+    @Test
+    void aNewChargeNamingAnExistingAddendumIsRefused() {
+        UUID leaseId = postedWithFee();
+        UUID addendumId = parkingAddendum(leaseId).addendum().id();
+        List<LeaseLineInput> tied = List.of(new LeaseLineInput(null, "PARKING_FEE", new BigDecimal("1500"),
+                BigDecimal.ZERO, null, null, null, null, null, addendumId));
+
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2027, 3, 15),
+                LocalDate.of(2027, 3, 10), null, "Second bay", tied,
+                List.of(chequeRow("1500", LocalDate.of(2027, 4, 1))))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("only an amend may name an addendum");
     }
 }
