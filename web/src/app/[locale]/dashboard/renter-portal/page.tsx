@@ -76,6 +76,12 @@ export default function RenterPortalPage() {
         onConfirm: () => void;
     } | null>(null);
     const { data: session } = useSession();
+    // The portal is the signed-in renter's own tenancy. Anyone else — a
+    // SUPER_ADMIN following the sidebar — has nothing here, and firing the
+    // renter-only endpoints for them painted a red "couldn't load this" banner
+    // over the page: a transport error for what is really "you have no
+    // tenancy", offering a retry that could never succeed.
+    const isRenter = (session?.user?.role as string | undefined) === "RENTER";
 
     // Meetings state
     const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -85,11 +91,13 @@ export default function RenterPortalPage() {
     const [showCreateMeeting, setShowCreateMeeting] = useState(false);
 
     useEffect(() => {
+        if (!isRenter) return;
         fetchMyLeases();
         fetchPendingPayments();
-    }, []);
+    }, [isRenter]);
 
     const fetchMyMeetings = useCallback(async () => {
+        if (!isRenter) { setMeetingsLoading(false); return; }
         setMeetingsLoading(true);
         try {
             const res = await fetch(`/api/proxy/v1/meetings/my?page=${meetingsPage - 1}&size=${MEETINGS_PER_PAGE}`);
@@ -112,7 +120,7 @@ export default function RenterPortalPage() {
         } finally {
             setMeetingsLoading(false);
         }
-    }, [meetingsPage]);
+    }, [meetingsPage, isRenter]);
 
     useEffect(() => {
         fetchMyMeetings();
@@ -255,6 +263,17 @@ export default function RenterPortalPage() {
     };
 
     const userName = session?.user?.name || "Renter";
+
+    // Before the loading skeleton: a non-renter is not waiting for anything, so
+    // showing them a spinner for data that will never arrive is its own bug.
+    if (session && !isRenter) {
+        return (
+            <div className="p-8 max-w-5xl mx-auto">
+                <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">{t("renterPortal")}</h1>
+                <p className="text-sm text-muted">{t("renterPortalNoTenancy")}</p>
+            </div>
+        );
+    }
 
     if (loading) {
         return (

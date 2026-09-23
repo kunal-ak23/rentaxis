@@ -130,6 +130,7 @@
     "renter": "Renter",
     "renterPortal": "Renter Portal",
     "renterPortalDesc": "View your leases, download contracts, and manage your tenancy.",
+    "renterPortalNoTenancy": "The renter portal shows your own tenancy. This account does not have one.",
     "renters": "Renters",
     "reports": "Reports",
     "retry": "Retry",
