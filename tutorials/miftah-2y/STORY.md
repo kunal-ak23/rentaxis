@@ -73,7 +73,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | proven with gaps (#54 header flag inert, #55 no VAT return, #56 VAT timing) |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
-| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | partly proven (recognition to 31/08/2026) |
+| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | proven (recognition to 31/08/2026; banking run + aging; #57) |
 | M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
 
 ### Cross-cutting
@@ -268,6 +268,17 @@ trial balance shows Output VAT 6,000 Cr beside Input VAT 200 Dr from the HVAC in
 That is the only VAT reporting: there is no return view (#55). All of the year's VAT
 lands on the contract date rather than per payment period, which an accountant needs to
 rule on (#56).
+
+**M26 (rest) · Sep 2026 — the banking run and the aging.** Sixteen past-dated PDCs had
+never been banked, so the register showed 200,034.25 overdue across 20 items, most of it
+cheques sitting in the drawer. *Collection → Select all → Deposit Batch* banked all 16
+(171,050) in one go. Clearing took 16 separate dialogs (#57). Fifteen cleared (139,550
+"cleared this month"). Gulf Brew's August cheque 700102 (31,500, VAT included) bounced
+for insufficient funds. The tiles now reconcile line by line: Bounced 54,500 (3: Fatima's
+7,500 and 15,500, Gulf Brew's 31,500); Overdue 60,484.25 (5) = those three + Fatima's
+750 cash fee + her 5,234.25 settlement balance; aging 31–60 days: 31,500, 90+: 28,984.25;
+Registered 121,484.25 = the two cash rows + four future PDCs (Omar 600203/600204, Gulf
+Brew 700103/700104). "Due" equals "Overdue" because every lease has 0 grace days.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
