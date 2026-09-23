@@ -95,4 +95,28 @@ class ChequeImageRetentionJobTest {
 
         verify(repo).findImagePurgeBatch(eq(LocalDate.now().minusDays(45)), any());
     }
+
+    /** Audit C-F2: the purge deletes cheque scans only, whatever path a row carries. */
+    @Test
+    void purge_neverDeletesABlobOutsideTheChequeFolder() {
+        UUID t = UUID.randomUUID();
+        UUID contract = UUID.randomUUID();
+        UUID traversal = UUID.randomUUID();
+        UUID scan = UUID.randomUUID();
+        when(repo.findImagePurgeBatch(any(), any())).thenReturn(List.of(
+                new ChequeImagePurgeRow(contract, t, "lease-docs/ab12cd34.pdf"),
+                new ChequeImagePurgeRow(traversal, t, "cheques/../contracts/RA-1.pdf"),
+                new ChequeImagePurgeRow(scan, t, "cheques/c.jpg")
+        ));
+
+        job.purge();
+
+        verify(blob, never()).delete(t, "lease-docs/ab12cd34.pdf");
+        verify(blob, never()).delete(t, "cheques/../contracts/RA-1.pdf");
+        verify(blob).delete(t, "cheques/c.jpg");
+        // The stray pointers are dropped all the same, so the row is not retried nightly.
+        verify(repo).clearImage(contract);
+        verify(repo).clearImage(traversal);
+        verify(repo).clearImage(scan);
+    }
 }

@@ -112,9 +112,21 @@ class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
         it.setBankName("Emirates NBD");
         it.setPayerName("Test Renter");
         it.setImageUrl("https://blob/x.jpg");
-        it.setImageBlobPath("t/x.jpg");
+        it.setImageBlobPath(issuedImage(tenantId));
         it.setImageUploadedAt(OffsetDateTime.now());
         return it;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+
+    /** A scan as /cheques/extract records it: bulk-attach takes only server-issued paths (C-F2). */
+    private String issuedImage(UUID tenantId) {
+        com.datagami.rentaxis.domain.entity.ChequeImageUpload u = new com.datagami.rentaxis.domain.entity.ChequeImageUpload();
+        u.setTenantId(tenantId);
+        u.setBlobPath("cheques/" + UUID.randomUUID() + ".jpg");
+        u.setImageUrl("https://blob/" + u.getBlobPath());
+        return imageUploads.save(u).getBlobPath();
     }
 
     private static List<String> reasons(BulkAttachValidationException e) {
@@ -289,5 +301,63 @@ class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
         assertThat(after).extracting(Cheque::getChequeNumber)
                 .containsExactly("C-1", "C-2", null, null);
         assertThat(after).allSatisfy(c -> assertThat(c.getCrtJournalId()).isNull());
+    }
+
+    // ------------------------------------------------------------------
+    // audit C-F2: only server-issued images
+    // ------------------------------------------------------------------
+
+    @Test
+    void aPathTheServerNeverIssuedIsRefused() {
+        BulkAttachChequeItem it = item(register.get(0).getId(), "C-1");
+        it.setImageBlobPath("lease-docs/ab12cd34.pdf");
+
+        assertThatThrownBy(() -> details.bulkAttach(leaseId, List.of(it)))
+                .isInstanceOf(BulkAttachValidationException.class)
+                .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e)).contains("image_not_issued"));
+        assertThat(reread().get(0).getImageBlobPath()).isNull();
+    }
+
+    @Test
+    void anotherTenantsScanIsRefused() {
+        BulkAttachChequeItem it = item(register.get(0).getId(), "C-1");
+        it.setImageBlobPath(issuedImage(UUID.randomUUID()));
+
+        assertThatThrownBy(() -> details.bulkAttach(leaseId, List.of(it)))
+                .isInstanceOf(BulkAttachValidationException.class)
+                .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e)).contains("image_not_issued"));
+    }
+
+    @Test
+    void aScanIsClaimedByOneChequeAndTheServerUrlIsStored() {
+        BulkAttachChequeItem first = item(register.get(0).getId(), "C-1");
+        first.setImageUrl("https://evil.example/phish.jpg");
+        details.bulkAttach(leaseId, List.of(first));
+        Cheque attached = reread().get(0);
+        assertThat(attached.getImageBlobPath()).isEqualTo(first.getImageBlobPath());
+        assertThat(attached.getImageUrl()).isEqualTo("https://blob/" + first.getImageBlobPath());
+
+        BulkAttachChequeItem reuse = item(register.get(1).getId(), "C-2");
+        reuse.setImageBlobPath(first.getImageBlobPath());
+        assertThatThrownBy(() -> details.bulkAttach(leaseId, List.of(reuse)))
+                .isInstanceOf(BulkAttachValidationException.class)
+                .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e)).contains("image_not_issued"));
+
+        // Re-saving the row with the image it already has is fine.
+        BulkAttachChequeItem again = item(register.get(0).getId(), "C-1");
+        again.setImageBlobPath(first.getImageBlobPath());
+        details.bulkAttach(leaseId, List.of(again));
+    }
+
+    @Test
+    void oneScanOnTwoRowsOfOneRequestIsRefused() {
+        BulkAttachChequeItem a = item(register.get(0).getId(), "C-1");
+        BulkAttachChequeItem b = item(register.get(1).getId(), "C-2");
+        b.setImageBlobPath(a.getImageBlobPath());
+
+        assertThatThrownBy(() -> details.bulkAttach(leaseId, List.of(a, b)))
+                .isInstanceOf(BulkAttachValidationException.class)
+                .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e))
+                        .contains("duplicate_image_in_request"));
     }
 }

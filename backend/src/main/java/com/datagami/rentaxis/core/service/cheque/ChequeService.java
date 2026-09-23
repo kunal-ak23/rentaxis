@@ -1139,7 +1139,13 @@ public class ChequeService {
         requireStatus(cheque, "capture", ChequeStatus.ONLINE_PENDING);
 
         LocalDate on = capturedOn != null ? capturedOn : LocalDate.now();
-        applyClearing(lease, cheque, on, settlementAccountId, null);
+        // The gateway's settlement account is configured per organisation and
+        // validated there (TenantGatewayConfigService), not typed by a caller, so it
+        // is exempt from the per-property rule applied to caller overrides below.
+        if (settlementAccountId != null) {
+            cheque.setDebitAccount(requireSettlementAccount(account(settlementAccountId)));
+        }
+        applyClearing(lease, cheque, on, null, null);
         chequeRepository.save(cheque);
         penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
@@ -1155,7 +1161,7 @@ public class ChequeService {
         if (debitAccountId != null) {
             // Which of our banks the paper physically went to. Recorded now so the
             // CRT that follows debits it rather than re-resolving the role.
-            cheque.setDebitAccount(settlementAccount(debitAccountId));
+            cheque.setDebitAccount(settlementAccount(debitAccountId, cheque.getProperty()));
         }
         cheque.setDepositedAt(date);
         moveTo(cheque, ChequeStatus.DEPOSITED, notes);
@@ -1184,7 +1190,7 @@ public class ChequeService {
         // when it was set, but a chart of accounts is edited, and a receivable leaf
         // debited here would look exactly like money in the bank on the balance sheet.
         Account debit = debitAccountId != null
-                ? settlementAccount(debitAccountId)
+                ? settlementAccount(debitAccountId, cheque.getProperty())
                 : requireSettlementAccount(cheque.getDebitAccount());
         // No resolveOrNull fallback and no try/catch: when the row names no account
         // the role goes into the request and PostingService resolves it, so an
@@ -1260,7 +1266,7 @@ public class ChequeService {
         // against the CASH role, which is the tenant-level default, and forcing the
         // property's bank onto it here would bank cash that never went to a bank.
         if (row.debitAccountId() != null) {
-            c.setDebitAccount(settlementAccount(row.debitAccountId()));
+            c.setDebitAccount(settlementAccount(row.debitAccountId(), property));
         }
         return c;
     }
@@ -1667,8 +1673,20 @@ public class ChequeService {
         return a;
     }
 
-    private Account settlementAccount(UUID id) {
-        return requireSettlementAccount(account(id));
+    /**
+     * A caller-named bank or cash account for a cheque on {@code property}: it must
+     * be that building's own leaf or a tenant-level one (audit C-F1). Otherwise a
+     * manager of building X could clear X's receipt into building Y's bank, and
+     * both buildings' bank reconciliations would break. Same "does not exist"
+     * wording as a foreign tenant's account.
+     */
+    private Account settlementAccount(UUID id, com.datagami.rentaxis.domain.entity.Property property) {
+        Account a = requireSettlementAccount(account(id));
+        UUID accountProperty = a.getPropertyId();
+        if (accountProperty != null && (property == null || !accountProperty.equals(property.getId()))) {
+            throw new BusinessRuleViolationException("Account " + id + " does not belong to this property");
+        }
+        return a;
     }
 
     /**

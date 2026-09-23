@@ -66,7 +66,15 @@ public class ChequeImageRetentionJob {
                 // The blob first: clearing the columns while the file survived would
                 // lose the only pointer to it, and the image would sit in storage
                 // with nothing left that knows it is there.
-                blob.delete(row.tenantId(), row.chequeImageBlobPath());
+                // Only ever a cheque scan (audit C-F2). A row pointing anywhere else
+                // (possible before bulk-attach checked its paths) loses the
+                // pointer, never the file: that blob belongs to something else.
+                if (isChequeImagePath(row.chequeImageBlobPath())) {
+                    blob.delete(row.tenantId(), row.chequeImageBlobPath());
+                } else {
+                    log.warn("Cheque {} pointed at a non-cheque blob; cleared the reference, kept the blob",
+                            row.id());
+                }
                 chequeRepository.clearImage(row.id());
                 ok++;
             } catch (Exception e) {
@@ -77,5 +85,11 @@ public class ChequeImageRetentionJob {
 
         log.info("Cheque retention purge: cutoff={}, batch={}, deleted={}, failed={}",
                 cutoff, rows.size(), ok, failed);
+    }
+
+    /** What BlobStorageService.uploadCheque writes: {@code cheques/<uuid><ext>}, one segment, no tricks. */
+    static boolean isChequeImagePath(String path) {
+        return path != null && path.startsWith("cheques/") && path.indexOf('/', "cheques/".length()) < 0
+                && !path.contains("..") && !path.contains("\\");
     }
 }

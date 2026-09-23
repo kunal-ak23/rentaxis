@@ -204,8 +204,8 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         String body = """
                 {"items":[{"scheduleId":"%s","chequeNumber":"C-legacy","chequeDate":"2026-06-05",
                 "bankName":"ENBD","payerName":"R","imageUrl":"https://blob/x.jpg",
-                "imageBlobPath":"t/x.jpg","imageUploadedAt":"2026-05-20T10:00:00Z"}]}"""
-                .formatted(first.getId());
+                "imageBlobPath":"%s","imageUploadedAt":"2026-05-20T10:00:00Z"}]}"""
+                .formatted(first.getId(), issuedImage(lease.getTenantId()));
 
         mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -273,6 +273,18 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
                 .andExpect(status().isForbidden());
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+
+    /** A scan as /cheques/extract records it: bulk-attach takes only server-issued paths (C-F2). */
+    private String issuedImage(UUID tenantId) {
+        com.datagami.rentaxis.domain.entity.ChequeImageUpload u = new com.datagami.rentaxis.domain.entity.ChequeImageUpload();
+        u.setTenantId(tenantId);
+        u.setBlobPath("cheques/" + UUID.randomUUID() + ".jpg");
+        u.setImageUrl("https://blob/" + u.getBlobPath());
+        return imageUploads.save(u).getBlobPath();
+    }
+
     private BulkAttachChequeItem buildItem(UUID chequeId, String num, LocalDate date) {
         BulkAttachChequeItem it = new BulkAttachChequeItem();
         it.setChequeId(chequeId);
@@ -281,7 +293,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         it.setBankName("Bank");
         it.setPayerName("Payer");
         it.setImageUrl("https://blob/x.jpg");
-        it.setImageBlobPath("t/x.jpg");
+        it.setImageBlobPath(issuedImage(lease.getTenantId()));
         it.setImageUploadedAt(OffsetDateTime.now());
         return it;
     }

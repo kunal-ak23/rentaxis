@@ -213,3 +213,5 @@ databaseChangeLog:
       file: db/changelog/changesets/102-ticket-attachment-uploaded-by.yaml
   - include:
       file: db/changelog/changesets/103-user-token-version.yaml
+  - include:
+      file: db/changelog/changesets/104-cheque-image-uploads.yaml

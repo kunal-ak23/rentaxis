@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,12 +72,16 @@ public class ChequeDetailsService {
     private final LeaseRepository leaseRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
 
+    private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+
     public ChequeDetailsService(ChequeRepository chequeRepository,
                                 LeaseRepository leaseRepository,
-                                LeaseAccessPolicy leaseAccessPolicy) {
+                                LeaseAccessPolicy leaseAccessPolicy,
+                                com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
+        this.imageUploads = imageUploads;
     }
 
     /**
@@ -213,6 +218,30 @@ public class ChequeDetailsService {
                 notAttachable.add(new BulkAttachErrorRow(it.targetId(), "cheque_not_attachable"));
             }
         }
+        // The image must be one this tenant uploaded through /cheques/extract and
+        // that no other cheque has claimed (audit C-F2). The retention purge
+        // deletes whatever path a cheque carries, so a client-chosen path was a
+        // delete-any-blob-in-the-tenant primitive. Keeping the path the row
+        // already has is always allowed (rows scanned before this check existed).
+        Map<UUID, com.datagami.rentaxis.domain.entity.ChequeImageUpload> issuedImages = new HashMap<>();
+        Set<String> seenPaths = new HashSet<>();
+        for (BulkAttachChequeItem it : items) {
+            Cheque c = byId.get(it.targetId());
+            String path = blankToNull(it.getImageBlobPath());
+            if (path != null && !seenPaths.add(path)) {
+                bad.add(new BulkAttachErrorRow(it.targetId(), "duplicate_image_in_request"));
+                continue;
+            }
+            if (c == null || path == null || path.equals(c.getImageBlobPath())) {
+                continue;
+            }
+            var issued = imageUploads.findByTenantIdAndBlobPath(tenantId, path).orElse(null);
+            if (issued == null || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
+                bad.add(new BulkAttachErrorRow(it.targetId(), "image_not_issued"));
+            } else {
+                issuedImages.put(c.getId(), issued);
+            }
+        }
         if (!bad.isEmpty()) {
             throw new BulkAttachValidationException(bad, false);
         }
@@ -250,8 +279,19 @@ public class ChequeDetailsService {
             if (it.getChequeDate() != null) {
                 c.setChequeDate(it.getChequeDate());
             }
-            c.setImageUrl(blankToNull(it.getImageUrl()));
-            c.setImageBlobPath(blankToNull(it.getImageBlobPath()));
+            String path = blankToNull(it.getImageBlobPath());
+            var issued = issuedImages.get(c.getId());
+            if (issued != null) {
+                // The URL the server recorded, not one from the request.
+                c.setImageUrl(issued.getImageUrl());
+                c.setImageBlobPath(issued.getBlobPath());
+                issued.setChequeId(c.getId());
+                imageUploads.save(issued);
+            } else if (path == null) {
+                c.setImageUrl(null);
+                c.setImageBlobPath(null);
+            }
+            // else: the row's own, unchanged image stays as it is.
             c.setImageUploadedAt(it.getImageUploadedAt() != null ? it.getImageUploadedAt().toInstant() : now);
             out.add(ChequeMapper.toDto(c, LocalDate.now(), lease.getGracePeriodDays()));
         }
