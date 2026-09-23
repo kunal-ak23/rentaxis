@@ -74,7 +74,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
 | M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | proven (recognition to 31/08/2026; banking run + aging; #57) |
-| M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
+| M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | dashboard + inbox proven (#59, #60); renter portals need the renters' own sign-ins |
 
 ### Cross-cutting
 
@@ -292,6 +292,17 @@ domain), runs "Residents get 20% off all coffee", eyebrow "New on the ground flo
 + AR. It shows coupon MIFTAH20 on tap, runs 23/09–31/10/2026 in the home carousel and
 offers, is shown to Miftah Residences only, and is **Live**. Views and taps are 0 until a
 renter opens the app.
+
+**M27 (part) · 23 Sep 2026 — today, from the office.** The dashboard reads "2 expiring
+leases · AED 60,484 overdue". The two are Ahmed's and Rajesh's 2025–26 contracts, both
+ending 30/09. The 60,484 is the same five items the register lists (Fatima's two bounced
+cheques, her 750 cash fee and 5,234 settlement balance, and Gulf Brew's 31,500 bounce).
+Occupancy is 44.4%, 4 of 9 units, with G-01 counted. Pending this month is 0, because
+Rajesh's September cheque cleared. The collection tile reads "AED 139,550 of AED 3,667
+expected": the catch-up banking run's clearances measured against one cheque dated this
+month (#59). The activity feed lists every clearance and the bounce, with raw amounts
+(#60). A bounce notifies the renter only; the super admin's inbox has the ticket
+assignments and org provisioning, and nothing for the bounce.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
