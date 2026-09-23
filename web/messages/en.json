@@ -1914,6 +1914,8 @@
     "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone."
   },
   "Cheques": {
+    "depositOwnDates": "Deposit each cheque on its own date",
+    "depositOwnDatesHint": "For a run entered after the fact. Each cheque is recorded as banked on the date written on it; a cheque whose date has not arrived yet is refused. Leave unticked to bank the whole selection on one date.",
     "register": "Cheque Register",
     "collection": "Collection",
     "returnReplace": "Return & Replace",

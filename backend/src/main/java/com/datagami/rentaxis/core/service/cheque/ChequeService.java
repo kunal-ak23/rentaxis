@@ -373,8 +373,9 @@ public class ChequeService {
             byId.put(c.getId(), c);
         }
         // Read before the loop so the rows can be checked against the date the
-        // clerk actually chose, not just against each other.
-        LocalDate date = request.dateOrToday();
+        // clerk actually chose, not just against each other. With
+        // useChequeDates (#10) that is each row's own cheque date instead.
+        LocalDate today = LocalDate.now();
         List<String> problems = new ArrayList<>();
         for (UUID id : ids) {
             Cheque c = byId.get(id);
@@ -394,10 +395,16 @@ public class ChequeService {
                 problems.add(label(c) + " is " + c.getStatus());
             } else if (c.getMode() != ChequeMode.PDC) {
                 problems.add(label(c) + " is a " + c.getMode() + " receipt, not a cheque");
-            } else if (c.getChequeDate() != null && date.isBefore(c.getChequeDate())) {
+            } else if (Boolean.TRUE.equals(request.useChequeDates()) && c.getChequeDate() != null
+                    && c.getChequeDate().isAfter(today)) {
+                // Its own date is still to come: it cannot have been banked, and
+                // banking it today would be the early presentation below.
+                problems.add(label(c) + " is dated " + c.getChequeDate()
+                        + ", which has not arrived yet — it cannot have been banked on its own date.");
+            } else if (c.getChequeDate() != null && request.dateFor(c.getChequeDate()).isBefore(c.getChequeDate())) {
                 // One date covers the whole selection, so a clerk banking
                 // October's pile can easily sweep up a November cheque.
-                problems.add(earlyPresentation(c, date));
+                problems.add(earlyPresentation(c, request.dateFor(c.getChequeDate())));
             }
         }
         if (!problems.isEmpty()) {
@@ -412,7 +419,7 @@ public class ChequeService {
         for (UUID id : ids) {
             Cheque c = byId.get(id);
             Lease lease = managedLeaseOf(c);
-            applyDeposit(c, date, request.debitAccountId(), null);
+            applyDeposit(c, request.dateFor(c.getChequeDate()), request.debitAccountId(), null);
             chequeRepository.save(c);
             publishDeposited(c);
             out.add(dto(c, lease));

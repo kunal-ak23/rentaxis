@@ -36,6 +36,8 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
     const tl = useTranslations("Leasing");
 
     const [date, setDate] = useState(todayIso());
+    // #10: one date for the selection (the default), or each cheque's own.
+    const [ownDates, setOwnDates] = useState(false);
     const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
     useEffect(() => {
         if (!open) return;
         setDate(todayIso());
+        setOwnDates(false);
         setDebitAccountId(null);
         setError(null);
     }, [open]);
@@ -51,7 +54,9 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
         setBusy(true);
         setError(null);
         try {
-            const cheques = await chequeApi.depositBatch({ chequeIds, date, debitAccountId });
+            const cheques = await chequeApi.depositBatch(
+                ownDates ? { chequeIds, date, debitAccountId, useChequeDates: true } : { chequeIds, date, debitAccountId },
+            );
             onDone(cheques);
         } catch (e) {
             setError(e instanceof ApiError ? e.message : t("actionFailed"));
@@ -76,17 +81,32 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
                 <p className="text-[12px] text-muted" data-testid="deposit-batch-total">
                     {t("depositBatchSummary", { n: chequeIds.length, total: fmtAmount(total) })}
                 </p>
-                <div>
-                    <label className={label} htmlFor="deposit-batch-date">{t("depositDate")}</label>
+                <label className="flex items-start gap-2 cursor-pointer">
                     <input
-                        id="deposit-batch-date"
-                        data-testid="deposit-batch-date"
-                        type="date"
-                        className={field}
-                        value={date}
-                        onChange={e => setDate(e.target.value)}
+                        type="checkbox"
+                        data-testid="deposit-batch-own-dates"
+                        checked={ownDates}
+                        onChange={e => setOwnDates(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-border text-primary focus:ring-primary"
                     />
-                </div>
+                    <span>
+                        <span className="block text-xs font-semibold text-foreground">{t("depositOwnDates")}</span>
+                        <span className="block text-[10px] text-muted">{t("depositOwnDatesHint")}</span>
+                    </span>
+                </label>
+                {!ownDates && (
+                    <div>
+                        <label className={label} htmlFor="deposit-batch-date">{t("depositDate")}</label>
+                        <input
+                            id="deposit-batch-date"
+                            data-testid="deposit-batch-date"
+                            type="date"
+                            className={field}
+                            value={date}
+                            onChange={e => setDate(e.target.value)}
+                        />
+                    </div>
+                )}
                 <div>
                     <label className={label}>{tl("debitAccount")}</label>
                     <SettlementAccountPicker

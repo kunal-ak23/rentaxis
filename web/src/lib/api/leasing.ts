@@ -679,6 +679,8 @@ export type DepositBatchInput = {
   chequeIds: string[];
   date?: string | null;
   debitAccountId?: string | null;
+  /** #10: bank each row on its own cheque date; a row dated after today is refused. */
+  useChequeDates?: boolean;
 };
 
 /** ClearBatchRequest — one bank credit covering several DEPOSITED cheques (#57). */
