@@ -412,6 +412,35 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
                 .allSatisfy(s -> assertThat(s.getAmount()).isEqualByComparingTo("51000"));
     }
 
+    /**
+     * amendLines reverses every POSTED TCO on the lease to rebuild it from the
+     * fresh set of lines — including an addendum's own TCO, which it has no
+     * reason to spare. The addendum row is never touched by an amend, so
+     * without a derived flag the panel would go on showing that addendum's TCO
+     * entry number as if it were still live.
+     */
+    @Test
+    void anAmendAfterAnAddendumMarksTheAddendumSuperseded() {
+        UUID leaseId = postedWithFee();
+        AddendumResponse added = variations.addCharge(leaseId, parking("6000", "6000"));
+        assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::superseded).containsExactly(false);
+
+        List<LeaseLineInput> same = leaseLines(leaseId).stream().map(LeaseVariationServiceIT::resend).toList();
+        fixtures.asTenantAdmin();
+        posting.amendLines(leaseId, same, "Narration correction");
+
+        List<LeaseAddendumDTO> after = variations.list(leaseId);
+        assertThat(after).singleElement().satisfies(a -> {
+            assertThat(a.id()).isEqualTo(added.addendum().id());
+            assertThat(a.superseded()).isTrue();
+            // The addendum row itself keeps naming the (now reversed) TCO — the
+            // amend does not rewrite it, only the derived flag changes.
+            assertThat(a.tcoJournalId()).isEqualTo(added.addendum().tcoJournalId());
+        });
+        assertThat(tx.execute(s -> entries.findById(added.addendum().tcoJournalId()).orElseThrow()).getStatus())
+                .isEqualTo(JournalStatus.REVERSED);
+    }
+
     // ------------------------------------------------------------------
     // recordEjari isolation (review T3/T4)
     // ------------------------------------------------------------------

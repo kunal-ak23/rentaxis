@@ -19,7 +19,9 @@ import com.datagami.rentaxis.domain.entity.LeaseAddendum;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseAddendumRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -69,6 +71,7 @@ public class LeaseVariationService {
     private final LeaseLineRepository leaseLineRepository;
     private final ChequeRepository chequeRepository;
     private final LeaseAddendumRepository addendumRepository;
+    private final JournalEntryRepository journalEntryRepository;
     private final LeaseService leaseService;
     private final LeasePostingService postingService;
     private final ChequeGenerationService chequeGeneration;
@@ -82,6 +85,7 @@ public class LeaseVariationService {
                                  LeaseLineRepository leaseLineRepository,
                                  ChequeRepository chequeRepository,
                                  LeaseAddendumRepository addendumRepository,
+                                 JournalEntryRepository journalEntryRepository,
                                  LeaseService leaseService,
                                  LeasePostingService postingService,
                                  ChequeGenerationService chequeGeneration,
@@ -94,6 +98,7 @@ public class LeaseVariationService {
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
         this.addendumRepository = addendumRepository;
+        this.journalEntryRepository = journalEntryRepository;
         this.leaseService = leaseService;
         this.postingService = postingService;
         this.chequeGeneration = chequeGeneration;
@@ -214,7 +219,7 @@ public class LeaseVariationService {
         events.publishEvent(new LeaseVariedEvent(lease.getTenantId(), lease.getId(), addendum.getId(),
                 newLines.stream().map(LeaseLine::getId).toList()));
 
-        return new AddendumResponse(toDto(addendum), postingService.response(lease, tco,
+        return new AddendumResponse(toDto(addendum, tco.getStatus()), postingService.response(lease, tco,
                 chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())));
     }
 
@@ -235,7 +240,7 @@ public class LeaseVariationService {
         }
         leaseAccessPolicy.requireReadable(lease);
         return addendumRepository.findByLease_IdOrderByCreatedAtAsc(leaseId).stream()
-                .map(LeaseVariationService::toDto).toList();
+                .map(this::toDto).toList();
     }
 
     /**
@@ -279,9 +284,21 @@ public class LeaseVariationService {
         }
     }
 
-    static LeaseAddendumDTO toDto(LeaseAddendum a) {
+    /**
+     * Looks the addendum's TCO up to say whether it is still the live entry —
+     * {@code amendLines} reverses every POSTED TCO on the lease, including an
+     * addendum's, without touching the addendum row itself.
+     */
+    LeaseAddendumDTO toDto(LeaseAddendum a) {
+        JournalStatus tcoStatus = a.getTcoJournalId() == null ? null
+                : journalEntryRepository.findById(a.getTcoJournalId()).map(JournalEntry::getStatus).orElse(null);
+        return toDto(a, tcoStatus);
+    }
+
+    /** Same DTO, without the lookup, for a caller that already knows the TCO's status. */
+    private static LeaseAddendumDTO toDto(LeaseAddendum a, JournalStatus tcoStatus) {
         return new LeaseAddendumDTO(a.getId(), a.getAddendumNumber(), a.getEffectiveFrom(), a.getContractDate(),
                 a.getEjariNumber(), a.getEjariNumber() == null, a.getReason(), a.getValue(),
-                a.getTcoJournalId(), a.getTcoEntryNumber(), a.getCreatedAt());
+                a.getTcoJournalId(), a.getTcoEntryNumber(), tcoStatus == JournalStatus.REVERSED, a.getCreatedAt());
     }
 }

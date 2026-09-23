@@ -12,6 +12,13 @@ import java.util.UUID;
  * <p>{@code ejariPending} is derived rather than stored — a blank Ejari number
  * <em>is</em> "pending", and a second column saying so would be a second place
  * for one fact.</p>
+ *
+ * <p>{@code superseded} is derived too: {@code LeasePostingService.amendLines}
+ * reverses every POSTED {@code TCO} against the lease, including an addendum's
+ * own, when it rebuilds the ledger from a fresh set of lines. The addendum row
+ * itself is never touched by an amend — it still names the TCO that raised it —
+ * so without this flag the lease page kept showing a reversed entry number as
+ * if it were still live.</p>
  */
 public record LeaseAddendumDTO(UUID id,
                                String addendumNumber,
@@ -23,5 +30,6 @@ public record LeaseAddendumDTO(UUID id,
                                BigDecimal value,
                                UUID tcoJournalId,
                                String tcoEntryNumber,
+                               boolean superseded,
                                Instant createdAt) {
 }
