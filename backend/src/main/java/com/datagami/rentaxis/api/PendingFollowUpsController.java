@@ -33,7 +33,11 @@ public class PendingFollowUpsController {
                         i.getOccurredAt(), i.getSummary(),
                         i.getOutcome(), i.getFollowUpDate(),
                         i.getCreatedBy(),
-                        userRepo.findById(i.getCreatedBy()).map(u -> u.getName()).orElse(null),
+                        // findDisplayNameById, not the tenant-filtered findById: a
+                        // SUPER_ADMIN acting inside a pivoted tenant has
+                        // tenant_id = NULL, so the filtered lookup can't see them
+                        // and the name comes back blank.
+                        userRepo.findDisplayNameById(i.getCreatedBy()).orElse(null),
                         i.getCreatedAt()))
                 .collect(Collectors.toList());
     }
