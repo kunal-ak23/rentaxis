@@ -313,6 +313,12 @@ the payee as the payer (#63), and it was auto-matched to **row #3**, because mat
 compares against the posting date and every row carries the contract date 20/04/2026
 (#62). Fixed by hand (row #4, payer Gulf Brew) and approved: row 4 now holds the scan.
 
+**Post-deploy check · PR #339 (108d93ad) on production.** The leases toolbar wraps, so
+"+ Draft Lease" is fully visible (#48). The Help button no longer shows over the contract
+wizard (#44). An agreement date of 20/09/2026 carries into step 2's contract date (#45).
+Ticking "Rent carries VAT" and choosing Rent in step 3 ticks the line's VAT box by itself:
+64,000 + 3,200 = 67,200 (#54). The wizard was closed without saving.
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
