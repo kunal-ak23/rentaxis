@@ -198,7 +198,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
       state = state.copyWith(
         isLoading: false,
-        error: 'Invalid email or password',
+        error: _loginErrorMessage(e.response?.statusCode, e.response?.data),
       );
       return false;
     } catch (e) {
@@ -208,6 +208,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return false;
     }
+  }
+
+  /// What a failed login tells the user. A deactivated account or organisation
+  /// (403, reported only after the password matched) and the login rate limit
+  /// (429) are not wrong passwords, and saying so sends the user to reset a
+  /// password that works.
+  static String _loginErrorMessage(int? status, dynamic data) {
+    if (status == 403) {
+      final message = data is Map ? data['message'] : null;
+      if (message is String && message.isNotEmpty) return message;
+      return 'This account cannot sign in right now. Contact your administrator.';
+    }
+    if (status == 429) {
+      return 'Too many sign-in attempts. Wait a minute and try again.';
+    }
+    return 'Invalid email or password';
   }
 
   /// Extracts the `tenants` list from the 409 LoginAmbiguousResponse body.
