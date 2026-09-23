@@ -164,6 +164,17 @@ class UserResendInviteIT extends AbstractPostgresIT {
                 .isNotEqualTo("USER_INVITED:" + renter.getId());
         assertThat(invited.get(0).getTenantId()).isEqualTo(org.getId());
         assertThat(after.getInviteToken()).isNotNull();
+        // PR #342 review I4: dedup keys are stored and logged, so no part of the
+        // secret may be in one.
+        String key = invited.get(0).getDedupKey();
+        for (int i = 0; i + 10 <= after.getInviteToken().length(); i++) {
+            assertThat(key).doesNotContain(after.getInviteToken().substring(i, i + 10));
+        }
+
+        userService.resendInvite(renter.getId());
+        List<String> keys = events.stream(EmailEvent.class)
+                .filter(e -> e.getType() == EmailEventType.USER_INVITED).map(EmailEvent::getDedupKey).toList();
+        assertThat(keys).hasSize(2).doesNotHaveDuplicates();
     }
 
     /** Creating an invited user without a password is the normal path, and nothing echoes one. */

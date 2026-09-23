@@ -215,10 +215,11 @@ public class UserService {
      * users who had signed in before that. The old token is overwritten, so the
      * previous link stops working the moment this commits.
      *
-     * <p>The dedup key carries a slice of the new token: the outbox drops a
-     * second row with the same key, and {@code USER_INVITED:<id>} is already
-     * taken by the first invite, which would have made every resend a silent
-     * no-op.
+     * <p>Each resend needs its own dedup key: the outbox drops a second row with
+     * the same key, and {@code USER_INVITED:<id>} is already taken by the first
+     * invite, which would have made every resend a silent no-op. The key carries
+     * a random nonce and nothing derived from the token: dedup keys are stored in
+     * {@code email_outbox} and written to logs (PR #342 review I4).
      *
      * <p>Authorization (caller's tenant and role rank) is the controller's job,
      * the same as every other {@code /api/admin/users} mutation.
@@ -246,7 +247,7 @@ public class UserService {
         user.setInviteToken(generateInviteToken());
         user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
         User saved = userRepository.saveAndFlush(user);
-        publishInvite(saved, "USER_INVITED:" + saved.getId() + ":" + saved.getInviteToken().substring(0, 12));
+        publishInvite(saved, "USER_INVITED:" + saved.getId() + ":resend:" + UUID.randomUUID());
         return saved;
     }
 
