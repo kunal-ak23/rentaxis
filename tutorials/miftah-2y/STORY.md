@@ -37,7 +37,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | proven |
 | S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | blocked (renters only; no staff users — agents may not create login accounts) |
 | S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | proven (persist across reload); #65 |
-| S07 | Bank account + two vendors | lists render | vendor proven (Gulf Cool HVAC, M-era); bank account blocked by #67 (500 when linked to a ledger account); #66 |
+| S07 | Bank account + two vendors | lists render | proven after PR #340: Emirates Islamic 3708451902001 linked to 100005 (was a 500, #67); vendor Gulf Cool HVAC |
 
 ### Y1 — Oct 2024 → Sep 2025
 
@@ -366,6 +366,12 @@ panel (#47, generalised in #339).
   8,000 / Cr Maintenance Charges 350 / Cr Bank 7,650. The contract is CLOSED. The
   finalized page still showed the "Terminate the contract before settling it" prompt
   (#51, being fixed in round 3).
+
+**Post-deploy check · PR #340 (08581003) on production.** The Emirates Islamic account
+(3708451902001, IBAN AE07…2001, Al Barsha) now saves linked to ledger account 100005,
+which returned a 500 before (#67). A unit posted against a property outside the org is
+refused, "Property not found" (404) (#70). The ITs prove the cross-tenant case for units,
+buildings, staff and bank accounts.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
