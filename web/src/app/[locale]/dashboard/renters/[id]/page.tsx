@@ -82,7 +82,7 @@ export default function RenterDetailPage() {
     const tLeasing = useTranslations("Leasing");
     const tCheques = useTranslations("Cheques");
     const tInv = useTranslations("Invites");
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const canView = hasPermission(userRole, "canViewLeases");
     const canManageRenters = hasPermission(userRole, "canManageRenters");
@@ -117,7 +117,14 @@ export default function RenterDetailPage() {
     };
 
     useEffect(() => {
-        if (userRole && !canView) {
+        // Wait for the session: the first render has no role yet, and loading
+        // then would fetch everything once without a role and again with one
+        // (web review M1) — and fire a RENTER's requests before refusing them.
+        if (!userRole) {
+            if (sessionStatus !== "loading") setLoading(false);
+            return;
+        }
+        if (!canView) {
             setLoading(false);
             return;
         }
@@ -191,7 +198,7 @@ export default function RenterDetailPage() {
         return () => {
             cancelled = true;
         };
-    }, [renterId, userRole, canView, t, reloadKey]);
+    }, [renterId, userRole, canView, sessionStatus, t, reloadKey]);
 
     const summary = useMemo(() => chequeSummary(cheques), [cheques]);
     const unitOf = useMemo(() => new Map(leases.map(l => [l.id, l.unitIdentifier ?? "—"])), [leases]);

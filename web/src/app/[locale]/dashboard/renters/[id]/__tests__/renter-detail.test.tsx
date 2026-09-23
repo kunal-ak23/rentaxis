@@ -1,12 +1,14 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chequeSummary } from "@/components/renters/chequeSummary";
 
 // #8: the staff renter-detail page — profile, contracts (linked), cheques and
 // their summary, tickets, the ledger link and Resend invite.
 
-let role = "TENANT_ADMIN";
-vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role } } }) }));
+let role: string | undefined = "TENANT_ADMIN";
+vi.mock("next-auth/react", () => ({
+    useSession: () => (role ? { data: { user: { role } }, status: "authenticated" } : { data: null, status: "loading" }),
+}));
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "r1" }) }));
 vi.mock("next-intl", () => {
     const t = Object.assign((key: string) => key, { has: () => true });
@@ -122,6 +124,30 @@ describe("RenterDetailPage", () => {
         expect(confirm).toHaveBeenCalledWith("resendConfirm");
         await waitFor(() => expect(renterReads()).toBe(2));
         expect(await screen.findByText("resent")).toBeTruthy();
+    });
+
+    // Web review M1: no fetch before the session has a role, and one load after.
+    it("loads once, after the session arrives", async () => {
+        role = undefined;
+        const { rerender } = render(<RenterDetailPage />);
+        await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+        const calls = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+            .filter(c => String(c[0]).endsWith("/v1/renters/r1")).length;
+        expect(calls()).toBe(0);
+
+        role = "TENANT_ADMIN";
+        rerender(<RenterDetailPage />);
+
+        expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
+        expect(calls()).toBe(1);
+    });
+
+    it("sends no request for a renter who opens the page", async () => {
+        role = "RENTER";
+        render(<RenterDetailPage />);
+
+        expect(await screen.findByText("accessDenied")).toBeTruthy();
+        expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it("hides Resend invite and the ledger from a property manager", async () => {
