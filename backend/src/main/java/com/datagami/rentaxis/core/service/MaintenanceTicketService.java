@@ -207,10 +207,20 @@ public class MaintenanceTicketService {
         List<MaintenanceTicket> tickets;
 
         if ("RENTER".equals(role) || "TENANT_USER".equals(role)) {
-            // Renters/tenant users see only tickets they reported
-            tickets = unitId != null
-                    ? ticketRepository.findByReportedByAndUnitId(userId, unitId)
-                    : ticketRepository.findByReportedBy(userId);
+            // Renters/tenant users see the tickets they reported, and a renter
+            // also sees the ones staff logged on their behalf (#19).
+            UUID renterId = "RENTER".equals(role)
+                    ? renterRepository.findByUserId(userId).map(Renter::getId).orElse(null)
+                    : null;
+            if (renterId != null) {
+                tickets = unitId != null
+                        ? ticketRepository.findForRenterAndUnitId(userId, renterId, unitId)
+                        : ticketRepository.findForRenter(userId, renterId);
+            } else {
+                tickets = unitId != null
+                        ? ticketRepository.findByReportedByAndUnitId(userId, unitId)
+                        : ticketRepository.findByReportedBy(userId);
+            }
         } else if ("PROPERTY_MANAGER".equals(role)) {
             // Property managers see tickets for their assigned properties
             List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByUserId(userId);
@@ -293,8 +303,7 @@ public class MaintenanceTicketService {
 
         if (targetStatus == TicketStatus.RESOLVED) {
             ticket.setResolvedAt(Instant.now());
-            String otp = String.format("%06d", SECURE_RANDOM.nextInt(999999));
-            ticket.setClosureOtp(otp);
+            issueClosureOtp(ticket);
             log.info("Ticket {} resolved. Closure OTP generated.", ticketId);
         }
 
@@ -307,16 +316,11 @@ public class MaintenanceTicketService {
                 null, null, performedBy != null ? performedBy : ticket.getReportedBy(),
                 "Status changed: " + fromStatus + " → " + targetStatus.name());
 
-        // Notify reporter when ticket is resolved
+        // Notify the OTP holder when the ticket is resolved: the renter it was
+        // logged for, never the staff member who logged it (PR #342 review I2).
         if (targetStatus == TicketStatus.RESOLVED) {
-            try {
-                notificationService.notify(ticket.getTenantId(), ticket.getReportedBy(),
-                        "TICKET_RESOLVED", "Ticket Resolved",
-                        "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.",
-                        "TICKET", ticket.getId());
-            } catch (Exception e) {
-                log.warn("Failed to send ticket resolved notification for ticket {}", ticketId, e);
-            }
+            notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
+                    "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.");
         }
 
         // Emit TICKET_REOPENED event when transitioning to REOPENED status
@@ -343,9 +347,76 @@ public class MaintenanceTicketService {
         return mapToDTO(saved);
     }
 
+    /** Wrong closure OTPs allowed before the code is discarded (PR #342 review I2). */
+    static final int MAX_OTP_ATTEMPTS = 5;
+
+    /**
+     * Who holds a ticket's closure OTP: the renter it was logged for, when staff
+     * logged it on a renter's behalf (#19), and otherwise whoever reported it.
+     *
+     * <p>The OTP is the renter's confirmation that the work is done. Keyed on the
+     * reporter alone, an on-behalf ticket put it in the hands of the staff member
+     * who logged it, who could then resolve and close it without the renter. A
+     * renter with no portal account holds it too, which means nobody can read it:
+     * the ticket is then closed by the tenant's non-OTP route, not by staff
+     * quoting a code to themselves.
+     */
+    private UUID otpHolder(MaintenanceTicket ticket) {
+        if (ticket.getOnBehalfOfRenterId() != null) {
+            return renterRepository.findById(ticket.getOnBehalfOfRenterId())
+                    .map(Renter::getUserId)
+                    .orElse(null);
+        }
+        return ticket.getReportedBy();
+    }
+
+    private void issueClosureOtp(MaintenanceTicket ticket) {
+        ticket.setClosureOtp(String.format("%06d", SECURE_RANDOM.nextInt(1_000_000)));
+        ticket.setClosureOtpFailedAttempts(0);
+    }
+
+    private void notifyOtpHolder(MaintenanceTicket ticket, String type, String title, String message) {
+        UUID holder = otpHolder(ticket);
+        if (holder == null) return;
+        try {
+            notificationService.notify(ticket.getTenantId(), holder,
+                    type, title, message, "TICKET", ticket.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send closure OTP notification for ticket {}", ticket.getId(), e);
+        }
+    }
+
+    /**
+     * Issues a fresh closure OTP for a resolved ticket and sends it to the holder,
+     * for when the renter lost it or the old one was locked after
+     * {@link #MAX_OTP_ATTEMPTS} wrong tries. Staff trigger it; they still never
+     * see the code.
+     */
     @Transactional
-    public MaintenanceTicketDTO closeWithOtp(UUID ticketId, String otp, UUID performedBy) {
+    public MaintenanceTicketDTO reissueClosureOtp(UUID ticketId, UUID performedBy) {
         MaintenanceTicket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        if (ticket.getStatus() != TicketStatus.RESOLVED) {
+            throw new BusinessRuleViolationException("A closure OTP can only be issued for a resolved ticket");
+        }
+        issueClosureOtp(ticket);
+        MaintenanceTicket saved = ticketRepository.save(ticket);
+        recordHistory(saved, "OTP_REISSUED", null, null, null, null, performedBy,
+                "A new closure OTP was sent to the renter");
+        notifyOtpHolder(saved, "TICKET_OTP_REISSUED", "New closure OTP",
+                "A new OTP was issued for your ticket '" + saved.getTitle() + "'. Share it to close the ticket.");
+        return mapToDTO(saved, performedBy);
+    }
+
+    /**
+     * {@code noRollbackFor}: a wrong OTP is answered with a 400 and must still
+     * count, or the attempt limit would roll back with every failed try.
+     */
+    @Transactional(noRollbackFor = BusinessRuleViolationException.class)
+    public MaintenanceTicketDTO closeWithOtp(UUID ticketId, String otp, UUID performedBy) {
+        // Locked for the read-check-increment below, so parallel guesses cannot
+        // each read the same count and exceed the limit.
+        MaintenanceTicket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
@@ -362,7 +433,21 @@ public class MaintenanceTicketService {
         }
 
         if (otpRequired) {
-            if (ticket.getClosureOtp() == null || !ticket.getClosureOtp().equals(otp)) {
+            if (ticket.getClosureOtp() == null) {
+                throw new BusinessRuleViolationException(
+                        "This ticket's closure OTP is no longer valid. Issue a new one to the renter.");
+            }
+            if (!ticket.getClosureOtp().equals(otp)) {
+                int attempts = ticket.getClosureOtpFailedAttempts() + 1;
+                ticket.setClosureOtpFailedAttempts(attempts);
+                if (attempts >= MAX_OTP_ATTEMPTS) {
+                    // Discard the code: six digits cannot survive unlimited guesses.
+                    ticket.setClosureOtp(null);
+                    ticketRepository.save(ticket);
+                    throw new BusinessRuleViolationException(
+                            "Too many wrong OTPs. Issue a new one to the renter to close this ticket.");
+                }
+                ticketRepository.save(ticket);
                 throw new BusinessRuleViolationException("Invalid OTP");
             }
         }
@@ -641,10 +726,10 @@ public class MaintenanceTicketService {
     }
 
     /**
-     * Maps a ticket to its DTO. The closure OTP is a secret shared with the
-     * reporter only (the renter hands it over to confirm closure); exposing it
-     * to managers would let them close tickets without renter confirmation, so
-     * it is redacted unless the requester is the reporter.
+     * Maps a ticket to its DTO. The closure OTP is a secret shared with its
+     * holder only ({@link #otpHolder}: the renter hands it over to confirm
+     * closure); exposing it to managers would let them close tickets without
+     * renter confirmation, so it is redacted for everyone else.
      */
     private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket, UUID requesterId) {
         MaintenanceTicketDTO dto = new MaintenanceTicketDTO();
@@ -664,8 +749,9 @@ public class MaintenanceTicketService {
         dto.setEstimatedResolutionHours(ticket.getEstimatedResolutionHours());
         dto.setResolvedAt(ticket.getResolvedAt());
         dto.setClosedAt(ticket.getClosedAt());
-        boolean isReporter = requesterId != null && requesterId.equals(ticket.getReportedBy());
-        dto.setClosureOtp(isReporter ? ticket.getClosureOtp() : null);
+        boolean isOtpHolder = requesterId != null && ticket.getClosureOtp() != null
+                && requesterId.equals(otpHolder(ticket));
+        dto.setClosureOtp(isOtpHolder ? ticket.getClosureOtp() : null);
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());

@@ -201,3 +201,5 @@ databaseChangeLog:
       file: db/changelog/changesets/96-ticket-on-behalf-of-renter.yaml
   - include:
       file: db/changelog/changesets/97-retire-invites-of-activated-users.yaml
+  - include:
+      file: db/changelog/changesets/98-ticket-closure-otp-attempts.yaml

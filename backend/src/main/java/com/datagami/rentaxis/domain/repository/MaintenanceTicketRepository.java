@@ -3,6 +3,10 @@ package com.datagami.rentaxis.domain.repository;
 import com.datagami.rentaxis.domain.entity.MaintenanceTicket;
 import com.datagami.rentaxis.domain.entity.enums.TicketStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -37,4 +41,19 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     List<MaintenanceTicket> findByPropertyIdInAndUnitId(List<UUID> propertyIds, UUID unitId);
 
     long countByStatus(TicketStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM MaintenanceTicket t WHERE t.id = :id")
+    java.util.Optional<MaintenanceTicket> findByIdForUpdate(@Param("id") UUID id);
+
+    // A renter's own list: the tickets they reported and the ones staff logged on
+    // their behalf (#19, PR #342 review I2). Without the second half a phoned-in
+    // complaint never reached the renter it was about.
+    @Query("SELECT t FROM MaintenanceTicket t WHERE t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId")
+    List<MaintenanceTicket> findForRenter(@Param("userId") UUID userId, @Param("renterId") UUID renterId);
+
+    @Query("SELECT t FROM MaintenanceTicket t WHERE (t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId)"
+            + " AND t.unit.id = :unitId")
+    List<MaintenanceTicket> findForRenterAndUnitId(@Param("userId") UUID userId, @Param("renterId") UUID renterId,
+                                                   @Param("unitId") UUID unitId);
 }

@@ -69,6 +69,14 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "closure_otp", length = 6)
     private String closureOtp;
 
+    /**
+     * Wrong OTPs entered against the current closure code (PR #342 review I2).
+     * At {@code MaintenanceTicketService.MAX_OTP_ATTEMPTS} the code is discarded
+     * and a new one has to be issued; reset whenever one is.
+     */
+    @Column(name = "closure_otp_failed_attempts", nullable = false)
+    private int closureOtpFailedAttempts = 0;
+
     @Column(name = "satisfaction_rating")
     private Integer satisfactionRating;
 

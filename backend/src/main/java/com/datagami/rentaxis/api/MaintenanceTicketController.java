@@ -75,6 +75,15 @@ public class MaintenanceTicketController {
         return ResponseEntity.ok(ticketService.closeWithOtp(id, body.get("otp"), performedBy));
     }
 
+    /** A fresh closure OTP, sent to the renter who holds it (PR #342 review I2). */
+    @PostMapping("/{id}/closure-otp")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<MaintenanceTicketDTO> reissueClosureOtp(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId) {
+        return ResponseEntity.ok(ticketService.reissueClosureOtp(id, userId));
+    }
+
     @PostMapping("/{id}/replies")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TicketReplyDTO> addReply(
