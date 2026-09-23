@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { BookOpen, Download, Loader2, ShieldCheck } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
@@ -11,7 +11,7 @@ import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
-import { fmtAmount, fmtBalance, ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
+import { accountName, fmtAmount, fmtBalance, ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /**
@@ -29,6 +29,7 @@ export default function GeneralLedgerPage() {
 
 function GeneralLedger() {
     const t = useTranslations("Ledger");
+    const locale = useLocale();
     const tCommon = useTranslations("Common");
     const params = useSearchParams();
     const { data: session } = useSession();
@@ -87,12 +88,12 @@ function GeneralLedger() {
         const rows: (string | number)[][] = [];
         for (const l of ledgers) {
             if (l.openingBalance !== 0) {
-                rows.push([l.accountCode, l.accountName, "", "", t("openingBalance"), "", "", fmtBalance(l.openingBalance), "", "", ""]);
+                rows.push([l.accountCode, accountName(l, locale), "", "", t("openingBalance"), "", "", fmtBalance(l.openingBalance), "", "", ""]);
             }
             for (const r of l.rows) {
                 rows.push([
                     l.accountCode,
-                    l.accountName,
+                    accountName(l, locale),
                     r.entryDate,
                     r.entryNumber,
                     r.particular,
@@ -105,7 +106,7 @@ function GeneralLedger() {
                 ]);
             }
             rows.push([
-                l.accountCode, l.accountName, "", "", t("subTotal"),
+                l.accountCode, accountName(l, locale), "", "", t("subTotal"),
                 fmtAmount(l.totalDebit), fmtAmount(l.totalCredit), fmtBalance(l.closingBalance), "", "", "",
             ]);
         }

@@ -677,6 +677,13 @@ export type DepositBatchInput = {
   debitAccountId?: string | null;
 };
 
+/** ClearBatchRequest — one bank credit covering several DEPOSITED cheques (#57). */
+export type ClearBatchInput = {
+  chequeIds: string[];
+  clearingDate?: string | null;
+  narration?: string | null;
+};
+
 /** ReplaceChequeRequest — what the renter handed over after a bounce. */
 export type ReplaceChequeInput = {
   replacements: ChequeRowInput[];
@@ -1003,6 +1010,8 @@ export const chequeApi = {
   deposit: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/deposit`, body),
   depositBatch: (body: DepositBatchInput) => send<Cheque[]>("POST", "/cheques/deposit-batch", body),
   clear: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/clear`, body),
+  /** All or nothing: one row that is not DEPOSITED 400s the call, naming it. */
+  clearBatch: (body: ClearBatchInput) => send<Cheque[]>("POST", "/cheques/clear-batch", body),
   receive: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/receive`, body),
   /** `body.failureReason` is required — the backend 400s a bounce without one. */
   bounce: (id: string, body: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/bounce`, body),

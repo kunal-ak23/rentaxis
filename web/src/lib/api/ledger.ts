@@ -176,6 +176,7 @@ export type AccountLedger = {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   accountType: string;
   openingBalance: number;
   rows: LedgerRow[];
@@ -189,6 +190,7 @@ export type TrialBalanceRow = {
   accountId: string;
   code: string;
   name: string;
+  nameAr?: string | null;
   accountType: string;
   parentId: string | null;
   propertyId: string | null;
@@ -202,6 +204,7 @@ export type JournalLine = {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   debit: number;
   credit: number;
   narration: string | null;
@@ -368,4 +371,25 @@ export function fmtAmount(n: number): string {
 export function fmtBalance(n: number): string {
   if (Math.abs(n) < 0.005) return "0.00";
   return n > 0 ? `${nf.format(n)} Dr` : `${nf.format(-n)} Cr`;
+}
+
+/**
+ * An account's display name for the current locale: the Arabic name under `ar`
+ * when the account has one, the English name otherwise (gap #68). Accepts the
+ * shapes the ledger endpoints return: `name`/`nameAr` on accounts and trial
+ * balance rows, `accountName`/`accountNameAr` on ledger and journal lines.
+ */
+export function accountName(
+  acc: {
+    name?: string | null;
+    nameAr?: string | null;
+    accountName?: string | null;
+    accountNameAr?: string | null;
+  },
+  locale: string,
+): string {
+  const en = acc.name ?? acc.accountName ?? "";
+  if (locale !== "ar") return en;
+  const ar = acc.nameAr ?? acc.accountNameAr;
+  return ar && ar.trim() ? ar : en;
 }

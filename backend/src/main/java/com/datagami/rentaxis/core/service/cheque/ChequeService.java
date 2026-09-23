@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.cheque.ClearBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.DepositBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
@@ -54,6 +55,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -231,6 +233,7 @@ public class ChequeService {
     private final LeaseClosureService closure;
     private final ApplicationEventPublisher events;
     private final EntityManager entityManager;
+    private final Clock clock;
 
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
@@ -252,7 +255,8 @@ public class ChequeService {
                          PenaltyAssessmentRepository penaltyAssessments,
                          LeaseClosureService closure,
                          ApplicationEventPublisher events,
-                         EntityManager entityManager) {
+                         EntityManager entityManager,
+                         Clock clock) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseEventRepository = leaseEventRepository;
@@ -266,6 +270,42 @@ public class ChequeService {
         this.closure = closure;
         this.events = events;
         this.entityManager = entityManager;
+        this.clock = clock;
+    }
+
+    /**
+     * The most rows one batch call may carry (PR #340 review I2). Each row is
+     * locked up front and, on a clear, posts a journal, all inside one
+     * transaction that holds every lock until commit; an unbounded selection is a
+     * long transaction that refuses every other action on those cheques, and past
+     * the driver's 32,767 bind parameters it is a 500. A deposit slip holds far
+     * fewer than this.
+     */
+    static final int MAX_BATCH = 500;
+
+    private static List<UUID> batchIds(List<UUID> chequeIds, String verb) {
+        if (chequeIds == null || chequeIds.isEmpty()) {
+            throw new BusinessRuleViolationException("Select at least one cheque to " + verb);
+        }
+        if (chequeIds.size() > MAX_BATCH) {
+            throw new BusinessRuleViolationException("Select at most " + MAX_BATCH + " cheques to " + verb
+                    + " at a time; " + chequeIds.size() + " were selected, and nothing was changed.");
+        }
+        // Distinct, because the same row ticked twice would otherwise be reported
+        // as its own duplicate and would be saved twice.
+        return chequeIds.stream().distinct().toList();
+    }
+
+    /**
+     * Whether a batch row is outside what the caller may manage. Such a row is
+     * reported exactly as a missing id is ("does not exist"), before anything
+     * that names it: a property manager holding a UUID from another building must
+     * not learn its cheque number or status from the refusal (PR #340 review M1).
+     * A row with no lease cannot be placed in anyone's scope, so a restricted
+     * caller gets the same answer for it.
+     */
+    private boolean outOfScope(Lease lease) {
+        return lease == null ? leaseAccessPolicy.isRestricted() : !leaseAccessPolicy.canManage(lease);
     }
 
     // ------------------------------------------------------------------
@@ -319,12 +359,7 @@ public class ChequeService {
      */
     @Transactional
     public List<ChequeDTO> depositBatch(DepositBatchRequest request) {
-        if (request == null || request.chequeIds() == null || request.chequeIds().isEmpty()) {
-            throw new BusinessRuleViolationException("Select at least one cheque to deposit");
-        }
-        // Distinct, because the same row ticked twice would otherwise be reported
-        // as its own duplicate and would be saved twice.
-        List<UUID> ids = request.chequeIds().stream().distinct().toList();
+        List<UUID> ids = batchIds(request == null ? null : request.chequeIds(), "deposit");
 
         List<Cheque> cheques;
         try {
@@ -343,7 +378,7 @@ public class ChequeService {
         List<String> problems = new ArrayList<>();
         for (UUID id : ids) {
             Cheque c = byId.get(id);
-            if (c == null) {
+            if (c == null || outOfScope(c.getLease())) {
                 problems.add(id + " does not exist");
                 continue;
             }
@@ -388,6 +423,81 @@ public class ChequeService {
     // ------------------------------------------------------------------
     // -> CLEARED  (CRT)
     // ------------------------------------------------------------------
+
+    /**
+     * One bank credit, cleared together (gap #57): the mirror of
+     * {@link #depositBatch}.
+     *
+     * <p>All or nothing, for the same reason: a statement line either matches the
+     * register or it does not. Every id is locked and checked up front, so a row
+     * that is not DEPOSITED fails the call by name before anything posts. Each row
+     * is then cleared through {@link #clear(UUID, ChequeActionRequest, Replay)}
+     * itself — the same {@code CRT}, late-payment hook, notification and closure
+     * check a single clear runs — inside this one transaction, so a failure on any
+     * row rolls back every clearance before it.</p>
+     */
+    @Transactional
+    public List<ChequeDTO> clearBatch(ClearBatchRequest request) {
+        List<UUID> ids = batchIds(request == null ? null : request.chequeIds(), "clear");
+        // One date covers every row, so it is checked against every row (review M2).
+        // Not after today on the app clock (Asia/Dubai): a future clearing would
+        // also hand the late-payment rule a day that has not happened yet.
+        LocalDate today = LocalDate.now(clock);
+        LocalDate date = request.clearingDate() != null ? request.clearingDate() : today;
+        if (date.isAfter(today)) {
+            throw new BusinessRuleViolationException("The clearing date " + date
+                    + " is in the future. Funds cannot have cleared yet, and nothing was cleared.");
+        }
+
+        List<Cheque> cheques;
+        try {
+            cheques = chequeRepository.findAllByIdForUpdate(ids);
+        } catch (PessimisticLockingFailureException e) {
+            throw new RowLockedException(BEING_UPDATED);
+        }
+        Map<UUID, Cheque> byId = new LinkedHashMap<>();
+        for (Cheque c : cheques) {
+            requireSameTenant(c);
+            byId.put(c.getId(), c);
+        }
+        List<String> problems = new ArrayList<>();
+        for (UUID id : ids) {
+            Cheque c = byId.get(id);
+            if (c == null || outOfScope(c.getLease())) {
+                problems.add(id + " does not exist");
+                continue;
+            }
+            Lease lease = c.getLease();
+            if (lease == null) {
+                problems.add(label(c) + " belongs to no lease");
+            } else if (!COLLECTABLE.contains(lease.getStatus())) {
+                problems.add(label(c) + " belongs to a lease that is " + lease.getStatus());
+            } else if (c.getStatus() != ChequeStatus.DEPOSITED) {
+                problems.add(label(c) + " is " + c.getStatus());
+            } else if (c.getDepositedAt() != null && date.isBefore(c.getDepositedAt())) {
+                // A clearance dated before the deposit writes a CRT the bank
+                // statement can never have shown.
+                problems.add(label(c) + " was deposited on " + c.getDepositedAt()
+                        + ", after the clearing date " + date);
+            }
+        }
+        if (!problems.isEmpty()) {
+            throw new BusinessRuleViolationException(
+                    "These cheques cannot be cleared: " + String.join("; ", problems)
+                            + ". Only DEPOSITED cheques can be cleared, on or after the day they were"
+                            + " deposited, and nothing was cleared.");
+        }
+
+        ChequeActionRequest each = new ChequeActionRequest(
+                date,
+                request.narration() == null || request.narration().isBlank() ? null : request.narration().trim(),
+                null, null);
+        List<ChequeDTO> out = new ArrayList<>(ids.size());
+        for (UUID id : ids) {
+            out.add(clear(id, each, null));
+        }
+        return out;
+    }
 
     /**
      * The bank confirmed it: {@code CRT} Dr the bank / Cr PDC receivable. The

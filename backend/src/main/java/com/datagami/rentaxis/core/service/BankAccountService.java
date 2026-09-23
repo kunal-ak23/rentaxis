@@ -1,12 +1,19 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.BankAccountRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.BankAccount;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.BankAccountRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +29,8 @@ public class BankAccountService {
     private final BankAccountRepository repository;
     private final AccountService accountService;
     private final AccountResolver resolver;
+    private final AccountRepository accountRepository;
+    private final PropertyRepository propertyRepository;
 
     @Transactional(readOnly = true)
     public List<BankAccount> getAllBankAccounts() {
@@ -36,7 +45,89 @@ public class BankAccountService {
     @Transactional(readOnly = true)
     public BankAccount getBankAccountById(UUID id) {
         return repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Bank account not found"));
+                .orElseThrow(() -> new NotFoundException("Bank account not found"));
+    }
+
+    /**
+     * Creates a bank account from a request body. The property and ledger account
+     * arrive as ids and are resolved here, inside the transaction and the caller's
+     * tenant, before anything is saved (gap #67).
+     */
+    @Transactional
+    public BankAccount createBankAccount(BankAccountRequest request) {
+        BankAccount b = new BankAccount();
+        apply(b, request);
+        b.setDefault(Boolean.TRUE.equals(request.isDefault()));
+        b.setActive(request.active() == null || request.active());
+        return createBankAccount(b);
+    }
+
+    @Transactional
+    public BankAccount updateBankAccount(UUID id, BankAccountRequest request) {
+        BankAccount existing = getBankAccountById(id);
+        apply(existing, request);
+        if (request.isDefault() != null) existing.setDefault(request.isDefault());
+        if (request.active() != null) existing.setActive(request.active());
+        return repository.save(existing);
+    }
+
+    private void apply(BankAccount b, BankAccountRequest r) {
+        if (r.bankName() == null || r.bankName().isBlank()) {
+            throw new BusinessRuleViolationException("Bank name is required");
+        }
+        if (r.accountNumber() == null || r.accountNumber().isBlank()) {
+            throw new BusinessRuleViolationException("Account number is required");
+        }
+        b.setBankName(r.bankName().trim());
+        b.setAccountNumber(r.accountNumber().trim());
+        b.setIban(r.iban());
+        b.setBranchName(r.branchName());
+        b.setCurrency(r.currency() == null || r.currency().isBlank() ? "AED" : r.currency());
+        b.setProperty(resolveProperty(r.property()));
+        b.setCoaAccount(resolveBankLeaf(r.coaAccount(), b.getCoaAccount()));
+    }
+
+    private Property resolveProperty(BankAccountRequest.Ref ref) {
+        if (ref == null) return null;
+        if (ref.id() == null) throw new BusinessRuleViolationException("property.id is required");
+        return propertyRepository.findById(ref.id())
+                .filter(p -> inCurrentTenant(p.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Property not found"));
+    }
+
+    /**
+     * A bank account posts to its ledger account, so that account must be one of
+     * this tenant's BANK-subtype leaves: not a group, not a receivable (gap #66).
+     *
+     * <p>Only a change of link is validated. A row linked under the old ASSET-wide
+     * picker (to a receivable or a group) re-sends that same id on every edit; if
+     * it were re-validated here, fixing a typo in the IBAN would 400 until the
+     * operator also re-linked it. Keeping the current link is not a new choice, so
+     * {@code current} passes through unchanged (PR #340 review I-2).</p>
+     */
+    private Account resolveBankLeaf(BankAccountRequest.Ref ref, Account current) {
+        if (ref == null) return null;
+        if (ref.id() == null) throw new BusinessRuleViolationException("coaAccount.id is required");
+        if (current != null && ref.id().equals(current.getId()) && inCurrentTenant(current.getTenantId())) {
+            return current;
+        }
+        Account a = accountRepository.findByIdScopedToTenant(ref.id())
+                .filter(acc -> inCurrentTenant(acc.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Ledger account not found"));
+        if (a.isGroup() || a.getAccountSubType() != AccountSubType.BANK) {
+            throw new BusinessRuleViolationException(
+                    "A bank account must be linked to a Bank ledger account, not " + a.getCode() + " " + a.getName());
+        }
+        if (!a.isActive()) {
+            throw new BusinessRuleViolationException("Ledger account " + a.getCode() + " is inactive");
+        }
+        return a;
+    }
+
+    /** Belt and braces over the Hibernate tenant filter: an id from a request body never crosses tenants. */
+    private static boolean inCurrentTenant(UUID rowTenantId) {
+        UUID current = TenantContextHolder.getTenantId();
+        return current != null && current.equals(rowTenantId);
     }
 
     @Transactional
@@ -66,21 +157,6 @@ public class BankAccountService {
             }
         }
         return repository.save(bankAccount);
-    }
-
-    @Transactional
-    public BankAccount updateBankAccount(UUID id, BankAccount updates) {
-        BankAccount existing = getBankAccountById(id);
-        existing.setBankName(updates.getBankName());
-        existing.setAccountNumber(updates.getAccountNumber());
-        existing.setIban(updates.getIban());
-        existing.setBranchName(updates.getBranchName());
-        existing.setCurrency(updates.getCurrency());
-        existing.setProperty(updates.getProperty());
-        existing.setCoaAccount(updates.getCoaAccount());
-        existing.setDefault(updates.isDefault());
-        existing.setActive(updates.isActive());
-        return repository.save(existing);
     }
 
     @Transactional

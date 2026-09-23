@@ -180,16 +180,29 @@ describe("LeaseLinesGrid", () => {
             expect(vatBox(0).checked).toBe(true);
         });
 
-        it("never rewrites a row's persisted flag it was handed (a copied renewal row)", () => {
-            render(
-                <Harness
-                    initial={[row({ key: 0, id: "line-1", chargeTypeId: "ct-rent", grossAmount: 100, vatApplicable: true })]}
-                    rentVat={false}
-                />,
+        it("never rewrites a row's persisted flag it was handed, even when the header flag changes", () => {
+            // The amend guarantee (review m-5): a posted lease's lines are
+            // re-sent with their stored flags. A grid that re-applied
+            // `rentVat` on a prop change would silently re-price them.
+            const onChange = vi.fn();
+            const lines = [
+                row({ key: 0, id: "line-1", chargeTypeId: "ct-rent", grossAmount: 100, vatApplicable: true }),
+                row({ key: 1, id: "line-2", chargeTypeId: "ct-rent", grossAmount: 100, vatApplicable: false }),
+            ];
+            const grid = (rentVat: boolean) => (
+                <NextIntlClientProvider locale="en" messages={en}>
+                    <LeaseLinesGrid lines={lines} chargeTypes={CHARGE_TYPES} editable onChange={onChange} rentVat={rentVat} />
+                </NextIntlClientProvider>
             );
-            expect(vatBox(0).checked).toBe(true);
-            fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "200" } });
-            expect(vatBox(0).checked).toBe(true);
+            const { rerender } = render(grid(false));
+            expect([vatBox(0).checked, vatBox(1).checked]).toEqual([true, false]);
+
+            rerender(grid(true));
+            rerender(grid(false));
+            rerender(grid(true));
+
+            expect(onChange).not.toHaveBeenCalled();
+            expect([vatBox(0).checked, vatBox(1).checked]).toEqual([true, false]);
         });
     });
 

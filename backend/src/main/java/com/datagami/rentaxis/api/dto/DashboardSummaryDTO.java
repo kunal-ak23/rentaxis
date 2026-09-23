@@ -33,7 +33,16 @@ public class DashboardSummaryDTO {
     @Data
     public static class RecentActivityItem {
         private String type; // "LEASE_ACTIVATED", "PAYMENT_CLEARED", "PAYMENT_COLLECTED", etc.
+        /** English fallback sentence; clients that can should render from the fields below. */
         private String description;
         private String timestamp;
+        // The facts the description is built from, so a client can render the
+        // line in its own language and number format (gap #60).
+        private String chequeStatus;
+        private String chequeNumber;
+        private Integer seqNo;
+        private String unitNumber;
+        private String propertyName;
+        private BigDecimal amount;
     }
 }

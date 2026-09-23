@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.BuildingRequest;
 import com.datagami.rentaxis.core.service.BuildingService;
 import com.datagami.rentaxis.domain.entity.Building;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +22,8 @@ public class BuildingController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<Building> createBuilding(@RequestBody Building building) {
-        return ResponseEntity.ok(service.createBuilding(building));
+    public ResponseEntity<Building> createBuilding(@RequestBody BuildingRequest request) {
+        return ResponseEntity.ok(service.createBuilding(request));
     }
 
     @GetMapping

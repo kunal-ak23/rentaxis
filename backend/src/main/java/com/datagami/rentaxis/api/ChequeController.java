@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.cheque.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeSummaryDTO;
+import com.datagami.rentaxis.api.dto.cheque.ClearBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.DepositBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.LeaseChequeStatsDTO;
 import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
@@ -164,6 +165,12 @@ public class ChequeController {
     @PreAuthorize(STAFF)
     public List<ChequeDTO> depositBatch(@RequestBody DepositBatchRequest request) {
         return chequeService.depositBatch(request);
+    }
+
+    @PostMapping("/clear-batch")
+    @PreAuthorize(STAFF)
+    public List<ChequeDTO> clearBatch(@RequestBody ClearBatchRequest request) {
+        return chequeService.clearBatch(request);
     }
 
     @PutMapping("/{id}/clear")

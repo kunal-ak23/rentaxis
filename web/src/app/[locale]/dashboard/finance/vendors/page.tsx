@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
+import { accountName } from "@/lib/api/ledger";
 import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
@@ -13,6 +14,7 @@ type Account = {
     id: string;
     code: string;
     name: string;
+    nameAr?: string | null;
     accountType: string;
 };
 
@@ -325,7 +327,7 @@ export default function VendorsPage() {
                                         </td>
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {vendor.payableAccount
-                                                ? `${vendor.payableAccount.code} - ${vendor.payableAccount.name}`
+                                                ? `${vendor.payableAccount.code} - ${accountName(vendor.payableAccount, locale)}`
                                                 : "\u2014"}
                                         </td>
                                         <td className="px-5 py-3">
@@ -558,7 +560,7 @@ export default function VendorsPage() {
                                 </label>
                                 <p className="w-full border border-border rounded-lg bg-input p-3 text-xs text-muted">
                                     {editingVendor?.payableAccount
-                                        ? `${editingVendor.payableAccount.code} - ${editingVendor.payableAccount.name}`
+                                        ? `${editingVendor.payableAccount.code} - ${accountName(editingVendor.payableAccount, locale)}`
                                         : t("payableAccountManaged")}
                                 </p>
                             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight, ChevronDown, Dumbbell } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingM
 import RenewalBanner from "@/components/renewals/RenewalBanner";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import type { RenterCheque } from "@/lib/api/leasing";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 
 type Lease = {
     id: string;
@@ -53,16 +54,32 @@ const MEETING_STATUS_COLORS: Record<string, string> = {
 
 const MEETINGS_PER_PAGE = 5;
 
+// The `Meetings` namespace already carries translated labels for each enum
+// value; these maps only route the wire value to its key.
+const MEETING_TYPE_KEYS: Record<string, string> = {
+    OFFICE_VISIT: "officeVisit",
+    PROPERTY_VISIT: "propertyVisit",
+};
+const MEETING_PURPOSE_KEYS: Record<string, string> = {
+    CHEQUE_REPLACEMENT: "chequeReplacement",
+    LEASE_RENEWAL: "leaseRenewal",
+    PROPERTY_VIEWING: "propertyViewing",
+    OTHER: "other",
+};
+
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
     const tPayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
     const tLeasing = useTranslations("Leasing");
+    const tHome = useTranslations("RenterHome");
+    const tMeetings = useTranslations("Meetings");
+    const locale = useLocale();
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
+    const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean; daysOverdue: number } | null>(null);
     // `/online-payments/my-payments` returns RenterChequeDTO rows. The local
     // shape this used to declare carried a `paymentMethod` the DTO has never
     // had, which is how the Method column came to render a hardcoded literal.
@@ -169,11 +186,17 @@ export default function RenterPortalPage() {
                     const due = new Date(next.dueDate);
                     due.setHours(0, 0, 0, 0);
                     const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    // Overdue-ness and its day count are the server's
+                    // (`ChequeDueRules.daysOverdue`, counted from the end of
+                    // the grace period) — the same numbers My Payments shows.
+                    // Counting from the cheque date here put one cheque at 630
+                    // days on this card and 625 on My Payments.
                     setNextPayment({
                         dueDate: next.dueDate,
                         amount: next.payable ?? next.amount,
                         daysUntilDue: diffDays,
-                        isOverdue: diffDays < 0,
+                        isOverdue: !!next.overdue,
+                        daysOverdue: next.daysOverdue ?? 0,
                     });
                 }
             } else {
@@ -188,9 +211,9 @@ export default function RenterPortalPage() {
 
     const handleAccept = (id: string) => {
         setConfirmDialog({
-            title: "Accept Lease",
-            description: "Are you sure you want to accept this lease? This action cannot be undone.",
-            confirmText: "Accept Lease",
+            title: tHome("acceptTitle"),
+            description: tHome("acceptDescription"),
+            confirmText: tHome("acceptTitle"),
             isDestructive: false,
             onConfirm: async () => {
                 setConfirmDialog(null);
@@ -206,9 +229,9 @@ export default function RenterPortalPage() {
 
     const handleReject = (id: string) => {
         setConfirmDialog({
-            title: "Reject Lease",
-            description: "Are you sure you want to reject this lease? This action cannot be undone.",
-            confirmText: "Reject Lease",
+            title: tHome("rejectTitle"),
+            description: tHome("rejectDescription"),
+            confirmText: tHome("rejectTitle"),
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
@@ -262,7 +285,8 @@ export default function RenterPortalPage() {
         }
     };
 
-    const userName = session?.user?.name || "Renter";
+    const timeLocale = locale === "ar" ? "ar-AE" : "en-GB";
+    const userName = session?.user?.name || tHome("renterFallback");
 
     // Before the loading skeleton: a non-renter is not waiting for anything, so
     // showing them a spinner for data that will never arrive is its own bug.
@@ -349,7 +373,7 @@ export default function RenterPortalPage() {
                                         <CreditCard size={18} />
                                     </div>
                                     <div>
-                                        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Next Payment</p>
+                                        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{tHome("nextPayment")}</p>
                                         <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(nextPayment.amount)}</p>
                                     </div>
                                 </div>
@@ -363,16 +387,23 @@ export default function RenterPortalPage() {
                                 )}>
                                     <Clock size={11} />
                                     {nextPayment.isOverdue
-                                        ? `${Math.abs(nextPayment.daysUntilDue)} days overdue`
-                                        : nextPayment.daysUntilDue === 0
-                                            ? "Due today"
-                                            : `Due in ${nextPayment.daysUntilDue} days`
+                                        ? tHome("daysOverdue", { count: nextPayment.daysOverdue })
+                                        : nextPayment.daysUntilDue < 0
+                                            // Past its date but inside the grace period:
+                                            // the server does not call it overdue yet.
+                                            ? tHome("dueInGrace")
+                                            : nextPayment.daysUntilDue === 0
+                                            ? tHome("dueToday")
+                                            : tHome("dueInDays", { count: nextPayment.daysUntilDue })
                                     }
                                 </span>
                             </div>
                             <div className="flex items-center justify-between text-xs text-muted">
-                                <span>Due {new Date(nextPayment.dueDate).toLocaleDateString()}</span>
-                                <span className="text-primary font-semibold">View all payments &rarr;</span>
+                                <span>{tHome("dueOn", { date: fmtIsoDate(nextPayment.dueDate, locale) })}</span>
+                                <span className="text-primary font-semibold inline-flex items-center gap-1">
+                                    {tHome("viewAllPayments")}
+                                    <ChevronRight size={12} className="rtl:rotate-180" />
+                                </span>
                             </div>
                         </div>
                     ) : (
@@ -381,8 +412,8 @@ export default function RenterPortalPage() {
                                 <CheckCircle size={18} />
                             </div>
                             <div>
-                                <p className="text-sm font-bold text-foreground">All payments up to date</p>
-                                <p className="text-[10px] text-muted">No pending payments at this time.</p>
+                                <p className="text-sm font-bold text-foreground">{tHome("allPaymentsUpToDate")}</p>
+                                <p className="text-[10px] text-muted">{tHome("noPendingPayments")}</p>
                             </div>
                         </div>
                     )}
@@ -421,7 +452,7 @@ export default function RenterPortalPage() {
                                 </div>
                             </div>
                             <span className={cn("inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
-                                {lease.status.replace('_', ' ')}
+                                {tLeasing(`leaseStatus.${lease.status}`)}
                             </span>
                         </div>
 
@@ -429,29 +460,29 @@ export default function RenterPortalPage() {
                             <div className="bg-input/70 rounded-xl p-3 border border-border">
                                 <div className="flex items-center gap-2 mb-1">
                                     <DollarSign size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">Rent</span>
+                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("rent")}</span>
                                 </div>
                                 <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(lease.rentAmount)}</p>
                             </div>
                             <div className="bg-input/70 rounded-xl p-3 border border-border">
                                 <div className="flex items-center gap-2 mb-1">
                                     <Calendar size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">Start</span>
+                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("start")}</span>
                                 </div>
-                                <p className="text-xs font-bold text-foreground">{new Date(lease.startDate).toLocaleDateString()}</p>
+                                <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.startDate, locale)}</p>
                             </div>
                             <div className="bg-input/70 rounded-xl p-3 border border-border">
                                 <div className="flex items-center gap-2 mb-1">
                                     <Calendar size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">End</span>
+                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("end")}</span>
                                 </div>
-                                <p className="text-xs font-bold text-foreground">{new Date(lease.endDate).toLocaleDateString()}</p>
+                                <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.endDate, locale)}</p>
                             </div>
                             {lease.ejariNumber && (
                                 <div className="bg-input/70 rounded-xl p-3 border border-border">
                                     <div className="flex items-center gap-2 mb-1">
                                         <Home size={12} className="text-muted" />
-                                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">Ejari</span>
+                                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("ejari")}</span>
                                     </div>
                                     <p className="text-xs font-bold text-foreground">{lease.ejariNumber}</p>
                                 </div>
@@ -494,7 +525,7 @@ export default function RenterPortalPage() {
                                                         return (
                                                             <tr key={p.id} className={cn("border-t border-border", isLast && hasResidualLast && "bg-primary/5 font-semibold")}>
                                                                 <td className="px-3 py-2 tabular-nums">{p.installmentNumber}</td>
-                                                                <td className="px-3 py-2 tabular-nums">{new Date(p.dueDate).toLocaleDateString()}</td>
+                                                                <td className="px-3 py-2 tabular-nums">{fmtIsoDate(p.dueDate, locale)}</td>
                                                                 <td className="px-3 py-2 text-end tabular-nums">{formatCurrencyCompact(p.amount)}</td>
                                                                 {/*
                                                                   * These rows are RenterChequeDTO, which has
@@ -577,7 +608,7 @@ export default function RenterPortalPage() {
                         {t("noLeasesFound")}
                     </p>
                     <p className="text-xs text-muted">
-                        Your leases will appear here once your landlord creates them.
+                        {tHome("noLeasesHint")}
                     </p>
                 </div>
             )}
@@ -590,8 +621,8 @@ export default function RenterPortalPage() {
                             <CalendarDays size={16} />
                         </div>
                         <div>
-                            <h2 className="text-sm font-bold text-foreground tracking-tight">My Meetings</h2>
-                            <p className="text-[10px] text-muted font-medium">View and manage your scheduled meetings</p>
+                            <h2 className="text-sm font-bold text-foreground tracking-tight">{tHome("myMeetings")}</h2>
+                            <p className="text-[10px] text-muted font-medium">{tHome("myMeetingsDesc")}</p>
                         </div>
                     </div>
                     <button
@@ -599,7 +630,7 @@ export default function RenterPortalPage() {
                         className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary/90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                         <Plus size={14} />
-                        Request Meeting
+                        {tHome("requestMeeting")}
                     </button>
                 </div>
 
@@ -609,7 +640,7 @@ export default function RenterPortalPage() {
                             <div key={i} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 animate-pulse">
                                 <div className="h-4 w-32 bg-input rounded" />
                                 <div className="h-4 w-24 bg-input rounded" />
-                                <div className="h-5 w-20 bg-input rounded-full ml-auto" />
+                                <div className="h-5 w-20 bg-input rounded-full ms-auto" />
                             </div>
                         ))}
                     </div>
@@ -618,14 +649,14 @@ export default function RenterPortalPage() {
                         <div className="w-12 h-12 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-4">
                             <CalendarDays size={24} />
                         </div>
-                        <p className="text-sm font-bold text-muted mb-1 uppercase tracking-widest">No meetings yet</p>
-                        <p className="text-xs text-muted mb-4">Request a meeting with your property manager.</p>
+                        <p className="text-sm font-bold text-muted mb-1 uppercase tracking-widest">{tHome("noMeetingsYet")}</p>
+                        <p className="text-xs text-muted mb-4">{tHome("noMeetingsHint")}</p>
                         <button
                             onClick={() => setShowCreateMeeting(true)}
                             className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary/20 transition-all duration-200 cursor-pointer"
                         >
                             <Plus size={14} />
-                            Request Meeting
+                            {tHome("requestMeeting")}
                         </button>
                     </div>
                 ) : (
@@ -633,10 +664,10 @@ export default function RenterPortalPage() {
                         <div className="bg-surface rounded-xl border border-border overflow-hidden">
                             {/* Table header */}
                             <div className="grid grid-cols-12 gap-3 px-4 py-2.5 bg-input/40 border-b border-border">
-                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Date & Time</div>
-                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Purpose</div>
-                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Property</div>
-                                <div className="col-span-2 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Status</div>
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">{tHome("colDateTime")}</div>
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">{tHome("colPurpose")}</div>
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">{tHome("colProperty")}</div>
+                                <div className="col-span-2 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">{tHome("colStatus")}</div>
                                 <div className="col-span-1" />
                             </div>
                             {/* Table rows */}
@@ -650,24 +681,24 @@ export default function RenterPortalPage() {
                                     >
                                         <div className="col-span-3">
                                             <p className="text-xs font-bold text-foreground tabular-nums">
-                                                {new Date(meeting.slotStart).toLocaleDateString()}
+                                                {fmtIsoDate(meeting.slotStart, locale)}
                                             </p>
                                             <p className="text-[10px] text-muted">
-                                                {new Date(meeting.slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {new Date(meeting.slotStart).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" })}
                                                 {" – "}
-                                                {new Date(meeting.slotEnd).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {new Date(meeting.slotEnd).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" })}
                                             </p>
                                         </div>
                                         <div className="col-span-3">
                                             <p className="text-xs font-semibold text-foreground truncate">
-                                                {meeting.title || meeting.purpose.replace(/_/g, " ")}
+                                                {meeting.title || (MEETING_PURPOSE_KEYS[meeting.purpose] ? tMeetings(MEETING_PURPOSE_KEYS[meeting.purpose]) : meeting.purpose)}
                                             </p>
-                                            <p className="text-[10px] text-muted">{meeting.type.replace(/_/g, " ")}</p>
+                                            <p className="text-[10px] text-muted">{MEETING_TYPE_KEYS[meeting.type] ? tMeetings(MEETING_TYPE_KEYS[meeting.type]) : meeting.type}</p>
                                         </div>
                                         <div className="col-span-3">
                                             <p className="text-xs text-foreground truncate">{meeting.propertyName || "—"}</p>
                                             {meeting.unitNumber && (
-                                                <p className="text-[10px] text-muted">Unit {meeting.unitNumber}</p>
+                                                <p className="text-[10px] text-muted">{tHome("unitLabel", { unit: meeting.unitNumber })}</p>
                                             )}
                                         </div>
                                         <div className="col-span-2">
@@ -675,7 +706,7 @@ export default function RenterPortalPage() {
                                                 "inline-flex items-center px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest",
                                                 MEETING_STATUS_COLORS[meeting.status] ?? "bg-input text-muted border border-border"
                                             )}>
-                                                {meeting.status.replace(/_/g, " ")}
+                                                {MEETING_STATUS_COLORS[meeting.status] ? tMeetings(`status.${meeting.status}`) : meeting.status}
                                             </span>
                                         </div>
                                         <div className="col-span-1 flex justify-end">
@@ -694,15 +725,17 @@ export default function RenterPortalPage() {
                         {meetingsTotalPages > 1 && (
                             <div className="flex items-center justify-between mt-3 px-1">
                                 <p className="text-[10px] text-muted">
-                                    Page {meetingsPage} of {meetingsTotalPages}
+                                    {tHome("pageOf", { page: meetingsPage, total: meetingsTotalPages })}
                                 </p>
                                 <div className="flex items-center gap-1">
                                     <button
                                         onClick={() => setMeetingsPage(p => Math.max(1, p - 1))}
                                         disabled={meetingsPage === 1}
+                                        aria-label={tHome("previousPage")}
+                                        data-testid="renter-meetings-prev"
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                     >
-                                        <ChevronLeft size={13} />
+                                        <ChevronLeft size={13} className="rtl:rotate-180" />
                                     </button>
                                     <span className="text-[10px] font-semibold text-foreground px-2">
                                         {meetingsPage} / {meetingsTotalPages}
@@ -710,9 +743,11 @@ export default function RenterPortalPage() {
                                     <button
                                         onClick={() => setMeetingsPage(p => Math.min(meetingsTotalPages, p + 1))}
                                         disabled={meetingsPage >= meetingsTotalPages}
+                                        aria-label={tHome("nextPage")}
+                                        data-testid="renter-meetings-next"
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                     >
-                                        <ChevronRight size={13} />
+                                        <ChevronRight size={13} className="rtl:rotate-180" />
                                     </button>
                                 </div>
                             </div>
@@ -740,7 +775,7 @@ export default function RenterPortalPage() {
                 onConfirm={confirmDialog?.onConfirm || (() => {})}
                 title={confirmDialog?.title || ""}
                 description={confirmDialog?.description}
-                confirmText={confirmDialog?.confirmText || "Confirm"}
+                confirmText={confirmDialog?.confirmText || tHome("confirm")}
                 isDestructive={confirmDialog?.isDestructive || false}
             />
         </div>

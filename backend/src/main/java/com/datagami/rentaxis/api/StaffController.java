@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.StaffRequest;
 import com.datagami.rentaxis.core.service.StaffService;
 import com.datagami.rentaxis.domain.entity.Staff;
 import org.springframework.http.ResponseEntity;
@@ -35,13 +36,13 @@ public class StaffController {
     }
 
     @PostMapping
-    public ResponseEntity<Staff> createStaff(@RequestBody Staff staff) {
-        return ResponseEntity.ok(service.createStaff(staff));
+    public ResponseEntity<Staff> createStaff(@RequestBody StaffRequest request) {
+        return ResponseEntity.ok(service.createStaff(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Staff> updateStaff(@PathVariable UUID id, @RequestBody Staff staff) {
-        return ResponseEntity.ok(service.updateStaff(id, staff));
+    public ResponseEntity<Staff> updateStaff(@PathVariable UUID id, @RequestBody StaffRequest request) {
+        return ResponseEntity.ok(service.updateStaff(id, request));
     }
 
     @DeleteMapping("/{id}")

@@ -49,6 +49,23 @@ import { TenantSwitcher } from "./TenantSwitcher";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
+/**
+ * The nav item to highlight for a pathname: the longest href that equals the
+ * path or is a whole-segment prefix of it. A substring test lit "My Leases"
+ * (/dashboard/renter-portal) on every renter-portal sub-page, alongside the
+ * payments or penalties item the renter was actually on.
+ */
+export function activeNavHref(pathname: string, hrefs: string[]): string | null {
+    const path = pathname.replace(/^\/(en|ar)(?=\/|$)/, "") || "/";
+    let best: string | null = null;
+    for (const href of hrefs) {
+        if ((path === href || path.startsWith(`${href}/`)) && (best === null || href.length > best.length)) {
+            best = href;
+        }
+    }
+    return best;
+}
+
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
     const tCheques = useTranslations("Cheques");
@@ -231,12 +248,18 @@ export default function MvpSidebar() {
     const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
         { name: tNav("myLeases"), href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
+        // The penalties page explains an approved fine; without a link a renter
+        // with one had no way to find it (gap #39).
+        { name: tNav("myPenalties"), href: "/dashboard/renter-portal/penalties", icon: AlertTriangle, tourId: 'sidebar-my-penalties' },
         { name: tNav("myTickets"), href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
         ...(isEnabled('LISTINGS') && tenantSlug ? [{ name: tNav("listings"), href: `/marketplace/${tenantSlug}`, icon: Building2, tourId: 'sidebar-listings' }] : []),
         ...(isEnabled('MEETINGS') ? [{ name: tNav("meetings"), href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
+
+    // Every item the sidebar renders, so the longest match wins across sections.
+    const navHrefs = () => [...allItems, ...financeItems, ...hrItems, ...settingsItems].map((i) => i.href);
 
     const renderSection = (
         items: { name: string; href: string; icon: React.ElementType; tourId?: string }[],
@@ -253,13 +276,14 @@ export default function MvpSidebar() {
                 {label}
             </div>
             {items.map((item) => {
-                const isActive = pathname.includes(item.href);
+                const isActive = activeNavHref(pathname, navHrefs()) === item.href;
                 const Icon = item.icon;
                 return (
                     <SidebarTooltip key={item.href} label={item.name} enabled={isCollapsed}>
                         <Link
                             href={item.href}
                             data-tour={item.tourId}
+                            aria-current={isActive ? "page" : undefined}
                             className={cn(
                                 "group flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-sm)] transition-colors text-[13.5px] font-medium relative cursor-pointer",
                                 "focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",

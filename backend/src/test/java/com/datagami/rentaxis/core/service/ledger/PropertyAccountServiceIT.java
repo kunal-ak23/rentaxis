@@ -63,6 +63,35 @@ class PropertyAccountServiceIT extends AbstractPostgresIT {
         assertThat(resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null).getCode()).isEqualTo("F-02");
     }
 
+    /**
+     * Gap #68: a generated leaf is named in Arabic too, from a per-role label plus the
+     * property's Arabic name. Roles that share a group (Rental Income and Admin Fee
+     * both sit under C-01-01) must not end up with the same Arabic name.
+     */
+    @Test
+    void generatedLeavesGetAnArabicName() {
+        Property draft = new Property(); draft.setNameEn("Miftah Residences"); draft.setNameAr("مفتاح ريزيدنسز");
+        draft.setEmirate(Emirate.DUBAI);
+        Property p = properties.createProperty(draft);
+        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, p.getId()).getNameAr())
+                .isEqualTo("إيجارات مستحقة - مفتاح ريزيدنسز");
+        String income = resolver.resolve(AccountRole.RENTAL_INCOME, p.getId()).getNameAr();
+        String adminFee = resolver.resolve(AccountRole.ADMIN_FEE, p.getId()).getNameAr();
+        assertThat(income).isEqualTo("إيرادات الإيجار - مفتاح ريزيدنسز");
+        assertThat(adminFee).isNotEqualTo(income).endsWith(" - مفتاح ريزيدنسز");
+        // Direct-expense leaves, which carry no role, are named too.
+        assertThat(accountRepo.findAll().stream()
+                .filter(a -> p.getId().equals(a.getPropertyId()) && a.getName().startsWith("Cleaning - ")))
+                .singleElement().extracting(Account::getNameAr).isEqualTo("التنظيف - مفتاح ريزيدنسز");
+    }
+
+    @Test
+    void aPropertyWithNoArabicNameStillGetsAnArabicLabel() {
+        Property p = newProperty("Tara 9");
+        assertThat(resolver.resolve(AccountRole.RENT_RECEIVABLE, p.getId()).getNameAr())
+                .isEqualTo("إيجارات مستحقة - Tara 9");
+    }
+
     @Test
     void creatingAPropertyGeneratesItsAccountSetAndMappings() {
         Property p = newProperty("Tulip Oasis 7");

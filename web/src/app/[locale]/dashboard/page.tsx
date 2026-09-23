@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
+import { activityText, type ActivityItem } from "@/components/dashboard/activityText";
 import { cn } from "@/lib/utils";
 import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
@@ -27,11 +28,7 @@ type DashboardSummary = {
   overdueAmount: number;
   receivedThisMonth?: number | null;
   receivedLastMonth?: number | null;
-  recentActivity: {
-    type: string;
-    description: string;
-    timestamp: string;
-  }[];
+  recentActivity: ActivityItem[];
 };
 
 type MonthlyPoint = {
@@ -220,6 +217,7 @@ function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: 
 
 export default function DashboardPage() {
   const t = useTranslations("Dashboard");
+  const tCheques = useTranslations("Cheques");
   const locale = useLocale();
   const { data: session } = useSession();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -391,7 +389,7 @@ export default function DashboardPage() {
                   {item.type.slice(0, 2)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] text-foreground truncate">{item.description}</p>
+                  <p className="text-[13px] text-foreground truncate">{activityText(item, t, tCheques)}</p>
                 </div>
                 <div className="text-[11px] text-[var(--ink-500)] whitespace-nowrap">{formatTimeAgo(item.timestamp, t, locale)}</div>
               </div>

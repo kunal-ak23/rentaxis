@@ -561,7 +561,13 @@ export default function SettlementPage() {
                 </div>
             )}
 
-            {lease && !settleable && (
+            {/*
+              * "Terminate first" is advice for a running contract. A finalized
+              * settlement, or a CLOSED contract (closure already required one),
+              * has nothing left to terminate: the banner sat above "Finalized
+              * … by …" offering a Terminate button (gap #51).
+              */}
+            {lease && !settleable && !finalized && lease.status !== "CLOSED" && (
                 <div
                     role="alert"
                     data-testid="settlement-not-settleable"
