@@ -163,3 +163,38 @@ are separate findings and unchanged here.
    pinned down before implementation — left as-is it would be read two different ways.
    Note this is also the one place v1 touches the same ground as the deferred reductions
    work, so a deliberately minimal answer is fine.
+
+## Amendment 2026-09-23: downward corrections after settlement
+
+v1 shipped **additions only** (findings #15/#17), implemented as the addendum path
+(`LeaseVariationService.addCharge`, `POST /api/v1/leases/{id}/addenda`, commits bf6fcea1,
+e1770cb5, 84900aae). Full backend suite green (2325 tests, 0 failures, 0 errors) on
+2026-09-23. The browser pass (local sign-in, ADD-yy/1 panel, Ejari badge clearing, Arabic
+RTL) is **pending the user's manual check** — it was not run as part of this verification.
+
+During implementation, three facts were confirmed that rule out treating a *downward*
+correction as "the same additive document with a different sign", contrary to what this
+spec originally assumed:
+
+1. **`LeasePostingService.planLines` emits pairs only for `lineNet.signum() > 0`.** A
+   negative net line produces no journal pair at all — it is silently dropped, not posted
+   as a reversing entry.
+2. **`RecognitionService.build` skips `net.signum() <= 0`** (`RecognitionService.java:848`).
+   A negative-net line is invisible to recognition, so it cannot carry a re-plan of future
+   recognition entries on its own.
+3. **`ck_lease_lines_net` forbids a negative line at the database level**
+   (`83-lease-posting-and-cheques.yaml:83`: `net_amount >= 0`). Even if the service layer
+   were changed, the schema constraint would reject the row.
+
+Together these mean a downward correction after money has cleared needs new design: a
+credit note (Dr `ADVANCE_RENT`/income, Cr `RENT_RECEIVABLE`) plus a re-plan of future
+recognition entries, not a signed addendum. This is out of scope for v1 and tracked in
+`tutorials/miftah-2y/FIXPLAN.md` as "settled downward correction (credit note + recognition
+re-plan)".
+
+This also reopens the approved answer to Resolved question 4 above. `ADVANCE_RENT` is not
+a spare per-renter credit account — it is **the unearned-rent liability that every TCO
+already credits for RENT lines** (per-day recognition draws it down as rent is earned). Routing
+a post-settlement credit balance into the same account a TCO credits for unearned rent would
+conflate two different liabilities. The "credit balance → `ADVANCE_RENT`" answer needs a
+fresh decision made alongside the credit-note design, not reused as-is.
