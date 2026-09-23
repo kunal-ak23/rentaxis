@@ -87,8 +87,7 @@ public class UserService {
      * next role — each still needs its own visit:
      * {@code UserController.privilegeRank} (exhaustive, will not compile — safe),
      * {@code ApiSecurityFilter}'s tenant-access chain (if/else — silent),
-     * {@code UserService.createUser}'s {@code issuesInviteToken} (if/else —
-     * silent; a guard has no email, so it is correctly false for SECURITY_GUARD),
+     * {@code UserService.issuesInviteToken} (exhaustive, will not compile — safe),
      * and the {@code @PreAuthorize} literals across the controllers.
      */
     private static boolean getsTenantMembership(UserRole role) {
@@ -173,14 +172,27 @@ public class UserService {
      * the next role must not compile until it has an answer here.
      * <ul>
      *   <li>RENTER, PROPERTY_MANAGER, TENANT_USER — always, as before.</li>
+     *   <li>TENANT_ADMIN, ACCOUNTANT (#2) — whenever nobody chose a password for
+     *       them, which is how the admin users form now creates them. A password
+     *       that <i>was</i> supplied is the account holder's own on the one path
+     *       that sends one on purpose, self-registration
+     *       ({@code AuthController.register}, a TENANT_ADMIN), and emailing that
+     *       person a "set your password" link a second after they set it would
+     *       be noise. API callers that still send a password (the demo seeder)
+     *       keep working unchanged.</li>
      *   <li>SECURITY_GUARD — never: a guard has no email and signs in by phone OTP.</li>
-     *   <li>SUPER_ADMIN — never; the password is required. See {@code createUser}.</li>
+     *   <li>SUPER_ADMIN — never; the password is required. Not extended because
+     *       it is not trivially safe: a SUPER_ADMIN has no tenant, and
+     *       {@code USER_INVITED} is dispatched per tenant (the tenant's
+     *       EMAIL_NOTIFICATIONS feature gate, branding and the outbox row's
+     *       tenant), so the invite would have nowhere well-defined to go.</li>
      * </ul>
      */
     static boolean issuesInviteToken(UserRole role, boolean passwordSupplied) {
         return switch (role) {
             case RENTER, PROPERTY_MANAGER, TENANT_USER -> true;
-            case TENANT_ADMIN, ACCOUNTANT, SUPER_ADMIN, SECURITY_GUARD -> false;
+            case TENANT_ADMIN, ACCOUNTANT -> !passwordSupplied;
+            case SUPER_ADMIN, SECURITY_GUARD -> false;
         };
     }
 
