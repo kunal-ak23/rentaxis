@@ -83,7 +83,11 @@ export default function ChequeRegisterPage() {
 
     // Batch clearing (#57): offered only while the register is filtered to
     // DEPOSITED, so every tickable row is one the server will accept. Keyed by
-    // id, like the Collection page, so the total survives a page change.
+    // id so each tick carries its amount into the total. Every reload prunes
+    // the selection to the deposited rows it returned (see `load`): a row
+    // cleared or bounced from its own menu, or by a colleague, leaves the
+    // list, and a tick the operator can no longer see or untick must not stay
+    // in the count, the total or the batch the server would refuse whole.
     const batchMode = applied.status === "DEPOSITED";
     const [selected, setSelected] = useState<Map<string, number>>(new Map());
     const [clearBatchOpen, setClearBatchOpen] = useState(false);
@@ -94,20 +98,27 @@ export default function ChequeRegisterPage() {
         setLoading(true);
         setLoadError(null);
         try {
-            setPage(
-                await chequeApi.list({
-                    status: applied.status || undefined,
-                    mode: applied.mode || undefined,
-                    propertyId: applied.propertyId || undefined,
-                    from: applied.from || undefined,
-                    to: applied.to || undefined,
-                    search: applied.search || undefined,
-                    page: pageIndex,
-                    size,
-                }),
-            );
+            const result = await chequeApi.list({
+                status: applied.status || undefined,
+                mode: applied.mode || undefined,
+                propertyId: applied.propertyId || undefined,
+                from: applied.from || undefined,
+                to: applied.to || undefined,
+                search: applied.search || undefined,
+                page: pageIndex,
+                size,
+            });
+            setPage(result);
+            const visible = new Set(result.content.filter(c => c.status === "DEPOSITED").map(c => c.id));
+            setSelected(prev => {
+                if ([...prev.keys()].every(id => visible.has(id))) return prev;
+                const next = new Map<string, number>();
+                for (const [id, amount] of prev) if (visible.has(id)) next.set(id, amount);
+                return next;
+            });
         } catch (err) {
             setPage(null);
+            setSelected(prev => (prev.size === 0 ? prev : new Map()));
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
         } finally {
             setLoading(false);

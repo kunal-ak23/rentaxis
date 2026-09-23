@@ -31,6 +31,7 @@ vi.mock("@/components/finance/useNameLookup", () => ({
 
 const list = vi.fn();
 const clearBatch = vi.fn();
+const clearOne = vi.fn();
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
@@ -41,6 +42,7 @@ vi.mock("@/lib/api/leasing", async orig => {
             summary: async () => null,
             aging: async () => null,
             clearBatch: (...a: unknown[]) => clearBatch(...(a as [])),
+            clear: (...a: unknown[]) => clearOne(...(a as [])),
         },
     };
 });
@@ -74,6 +76,7 @@ beforeEach(() => {
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] })) as unknown as typeof fetch;
     list.mockReset();
     clearBatch.mockReset();
+    clearOne.mockReset();
     list.mockResolvedValue(page(ROWS));
 });
 
@@ -128,6 +131,31 @@ describe("Cheque register batch clear (#57)", () => {
         // The register reloads and the selection is spent.
         await waitFor(() => expect(list.mock.calls.length).toBeGreaterThanOrEqual(3));
         await waitFor(() => expect(screen.getByTestId("clear-batch-open")).toHaveTextContent("(0)"));
+    });
+
+    it("drops a ticked row from the selection once its own row menu clears it (I-1)", async () => {
+        await filterToDeposited();
+        fireEvent.click(screen.getByTestId("clear-batch-select-c1"));
+        fireEvent.click(screen.getByTestId("clear-batch-select-c2"));
+        expect(screen.getByTestId("clear-batch-open")).toHaveTextContent("(2)");
+        expect(screen.getByTestId("clear-batch-selected-total")).toHaveTextContent("41,500.00");
+
+        // Cleared on its own, 700101 leaves the Deposited list on reload.
+        clearOne.mockResolvedValue({});
+        list.mockResolvedValue(page(ROWS.filter(c => c.id !== "c1")));
+        fireEvent.click(screen.getByTestId("cheque-row-action-clear-c1"));
+        fireEvent.click(await screen.findByTestId("cheque-clear-confirm"));
+
+        await waitFor(() => expect(clearOne).toHaveBeenCalledWith("c1", expect.anything()));
+        await waitFor(() => expect(screen.queryByTestId("cheque-row-c1")).toBeNull());
+        await waitFor(() => expect(screen.getByTestId("clear-batch-open")).toHaveTextContent(`${en.Cheques.clearBatch} (1)`));
+        expect(screen.getByTestId("clear-batch-selected-total")).toHaveTextContent("10,000.00");
+        expect(screen.getByTestId("clear-batch-select-c2")).toBeChecked();
+
+        clearBatch.mockResolvedValue([]);
+        fireEvent.click(screen.getByTestId("clear-batch-open"));
+        fireEvent.click(await screen.findByTestId("clear-batch-confirm"));
+        await waitFor(() => expect(clearBatch).toHaveBeenCalledWith(expect.objectContaining({ chequeIds: ["c2"] })));
     });
 });
 
