@@ -46,8 +46,11 @@ class UnitOrderingIT extends AbstractPostgresIT {
         property = propertyRepo.save(property);
 
         // Deliberately shuffled on the way in: the ordering must come from the
-        // query, not from the order rows happened to be written.
-        for (String number : List.of("A-301", "A-102", "A-202", "A-101", "A-203", "A-302", "A-103", "A-201")) {
+        // query, not from the order rows happened to be written. A-1001 and B-101
+        // are here too, because a lexicographic ORDER BY sorts "A-1001" before
+        // "A-201" — the digit run has to compare numerically, not as characters.
+        for (String number : List.of("A-301", "A-102", "A-202", "A-101", "A-203", "A-302", "A-103", "A-201",
+                "A-1001", "B-101")) {
             Unit unit = new Unit();
             unit.setProperty(property);
             unit.setUnitNumber(number);
@@ -57,6 +60,7 @@ class UnitOrderingIT extends AbstractPostgresIT {
 
         assertThat(unitRepo.findByPropertyId(property.getId()))
                 .extracting(Unit::getUnitNumber)
-                .containsExactly("A-101", "A-102", "A-103", "A-201", "A-202", "A-203", "A-301", "A-302");
+                .containsExactly("A-101", "A-102", "A-103", "A-201", "A-202", "A-203", "A-301", "A-302",
+                        "A-1001", "B-101");
     }
 }
