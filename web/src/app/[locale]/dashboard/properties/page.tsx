@@ -811,7 +811,10 @@ export default function PropertiesPage() {
                                                 { label: "Units", count: portfolioResult.unitsCreated },
                                                 { label: "Renters", count: portfolioResult.rentersCreated },
                                                 { label: "Leases", count: portfolioResult.leasesCreated },
-                                                { label: "Payment Schedules", count: portfolioResult.paymentSchedulesCreated },
+                                                // ACTIVE rows actually posted (on the books); any that could
+                                                // not post are DRAFT and listed below as "Imported as draft".
+                                                { label: "Leases posted", count: portfolioResult.leasesPosted ?? 0 },
+                                                { label: "Cheques", count: portfolioResult.chequesCreated ?? portfolioResult.paymentSchedulesCreated ?? 0 },
                                                 ...(portfolioResult.chequesFromSheet > 0
                                                     ? [{ label: "Cheques (from sheet)", count: portfolioResult.chequesFromSheet }]
                                                     : []),

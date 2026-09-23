@@ -38,4 +38,10 @@ public class PortfolioImportJobDetailsDTO {
 
     /** @see #contractsCreated */
     private Integer mappingsCreated;
+    /**
+     * v1 portfolio import only: rows the sheet marked ACTIVE that were posted (TCO
+     * plus a PDR per cheque) and so are on the books. A row that could not be posted
+     * stays DRAFT and is listed as a warning "Imported as draft: …" (gap #83).
+     */
+    private Integer leasesPosted;
 }

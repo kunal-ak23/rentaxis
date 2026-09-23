@@ -314,8 +314,70 @@ public class ChequeGenerationService {
                 : request;
 
         ChequeMode mode = mode(r.mode());
-        int n = installments(r, lease);
-        LocalDate firstDueDate = firstNonNull(r.firstDueDate(), lease.getFirstDueDate(), lease.getStartDate());
+        List<Row> rows = rowsFor(lease, r, true);
+
+        // The old grid goes before the new one is written: a derived delete loads
+        // the rows first, so the tenant filter applies to them as it would to a
+        // read, and the flush makes the deletes hit the database ahead of the
+        // inserts rather than after them.
+        chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
+        chequeRepository.flush();
+
+        Account debitAccount = debitAccount(r.debitAccountId(), lease);
+        List<Cheque> saved = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            Cheque c = blank(lease);
+            c.setSeqNo(row.seqNo());
+            c.setPostingDate(row.postingDate());
+            c.setChequeDate(row.chequeDate());
+            c.setAmount(row.amount());
+            c.setNarration(row.narration());
+            c.setMode(mode);
+            c.setPayeeBank(r.payeeBank());
+            c.setDebitAccount(debitAccount);
+            saved.add(c);
+        }
+        return toDtos(chequeRepository.saveAll(saved), lease);
+    }
+
+
+    /**
+     * The grid {@link #generateForSystemImport} would write, without writing it —
+     * for the portfolio import, which has to put the sheet's own instruments, the
+     * generated ones and a booking cheque together into <em>one</em> grid before it
+     * saves anything (gap #83).
+     *
+     * <p>{@code includeRent = false} proposes only the non-rent lines, each as its own
+     * row dated the contract date: what an import whose Cheques sheet states the rent
+     * instalments still owes for the deposit and the fees.</p>
+     *
+     * <p><b>Never throws.</b> The importer runs every lease of a workbook in one
+     * transaction, and a {@code BusinessRuleViolationException} leaving this
+     * {@code @Transactional} proxy would mark that transaction rollback-only and
+     * lose the whole workbook at commit. So the refusal comes back as a sentence.</p>
+     */
+    @Transactional(readOnly = true)
+    public Proposal proposeForSystemImport(Lease lease, GenerateChequesRequest request, boolean includeRent) {
+        GenerateChequesRequest r = request == null
+                ? new GenerateChequesRequest(null, null, null, null, null, null, null)
+                : request;
+        try {
+            return new Proposal(rowsFor(lease, r, includeRent), null);
+        } catch (BusinessRuleViolationException e) {
+            return new Proposal(List.of(), e.getMessage());
+        }
+    }
+
+    /** What {@link #proposeForSystemImport} proposes: the rows, or why there are none. */
+    public record Proposal(List<Row> rows, String problem) {}
+
+    /**
+     * The rows for a lease's lines under a generate request. With
+     * {@code includeRent = false} the RENT lines are left out and every other line
+     * becomes its own row; a lease with nothing but rent then proposes none.
+     */
+    private List<Row> rowsFor(Lease lease, GenerateChequesRequest r, boolean includeRent) {
+        UUID leaseId = lease.getId();
         // FIRST_LARGER rather than the lease's own installmentDistribution: the
         // grid's residual belongs on the cheque the landlord is most certain of,
         // which is the one handed over at signing. The lease-level field is the v1
@@ -346,31 +408,15 @@ public class ChequeGenerationService {
             }
         }
 
-        List<Row> rows = buildRows(rent, extras, n, lease.getContractDate(), firstDueDate,
-                lease.getEndDate(), distribution, fold);
-
-        // The old grid goes before the new one is written: a derived delete loads
-        // the rows first, so the tenant filter applies to them as it would to a
-        // read, and the flush makes the deletes hit the database ahead of the
-        // inserts rather than after them.
-        chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
-        chequeRepository.flush();
-
-        Account debitAccount = debitAccount(r.debitAccountId(), lease);
-        List<Cheque> saved = new ArrayList<>(rows.size());
-        for (Row row : rows) {
-            Cheque c = blank(lease);
-            c.setSeqNo(row.seqNo());
-            c.setPostingDate(row.postingDate());
-            c.setChequeDate(row.chequeDate());
-            c.setAmount(row.amount());
-            c.setNarration(row.narration());
-            c.setMode(mode);
-            c.setPayeeBank(r.payeeBank());
-            c.setDebitAccount(debitAccount);
-            saved.add(c);
+        if (!includeRent) {
+            if (extras.stream().noneMatch(e -> e.amount().signum() > 0)) return List.of();
+            return buildRows(BigDecimal.ZERO, extras, 1, lease.getContractDate(), lease.getContractDate(),
+                    lease.getEndDate(), distribution, false);
         }
-        return toDtos(chequeRepository.saveAll(saved), lease);
+        int n = installments(r, lease);
+        LocalDate firstDueDate = firstNonNull(r.firstDueDate(), lease.getFirstDueDate(), lease.getStartDate());
+        return buildRows(rent, extras, n, lease.getContractDate(), firstDueDate,
+                lease.getEndDate(), distribution, fold);
     }
 
     /**

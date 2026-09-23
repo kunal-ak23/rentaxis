@@ -14,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -21,7 +23,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -413,11 +414,10 @@ public class PortfolioImportService {
                                                      LocalDate startDate, LocalDate endDate) {
         try {
             if (!monthlyRent.isEmpty()) {
-                BigDecimal mr = new BigDecimal(monthlyRent);
-                // Mirror PortfolioImportPersistService.monthsInclusive — end date is
-                // inclusive in our lease convention so Jan 1 → Dec 31 counts as 12.
-                long months = Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
-                return mr.multiply(BigDecimal.valueOf(months));
+                // The persist phase's rule, so the Cheques-sheet total is checked
+                // against the very figure the lease will carry.
+                return PortfolioImportPersistService.rentFromMonthly(new BigDecimal(monthlyRent),
+                        PortfolioImportPersistService.monthsInclusive(startDate, endDate));
             }
             if (!rentAmount.isEmpty()) {
                 return new BigDecimal(rentAmount);
@@ -623,6 +623,22 @@ public class PortfolioImportService {
 
     @Async("importExecutor")
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
+        process(fileBytes, job, tenantId, null);
+    }
+
+    /**
+     * The same, carrying the uploader's {@code Authentication} for the post phase
+     * (gap #83): a v1 row the sheet marks ACTIVE is posted after the persist phase
+     * has committed, and posting goes through {@code LeaseAccessPolicy}, which fails
+     * closed on an executor thread with no user. Without it every such row stays
+     * DRAFT and says why. The cut-over's own post job carries its caller the same way.
+     */
+    @Async("importExecutor")
+    public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
+        process(fileBytes, job, tenantId, auth);
+    }
+
+    private void process(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
         // Set tenant context for this async thread
         TenantContextHolder.setTenantId(tenantId);
         // Through WorkbookGuard, never `new XSSFWorkbook` directly: an uploaded
@@ -652,7 +668,12 @@ public class PortfolioImportService {
             if (ContractImportValidator.isV2Workbook(workbook)) {
                 contractPersistService.persist(workbook, job, outcome.warnings());
             } else {
-                persistService.persistWorkbook(workbook, job, outcome.warnings());
+                PortfolioImportPersistService.PersistResult persisted =
+                        persistService.persistWorkbook(workbook, job, outcome.warnings());
+                // Only now, with the leases committed: each ACTIVE row posts in a
+                // transaction of its own, and a new transaction cannot see rows the
+                // persist transaction had not yet committed.
+                postRequestedLeases(persisted, job, auth);
             }
 
             job.setStatus("COMPLETED");
@@ -703,6 +724,19 @@ public class PortfolioImportService {
             importJobRepository.save(job);
         } finally {
             TenantContextHolder.clear();
+        }
+    }
+
+    /** Runs the post phase as the uploader, and gives the thread back clean. */
+    private void postRequestedLeases(PortfolioImportPersistService.PersistResult persisted, ImportJob job,
+                                     Authentication auth) {
+        if (persisted.toPost().isEmpty()) return;
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            if (auth != null) SecurityContextHolder.getContext().setAuthentication(auth);
+            persistService.postRequested(persisted, job);
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(previous);
         }
     }
 

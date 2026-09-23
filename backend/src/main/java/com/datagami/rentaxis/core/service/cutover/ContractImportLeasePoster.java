@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -87,6 +88,30 @@ public class ContractImportLeasePoster {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Posted postOne(UUID batchId, UUID leaseId, LocalDate recogniseThrough) {
+        return postAndReplay(leaseId, batchId, recogniseThrough, () -> leasePosting.post(leaseId, batchId));
+    }
+
+    /**
+     * One lease of a <b>portfolio import</b> (the v1 Properties → Import Portfolio
+     * workbook) that the sheet marked ACTIVE, put on the books (gap #83).
+     *
+     * <p>The same door and the same commit boundary as {@link #postOne}, for the
+     * same reason: the fourth lease of the workbook failing to post must cost that
+     * lease and nothing else, and it must leave no journals behind at all. What
+     * differs is only what the post is: no batch id (a portfolio import is not a
+     * reversible cut-over batch, so its journals obey the period lock like any
+     * interactive post), and no recognition catch-up — the nightly recognition run
+     * treats this lease exactly as it treats one posted by hand. The cheque replay
+     * is skipped, since a portfolio import never records an imported status.</p>
+     *
+     * @return what was written, or {@code null} when the lease is not DRAFT any more.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Posted postPortfolioLease(UUID leaseId) {
+        return postAndReplay(leaseId, null, null, () -> leasePosting.postForPortfolioImport(leaseId));
+    }
+
+    private Posted postAndReplay(UUID leaseId, UUID batchId, LocalDate recogniseThrough, Runnable post) {
         Lease lease = leases.findByIdScopedToTenant(leaseId).orElse(null);
         if (lease == null) {
             // The link has no foreign key on lease_id by design (changeset 88), so a
@@ -100,13 +125,16 @@ public class ContractImportLeasePoster {
             return null;
         }
 
-        leasePosting.post(leaseId, batchId);
+        post.run();
 
-        ChequeService.Replay replay = new ChequeService.Replay(batchId);
         int deposited = 0;
         int cleared = 0;
         int bounced = 0;
-        for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+        // A portfolio import (no batch) records no imported cheque statuses: the
+        // post has registered every row and that is all its sheet said.
+        List<Cheque> toReplay = batchId == null ? List.of() : cheques.findByLease_IdOrderBySeqNoAsc(leaseId);
+        ChequeService.Replay replay = batchId == null ? null : new ChequeService.Replay(batchId);
+        for (Cheque c : toReplay) {
             switch (replayTarget(c)) {
                 case REGISTERED -> {
                     // The lease post already registered it and wrote its PDR; the
@@ -150,12 +178,12 @@ public class ContractImportLeasePoster {
             }
         }
 
-        RecognitionService.LeaseCatchUp caughtUp =
-                recognition.catchUpLease(leaseId, recogniseThrough, batchId);
+        int recognised = recogniseThrough == null ? 0
+                : recognition.catchUpLease(leaseId, recogniseThrough, batchId).posted();
 
         log.debug("Imported lease {} posted in batch {}: {} deposited, {} cleared, {} bounced, {} recognised",
-                leaseId, batchId, deposited, cleared, bounced, caughtUp.posted());
-        return new Posted(deposited, cleared, bounced, caughtUp.posted());
+                leaseId, batchId, deposited, cleared, bounced, recognised);
+        return new Posted(deposited, cleared, bounced, recognised);
     }
 
     /**

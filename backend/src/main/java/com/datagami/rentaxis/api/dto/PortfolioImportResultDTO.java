@@ -17,6 +17,8 @@ public class PortfolioImportResultDTO {
     private int chequesCreated;
     private int chequesFromSheet;
     private int bookingDepositsCreated;
+    /** v1 import: ACTIVE rows actually posted; the rest are DRAFT and listed as warnings. */
+    private int leasesPosted;
 
     /**
      * Cut-over import only: the DRAFT batch the job produced, and what it wrote

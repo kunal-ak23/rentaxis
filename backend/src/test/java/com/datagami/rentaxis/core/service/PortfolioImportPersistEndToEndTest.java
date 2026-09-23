@@ -55,6 +55,8 @@ class PortfolioImportPersistEndToEndTest {
     @Mock LeaseService leaseService;
     @Mock ChargeTypeService chargeTypeService;
     @Mock ChequeGenerationService chequeGenerationService;
+    @Mock com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccountService;
+    @Mock com.datagami.rentaxis.core.service.cutover.ContractImportLeasePoster leasePoster;
 
     PortfolioImportPersistService service;
 
@@ -63,7 +65,17 @@ class PortfolioImportPersistEndToEndTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, importJobRepository,
-                leaseService, chargeTypeService, chequeGenerationService);
+                leaseService, chargeTypeService, chequeGenerationService,
+                propertyAccountService, leasePoster);
+        // A generated grid is one row big enough for any booking cheque; the
+        // non-rent proposal (a Cheques-sheet lease) is empty. The real proposals are
+        // ChequeGenerationServiceIT's and PortfolioImportPostingIT's subject.
+        lenient().when(chequeGenerationService.proposeForSystemImport(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenAnswer(inv -> new ChequeGenerationService.Proposal((Boolean) inv.getArgument(2)
+                        ? java.util.List.of(new ChequeGenerationService.Row(1, java.time.LocalDate.of(2026, 1, 1),
+                                java.time.LocalDate.of(2026, 1, 1), new java.math.BigDecimal("1000000"),
+                                "Rent - 1st Installment"))
+                        : java.util.List.of(), null));
         lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(java.util.List.of());
         lenient().when(chequeGenerationService.saveRowsForSystemImport(any(), any())).thenReturn(java.util.List.of());
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -80,7 +92,7 @@ class PortfolioImportPersistEndToEndTest {
         ImportJob job = new ImportJob();
         job.setId(UUID.randomUUID());
 
-        service.persistWorkbook(wb, job);
+        PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, job);
 
         // 5 leases saved (one per scenario).
         ArgumentCaptor<Lease> leaseCap = ArgumentCaptor.forClass(Lease.class);
@@ -90,21 +102,14 @@ class PortfolioImportPersistEndToEndTest {
         List<Lease> distinctLeases = leaseCap.getAllValues().stream().distinct().toList();
         assertThat(distinctLeases).hasSize(5);
 
-        // Status mix: 4 ACTIVE, 1 DRAFT.
-        assertThat(distinctLeases).filteredOn(l -> l.getStatus() == LeaseStatus.DRAFT).hasSize(1);
-        assertThat(distinctLeases).filteredOn(l -> l.getStatus() == LeaseStatus.ACTIVE).hasSize(4);
-
-        // DRAFT lease's unit must remain VACANT — the OCCUPIED transition is gated.
+        // Every lease is written DRAFT (gap #83): the four ACTIVE rows are queued for
+        // the post phase, which is the only thing that may make them ACTIVE, and no
+        // unit is claimed until they post.
+        assertThat(distinctLeases).allSatisfy(l -> assertThat(l.getStatus()).isEqualTo(LeaseStatus.DRAFT));
+        assertThat(result.toPost()).hasSize(4);
         ArgumentCaptor<Unit> unitCap = ArgumentCaptor.forClass(Unit.class);
         verify(unitRepository, atLeastOnce()).save(unitCap.capture());
-        // Filter out unit creations during sheet 3 (Units sheet) — those start VACANT.
-        // The flips to OCCUPIED come AFTER initial save, so only the latest save per
-        // unit reflects the final state.
-        // In any case, at least one save must have stayed VACANT (the DRAFT scenario's unit).
-        assertThat(unitCap.getAllValues())
-                .anyMatch(u -> u.getStatus() == UnitStatus.VACANT);
-        assertThat(unitCap.getAllValues())
-                .anyMatch(u -> u.getStatus() == UnitStatus.OCCUPIED);
+        assertThat(unitCap.getAllValues()).noneMatch(u -> u.getStatus() == UnitStatus.OCCUPIED);
 
         // Every scenario has a positive deposit, so every lease gets a RENT line and
         // a SECURITY_DEPOSIT line. These used to be a LeaseCharge row plus a
@@ -118,14 +123,15 @@ class PortfolioImportPersistEndToEndTest {
         verify(leaseService, org.mockito.Mockito.times(5)).syncDerivedTotals(any(Lease.class));
 
         // Counters serialized into the JSONB column. chequesFromSheet counts the
-        // sheet's rows (scenario 2's four); schedulesCreated now counts the register
-        // rows the import wrote — those four plus scenario 4's booking cheque.
+        // sheet's rows (scenario 2's four); schedulesCreated counts every grid row
+        // the import wrote — those four, one generated row for each of the other
+        // four leases (the mock proposes one), and scenario 4's booking cheque.
         assertThat(job.getErrors()).startsWith("{");
         PortfolioImportJobDetailsDTO details = new ObjectMapper()
                 .readValue(job.getErrors(), PortfolioImportJobDetailsDTO.class);
         assertThat(details.getChequesFromSheet()).isEqualTo(4);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
-        assertThat(job.getSchedulesCreated()).isEqualTo(5);
+        assertThat(job.getSchedulesCreated()).isEqualTo(9);
 
         // Job summary counters.
         assertThat(job.getLeasesCreated()).isEqualTo(5);

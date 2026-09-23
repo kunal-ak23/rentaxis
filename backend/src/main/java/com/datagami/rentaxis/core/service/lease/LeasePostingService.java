@@ -258,12 +258,34 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId, UUID importBatchId) {
+        return post(leaseId, importBatchId,
+                importBatchId == null ? Preconditions.FOR_POST : Preconditions.FOR_IMPORT_POST,
+                importBatchId == null);
+    }
+
+    /**
+     * The post a <b>portfolio import</b> (Properties → Import Portfolio) makes for a
+     * row the sheet marked ACTIVE (gap #83).
+     *
+     * <p>It is the interactive post in every respect that touches the ledger — no
+     * batch id, so the period lock applies to its journals exactly as it would to
+     * the accountant clicking Post — with the one difference the cut-over also
+     * makes: nobody is e-mailed. An import is the landlord moving tenancies that
+     * already exist onto the system, and "your lease has been activated" landing in
+     * every renter's inbox would be the first thing they noticed about it.</p>
+     */
+    @Transactional
+    public PostLeaseResponse postForPortfolioImport(UUID leaseId) {
+        draftImportBatchProblem(leaseId).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
+        return post(leaseId, null, Preconditions.FOR_PORTFOLIO_IMPORT, false);
+    }
+
+    private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce) {
         Lease lease = lockLease(leaseId);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 
-        PostingPlan plan = validate(lease, lines, cheques,
-                importBatchId == null ? Preconditions.FOR_POST : Preconditions.FOR_IMPORT_POST);
+        PostingPlan plan = validate(lease, lines, cheques, checks);
         plan.throwIfRefused(propertyIdOf(lease));
 
         JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
@@ -285,7 +307,7 @@ public class LeasePostingService {
         lease.setPostedAt(Instant.now());
         lease.setPostedBy(currentUserId());
 
-        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), importBatchId == null);
+        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), announce);
         events.publishEvent(new LeasePostedEvent(lease.getTenantId(), lease.getId(), lease.getContractDate()));
 
         return response(lease, tco, cheques);
@@ -534,6 +556,12 @@ public class LeasePostingService {
          * ledger is about to accept — see {@link #post(UUID, UUID)}.
          */
         static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false);
+        /**
+         * A portfolio import's post: the interactive rules, lock included — its
+         * journals carry no batch id, so {@code PostingService} enforces the lock on
+         * them and the pre-check has to say so first.
+         */
+        static final Preconditions FOR_PORTFOLIO_IMPORT = new Preconditions(true, true, true);
     }
 
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks) {
@@ -546,7 +574,18 @@ public class LeasePostingService {
 
         if (checks.leaseMustBeUnposted()
                 && lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            otherErrors.add("Only a DRAFT or PENDING_SIGNATURE lease can be posted; this one is " + lease.getStatus() + ".");
+            if (lease.getStatus() == LeaseStatus.ACTIVE && lease.getPostingJournalId() == null) {
+                // What the pre-v2 portfolio import left behind (gap #83): ACTIVE, with
+                // no contract journal. Posting from ACTIVE would skip the DRAFT-only
+                // grid rules the whole post relies on, so it is refused — but by name,
+                // so nobody reads "this one is ACTIVE" as "it is already on the books".
+                otherErrors.add("This lease is ACTIVE but was never posted (no contract journal), so it is"
+                        + " not on the books. An ACTIVE lease cannot be posted; recreate it as a draft"
+                        + " and post that.");
+            } else {
+                otherErrors.add("Only a DRAFT or PENDING_SIGNATURE lease can be posted; this one is "
+                        + lease.getStatus() + ".");
+            }
         }
         if (lease.getContractDate() == null) {
             otherErrors.add("The lease has no contract date.");
