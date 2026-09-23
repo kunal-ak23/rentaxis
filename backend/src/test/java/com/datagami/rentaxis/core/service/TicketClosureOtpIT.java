@@ -50,6 +50,9 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.UnitRepository unitRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private UUID tenantId;
     private User staff;
@@ -75,6 +78,13 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         p.setNameEn("Tower " + UUID.randomUUID());
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
+
+        // The PM runs this property, so the property-scoped routes let them act.
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment a =
+                new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        a.setUserId(staff.getId());
+        a.setPropertyId(propertyId);
+        assignmentRepo.save(a);
 
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 staff.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
@@ -151,6 +161,7 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         assertThat(recipients).containsExactly(renterUser.getId());
     }
 
+    /** Staff reporting with no renter at all (no on-behalf renter, no contract) stay the holder. */
     @Test
     void aTicketStaffLoggedForNobodyStillShowsItsReporterTheOtp() {
         UUID id = resolvedTicket(false);
@@ -189,5 +200,263 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
                 Integer.class, id)).isZero();
 
         assertThat(tickets.closeWithOtp(id, fresh, staff.getId()).getStatus()).isEqualTo("CLOSED");
+    }
+
+    // ---- The status route cannot skip the OTP ----
+
+    private static final String CLOSED_WITHOUT_OTP = "Ticket closed without OTP (no renter to confirm)";
+
+    private String status(UUID ticketId) {
+        return jdbc.queryForObject("SELECT status FROM maintenance_tickets WHERE id = ?", String.class, ticketId);
+    }
+
+    private List<String> historyNotes(UUID ticketId) {
+        return jdbc.queryForList("SELECT notes FROM ticket_history WHERE ticket_id = ? ORDER BY created_at",
+                String.class, ticketId);
+    }
+
+    private void assertRefusedThroughStatusRoute(UUID id) {
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("OTP closure");
+        assertThat(status(id)).isEqualTo("RESOLVED");
+        assertThat(storedOtp(id)).isNotNull();
+    }
+
+    private void assertClosedWithoutOtp(UUID id) {
+        MaintenanceTicketDTO closed = tickets.updateStatus(id, "CLOSED", staff.getId());
+        assertThat(closed.getStatus()).isEqualTo("CLOSED");
+        assertThat(closed.getClosedAt()).isNotNull();
+        assertThat(storedOtp(id)).isNull();
+        assertThat(historyNotes(id)).last().isEqualTo(CLOSED_WITHOUT_OTP);
+    }
+
+    @Test
+    void staffCannotCloseAResolvedTicketThroughTheStatusRouteWhenItsRenterHoldsTheOtp() {
+        UUID id = resolvedTicket(true);
+
+        assertRefusedThroughStatusRoute(id);
+
+        // The OTP route still works.
+        assertThat(tickets.closeWithOtp(id, storedOtp(id), staff.getId()).getStatus()).isEqualTo("CLOSED");
+    }
+
+    @Test
+    void staffCannotCloseARenterReportedTicketThroughTheStatusRoute() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                renterUser.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Door jammed");
+        UUID id = tickets.createTicket(dto, renterUser.getId()).getId();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                staff.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+        tickets.assignTicket(id, staff.getId(), staff.getId());
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+
+        assertRefusedThroughStatusRoute(id);
+    }
+
+    @Test
+    void anOnBehalfRenterWithNoPortalAccountLetsStaffCloseThroughTheStatusRoute() {
+        Renter noAccount = new Renter();
+        noAccount.setNameEn("Walk-in Renter");
+        noAccount = renterRepo.save(noAccount);
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Broken AC");
+        dto.setOnBehalfOfRenterId(noAccount.getId());
+        UUID id = tickets.createTicket(dto, staff.getId()).getId();
+        tickets.assignTicket(id, staff.getId(), staff.getId());
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+
+        assertClosedWithoutOtp(id);
+    }
+
+    @Test
+    void aTicketWithNoRenterBehindItLetsStaffCloseThroughTheStatusRoute() {
+        UUID id = resolvedTicket(false);
+
+        assertClosedWithoutOtp(id);
+    }
+
+    @Test
+    void aTenantThatDoesNotAskForOtpsClosesThroughTheStatusRouteAsBefore() {
+        LandlordOrg org = orgRepo.findById(tenantId).orElseThrow();
+        org.setTicketOtpRequired(false);
+        orgRepo.save(org);
+        UUID id = resolvedTicket(true);
+
+        assertThat(tickets.updateStatus(id, "CLOSED", staff.getId()).getStatus()).isEqualTo("CLOSED");
+        assertThat(historyNotes(id)).last().isEqualTo("Status changed: RESOLVED → CLOSED");
+    }
+
+    // ---- Re-review I1: a contract's renter holds the OTP of tickets raised on it ----
+
+    private void as(User u) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                u.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_" + u.getRole().name()))));
+    }
+
+    private UUID leaseFor(Renter r) {
+        com.datagami.rentaxis.domain.entity.Unit u = new com.datagami.rentaxis.domain.entity.Unit();
+        u.setProperty(propertyRepo.findById(propertyId).orElseThrow());
+        u.setUnitNumber("U-" + UUID.randomUUID());
+        u = unitRepo.save(u);
+        com.datagami.rentaxis.domain.entity.Lease l = new com.datagami.rentaxis.domain.entity.Lease();
+        l.setUnit(u);
+        l.setRenter(r);
+        l.setStartDate(java.time.LocalDate.of(2026, 1, 1));
+        l.setEndDate(java.time.LocalDate.of(2026, 12, 31));
+        l.setStatus(com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE);
+        l.setRentAmount(new java.math.BigDecimal("1200.00"));
+        l.setDepositAmount(new java.math.BigDecimal("0.00"));
+        return leaseRepo.save(l).getId();
+    }
+
+    @Test
+    void aTicketStaffRaiseOnAContractBelongsToItsRenterNotToStaff() {
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("AC leaking");
+        dto.setLeaseId(leaseFor(renter));
+        UUID id = tickets.createTicket(dto, staff.getId()).getId();
+        tickets.assignTicket(id, staff.getId(), staff.getId());
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+
+        assertThat(tickets.getTicket(id, staff.getId()).getClosureOtp()).isNull();
+        assertRefusedThroughStatusRoute(id);
+
+        as(renterUser);
+        assertThat(tickets.getTicket(id, renterUser.getId()).getClosureOtp()).isEqualTo(storedOtp(id));
+        assertThat(tickets.getTickets(renterUser.getId(), "RENTER", null))
+                .extracting(MaintenanceTicketDTO::getId).contains(id);
+    }
+
+    @Test
+    void aRenterCannotRaiseATicketOnSomeoneElsesContract() {
+        UUID lease = leaseFor(renter);
+        User other = user(UserRole.RENTER);
+        Renter otherRenter = new Renter();
+        otherRenter.setNameEn("Other Renter");
+        otherRenter.setUserId(other.getId());
+        renterRepo.save(otherRenter);
+        as(other);
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Not my flat");
+        dto.setLeaseId(lease);
+
+        assertThatThrownBy(() -> tickets.createTicket(dto, other.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+    }
+
+    // ---- Re-review I2/I3: re-issue is capped, scoped, and refused with nobody to send to ----
+
+    private long reissues(UUID id) {
+        return jdbc.queryForObject("SELECT count(*) FROM ticket_history WHERE ticket_id = ? AND action = 'OTP_REISSUED'",
+                Long.class, id);
+    }
+
+    @Test
+    void aClosureOtpCannotBeReissuedWhenNoRenterCanReceiveIt() {
+        Renter noAccount = new Renter();
+        noAccount.setNameEn("Walk-in Renter");
+        noAccount = renterRepo.save(noAccount);
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Broken AC");
+        dto.setOnBehalfOfRenterId(noAccount.getId());
+        UUID onBehalf = tickets.createTicket(dto, staff.getId()).getId();
+        tickets.assignTicket(onBehalf, staff.getId(), staff.getId());
+        tickets.updateStatus(onBehalf, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(onBehalf, "RESOLVED", staff.getId());
+        UUID noRenter = resolvedTicket(false);
+
+        for (UUID id : List.of(onBehalf, noRenter)) {
+            assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("No renter can receive")
+                    .hasMessageContaining("status route");
+            assertThat(reissues(id)).isZero();
+        }
+    }
+
+    @Test
+    void aClosureOtpCanBeReissuedAtMostThreeTimesADay() {
+        UUID id = resolvedTicket(true);
+        for (int i = 0; i < MaintenanceTicketService.MAX_OTP_REISSUES_PER_DAY; i++) {
+            tickets.reissueClosureOtp(id, staff.getId());
+        }
+        String last = storedOtp(id);
+
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("at most 3 times in 24 hours");
+        assertThat(storedOtp(id)).isEqualTo(last);
+        assertThat(reissues(id)).isEqualTo(3);
+    }
+
+    @Test
+    void aPropertyManagerCannotReissueForAPropertyTheyDoNotRun() {
+        UUID id = resolvedTicket(true);
+        User otherPm = user(UserRole.PROPERTY_MANAGER);
+        as(otherPm);
+
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, otherPm.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+        assertThat(reissues(id)).isZero();
+    }
+
+    @Test
+    void tenWrongOtpsInTotalLockOtpClosureForGoodAndOnlyAnAdminCanClose() {
+        UUID id = resolvedTicket(true);
+        // Five wrong on the first code discards it...
+        for (int i = 0; i < MaintenanceTicketService.MAX_OTP_ATTEMPTS; i++) {
+            String otp = storedOtp(id);
+            assertThatThrownBy(() -> tickets.closeWithOtp(id, wrong(otp), staff.getId()))
+                    .isInstanceOf(BusinessRuleViolationException.class);
+        }
+        // ...a re-issue resets the per-code count but not the lifetime one...
+        tickets.reissueClosureOtp(id, staff.getId());
+        for (int i = 1; i < MaintenanceTicketService.MAX_OTP_ATTEMPTS; i++) {
+            String otp = storedOtp(id);
+            assertThatThrownBy(() -> tickets.closeWithOtp(id, wrong(otp), staff.getId()))
+                    .hasMessage("Invalid OTP");
+        }
+        String otp = storedOtp(id);
+        // ...and the tenth wrong one in total locks it.
+        assertThatThrownBy(() -> tickets.closeWithOtp(id, wrong(otp), staff.getId()))
+                .hasMessageContaining("OTP closure is now locked");
+        assertThat(jdbc.queryForObject("SELECT closure_otp_total_failed_attempts FROM maintenance_tickets WHERE id = ?",
+                Integer.class, id)).isEqualTo(MaintenanceTicketService.MAX_TOTAL_OTP_FAILURES);
+
+        // Locked: no code, no re-issue, and the right old code is useless.
+        assertThat(storedOtp(id)).isNull();
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                .hasMessageContaining("OTP closure is locked");
+        assertThatThrownBy(() -> tickets.closeWithOtp(id, otp, staff.getId()))
+                .hasMessageContaining("OTP closure is locked");
+
+        // Reopening and resolving again does not unlock it or mint a new code.
+        tickets.updateStatus(id, "REOPENED", staff.getId());
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+        assertThat(storedOtp(id)).isNull();
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                .hasMessageContaining("OTP closure is locked");
+
+        // A property manager cannot close it through the status route; a tenant admin can, on the record.
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.AccessDeniedException.class);
+        assertThat(status(id)).isEqualTo("RESOLVED");
+        User admin = user(UserRole.TENANT_ADMIN);
+        as(admin);
+        assertThat(tickets.updateStatus(id, "CLOSED", admin.getId()).getStatus()).isEqualTo("CLOSED");
+        assertThat(historyNotes(id)).last()
+                .isEqualTo("Ticket closed without OTP (OTP closure locked after 10 wrong OTPs)");
     }
 }

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
@@ -68,10 +69,63 @@ public class MaintenanceTicketService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private static boolean callerIsRenter() {
+        return callerHasRole("RENTER");
+    }
+
+    private static boolean callerHasRole(String role) {
         org.springframework.security.core.Authentication auth =
                 org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_RENTER".equals(a.getAuthority()));
+                .anyMatch(a -> ("ROLE_" + role).equals(a.getAuthority()));
+    }
+
+    /**
+     * The calling renter's user id, from the verified security principal (not
+     * the X-User-Id header), or {@code null} when the caller is not a renter.
+     */
+    private static UUID callingRenterUserId() {
+        if (!callerIsRenter()) return null;
+        String name = org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        try {
+            return UUID.fromString(name);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            // A renter we cannot identify owns nothing.
+            throw new NotFoundException("Ticket not found");
+        }
+    }
+
+    /**
+     * Renter isolation: a renter may reach a ticket only when they reported it,
+     * it was logged on their behalf (#19) or it was raised on their contract.
+     * Anything else is the same 404 as a
+     * ticket that does not exist, so its existence is not revealed. Staff pass
+     * through; their tenant scope is the Hibernate tenant filter.
+     */
+    private void requireRenterOwns(MaintenanceTicket ticket) {
+        UUID caller = callingRenterUserId();
+        if (caller == null) return;
+        if (caller.equals(ticket.getReportedBy())) return;
+        UUID callerRenterId = renterRepository.findByUserId(caller).map(Renter::getId).orElse(null);
+        if (callerRenterId != null) {
+            if (callerRenterId.equals(ticket.getOnBehalfOfRenterId())) return;
+            Renter leaseRenter = leaseRenter(ticket);
+            if (leaseRenter != null && callerRenterId.equals(leaseRenter.getId())) return;
+        }
+        throw new NotFoundException("Ticket not found");
+    }
+
+    /** The ticket, when it exists in the tenant and the caller may reach it. */
+    private MaintenanceTicket visibleTicket(UUID ticketId) {
+        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        requireRenterOwns(ticket);
+        return ticket;
+    }
+
+    /** For the sub-resource reads: a renter must own the ticket first. */
+    private void requireRenterOwns(UUID ticketId) {
+        if (callerIsRenter()) visibleTicket(ticketId);
     }
 
     /** The journal_entry_sequences series for ticket references (#20). */
@@ -105,6 +159,12 @@ public class MaintenanceTicketService {
         if (dto.getLeaseId() != null) {
             Lease lease = leaseRepository.findById(dto.getLeaseId())
                     .orElseThrow(() -> new NotFoundException("Lease not found"));
+            // A lease's renter holds its tickets' closure OTP, so a renter may
+            // only raise a ticket on their own contract.
+            if (callerIsRenter() && (lease.getRenter() == null
+                    || !reportedBy.equals(lease.getRenter().getUserId()))) {
+                throw new NotFoundException("Lease not found");
+            }
             ticket.setLease(lease);
         }
 
@@ -278,8 +338,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public MaintenanceTicketDTO getTicket(UUID ticketId, UUID requesterId) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = visibleTicket(ticketId);
         return mapToDTO(ticket, requesterId);
     }
 
@@ -322,18 +381,43 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO updateStatus(UUID ticketId, String newStatus, UUID performedBy) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = visibleTicket(ticketId);
 
         String fromStatus = ticket.getStatus().name();
         TicketStatus targetStatus = TicketStatus.valueOf(newStatus);
         validateStatusTransition(ticket.getStatus(), targetStatus);
 
+        // A resolved ticket is closed by its renter's OTP. The status route may
+        // close it only when nobody could hand one over (or the tenant does not
+        // ask for OTPs); otherwise it would let staff skip the renter.
+        String closeNote = null;
+        if (ticket.getStatus() == TicketStatus.RESOLVED && targetStatus == TicketStatus.CLOSED
+                && otpRequired(ticket)) {
+            if (otpClosureLocked(ticket)) {
+                // Too many wrong OTPs: only an admin may close it, on the record.
+                if (!callerHasRole("TENANT_ADMIN") && !callerHasRole("SUPER_ADMIN")) {
+                    throw new AccessDeniedException(
+                            "OTP closure is locked for this ticket. Only a tenant admin can close it.");
+                }
+                closeNote = "Ticket closed without OTP (OTP closure locked after "
+                        + MAX_TOTAL_OTP_FAILURES + " wrong OTPs)";
+            } else if (hasRenterToConfirm(ticket)) {
+                throw new BusinessRuleViolationException(
+                        "A resolved ticket is closed with the renter's OTP. Use OTP closure (PUT /tickets/{id}/close).");
+            } else {
+                closeNote = "Ticket closed without OTP (no renter to confirm)";
+            }
+        }
+
         ticket.setStatus(targetStatus);
+        if (targetStatus == TicketStatus.CLOSED) {
+            ticket.setClosedAt(Instant.now());
+            ticket.setClosureOtp(null);
+        }
 
         if (targetStatus == TicketStatus.RESOLVED) {
             ticket.setResolvedAt(Instant.now());
-            issueClosureOtp(ticket);
+            if (!otpClosureLocked(ticket)) issueClosureOtp(ticket);
             log.info("Ticket {} resolved. Closure OTP generated.", ticketId);
         }
 
@@ -344,11 +428,11 @@ public class MaintenanceTicketService {
         MaintenanceTicket saved = ticketRepository.save(ticket);
         recordHistory(saved, "STATUS_CHANGED", fromStatus, targetStatus.name(),
                 null, null, performedBy != null ? performedBy : ticket.getReportedBy(),
-                "Status changed: " + fromStatus + " → " + targetStatus.name());
+                closeNote != null ? closeNote : "Status changed: " + fromStatus + " → " + targetStatus.name());
 
         // Notify the OTP holder when the ticket is resolved: the renter it was
         // logged for, never the staff member who logged it (PR #342 review I2).
-        if (targetStatus == TicketStatus.RESOLVED) {
+        if (targetStatus == TicketStatus.RESOLVED && !otpClosureLocked(ticket)) {
             notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
                     "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.");
         }
@@ -381,6 +465,21 @@ public class MaintenanceTicketService {
     static final int MAX_OTP_ATTEMPTS = 5;
 
     /**
+     * Wrong closure OTPs a ticket may receive in its lifetime, across every
+     * re-issued code; at this many OTP closure is locked for good (PR #342
+     * re-review I2). Without it, re-issuing reset the per-code counter and
+     * guessing was unbounded.
+     */
+    static final int MAX_TOTAL_OTP_FAILURES = 10;
+
+    /** Closure OTP re-issues allowed per ticket in any 24 hours. */
+    static final int MAX_OTP_REISSUES_PER_DAY = 3;
+
+    private static boolean otpClosureLocked(MaintenanceTicket ticket) {
+        return ticket.getClosureOtpTotalFailedAttempts() >= MAX_TOTAL_OTP_FAILURES;
+    }
+
+    /**
      * Who holds a ticket's closure OTP: the renter it was logged for, when staff
      * logged it on a renter's behalf (#19), and otherwise whoever reported it.
      *
@@ -397,7 +496,43 @@ public class MaintenanceTicketService {
                     .map(Renter::getUserId)
                     .orElse(null);
         }
+        // A ticket raised on a contract belongs to that contract's renter, even
+        // when staff logged it (PR #342 re-review I1).
+        Renter leaseRenter = leaseRenter(ticket);
+        if (leaseRenter != null) {
+            return leaseRenter.getUserId();
+        }
         return ticket.getReportedBy();
+    }
+
+    private static Renter leaseRenter(MaintenanceTicket ticket) {
+        return ticket.getLease() != null ? ticket.getLease().getRenter() : null;
+    }
+
+    /**
+     * Whether someone who can act holds the closure OTP: a renter with a portal
+     * account the ticket was logged for or whose contract it was raised on, or a
+     * renter who reported it. An
+     * on-behalf renter with no account, or a ticket with no renter behind it
+     * (staff-originated, legacy free-text on-behalf), has nobody to confirm.
+     */
+    private boolean hasRenterToConfirm(MaintenanceTicket ticket) {
+        UUID holder = otpHolder(ticket);
+        if (holder == null) return false;
+        if (ticket.getOnBehalfOfRenterId() != null || leaseRenter(ticket) != null) return true;
+        return renterRepository.findByUserId(holder).isPresent()
+                || userRepository.findById(holder)
+                        .map(u -> u.getRole() == com.datagami.rentaxis.domain.entity.enums.UserRole.RENTER)
+                        .orElse(false);
+    }
+
+    /** The tenant's ticketOtpRequired setting; on unless switched off. */
+    private boolean otpRequired(MaintenanceTicket ticket) {
+        UUID tenantId = ticket.getTenantId() != null ? ticket.getTenantId() : TenantContextHolder.getTenantId();
+        if (tenantId == null) return true;
+        return landlordOrgRepository.findById(tenantId)
+                .map(org -> org.getTicketOtpRequired() != null ? org.getTicketOtpRequired() : true)
+                .orElse(true);
     }
 
     private void issueClosureOtp(MaintenanceTicket ticket) {
@@ -424,10 +559,28 @@ public class MaintenanceTicketService {
      */
     @Transactional
     public MaintenanceTicketDTO reissueClosureOtp(UUID ticketId, UUID performedBy) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
+        MaintenanceTicket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        requirePropertyManagerAssigned(ticket);
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("A closure OTP can only be issued for a resolved ticket");
+        }
+        if (otpClosureLocked(ticket)) {
+            throw new BusinessRuleViolationException(
+                    "OTP closure is locked for this ticket after too many wrong OTPs. A tenant admin can close it"
+                            + " through the status route (PUT /tickets/{id}/status).");
+        }
+        if (!hasRenterToConfirm(ticket)) {
+            throw new BusinessRuleViolationException(
+                    "No renter can receive a closure OTP for this ticket. Close it through the status route"
+                            + " (PUT /tickets/{id}/status).");
+        }
+        long recent = historyRepository.countByTicketIdAndActionAndCreatedAtAfter(
+                ticket.getId(), "OTP_REISSUED", Instant.now().minus(24, ChronoUnit.HOURS));
+        if (recent >= MAX_OTP_REISSUES_PER_DAY) {
+            throw new BusinessRuleViolationException(
+                    "A closure OTP can be re-issued at most " + MAX_OTP_REISSUES_PER_DAY
+                            + " times in 24 hours. Try again later.");
         }
         issueClosureOtp(ticket);
         MaintenanceTicket saved = ticketRepository.save(ticket);
@@ -436,6 +589,25 @@ public class MaintenanceTicketService {
         notifyOtpHolder(saved, "TICKET_OTP_REISSUED", "New closure OTP",
                 "A new OTP was issued for your ticket '" + saved.getTitle() + "'. Share it to close the ticket.");
         return mapToDTO(saved, performedBy);
+    }
+
+    /**
+     * A property manager acts only on tickets of the properties assigned to them,
+     * as their list does; anything else is "not found". Other roles pass.
+     */
+    private void requirePropertyManagerAssigned(MaintenanceTicket ticket) {
+        if (!callerHasRole("PROPERTY_MANAGER")) return;
+        UUID caller;
+        try {
+            caller = UUID.fromString(org.springframework.security.core.context.SecurityContextHolder
+                    .getContext().getAuthentication().getName());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new NotFoundException("Ticket not found");
+        }
+        UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
+        boolean assigned = propertyAssignmentRepository.findByUserId(caller).stream()
+                .anyMatch(a -> a.getPropertyId().equals(propertyId));
+        if (!assigned) throw new NotFoundException("Ticket not found");
     }
 
     /**
@@ -448,21 +620,18 @@ public class MaintenanceTicketService {
         // each read the same count and exceed the limit.
         MaintenanceTicket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        requireRenterOwns(ticket);
 
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("Ticket must be in RESOLVED status to close with OTP");
         }
 
-        // Check tenant OTP setting
-        UUID tenantId = TenantContextHolder.getTenantId();
-        boolean otpRequired = true;
-        if (tenantId != null) {
-            otpRequired = landlordOrgRepository.findById(tenantId)
-                    .map(org -> org.getTicketOtpRequired() != null ? org.getTicketOtpRequired() : true)
-                    .orElse(true);
-        }
-
-        if (otpRequired) {
+        if (otpRequired(ticket)) {
+            if (otpClosureLocked(ticket)) {
+                throw new BusinessRuleViolationException(
+                        "OTP closure is locked for this ticket after too many wrong OTPs. A tenant admin can close it"
+                                + " through the status route (PUT /tickets/{id}/status).");
+            }
             if (ticket.getClosureOtp() == null) {
                 throw new BusinessRuleViolationException(
                         "This ticket's closure OTP is no longer valid. Issue a new one to the renter.");
@@ -470,6 +639,17 @@ public class MaintenanceTicketService {
             if (!ticket.getClosureOtp().equals(otp)) {
                 int attempts = ticket.getClosureOtpFailedAttempts() + 1;
                 ticket.setClosureOtpFailedAttempts(attempts);
+                int total = ticket.getClosureOtpTotalFailedAttempts() + 1;
+                ticket.setClosureOtpTotalFailedAttempts(total);
+                if (total >= MAX_TOTAL_OTP_FAILURES) {
+                    ticket.setClosureOtp(null);
+                    ticketRepository.save(ticket);
+                    recordHistory(ticket, "OTP_LOCKED", null, null, null, null, performedBy,
+                            "OTP closure locked after " + MAX_TOTAL_OTP_FAILURES + " wrong OTPs");
+                    throw new BusinessRuleViolationException(
+                            "Too many wrong OTPs. OTP closure is now locked for this ticket; a tenant admin can"
+                                    + " close it through the status route.");
+                }
                 if (attempts >= MAX_OTP_ATTEMPTS) {
                     // Discard the code: six digits cannot survive unlimited guesses.
                     ticket.setClosureOtp(null);
@@ -506,8 +686,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO rateTicket(UUID ticketId, int rating, String comment) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = visibleTicket(ticketId);
 
         if (ticket.getStatus() != TicketStatus.CLOSED && ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("Can only rate resolved or closed tickets");
@@ -529,8 +708,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public TicketReplyDTO addReply(UUID ticketId, UUID userId, String message) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = visibleTicket(ticketId);
 
         // Resolve user name from ID (filter-bypassing: superadmins have
         // tenant_id = NULL and are invisible to the tenant-filtered findById)
@@ -562,6 +740,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public List<TicketReplyDTO> getReplies(UUID ticketId) {
+        requireRenterOwns(ticketId);
         return replyRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
                 .map(this::mapReplyToDTO)
                 .collect(Collectors.toList());
@@ -571,6 +750,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public java.util.List<TicketAttachmentDTO> getAttachments(UUID ticketId) {
+        requireRenterOwns(ticketId);
         return attachmentRepository.findByTicketId(ticketId).stream()
                 .map(this::mapAttachmentToDTO)
                 .collect(Collectors.toList());
@@ -580,6 +760,7 @@ public class MaintenanceTicketService {
     public void deleteAttachment(UUID attachmentId) {
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        requireRenterOwnsAttachment(attachment);
         attachmentRepository.delete(attachment);
     }
 
@@ -587,6 +768,7 @@ public class MaintenanceTicketService {
     public byte[] downloadAttachment(UUID attachmentId) {
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        requireRenterOwnsAttachment(attachment);
         String url = attachment.getFileUrl();
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
             String marker = ".blob.core.windows.net/";
@@ -613,8 +795,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = visibleTicket(ticketId);
 
         byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
@@ -635,6 +816,16 @@ public class MaintenanceTicketService {
         attachment.setUploadedAt(Instant.now());
 
         return mapAttachmentToDTO(attachmentRepository.save(attachment));
+    }
+
+    /** An attachment on a ticket the renter does not own is "not found" to them. */
+    private void requireRenterOwnsAttachment(TicketAttachment attachment) {
+        if (!callerIsRenter()) return;
+        try {
+            requireRenterOwns(attachment.getTicket());
+        } catch (NotFoundException e) {
+            throw new NotFoundException("Attachment not found");
+        }
     }
 
     /**
@@ -893,6 +1084,7 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public java.util.List<TicketHistoryDTO> getHistory(UUID ticketId) {
+        requireRenterOwns(ticketId);
         return historyRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
                 .map(this::mapHistoryToDTO)
                 .collect(java.util.stream.Collectors.toList());

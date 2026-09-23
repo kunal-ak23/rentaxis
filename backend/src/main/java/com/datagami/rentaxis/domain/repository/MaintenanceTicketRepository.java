@@ -57,13 +57,16 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     @Query("SELECT t FROM MaintenanceTicket t WHERE t.id = :id")
     java.util.Optional<MaintenanceTicket> findByIdForUpdate(@Param("id") UUID id);
 
-    // A renter's own list: the tickets they reported and the ones staff logged on
-    // their behalf (#19, PR #342 review I2). Without the second half a phoned-in
-    // complaint never reached the renter it was about.
-    @Query("SELECT t FROM MaintenanceTicket t WHERE t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId")
+    // A renter's own list: the tickets they reported, the ones staff logged on
+    // their behalf (#19, PR #342 review I2) and the ones raised on their contract
+    // (re-review I1: that renter holds the closure OTP). Without the latter two a
+    // phoned-in complaint never reached the renter it was about.
+    @Query("SELECT t FROM MaintenanceTicket t LEFT JOIN t.lease l"
+            + " WHERE t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId OR l.renter.id = :renterId")
     List<MaintenanceTicket> findForRenter(@Param("userId") UUID userId, @Param("renterId") UUID renterId);
 
-    @Query("SELECT t FROM MaintenanceTicket t WHERE (t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId)"
+    @Query("SELECT t FROM MaintenanceTicket t LEFT JOIN t.lease l"
+            + " WHERE (t.reportedBy = :userId OR t.onBehalfOfRenterId = :renterId OR l.renter.id = :renterId)"
             + " AND t.unit.id = :unitId")
     List<MaintenanceTicket> findForRenterAndUnitId(@Param("userId") UUID userId, @Param("renterId") UUID renterId,
                                                    @Param("unitId") UUID unitId);

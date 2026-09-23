@@ -205,3 +205,5 @@ databaseChangeLog:
       file: db/changelog/changesets/98-ticket-closure-otp-attempts.yaml
   - include:
       file: db/changelog/changesets/99-ticket-on-behalf-renter-fk.yaml
+  - include:
+      file: db/changelog/changesets/100-ticket-closure-otp-total-failures.yaml

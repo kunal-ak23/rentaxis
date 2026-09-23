@@ -77,6 +77,14 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "closure_otp_failed_attempts", nullable = false)
     private int closureOtpFailedAttempts = 0;
 
+    /**
+     * Every wrong closure OTP this ticket has ever received, across re-issued
+     * codes; never reset. At the service's limit OTP closure is locked for good
+     * (PR #342 re-review I2).
+     */
+    @Column(name = "closure_otp_total_failed_attempts", nullable = false)
+    private int closureOtpTotalFailedAttempts = 0;
+
     @Column(name = "satisfaction_rating")
     private Integer satisfactionRating;
 
