@@ -38,6 +38,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -212,5 +213,34 @@ class ChequeClearBatchIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> service.clearBatch(new ClearBatchRequest(List.of(), CLEAR_DATE, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("at least one cheque");
+    }
+
+    // ---- review I2: size cap ----
+
+    @Test
+    void moreThanFiveHundredIdsIsRefusedBeforeAnythingIsRead() {
+        List<UUID> tooMany = new ArrayList<>();
+        for (int i = 0; i < ChequeService.MAX_BATCH + 1; i++) tooMany.add(UUID.randomUUID());
+        assertThatThrownBy(() -> service.clearBatch(new ClearBatchRequest(tooMany, CLEAR_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("at most 500");
+        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(tooMany, DEPOSIT_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("at most 500");
+    }
+
+    @Test
+    void exactlyFiveHundredIdsIsNotRefusedForItsSize() {
+        List<UUID> five = new ArrayList<>();
+        for (int i = 0; i < ChequeService.MAX_BATCH; i++) five.add(UUID.randomUUID());
+        // Refused, but for the rows (none exists), not for the count.
+        assertThatThrownBy(() -> service.clearBatch(new ClearBatchRequest(five, CLEAR_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("does not exist")
+                .hasMessageNotContaining("at most");
+        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(five, DEPOSIT_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("does not exist")
+                .hasMessageNotContaining("at most");
     }
 }

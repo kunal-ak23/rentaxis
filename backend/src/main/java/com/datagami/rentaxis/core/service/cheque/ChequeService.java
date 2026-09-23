@@ -269,6 +269,29 @@ public class ChequeService {
         this.entityManager = entityManager;
     }
 
+    /**
+     * The most rows one batch call may carry (PR #340 review I2). Each row is
+     * locked up front and, on a clear, posts a journal, all inside one
+     * transaction that holds every lock until commit; an unbounded selection is a
+     * long transaction that refuses every other action on those cheques, and past
+     * the driver's 32,767 bind parameters it is a 500. A deposit slip holds far
+     * fewer than this.
+     */
+    static final int MAX_BATCH = 500;
+
+    private static List<UUID> batchIds(List<UUID> chequeIds, String verb) {
+        if (chequeIds == null || chequeIds.isEmpty()) {
+            throw new BusinessRuleViolationException("Select at least one cheque to " + verb);
+        }
+        if (chequeIds.size() > MAX_BATCH) {
+            throw new BusinessRuleViolationException("Select at most " + MAX_BATCH + " cheques to " + verb
+                    + " at a time; " + chequeIds.size() + " were selected, and nothing was changed.");
+        }
+        // Distinct, because the same row ticked twice would otherwise be reported
+        // as its own duplicate and would be saved twice.
+        return chequeIds.stream().distinct().toList();
+    }
+
     // ------------------------------------------------------------------
     // REGISTERED -> DEPOSITED  (no journal)
     // ------------------------------------------------------------------
@@ -320,12 +343,7 @@ public class ChequeService {
      */
     @Transactional
     public List<ChequeDTO> depositBatch(DepositBatchRequest request) {
-        if (request == null || request.chequeIds() == null || request.chequeIds().isEmpty()) {
-            throw new BusinessRuleViolationException("Select at least one cheque to deposit");
-        }
-        // Distinct, because the same row ticked twice would otherwise be reported
-        // as its own duplicate and would be saved twice.
-        List<UUID> ids = request.chequeIds().stream().distinct().toList();
+        List<UUID> ids = batchIds(request == null ? null : request.chequeIds(), "deposit");
 
         List<Cheque> cheques;
         try {
@@ -404,10 +422,7 @@ public class ChequeService {
      */
     @Transactional
     public List<ChequeDTO> clearBatch(ClearBatchRequest request) {
-        if (request == null || request.chequeIds() == null || request.chequeIds().isEmpty()) {
-            throw new BusinessRuleViolationException("Select at least one cheque to clear");
-        }
-        List<UUID> ids = request.chequeIds().stream().distinct().toList();
+        List<UUID> ids = batchIds(request == null ? null : request.chequeIds(), "clear");
 
         List<Cheque> cheques;
         try {
