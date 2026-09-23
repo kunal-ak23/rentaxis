@@ -38,7 +38,7 @@ function mockFetchRoutes(routes: Record<string, unknown>) {
 
 async function goToPropertyVisitStep2() {
     fireEvent.click(screen.getByText("propertyVisit"));
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
     // Step 2: property dropdown populated from GET /v1/properties
     await screen.findByText("Marina Tower");
 }
@@ -75,9 +75,9 @@ describe("CreateMeetingModal (property visit data contracts)", () => {
         expect(unitCalls.some((u) => u.includes("/v1/units?"))).toBe(false);
 
         // Host auto-derived from assignedManagers[0] — no PM picker on step 3
-        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
-        await screen.findByText("Preferred Date *");
-        expect(screen.queryByText("Property Manager *")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
+        await screen.findByText("create.preferredDate *");
+        expect(screen.queryByText("create.propertyManager *")).toBeNull();
         expect(
             fetchMock.mock.calls.some((c) => String(c[0]).includes("/managers")),
         ).toBe(false);
@@ -100,9 +100,9 @@ describe("CreateMeetingModal (property visit data contracts)", () => {
 
         const [propertySelect] = screen.getAllByRole("combobox");
         fireEvent.change(propertySelect, { target: { value: "p1" } });
-        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+        fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
 
-        await screen.findByText("Property Manager *");
+        await screen.findByText("create.propertyManager *");
         // Option label renders the User.name field, not "(email)" alone
         await screen.findByText("Bob PM (bob@x.com)");
     });
@@ -117,7 +117,7 @@ describe("CreateMeetingModal (staff, property with no assigned manager — #61)"
         await goToPropertyVisitStep2();
         const [propertySelect] = screen.getAllByRole("combobox");
         fireEvent.change(propertySelect, { target: { value: "p1" } });
-        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+        fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
     }
 
     function routes(defaultHost: { ok: boolean; status: number; body: unknown }) {
@@ -141,7 +141,7 @@ describe("CreateMeetingModal (staff, property with no assigned manager — #61)"
         await goToStep3(fetchMock);
 
         await screen.findByText("defaultHostFallback");
-        expect(screen.queryByText("Property Manager *")).toBeNull();
+        expect(screen.queryByText("create.propertyManager *")).toBeNull();
 
         const dateInput = document.querySelector('input[type="date"]');
         if (!dateInput) throw new Error("date input not found");
@@ -157,9 +157,9 @@ describe("CreateMeetingModal (staff, property with no assigned manager — #61)"
         await goToStep3(fetchMock);
 
         await screen.findByText("staffNoHostAvailable");
-        expect(screen.queryByText("Property Manager *")).toBeNull();
-        expect(screen.queryByText("Preferred Date *")).toBeNull();
-        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+        expect(screen.queryByText("create.propertyManager *")).toBeNull();
+        expect(screen.queryByText("create.preferredDate *")).toBeNull();
+        expect(screen.getByRole("button", { name: /create\.next/ })).toBeDisabled();
     });
 });
 
@@ -187,17 +187,19 @@ describe("CreateMeetingModal (staff, managers lookup fails — review m-2)", () 
         await goToPropertyVisitStep2();
         const [propertySelect] = screen.getAllByRole("combobox");
         fireEvent.change(propertySelect, { target: { value: "p1" } });
-        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+        fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
 
-        await screen.findByText("slotsLoadError");
+        await screen.findByText("create.managersLoadError");
+        // Its own message: no date has been picked, so "couldn't load times" would mislead.
+        expect(screen.queryByText("slotsLoadError")).toBeNull();
         expect(screen.queryByText("defaultHostFallback")).toBeNull();
-        expect(screen.queryByText("Preferred Date *")).toBeNull();
-        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+        expect(screen.queryByText("create.preferredDate *")).toBeNull();
+        expect(screen.getByRole("button", { name: /create\.next/ })).toBeDisabled();
         expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/meetings/default-host"))).toBe(false);
 
         fireEvent.click(screen.getByRole("button", { name: "retry" }));
         await screen.findByText("Alice Manager (alice@x.com)");
-        expect(screen.queryByText("slotsLoadError")).toBeNull();
+        expect(screen.queryByText("create.managersLoadError")).toBeNull();
         expect(screen.queryByText("defaultHostFallback")).toBeNull();
     });
 });
@@ -220,15 +222,15 @@ async function goToRenterStep3(fetchMock: ReturnType<typeof vi.fn>) {
         <CreateMeetingModal isOpen onClose={() => {}} onSuccess={() => {}} session={renterSession} />,
     );
     fireEvent.click(screen.getByText("officeVisit"));
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
 
-    await screen.findByText("Marina Tower — Unit 101");
+    await screen.findByText("create.leaseOption");
     const [purposeSelect, leaseSelect] = screen.getAllByRole("combobox");
     fireEvent.change(purposeSelect, { target: { value: "CHEQUE_REPLACEMENT" } });
     fireEvent.change(leaseSelect, { target: { value: "l1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /create\.next/ }));
 
-    await screen.findByText("Preferred Date *");
+    await screen.findByText("create.preferredDate *");
     void fetchMock;
 }
 
@@ -249,9 +251,9 @@ describe("CreateMeetingModal (renter default-host handling)", () => {
         await goToRenterStep3(fetchMock);
 
         await screen.findByText("noHostAvailable");
-        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+        expect(screen.getByRole("button", { name: /create\.next/ })).toBeDisabled();
         // Dead slot grid must not render alongside the message.
-        expect(screen.queryByText("Available Slots")).toBeNull();
+        expect(screen.queryByText("create.availableSlots")).toBeNull();
     });
 
     it("shows a retry-able error when default-host fails with a server error", async () => {
@@ -271,8 +273,8 @@ describe("CreateMeetingModal (renter default-host handling)", () => {
 
         await goToRenterStep3(fetchMock);
 
-        await screen.findByText("slotsLoadError");
-        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+        await screen.findByText("create.hostLoadError");
+        expect(screen.getByRole("button", { name: /create\.next/ })).toBeDisabled();
         expect(defaultHostCalls).toBe(1);
 
         fireEvent.click(screen.getByText("retry"));

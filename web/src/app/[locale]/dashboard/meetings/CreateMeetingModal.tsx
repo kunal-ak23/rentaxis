@@ -51,7 +51,7 @@ type PMUser = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const STEP_LABELS = ["Type", "Context", "Date & Slot", "Details", "Review"];
+const STEP_KEYS = ["stepType", "stepContext", "stepDateSlot", "stepDetails", "stepReview"] as const;
 
 function formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -432,7 +432,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
             if (res.status === 409) {
                 const err = await res.json().catch(() => ({}));
-                setConflictMessage(err.error ?? "This slot is already booked.");
+                setConflictMessage(err.error ?? t("create.slotTaken"));
                 setSuggestedSlot(err.nextAvailableSlot ?? null);
                 setSubmitting(false);
                 return;
@@ -443,10 +443,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                 onClose();
             } else {
                 const err = await res.json().catch(() => ({}));
-                setConflictMessage(err.message ?? "Failed to create meeting. Please try again.");
+                setConflictMessage(err.message ?? t("create.createFailed"));
             }
         } catch {
-            setConflictMessage("An unexpected error occurred.");
+            setConflictMessage(t("create.unexpectedError"));
         } finally {
             setSubmitting(false);
         }
@@ -480,18 +480,20 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <div>
                         <h2 className="text-sm font-bold text-foreground">{t("newMeeting")}</h2>
-                        <p className="text-[10px] text-muted mt-0.5">Step {step} of 5 — {STEP_LABELS[step - 1]}</p>
+                        <p className="text-[10px] text-muted mt-0.5">
+                            {t("create.stepOf", { step, total: STEP_KEYS.length, label: t(`create.${STEP_KEYS[step - 1]}`) })}
+                        </p>
                     </div>
-                    <button onClick={onClose} className="p-1 text-muted hover:text-foreground cursor-pointer">
+                    <button onClick={onClose} aria-label={t("create.close")} className="p-1 text-muted hover:text-foreground cursor-pointer">
                         <X size={16} />
                     </button>
                 </div>
 
                 {/* Step progress bar */}
                 <div className="flex px-6 pt-4 gap-1 shrink-0">
-                    {STEP_LABELS.map((label, i) => (
+                    {STEP_KEYS.map((key, i) => (
                         <div
-                            key={label}
+                            key={key}
                             className={cn(
                                 "h-1 rounded-full flex-1 transition-colors",
                                 i + 1 <= step ? "bg-primary" : "bg-border",
@@ -506,12 +508,12 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {/* ── Step 1: Meeting Type ─────────────────────────────── */}
                     {step === 1 && (
                         <div className="space-y-3">
-                            <p className="text-xs font-semibold text-foreground">What type of meeting would you like to schedule?</p>
+                            <p className="text-xs font-semibold text-foreground">{t("create.typeQuestion")}</p>
                             <div className="grid grid-cols-2 gap-3">
                                 {(
                                     [
-                                        { value: "OFFICE_VISIT", label: t("officeVisit"), description: "Visit the management office", icon: Building2 },
-                                        { value: "PROPERTY_VISIT", label: t("propertyVisit"), description: "Visit at the property/unit", icon: MapPin },
+                                        { value: "OFFICE_VISIT", label: t("officeVisit"), description: t("create.officeVisitDesc"), icon: Building2 },
+                                        { value: "PROPERTY_VISIT", label: t("propertyVisit"), description: t("create.propertyVisitDesc"), icon: MapPin },
                                     ] as const
                                 ).map(({ value, label, description, icon: Icon }) => (
                                     <button
@@ -537,34 +539,34 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {step === 2 && meetingType === "OFFICE_VISIT" && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Purpose *</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.purpose")} *</label>
                                 <select
                                     value={officePurpose}
                                     onChange={(e) => setOfficePurpose(e.target.value as OfficePurpose)}
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                 >
-                                    <option value="">Select purpose…</option>
+                                    <option value="">{t("create.selectPurposePlaceholder")}</option>
                                     <option value="CHEQUE_REPLACEMENT">{t("chequeReplacement")}</option>
                                     <option value="LEASE_RENEWAL">{t("leaseRenewal")}</option>
                                     <option value="OTHER">{t("other")}</option>
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Related Lease *</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.relatedLease")} *</label>
                                 <select
                                     value={selectedLeaseId}
                                     onChange={(e) => setSelectedLeaseId(e.target.value)}
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                 >
-                                    <option value="">Select lease…</option>
+                                    <option value="">{t("create.selectLeasePlaceholder")}</option>
                                     {leases.map((l) => (
                                         <option key={l.id} value={l.id}>
-                                            {l.propertyName} — Unit {l.unitIdentifier}
+                                            {t("create.leaseOption", { property: l.propertyName, unit: l.unitIdentifier })}
                                         </option>
                                     ))}
                                 </select>
                                 {leases.length === 0 && (
-                                    <p className="text-[10px] text-muted mt-1">No active leases found.</p>
+                                    <p className="text-[10px] text-muted mt-1">{t("create.noActiveLeases")}</p>
                                 )}
                             </div>
                         </div>
@@ -573,13 +575,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {step === 2 && meetingType === "PROPERTY_VISIT" && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property *</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.property")} *</label>
                                 <select
                                     value={selectedPropertyId}
                                     onChange={(e) => { setSelectedPropertyId(e.target.value); setSelectedUnitId(""); }}
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                 >
-                                    <option value="">Select property…</option>
+                                    <option value="">{t("create.selectPropertyPlaceholder")}</option>
                                     {properties.map((p) => (
                                         <option key={p.id} value={p.id}>{p.nameEn}</option>
                                     ))}
@@ -587,13 +589,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             </div>
                             {selectedPropertyId && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Unit (optional)</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.unitOptional")}</label>
                                     <select
                                         value={selectedUnitId}
                                         onChange={(e) => setSelectedUnitId(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                     >
-                                        <option value="">No specific unit</option>
+                                        <option value="">{t("create.noSpecificUnit")}</option>
                                         {units.map((u) => (
                                             <option key={u.id} value={u.id}>{u.unitNumber}</option>
                                         ))}
@@ -609,13 +611,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             {/* PM Picker — shown when we can't derive host */}
                             {showPmPicker && !staffUsesDefaultHost && !pmLoadFailed && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property Manager *</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.propertyManager")} *</label>
                                     <select
                                         value={selectedPmId}
                                         onChange={(e) => setSelectedPmId(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                     >
-                                        <option value="">Select a property manager…</option>
+                                        <option value="">{t("create.selectManagerPlaceholder")}</option>
                                         {pmUsers.map((u) => (
                                             <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>
                                         ))}
@@ -625,7 +627,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
                             {showPmPicker && pmLoadFailed && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 space-y-2">
-                                    <p className="text-xs text-start text-error">{t("slotsLoadError")}</p>
+                                    <p className="text-xs text-start text-error">{t("create.managersLoadError")}</p>
                                     <button
                                         type="button"
                                         onClick={() => fetchPmUsers(pmPropertyId)}
@@ -652,7 +654,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
                             {usesDefaultHost && defaultHostStatus === "error" && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 space-y-2">
-                                    <p className="text-xs text-start text-error">{t("slotsLoadError")}</p>
+                                    <p className="text-xs text-start text-error">{t("create.hostLoadError")}</p>
                                     <button
                                         type="button"
                                         onClick={fetchDefaultHost}
@@ -666,7 +668,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             {/* Date */}
                             {!hostBlocked && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Preferred Date *</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.preferredDate")} *</label>
                                     <input
                                         type="date"
                                         value={selectedDate}
@@ -681,15 +683,15 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             {selectedDate && !hostBlocked && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">
-                                        Available Slots
-                                        {slotsLoading && <Loader2 size={10} className="inline ml-2 animate-spin" />}
+                                        {t("create.availableSlots")}
+                                        {slotsLoading && <Loader2 size={10} className="inline ms-2 animate-spin" />}
                                     </label>
                                     {slotsLoading ? (
                                         <div className="flex items-center justify-center py-6">
                                             <Loader2 className="w-5 h-5 animate-spin text-primary opacity-60" />
                                         </div>
                                     ) : slotGrid.length === 0 ? (
-                                        <p className="text-xs text-muted text-center py-4">No slots returned. Please pick a different date.</p>
+                                        <p className="text-xs text-muted text-center py-4">{t("create.noSlotsReturned")}</p>
                                     ) : (
                                         <div className="grid grid-cols-4 gap-1.5">
                                             {slotGrid.map((slot, idx) => {
@@ -720,7 +722,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     )}
                                     {!deriveHostUserId() && !showPmPicker && !(isRenter && !defaultHostId) && (
                                         <p className="text-[10px] text-warning mt-2">
-                                            Could not determine host. Please go back and verify your selection.
+                                            {t("create.hostUnknown")}
                                         </p>
                                     )}
                                 </div>
@@ -733,11 +735,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                         <div className="space-y-4">
                             {officePurpose === "CHEQUE_REPLACEMENT" ? (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Cheque Details</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.chequeDetails")}</label>
                                     <textarea
                                         value={chequeNotes}
                                         onChange={(e) => setChequeNotes(e.target.value)}
-                                        placeholder="Which cheques are being replaced? (e.g. cheque #5, #6 — dated Jan, Feb)"
+                                        placeholder={t("create.chequeDetailsPlaceholder")}
                                         rows={4}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none resize-none"
                                     />
@@ -748,39 +750,39 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                         const lease = leases.find(l => l.id === selectedLeaseId);
                                         return lease?.endDate ? (
                                             <div className="bg-input/40 rounded-lg px-3 py-2 text-xs text-muted">
-                                                Current lease ends: <span className="font-semibold text-foreground">{lease.endDate}</span>. Renewal starts from this date.
+                                                {t("create.currentLeaseEnds", { date: lease.endDate })}
                                             </div>
                                         ) : null;
                                     })()}
                                     <div>
-                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Renewal Duration (months)</label>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.renewalDuration")}</label>
                                         <input
                                             type="number"
                                             value={renewalMonths}
                                             onChange={(e) => setRenewalMonths(e.target.value)}
-                                            placeholder="e.g. 12"
+                                            placeholder={t("create.renewalDurationPlaceholder")}
                                             min="1"
                                             max="120"
                                             className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Proposed Rent Amount (AED)</label>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.proposedRentAmount")}</label>
                                         <input
                                             type="number"
                                             value={renewalRent}
                                             onChange={(e) => setRenewalRent(e.target.value)}
-                                            placeholder="e.g. 60000"
+                                            placeholder={t("create.proposedRentPlaceholder")}
                                             min="0"
                                             className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Additional Notes</label>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.additionalNotes")}</label>
                                         <textarea
                                             value={notes}
                                             onChange={(e) => setNotes(e.target.value)}
-                                            placeholder="Any additional context for the renewal discussion…"
+                                            placeholder={t("create.renewalNotesPlaceholder")}
                                             rows={3}
                                             className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none resize-none"
                                         />
@@ -788,11 +790,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 </div>
                             ) : (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("notes")} (optional)</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.notesOptional")}</label>
                                     <textarea
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value)}
-                                        placeholder="Any additional notes or requests for the meeting…"
+                                        placeholder={t("create.notesPlaceholder")}
                                         rows={5}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none resize-none"
                                     />
@@ -804,60 +806,60 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {/* ── Step 5: Review ───────────────────────────────────── */}
                     {step === 5 && (
                         <div className="space-y-3">
-                            <p className="text-xs font-semibold text-foreground mb-1">Review your meeting request</p>
+                            <p className="text-xs font-semibold text-foreground mb-1">{t("create.reviewTitle")}</p>
 
                             <div className="bg-input/40 rounded-xl border border-border divide-y divide-border">
-                                <ReviewRow label="Type" value={meetingType === "OFFICE_VISIT" ? t("officeVisit") : t("propertyVisit")} />
+                                <ReviewRow label={t("create.reviewType")} value={meetingType === "OFFICE_VISIT" ? t("officeVisit") : t("propertyVisit")} />
                                 {meetingType === "OFFICE_VISIT" && (
                                     <>
-                                        <ReviewRow label="Purpose" value={
+                                        <ReviewRow label={t("create.purpose")} value={
                                             officePurpose === "CHEQUE_REPLACEMENT" ? t("chequeReplacement")
                                                 : officePurpose === "LEASE_RENEWAL" ? t("leaseRenewal")
                                                     : t("other")
                                         } />
-                                        <ReviewRow label="Lease" value={
+                                        <ReviewRow label={t("create.reviewLease")} value={
                                             selectedLease
-                                                ? `${selectedLease.propertyName} — Unit ${selectedLease.unitIdentifier}`
+                                                ? t("create.leaseOption", { property: selectedLease.propertyName, unit: selectedLease.unitIdentifier })
                                                 : "—"
                                         } />
                                     </>
                                 )}
                                 {meetingType === "PROPERTY_VISIT" && (
                                     <>
-                                        <ReviewRow label="Property" value={selectedProperty?.nameEn ?? "—"} />
-                                        {selectedUnit && <ReviewRow label="Unit" value={selectedUnit.unitNumber} />}
+                                        <ReviewRow label={t("create.property")} value={selectedProperty?.nameEn ?? "—"} />
+                                        {selectedUnit && <ReviewRow label={t("create.reviewUnit")} value={selectedUnit.unitNumber} />}
                                     </>
                                 )}
-                                <ReviewRow label="Date" value={selectedDate} />
-                                <ReviewRow label="Time Slot" value={
+                                <ReviewRow label={t("create.reviewDate")} value={selectedDate} />
+                                <ReviewRow label={t("create.reviewTimeSlot")} value={
                                     selectedSlot
                                         ? `${typeof selectedSlot.start === "string" && selectedSlot.start.includes("T") ? formatTime(selectedSlot.start) : selectedSlot.start}` +
                                         ` – ${typeof selectedSlot.end === "string" && selectedSlot.end.includes("T") ? formatTime(selectedSlot.end) : selectedSlot.end}`
                                         : "—"
                                 } />
                                 {officePurpose === "CHEQUE_REPLACEMENT" && chequeNotes && (
-                                    <ReviewRow label="Cheque Notes" value={chequeNotes} />
+                                    <ReviewRow label={t("create.reviewChequeNotes")} value={chequeNotes} />
                                 )}
                                 {officePurpose === "LEASE_RENEWAL" && (
                                     <>
                                         {(() => {
                                             const lease = leases.find(l => l.id === selectedLeaseId);
-                                            return lease?.endDate ? <ReviewRow label="Renewal Start" value={lease.endDate} /> : null;
+                                            return lease?.endDate ? <ReviewRow label={t("create.reviewRenewalStart")} value={lease.endDate} /> : null;
                                         })()}
-                                        {renewalMonths && <ReviewRow label="Duration" value={`${renewalMonths} month${renewalMonths === "1" ? "" : "s"}`} />}
-                                        {renewalRent && <ReviewRow label="Proposed Rent" value={`AED ${renewalRent}`} />}
+                                        {renewalMonths && <ReviewRow label={t("create.reviewDuration")} value={t("create.durationMonths", { n: parseInt(renewalMonths, 10) || 0 })} />}
+                                        {renewalRent && <ReviewRow label={t("create.reviewProposedRent")} value={t("create.rentAmount", { amount: renewalRent })} />}
                                     </>
                                 )}
-                                {notes && <ReviewRow label="Notes" value={notes} />}
+                                {notes && <ReviewRow label={t("notes")} value={notes} />}
                             </div>
 
                             {/* Conflict error */}
                             {conflictMessage && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3">
-                                    <p className="text-xs font-semibold text-error mb-1">Scheduling Conflict</p>
+                                    <p className="text-xs font-semibold text-error mb-1">{t("create.conflictTitle")}</p>
                                     <p className="text-[10px] text-error/80">{conflictMessage}</p>
                                     {suggestedSlot && (
-                                        <p className="text-[10px] text-muted mt-1">Suggested next available slot: <span className="font-semibold text-foreground">{suggestedSlot}</span></p>
+                                        <p className="text-[10px] text-muted mt-1">{t("create.suggestedSlot")} <span className="font-semibold text-foreground">{suggestedSlot}</span></p>
                                     )}
                                 </div>
                             )}
@@ -871,8 +873,8 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                         onClick={step === 1 ? onClose : handleBack}
                         className="flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:text-foreground hover:bg-input transition-colors cursor-pointer"
                     >
-                        {step > 1 && <ChevronLeft size={14} />}
-                        {step === 1 ? t("cancel") : "Back"}
+                        {step > 1 && <ChevronLeft size={14} className="rtl:rotate-180" />}
+                        {step === 1 ? t("cancel") : t("create.back")}
                     </button>
 
                     {step < 5 ? (
@@ -886,7 +888,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     : "bg-input text-muted cursor-not-allowed",
                             )}
                         >
-                            Next <ChevronRight size={14} />
+                            {t("create.next")} <ChevronRight size={14} className="rtl:rotate-180" />
                         </button>
                     ) : (
                         <button
