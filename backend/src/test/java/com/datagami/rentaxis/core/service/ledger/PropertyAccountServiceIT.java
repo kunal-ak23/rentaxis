@@ -126,6 +126,41 @@ class PropertyAccountServiceIT extends AbstractPostgresIT {
         assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
     }
 
+    /**
+     * A leaf under D-01 that belongs to nobody must not stop a property of the
+     * same name getting its own six leaves.
+     *
+     * <p>Property names are unique per tenant ({@code ux_properties_tenant_name_en_lower}),
+     * so two <em>live</em> properties can never share a {@code nameEn} within one
+     * tenant — but an account's name is not similarly protected. A discarded
+     * import batch clears {@code accounts.property_id} back to null and leaves
+     * the row (and its name) behind — see
+     * {@code ImportBatchDiscardService#deleteProperty} — so a leaf named
+     * "Repairs & Maintenance - Nakheel Court" can already exist with no property
+     * at all by the time a property newly named "Nakheel Court" is created. The
+     * old dedup looked the leaf up by {@code (name, parent)} alone, found that
+     * orphan, decided the category was "already generated" and created nothing
+     * for the new property — which then had no leaf to code a supplier invoice
+     * to, silently, with nothing in the response saying so.</p>
+     */
+    @Test
+    void aLeafThatBelongsToNoPropertyDoesNotStopANewPropertyGettingItsOwn() {
+        Account directExpense = accounts.getAccountByCode("D-01");
+        String propertyName = "Nakheel Court Reimport " + UUID.randomUUID().toString().substring(0, 8);
+        // A leftover from a discarded import batch: same name this property's
+        // leaves will need, but property = null.
+        Account orphan = accounts.createLeaf("Repairs & Maintenance - " + propertyName, directExpense, null);
+        assertThat(orphan.getPropertyId()).isNull();
+
+        Property p = newProperty(propertyName);
+
+        List<Account> leaves = accountRepo.findByProperty_Id(p.getId()).stream()
+                .filter(a -> a.getParent() != null && a.getParent().getId().equals(directExpense.getId())).toList();
+        assertThat(leaves).hasSize(6);
+        assertThat(leaves).extracting(Account::getId).doesNotContain(orphan.getId());
+        assertThat(leaves).allSatisfy(a -> assertThat(a.getPropertyId()).isEqualTo(p.getId()));
+    }
+
     @Test
     void manualMappingToASharedAccountAndTypeCheck() {
         Property galah = newProperty("Galah Residence 2");

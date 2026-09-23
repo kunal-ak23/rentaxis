@@ -219,7 +219,13 @@ public class PropertyAccountService {
         }
         for (String category : DIRECT_EXPENSE_CATEGORIES) {
             String name = category + " - " + property.getNameEn();
-            if (accountRepo.findByNameAndParent_Id(name, parent.get().getId()).isPresent()) continue;
+            // Scoped to this property, not just this name: two properties with the
+            // same display name must not share one leaf (see the repository method's
+            // javadoc).
+            if (accountRepo.findByParent_IdAndProperty_IdAndNameStartingWith(parent.get().getId(), propertyId, category)
+                    .isPresent()) {
+                continue;
+            }
             accountService.createLeaf(name, parent.get(), propertyId);
         }
     }
