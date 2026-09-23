@@ -65,7 +65,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | proven |
 | M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | proven |
 | M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | proven |
-| M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | planned |
+| M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | proven (discount, not a true rent-free period — #50) |
 | M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
 | M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | planned |
 | M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
@@ -73,7 +73,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | planned |
-| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | planned |
+| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | partly proven (recognition to 31/08/2026) |
 | M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
 
 ### Cross-cutting
@@ -229,6 +229,20 @@ contract date defaulted to today rather than the agreement date (#45), the chequ
 ignored step 2's *Uniform* distribution (#46), and the Help button sat over every step's
 Next (#44, reopened for modals). `/dashboard/leases/new` is not the wizard — it shows a raw
 *"Invalid value for parameter 'id'"* (#47) — and the leases toolbar overflows at 974px (#48).
+
+**M18 · Dec 2025 — Rajesh renews, frozen and compensated.** His lease had expired on
+30/09/2025 with him still in the flat; the paperwork caught up on 05/12/2025. *Renew* on the
+expired lease proposed a continuous term (01/10/2025–30/09/2026), copied the lines and
+carried the 8,000 deposit forward by JV. The copied rent line still read *"Annual rent 01
+Oct 2024 - 30 Sep 2025"* (#49). The rent-free month could only be written as a 4,000
+discount on the 48,000 rent — no screen sets a line's own period (#50) — so the contract is
+**44,000**, twelve ADCB PDCs 400401–400412, posted with a 1-TCO/12-PDR review and the old
+lease retired as RENEWED.
+
+**M26 (part) · Aug 2026 — recognition caught up.** With Omar's and Rajesh's contracts on the
+books, 20 months were pending. The per-day arithmetic is exact — A-102 64,000 ÷ 365 × 31 =
+5,435.62, A-103 44,000 ÷ 365 × 31 = 3,736.99, February pro-rated to 28 days — and *Run
+recognition* posted all 20 (88,427.44) to 31/08/2026, the last month that has ended.
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
