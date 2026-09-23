@@ -41,6 +41,7 @@ class TicketOnBehalfOfRenterIT extends AbstractPostgresIT {
     @Autowired PropertyRepository propertyRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired LandlordOrgRepository orgRepo;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     @AfterEach
     void tearDown() {
@@ -118,6 +119,22 @@ class TicketOnBehalfOfRenterIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> tickets.createTicket(dto(propertyId, other), UUID.randomUUID()))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    /** Changeset 99: deleting the renter clears the link and keeps the ticket and its name. */
+    @Test
+    void deletingTheRenterClearsTheLinkAndKeepsTheTicket() {
+        tenant();
+        as("PROPERTY_MANAGER");
+        Renter gone = renter("Former Renter");
+        MaintenanceTicketDTO created = tickets.createTicket(dto(property(), gone.getId()), UUID.randomUUID());
+
+        jdbc.update("DELETE FROM renters WHERE id = ?", gone.getId());
+
+        assertThat(jdbc.queryForObject("SELECT on_behalf_of_renter_id FROM maintenance_tickets WHERE id = ?",
+                UUID.class, created.getId())).isNull();
+        assertThat(jdbc.queryForObject("SELECT on_behalf_of FROM maintenance_tickets WHERE id = ?",
+                String.class, created.getId())).isEqualTo("Former Renter");
     }
 
     @Test

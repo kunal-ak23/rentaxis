@@ -110,6 +110,33 @@ class TenantDeletionPostedLeaseIT extends AbstractPostgresIT {
         LeaseTestFixtures.clearAuth();
     }
 
+    @Autowired MaintenanceTicketService ticketService;
+
+    /**
+     * Changeset 99 put a foreign key (ON DELETE SET NULL) on a ticket's
+     * on-behalf renter. The purge deletes table by table in whatever order the
+     * foreign keys allow; a SET NULL must never be what stalls it.
+     */
+    @Test
+    void deletesATenantWithATicketLoggedOnARentersBehalf() {
+        com.datagami.rentaxis.api.dto.CreateTicketDTO dto = new com.datagami.rentaxis.api.dto.CreateTicketDTO();
+        dto.setPropertyId(fixtures.property().getId());
+        dto.setTitle("Noise from 1204");
+        dto.setOnBehalfOfRenterId(fixtures.renter().getId());
+        ticketService.createTicket(dto, UUID.randomUUID());
+
+        UUID tenantId = fixtures.tenantId();
+        LandlordOrg org = orgRepo.findById(tenantId).orElseThrow();
+        assertThat(rows("maintenance_tickets", tenantId)).isEqualTo(1);
+        TenantContextHolder.clear();
+
+        service.deleteTenant(tenantId, org.getName());
+
+        assertThat(orgRepo.findById(tenantId)).isEmpty();
+        assertThat(rows("maintenance_tickets", tenantId)).isZero();
+        assertThat(rows("renters", tenantId)).isZero();
+    }
+
     @Test
     void deletesATenantWhoseLeaseIsPosted() {
         PostLeaseResponse posted = fixtures.postedLease(CONTRACT_DATE, START, END,
