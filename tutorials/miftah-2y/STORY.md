@@ -50,7 +50,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
 | M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | proven |
 | M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | proven (on the year-2 lease, after PR #338) |
-| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
+| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | contract proven earlier (Sara's A-201 lease); listing proven in M21; viewing blocked by #61; renter accept needs her sign-in |
 | M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
 | M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
 | M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | proven |
