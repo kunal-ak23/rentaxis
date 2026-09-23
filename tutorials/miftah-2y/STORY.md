@@ -72,7 +72,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
-| M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | planned |
+| M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
 | M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | partly proven (recognition to 31/08/2026) |
 | M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
 
@@ -256,6 +256,13 @@ The finalized page still offered *Terminate contract* (#51). Then a fresh A-201 
 (105,000 rent, a new 10,500 deposit, 1,050 fee; 116,550; PDCs 600201–600204) posted from
 01/04/2026. That is the whole of "transfer": there is none (#52), so the renter paid an exit
 fee to stay.
+
+**M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
+Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
+and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
+REVERSED, "Reversed by JV-26/2", and JV-26/2 reads "Reversal of JV-26/1"; both stay in the
+ledger. Neither page offers edit or delete, and the API has none: journals have only list,
+get, create and reverse. A second reverse is refused ("already reversed").
 
 **M19 · Jan 2026 — 2025 closed, as far as the product goes.** With recognition posted to
 August 2026 and nothing left to back-date into 2025, the books were locked through
