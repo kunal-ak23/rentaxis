@@ -203,6 +203,38 @@ public class BlobStorageService {
         }
     }
 
+    /**
+     * Reads a blob named by a stored URL, but only when the URL is in this
+     * service's own storage account and in the {@code shared} container or the
+     * given tenant's container. Used to inline an org logo into a PDF through the
+     * SDK, so the PDF renderer never fetches a URL itself. Anything else, and any
+     * blob larger than {@code maxBytes}, is {@link Optional#empty()}.
+     */
+    public Optional<DownloadResult> downloadOwnedUrl(UUID tenantId, String url, long maxBytes) {
+        Optional<BlobLocation> location = parseOwnedBlobUrl(url);
+        if (location.isEmpty()) {
+            return Optional.empty();
+        }
+        String container = location.get().containerName();
+        boolean allowed = "shared".equals(container)
+                || (tenantId != null && container.equals((containerPrefix + tenantId).toLowerCase(Locale.ROOT)));
+        if (!allowed) {
+            return Optional.empty();
+        }
+        try {
+            BlobClient client = getServiceClient().getBlobContainerClient(container)
+                    .getBlobClient(location.get().blobPath());
+            var props = client.getProperties();
+            if (props.getBlobSize() > maxBytes) {
+                return Optional.empty();
+            }
+            return Optional.of(new DownloadResult(client.downloadContent().toBytes(), props.getContentType()));
+        } catch (RuntimeException e) {
+            log.warn("Could not read owned blob {}/{}: {}", container, location.get().blobPath(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     /** Reads a tenant-scoped blob for an authenticated controller response. */
     public DownloadResult download(UUID tenantId, String blobPath) {
         if (tenantId == null || blobPath == null || blobPath.isBlank()) {
