@@ -161,6 +161,46 @@ class PropertyAccountServiceIT extends AbstractPostgresIT {
         assertThat(leaves).allSatisfy(a -> assertThat(a.getPropertyId()).isEqualTo(p.getId()));
     }
 
+    /**
+     * The dedup looked for any leaf of this property under D-01 whose name merely
+     * starts with the category, so a hand-made "Security Deposit Refunds" leaf
+     * passed for the generated "Security - X" and the property never got one.
+     */
+    @Test
+    void aHandMadeLeafSharingACategorysFirstWordDoesNotStopItsLeaf() {
+        Property p = newProperty("Nakheel Court Security");
+        Account directExpense = accounts.getAccountByCode("D-01");
+        removeGeneratedLeaf(p, "Security - Nakheel Court Security");
+        accounts.createLeaf("Security Deposit Refunds", directExpense, p.getId());
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName)
+                .contains("Security - Nakheel Court Security", "Security Deposit Refunds");
+    }
+
+    /** Two such leaves made the single-result finder throw and the whole generation fail. */
+    @Test
+    void twoHandMadeLeavesSharingACategorysFirstWordDoNotBreakGeneration() {
+        Property p = newProperty("Nakheel Court Guards");
+        Account directExpense = accounts.getAccountByCode("D-01");
+        removeGeneratedLeaf(p, "Security - Nakheel Court Guards");
+        accounts.createLeaf("Security Deposit Refunds", directExpense, p.getId());
+        accounts.createLeaf("Security Guard Wages", directExpense, p.getId());
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName)
+                .contains("Security - Nakheel Court Guards");
+    }
+
+    private void removeGeneratedLeaf(Property p, String name) {
+        Account generated = accountRepo.findByProperty_Id(p.getId()).stream()
+                .filter(a -> a.getName().equals(name)).findFirst().orElseThrow();
+        accountRepo.delete(generated);
+        assertThat(accountRepo.findByProperty_Id(p.getId())).extracting(Account::getName).doesNotContain(name);
+    }
+
     @Test
     void manualMappingToASharedAccountAndTypeCheck() {
         Property galah = newProperty("Galah Residence 2");

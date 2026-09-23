@@ -65,8 +65,13 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      * existed, and skipped creating its own. Scoping the lookup to this
      * property's own id closes that: a same-named leaf belonging to a
      * <em>different</em> property no longer counts as "already generated".</p>
+     *
+     * <p>An existence check, not a single-result finder: the caller passes
+     * {@code category + " - "}, and a user may still have made more than one
+     * leaf under that prefix by hand — which must mean "already there", not an
+     * {@code IncorrectResultSizeDataAccessException} failing the whole run.</p>
      */
-    Optional<Account> findByParent_IdAndProperty_IdAndNameStartingWith(UUID parentId, UUID propertyId, String namePrefix);
+    boolean existsByParent_IdAndProperty_IdAndNameStartingWith(UUID parentId, UUID propertyId, String namePrefix);
 
     /**
      * Highest numeric code in this tenant (codes like "A-02-01" are ignored).

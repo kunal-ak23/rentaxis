@@ -218,12 +218,15 @@ public class PropertyAccountService {
             return;
         }
         for (String category : DIRECT_EXPENSE_CATEGORIES) {
-            String name = category + " - " + property.getNameEn();
+            String prefix = category + " - ";
+            String name = prefix + property.getNameEn();
             // Scoped to this property, not just this name: two properties with the
             // same display name must not share one leaf (see the repository method's
-            // javadoc).
-            if (accountRepo.findByParent_IdAndProperty_IdAndNameStartingWith(parent.get().getId(), propertyId, category)
-                    .isPresent()) {
+            // javadoc). The prefix, not the full name, so a leaf that survives a
+            // property rename still counts; "category - " rather than the bare
+            // category, so a hand-made "Security Deposit Refunds" is not mistaken
+            // for the generated "Security - <Property>".
+            if (accountRepo.existsByParent_IdAndProperty_IdAndNameStartingWith(parent.get().getId(), propertyId, prefix)) {
                 continue;
             }
             accountService.createLeaf(name, parent.get(), propertyId);
