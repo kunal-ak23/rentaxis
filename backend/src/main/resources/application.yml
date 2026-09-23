@@ -141,6 +141,9 @@ app:
   renewal:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}
+    # Dev fallback only. Under the prod profile RenewalTokenService refuses to
+    # start with this literal or with nothing (audit B-F5); deploy.yml passes
+    # the APP_RENEWAL_TOKEN_SECRET GitHub secret.
     token-secret: ${APP_RENEWAL_TOKEN_SECRET:dev-only-please-rotate-in-prod-min-32-bytes-please}
     # Falls back to the public app URL (set on prod) so renewal-email CTAs are absolute,
     # not localhost. Local dev (no NEXT_PUBLIC_API_URL) still resolves to localhost:3000.
