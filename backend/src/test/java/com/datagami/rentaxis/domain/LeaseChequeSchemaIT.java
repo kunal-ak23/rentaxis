@@ -1,14 +1,11 @@
 package com.datagami.rentaxis.domain;
 
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,12 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * they are asserted against a real Postgres rather than through the services.
  */
 @SpringBootTest
-@Testcontainers
-class LeaseChequeSchemaIT {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class LeaseChequeSchemaIT extends AbstractPostgresIT {
 
     @Autowired
     JdbcTemplate jdbc;

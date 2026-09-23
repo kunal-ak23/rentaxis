@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -17,7 +18,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -28,9 +28,6 @@ import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -59,7 +56,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * list) this suite needs.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
 // server.tomcat.max-swallow-size defaults to 2MB: after Tomcat aborts an
 // oversized multipart request and writes its error response, it only reads
 // ("swallows") up to this much of whatever the client is still sending before
@@ -70,10 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 // test means to observe. Unlimited swallowing has no effect on any other test:
 // it only changes what happens to bytes still in flight after an error.
 @TestPropertySource(properties = "server.tomcat.max-swallow-size=-1")
-class VoucherControllerIT {
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+class VoucherControllerIT extends AbstractPostgresIT {
 
     @LocalServerPort int port;
 

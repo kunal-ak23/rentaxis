@@ -28,6 +28,7 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,15 +36,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -83,9 +80,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the job's only input.</p>
  */
 @SpringBootTest
-@Testcontainers
 @Import(LeaseExpirationJobIT.FixedClockConfig.class)
-class LeaseExpirationJobIT {
+class LeaseExpirationJobIT extends AbstractPostgresIT {
 
     /** A week after the fixture lease's 23 Sep 2027 end date. */
     static final LocalDate TODAY = LocalDate.of(2027, 10, 1);
@@ -98,9 +94,6 @@ class LeaseExpirationJobIT {
             return Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).plusHours(3).toInstant(), ZoneOffset.UTC);
         }
     }
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired LeaseExpirationJob job;
     @Autowired LeaseService leaseService;
@@ -170,6 +163,20 @@ class LeaseExpirationJobIT {
     // ------------------------------------------------------------------
 
     /** Read something as a given tenant, with no authenticated caller — as the job runs. */
+    /**
+     * This test's two landlords swept one at a time. The shared test database also
+     * holds other classes' leases, so a count from {@code runFor} is not this test's
+     * to assert exactly; these are.
+     */
+    private int expiredForBoth() {
+        return job.runTenant(alpha.tenantId(), TODAY) + job.runTenant(beta.tenantId(), TODAY);
+    }
+
+    /** What the sweep would pick up for this landlord — the query, not the flip. */
+    private List<UUID> candidates(UUID tenantId) {
+        return as(tenantId, () -> leaseService.findLeasesToExpire(TODAY));
+    }
+
     private <T> T as(UUID tenantId, Supplier<T> read) {
         TenantContextHolder.setTenantId(tenantId);
         try {
@@ -222,11 +229,13 @@ class LeaseExpirationJobIT {
         long alphaJournals = journalCount(alpha.tenantId());
         long betaJournals = journalCount(beta.tenantId());
 
+        // runFor, not runTenant: this is the test of the loop over organisations.
+        // Its totals also count whatever other classes left on the shared test
+        // database, so they are bounded below; the per-lease checks are exact.
         LeaseExpirationJob.ExpiryRun run = job.runFor(TODAY);
 
-        assertThat(run.expired()).as("one lease each").isEqualTo(2);
-        assertThat(run.skipped()).isZero();
-        assertThat(run.failed()).isZero();
+        assertThat(run.tenants()).as("both landlords were visited").isGreaterThanOrEqualTo(2);
+        assertThat(run.expired()).as("at least one lease each").isGreaterThanOrEqualTo(2);
         for (UUID leaseId : List.of(alphaLease, betaLease)) {
             assertThat(statusOf(leaseId)).isEqualTo(LeaseStatus.EXPIRED);
             Unit unit = unitOf(leaseId);
@@ -330,12 +339,15 @@ class LeaseExpirationJobIT {
         assertThat(statusOf(alphaLease)).as("posting the successor retires the predecessor")
                 .isEqualTo(LeaseStatus.RENEWED);
 
-        LeaseExpirationJob.ExpiryRun run = job.runFor(TODAY);
+        assertThat(candidates(alpha.tenantId())).as("a RENEWED lease is never even a candidate")
+                .doesNotContain(alphaLease);
+
+        int alphaExpired = job.runTenant(alpha.tenantId(), TODAY);
+        int betaExpired = job.runTenant(beta.tenantId(), TODAY);
 
         assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.RENEWED);
-        assertThat(run.expired()).as("only the other landlord's").isEqualTo(1);
-        assertThat(run.skipped()).as("a RENEWED lease is never even a candidate").isZero();
-        assertThat(run.failed()).isZero();
+        assertThat(alphaExpired).isZero();
+        assertThat(betaExpired).as("only the other landlord's").isEqualTo(1);
     }
 
     /**
@@ -363,16 +375,16 @@ class LeaseExpirationJobIT {
         jdbc.update("update leases set terminated_on = ? where id = ?",
                 java.sql.Date.valueOf(LocalDate.of(2027, 6, 30)), betaLease);
 
-        LeaseExpirationJob.ExpiryRun run = job.runFor(TODAY);
+        assertThat(candidates(alpha.tenantId())).as("neither row is a candidate at all — the query excludes both")
+                .doesNotContain(alphaLease);
+        assertThat(candidates(beta.tenantId())).doesNotContain(betaLease);
+
+        int expired = expiredForBoth();
 
         assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.TERMINATED);
         assertThat(statusOf(betaLease)).as("a termination in flight is not an expiry")
                 .isEqualTo(LeaseStatus.ACTIVE);
-        assertThat(run.expired()).isZero();
-        assertThat(run.skipped()).as("neither row is a candidate at all — the query excludes both")
-                .isZero();
-        assertThat(run.failed()).as("and neither is refused by the flip, which never sees them")
-                .isZero();
+        assertThat(expired).isZero();
     }
 
     /**
@@ -457,11 +469,7 @@ class LeaseExpirationJobIT {
     void aSecondSweepIsANoOp() {
         job.runFor(TODAY);
 
-        LeaseExpirationJob.ExpiryRun again = job.runFor(TODAY);
-
-        assertThat(again.expired()).isZero();
-        assertThat(again.skipped()).isZero();
-        assertThat(again.failed()).isZero();
+        assertThat(expiredForBoth()).as("nothing of this test's left to expire").isZero();
         assertThat(eventsOf(alphaLease))
                 .filteredOn(e -> e.getNewState() == LeaseStatus.EXPIRED)
                 .as("one expiry event, not two").hasSize(1);

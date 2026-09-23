@@ -14,6 +14,7 @@ import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,14 +22,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -57,9 +54,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * close into their own hands, not how they lose the ability to close at all.</p>
  */
 @SpringBootTest(properties = "rentaxis.recognition.job.enabled=false")
-@Testcontainers
 @Import(RevenueRecognitionJobDisabledIT.FixedClockConfig.class)
-class RevenueRecognitionJobDisabledIT {
+class RevenueRecognitionJobDisabledIT extends AbstractPostgresIT {
 
     static final LocalDate TODAY = LocalDate.of(2026, 12, 1);
 
@@ -71,9 +67,6 @@ class RevenueRecognitionJobDisabledIT {
             return Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).plusHours(3).toInstant(), ZoneOffset.UTC);
         }
     }
-
-    @Container @ServiceConnection
-    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired RevenueRecognitionJob job;
     @Autowired RecognitionService recognition;
