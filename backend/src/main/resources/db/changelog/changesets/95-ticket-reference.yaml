@@ -4,6 +4,16 @@ databaseChangeLog:
   # per calendar year from the same journal_entry_sequences table the journal
   # and addendum numbers use (series 'TKT'), assigned at creation.
   #
+  # The year is the Dubai calendar year, as at runtime (the JVM runs on
+  # Asia/Dubai). created_at is a zone-less timestamp holding UTC wall time (the
+  # session is SET TIME ZONE 'UTC'), so it is read as UTC and converted: a
+  # ticket logged at 01:30 on 1 January in Dubai is 21:30 on 31 December UTC
+  # and belongs to the new year's series.
+  #
+  # Edited in place after review (PR #342 I3), which is safe only because this
+  # changeset had never run anywhere shared: it is new in PR #342, main does not
+  # carry it, and every deploy is from main.
+  #
   # Existing tickets are backfilled per tenant and year in creation order, and
   # the counter is seeded one past the highest backfilled number so the next
   # ticket does not collide. The column stays nullable at the database level
@@ -24,9 +34,9 @@ databaseChangeLog:
               WITH numbered AS (
                 SELECT id,
                        tenant_id,
-                       EXTRACT(YEAR FROM COALESCE(created_at, now()))::int AS yr,
+                       EXTRACT(YEAR FROM COALESCE(created_at AT TIME ZONE 'UTC', now()) AT TIME ZONE 'Asia/Dubai')::int AS yr,
                        ROW_NUMBER() OVER (
-                         PARTITION BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at, now()))
+                         PARTITION BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at AT TIME ZONE 'UTC', now()) AT TIME ZONE 'Asia/Dubai')
                          ORDER BY created_at, id) AS n
                 FROM maintenance_tickets
                 WHERE tenant_id IS NOT NULL
@@ -38,10 +48,10 @@ databaseChangeLog:
         - sql:
             sql: |
               INSERT INTO journal_entry_sequences (tenant_id, doc_type, fiscal_year, next_value)
-              SELECT tenant_id, 'TKT', EXTRACT(YEAR FROM COALESCE(created_at, now()))::int, COUNT(*) + 1
+              SELECT tenant_id, 'TKT', EXTRACT(YEAR FROM COALESCE(created_at AT TIME ZONE 'UTC', now()) AT TIME ZONE 'Asia/Dubai')::int, COUNT(*) + 1
               FROM maintenance_tickets
               WHERE tenant_id IS NOT NULL
-              GROUP BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at, now()))
+              GROUP BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at AT TIME ZONE 'UTC', now()) AT TIME ZONE 'Asia/Dubai')
               ON CONFLICT (tenant_id, doc_type, fiscal_year)
               DO UPDATE SET next_value = GREATEST(journal_entry_sequences.next_value, EXCLUDED.next_value);
         - createIndex:
