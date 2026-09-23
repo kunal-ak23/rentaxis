@@ -31,23 +31,33 @@ public class EntryNumberService {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public String next(JournalDocType docType, LocalDate entryDate) {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        int fy = fiscal.fiscalYearOf(entryDate);
-        JournalEntrySequence seq = repo.lock(tenantId, docType.name(), fy).orElseGet(() -> create(tenantId, docType, fy));
-        long value = seq.getNextValue();
-        seq.setNextValue(value + 1);
-        repo.save(seq);
-        return docType.name() + "-" + String.format(Locale.ROOT, "%02d", fy % 100) + "/" + value;
+        return nextDocumentNumber(docType.name(), entryDate);
     }
 
     /**
-     * Creates the counter row the first time a tenant posts this doc type in this
+     * The same counter for a document that is not a journal — an addendum's
+     * {@code ADD-yy/n}. The sequence table is keyed by a free-text series, so
+     * a series that is not a {@link JournalDocType} name cannot collide with one.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String nextDocumentNumber(String series, LocalDate date) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        int fy = fiscal.fiscalYearOf(date);
+        JournalEntrySequence seq = repo.lock(tenantId, series, fy).orElseGet(() -> create(tenantId, series, fy));
+        long value = seq.getNextValue();
+        seq.setNextValue(value + 1);
+        repo.save(seq);
+        return series + "-" + String.format(Locale.ROOT, "%02d", fy % 100) + "/" + value;
+    }
+
+    /**
+     * Creates the counter row the first time a tenant posts this series in this
      * fiscal year, then reads it back under the lock. The insert yields to whoever
      * wins the race and commits on its own — see the repository for why neither
      * half of that is optional.
      */
-    private JournalEntrySequence create(UUID tenantId, JournalDocType docType, int fy) {
-        repo.insertIfAbsent(tenantId, docType.name(), fy);
-        return repo.lock(tenantId, docType.name(), fy).orElseThrow();
+    private JournalEntrySequence create(UUID tenantId, String series, int fy) {
+        repo.insertIfAbsent(tenantId, series, fy);
+        return repo.lock(tenantId, series, fy).orElseThrow();
     }
 }
