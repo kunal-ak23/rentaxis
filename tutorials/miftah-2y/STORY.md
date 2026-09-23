@@ -31,11 +31,11 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 
 | ID | Beat | UI proof | Status |
 |---|---|---|---|
-| S01 | Provision the org, enable LISTINGS/MEETINGS/RENEWALS/GATEPASS, create the tenant admin | org appears in the superadmin list with features on | planned |
-| S02 | Seed chart of accounts, charge types, property-account template | accounts tree renders | planned |
-| S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | planned |
-| S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | planned |
-| S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | planned |
+| S01 | Provision the org, enable LISTINGS/MEETINGS/RENEWALS/GATEPASS, create the tenant admin | org appears in the superadmin list with features on | proven |
+| S02 | Seed chart of accounts, charge types, property-account template | accounts tree renders | proven |
+| S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | proven |
+| S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | proven |
+| S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | blocked (renters only; no staff users — agents may not create login accounts) |
 | S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | planned |
 | S07 | Bank account + two vendors | lists render | planned |
 
@@ -43,27 +43,27 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 
 | ID | Month | Beat | Status |
 |---|---|---|---|
-| M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | planned |
+| M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | proven |
 | M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | planned |
 | M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | planned |
 | M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
-| M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | planned |
+| M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
 | M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | planned |
-| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | planned |
+| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | blocked → unblocked by PR #338 (Add charge); rerun pending |
 | M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
-| M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | planned |
-| M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | planned |
+| M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
+| M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
 | M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | planned |
-| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | planned |
-| M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | planned |
-| M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | planned |
+| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | in progress (renter side done 23 Sep 2026) |
+| M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | proven |
+| M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | proven |
 
 ### Y2 — Oct 2025 → Sep 2026
 
 | ID | Month | Beat | Status |
 |---|---|---|---|
-| M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | planned |
-| M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | planned |
+| M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | proven |
+| M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | proven |
 | M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | planned |
 | M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | planned |
 | M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
