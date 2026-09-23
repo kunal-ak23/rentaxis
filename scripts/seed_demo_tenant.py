@@ -77,7 +77,7 @@ def load_env():
 
 class Api:
     """Thin client mirroring the mobile apps' auth model: login once, then
-    send X-User-* headers on every call."""
+    send the bearer token (when issued) plus the X-User-* headers on every call."""
 
     def __init__(self, base_url, web_base_url=None):
         self.base = base_url.rstrip("/")
@@ -107,6 +107,12 @@ class Api:
         if u.get("tenantId"):
             self.headers["X-Tenant-Id"] = str(u["tenantId"])
             self.headers["X-User-Tenant-Id"] = str(u["tenantId"])
+        # Once APP_AUTH_TOKEN_SECRET is set, login returns a signed token and the
+        # backend authenticates it; a SUPER_ADMIN on the legacy headers alone is
+        # refused (it needs the internal-proxy secret only the web app holds).
+        # Stacks with token issuance off return no token and keep the headers.
+        if u.get("token"):
+            self.headers["Authorization"] = f"Bearer {u['token']}"
         return u
 
     def login_nextauth(self, email, password):
