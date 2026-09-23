@@ -81,7 +81,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | ID | Beat | Status |
 |---|---|---|
 | X01 | Renter sees only their own ledger (tenant + renter isolation) | proven by test (LeaseAccessPolicyTest 21/21); live portal walk needs a renter sign-in |
-| X02 | Arabic / RTL pass on the renter portal and the dashboard | planned |
+| X02 | Arabic / RTL pass on the renter portal and the dashboard | dashboard half proven (RTL, strings translated except the activity feed #60); finance screens show English account names (#68); renter-portal half needs a renter sign-in (#36 fixed in round 3 by code) |
 | X03 | RBAC: property manager cannot post or reverse a journal; accountant cannot create a lease | proven by test (JournalControllerIT 12/12, LeaseControllerReadAccessIT 7/7) |
 | X04 | The disposable org cannot see Miftah Demo's data | proven by test (TenantAspectIT 9/9, JournalControllerIT cross-tenant cases) + live: every list in the org shows only its own rows |
 
