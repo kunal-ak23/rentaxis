@@ -10,6 +10,7 @@
     "off": "Off"
   },
   "MasterData": {
+    "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
     "acceptLease": "Accept Lease",
     "actions": "Actions",
     "activate": "Activate",

@@ -52,6 +52,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -769,6 +770,44 @@ public class ContractGenerationService {
     public void cleanupTenantDocuments(UUID tenantId, List<String> documentUrls) {
         if (tenantId == null || documentUrls == null) return;
         documentUrls.forEach(url -> deleteStoredFile(tenantId, url));
+    }
+
+    /**
+     * The contract for one lease, as a PDF (#38): the stored, generated contract
+     * when there is one, otherwise the same template rendered on the fly from the
+     * posted lease.
+     *
+     * <p>Why the fallback: a renewal is posted without a generated contract, so a
+     * renter in their second year had nothing to download — the only stored
+     * contract sat on the RENEWED predecessor. Rendering writes nothing (the same
+     * path as {@link #previewContract}) and only for a <em>posted</em> contract;
+     * a draft has not been issued to anybody.</p>
+     *
+     * <p>Access is {@link LeaseAccessPolicy#requireReadable}: a renter reaches only
+     * a lease whose renter is them, a property manager only their buildings, and
+     * everyone else gets the same 404 as for a lease that does not exist. The
+     * tenant comparison is explicit as well, because a primary-key load is only
+     * narrowed by the filter inside a transaction.</p>
+     */
+    @Transactional(readOnly = true)
+    public byte[] currentContractPdf(UUID leaseId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        Lease lease = leaseRepository.findById(leaseId)
+                .filter(l -> tenantId == null || tenantId.equals(l.getTenantId()))
+                .orElse(null);
+        leaseAccessPolicy.requireReadable(lease);
+
+        Optional<LeaseDocument> stored = leaseDocumentRepository.findByLeaseId(leaseId).stream()
+                .filter(d -> d.getType() == DocumentType.CONTRACT)
+                .findFirst();
+        if (stored.isPresent()) {
+            return getDocumentContent(stored.get().getId());
+        }
+        if (lease.getPostedAt() == null) {
+            throw new NotFoundException("No contract has been issued for this lease yet");
+        }
+        String number = lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : "—";
+        return renderPdf(renderContractHtml(lease, number));
     }
 
     @Transactional(readOnly = true)

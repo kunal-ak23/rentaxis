@@ -465,6 +465,21 @@ public class LeaseController {
         return ResponseEntity.ok(contractGenerationService.getDocuments(id));
     }
 
+    /**
+     * The lease's contract as a PDF (#38): the stored one, or the posted lease
+     * rendered on the fly when none was generated (a renewal). Renter-scoped by
+     * {@code LeaseAccessPolicy}: a renter gets only their own lease's contract.
+     */
+    @GetMapping("/{id}/contract")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER', 'RENTER')")
+    public ResponseEntity<byte[]> downloadCurrentContract(@PathVariable UUID id) {
+        byte[] content = contractGenerationService.currentContractPdf(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"contract-" + id + ".pdf\"")
+                .body(content);
+    }
+
     @GetMapping("/documents/{docId}/download")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
     public ResponseEntity<byte[]> downloadDocument(@PathVariable UUID docId) {
