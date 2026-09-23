@@ -44,11 +44,11 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | ID | Month | Beat | Status |
 |---|---|---|---|
 | M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | proven |
-| M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | planned |
-| M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | planned |
+| M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | proven |
+| M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | proven |
 | M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
 | M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
-| M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | planned |
+| M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | proven |
 | M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | proven (on the year-2 lease, after PR #338) |
 | M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
 | M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
@@ -191,6 +191,23 @@ The activity history attributed both staff actions to *"System"* (#42). Visitor 
 have no web surface — the renter's gate-pass flow lives in the mobile app — so that half of
 M12 is left to the mobile run. The renter's meeting request dead-ended with no explanation
 because the org has no staff host (#41, fixed in PR #338).
+
+**M03 · Jan 2025 → Jul 2026 — the collection history, banked properly.** Twenty-two cheques
+had been left REGISTERED since the first pass — which is why every renter portal read
+"625 days overdue" (#40). They were banked month by month from *Collection*: one batch per
+cheque date, deposited the day after it. The first batch deliberately mixed a 01/02/2025
+cheque into a 01/01/2025 batch and was refused whole — *"400305 is dated 2025-02-01 and
+cannot be banked on 2025-01-01 … nothing was deposited"* — the #9 fix, live. Each was then
+cleared four days after its date; the Clear dialog now says **Clearing Date** (#11) but
+defaults to today, so a clerk working a backlog has to set every date by hand or every CRT
+lands in September 2026. Afterwards the register read Deposited 0.00, Due 28,984.25 across
+four rows — Fatima's two bounced cheques and two collection rows, the real arrears — and the
+trial balance closed at **1,898,802.38 = 1,898,802.38**.
+
+**M06 · Jan 2025 — 2024 closed.** With nothing pending recognition up to today, the books
+were locked through 31/12/2024. A balanced manual JV dated 15/12/2024 (Bank Charges Dr 100 /
+Rounding Off Cr 100) was refused: *"Cannot post on 2024-12-15: books are locked through
+2024-12-31"*.
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
