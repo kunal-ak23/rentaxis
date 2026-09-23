@@ -46,7 +46,19 @@ export default function AuthenticatedLayout({
                 <MvpSidebar />
                 <div className="flex flex-col flex-1 min-w-0">
                     <TopHeader />
-                    <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 py-6 lg:px-8 lg:py-7">
+                    {/*
+                      * Extra bottom padding, distinct from the top's, so the
+                      * last row of page content (e.g. a Post button pinned at
+                      * the bottom-right of a form) can always scroll clear of
+                      * HelpFAB (#44) — a fixed circular button (h-12 = 48px)
+                      * offset bottom-6 right-6 (24px) that otherwise sits on
+                      * top of it. pb-24 (96px) covers the button's height
+                      * plus its own margin plus a small gap. Padding-bottom
+                      * is direction-independent, so this needs no RTL
+                      * variant even though the FAB itself is pinned to a
+                      * physical corner.
+                      */}
+                    <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 pt-6 pb-24 lg:px-8 lg:pt-7 lg:pb-28">
                         {children}
                     </main>
                 </div>
