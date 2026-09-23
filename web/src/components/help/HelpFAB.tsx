@@ -34,17 +34,17 @@ export default function HelpFAB() {
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [open]);
 
-  // A modal/dialog is a fixed overlay that can sit on top of the FAB (they
-  // share the same z-index tier) and cover its footer buttons — see #44.
-  // Get out of the way entirely while one is open rather than special-casing
-  // any particular dialog. This must come after every hook above so hook
-  // order stays stable across renders.
+  // #44: the FAB lives one tier below modal overlays (z-40 vs z-50), so any
+  // fixed z-50 overlay — with or without role="dialog" — paints over it and
+  // its footer buttons stay clickable. On top of that, get out of the way
+  // entirely while a proper dialog is open. This must come after every hook
+  // above so hook order stays stable across renders.
   if (dialogOpen) {
     return null;
   }
 
   return (
-    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 right-6 z-50">
+    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 right-6 z-40">
       <AnimatePresence>
         {open && (
           <motion.div
