@@ -348,6 +348,40 @@ class PropertyManagerScopeIT extends AbstractPostgresIT {
                 Map.of("assignTo", pm.getId().toString())).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    /**
+     * The unit and lease a ticket names must be in the property it names, and a
+     * manager may name only a lease they manage. Only the property used to be
+     * checked, so a Marina manager could open a ticket on the Palm lease and make
+     * the Palm renter the closure-OTP holder.
+     */
+    @Test
+    void aTicketCannotPointAtAnotherBuildingsLeaseOrUnit() {
+        String tickets = "/api/v1/tickets";
+        String m = marina.getId().toString();
+        Unit otherMarinaUnit = fixtures.createUnit(marina, "102");
+
+        for (User caller : List.of(pm, admin)) {
+            assertThat(call(caller, HttpMethod.POST, tickets, Map.of("propertyId", m, "title", "x",
+                    "leaseId", palmLease.toString())).getStatusCode()).as(caller.getRole().name())
+                    .isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(call(caller, HttpMethod.POST, tickets, Map.of("propertyId", m, "title", "x",
+                    "unitId", palmUnit.getId().toString())).getStatusCode()).as(caller.getRole().name())
+                    .isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(call(caller, HttpMethod.POST, tickets, Map.of("propertyId", m, "title", "x",
+                    "unitId", otherMarinaUnit.getId().toString(), "leaseId", marinaLease.toString()))
+                    .getStatusCode()).as(caller.getRole().name()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+        // The Palm lease under its own property is still out of the Marina manager's reach.
+        assertThat(call(pm, HttpMethod.POST, tickets, Map.of("propertyId", palm.getId().toString(), "title", "x",
+                "leaseId", palmLease.toString())).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        ResponseEntity<String> ok = call(pm, HttpMethod.POST, tickets, Map.of("propertyId", m, "title", "Leak",
+                "unitId", marinaUnit.getId().toString(), "leaseId", marinaLease.toString()));
+        assertThat(ok.getStatusCode().is2xxSuccessful()).as(ok.getBody()).isTrue();
+        assertThat(call(admin, HttpMethod.POST, tickets, Map.of("propertyId", palm.getId().toString(), "title", "Leak",
+                "leaseId", palmLease.toString())).getStatusCode().is2xxSuccessful()).isTrue();
+    }
+
     // ------------------------------------------------------------- inventory
 
     @Test

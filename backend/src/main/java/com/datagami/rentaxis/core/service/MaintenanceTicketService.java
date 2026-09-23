@@ -258,8 +258,14 @@ public class MaintenanceTicketService {
         ticket.setDescription(dto.getDescription());
         ticket.setStatus(TicketStatus.OPEN);
 
+        // Unit and lease must sit in the property the ticket names, which is the
+        // one the caller's scope was checked against. Only the property used to
+        // be scoped: a manager of building A could name building B's lease, and
+        // B's renter became the closure-OTP holder of a ticket they never raised.
+        Unit unit = null;
         if (dto.getUnitId() != null) {
-            Unit unit = unitRepository.findById(dto.getUnitId())
+            unit = unitRepository.findById(dto.getUnitId())
+                    .filter(u -> u.getProperty() != null && property.getId().equals(u.getProperty().getId()))
                     .orElseThrow(() -> new NotFoundException("Unit not found"));
             ticket.setUnit(unit);
         }
@@ -267,11 +273,22 @@ public class MaintenanceTicketService {
         if (dto.getLeaseId() != null) {
             Lease lease = leaseRepository.findById(dto.getLeaseId())
                     .orElseThrow(() -> new NotFoundException("Lease not found"));
-            // A lease's renter holds its tickets' closure OTP, so a renter may
-            // only raise a ticket on their own contract.
-            if (callerIsRenter() && (lease.getRenter() == null
-                    || !reportedBy.equals(lease.getRenter().getUserId()))) {
+            Unit leaseUnit = lease.getUnit();
+            boolean inProperty = leaseUnit != null && leaseUnit.getProperty() != null
+                    && property.getId().equals(leaseUnit.getProperty().getId());
+            boolean onUnit = unit == null || (leaseUnit != null && unit.getId().equals(leaseUnit.getId()));
+            if (!inProperty || !onUnit) {
                 throw new NotFoundException("Lease not found");
+            }
+            // A lease's renter holds its tickets' closure OTP, so a renter may
+            // only raise a ticket on their own contract, and staff only on one
+            // they manage.
+            if (callerIsRenter()) {
+                if (lease.getRenter() == null || !reportedBy.equals(lease.getRenter().getUserId())) {
+                    throw new NotFoundException("Lease not found");
+                }
+            } else {
+                propertyScope.requireCanAccessLease(lease);
             }
             ticket.setLease(lease);
         }
