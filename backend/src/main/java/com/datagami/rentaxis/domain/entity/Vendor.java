@@ -69,6 +69,14 @@ public class Vendor extends BaseTenantEntity {
     @Column(columnDefinition = "text")
     private String notes;
 
+    // Serialized in responses, never accepted from a request body (PR #340 review
+    // I1). The server creates this leaf when the vendor is created and keeps it
+    // for life. Bound from JSON it arrived as a transient Account (Account.id is
+    // READ_ONLY): a POST carrying one 500'd at flush, and a PUT carrying one
+    // inserted a client-shaped orphan account and moved the vendor's payable onto
+    // it. No client sends it on purpose; the web vendors page never has.
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "payable_account_id")
     private Account payableAccount;

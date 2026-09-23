@@ -82,6 +82,29 @@ class RequestBodyIdBindingTest {
     }
 
     /**
+     * PR #340 review I1: the payable leaf is the server's. Bound from a body it
+     * was a transient Account that 500'd a POST and, on a PUT, was inserted as a
+     * parentless account the vendor's ledger then moved onto.
+     */
+    @Test
+    void vendorIgnoresAClientSuppliedPayableAccount() throws Exception {
+        Vendor v = mapper.readValue(
+                "{\"nameEn\":\"Acme\",\"payableAccount\":{\"id\":\"%s\",\"code\":\"X\"}}".formatted(suppliedId),
+                Vendor.class);
+        assertThat(v.getPayableAccount()).isNull();
+        assertThat(v.getNameEn()).isEqualTo("Acme");
+    }
+
+    @Test
+    void theVendorsPayableAccountIsStillSerialized() throws Exception {
+        Vendor v = new Vendor();
+        Account a = new Account();
+        a.setCode("B-01-04-0001");
+        v.setPayableAccount(a);
+        assertThat(mapper.writeValueAsString(v)).contains("\"payableAccount\"").contains("B-01-04-0001");
+    }
+
+    /**
      * isSystem gates "system accounts cannot be modified" and "cannot be
      * deleted". A client that could set it on create would own a row nothing in
      * the API can subsequently touch.

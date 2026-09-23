@@ -64,12 +64,10 @@ public class VendorService {
         existing.setIban(updates.getIban());
         existing.setActive(updates.isActive());
         existing.setNotes(updates.getNotes());
-        // An explicitly supplied payableAccount on the update wins; otherwise the
-        // vendor keeps its existing leaf (renamed/deactivated below) rather than
-        // having it wiped out by a request body that simply didn't send one.
-        if (updates.getPayableAccount() != null) {
-            existing.setPayableAccount(updates.getPayableAccount());
-        }
+        // The payable leaf is never taken from the update (PR #340 review I1): the
+        // vendor keeps the one created with it, renamed/deactivated below. Taking
+        // the client's object inserted it as a new, parentless account and moved
+        // the vendor's ledger onto it.
 
         Account leaf = existing.getPayableAccount();
         if (leaf != null && !leaf.isSystem()) {
