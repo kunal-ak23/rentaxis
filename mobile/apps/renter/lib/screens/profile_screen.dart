@@ -168,7 +168,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       return;
     }
-    if (_newPasswordController.text.length < 6) {
+    if (_newPasswordController.text.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(l.passwordTooShort),
@@ -855,8 +855,8 @@ class _L {
   String get passwordsDontMatch =>
       ar ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match';
   String get passwordTooShort => ar
-      ? 'يجب أن تتكون كلمة المرور من 6 أحرف على الأقل'
-      : 'Password must be at least 6 characters';
+      ? 'يجب أن تتكون كلمة المرور من 8 أحرف على الأقل'
+      : 'Password must be at least 8 characters';
   String get passwordChanged =>
       ar ? 'تم تغيير كلمة المرور بنجاح' : 'Password changed successfully';
   String get passwordChangeFailed => ar

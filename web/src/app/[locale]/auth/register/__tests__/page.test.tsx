@@ -87,7 +87,7 @@ describe("RegisterPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: /create organization/i }));
 
-        expect(await screen.findByText("Password must be at least 6 characters")).toBeVisible();
+        expect(await screen.findByText("Password must be at least 8 characters")).toBeVisible();
         expect(global.fetch).not.toHaveBeenCalled();
     });
 });

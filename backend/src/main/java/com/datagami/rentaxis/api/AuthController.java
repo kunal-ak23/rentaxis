@@ -11,6 +11,7 @@ import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -66,7 +67,7 @@ public class AuthController {
             @NotBlank @Size(max = 200) String fullName,
             @NotBlank @Size(max = 200) String companyName,
             @NotBlank @Email @Size(max = 254) String email,
-            @NotBlank @Size(min = 6, max = 72) String password) {
+            @NotBlank @Size(min = 8, max = 72) String password) {
     }
 
     /**
@@ -185,6 +186,20 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
+        // Deactivation has to stop a login, not just the next bearer request
+        // (audit A-F5). Checked only AFTER the password matched, so the status is
+        // told to the account holder and to nobody guessing emails.
+        List<User> usable = matched.stream().filter(this::mayLogIn).toList();
+        if (usable.isEmpty()) {
+            boolean userInactive = matched.stream().allMatch(u -> u.getStatus() != UserStatus.ACTIVE);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(java.util.Map.of(
+                    "error", userInactive ? "ACCOUNT_INACTIVE" : "ORG_INACTIVE",
+                    "message", userInactive
+                            ? "This account has been deactivated. Contact your administrator."
+                            : "This organisation is inactive. Contact support to reactivate it."));
+        }
+        matched = usable;
+
         if (matched.size() > 1) {
             // Caller proved access to multiple tenants by supplying a password
             // that matches in each. Return the picker payload — at this point
@@ -211,6 +226,26 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(toAuthResponse(authed));
+    }
+
+    /**
+     * An ACTIVE user whose organisation is ACTIVE. A SUPER_ADMIN has no
+     * organisation; a user with memberships may log in while any one of those
+     * organisations is ACTIVE (the per-request check refuses the inactive ones).
+     */
+    private boolean mayLogIn(User user) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            return false;
+        }
+        if (user.getRole() == UserRole.SUPER_ADMIN && user.getTenantId() == null) {
+            return true;
+        }
+        java.util.Set<UUID> orgs = new java.util.LinkedHashSet<>();
+        if (user.getTenantId() != null) orgs.add(user.getTenantId());
+        orgs.addAll(userService.getUserTenantIds(user.getId()));
+        return orgs.stream().anyMatch(id -> orgService.findById(id)
+                .map(o -> "ACTIVE".equalsIgnoreCase(o.getStatus()))
+                .orElse(false));
     }
 
     /**
@@ -477,8 +512,9 @@ public class AuthController {
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "Current password is incorrect"));
         }
-        if (request.newPassword() == null || request.newPassword().length() < 6) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("error", "New password must be at least 6 characters"));
+        if (request.newPassword() == null || request.newPassword().length() < UserService.MIN_PASSWORD_LENGTH) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error",
+                    "New password must be at least " + UserService.MIN_PASSWORD_LENGTH + " characters"));
         }
 
         // changePassword is @Transactional — the entity write and event publish

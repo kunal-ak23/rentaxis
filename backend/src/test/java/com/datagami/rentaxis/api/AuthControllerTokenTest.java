@@ -52,6 +52,11 @@ class AuthControllerTokenTest {
         tokens = new AuthTokenService(SECRET);
         controller = new AuthController(userService, orgService, passwordEncoder,
                 firebaseGuardAuthService, appleAuthService, tokens);
+        // Login now refuses users of an INACTIVE (or missing) organisation (round 5, A-F5).
+        LandlordOrg active = new LandlordOrg();
+        active.setStatus("ACTIVE");
+        org.mockito.Mockito.when(orgService.findById(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.Optional.of(active));
     }
 
     private User user(UUID id, UUID tenantId, UserRole role) {
@@ -63,6 +68,7 @@ class AuthControllerTokenTest {
         u.setTenantId(tenantId);
         u.setPasswordHash("$hash$");
         u.setWelcomedAt(Instant.now());
+        u.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
         return u;
     }
 

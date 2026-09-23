@@ -8,6 +8,12 @@ import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 
+const LOCKED_OUT_MESSAGES: Record<string, string> = {
+    ACCOUNT_INACTIVE: "This account has been deactivated. Contact your administrator.",
+    ORG_INACTIVE: "This organisation is inactive. Contact support to reactivate it.",
+    RATE_LIMITED: "Too many sign-in attempts. Please wait a minute and try again.",
+};
+
 export default function LoginPage() {
     const router = useRouter();
     const registered = useSearchParams().get("registered") === "true";
@@ -60,6 +66,15 @@ export default function LoginPage() {
             } catch {
                 // Fall through to generic error.
             }
+        }
+
+        // Deactivated account / organisation, or too many attempts: say so
+        // rather than blaming the password the user typed correctly.
+        const lockedOut = res?.error ? LOCKED_OUT_MESSAGES[res.error] : undefined;
+        if (lockedOut) {
+            setError(lockedOut);
+            setLoading(false);
+            return;
         }
 
         if (res?.error) {

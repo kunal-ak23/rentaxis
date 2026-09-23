@@ -37,6 +37,17 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern APPLE_AUTH_PATH = PARSER.parse("/api/auth/apple");
     private static final PathPattern REGISTRATION_PATH = PARSER.parse("/api/auth/register");
 
+    /**
+     * Password login and invite redemption (audit A-F4). Both are unauthenticated
+     * and answer a guess: login a password, set-password (and its GET validate) a
+     * 256-bit invite token. The token is not guessable, so that bucket is about
+     * noise; login is the one an attacker would hammer. Keyed on the client IP,
+     * which the web's NextAuth call forwards (X-Forwarded-For) so web logins are
+     * not all counted against the web container's address.
+     */
+    private static final PathPattern LOGIN_PATH = PARSER.parse("/api/auth/login");
+    private static final PathPattern SET_PASSWORD_PATH = PARSER.parse("/api/auth/set-password/**");
+
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
     /**
@@ -83,6 +94,20 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, Bucket> registrationBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> promoEventBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> loginBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> setPasswordBuckets = new ConcurrentHashMap<>();
+
+    /**
+     * Logins per minute per client IP. 20 leaves room for an office NAT and a few
+     * typos per person while turning an online guessing run into a trickle.
+     * A property, not a constant, only so the test JVM (hundreds of logins from
+     * 127.0.0.1 across cached contexts) can raise it; prod keeps the default.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.login-per-minute:20}")
+    private int loginPerMinute = 20;
+
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.set-password-per-minute:10}")
+    private int setPasswordPerMinute = 10;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -103,8 +128,11 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
         boolean isPromoEvents =
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
+        boolean isLogin = "POST".equals(request.getMethod()) && LOGIN_PATH.matches(path);
+        boolean isSetPassword = SET_PASSWORD_PATH.matches(path);
 
-        if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents) {
+        if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents
+                && !isLogin && !isSetPassword) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -115,6 +143,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         Bucket bucket;
         if (isRegistration) {
             bucket = registrationBuckets.computeIfAbsent(ip, k -> createRegistrationBucket());
+        } else if (isLogin) {
+            bucket = loginBuckets.computeIfAbsent(ip, k -> perMinute(loginPerMinute));
+        } else if (isSetPassword) {
+            bucket = setPasswordBuckets.computeIfAbsent(ip, k -> perMinute(setPasswordPerMinute));
         } else if (isFirebaseAuth || isAppleAuth) {
             bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
@@ -154,6 +186,13 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
                 .refillGreedy(20, Duration.ofMinutes(1))
                 .build();
         return Bucket.builder().addLimit(limit).build();
+    }
+
+    private static Bucket perMinute(int n) {
+        return Bucket.builder().addLimit(Bandwidth.builder()
+                .capacity(n)
+                .refillGreedy(n, Duration.ofMinutes(1))
+                .build()).build();
     }
 
     private Bucket createBucket() {

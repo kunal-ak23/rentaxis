@@ -27,8 +27,8 @@ export default function RegisterPage() {
 
         // Basic client-side validation
         const errors: Record<string, string> = {};
-        if (formData.password.length < 6) {
-            errors.password = "Password must be at least 6 characters";
+        if (formData.password.length < 8) {
+            errors.password = "Password must be at least 8 characters";
         }
         if (Object.keys(errors).length > 0) {
             setFieldErrors(errors);

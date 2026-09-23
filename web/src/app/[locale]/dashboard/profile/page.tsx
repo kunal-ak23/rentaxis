@@ -90,8 +90,8 @@ export default function ProfilePage() {
             setPasswordError("New passwords do not match");
             return;
         }
-        if (newPassword.length < 6) {
-            setPasswordError("Password must be at least 6 characters");
+        if (newPassword.length < 8) {
+            setPasswordError("Password must be at least 8 characters");
             return;
         }
 
@@ -279,7 +279,7 @@ export default function ProfilePage() {
                                 value={newPassword}
                                 onChange={(e) => setNewPassword(e.target.value)}
                                 required
-                                minLength={6}
+                                minLength={8}
                                 className="w-full border border-border rounded-lg bg-background px-4 py-3 text-sm text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                             />
                         </div>
