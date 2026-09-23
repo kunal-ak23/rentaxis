@@ -50,6 +50,20 @@ public class User extends BaseTenantEntity {
     private Instant welcomedAt;
 
     /**
+     * Revocation counter for bearer tokens (security audit P1-2). Every token
+     * carries the value it was minted with ({@code tv} claim) and
+     * {@code ApiSecurityFilter} refuses one that no longer matches.
+     *
+     * <p>{@code updatable = false} on purpose: the only writer is
+     * {@code UserRepository.bumpTokenVersion}, an atomic increment. Without it a
+     * later flush of a User loaded before the bump (Hibernate updates every
+     * column) would write the old value back and silently un-revoke the tokens.
+     */
+    @JsonIgnore
+    @Column(name = "token_version", nullable = false, updatable = false)
+    private int tokenVersion;
+
+    /**
      * The set-password invite secret: whoever holds it can choose this account's
      * password. Never serialised (PR #342 review C2); no response may carry it.
      */

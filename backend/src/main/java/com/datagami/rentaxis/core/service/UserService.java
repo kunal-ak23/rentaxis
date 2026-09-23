@@ -11,6 +11,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
@@ -37,13 +38,15 @@ public class UserService {
     private final PropertyRepository propertyRepository;
     private final ApplicationEventPublisher events;
     private final UserReferenceReleaser referenceReleaser;
+    private final TokenRevocationService tokenRevocation;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
             UserTenantMembershipRepository tenantMembershipRepository,
             PropertyRepository propertyRepository,
             ApplicationEventPublisher events,
-            UserReferenceReleaser referenceReleaser) {
+            UserReferenceReleaser referenceReleaser,
+            TokenRevocationService tokenRevocation) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
@@ -51,6 +54,7 @@ public class UserService {
         this.propertyRepository = propertyRepository;
         this.events = events;
         this.referenceReleaser = referenceReleaser;
+        this.tokenRevocation = tokenRevocation;
     }
 
     /**
@@ -465,6 +469,8 @@ public class UserService {
         if (updated == 0) {
             return InviteResult.ALREADY_USED;
         }
+        // A new password ends every session opened with the old one (audit P1-2).
+        tokenRevocation.revokeAllTokens(probe.getId());
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
@@ -479,20 +485,27 @@ public class UserService {
      * Encodes and persists the new password, then publishes PASSWORD_CHANGED within
      * a single transaction so the entity write and event publish share the same
      * commit boundary (TransactionalEventListener fires on commit).
+     *
+     * @return the user's new token version, for minting the caller a replacement
+     *         token (every existing one is revoked by this change)
      */
     @Transactional
-    public void changePassword(User user, String newRawPassword) {
+    public int changePassword(User user, String newRawPassword) {
         user.setPasswordHash(passwordEncoder.encode(newRawPassword));
         // The holder chose a password; an outstanding invite link must not
         // outlive that (PR #342 review I1).
         user.clearInvite();
         userRepository.save(user);
+        // Ends every other session, including a thief's (audit P1-2). The caller
+        // gets a fresh token from AuthController so their own session survives.
+        tokenRevocation.revokeAllTokens(user.getId());
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
                 user.getTenantId(),
                 new PasswordChangedPayload(user.getId(), user.getName(),
                         Instant.now().toString(), null),
                 "PASSWORD_CHANGED:" + user.getId()));
+        return tokenRevocation.currentTokenVersion(user.getId());
     }
 
     /**
@@ -568,6 +581,7 @@ public class UserService {
         }
 
         UserRole previousRole = user.getRole();
+        UUID previousTenantId = user.getTenantId();
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -610,6 +624,15 @@ public class UserService {
             addTenantMembership(saved.getId(), newTenantId);
         }
 
+        // A token carries the role and tenants it was minted with; once any of
+        // them, or the password, changes, the old tokens describe somebody
+        // this user no longer is (audit P1-2: a demoted admin kept admin for 30
+        // days and could mint a new admin with it).
+        boolean passwordSet = rawPassword != null && !rawPassword.isBlank();
+        if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordSet) {
+            tokenRevocation.revokeAllTokens(saved.getId());
+        }
+
         // Emit STAFF_ROLE_CHANGED when role transitions to a different value
         if (previousRole != role) {
             events.publishEvent(new EmailEvent(this,
@@ -641,6 +664,9 @@ public class UserService {
         tenantMembershipRepository.deleteByUserId(id);
         propertyAssignmentRepository.deleteByUserId(id);
         userRepository.deleteById(id);
+        // No row, no valid token (the filter refuses a missing user); drop the
+        // cached state so that holds from the next request, not in 30 s.
+        tokenRevocation.evictUserAfterCommit(id);
     }
 
     // --- Property Assignment Methods ---
@@ -694,6 +720,8 @@ public class UserService {
     @Transactional
     public void removeTenantMembership(UUID userId, UUID tenantId) {
         tenantMembershipRepository.deleteByUserIdAndTenantId(userId, tenantId);
+        // The token's "tids" claim still lists the removed tenant.
+        tokenRevocation.revokeAllTokens(userId);
     }
 
     public List<UUID> getUserTenantIds(UUID userId) {

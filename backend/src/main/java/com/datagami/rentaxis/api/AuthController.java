@@ -223,7 +223,7 @@ public class AuthController {
     private AuthResponse toAuthResponse(User user) {
         List<UUID> memberTenantIds = userService.getUserTenantIds(user.getId());
         String token = authTokenService.issue(
-                user.getId(), user.getRole(), user.getTenantId(), memberTenantIds);
+                user.getId(), user.getRole(), user.getTenantId(), memberTenantIds, user.getTokenVersion());
         return new AuthResponse(
                 user.getId().toString(),
                 user.getEmail(),
@@ -263,7 +263,7 @@ public class AuthController {
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
                 List.of(org.getId().toString()),
                 authTokenService.issue(user.getId(), user.getRole(), user.getTenantId(),
-                        List.of(org.getId()))));
+                        List.of(org.getId()), user.getTokenVersion())));
     }
 
     // --- Security guard Firebase Phone Authentication login ---
@@ -483,8 +483,19 @@ public class AuthController {
 
         // changePassword is @Transactional — the entity write and event publish
         // share the same transaction, so TransactionalEventListener fires on commit.
-        userService.changePassword(user, request.newPassword());
+        int tokenVersion = userService.changePassword(user, request.newPassword());
 
-        return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
+        // The change revoked every token this user holds, the one on this
+        // request included (audit P1-2). Hand the caller a replacement so the
+        // device that changed the password stays signed in while every other
+        // one is signed out. Absent while token auth is unconfigured.
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("message", "Password updated successfully");
+        String token = authTokenService.issue(user.getId(), user.getRole(), user.getTenantId(),
+                userService.getUserTenantIds(user.getId()), tokenVersion);
+        if (token != null) {
+            body.put("token", token);
+        }
+        return ResponseEntity.ok(body);
     }
 }

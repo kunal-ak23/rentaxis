@@ -7,6 +7,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -50,20 +52,41 @@ import java.util.UUID;
 @Component
 public class ApiSecurityFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(ApiSecurityFilter.class);
+
     private final AuthTokenService authTokenService;
+    private final BearerTokenStateCheck tokenStateCheck;
     private final String internalProxySecret;
     private final String legacyHeadersMode;
 
     public ApiSecurityFilter(AuthTokenService authTokenService,
+            BearerTokenStateCheck tokenStateCheck,
             @Value("${app.auth.internal-proxy-secret:}") String internalProxySecret,
             @Value("${app.auth.legacy-headers:allow}") String legacyHeadersMode) {
         this.authTokenService = authTokenService;
+        this.tokenStateCheck = tokenStateCheck;
         this.internalProxySecret = internalProxySecret == null ? "" : internalProxySecret;
         this.legacyHeadersMode = legacyHeadersMode == null ? "allow" : legacyHeadersMode;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+        // The tenant is a ThreadLocal on a pooled Tomcat thread (security audit
+        // P1-1). Whatever an earlier request left on this thread must never be
+        // seen by this one, and nothing this request sets may outlive it — on
+        // every path, including the skipped public routes and the error paths
+        // that used to return without clearing. TenantContextResetFilter does
+        // the same at the outermost edge; this is the second line.
+        TenantContextHolder.clear();
+        try {
+            authenticate(request, response, filterChain);
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private void authenticate(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
         String path = request.getRequestURI();
@@ -275,6 +298,20 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         // home tenant and no X-Tenant-Id is refused rather than let through unscoped.
         if (!authorized) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "Access to requested tenant is forbidden.");
+            return;
+        }
+
+        // Revocation (audit P1-2): a genuine, unexpired token is still refused
+        // once the row behind it has moved on — password or role changed, user
+        // moved, removed, deleted or deactivated, or the organisation it acts in
+        // deactivated. 401, not 403: the token itself is dead, and a 401 is what
+        // sends the mobile apps back to their login screen. After the tenant
+        // authorization so a request for somebody else's organisation still
+        // gets its 403 rather than a verdict on that organisation's status.
+        String rejection = tokenStateCheck.rejectionReason(identity, requestedTenantId);
+        if (rejection != null) {
+            log.info("Refusing bearer token for user {}: {}", identity.userId(), rejection);
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired bearer token.");
             return;
         }
 

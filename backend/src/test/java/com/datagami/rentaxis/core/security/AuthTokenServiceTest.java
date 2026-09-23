@@ -45,6 +45,28 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void the_token_version_round_trips() throws Exception {
+        String token = service.issue(UUID.randomUUID(), UserRole.RENTER, UUID.randomUUID(), List.of(), 7);
+        assertThat(service.verify(token).tokenVersion()).isEqualTo(7);
+    }
+
+    @Test
+    void a_token_without_a_version_is_invalid() {
+        // Well signed, unexpired, but no "tv": it cannot be checked against the
+        // user's current version, so it is not a token we accept (audit P1-2).
+        String token = Jwts.builder()
+                .subject(UUID.randomUUID().toString())
+                .claim("role", "TENANT_ADMIN")
+                .claim("tids", List.of())
+                .issuedAt(new Date())
+                .expiration(Date.from(Instant.now().plus(Duration.ofDays(1))))
+                .signWith(rawKey())
+                .compact();
+        assertThatThrownBy(() -> service.verify(token))
+                .isInstanceOf(AuthTokenService.TokenInvalidException.class);
+    }
+
+    @Test
     void null_home_tenant_round_trips_as_null() throws Exception {
         String token = service.issue(UUID.randomUUID(), UserRole.SUPER_ADMIN, null, List.of());
         var v = service.verify(token);

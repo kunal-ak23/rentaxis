@@ -4,6 +4,7 @@ import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -25,19 +26,22 @@ public class LandlordOrgService {
     private final JdbcTemplate jdbcTemplate;
     private final ContractGenerationService contractGenerationService;
     private final TenantArtifactCleanupService tenantArtifactCleanupService;
+    private final TokenRevocationService tokenRevocation;
 
     public LandlordOrgService(LandlordOrgRepository repository,
                                UserRepository userRepository,
                                NotificationService notificationService,
                                JdbcTemplate jdbcTemplate,
                                ContractGenerationService contractGenerationService,
-                               TenantArtifactCleanupService tenantArtifactCleanupService) {
+                               TenantArtifactCleanupService tenantArtifactCleanupService,
+                               TokenRevocationService tokenRevocation) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.jdbcTemplate = jdbcTemplate;
         this.contractGenerationService = contractGenerationService;
         this.tenantArtifactCleanupService = tenantArtifactCleanupService;
+        this.tokenRevocation = tokenRevocation;
     }
 
     @Transactional
@@ -73,7 +77,13 @@ public class LandlordOrgService {
 
     @Transactional
     public LandlordOrg save(LandlordOrg org) {
-        return repository.save(org);
+        LandlordOrg saved = repository.save(org);
+        // The bearer-token check caches each organisation's status; a
+        // deactivation must take effect on the next request (audit P1-2).
+        if (saved.getId() != null) {
+            tokenRevocation.evictOrg(saved.getId());
+        }
+        return saved;
     }
 
     /**
@@ -167,7 +177,9 @@ public class LandlordOrgService {
         // users sharing an email AND sharing exactly one cross-tenant
         // membership, where the first to be cleaned wins the reparent.
         int preserved = jdbcTemplate.update(
-                "UPDATE users u SET tenant_id = (" +
+                // token_version + 1: a reparented user's tokens name the deleted
+                // tenant as home (audit P1-2), so they must log in again.
+                "UPDATE users u SET token_version = token_version + 1, tenant_id = (" +
                         "  SELECT m.tenant_id FROM user_tenant_memberships m " +
                         "  WHERE m.user_id = u.id AND m.tenant_id <> ? " +
                         "    AND NOT EXISTS (" +
@@ -257,6 +269,9 @@ public class LandlordOrgService {
         });
 
         scheduleExternalCleanupAfterCommit(tenantId, contractDocumentUrls);
+        // Tokens that act in this tenant stop working on the next request, not
+        // when the cached ACTIVE status expires.
+        tokenRevocation.evictOrg(tenantId);
         log.info("deleteTenant({}): database purge completed; contract cleanup and {} exact artifact cleanups scheduled after commit",
                 tenantId, queuedArtifacts);
     }

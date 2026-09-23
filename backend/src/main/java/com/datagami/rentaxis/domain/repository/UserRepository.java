@@ -78,6 +78,33 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByTenantId(UUID tenantId);
 
     /**
+     * What {@code ApiSecurityFilter} needs to decide whether a bearer token is
+     * still good: the row's token version and status. Native SQL so the tenant
+     * Hibernate filter never narrows it (a SUPER_ADMIN has no tenant, and the
+     * check runs before any tenant context is set).
+     */
+    @Query(value = "SELECT token_version AS tokenVersion, status AS status FROM users WHERE id = :id",
+            nativeQuery = true)
+    Optional<TokenState> findTokenStateById(@Param("id") UUID id);
+
+    interface TokenState {
+        Integer getTokenVersion();
+
+        String getStatus();
+    }
+
+    /**
+     * Revokes every bearer token issued to this user so far. Atomic increment in
+     * SQL (never read-modify-write through the entity; see
+     * {@code User.tokenVersion}). Native so the tenant filter cannot turn it into
+     * a silent no-op for a user outside the caller's tenant.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    @Modifying(flushAutomatically = true)
+    @Query(value = "UPDATE users SET token_version = token_version + 1 WHERE id = :id", nativeQuery = true)
+    int bumpTokenVersion(@Param("id") UUID id);
+
+    /**
      * Explicit tenant-scoped batch lookup by id, mirroring
      * {@code PropertyRepository.findByTenantIdAndIdIn}.
      *
