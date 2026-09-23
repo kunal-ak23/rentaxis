@@ -114,6 +114,10 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [loading, setLoading] = useState(!isNew);
+  // A failed load leaves nothing to edit: a 404 is "no such listing", anything
+  // else "could not load it". Either way the form, and Save, are not shown —
+  // Save on an empty form would PUT blanks over the listing, or 404 again.
+  const [loadError, setLoadError] = useState<'notFound' | 'failed' | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -154,6 +158,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (isNew) return;
     setLoading(true);
+    setLoadError(null);
     fetchListing(id, token)
       .then(data => {
         setListing(data);
@@ -192,7 +197,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
         setAmenities(amenityMap);
         setMedia([...data.media].sort((a, b) => a.sortOrder - b.sortOrder));
       })
-      .catch(() => showToast('error', t('saveError')))
+      .catch((err: { status?: number }) => setLoadError(err?.status === 404 ? 'notFound' : 'failed'))
       .finally(() => setLoading(false));
   }, [id, isNew, t, showToast]);
 
@@ -238,6 +243,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   }
 
   async function handleSave() {
+    if (!isNew && !listing) return;
     if (!form.titleEn.trim()) {
       showToast('error', t('required') + ': ' + t('titleEn'));
       setActiveTab('details');
@@ -394,6 +400,24 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
         <div className="h-6 w-48 bg-input rounded-lg mb-6" />
         <div className="h-10 bg-input/50 rounded-xl mb-4" />
         <div className="h-64 bg-surface rounded-xl border border-border" />
+      </div>
+    );
+  }
+
+  if (!isNew && (loadError || !listing)) {
+    return (
+      <div role="alert" className="max-w-lg mx-auto mt-16 text-center bg-surface border border-border rounded-xl p-8">
+        <AlertCircle size={28} className="mx-auto mb-3 text-muted" />
+        <p className="text-sm text-foreground mb-5">
+          {loadError === 'notFound' ? t('listingNotFound') : t('listingLoadFailed')}
+        </p>
+        <Link
+          href="/dashboard/listings"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <ArrowLeft size={14} className="rtl:rotate-180" />
+          {t('backToListingsLink')}
+        </Link>
       </div>
     );
   }

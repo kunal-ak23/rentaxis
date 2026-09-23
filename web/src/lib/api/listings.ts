@@ -141,7 +141,11 @@ export async function fetchListing(id: string, token?: string): Promise<UnitList
   const headers: HeadersInit = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${BASE}/${id}`, { headers })
-  if (!res.ok) throw new Error(`Failed to fetch listing: ${res.status}`)
+  if (!res.ok) {
+    // The status travels with the error so a caller can tell "no such listing"
+    // (404) from "could not load it right now".
+    throw Object.assign(new Error(`Failed to fetch listing: ${res.status}`), { status: res.status })
+  }
   return res.json()
 }
 
