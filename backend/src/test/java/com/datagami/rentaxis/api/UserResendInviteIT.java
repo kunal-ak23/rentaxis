@@ -9,7 +9,11 @@ import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.api.dto.UserResponseDTO;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
+import com.datagami.rentaxis.testsupport.ChangesetSql;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,6 +51,8 @@ class UserResendInviteIT extends AbstractPostgresIT {
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired UserService userService;
     @Autowired ApplicationEvents events;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired TransactionTemplate tx;
 
     private LandlordOrg org(String label) {
         LandlordOrg org = new LandlordOrg();
@@ -174,5 +180,99 @@ class UserResendInviteIT extends AbstractPostgresIT {
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getBody()).doesNotContainIgnoringCase("password").contains("\"invitePending\":true");
+    }
+    // --- PR #342 review I1: an activated user has no invite to resend ---
+
+    private User welcomed(User u) {
+        u.setWelcomedAt(Instant.now().minusSeconds(86400));
+        return userRepo.save(u);
+    }
+
+    @Test
+    void aUserWhoHasSignedInIsNotReinvitedEvenWithALegacyToken() {
+        LandlordOrg org = org("welcomed");
+        User admin = user(org, UserRole.TENANT_ADMIN, null, null);
+        String legacy = token();
+        User renter = welcomed(user(org, UserRole.RENTER, legacy, Instant.now().minusSeconds(60)));
+
+        ResponseEntity<String> res = post(admin, "/api/admin/users/" + renter.getId() + "/resend-invite", null);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        assertThat(userRepo.findById(renter.getId()).orElseThrow().getInviteToken()).isEqualTo(legacy);
+        assertThat(UserResponseDTO.from(renter).isInvitePending()).isFalse();
+        assertThat(UserResponseDTO.from(renter).getInviteExpiresAt()).isNull();
+    }
+
+    @Test
+    void anInactiveUserIsNotReinvited() {
+        LandlordOrg org = org("inactive");
+        User admin = user(org, UserRole.TENANT_ADMIN, null, null);
+        User renter = user(org, UserRole.RENTER, token(), Instant.now().minusSeconds(60));
+        renter.setStatus(UserStatus.INACTIVE);
+        userRepo.save(renter);
+
+        assertThat(post(admin, "/api/admin/users/" + renter.getId() + "/resend-invite", null)
+                .getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
+    void aPasswordSignInRetiresTheInvite() {
+        LandlordOrg org = org("login");
+        User renter = user(org, UserRole.RENTER, token(), Instant.now().plusSeconds(3600));
+
+        ResponseEntity<String> res = RestClient.builder().baseUrl("http://localhost:" + port).build()
+                .post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("email", renter.getEmail(), "password", "pwd"))
+                .retrieve().onStatus(s -> true, (rq, rs) -> { }).toEntity(String.class);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        User after = userRepo.findById(renter.getId()).orElseThrow();
+        assertThat(after.getInviteToken()).isNull();
+        assertThat(after.getInviteTokenExpiresAt()).isNull();
+    }
+
+    @Test
+    void changingYourOwnPasswordRetiresTheInvite() {
+        User renter = user(org("mepwd"), UserRole.RENTER, token(), Instant.now().plusSeconds(3600));
+
+        userService.changePassword(renter, "a-brand-new-password");
+
+        assertThat(userRepo.findById(renter.getId()).orElseThrow().getInviteToken()).isNull();
+    }
+
+    @Test
+    void anAdminSettingAPasswordRetiresTheInviteButAnEditWithoutOneDoesNot() {
+        LandlordOrg org = org("adminpwd");
+        User keeps = user(org, UserRole.PROPERTY_MANAGER, token(), Instant.now().plusSeconds(3600));
+        User loses = user(org, UserRole.PROPERTY_MANAGER, token(), Instant.now().plusSeconds(3600));
+
+        userService.updateUser(keeps.getId(), keeps.getEmail(), null, "Renamed", keeps.getRole(),
+                org.getId().toString(), null);
+        userService.updateUser(loses.getId(), loses.getEmail(), "set-by-admin-1", "Renamed", loses.getRole(),
+                org.getId().toString(), null);
+
+        assertThat(userRepo.findById(keeps.getId()).orElseThrow().getInviteToken()).isNotNull();
+        assertThat(userRepo.findById(loses.getId()).orElseThrow().getInviteToken()).isNull();
+    }
+
+    /** Changeset 97, run on rows this test controls and rolled back. */
+    @Test
+    void changeset97RetiresOnlyTheTokensOfUsersWhoHaveSignedIn() {
+        LandlordOrg org = org("cs97");
+        tx.executeWithoutResult(status -> {
+            User signedIn = welcomed(user(org, UserRole.RENTER, token(), Instant.now().minusSeconds(60)));
+            User neverSignedIn = user(org, UserRole.RENTER, token(), Instant.now().minusSeconds(60));
+            userRepo.flush();
+
+            ChangesetSql.of("97-retire-invites-of-activated-users.yaml").forEach(jdbc::execute);
+
+            assertThat(jdbc.queryForObject("SELECT invite_token FROM users WHERE id = ?", String.class,
+                    signedIn.getId())).isNull();
+            assertThat(jdbc.queryForObject("SELECT invite_token_expires_at FROM users WHERE id = ?",
+                    java.sql.Timestamp.class, signedIn.getId())).isNull();
+            assertThat(jdbc.queryForObject("SELECT invite_token FROM users WHERE id = ?", String.class,
+                    neverSignedIn.getId())).isEqualTo(neverSignedIn.getInviteToken());
+            status.setRollbackOnly();
+        });
     }
 }

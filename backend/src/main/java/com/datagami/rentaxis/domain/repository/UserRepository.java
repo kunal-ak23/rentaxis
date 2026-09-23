@@ -65,6 +65,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                           @Param("hash") String hash,
                           @Param("now") Instant now);
 
+    @Modifying
+    @Query("""
+            UPDATE User u
+            SET u.inviteToken = NULL,
+                u.inviteTokenExpiresAt = NULL
+            WHERE u.id = :id
+              AND u.inviteToken IS NOT NULL
+            """)
+    int clearInviteToken(@Param("id") UUID id);
+
     List<User> findByTenantId(UUID tenantId);
 
     /**

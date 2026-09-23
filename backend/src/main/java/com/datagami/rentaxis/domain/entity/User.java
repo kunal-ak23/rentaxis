@@ -80,6 +80,25 @@ public class User extends BaseTenantEntity {
     @Column(name = "apple_refresh_token", columnDefinition = "text")
     private String appleRefreshToken;
 
+    /**
+     * Whether this account is still waiting on its set-password invite: a token
+     * is outstanding and the holder has never signed in (PR #342 review I1).
+     *
+     * <p>{@code welcomedAt} is set on first sign-in, so a user who got in with a
+     * password they were given is activated even if a legacy token is still on
+     * the row. Offering "Resend invite" to them would mail an unsolicited
+     * set-password link to an account that already has one.
+     */
+    public boolean hasPendingInvite() {
+        return inviteToken != null && welcomedAt == null;
+    }
+
+    /** Drops the invite secret: the account has a password its holder knows. */
+    public void clearInvite() {
+        this.inviteToken = null;
+        this.inviteTokenExpiresAt = null;
+    }
+
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null
 }

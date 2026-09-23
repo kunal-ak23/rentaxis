@@ -203,6 +203,9 @@ public class AuthController {
         if (authed.getWelcomedAt() == null) {
             userService.markWelcomed(authed.getId());
         }
+        if (authed.getInviteToken() != null) {
+            userService.retireInviteOnPasswordLogin(authed.getId());
+        }
 
         return ResponseEntity.ok(toAuthResponse(authed));
     }

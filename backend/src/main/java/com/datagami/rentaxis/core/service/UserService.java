@@ -208,11 +208,12 @@ public class UserService {
     /**
      * Re-issues a user's set-password invite (#7) and emails it again.
      *
-     * <p>Only for a user whose invite is still outstanding — unused, whether or
-     * not it has expired. Redeeming an invite clears the token
-     * ({@code UserRepository.redeemInviteToken}), so a non-null token is exactly
-     * "never used". The old token is overwritten, so the previous link stops
-     * working the moment this commits.
+     * <p>Only for an active user whose invite is still outstanding
+     * ({@link User#hasPendingInvite}): unused, expired or not, and never signed
+     * in. Redeeming the invite, a password sign-in, {@code /me/password} and an
+     * admin password edit all clear the token, and changeset 97 cleared it for
+     * users who had signed in before that. The old token is overwritten, so the
+     * previous link stops working the moment this commits.
      *
      * <p>The dedup key carries a slice of the new token: the outbox drops a
      * second row with the same key, and {@code USER_INVITED:<id>} is already
@@ -226,9 +227,17 @@ public class UserService {
     public User resendInvite(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("User not found"));
-        if (user.getInviteToken() == null) {
+        // Activated means signed in at least once, or a password was set by a path
+        // that clears the token (invite redemption, /me/password, an admin edit).
+        // Re-inviting them would mail a live set-password link to an account that
+        // already has a password: an unsolicited reset (PR #342 review I1).
+        if (!user.hasPendingInvite()) {
             throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
                     "This user has no outstanding invite: they have already set a password.");
+        }
+        if (user.getStatus() != com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user is inactive; reactivate them before re-sending the invite.");
         }
         if (user.getEmail() == null || user.getEmail().isBlank()) {
             throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
@@ -416,6 +425,17 @@ public class UserService {
         });
     }
 
+    /**
+     * A successful password sign-in proves the holder has a working password, so
+     * any outstanding invite link is retired (PR #342 review I1). A targeted
+     * UPDATE rather than a save of the caller's detached entity, for the reason
+     * {@link #markWelcomed} gives.
+     */
+    @Transactional
+    public void retireInviteOnPasswordLogin(UUID userId) {
+        userRepository.clearInviteToken(userId);
+    }
+
     public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }
 
     /**
@@ -462,6 +482,9 @@ public class UserService {
     @Transactional
     public void changePassword(User user, String newRawPassword) {
         user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        // The holder chose a password; an outstanding invite link must not
+        // outlive that (PR #342 review I1).
+        user.clearInvite();
         userRepository.save(user);
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
@@ -554,6 +577,9 @@ public class UserService {
 
         if (rawPassword != null && !rawPassword.isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            // A set password retires the invite: otherwise the old link, or a
+            // resend, could replace it (PR #342 review I1).
+            user.clearInvite();
         }
 
         // Same translation as createUser, and saveAndFlush for the same reason —

@@ -143,7 +143,7 @@ public class RenterService {
         dto.setPhone(renter.getPhone());
         dto.setPrimaryLanguage(renter.getPrimaryLanguage());
         dto.setUserId(renter.getUserId());
-        if (user != null && user.getInviteToken() != null) {
+        if (user != null && user.hasPendingInvite()) {
             dto.setInvitePending(true);
             dto.setInviteExpiresAt(user.getInviteTokenExpiresAt());
         }

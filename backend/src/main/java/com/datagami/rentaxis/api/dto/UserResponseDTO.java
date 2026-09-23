@@ -17,8 +17,9 @@ public class UserResponseDTO {
     private UUID tenantId;
     private String phoneNumber;
     /**
-     * True while the user's set-password invite is unused (expired or not), which
-     * is when "Resend invite" applies (#7). Never the token itself.
+     * True while the user's set-password invite is unused (expired or not) and
+     * they have never signed in, which is when "Resend invite" applies (#7). Never
+     * the token itself.
      */
     private boolean invitePending;
     private java.time.Instant inviteExpiresAt;
@@ -32,8 +33,8 @@ public class UserResponseDTO {
         dto.setStatus(user.getStatus());
         dto.setTenantId(user.getTenantId());
         dto.setPhoneNumber(user.getPhoneNumber());
-        dto.setInvitePending(user.getInviteToken() != null);
-        dto.setInviteExpiresAt(user.getInviteToken() != null ? user.getInviteTokenExpiresAt() : null);
+        dto.setInvitePending(user.hasPendingInvite());
+        dto.setInviteExpiresAt(user.hasPendingInvite() ? user.getInviteTokenExpiresAt() : null);
         return dto;
     }
 }
