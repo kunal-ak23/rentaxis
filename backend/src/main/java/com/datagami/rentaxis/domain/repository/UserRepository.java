@@ -126,6 +126,22 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByRole(UserRole role);
 
+    /**
+     * ACTIVE users of {@code role} who belong to {@code tenantId} (home tenant or
+     * membership), oldest account first, id as the tie-break — a deterministic
+     * answer to "who is the default". Native for the reason above.
+     */
+    @Query(value = """
+            SELECT u.id FROM users u
+            WHERE u.status = 'ACTIVE' AND u.role = :role
+              AND (u.tenant_id = :tenantId
+                   OR EXISTS (SELECT 1 FROM user_tenant_memberships m
+                              WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
+            ORDER BY u.created_at ASC NULLS LAST, u.id ASC
+            """, nativeQuery = true)
+    List<UUID> findActiveIdsInTenantByRoleOldestFirst(@Param("tenantId") UUID tenantId,
+                                                      @Param("role") String role);
+
     List<User> findByTenantIdAndRole(UUID tenantId, UserRole role);
 
     /**

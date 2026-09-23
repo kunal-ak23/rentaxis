@@ -346,17 +346,23 @@ public class MeetingService {
 
     // ---- Default host (for renters who cannot derive a PM) ----
 
+    /**
+     * The host a renter's request goes to when they cannot name one: the oldest
+     * ACTIVE tenant admin, else the oldest ACTIVE property manager.
+     *
+     * <p>It used to be the first row of an unordered, unfiltered query: a
+     * deactivated admin could be handed every renter's request (and
+     * {@link #requireEligibleHost} then refused the booking), and which admin came
+     * back could change from one call to the next.</p>
+     */
     @Transactional(readOnly = true)
     public UUID getDefaultHostId() {
         UUID tenantId = TenantContextHolder.getTenantId();
-        // Prefer TENANT_ADMIN, fall back to any user with PROPERTY_MANAGER role
-        List<User> admins = userRepository.findByTenantIdAndRole(tenantId, UserRole.TENANT_ADMIN);
-        if (!admins.isEmpty()) {
-            return admins.get(0).getId();
-        }
-        List<User> managers = userRepository.findByTenantIdAndRole(tenantId, UserRole.PROPERTY_MANAGER);
-        if (!managers.isEmpty()) {
-            return managers.get(0).getId();
+        for (UserRole role : List.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER)) {
+            List<UUID> ids = userRepository.findActiveIdsInTenantByRoleOldestFirst(tenantId, role.name());
+            if (!ids.isEmpty()) {
+                return ids.get(0);
+            }
         }
         throw new NotFoundException("No host user found for this tenant");
     }
