@@ -589,6 +589,8 @@
     "confirmDelete": "Delete",
     "confirmPublishTitle": "Publish Listing",
     "confirmPublishDesc": "This will make the listing visible on the marketplace.",
+    "confirmPublishNoMedia": "This listing has no photos. Publish anyway?",
+    "confirmPublishAnyway": "Publish anyway",
     "confirmPublish": "Publish",
     "confirmUnlistTitle": "Unlist Listing",
     "confirmUnlistDesc": "This will hide the listing from the marketplace.",

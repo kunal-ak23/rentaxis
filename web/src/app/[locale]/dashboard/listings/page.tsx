@@ -128,8 +128,10 @@ function ListingsContent() {
   function handlePublish(listing: UnitListingSummaryDTO) {
     setConfirmConfig({
       title: t('confirmPublishTitle'),
-      description: t('confirmPublishDesc'),
-      confirmText: t('confirmPublish'),
+      // A listing's summary has a cover URL whenever it has any media; none
+      // means the marketplace page would show no photos (gap #58).
+      description: listing.coverPhotoUrl ? t('confirmPublishDesc') : t('confirmPublishNoMedia'),
+      confirmText: listing.coverPhotoUrl ? t('confirmPublish') : t('confirmPublishAnyway'),
       isDestructive: false,
       onConfirm: async () => {
         setConfirmOpen(false);

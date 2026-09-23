@@ -33,6 +33,7 @@ import type {
   ListingStatus,
 } from "@/types/listing";
 import { InterestsDrawer } from "../_components/InterestsDrawer";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrencyCompact } from "@/lib/format";
 
 // ──────────── Amenity groups ────────────
@@ -126,6 +127,9 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
   // Interests drawer
   const [showInterests, setShowInterests] = useState(false);
+
+  // Publishing with no media is allowed, but not silently (gap #58).
+  const [confirmNoMedia, setConfirmNoMedia] = useState(false);
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -259,8 +263,18 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  function requestPublish() {
+    if (!listing) return;
+    if (media.length === 0) {
+      setConfirmNoMedia(true);
+      return;
+    }
+    void handlePublish();
+  }
+
   async function handlePublish() {
     if (!listing) return;
+    setConfirmNoMedia(false);
     setActionLoading('publish');
     try {
       await publishListing(listing.id, token);
@@ -459,7 +473,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
           {/* Publish/Unlist */}
           {!isNew && listing?.status !== 'PUBLISHED' && (
             <button
-              onClick={handlePublish}
+              onClick={requestPublish}
               disabled={actionLoading === 'publish'}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-success text-white hover:bg-success/90 transition-all cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-success/30"
             >
@@ -1088,6 +1102,17 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmNoMedia}
+        onClose={() => setConfirmNoMedia(false)}
+        onConfirm={() => void handlePublish()}
+        title={t('confirmPublishTitle')}
+        description={t('confirmPublishNoMedia')}
+        confirmText={t('confirmPublishAnyway')}
+        cancelText={t('cancel')}
+        isDestructive={false}
+      />
 
       {/* Interests drawer */}
       {showInterests && listing && (

@@ -589,6 +589,8 @@
     "confirmDelete": "حذف",
     "confirmPublishTitle": "نشر القائمة",
     "confirmPublishDesc": "سيجعل هذا القائمة مرئية في السوق.",
+    "confirmPublishNoMedia": "لا تحتوي هذه القائمة على صور. هل تريد نشرها على أي حال؟",
+    "confirmPublishAnyway": "نشر على أي حال",
     "confirmPublish": "نشر",
     "confirmUnlistTitle": "إلغاء نشر القائمة",
     "confirmUnlistDesc": "سيخفي هذا القائمة من السوق.",
