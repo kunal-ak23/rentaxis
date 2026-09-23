@@ -49,9 +49,15 @@ public class User extends BaseTenantEntity {
     @Column(name = "welcomed_at")
     private Instant welcomedAt;
 
+    /**
+     * The set-password invite secret: whoever holds it can choose this account's
+     * password. Never serialised (PR #342 review C2); no response may carry it.
+     */
+    @JsonIgnore
     @Column(name = "invite_token", length = 64, unique = true)
     private String inviteToken;
 
+    @JsonIgnore
     @Column(name = "invite_token_expires_at")
     private Instant inviteTokenExpiresAt;
 

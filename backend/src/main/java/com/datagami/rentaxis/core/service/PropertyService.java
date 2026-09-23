@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.BulkPropertyImportResultDTO;
+import com.datagami.rentaxis.api.dto.ManagerSummaryDTO;
 import com.datagami.rentaxis.api.dto.PropertyStatsDTO;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -304,11 +305,26 @@ public class PropertyService {
         dto.setActualRevenue(units.stream()
                 .map(u -> u.getActualRent() != null ? u.getActualRent() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
-        dto.setAssignedManagers(userService.getAssignedManagers(property.getId()));
+        dto.setAssignedManagers(userService.getAssignedManagers(property.getId()).stream()
+                .map(ManagerSummaryDTO::from).toList());
         return dto;
     }
 
-    public List<com.datagami.rentaxis.domain.entity.User> getPropertyManagers(UUID propertyId) {
-        return userService.getAssignedManagers(propertyId);
+    /**
+     * The users assigned to one property, for a caller who may see that property.
+     *
+     * <p>The property must be in the caller's tenant ({@link #getPropertyById}), and
+     * a PROPERTY_MANAGER must be assigned to it — the same rule
+     * {@link #getAllPropertiesWithStats} applies to the list. Anything else is a
+     * 404, so the endpoint does not confirm that another building exists.
+     */
+    @Transactional(readOnly = true)
+    public List<ManagerSummaryDTO> getPropertyManagers(UUID propertyId) {
+        Property property = getPropertyById(propertyId);
+        if (filterByRole(List.of(property)).isEmpty()) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Property not found");
+        }
+        return userService.getAssignedManagers(property.getId()).stream()
+                .map(ManagerSummaryDTO::from).toList();
     }
 }

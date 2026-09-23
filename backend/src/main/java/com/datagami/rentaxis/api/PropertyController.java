@@ -67,7 +67,7 @@ public class PropertyController {
 
     @GetMapping("/{id}/managers")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    public ResponseEntity<List<com.datagami.rentaxis.domain.entity.User>> getPropertyManagers(@PathVariable UUID id) {
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.ManagerSummaryDTO>> getPropertyManagers(@PathVariable UUID id) {
         return ResponseEntity.ok(service.getPropertyManagers(id));
     }
 

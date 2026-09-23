@@ -686,13 +686,10 @@ public class UserService {
      * needs a session that outlives the call. It has one over HTTP today and
      * nowhere else.
      *
-     * <p><b>This does not make the endpoint above it safe.</b>
-     * {@code GET /api/v1/properties/{id}/managers} reaches here without checking
-     * that the property belongs to the caller's tenant, so a foreign property id
-     * still selects foreign assignment rows; what this annotation guarantees is
-     * only that the users those rows point at are not returned. The missing check
-     * belongs in {@code PropertyService} and is called out in the hotfix report
-     * rather than widened into here.
+     * <p>This returns entities; callers that answer HTTP map them to
+     * {@code ManagerSummaryDTO} (the entity carries the invite token), and
+     * {@code PropertyService.getPropertyManagers} checks the property is one the
+     * caller may see before it gets here (PR #342 review C2).
      */
     @Transactional(readOnly = true)
     public List<User> getAssignedManagers(UUID propertyId) {
