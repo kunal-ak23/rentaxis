@@ -1,8 +1,7 @@
 # Mid-term contract variation (addendum) — design
 
-**Status: DRAFT — contingent on approving Approach A.** Written during brainstorming so
-there is something to red-line; no code has been written. Sections marked **OPEN** still
-need a decision.
+**Status: APPROVED 2026-09-23** — Approach A, with the four formerly open questions
+answered in *Decisions taken*. No code has been written yet.
 
 Addresses findings #15 and #17 from the two-year simulation (`tutorials/miftah-2y/gaps.md`).
 
@@ -52,6 +51,11 @@ Two consequences worth stating plainly:
 | v1 scope | Additions **and** corrections. Negotiated reductions and refunds of cleared cash are out. |
 | Correction model | Industry-standard hybrid, split on settlement (below) |
 | Downward-correction surplus | Return uncleared instruments first; any remainder becomes a credit balance |
+| Approach | **A** — new entry point reaching the existing additive path (approved 2026-09-23) |
+| Ejari on an addendum | Not required at creation; an optional Ejari field, and a follow-up task is recorded when it is blank |
+| Extra deposit | Keep `extend`'s DEPOSIT refusal in v1; extra deposit is charged as a separate act |
+| Document number | Own series `ADD-yy/n`, distinct from TCO; backs `DocumentType.ADDENDUM` |
+| Credit balance | An `ADVANCE_RENT` credit on the tenant ledger, consumed by later charges or at settlement |
 
 ### The correction rule
 
@@ -141,7 +145,7 @@ Negotiated rent reductions, refunds of cleared cash, and any automatic Ejari
 re-registration. Renewal-time escalation (#24) and recurring-vs-one-off charge typing (#23)
 are separate findings and unchanged here.
 
-## OPEN questions
+## Resolved questions (answers in *Decisions taken*)
 
 1. **Ejari.** A material variation legally needs a fresh registration. Prompt for a new
    Ejari number on an addendum, or record it as a follow-up task? (Related: #24 leaves
