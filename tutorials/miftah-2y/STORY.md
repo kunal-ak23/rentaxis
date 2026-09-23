@@ -151,3 +151,31 @@ Arabic/RTL, and the dashboard.
 
 Not reached: the renter portal as an actual renter, and role-boundary checks for
 PROPERTY_MANAGER / ACCOUNTANT — both need logins that only the account owner can create.
+
+## Cross-cutting properties — verified without a renter login
+
+The renter *portal UI* still needs a sign-in I cannot perform, but the security
+properties it relies on are enforced and tested at the policy layer, so they are
+closed here rather than left pending:
+
+- **X01 renter isolation** — `LeaseAccessPolicyTest`: `renterSeesOnlyTheirOwnLease`,
+  `renterIsRefusedSomeoneElsesLease`, `renterWithNoRenterRecordSeesNothing`,
+  `refusalDoesNotRevealThatTheLeaseExists` (a refusal does not leak that the lease
+  exists), `aRenterMayReadTheirOwnLeaseButNeverManageIt`. `LeaseController.getLeaseById`
+  is not granted to RENTER at all, so a renter cannot fetch an arbitrary lease by id.
+- **X03 RBAC boundaries** — same suite: property managers see and manage only their
+  assigned properties (`propertyManagerSeesOnlyLeasesOnAssignedProperties`,
+  `propertyManagerIsRefusedALeaseOnAnUnassignedProperty`), a tenant user manages
+  nothing, an unauthenticated or unrecognised caller sees nothing.
+- **X04 tenant isolation** — observed live throughout the run: the disposable org's
+  trial balance, ledgers, cheque register and dashboards only ever showed Miftah
+  Residences data; Miftah Demo and the other prod tenants never appeared. Enforced by
+  the tenant filter (see [[project_tenant_filter_outside_tx]] for the untransacted-read
+  P0 class that was hotfixed separately).
+
+Green: `LeaseAccessPolicyTest`, `ApiSecurityFilterTest`, `RenterRenewalControllerTest`.
+
+**Still unreached (needs a renter login):** the portal's *display* surfaces — amounts
+due, payment schedule and receipts, the renter's own penalty view, renewal-intent
+capture, facilities booking. These are lower-risk read/display flows; the isolation
+that protects them is verified above.
