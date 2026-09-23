@@ -138,7 +138,7 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
                 ejariNumber: header.ejariNumber || null,
                 paymentReferenceNumber: header.paymentReferenceNumber || null,
                 rentVatApplicable: header.rentVatApplicable,
-                lines: toInputs(rows),
+                lines: toInputs(rows, { keepPeriods: false }),
             };
             const updated = await leaseApi.updateDraft(lease.id, body);
             setSaved(true);

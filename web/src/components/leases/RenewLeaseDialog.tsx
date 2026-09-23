@@ -80,7 +80,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 contractDate: contractDate || null,
                 startDate,
                 endDate,
-                lines: copyLines ? null : toInputs(rows),
+                lines: copyLines ? null : toInputs(rows, { keepPeriods: false }),
                 carryDepositForward: carryDeposit,
             });
             onRenewed(successor);

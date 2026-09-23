@@ -38,6 +38,14 @@ export type LineRow = {
     creditAccountId: string | null;
     creditAccountCode?: string | null;
     creditAccountName?: string | null;
+    /**
+     * The window a persisted line covers — an addendum's or an extension's rent
+     * runs over its own dates, not the lease's. Not editable in the grid; carried
+     * so an amend re-sends it (review I-2), because the server defaults a RENT line
+     * with no period to the whole term. A new blank line has none.
+     */
+    periodStart?: string | null;
+    periodEnd?: string | null;
 };
 
 export function blankLine(key: number): LineRow {
@@ -65,6 +73,8 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         creditAccountId: line.creditAccountId,
         creditAccountCode: line.creditAccountCode,
         creditAccountName: line.creditAccountName,
+        periodStart: line.periodStart ?? null,
+        periodEnd: line.periodEnd ?? null,
     };
 }
 
@@ -72,7 +82,10 @@ export function toRows(lines: LeaseLine[]): LineRow[] {
     return lines.map((l, i) => toRow(l, i));
 }
 
-/** The wire shape. Blank narrations go over as null, not "". */
+/**
+ * The wire shape. Blank narrations go over as null, not "". A line's period goes
+ * with it, so an amend does not stretch an addendum's rent back to the lease start.
+ */
 export function toInput(row: LineRow): LeaseLineInput {
     return {
         chargeTypeId: row.chargeTypeId,
@@ -81,11 +94,24 @@ export function toInput(row: LineRow): LeaseLineInput {
         narration: row.narration.trim() || null,
         vatApplicable: row.vatApplicable,
         creditAccountId: row.creditAccountId,
+        periodStart: row.periodStart ?? null,
+        periodEnd: row.periodEnd ?? null,
     };
 }
 
-export function toInputs(rows: LineRow[]): LeaseLineInput[] {
-    return rows.map(toInput);
+/**
+ * `keepPeriods: false` is for a caller that is (re)setting the term the lines
+ * belong to — a draft whose dates can be edited alongside its lines, or a
+ * renewal's new lease. A period read from the old term would pin the rent to
+ * dates that no longer apply; sent without one, the server re-defaults it to
+ * the term being saved, which is what those screens always relied on.
+ */
+export function toInputs(rows: LineRow[], opts: { keepPeriods?: boolean } = {}): LeaseLineInput[] {
+    const keepPeriods = opts.keepPeriods ?? true;
+    return rows.map(r => {
+        const input = toInput(r);
+        return keepPeriods ? input : { ...input, periodStart: null, periodEnd: null };
+    });
 }
 
 export function behaviourOf(row: LineRow, chargeTypes: ChargeType[]): ChargeBehaviour | null {

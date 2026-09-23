@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fmtIsoDate, linesAreValid, type LineRow } from "../leaseMath";
+import type { LeaseLine } from "@/lib/api/leasing";
+import { blankLine, fmtIsoDate, linesAreValid, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
 
 /**
  * `linesAreValid` is the one gate the amend/renew/extend dialogs and the
@@ -90,5 +91,49 @@ describe("fmtIsoDate", () => {
     it("returns an em dash for null or empty input", () => {
         expect(fmtIsoDate(null, "en")).toBe("—");
         expect(fmtIsoDate(undefined, "en")).toBe("—");
+    });
+});
+
+/**
+ * Review I-2: an amend re-inserts every line, and the backend defaults a RENT
+ * line with no period to the lease's whole term — so a mid-term addendum's rent
+ * re-sent without its period would be recognised from the lease start.
+ */
+describe("line periods", () => {
+    const persisted: LeaseLine = {
+        id: "line-3",
+        seqNo: 3,
+        chargeTypeId: "ct-rent",
+        chargeTypeCode: "RENT",
+        chargeTypeName: "Rent",
+        behaviour: "RENT",
+        creditAccountId: "acc-1",
+        creditAccountCode: "4100",
+        creditAccountName: "Rent income",
+        grossAmount: 4000,
+        discountAmount: 0,
+        netAmount: 4000,
+        narration: "Storage room",
+        vatApplicable: false,
+        periodStart: "2027-02-15",
+        periodEnd: "2027-10-01",
+    };
+
+    it("round-trips a line's period through toRow and toInput", () => {
+        const input = toInput(toRow(persisted, 0));
+        expect(input.periodStart).toBe("2027-02-15");
+        expect(input.periodEnd).toBe("2027-10-01");
+    });
+
+    it("sends no period for a newly added blank line", () => {
+        const input = toInput(blankLine(7));
+        expect(input.periodStart ?? null).toBeNull();
+        expect(input.periodEnd ?? null).toBeNull();
+    });
+
+    it("drops periods when the term itself is being (re)set, so the server re-defaults them", () => {
+        const [input] = toInputs([toRow(persisted, 0)], { keepPeriods: false });
+        expect(input.periodStart ?? null).toBeNull();
+        expect(input.periodEnd ?? null).toBeNull();
     });
 });
