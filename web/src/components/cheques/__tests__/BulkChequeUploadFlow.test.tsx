@@ -166,19 +166,13 @@ describe("BulkChequeUploadFlow", () => {
     expect(labels.some(l => l.includes("20/04/2026") || l.includes("2026-04-20"))).toBe(false);
   });
 
-  it("a failed extraction can be retried and fills the row, keeping operator edits (#64)", async () => {
+  it("a failed extraction can be retried and fills the row, keeping edits typed while it runs (#64)", async () => {
+    let resolveRetry: (v: unknown) => void = () => {};
     global.fetch = vi.fn()
       // First attempt fails outright.
       .mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: "upstream" }) })
-      // Retry succeeds.
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
-          extracted: { chequeNumber: "C-9", bankName: "ENBD", payerName: "GULF BREW CAFE LLC", chequeDate: "2026-07-04", amount: 5000, confidence: "HIGH" },
-          warnings: [],
-        }),
-      });
+      // Retry is held open so the operator can type while it is in flight.
+      .mockImplementationOnce(() => new Promise(r => { resolveRetry = r; }));
 
     render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -191,10 +185,24 @@ describe("BulkChequeUploadFlow", () => {
     expect(chequeNo.value).toBe("");
     expect((document.querySelector("select") as HTMLSelectElement).value).toBe("");
 
-    // The operator typed a bank while the row was failed; retry must not clobber it.
+    fireEvent.click(screen.getByText("retryExtraction"));
+    await waitFor(() => screen.getByText("retryingExtraction"));
+
+    // The operator types a bank while the retry is in flight (review m-5):
+    // the merge must read the rows as they are when the response lands, not
+    // a snapshot taken at click time.
     fireEvent.change(bank, { target: { value: "Mashreq" } });
 
-    fireEvent.click(screen.getByText("retryExtraction"));
+    await act(async () => {
+      resolveRetry({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-9", bankName: "ENBD", payerName: "GULF BREW CAFE LLC", chequeDate: "2026-07-04", amount: 5000, confidence: "HIGH" },
+          warnings: [],
+        }),
+      });
+    });
 
     await waitFor(() => expect(chequeNo.value).toBe("C-9"));
     expect(payer.value).toBe("GULF BREW CAFE LLC");
