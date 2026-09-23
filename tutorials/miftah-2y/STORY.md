@@ -351,6 +351,22 @@ and "carry deposit forward" produced a draft for 01/10/2026–30/09/2027:
 An invented lease id (`/leases/b4880f85`) now shows the friendly "Contract not found"
 panel (#47, generalised in #339).
 
+**M29 · 23 → 30 Sep 2026 — Rajesh moves out at the end of his term.**
+- **Notice:** *Give notice* marked the lease NOTICE_GIVEN, with no date and no party
+  captured (#27 still open).
+- **Terminate, dated 30/09/2026, the last day of the term:** the preview read earned
+  44,000.00, unearned 0.00 and receivable 0.00, with no uncleared instruments; all
+  twelve PDCs had cleared. For comparison, dating it 23/09 would have reversed 843.84 of
+  unearned rent (44,000 × 7 ÷ 365).
+- **Settlement:** it warns that September's rent is not recognised yet. That is by
+  design: recognition runs for months that have ended, and the PLANNED entry is picked
+  up in October whatever the lease's status. There was a 350 cleaning deduction, and the
+  refund of **7,650** is paid from Emirates Islamic.
+- **Finalized** as **STL-26/2**, dated 30/09 (a week ahead, allowed): Dr Security Deposit
+  8,000 / Cr Maintenance Charges 350 / Cr Bank 7,650. The contract is CLOSED. The
+  finalized page still showed the "Terminate the contract before settling it" prompt
+  (#51, being fixed in round 3).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
