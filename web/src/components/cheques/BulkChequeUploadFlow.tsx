@@ -42,6 +42,14 @@ type RowState = {
 
 type Step = 1 | 2 | 3;
 
+/**
+ * The date a scan of this row's cheque should carry: the cheque's own maturity
+ * date. `postingDate` is the contract/posting date in accounting v2 — identical
+ * on every row a wizard creates — so it is only a fallback for a row with no
+ * cheque date yet.
+ */
+const rowChequeDate = (c: Cheque): string => c.chequeDate ?? c.postingDate;
+
 export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose }: Props) {
   const t = useTranslations("bulkChequeUpload");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -141,7 +149,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   const remap = (candidates: RowState[]) =>
     autoMapChequesToRows(
       candidates.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, amount: r.amount, pinned: r.pinned, assignedRowId: r.rowId })),
-      eligibleRows.map(c => ({ id: c.id, dueDate: c.postingDate, amount: c.amount })),
+      eligibleRows.map(c => ({ id: c.id, dueDate: rowChequeDate(c), amount: c.amount })),
     );
 
   const goExtract = async () => {
@@ -445,14 +453,14 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                               .filter(s => !usedRowIds.has(s.id) || s.id === row.rowId)
                               .map(s => (
                                 <option key={s.id} value={s.id}>
-                                  #{s.seqNo} · {formatDate(s.postingDate)}
+                                  #{s.seqNo} · {formatDate(rowChequeDate(s))}
                                 </option>
                               ))}
                           </select>
                         </td>
                         <td className="pr-2">
                           {target && row.chequeDate && (
-                            <DueDateDelta dueDate={target.postingDate} chequeDate={row.chequeDate} />
+                            <DueDateDelta dueDate={rowChequeDate(target)} chequeDate={row.chequeDate} />
                           )}
                         </td>
                         <td className="pr-2 text-right">

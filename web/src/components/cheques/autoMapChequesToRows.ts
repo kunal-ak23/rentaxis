@@ -6,7 +6,9 @@
  * date; accounting-v2 replaced schedules with the lease's own cheque grid
  * (`ChequeRowInput` / `ChequeDTO`), so the target is now a cheque row rather
  * than a schedule. The matching stays date-first (the OCR'd cheque date
- * against the row's own posting date) with the amount as a tie-breaker only:
+ * against the row's own cheque date, falling back to its posting date only
+ * when the row has no cheque date — in v2 the posting date is the contract
+ * date, the same on every row) with the amount as a tie-breaker only:
  * an exact-amount match at the same date distance wins, but amount never
  * overrides a closer date — two rows a week apart are more likely confused by
  * a landlord's own rounding than by two cheques of the same amount landing on
@@ -24,7 +26,7 @@ export type AutoMapItem = {
 
 export type AutoMapChequeRow = {
   id: string;
-  /** The row's own posting/maturity date — what a matching cheque should be dated near. */
+  /** The row's own cheque (maturity) date — what a matching cheque should be dated near. */
   dueDate: string;
   amount?: number | null;
 };

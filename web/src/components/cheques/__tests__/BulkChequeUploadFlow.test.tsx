@@ -33,8 +33,8 @@ function makeCheque(over: Partial<Cheque> & { id: string; seqNo: number; posting
   };
 }
 
-// Two REGISTERED, PDC rows the flow may attach scans to (postingDate is the
-// row's own maturity — what a scanned cheque's date is matched against).
+// Two REGISTERED, PDC rows the flow may attach scans to. These have no
+// chequeDate, so matching falls back to postingDate.
 const rows: Cheque[] = [
   makeCheque({ id: "s1", seqNo: 1, postingDate: "2026-06-05", amount: 5000 }),
   makeCheque({ id: "s2", seqNo: 2, postingDate: "2026-07-05", amount: 5000 }),
@@ -120,6 +120,50 @@ describe("BulkChequeUploadFlow", () => {
     expect(lastCall[0]).toBe("/api/proxy/v1/leases/L1/cheques/bulk-attach");
     const body = JSON.parse(lastCall[1].body);
     expect(body.items.map((i: { chequeId: string }) => i.chequeId).sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("matches scans by each row's chequeDate, not the shared v2 postingDate (#62)", async () => {
+    // Accounting v2: every wizard row carries the same contract postingDate;
+    // only chequeDate distinguishes them.
+    const v2Rows: Cheque[] = [
+      makeCheque({ id: "r1", seqNo: 1, postingDate: "2026-04-20", chequeDate: "2026-05-01", amount: 5000 }),
+      makeCheque({ id: "r2", seqNo: 2, postingDate: "2026-04-20", chequeDate: "2026-08-01", amount: 5000 }),
+      makeCheque({ id: "r3", seqNo: 3, postingDate: "2026-04-20", chequeDate: "2026-11-01", amount: 5000 }),
+      makeCheque({ id: "r4", seqNo: 4, postingDate: "2026-04-20", chequeDate: "2027-02-01", amount: 5000 }),
+    ];
+    const scan = (n: string, date: string) => ({
+      ok: true,
+      json: async () => ({
+        image: { url: `u${n}`, blobPath: `b${n}`, uploadedAt: "2026-05-07T00:00:00Z" },
+        extracted: { chequeNumber: `C-${n}`, bankName: "ENBD", payerName: "R", chequeDate: date, amount: 5000, confidence: "HIGH" },
+        warnings: [],
+      }),
+    });
+    // Out of order on purpose: the first scan is the last cheque.
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(scan("4", "2027-02-01"))
+      .mockResolvedValueOnce(scan("2", "2026-08-01"));
+
+    render(<BulkChequeUploadFlow leaseId="L1" rows={v2Rows} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("d.png"), makeFile("b.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    const selects = Array.from(document.querySelectorAll("select")) as HTMLSelectElement[];
+    const byNumber = new Map(
+      Array.from(document.querySelectorAll("tbody tr")).map((tr, i) => [
+        (tr.querySelector("input") as HTMLInputElement).value,
+        selects[i].value,
+      ]),
+    );
+    expect(byNumber.get("C-4")).toBe("r4");
+    expect(byNumber.get("C-2")).toBe("r2");
+
+    // The picker labels rows by their cheque date, not the shared posting date.
+    const labels = Array.from(selects[0].options).map(o => o.textContent ?? "");
+    expect(labels.some(l => l.includes("20/04/2026") || l.includes("2026-04-20"))).toBe(false);
   });
 
   it("only offers REGISTERED PDC rows — a DEPOSITED row is not a bulk-attach target", async () => {
