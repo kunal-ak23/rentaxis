@@ -1040,6 +1040,25 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat(assessmentRows()).isEqualTo(before);
     }
 
+    /** Web review M5: an incident cannot predate the contract (a 1990 typo). */
+    @Test
+    void aPenaltyCannotBeRaisedForADateBeforeTheContract() {
+        PostLeaseResponse r = posted();
+        long before = assessmentRows();
+
+        assertThatThrownBy(() -> service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.OTHER, new BigDecimal("100"), "Noise",
+                CONTRACT_DATE.minusDays(1)), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("before the contract");
+        assertThat(assessmentRows()).isEqualTo(before);
+
+        // The contract date itself is fine: an advance cheque can bounce before move-in.
+        assertThat(service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.OTHER, new BigDecimal("100"), "Noise",
+                CONTRACT_DATE), null).incidentDate()).isEqualTo(CONTRACT_DATE);
+    }
+
     /** Leaving the date out is today, not "unknown". */
     @Test
     void aRaisedPenaltyWithNoDateIsDatedToday() {

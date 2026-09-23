@@ -220,6 +220,17 @@ describe("Give notice — particulars (#27)", () => {
         expect(screen.getByLabelText(en.Leasing.noticeNotes)).toHaveValue("Called on Monday");
     });
 
+    // Web review M7: the contract date is the floor (the lease here is dated 2026-01-01).
+    it("will not take a notice dated before the contract", async () => {
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-give-notice"));
+        const date = screen.getByLabelText(en.Leasing.noticeDate);
+        expect(date).toHaveAttribute("min", "2026-01-01");
+        fireEvent.change(date, { target: { value: "2025-12-31" } });
+
+        expect(screen.getByTestId("lease-give-notice-confirm")).toBeDisabled();
+    });
+
     it("will not take a move-out before the notice date", async () => {
         renderPage();
         fireEvent.click(await screen.findByTestId("lease-give-notice"));

@@ -166,6 +166,11 @@ public class PenaltyAssessmentService {
         if (incident.isAfter(LocalDate.now())) {
             throw new BusinessRuleViolationException("A penalty cannot be raised for a date in the future");
         }
+        LocalDate floor = lease.earliestEventDate();
+        if (floor != null && incident.isBefore(floor)) {
+            throw new BusinessRuleViolationException(
+                    "A penalty cannot be raised for a date before the contract (" + floor + ")");
+        }
         return dto(save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser));
     }
 

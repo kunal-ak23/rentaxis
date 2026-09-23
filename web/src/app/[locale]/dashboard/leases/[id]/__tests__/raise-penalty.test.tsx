@@ -135,6 +135,23 @@ describe("Raise penalty", () => {
         expect(api.propose).not.toHaveBeenCalled();
     });
 
+    // Web review M5: nothing before the contract date (2026-01-01 here). Enabled
+    // on the contract date first, so the disabled state below is the floor's doing.
+    it("refuses a date before the contract", async () => {
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("lease-raise-penalty"));
+        fireEvent.change(screen.getByLabelText(en.Leasing.amount), { target: { value: "100" } });
+        fireEvent.blur(screen.getByLabelText(en.Leasing.amount));
+        const date = screen.getByLabelText(en.Leasing.penaltyIncidentDate);
+        expect(date).toHaveAttribute("min", "2026-01-01");
+        fireEvent.change(date, { target: { value: "2026-01-01" } });
+        await waitFor(() => expect(screen.getByTestId("raise-penalty-confirm")).not.toBeDisabled());
+
+        fireEvent.change(date, { target: { value: "1990-01-01" } });
+        expect(screen.getByTestId("raise-penalty-confirm")).toBeDisabled();
+    });
+
     it("is finance's: not in a property manager's header", async () => {
         role = "PROPERTY_MANAGER";
         renderPage();

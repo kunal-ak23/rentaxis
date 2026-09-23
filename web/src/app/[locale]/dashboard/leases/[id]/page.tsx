@@ -469,6 +469,10 @@ export default function LeaseDetailPage() {
         );
     }
 
+    // The earliest day a notice or a penalty incident can carry: the contract
+    // date, or the start if earlier (Lease.earliestEventDate on the server).
+    const earliestEventDate = [lease.contractDate, lease.startDate]
+        .filter((d): d is string => !!d).sort()[0] ?? null;
     const drafting = DRAFTING.includes(lease.status);
     const posted = !!lease.postedAt;
     const readOnly = lease.status === "RENEWED";
@@ -810,7 +814,7 @@ export default function LeaseDetailPage() {
                     </div>
                 )}
 
-                {tab === "penalties" && <LeasePenaltiesTab key={penaltyKey} leaseId={leaseId} userRole={userRole} />}
+                {tab === "penalties" && <LeasePenaltiesTab key={penaltyKey} leaseId={leaseId} userRole={userRole} minDate={earliestEventDate} />}
 
                 {tab === "contract" && (
                     <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -1065,6 +1069,7 @@ export default function LeaseDetailPage() {
             <RaisePenaltyDialog
                 open={penaltyOpen}
                 leaseId={leaseId}
+                minDate={earliestEventDate}
                 onClose={() => setPenaltyOpen(false)}
                 onRaised={() => {
                     setPenaltyOpen(false);
@@ -1080,6 +1085,7 @@ export default function LeaseDetailPage() {
                 onClose={() => setNoticeOpen(false)}
                 onConfirm={handleGiveNotice}
                 error={noticeError}
+                minDate={earliestEventDate}
             />
 
             <ConfirmDialog

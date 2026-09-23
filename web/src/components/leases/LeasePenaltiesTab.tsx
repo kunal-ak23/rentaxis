@@ -20,9 +20,9 @@ import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
  * Waive without the shared queue's date/note dialogs.
  */
 
-type Props = { leaseId: string; userRole: UserRole | undefined };
+type Props = { leaseId: string; userRole: UserRole | undefined; minDate?: string | null };
 
-export default function LeasePenaltiesTab({ leaseId, userRole }: Props) {
+export default function LeasePenaltiesTab({ leaseId, userRole, minDate }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
 
@@ -50,6 +50,7 @@ export default function LeasePenaltiesTab({ leaseId, userRole }: Props) {
             <RaisePenaltyDialog
                 open={proposeOpen && canPropose}
                 leaseId={leaseId}
+                minDate={minDate}
                 onClose={() => setProposeOpen(false)}
                 onRaised={() => {
                     setProposeOpen(false);

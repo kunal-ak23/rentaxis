@@ -52,6 +52,7 @@ class LeaseNoticeDetailsIT extends AbstractPostgresIT {
     @Autowired LeasePostingService posting;
 
     private UUID leaseId;
+    private LocalDate contractDate;
 
     @BeforeEach
     void setUp() {
@@ -60,7 +61,8 @@ class LeaseNoticeDetailsIT extends AbstractPostgresIT {
                 .bootstrap()
                 .withLeaseServices(leaseService, generation, posting);
         LocalDate start = LocalDate.now().minusMonths(3).withDayOfMonth(1);
-        leaseId = f.postedLease(start.minusDays(10), start, start.plusYears(1).minusDays(1),
+        contractDate = start.minusDays(10);
+        leaseId = f.postedLease(contractDate, start, start.plusYears(1).minusDays(1),
                 List.of(line("RENT", "60000")), 4, "300100").lease().getId();
     }
 
@@ -113,6 +115,25 @@ class LeaseNoticeDetailsIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("future");
         assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /** Web review M7: no notice dated before the contract existed (a 1990 typo). */
+    @Test
+    void aNoticeDatedBeforeTheContractIsRefused() {
+        assertThatThrownBy(() -> leaseService.giveNotice(leaseId,
+                new GiveNoticeRequest(null, contractDate.minusDays(1), NoticeParty.RENTER, null), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("before the contract");
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /** Between signing and move-in is a real window: a renter can withdraw in it. */
+    @Test
+    void aNoticeOnTheContractDateIsAccepted() {
+        LeaseDTO after = leaseService.giveNotice(leaseId,
+                new GiveNoticeRequest(null, contractDate, NoticeParty.RENTER, null), null);
+
+        assertThat(after.getNoticeDate()).isEqualTo(contractDate);
     }
 
     @Test

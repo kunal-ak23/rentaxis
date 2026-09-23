@@ -28,9 +28,11 @@ type Props = {
     leaseId: string;
     onClose: () => void;
     onRaised: (p: PenaltyAssessment) => void;
+    /** Earliest allowed incident date: the contract date (the server refuses earlier). */
+    minDate?: string | null;
 };
 
-export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised }: Props) {
+export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, minDate }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
     const [reason, setReason] = useState<PenaltyReason>("OTHER");
@@ -51,7 +53,7 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised }:
     }, [open]);
 
     const today = businessTodayIso();
-    const invalid = amount <= 0 || !incidentDate || incidentDate > today;
+    const invalid = amount <= 0 || !incidentDate || incidentDate > today || (!!minDate && incidentDate < minDate);
 
     const submit = async () => {
         setBusy(true);
@@ -93,7 +95,7 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised }:
                 </div>
                 <div>
                     <label className={label} htmlFor="raise-penalty-date">{tl("penaltyIncidentDate")}</label>
-                    <input id="raise-penalty-date" type="date" max={today} className={field} value={incidentDate} onChange={e => setIncidentDate(e.target.value)} />
+                    <input id="raise-penalty-date" type="date" min={minDate || undefined} max={today} className={field} value={incidentDate} onChange={e => setIncidentDate(e.target.value)} />
                 </div>
                 <div className="sm:col-span-2">
                     <label className={label} htmlFor="raise-penalty-narration">{tl("narration")}</label>

@@ -120,6 +120,21 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "contract_date")
     private LocalDate contractDate;
 
+    /**
+     * The earliest day something can happen under this lease: the contract date,
+     * or the tenancy start if that is earlier or there is no contract date. The
+     * floor for a notice date and a penalty's incident date (web review M5/M7).
+     *
+     * <p>Not the start date alone: a contract is dated before the tenancy begins
+     * (the example above posts in March for June), and an advance cheque can
+     * bounce, or a renter withdraw, in between.
+     */
+    public LocalDate earliestEventDate() {
+        if (contractDate == null) return startDate;
+        if (startDate == null) return contractDate;
+        return contractDate.isBefore(startDate) ? contractDate : startDate;
+    }
+
     /** Derived: inclusive day count of the term. The denominator of per-day rent recognition. */
     @Column(name = "total_days")
     private Integer totalDays;

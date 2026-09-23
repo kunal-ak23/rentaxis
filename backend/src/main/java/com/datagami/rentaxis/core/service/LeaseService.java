@@ -1148,6 +1148,11 @@ public class LeaseService {
         if (noticeDate.isAfter(today)) {
             throw new BusinessRuleViolationException("The notice date cannot be in the future.");
         }
+        LocalDate floor = lease.earliestEventDate();
+        if (floor != null && noticeDate.isBefore(floor)) {
+            throw new BusinessRuleViolationException(
+                    "The notice date cannot be before the contract (" + floor + ").");
+        }
         com.datagami.rentaxis.domain.entity.enums.NoticeParty party = request.givenBy() != null
                 ? request.givenBy() : com.datagami.rentaxis.domain.entity.enums.NoticeParty.RENTER;
         LocalDate moveOut = request.intendedMoveOutDate();
