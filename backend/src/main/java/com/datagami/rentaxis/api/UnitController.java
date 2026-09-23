@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.UnitRequest;
 import com.datagami.rentaxis.core.service.UnitService;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
@@ -30,8 +31,8 @@ public class UnitController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<Unit> createUnit(@RequestBody Unit unit) {
-        return ResponseEntity.ok(service.createUnit(unit));
+    public ResponseEntity<Unit> createUnit(@RequestBody UnitRequest request) {
+        return ResponseEntity.ok(service.createUnit(request));
     }
 
     @GetMapping
