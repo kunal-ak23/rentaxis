@@ -18,6 +18,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
+import static com.datagami.rentaxis.api.CallerIdentity.callerRole;
+
 @RestController
 @RequestMapping("/api/v1/meetings")
 @RequiredArgsConstructor
@@ -27,9 +30,8 @@ public class MeetingController {
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MeetingDTO> createMeeting(@Valid @RequestBody CreateMeetingDTO dto,
-                                                     @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(meetingService.createMeeting(dto, userId));
+    public ResponseEntity<MeetingDTO> createMeeting(@Valid @RequestBody CreateMeetingDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(meetingService.createMeeting(dto, callerId()));
     }
 
     @GetMapping
@@ -44,49 +46,41 @@ public class MeetingController {
     @GetMapping("/my")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<MeetingDTO>> listMyMeetings(
-            @RequestHeader("X-User-Id") UUID userId,
             @RequestParam(defaultValue = "requester") String perspective,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(meetingService.listMyMeetings(userId, perspective,
+        return ResponseEntity.ok(meetingService.listMyMeetings(callerId(), perspective,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "slotStart"))));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MeetingDTO> getMeeting(@PathVariable UUID id,
-                                                  @RequestHeader("X-User-Id") UUID userId,
-                                                  @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(meetingService.getMeeting(id, userId, role));
+    public ResponseEntity<MeetingDTO> getMeeting(@PathVariable UUID id) {
+        return ResponseEntity.ok(meetingService.getMeeting(id, callerId(), callerRole()));
     }
 
     @PutMapping("/{id}/approve")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<MeetingDTO> approveMeeting(@PathVariable UUID id,
-                                                      @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(meetingService.approveMeeting(id, userId));
+    public ResponseEntity<MeetingDTO> approveMeeting(@PathVariable UUID id) {
+        return ResponseEntity.ok(meetingService.approveMeeting(id, callerId()));
     }
 
     @PutMapping("/{id}/cancel")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MeetingDTO> cancelMeeting(@PathVariable UUID id,
-                                                     @RequestHeader("X-User-Id") UUID userId,
-                                                     @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(meetingService.cancelMeeting(id, userId, role));
+    public ResponseEntity<MeetingDTO> cancelMeeting(@PathVariable UUID id) {
+        return ResponseEntity.ok(meetingService.cancelMeeting(id, callerId(), callerRole()));
     }
 
     @PutMapping("/{id}/complete")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<MeetingDTO> completeMeeting(@PathVariable UUID id,
-                                                       @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(meetingService.completeMeeting(id, userId));
+    public ResponseEntity<MeetingDTO> completeMeeting(@PathVariable UUID id) {
+        return ResponseEntity.ok(meetingService.completeMeeting(id, callerId()));
     }
 
     @PutMapping("/{id}/no-show")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<MeetingDTO> noShowMeeting(@PathVariable UUID id,
-                                                     @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(meetingService.noShowMeeting(id, userId));
+    public ResponseEntity<MeetingDTO> noShowMeeting(@PathVariable UUID id) {
+        return ResponseEntity.ok(meetingService.noShowMeeting(id, callerId()));
     }
 
     @GetMapping("/default-host")

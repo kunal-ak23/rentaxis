@@ -37,14 +37,20 @@ class ApiSecurityFilterTest {
     private final AuthTokenService enabledTokens = new AuthTokenService(TOKEN_SECRET);
     private final AuthTokenService disabledTokens = new AuthTokenService("");
 
+    /**
+     * Every token's row is current. Revocation against real rows is pinned by
+     * {@code BearerTokenRevocationIT}; these tests are about routing.
+     */
+    private static final BearerTokenStateCheck ALWAYS_CURRENT = (identity, tenant) -> null;
+
     /** Today's production config: no token secret, no proxy secret, legacy allowed. */
     private ApiSecurityFilter legacyOnlyFilter() {
-        return new ApiSecurityFilter(disabledTokens, "", "allow");
+        return new ApiSecurityFilter(disabledTokens, ALWAYS_CURRENT, "", "allow");
     }
 
     /** Phase-1 activated config: token secret set, proxy gate set, legacy still allowed. */
     private ApiSecurityFilter activatedFilter() {
-        return new ApiSecurityFilter(enabledTokens, PROXY_SECRET, "allow");
+        return new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, PROXY_SECRET, "allow");
     }
 
     /** Captures what the downstream servlet would observe, before the filter's cleanup. */
@@ -362,6 +368,60 @@ class ApiSecurityFilterTest {
     // ------------------------------------------------------------------
 
     @Test
+    void aRevokedBearerIs401AndNeverReachesTheChain() throws Exception {
+        UUID user = UUID.randomUUID();
+        UUID home = UUID.randomUUID();
+        String token = enabledTokens.issue(user, UserRole.TENANT_ADMIN, home, List.of(home), 3);
+        UUID[] askedAbout = new UUID[1];
+        int[] askedVersion = new int[1];
+        BearerTokenStateCheck revoked = (identity, tenant) -> {
+            askedAbout[0] = tenant;
+            askedVersion[0] = identity.tokenVersion();
+            return "token has been revoked";
+        };
+
+        MockHttpServletRequest req = request("/api/v1/properties");
+        req.addHeader("Authorization", "Bearer " + token);
+        // Legacy headers alongside: a revoked token must not fall back to them.
+        req.addHeader("X-User-Id", user.toString());
+        req.addHeader("X-User-Role", "TENANT_ADMIN");
+        req.addHeader("X-User-Tenant-Id", home.toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        new ApiSecurityFilter(enabledTokens, revoked, PROXY_SECRET, "allow").doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(chain.invoked).isFalse();
+        assertThat(askedAbout[0]).as("the check is asked about the tenant the request acts in").isEqualTo(home);
+        assertThat(askedVersion[0]).isEqualTo(3);
+        assertThat(TenantContextHolder.getTenantId()).isNull();
+    }
+
+    @Test
+    void aSkippedPublicRouteNeitherInheritsNorLeavesATenant() throws Exception {
+        // A tenant left on this pooled thread by an earlier request (audit P1-1).
+        UUID stale = UUID.randomUUID();
+        TenantContextHolder.setTenantId(stale);
+
+        MockHttpServletRequest req = request("/api/v1/public/renewal-intent");
+        req.addHeader("X-Tenant-ID", UUID.randomUUID().toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        FilterChain throwingChain = (rq, rs) -> {
+            assertThat(TenantContextHolder.getTenantId()).as("the request starts clean").isNull();
+            // What the old TenantInterceptor did, followed by a handler that throws.
+            TenantContextHolder.setTenantId(UUID.randomUUID());
+            throw new IllegalStateException("handler blew up");
+        };
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> activatedFilter().doFilter(req, res, throwingChain))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(TenantContextHolder.getTenantId()).as("and ends clean, even when it throws").isNull();
+    }
+
+    @Test
     void validBearerTakesIdentityFromClaimsNotFromHeaders() throws Exception {
         UUID realUser = UUID.randomUUID();
         UUID home = UUID.randomUUID();
@@ -599,7 +659,7 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
         assertThat(chain.invoked).isFalse();
@@ -616,7 +676,7 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
 
         assertThat(chain.invoked).isTrue();
         assertThat(chain.auth.getPrincipal()).isEqualTo(user.toString());
@@ -628,7 +688,7 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
 
         assertThat(chain.invoked).isTrue();
     }

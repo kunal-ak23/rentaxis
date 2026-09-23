@@ -63,7 +63,9 @@ class MaintenanceTicketServiceTest {
                 ticketRepository, replyRepository, attachmentRepository,
                 propertyRepository, unitRepository, leaseRepository,
                 userRepository, propertyAssignmentRepository, historyRepository,
-                landlordOrgRepository, notificationService, events);
+                landlordOrgRepository, notificationService, events,
+                mock(com.datagami.rentaxis.core.service.ledger.EntryNumberService.class),
+                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
     }

@@ -39,7 +39,7 @@ public class FirebaseAuthController {
         User guard = firebaseGuardAuthService.authenticate(request.idToken());
         List<UUID> memberTenantIds = userService.getUserTenantIds(guard.getId());
         String token = authTokenService.issue(
-                guard.getId(), guard.getRole(), guard.getTenantId(), memberTenantIds);
+                guard.getId(), guard.getRole(), guard.getTenantId(), memberTenantIds, guard.getTokenVersion());
         return ResponseEntity.ok(new AuthController.AuthResponse(
                 guard.getId().toString(),
                 guard.getEmail(),

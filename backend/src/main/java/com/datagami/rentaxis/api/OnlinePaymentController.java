@@ -8,7 +8,6 @@ import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentTotalsDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
 import com.datagami.rentaxis.core.service.OnlinePaymentService;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,9 +37,9 @@ public class OnlinePaymentController {
 
     @GetMapping("/my-payments")
     @PreAuthorize("hasRole('RENTER')")
-    public ResponseEntity<List<RenterChequeDTO>> getMyPayments(HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID userId = UUID.fromString(userIdStr);
+    public ResponseEntity<List<RenterChequeDTO>> getMyPayments() {
+        // The renter is the verified principal, never X-User-Id (PR #342).
+        UUID userId = CallerIdentity.callerId();
         return ResponseEntity.ok(onlinePaymentService.getMyPayments(userId));
     }
 

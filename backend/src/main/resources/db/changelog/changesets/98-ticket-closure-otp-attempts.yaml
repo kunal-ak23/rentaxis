@@ -1,0 +1,18 @@
+databaseChangeLog:
+  # PR #342 review I2: PUT /tickets/{id}/close accepted unlimited guesses at a
+  # six-digit closure OTP. The service now counts wrong ones and discards the
+  # code at the limit, so a new one has to be issued to the renter. Constant
+  # default: metadata-only on Postgres 11+, no table rewrite.
+  - changeSet:
+      id: 98-ticket-closure-otp-attempts
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: closure_otp_failed_attempts
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false

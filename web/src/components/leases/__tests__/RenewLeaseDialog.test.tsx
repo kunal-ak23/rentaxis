@@ -80,3 +80,45 @@ describe("RenewLeaseDialog deposit carry-forward (I2)", () => {
         expect(body.lines.map((l: { chargeTypeId: string }) => l.chargeTypeId)).toEqual(["ct-rent", "ct-dep"]);
     });
 });
+
+/**
+ * #23: "copy lines" carries one-off charges (an Admin Fee) into the new term.
+ * What is copied is a pending product decision; the dialog must at least say
+ * so, by name and amount, while copying is on.
+ */
+describe("RenewLeaseDialog copied one-off charges (#23)", () => {
+    const adminFee: LeaseLine = {
+        ...rent, id: "line-3", seqNo: 3, chargeTypeId: "ct-admin", chargeTypeCode: "ADMIN_FEE",
+        chargeTypeName: "Admin Fee", behaviour: "FEE", grossAmount: 1500, netAmount: 1500,
+        periodStart: null, periodEnd: null,
+    };
+    const parkingByAddendum: LeaseLine = { ...adminFee, id: "line-4", chargeTypeName: "Parking", addendumId: "add-1" };
+
+    function renderWith(lines: LeaseLine[]) {
+        return render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <RenewLeaseDialog open lease={{ ...LEASE, lines } as LeaseDetail} chargeTypes={CHARGE_TYPES}
+                    onClose={() => {}} onRenewed={() => {}} />
+            </NextIntlClientProvider>,
+        );
+    }
+
+    it("names the one-off charges that will be copied", () => {
+        renderWith([rent, deposit, adminFee, parkingByAddendum]);
+
+        const note = screen.getByTestId("renew-copied-charges");
+        expect(note).toHaveTextContent("This charge will be copied to the new term: Admin Fee 1,500.00");
+        // An addendum line is not copied, so it is not listed.
+        expect(note).not.toHaveTextContent("Parking");
+    });
+
+    it("goes away once copy lines is unticked, and never shows for rent and deposit alone", () => {
+        renderWith([rent, deposit, adminFee]);
+        fireEvent.click(screen.getByTestId("renew-copy-lines"));
+        expect(screen.queryByTestId("renew-copied-charges")).toBeNull();
+
+        cleanup();
+        renderWith([rent, deposit]);
+        expect(screen.queryByTestId("renew-copied-charges")).toBeNull();
+    });
+});

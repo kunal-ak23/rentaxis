@@ -42,12 +42,25 @@ public class EntryNumberService {
     @Transactional(propagation = Propagation.REQUIRED)
     public String nextDocumentNumber(String series, LocalDate date) {
         UUID tenantId = TenantContextHolder.getTenantId();
-        int fy = fiscal.fiscalYearOf(date);
-        JournalEntrySequence seq = repo.lock(tenantId, series, fy).orElseGet(() -> create(tenantId, series, fy));
+        return nextNumberForYear(tenantId, series, fiscal.fiscalYearOf(date));
+    }
+
+    /**
+     * The same counter keyed by a year the caller has already chosen, for a series
+     * that is not a ledger document and so has no business following the fiscal
+     * year — a maintenance ticket's {@code TKT-yy/n} runs by calendar year (#20).
+     * The tenant is explicit because a ticket's tenant is its property's.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String nextNumberForYear(UUID tenantId, String series, int year) {
+        if (tenantId == null) {
+            throw new IllegalStateException("A document number needs a tenant");
+        }
+        JournalEntrySequence seq = repo.lock(tenantId, series, year).orElseGet(() -> create(tenantId, series, year));
         long value = seq.getNextValue();
         seq.setNextValue(value + 1);
         repo.save(seq);
-        return series + "-" + String.format(Locale.ROOT, "%02d", fy % 100) + "/" + value;
+        return series + "-" + String.format(Locale.ROOT, "%02d", year % 100) + "/" + value;
     }
 
     /**

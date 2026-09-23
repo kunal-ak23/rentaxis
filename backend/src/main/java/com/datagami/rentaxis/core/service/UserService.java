@@ -11,6 +11,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
@@ -37,13 +38,15 @@ public class UserService {
     private final PropertyRepository propertyRepository;
     private final ApplicationEventPublisher events;
     private final UserReferenceReleaser referenceReleaser;
+    private final TokenRevocationService tokenRevocation;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
             UserTenantMembershipRepository tenantMembershipRepository,
             PropertyRepository propertyRepository,
             ApplicationEventPublisher events,
-            UserReferenceReleaser referenceReleaser) {
+            UserReferenceReleaser referenceReleaser,
+            TokenRevocationService tokenRevocation) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
@@ -51,6 +54,7 @@ public class UserService {
         this.propertyRepository = propertyRepository;
         this.events = events;
         this.referenceReleaser = referenceReleaser;
+        this.tokenRevocation = tokenRevocation;
     }
 
     /**
@@ -87,8 +91,7 @@ public class UserService {
      * next role — each still needs its own visit:
      * {@code UserController.privilegeRank} (exhaustive, will not compile — safe),
      * {@code ApiSecurityFilter}'s tenant-access chain (if/else — silent),
-     * {@code UserService.createUser}'s {@code issuesInviteToken} (if/else —
-     * silent; a guard has no email, so it is correctly false for SECURITY_GUARD),
+     * {@code UserService.issuesInviteToken} (exhaustive, will not compile — safe),
      * and the {@code @PreAuthorize} literals across the controllers.
      */
     private static boolean getsTenantMembership(UserRole role) {
@@ -162,6 +165,96 @@ public class UserService {
         return java.util.Base64.getEncoder().encodeToString(buf);
     }
 
+    private static final java.time.Duration INVITE_VALIDITY = java.time.Duration.ofDays(7);
+
+    /**
+     * Whether a newly created user of this role is onboarded by an emailed
+     * set-password link ({@code USER_INVITED}) rather than a password someone
+     * chose for them.
+     *
+     * <p>An exhaustive switch for the reason {@link #getsTenantMembership} is one:
+     * the next role must not compile until it has an answer here.
+     * <ul>
+     *   <li>RENTER, PROPERTY_MANAGER, TENANT_USER — always, as before.</li>
+     *   <li>TENANT_ADMIN, ACCOUNTANT (#2) — whenever nobody chose a password for
+     *       them, which is how the admin users form now creates them. A password
+     *       that <i>was</i> supplied is the account holder's own on the one path
+     *       that sends one on purpose, self-registration
+     *       ({@code AuthController.register}, a TENANT_ADMIN), and emailing that
+     *       person a "set your password" link a second after they set it would
+     *       be noise. API callers that still send a password (the demo seeder)
+     *       keep working unchanged.</li>
+     *   <li>SECURITY_GUARD — never: a guard has no email and signs in by phone OTP.</li>
+     *   <li>SUPER_ADMIN — never; the password is required. Not extended because
+     *       it is not trivially safe: a SUPER_ADMIN has no tenant, and
+     *       {@code USER_INVITED} is dispatched per tenant (the tenant's
+     *       EMAIL_NOTIFICATIONS feature gate, branding and the outbox row's
+     *       tenant), so the invite would have nowhere well-defined to go.</li>
+     * </ul>
+     */
+    static boolean issuesInviteToken(UserRole role, boolean passwordSupplied) {
+        return switch (role) {
+            case RENTER, PROPERTY_MANAGER, TENANT_USER -> true;
+            case TENANT_ADMIN, ACCOUNTANT -> !passwordSupplied;
+            case SUPER_ADMIN, SECURITY_GUARD -> false;
+        };
+    }
+
+    private void publishInvite(User user, String dedupKey) {
+        String setPasswordUrl = "/auth/set-password?token=" + user.getInviteToken();
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.USER_INVITED,
+                user.getTenantId(),
+                new UserInvitedPayload(user.getId(), user.getName(), setPasswordUrl, user.getInviteToken()),
+                dedupKey));
+    }
+
+    /**
+     * Re-issues a user's set-password invite (#7) and emails it again.
+     *
+     * <p>Only for an active user whose invite is still outstanding
+     * ({@link User#hasPendingInvite}): unused, expired or not, and never signed
+     * in. Redeeming the invite, a password sign-in, {@code /me/password} and an
+     * admin password edit all clear the token, and changeset 97 cleared it for
+     * users who had signed in before that. The old token is overwritten, so the
+     * previous link stops working the moment this commits.
+     *
+     * <p>Each resend needs its own dedup key: the outbox drops a second row with
+     * the same key, and {@code USER_INVITED:<id>} is already taken by the first
+     * invite, which would have made every resend a silent no-op. The key carries
+     * a random nonce and nothing derived from the token: dedup keys are stored in
+     * {@code email_outbox} and written to logs (PR #342 review I4).
+     *
+     * <p>Authorization (caller's tenant and role rank) is the controller's job,
+     * the same as every other {@code /api/admin/users} mutation.
+     */
+    @Transactional
+    public User resendInvite(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("User not found"));
+        // Activated means signed in at least once, or a password was set by a path
+        // that clears the token (invite redemption, /me/password, an admin edit).
+        // Re-inviting them would mail a live set-password link to an account that
+        // already has a password: an unsolicited reset (PR #342 review I1).
+        if (!user.hasPendingInvite()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has no outstanding invite: they have already set a password.");
+        }
+        if (user.getStatus() != com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user is inactive; reactivate them before re-sending the invite.");
+        }
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has no email address to send an invite to.");
+        }
+        user.setInviteToken(generateInviteToken());
+        user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
+        User saved = userRepository.saveAndFlush(user);
+        publishInvite(saved, "USER_INVITED:" + saved.getId() + ":resend:" + UUID.randomUUID());
+        return saved;
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -209,19 +302,31 @@ public class UserService {
         // A guard's rawPassword is ignored, whatever the caller passed — see
         // generateUnusableGuardSecret. This also makes a null rawPassword safe for
         // the one role that has no use for one.
-        user.setPasswordHash(passwordEncoder.encode(
-                role == UserRole.SECURITY_GUARD ? generateUnusableGuardSecret() : rawPassword));
+        boolean passwordSupplied = rawPassword != null && !rawPassword.isBlank();
+        boolean issuesInviteToken = issuesInviteToken(role, passwordSupplied);
+        String secret;
+        if (role == UserRole.SECURITY_GUARD) {
+            secret = generateUnusableGuardSecret();
+        } else if (passwordSupplied) {
+            secret = rawPassword;
+        } else if (issuesInviteToken) {
+            // #7: nobody invents a password for an invited user. The hash is of
+            // random bytes nobody ever sees; the invite link is how the account
+            // holder sets the first real one. This is what removed the plaintext
+            // password the renter form used to show and copy.
+            secret = generateUnusableGuardSecret();
+        } else {
+            throw new IllegalArgumentException("A password is required for the " + role + " role.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(secret));
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(normalizedPhone);
         user.setTenantId(tenantUuid);
 
-        boolean issuesInviteToken = role == UserRole.RENTER
-                || role == UserRole.PROPERTY_MANAGER
-                || role == UserRole.TENANT_USER;
         if (issuesInviteToken) {
             user.setInviteToken(generateInviteToken());
-            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
+            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(INVITE_VALIDITY));
         }
 
         // The existsBy checks above are happy-path message-quality guards, but
@@ -260,14 +365,9 @@ public class UserService {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
-        // Emit USER_INVITED for any role we issued an invite token for (RENTER, PROPERTY_MANAGER, TENANT_USER)
+        // Emit USER_INVITED for any role we issued an invite token for — see issuesInviteToken
         if (issuesInviteToken) {
-            String setPasswordUrl = "/auth/set-password?token=" + saved.getInviteToken();
-            events.publishEvent(new EmailEvent(this,
-                    EmailEventType.USER_INVITED,
-                    saved.getTenantId(),
-                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, saved.getInviteToken()),
-                    "USER_INVITED:" + saved.getId()));
+            publishInvite(saved, "USER_INVITED:" + saved.getId());
         }
 
         // Emit TENANT_ADMIN_ADDED inside the same @Transactional boundary so that
@@ -330,6 +430,17 @@ public class UserService {
         });
     }
 
+    /**
+     * A successful password sign-in proves the holder has a working password, so
+     * any outstanding invite link is retired (PR #342 review I1). A targeted
+     * UPDATE rather than a save of the caller's detached entity, for the reason
+     * {@link #markWelcomed} gives.
+     */
+    @Transactional
+    public void retireInviteOnPasswordLogin(UUID userId) {
+        userRepository.clearInviteToken(userId);
+    }
+
     public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }
 
     /**
@@ -358,6 +469,8 @@ public class UserService {
         if (updated == 0) {
             return InviteResult.ALREADY_USED;
         }
+        // A new password ends every session opened with the old one (audit P1-2).
+        tokenRevocation.revokeAllTokens(probe.getId());
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
@@ -372,17 +485,27 @@ public class UserService {
      * Encodes and persists the new password, then publishes PASSWORD_CHANGED within
      * a single transaction so the entity write and event publish share the same
      * commit boundary (TransactionalEventListener fires on commit).
+     *
+     * @return the user's new token version, for minting the caller a replacement
+     *         token (every existing one is revoked by this change)
      */
     @Transactional
-    public void changePassword(User user, String newRawPassword) {
+    public int changePassword(User user, String newRawPassword) {
         user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        // The holder chose a password; an outstanding invite link must not
+        // outlive that (PR #342 review I1).
+        user.clearInvite();
         userRepository.save(user);
+        // Ends every other session, including a thief's (audit P1-2). The caller
+        // gets a fresh token from AuthController so their own session survives.
+        tokenRevocation.revokeAllTokens(user.getId());
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
                 user.getTenantId(),
                 new PasswordChangedPayload(user.getId(), user.getName(),
                         Instant.now().toString(), null),
                 "PASSWORD_CHANGED:" + user.getId()));
+        return tokenRevocation.currentTokenVersion(user.getId());
     }
 
     /**
@@ -458,6 +581,7 @@ public class UserService {
         }
 
         UserRole previousRole = user.getRole();
+        UUID previousTenantId = user.getTenantId();
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -468,6 +592,9 @@ public class UserService {
 
         if (rawPassword != null && !rawPassword.isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            // A set password retires the invite: otherwise the old link, or a
+            // resend, could replace it (PR #342 review I1).
+            user.clearInvite();
         }
 
         // Same translation as createUser, and saveAndFlush for the same reason —
@@ -495,6 +622,15 @@ public class UserService {
         // SECURITY_GUARD omission.
         if (newTenantId != null && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), newTenantId);
+        }
+
+        // A token carries the role and tenants it was minted with; once any of
+        // them, or the password, changes, the old tokens describe somebody
+        // this user no longer is (audit P1-2: a demoted admin kept admin for 30
+        // days and could mint a new admin with it).
+        boolean passwordSet = rawPassword != null && !rawPassword.isBlank();
+        if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordSet) {
+            tokenRevocation.revokeAllTokens(saved.getId());
         }
 
         // Emit STAFF_ROLE_CHANGED when role transitions to a different value
@@ -528,6 +664,9 @@ public class UserService {
         tenantMembershipRepository.deleteByUserId(id);
         propertyAssignmentRepository.deleteByUserId(id);
         userRepository.deleteById(id);
+        // No row, no valid token (the filter refuses a missing user); drop the
+        // cached state so that holds from the next request, not in 30 s.
+        tokenRevocation.evictUserAfterCommit(id);
     }
 
     // --- Property Assignment Methods ---
@@ -581,6 +720,8 @@ public class UserService {
     @Transactional
     public void removeTenantMembership(UUID userId, UUID tenantId) {
         tenantMembershipRepository.deleteByUserIdAndTenantId(userId, tenantId);
+        // The token's "tids" claim still lists the removed tenant.
+        tokenRevocation.revokeAllTokens(userId);
     }
 
     public List<UUID> getUserTenantIds(UUID userId) {
@@ -600,13 +741,10 @@ public class UserService {
      * needs a session that outlives the call. It has one over HTTP today and
      * nowhere else.
      *
-     * <p><b>This does not make the endpoint above it safe.</b>
-     * {@code GET /api/v1/properties/{id}/managers} reaches here without checking
-     * that the property belongs to the caller's tenant, so a foreign property id
-     * still selects foreign assignment rows; what this annotation guarantees is
-     * only that the users those rows point at are not returned. The missing check
-     * belongs in {@code PropertyService} and is called out in the hotfix report
-     * rather than widened into here.
+     * <p>This returns entities; callers that answer HTTP map them to
+     * {@code ManagerSummaryDTO} (the entity carries the invite token), and
+     * {@code PropertyService.getPropertyManagers} checks the property is one the
+     * caller may see before it gets here (PR #342 review C2).
      */
     @Transactional(readOnly = true)
     public List<User> getAssignedManagers(UUID propertyId) {

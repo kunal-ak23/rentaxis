@@ -18,11 +18,11 @@ import java.util.UUID;
  * chart-of-accounts under {@code /api/v1/accounts}.
  *
  * <p>Lives under {@code /api/v1} — behind {@code ApiSecurityFilter} and
- * {@code anyRequest().authenticated()} — rather than beside the profile
- * endpoints on {@code /api/auth/me}, which are on the filter's skip list and
- * read identity from a raw header. A deletion endpoint must only ever act on
- * the principal the filter verified, so it is read from the SecurityContext
- * and never from {@code X-User-Id}.
+ * {@code anyRequest().authenticated()}. (The profile endpoints on
+ * {@code /api/auth/me} used to be on the filter's skip list and read identity
+ * from a raw header; since PR #342 they too go through the filter.) A deletion
+ * endpoint must only ever act on the principal the filter verified, so it is
+ * read from the SecurityContext and never from {@code X-User-Id}.
  */
 @RestController
 @RequestMapping("/api/v1/account")

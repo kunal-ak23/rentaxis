@@ -1,0 +1,33 @@
+databaseChangeLog:
+  # PR #342 review (backend M11): changeset 96 left on_behalf_of_renter_id
+  # without a foreign key. ON DELETE SET NULL keeps the column honest without
+  # getting in anyone's way: deleting a renter (tenant purge, or a user delete
+  # cascading through renters.user_id, changeset 57) clears the link and never
+  # blocks. The ticket keeps the renter's name in the on_behalf_of text, which
+  # is what a cleared id already reads as. Checked against LandlordOrgService's
+  # per-table purge passes, which a SET NULL cannot stall, and the account
+  # deletion path, which keeps the renter row.
+  #
+  # Ids that no longer resolve are cleared first, or the constraint would not
+  # validate.
+  - changeSet:
+      id: 99-ticket-on-behalf-renter-fk
+      author: rentaxis-system
+      changes:
+        - sql:
+            sql: |
+              UPDATE maintenance_tickets t
+              SET on_behalf_of_renter_id = NULL
+              WHERE on_behalf_of_renter_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM renters r WHERE r.id = t.on_behalf_of_renter_id);
+        - addForeignKeyConstraint:
+            baseTableName: maintenance_tickets
+            baseColumnNames: on_behalf_of_renter_id
+            referencedTableName: renters
+            referencedColumnNames: id
+            constraintName: fk_tickets_on_behalf_of_renter
+            onDelete: SET NULL
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: maintenance_tickets
+            constraintName: fk_tickets_on_behalf_of_renter

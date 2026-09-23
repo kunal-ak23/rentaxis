@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # PR #342 re-review I2: the per-code counter (98) resets whenever a closure
+  # OTP is re-issued, so staff could guess five, re-issue, guess five again,
+  # without end. This one counts every wrong OTP a ticket has ever received and
+  # never resets; at the limit OTP closure is locked for that ticket for good.
+  # Constant default: metadata-only on Postgres 11+, no table rewrite.
+  - changeSet:
+      id: 100-ticket-closure-otp-total-failures
+      author: rentaxis-system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: maintenance_tickets
+                columnName: closure_otp_total_failed_attempts
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: closure_otp_total_failed_attempts
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: maintenance_tickets
+            columnName: closure_otp_total_failed_attempts

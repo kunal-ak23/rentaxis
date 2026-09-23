@@ -120,6 +120,21 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "contract_date")
     private LocalDate contractDate;
 
+    /**
+     * The earliest day something can happen under this lease: the contract date,
+     * or the tenancy start if that is earlier or there is no contract date. The
+     * floor for a notice date and a penalty's incident date (web review M5/M7).
+     *
+     * <p>Not the start date alone: a contract is dated before the tenancy begins
+     * (the example above posts in March for June), and an advance cheque can
+     * bounce, or a renter withdraw, in between.
+     */
+    public LocalDate earliestEventDate() {
+        if (contractDate == null) return startDate;
+        if (startDate == null) return contractDate;
+        return contractDate.isBefore(startDate) ? contractDate : startDate;
+    }
+
     /** Derived: inclusive day count of the term. The denominator of per-day rent recognition. */
     @Column(name = "total_days")
     private Integer totalDays;
@@ -202,6 +217,19 @@ public class Lease extends BaseTenantEntity {
      */
     @Column(name = "terminated_on")
     private LocalDate terminatedOn;
+
+    /** The day notice was given (#27); null unless the lease went through NOTICE_GIVEN after changeset 94. */
+    @Column(name = "notice_date")
+    private LocalDate noticeDate;
+
+    /** Who gave it: the renter leaving, or the landlord serving notice (#27). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notice_given_by", length = 20)
+    private com.datagami.rentaxis.domain.entity.enums.NoticeParty noticeGivenBy;
+
+    /** The move-out date the notice names, when it names one (#27). */
+    @Column(name = "intended_move_out_date")
+    private LocalDate intendedMoveOutDate;
 
     /** The {@code TCR} that reversed the unearned rent, or null when nothing was unearned. */
     @Column(name = "termination_journal_id")

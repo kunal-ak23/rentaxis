@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # Security audit 2026-09-24 P1-2: bearer tokens could not be revoked. Every
+  # token now carries the user's token_version ("tv" claim) and ApiSecurityFilter
+  # refuses a token whose version is not the row's current one. Bumped on
+  # password change/set, role change, tenant move, membership removal and
+  # deletion. Existing users start at 0.
+  - changeSet:
+      id: 103-user-token-version
+      author: rentaxis-system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: users
+                columnName: token_version
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: token_version
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: users
+            columnName: token_version

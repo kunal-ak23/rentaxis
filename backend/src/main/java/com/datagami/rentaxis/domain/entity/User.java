@@ -49,9 +49,29 @@ public class User extends BaseTenantEntity {
     @Column(name = "welcomed_at")
     private Instant welcomedAt;
 
+    /**
+     * Revocation counter for bearer tokens (security audit P1-2). Every token
+     * carries the value it was minted with ({@code tv} claim) and
+     * {@code ApiSecurityFilter} refuses one that no longer matches.
+     *
+     * <p>{@code updatable = false} on purpose: the only writer is
+     * {@code UserRepository.bumpTokenVersion}, an atomic increment. Without it a
+     * later flush of a User loaded before the bump (Hibernate updates every
+     * column) would write the old value back and silently un-revoke the tokens.
+     */
+    @JsonIgnore
+    @Column(name = "token_version", nullable = false, updatable = false)
+    private int tokenVersion;
+
+    /**
+     * The set-password invite secret: whoever holds it can choose this account's
+     * password. Never serialised (PR #342 review C2); no response may carry it.
+     */
+    @JsonIgnore
     @Column(name = "invite_token", length = 64, unique = true)
     private String inviteToken;
 
+    @JsonIgnore
     @Column(name = "invite_token_expires_at")
     private Instant inviteTokenExpiresAt;
 
@@ -73,6 +93,25 @@ public class User extends BaseTenantEntity {
     @JsonIgnore
     @Column(name = "apple_refresh_token", columnDefinition = "text")
     private String appleRefreshToken;
+
+    /**
+     * Whether this account is still waiting on its set-password invite: a token
+     * is outstanding and the holder has never signed in (PR #342 review I1).
+     *
+     * <p>{@code welcomedAt} is set on first sign-in, so a user who got in with a
+     * password they were given is activated even if a legacy token is still on
+     * the row. Offering "Resend invite" to them would mail an unsolicited
+     * set-password link to an account that already has one.
+     */
+    public boolean hasPendingInvite() {
+        return inviteToken != null && welcomedAt == null;
+    }
+
+    /** Drops the invite secret: the account has a password its holder knows. */
+    public void clearInvite() {
+        this.inviteToken = null;
+        this.inviteTokenExpiresAt = null;
+    }
 
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null

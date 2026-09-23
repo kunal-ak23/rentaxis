@@ -17,6 +17,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -203,6 +206,9 @@ public class AuthController {
         if (authed.getWelcomedAt() == null) {
             userService.markWelcomed(authed.getId());
         }
+        if (authed.getInviteToken() != null) {
+            userService.retireInviteOnPasswordLogin(authed.getId());
+        }
 
         return ResponseEntity.ok(toAuthResponse(authed));
     }
@@ -217,7 +223,7 @@ public class AuthController {
     private AuthResponse toAuthResponse(User user) {
         List<UUID> memberTenantIds = userService.getUserTenantIds(user.getId());
         String token = authTokenService.issue(
-                user.getId(), user.getRole(), user.getTenantId(), memberTenantIds);
+                user.getId(), user.getRole(), user.getTenantId(), memberTenantIds, user.getTokenVersion());
         return new AuthResponse(
                 user.getId().toString(),
                 user.getEmail(),
@@ -257,7 +263,7 @@ public class AuthController {
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
                 List.of(org.getId().toString()),
                 authTokenService.issue(user.getId(), user.getRole(), user.getTenantId(),
-                        List.of(org.getId()))));
+                        List.of(org.getId()), user.getTokenVersion())));
     }
 
     // --- Security guard Firebase Phone Authentication login ---
@@ -346,8 +352,9 @@ public class AuthController {
      * Used by the TenantSwitcher component for multi-tenant TENANT_ADMINs.
      */
     @GetMapping("/me/tenants")
-    public ResponseEntity<List<TenantInfo>> getMyTenants(@RequestHeader("X-User-Id") String userIdStr) {
-        UUID userId = UUID.fromString(userIdStr);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<TenantInfo>> getMyTenants() {
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
 
         if (userOpt.isEmpty()) {
@@ -380,6 +387,12 @@ public class AuthController {
     }
 
     // --- Self-Service Profile ---
+    //
+    // Everything under /api/auth/me acts as the signed-in user, so identity is the
+    // verified principal (CallerIdentity), never the X-User-Id header. These are
+    // the only /api/auth routes ApiSecurityFilter runs on and SecurityConfig
+    // requires authentication for; the rest (login, register, set-password,
+    // firebase, apple) run before there is a principal and take no caller header.
 
     public record ProfileResponse(String id, String email, String name, String role, String phoneNumber,
                                    String tenantId, String orgName) {
@@ -392,8 +405,9 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<ProfileResponse> getMyProfile(@RequestHeader("X-User-Id") String userIdStr) {
-        UUID userId = UUID.fromString(userIdStr);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ProfileResponse> getMyProfile() {
+        UUID userId = callerId();
         return userService.findById(userId)
                 .map(user -> {
                     String tid = user.getTenantId() != null ? user.getTenantId().toString() : null;
@@ -414,10 +428,10 @@ public class AuthController {
     }
 
     @PutMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProfileResponse> updateMyProfile(
-            @RequestHeader("X-User-Id") String userIdStr,
             @RequestBody UpdateProfileRequest request) {
-        UUID userId = UUID.fromString(userIdStr);
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
         if (userOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -450,10 +464,10 @@ public class AuthController {
     }
 
     @PutMapping("/me/password")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> changePassword(
-            @RequestHeader("X-User-Id") String userIdStr,
             @RequestBody ChangePasswordRequest request) {
-        UUID userId = UUID.fromString(userIdStr);
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
         if (userOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -469,8 +483,19 @@ public class AuthController {
 
         // changePassword is @Transactional — the entity write and event publish
         // share the same transaction, so TransactionalEventListener fires on commit.
-        userService.changePassword(user, request.newPassword());
+        int tokenVersion = userService.changePassword(user, request.newPassword());
 
-        return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
+        // The change revoked every token this user holds, the one on this
+        // request included (audit P1-2). Hand the caller a replacement so the
+        // device that changed the password stays signed in while every other
+        // one is signed out. Absent while token auth is unconfigured.
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("message", "Password updated successfully");
+        String token = authTokenService.issue(user.getId(), user.getRole(), user.getTenantId(),
+                userService.getUserTenantIds(user.getId()), tokenVersion);
+        if (token != null) {
+            body.put("token", token);
+        }
+        return ResponseEntity.ok(body);
     }
 }

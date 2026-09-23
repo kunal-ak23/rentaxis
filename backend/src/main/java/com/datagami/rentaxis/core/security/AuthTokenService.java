@@ -38,8 +38,23 @@ import java.util.UUID;
  *
  * <p>Claims: {@code sub} = user id, {@code role} = {@link UserRole} name,
  * {@code hti} = home tenant id (absent when null), {@code tids} = member
- * tenant ids. Expiry 30 days, issued-at set. The mobile apps store the compact
- * JWS opaquely and replay it as {@code Authorization: Bearer <token>}.
+ * tenant ids, {@code tv} = the user's {@code token_version} at issue. Expiry 30
+ * days, issued-at set. The mobile apps store the compact JWS opaquely and
+ * replay it as {@code Authorization: Bearer <token>}.
+ *
+ * <p><b>Revocation (audit P1-2).</b> The signature alone proves only that we
+ * minted the token, not that it still describes the user. {@code tv} is what
+ * makes it revocable: {@link TokenRevocationService} bumps
+ * {@code users.token_version} on password, role, tenant, membership and deletion
+ * changes, and the filter refuses a token whose {@code tv} is stale, whose user
+ * is not ACTIVE, or whose organisation is not ACTIVE.
+ *
+ * <p><b>Why the lifetime is still 30 days.</b> The mobile apps have no refresh
+ * flow: a 401 sends the user back to the login screen
+ * ({@code rentaxis_core/lib/api/interceptors/auth_interceptor.dart}). A shorter
+ * TTL would log every mobile user out weekly without adding much, since every
+ * event that should end a session now ends it immediately through {@code tv}.
+ * Shorten it when a refresh endpoint exists.
  */
 @Service
 @Slf4j
@@ -75,7 +90,7 @@ public class AuthTokenService {
      * {@code null} when the service is disabled (clients treat an absent token
      * as "keep using legacy headers").
      */
-    public String issue(UUID userId, UserRole role, UUID homeTenantId, List<UUID> tenantIds) {
+    public String issue(UUID userId, UserRole role, UUID homeTenantId, List<UUID> tenantIds, int tokenVersion) {
         if (key == null) {
             return null;
         }
@@ -83,6 +98,7 @@ public class AuthTokenService {
         var builder = Jwts.builder()
                 .subject(userId.toString())
                 .claim("role", role.name())
+                .claim("tv", tokenVersion)
                 .claim("tids", (tenantIds == null ? List.<UUID>of() : tenantIds)
                         .stream().map(UUID::toString).toList())
                 .issuedAt(Date.from(now))
@@ -93,8 +109,18 @@ public class AuthTokenService {
         return builder.signWith(key).compact();
     }
 
+    /**
+     * Version-0 convenience for tests that mint a token for a user row they
+     * just created (new rows start at 0). Production code passes the row's
+     * real version; a token minted with a stale one is refused, never trusted.
+     */
+    public String issue(UUID userId, UserRole role, UUID homeTenantId, List<UUID> tenantIds) {
+        return issue(userId, role, homeTenantId, tenantIds, 0);
+    }
+
     /** Verified identity extracted from a valid token's claims. */
-    public record VerifiedIdentity(UUID userId, UserRole role, UUID homeTenantId, List<UUID> tenantIds) {
+    public record VerifiedIdentity(UUID userId, UserRole role, UUID homeTenantId, List<UUID> tenantIds,
+            int tokenVersion) {
     }
 
     /**
@@ -124,7 +150,14 @@ public class AuthTokenService {
             List<UUID> tenantIds = rawTids == null
                     ? List.of()
                     : rawTids.stream().map(t -> UUID.fromString(String.valueOf(t))).toList();
-            return new VerifiedIdentity(userId, role, homeTenantId, tenantIds);
+            // A token without "tv" predates revocation and cannot be checked
+            // against the user's current version, so it is not accepted. None
+            // were ever issued in production: issuance was off until this change.
+            Number tv = claims.get("tv", Number.class);
+            if (tv == null) {
+                throw new TokenInvalidException("token has no version");
+            }
+            return new VerifiedIdentity(userId, role, homeTenantId, tenantIds, tv.intValue());
         } catch (io.jsonwebtoken.ExpiredJwtException e) {
             throw new TokenExpiredException();
         } catch (JwtException | IllegalArgumentException | NullPointerException e) {

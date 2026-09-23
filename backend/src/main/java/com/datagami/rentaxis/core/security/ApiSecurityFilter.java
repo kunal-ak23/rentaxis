@@ -7,6 +7,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -50,14 +52,19 @@ import java.util.UUID;
 @Component
 public class ApiSecurityFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(ApiSecurityFilter.class);
+
     private final AuthTokenService authTokenService;
+    private final BearerTokenStateCheck tokenStateCheck;
     private final String internalProxySecret;
     private final String legacyHeadersMode;
 
     public ApiSecurityFilter(AuthTokenService authTokenService,
+            BearerTokenStateCheck tokenStateCheck,
             @Value("${app.auth.internal-proxy-secret:}") String internalProxySecret,
             @Value("${app.auth.legacy-headers:allow}") String legacyHeadersMode) {
         this.authTokenService = authTokenService;
+        this.tokenStateCheck = tokenStateCheck;
         this.internalProxySecret = internalProxySecret == null ? "" : internalProxySecret;
         this.legacyHeadersMode = legacyHeadersMode == null ? "allow" : legacyHeadersMode;
     }
@@ -65,18 +72,41 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        // The tenant is a ThreadLocal on a pooled Tomcat thread (security audit
+        // P1-1). Whatever an earlier request left on this thread must never be
+        // seen by this one, and nothing this request sets may outlive it — on
+        // every path, including the skipped public routes and the error paths
+        // that used to return without clearing. TenantContextResetFilter does
+        // the same at the outermost edge; this is the second line.
+        TenantContextHolder.clear();
+        try {
+            authenticate(request, response, filterChain);
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private void authenticate(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
 
         String path = request.getRequestURI();
 
-        // Skip auth routes to prevent interception overhead
-        if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
+        // Skip the pre-authentication routes (login, register, set-password, ...).
+        // The self-service profile routes under /api/auth/me act AS the signed-in
+        // user, so they are not skipped: they need the principal this filter sets
+        // (PR #342). Skipping them left every one anonymous, so the controller
+        // could only take identity from a raw X-User-Id header — which, with no
+        // filter in front, anyone could send, token or not, and which the phase-2
+        // legacy-header deny would never have reached.
+        if (!isSelfServiceProfilePath(path)
+                && (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
                 || path.startsWith("/actuator/") || path.startsWith("/api/webhooks/")
                 // Only the public asset folder skips authentication (issue #300):
                 // every other storage key under /serve now requires a caller, and
                 // skipping the filter for it would leave that caller anonymous.
                 || path.startsWith("/api/v1/assets/serve/" + AssetController.PUBLIC_PREFIX + "/")
                 || path.startsWith("/public/")
-                || path.startsWith("/api/v1/public/")) {
+                || path.startsWith("/api/v1/public/"))) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -181,7 +211,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
                 // Setup Tenant Context for Database Isolation (Hibernate Filters)
-                if (requestedTenantId != null) {
+                if (requestedTenantId != null && !isSelfServiceProfilePath(path)) {
                     TenantContextHolder.setTenantId(requestedTenantId);
                 }
             }
@@ -198,6 +228,23 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             TenantContextHolder.clear();
         }
     }
+
+    /**
+     * {@code /api/auth/me} and everything under it; SecurityConfig requires
+     * authentication there.
+     *
+     * <p>These routes get a principal but no tenant context. They are about the
+     * user, not a tenant: they read the caller's own user row by id, their
+     * memberships and org names. With the active tenant set, a multi-tenant admin
+     * working in a secondary organisation could not load their own profile (the
+     * tenant filter hides a user row whose home tenant is another one). Leaving it
+     * unset is what these routes had when the filter skipped them.
+     */
+    public static boolean isSelfServiceProfilePath(String path) {
+        return path.equals(SELF_SERVICE_PROFILE_PATH) || path.startsWith(SELF_SERVICE_PROFILE_PATH + "/");
+    }
+
+    public static final String SELF_SERVICE_PROFILE_PATH = "/api/auth/me";
 
     /**
      * Bearer path: identity from verified claims only. The X-User-* headers are
@@ -254,6 +301,20 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Revocation (audit P1-2): a genuine, unexpired token is still refused
+        // once the row behind it has moved on — password or role changed, user
+        // moved, removed, deleted or deactivated, or the organisation it acts in
+        // deactivated. 401, not 403: the token itself is dead, and a 401 is what
+        // sends the mobile apps back to their login screen. After the tenant
+        // authorization so a request for somebody else's organisation still
+        // gets its 403 rather than a verdict on that organisation's status.
+        String rejection = tokenStateCheck.rejectionReason(identity, requestedTenantId);
+        if (rejection != null) {
+            log.info("Refusing bearer token for user {}: {}", identity.userId(), rejection);
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired bearer token.");
+            return;
+        }
+
         // Establish Spring Security Context from the verified claims.
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 identity.userId().toString(), null,
@@ -261,7 +322,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         // Setup Tenant Context for Database Isolation (Hibernate Filters)
-        if (requestedTenantId != null) {
+        if (requestedTenantId != null && !isSelfServiceProfilePath(request.getRequestURI())) {
             TenantContextHolder.setTenantId(requestedTenantId);
         }
 

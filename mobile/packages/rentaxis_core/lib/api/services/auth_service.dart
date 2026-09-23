@@ -89,14 +89,21 @@ class AuthService {
     );
   }
 
-  Future<void> changePassword(
+  /// Changes the caller's password. The backend revokes every token the user
+  /// holds, this device's included, and answers with a replacement `token`;
+  /// the caller must store it (see [AuthNotifier.replaceAuthToken]) or the
+  /// next request 401s and signs this device out too. Returns null when the
+  /// backend issued none (token auth not configured).
+  Future<String?> changePassword(
     String currentPassword,
     String newPassword,
   ) async {
-    await _dio.put(
+    final response = await _dio.put(
       '/auth/me/password',
       data: {'currentPassword': currentPassword, 'newPassword': newPassword},
     );
+    final data = response.data;
+    return data is Map ? data['token'] as String? : null;
   }
 
   Future<List<dynamic>> getTenants() async {

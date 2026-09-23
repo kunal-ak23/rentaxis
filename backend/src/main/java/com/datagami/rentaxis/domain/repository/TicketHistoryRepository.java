@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface TicketHistoryRepository extends JpaRepository<TicketHistory, UUID> {
     List<TicketHistory> findByTicketIdOrderByCreatedAtAsc(UUID ticketId);
+
+    long countByTicketIdAndActionAndCreatedAtAfter(UUID ticketId, String action, java.time.Instant after);
 }

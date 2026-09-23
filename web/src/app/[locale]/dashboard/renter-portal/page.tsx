@@ -67,6 +67,11 @@ const MEETING_PURPOSE_KEYS: Record<string, string> = {
     OTHER: "other",
 };
 
+/** Statuses whose contract is the renter's current one (#38). */
+const CURRENT_CONTRACT = ["ACTIVE", "NOTICE_GIVEN"];
+/** Ended contracts: downloadable when a signed contract was stored. */
+const PAST_CONTRACT = ["RENEWED", "EXPIRED", "TERMINATED", "CLOSED"];
+
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
@@ -79,6 +84,7 @@ export default function RenterPortalPage() {
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [contractError, setContractError] = useState<string | null>(null);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean; daysOverdue: number } | null>(null);
     // `/online-payments/my-payments` returns RenterChequeDTO rows. The local
     // shape this used to declare carried a `paymentMethod` the DTO has never
@@ -245,32 +251,33 @@ export default function RenterPortalPage() {
         });
     };
 
+    /**
+     * #38: `GET /leases/{id}/contract` serves the stored contract, or renders the
+     * posted lease when none was generated — a renewal is posted without one,
+     * which left a second-year renter with no way to get their current contract.
+     * The endpoint is renter-scoped server-side (LeaseAccessPolicy): a renter
+     * can only ever fetch their own lease's contract.
+     */
     const handleDownloadContract = async (id: string) => {
+        setContractError(null);
         try {
-            const res = await fetch(`/api/proxy/v1/leases/${id}/documents`);
-            if (res.ok) {
-                const docs = await res.json();
-                if (docs.length > 0) {
-                    const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${docs[0].id}/download`);
-                    if (pdfRes.ok) {
-                        const blob = await pdfRes.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `contract-${id}.pdf`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    }
-                }
-            } else {
-                // A non-2xx used to leave the state at its initial empty
-                // value, so a failed request rendered as "nothing here".
-                setLoadError(tCommon("loadFailed"));
+            const pdfRes = await fetch(`/api/proxy/v1/leases/${id}/contract`);
+            if (!pdfRes.ok) {
+                setContractError(t("contractUnavailable"));
+                return;
             }
+            const blob = await pdfRes.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `contract-${id}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         } catch (err) {
             console.error(err);
+            setContractError(t("contractUnavailable"));
         }
     };
 
@@ -351,6 +358,11 @@ export default function RenterPortalPage() {
     return (
         <div className="p-8 max-w-5xl mx-auto">
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
+            {contractError && (
+                <div role="alert" className="mb-4 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3">
+                    {contractError}
+                </div>
+            )}
             <div className="mb-10">
                 <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                     {t("welcomeRenter")}, {userName}
@@ -585,8 +597,15 @@ export default function RenterPortalPage() {
                                     </button>
                                 </>
                             )}
-                            {lease.status === 'ACTIVE' && lease.hasContract && (
+                            {/*
+                              #38: the live contract (ACTIVE or under notice) always offers
+                              its contract — rendered from the posted lease when nothing was
+                              generated, as after a renewal. An ended one offers it when a
+                              signed contract was stored.
+                            */}
+                            {(CURRENT_CONTRACT.includes(lease.status) || (PAST_CONTRACT.includes(lease.status) && lease.hasContract)) && (
                                 <button
+                                    data-testid={`download-contract-${lease.id}`}
                                     onClick={() => handleDownloadContract(lease.id)}
                                     className="flex items-center gap-2 bg-info/10 text-info hover:bg-info/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
                                 >

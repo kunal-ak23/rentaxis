@@ -38,11 +38,15 @@ const jsonRes = (body: unknown, ok = true, status = 200) =>
     }) as unknown as Response;
 
 let putBodies: unknown[];
+let postBodies: Record<string, unknown>[];
+let resendUrls: string[];
 let postResponse: { ok: boolean; status: number; body: unknown };
 let deleteResponse: { ok: boolean; status: number; body: unknown };
 
 beforeEach(() => {
     putBodies = [];
+    postBodies = [];
+    resendUrls = [];
     postResponse = { ok: true, status: 200, body: pmUser };
     deleteResponse = { ok: true, status: 200, body: {} };
     global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -58,11 +62,16 @@ beforeEach(() => {
         if (u.includes(`/admin/users/${PM_ID}`) && method === "DELETE") {
             return jsonRes(deleteResponse.body, deleteResponse.ok, deleteResponse.status);
         }
+        if (u.includes("/resend-invite") && method === "POST") {
+            resendUrls.push(u);
+            return jsonRes({ ...pmUser, invitePending: true });
+        }
         if (u.includes("/admin/users") && method === "POST") {
+            postBodies.push(JSON.parse(String(init?.body)));
             return jsonRes(postResponse.body, postResponse.ok, postResponse.status);
         }
         if (u.includes("/admin/users")) {
-            return jsonRes([pmUser]);
+            return jsonRes([{ ...pmUser, invitePending: true }]);
         }
         if (u.includes("/admin/tenants")) {
             return jsonRes([{ id: "t1", name: "Tenant One" }]);
@@ -107,7 +116,6 @@ describe("SuperAdminUsersPage", () => {
         fireEvent.click(await screen.findByText("New User"));
         fireEvent.change(screen.getByPlaceholderText("e.g. Acme Corp Admin"), { target: { value: "New Admin" } });
         fireEvent.change(screen.getByPlaceholderText("e.g. admin@acmecorp.com"), { target: { value: "dup@x.com" } });
-        fireEvent.change(screen.getByPlaceholderText("Secure password"), { target: { value: "secret123" } });
         fireEvent.click(screen.getByText("Provision User"));
 
         expect(
@@ -135,5 +143,69 @@ describe("SuperAdminUsersPage", () => {
         expect(
             await screen.findByText("Cannot delete a user with active assignments.")
         ).toBeTruthy();
+    });
+
+    // #7 / #2: invited roles are onboarded by email, so the form asks for no
+    // password and sends none; only a SUPER_ADMIN is still given one here.
+    it("creates an invited user without asking for or sending a password", async () => {
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("New User"));
+        expect(screen.queryByPlaceholderText("Secure password")).toBeNull();
+        expect(screen.getByText("passwordNotNeeded")).toBeTruthy();
+        fireEvent.change(screen.getByPlaceholderText("e.g. Acme Corp Admin"), { target: { value: "New User" } });
+        fireEvent.change(screen.getByPlaceholderText("e.g. admin@acmecorp.com"), { target: { value: "new@x.com" } });
+        fireEvent.click(screen.getByText("Provision User"));
+
+        await waitFor(() => expect(postBodies.length).toBe(1));
+        expect(postBodies[0]).not.toHaveProperty("password");
+    });
+
+    // Web review M4: a guard gets no email invite (they sign in by phone OTP).
+    it("tells a security guard's creator about phone sign-in, not an email invite", async () => {
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("New User"));
+        fireEvent.change(screen.getByDisplayValue("Tenant"), { target: { value: "SECURITY_GUARD" } });
+
+        expect(screen.getByTestId("user-password-hint").textContent).toBe("guardSignsInByPhone");
+        expect(screen.queryByText("passwordNotNeeded")).toBeNull();
+        expect((screen.getByPlaceholderText("e.g. +971 50 123 4567") as HTMLInputElement).required).toBe(true);
+    });
+
+    it("still requires a password for a SUPER_ADMIN", async () => {
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("New User"));
+        fireEvent.change(screen.getByDisplayValue("Tenant"), { target: { value: "SUPER_ADMIN" } });
+
+        expect(screen.getByPlaceholderText("Secure password")).toBeTruthy();
+    });
+
+    it("resends a pending invite for that user after a confirm, then reloads the list", async () => {
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+        render(<SuperAdminUsersPage />);
+        const button = await screen.findByText("resend");
+        const listCalls = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+            .filter(c => String(c[0]).endsWith("/admin/users") && !(c[1] as RequestInit | undefined)?.method).length;
+        const before = listCalls();
+
+        fireEvent.click(button);
+
+        expect(confirm).toHaveBeenCalledWith("resendConfirm");
+        await waitFor(() => expect(resendUrls).toEqual([`/api/proxy/admin/users/${PM_ID}/resend-invite`]));
+        expect(await screen.findByText("resent")).toBeTruthy();
+        await waitFor(() => expect(listCalls()).toBeGreaterThan(before));
+    });
+
+    it("sends nothing when the resend confirm is declined", async () => {
+        vi.spyOn(window, "confirm").mockReturnValue(false);
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("resend"));
+
+        await new Promise(r => setTimeout(r, 20));
+        expect(resendUrls).toEqual([]);
+        expect(screen.queryByText("resent")).toBeNull();
     });
 });

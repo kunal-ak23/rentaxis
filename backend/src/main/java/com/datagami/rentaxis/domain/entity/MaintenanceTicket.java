@@ -69,6 +69,22 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "closure_otp", length = 6)
     private String closureOtp;
 
+    /**
+     * Wrong OTPs entered against the current closure code (PR #342 review I2).
+     * At {@code MaintenanceTicketService.MAX_OTP_ATTEMPTS} the code is discarded
+     * and a new one has to be issued; reset whenever one is.
+     */
+    @Column(name = "closure_otp_failed_attempts", nullable = false)
+    private int closureOtpFailedAttempts = 0;
+
+    /**
+     * Every wrong closure OTP this ticket has ever received, across re-issued
+     * codes; never reset. At the service's limit OTP closure is locked for good
+     * (PR #342 re-review I2).
+     */
+    @Column(name = "closure_otp_total_failed_attempts", nullable = false)
+    private int closureOtpTotalFailedAttempts = 0;
+
     @Column(name = "satisfaction_rating")
     private Integer satisfactionRating;
 
@@ -77,6 +93,14 @@ public class MaintenanceTicket extends BaseTenantEntity {
 
     @Column(name = "on_behalf_of")
     private String onBehalfOf;
+
+    /** The renter this was logged for, when staff picked one (#19); null on legacy free-text rows. */
+    @Column(name = "on_behalf_of_renter_id")
+    private UUID onBehalfOfRenterId;
+
+    /** Human reference, "TKT-yy/n" per tenant and calendar year (#20); set at creation. */
+    @Column(name = "reference", length = 20)
+    private String reference;
 
     /**
      * The day the tenant actually reported the issue, distinct from
@@ -93,6 +117,17 @@ public class MaintenanceTicket extends BaseTenantEntity {
 
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
+
+    /**
+     * Optimistic lock (PR #342 review r3 I2). The service's writers take the row
+     * lock ({@code findByIdForUpdate}) before they read; this is the backstop, so
+     * a save that read a stale row fails instead of writing old closure-OTP
+     * counters back. Never client-sent: the DTO does not carry it.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Long version;
 
     @PreUpdate
     public void onPreUpdate() {

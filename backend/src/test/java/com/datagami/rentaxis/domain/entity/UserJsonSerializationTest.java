@@ -36,4 +36,22 @@ class UserJsonSerializationTest {
         // empty/failed result masking the assertion above).
         assertThat(json).contains("pm@example.com");
     }
+
+    /** PR #342 review C2: the invite token lets its holder set this account's password. */
+    @Test
+    void serialize_neverIncludesTheInviteToken() throws Exception {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("pm@example.com");
+        user.setPasswordHash("x");
+        user.setName("Property Manager");
+        user.setRole(UserRole.PROPERTY_MANAGER);
+        user.setInviteToken("a1b2c3d4e5f6inviteTokenThatMustNeverLeak");
+        user.setInviteTokenExpiresAt(java.time.Instant.parse("2030-01-01T00:00:00Z"));
+
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(user);
+
+        assertThat(json).doesNotContain("inviteToken").doesNotContain("inviteTokenThatMustNeverLeak");
+        assertThat(json).contains("pm@example.com");
+    }
 }

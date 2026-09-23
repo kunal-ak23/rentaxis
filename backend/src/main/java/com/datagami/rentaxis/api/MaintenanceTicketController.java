@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
+import static com.datagami.rentaxis.api.CallerIdentity.callerRole;
+
 @RestController
 @RequestMapping("/api/v1/tickets")
 @RequiredArgsConstructor
@@ -20,38 +23,37 @@ public class MaintenanceTicketController {
 
     private final MaintenanceTicketService ticketService;
 
+    // Caller identity comes from the verified principal (CallerIdentity), never
+    // from the X-User-* headers. Every route here requires an authenticated caller.
+
     @PostMapping
     @PreAuthorize("hasAnyRole('RENTER', 'PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> createTicket(
-            @RequestBody CreateTicketDTO dto,
-            @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(ticketService.createTicket(dto, userId));
+            @RequestBody CreateTicketDTO dto) {
+        return ResponseEntity.ok(ticketService.createTicket(dto, callerId()));
     }
 
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MaintenanceTicketDTO>> listTickets(
-            @RequestHeader("X-User-Id") UUID userId,
-            @RequestHeader("X-User-Role") String role,
-            @RequestParam(required = false) UUID unitId) {
-        return ResponseEntity.ok(ticketService.getTickets(userId, role, unitId));
+            @RequestParam(required = false) UUID unitId,
+            @RequestParam(required = false) UUID renterId) {
+        return ResponseEntity.ok(ticketService.getTickets(callerId(), callerRole(), unitId, renterId));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MaintenanceTicketDTO> getTicket(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Id", required = false) UUID userId) {
-        return ResponseEntity.ok(ticketService.getTicket(id, userId));
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(ticketService.getTicket(id, callerId()));
     }
 
     @PutMapping("/{id}/assign")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> assignTicket(
             @PathVariable UUID id,
-            @RequestBody Map<String, UUID> body,
-            jakarta.servlet.http.HttpServletRequest request) {
-        UUID performedBy = UUID.fromString(request.getHeader("X-User-Id"));
+            @RequestBody Map<String, UUID> body) {
+        UUID performedBy = callerId();
         return ResponseEntity.ok(ticketService.assignTicket(id, body.get("assignTo"), performedBy));
     }
 
@@ -59,9 +61,8 @@ public class MaintenanceTicketController {
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> updateStatus(
             @PathVariable UUID id,
-            @RequestBody Map<String, String> body,
-            jakarta.servlet.http.HttpServletRequest request) {
-        UUID performedBy = UUID.fromString(request.getHeader("X-User-Id"));
+            @RequestBody Map<String, String> body) {
+        UUID performedBy = callerId();
         return ResponseEntity.ok(ticketService.updateStatus(id, body.get("status"), performedBy));
     }
 
@@ -69,20 +70,26 @@ public class MaintenanceTicketController {
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> closeWithOtp(
             @PathVariable UUID id,
-            @RequestBody Map<String, String> body,
-            jakarta.servlet.http.HttpServletRequest request) {
-        UUID performedBy = UUID.fromString(request.getHeader("X-User-Id"));
+            @RequestBody Map<String, String> body) {
+        UUID performedBy = callerId();
         return ResponseEntity.ok(ticketService.closeWithOtp(id, body.get("otp"), performedBy));
+    }
+
+    /** A fresh closure OTP, sent to the renter who holds it (PR #342 review I2). */
+    @PostMapping("/{id}/closure-otp")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<MaintenanceTicketDTO> reissueClosureOtp(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(ticketService.reissueClosureOtp(id, callerId()));
     }
 
     @PostMapping("/{id}/replies")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TicketReplyDTO> addReply(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userId,
             @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(ticketService.addReply(
-                id, userId, body.get("message")));
+                id, callerId(), body.get("message")));
     }
 
     @GetMapping("/{id}/replies")
@@ -145,6 +152,21 @@ public class MaintenanceTicketController {
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate startDate,
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate endDate) {
         return ResponseEntity.ok(ticketService.getReport(propertyId, startDate, endDate));
+    }
+
+    /**
+     * A ticket changed by someone else between this request's read and its write
+     * (MaintenanceTicket's {@code @Version}, PR #342 review r3 I2). The writers
+     * lock the row first, so this is the backstop; the answer is a 409 to reload,
+     * not a 500.
+     */
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+            jakarta.persistence.OptimisticLockException.class})
+    public ResponseEntity<Map<String, Object>> handleConcurrentChange(RuntimeException ex) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT).body(Map.of(
+                "error", true,
+                "message", "This ticket was changed by someone else at the same time. Reload it and try again.",
+                "status", 409));
     }
 
     @PutMapping("/{id}/estimate")

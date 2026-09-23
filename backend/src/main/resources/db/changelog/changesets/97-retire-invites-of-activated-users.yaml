@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # PR #342 review I1: before invite-only onboarding (#7), every RENTER,
+  # PROPERTY_MANAGER and TENANT_USER got an invite token alongside a password
+  # someone chose for them, and only redeeming the invite ever cleared it. Users
+  # who signed in with that password kept the token, showed "invite pending" and
+  # offered "Resend invite", which would mail a live set-password link to an
+  # account already in use.
+  #
+  # welcomed_at is set on first sign-in, so it is the one reliable "activated"
+  # marker in the data: the password hash cannot tell a real password from the
+  # unusable one an invited user starts with. Users who never signed in keep
+  # their token: for them a resend is the intended way in. From this release,
+  # password sign-in, /me/password and an admin password edit clear the token
+  # as they happen.
+  - changeSet:
+      id: 97-retire-invites-of-activated-users
+      author: rentaxis-system
+      changes:
+        - sql:
+            sql: |
+              UPDATE users
+              SET invite_token = NULL,
+                  invite_token_expires_at = NULL
+              WHERE invite_token IS NOT NULL
+                AND welcomed_at IS NOT NULL;
+      # Forward-only: a cleared token is a retired credential and must not come back.

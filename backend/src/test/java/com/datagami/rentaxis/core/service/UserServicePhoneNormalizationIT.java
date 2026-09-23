@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -283,7 +284,7 @@ class UserServicePhoneNormalizationIT extends AbstractPostgresIT {
         UserService racingService = new UserService(racing, passwordEncoder,
                 mock(UserPropertyAssignmentRepository.class), mock(UserTenantMembershipRepository.class),
                 mock(PropertyRepository.class), mock(ApplicationEventPublisher.class),
-                mock(UserReferenceReleaser.class));
+                mock(UserReferenceReleaser.class), mock(TokenRevocationService.class));
 
         assertThatThrownBy(() -> racingService.createUser("racer+" + UUID.randomUUID() + "@test",
                 "TempPass@123", "Racer", UserRole.SECURITY_GUARD, org.getId().toString(), phone, "admin"))
@@ -343,7 +344,7 @@ class UserServicePhoneNormalizationIT extends AbstractPostgresIT {
         UserService racingService = new UserService(racing, passwordEncoder,
                 mock(UserPropertyAssignmentRepository.class), mock(UserTenantMembershipRepository.class),
                 mock(PropertyRepository.class), mock(ApplicationEventPublisher.class),
-                mock(UserReferenceReleaser.class));
+                mock(UserReferenceReleaser.class), mock(TokenRevocationService.class));
 
         assertThatThrownBy(() -> racingService.createUser("racer+" + UUID.randomUUID() + "@test",
                 "TempPass@123", "Racer", UserRole.TENANT_USER, UUID.randomUUID().toString(), null, "admin"))

@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
+
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
@@ -21,40 +23,37 @@ public class NotificationController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<NotificationDTO>> getNotifications(
-            @RequestHeader("X-User-Id") UUID userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "false") boolean unreadOnly) {
-        return ResponseEntity.ok(notificationService.getNotifications(userId, page, size, unreadOnly));
+        return ResponseEntity.ok(notificationService.getNotifications(callerId(), page, size, unreadOnly));
     }
 
     @GetMapping("/unread-count")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Map<String, Long>> getUnreadCount(@RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(Map.of("count", notificationService.getUnreadCount(userId)));
+    public ResponseEntity<Map<String, Long>> getUnreadCount() {
+        return ResponseEntity.ok(Map.of("count", notificationService.getUnreadCount(callerId())));
     }
 
     @PutMapping("/{id}/read")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> markAsRead(@PathVariable UUID id,
-                                           @RequestHeader("X-User-Id") UUID userId) {
-        notificationService.markAsRead(id, userId);
+    public ResponseEntity<Void> markAsRead(@PathVariable UUID id) {
+        notificationService.markAsRead(id, callerId());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/read-all")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> markAllAsRead(@RequestHeader("X-User-Id") UUID userId) {
-        notificationService.markAllAsRead(userId);
+    public ResponseEntity<Void> markAllAsRead() {
+        notificationService.markAllAsRead(callerId());
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/devices/register")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> registerDevice(
-            @RequestHeader("X-User-Id") UUID userId,
             @RequestBody Map<String, String> body) {
-        notificationService.registerDevice(userId, body.get("token"), body.get("platform"));
+        notificationService.registerDevice(callerId(), body.get("token"), body.get("platform"));
         return ResponseEntity.ok().build();
     }
 }

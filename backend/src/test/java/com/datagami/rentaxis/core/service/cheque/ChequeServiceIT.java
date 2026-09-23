@@ -310,6 +310,50 @@ class ChequeServiceIT extends AbstractPostgresIT {
         }
     }
 
+    /** A tenancy that started eight months ago: three rent cheques already payable, one still to come. */
+    private PostLeaseResponse postedInThePast() {
+        LocalDate start = LocalDate.now().minusMonths(8).withDayOfMonth(1);
+        return fixtures.postedLease(start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "48000")), 4, "200100");
+    }
+
+    /**
+     * #10: a run entered after the fact banks each cheque on its own date, rather
+     * than stamping one date on October's and November's paper alike.
+     */
+    @Test
+    void depositBatchCanUseEachChequesOwnDate() {
+        PostLeaseResponse r = postedInThePast();
+        List<ChequeDTO> payable = r.cheques().stream()
+                .filter(c -> !c.chequeDate().isAfter(LocalDate.now())).toList();
+        assertThat(payable).hasSizeGreaterThanOrEqualTo(2);
+
+        List<ChequeDTO> deposited = service.depositBatch(new DepositBatchRequest(
+                payable.stream().map(ChequeDTO::id).toList(), LocalDate.now(), null, true));
+
+        assertThat(deposited).hasSize(payable.size());
+        for (ChequeDTO c : payable) {
+            assertThat(reread(c.id()).getDepositedAt()).isEqualTo(c.chequeDate());
+            assertThat(reread(c.id()).getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+        }
+    }
+
+    /** Its own date has not arrived: it cannot have been banked on it, and nothing in the run is. */
+    @Test
+    void depositBatchOnOwnDatesRefusesARowDatedInTheFuture() {
+        PostLeaseResponse r = postedInThePast();
+        List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
+        assertThat(r.cheques()).anySatisfy(c -> assertThat(c.chequeDate()).isAfter(LocalDate.now()));
+
+        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(ids, LocalDate.now(), null, true)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has not arrived yet");
+
+        for (UUID id : ids) {
+            assertThat(reread(id).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        }
+    }
+
     /** Banking on the day the cheque falls due is the ordinary case, not an edge. */
     @Test
     void aChequeCanBeBankedOnItsOwnDate() {

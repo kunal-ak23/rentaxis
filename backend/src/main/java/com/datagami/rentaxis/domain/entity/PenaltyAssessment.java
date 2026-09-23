@@ -77,6 +77,10 @@ public class PenaltyAssessment extends BaseTenantEntity {
     @Column(columnDefinition = "text")
     private String description;
 
+    /** When the charged-for thing happened (#12); null on rows older than changeset 93. */
+    @Column(name = "incident_date")
+    private java.time.LocalDate incidentDate;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)
     private PenaltyAssessmentStatus status = PenaltyAssessmentStatus.PROPOSED;

@@ -995,6 +995,81 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat(proposed.renterId()).isEqualTo(fixtures.renter().getId());
     }
 
+    /**
+     * #12: a penalty a person raises from the lease page — a category, an amount,
+     * the day it happened and a narration — is the same PROPOSED row the rule
+     * engine writes, posts nothing, and becomes a charge only through the same
+     * approval, whose PEN is written by PostingService.
+     */
+    @Test
+    void aStaffRaisedPenaltyTakesTheSameProposalAndApprovalPath() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        LocalDate incident = LocalDate.now().minusDays(3);
+        long entriesBefore = journalEntryRows();
+
+        PenaltyAssessmentDTO raised = service.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.OTHER, new BigDecimal("750.00"), "Damaged lobby door", incident),
+                fixtures.renter().getUserId());
+
+        assertThat(raised.status()).isEqualTo(PenaltyAssessmentStatus.PROPOSED);
+        assertThat(raised.incidentDate()).isEqualTo(incident);
+        assertThat(raised.description()).isEqualTo("Damaged lobby door");
+        assertThat(reread(raised.id()).getIncidentDate()).isEqualTo(incident);
+        assertThat(journalEntryRows()).isEqualTo(entriesBefore);
+
+        PenaltyAssessmentDTO approved = service.approve(raised.id(), APPROVE_DATE);
+
+        assertThat(approved.status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+        assertThat(entryCount(JournalDocType.PEN, raised.id())).isEqualTo(1);
+        List<JournalLine> pen = linesOf(approved.journalId());
+        assertThat(pen.get(1).getAccountId()).isEqualTo(leaf(AccountRole.OTHER_INCOME).getId());
+        assertThat(pen.get(1).getCredit()).isEqualByComparingTo("750.00");
+    }
+
+    @Test
+    void aPenaltyCannotBeRaisedForAFutureDate() {
+        PostLeaseResponse r = posted();
+        long before = assessmentRows();
+
+        assertThatThrownBy(() -> service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.OTHER, new BigDecimal("100"), "Noise",
+                LocalDate.now().plusDays(1)), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("future");
+        assertThat(assessmentRows()).isEqualTo(before);
+    }
+
+    /** Web review M5: an incident cannot predate the contract (a 1990 typo). */
+    @Test
+    void aPenaltyCannotBeRaisedForADateBeforeTheContract() {
+        PostLeaseResponse r = posted();
+        long before = assessmentRows();
+
+        assertThatThrownBy(() -> service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.OTHER, new BigDecimal("100"), "Noise",
+                CONTRACT_DATE.minusDays(1)), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("before the contract");
+        assertThat(assessmentRows()).isEqualTo(before);
+
+        // The contract date itself is fine: an advance cheque can bounce before move-in.
+        assertThat(service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.OTHER, new BigDecimal("100"), "Noise",
+                CONTRACT_DATE), null).incidentDate()).isEqualTo(CONTRACT_DATE);
+    }
+
+    /** Leaving the date out is today, not "unknown". */
+    @Test
+    void aRaisedPenaltyWithNoDateIsDatedToday() {
+        PostLeaseResponse r = posted();
+
+        PenaltyAssessmentDTO raised = service.propose(new ProposePenaltyRequest(
+                r.lease().getId(), null, PenaltyReason.LATE_PAYMENT, new BigDecimal("100"), null), null);
+
+        assertThat(raised.incidentDate()).isEqualTo(LocalDate.now());
+    }
+
     /** A penalty hung off another lease's instrument would file under two contracts. */
     @Test
     void aChequeFromAnotherLeaseIsRefused() {
