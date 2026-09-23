@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.cheque.ClearBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.DepositBatchRequest;
 import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
@@ -388,6 +389,69 @@ public class ChequeService {
     // ------------------------------------------------------------------
     // -> CLEARED  (CRT)
     // ------------------------------------------------------------------
+
+    /**
+     * One bank credit, cleared together (gap #57): the mirror of
+     * {@link #depositBatch}.
+     *
+     * <p>All or nothing, for the same reason: a statement line either matches the
+     * register or it does not. Every id is locked and checked up front, so a row
+     * that is not DEPOSITED fails the call by name before anything posts. Each row
+     * is then cleared through {@link #clear(UUID, ChequeActionRequest, Replay)}
+     * itself — the same {@code CRT}, late-payment hook, notification and closure
+     * check a single clear runs — inside this one transaction, so a failure on any
+     * row rolls back every clearance before it.</p>
+     */
+    @Transactional
+    public List<ChequeDTO> clearBatch(ClearBatchRequest request) {
+        if (request == null || request.chequeIds() == null || request.chequeIds().isEmpty()) {
+            throw new BusinessRuleViolationException("Select at least one cheque to clear");
+        }
+        List<UUID> ids = request.chequeIds().stream().distinct().toList();
+
+        List<Cheque> cheques;
+        try {
+            cheques = chequeRepository.findAllByIdForUpdate(ids);
+        } catch (PessimisticLockingFailureException e) {
+            throw new RowLockedException(BEING_UPDATED);
+        }
+        Map<UUID, Cheque> byId = new LinkedHashMap<>();
+        for (Cheque c : cheques) {
+            requireSameTenant(c);
+            byId.put(c.getId(), c);
+        }
+        List<String> problems = new ArrayList<>();
+        for (UUID id : ids) {
+            Cheque c = byId.get(id);
+            if (c == null) {
+                problems.add(id + " does not exist");
+                continue;
+            }
+            Lease lease = c.getLease();
+            if (lease == null) {
+                problems.add(label(c) + " belongs to no lease");
+            } else if (!COLLECTABLE.contains(lease.getStatus())) {
+                problems.add(label(c) + " belongs to a lease that is " + lease.getStatus());
+            } else if (c.getStatus() != ChequeStatus.DEPOSITED) {
+                problems.add(label(c) + " is " + c.getStatus());
+            }
+        }
+        if (!problems.isEmpty()) {
+            throw new BusinessRuleViolationException(
+                    "These cheques cannot be cleared: " + String.join("; ", problems)
+                            + ". Only DEPOSITED cheques can be cleared, and nothing was cleared.");
+        }
+
+        ChequeActionRequest each = new ChequeActionRequest(
+                request.dateOrToday(),
+                request.narration() == null || request.narration().isBlank() ? null : request.narration().trim(),
+                null, null);
+        List<ChequeDTO> out = new ArrayList<>(ids.size());
+        for (UUID id : ids) {
+            out.add(clear(id, each, null));
+        }
+        return out;
+    }
 
     /**
      * The bank confirmed it: {@code CRT} Dr the bank / Cr PDC receivable. The
