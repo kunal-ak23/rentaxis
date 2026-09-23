@@ -162,6 +162,73 @@ public class UserService {
         return java.util.Base64.getEncoder().encodeToString(buf);
     }
 
+    private static final java.time.Duration INVITE_VALIDITY = java.time.Duration.ofDays(7);
+
+    /**
+     * Whether a newly created user of this role is onboarded by an emailed
+     * set-password link ({@code USER_INVITED}) rather than a password someone
+     * chose for them.
+     *
+     * <p>An exhaustive switch for the reason {@link #getsTenantMembership} is one:
+     * the next role must not compile until it has an answer here.
+     * <ul>
+     *   <li>RENTER, PROPERTY_MANAGER, TENANT_USER — always, as before.</li>
+     *   <li>SECURITY_GUARD — never: a guard has no email and signs in by phone OTP.</li>
+     *   <li>SUPER_ADMIN — never; the password is required. See {@code createUser}.</li>
+     * </ul>
+     */
+    static boolean issuesInviteToken(UserRole role, boolean passwordSupplied) {
+        return switch (role) {
+            case RENTER, PROPERTY_MANAGER, TENANT_USER -> true;
+            case TENANT_ADMIN, ACCOUNTANT, SUPER_ADMIN, SECURITY_GUARD -> false;
+        };
+    }
+
+    private void publishInvite(User user, String dedupKey) {
+        String setPasswordUrl = "/auth/set-password?token=" + user.getInviteToken();
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.USER_INVITED,
+                user.getTenantId(),
+                new UserInvitedPayload(user.getId(), user.getName(), setPasswordUrl, user.getInviteToken()),
+                dedupKey));
+    }
+
+    /**
+     * Re-issues a user's set-password invite (#7) and emails it again.
+     *
+     * <p>Only for a user whose invite is still outstanding — unused, whether or
+     * not it has expired. Redeeming an invite clears the token
+     * ({@code UserRepository.redeemInviteToken}), so a non-null token is exactly
+     * "never used". The old token is overwritten, so the previous link stops
+     * working the moment this commits.
+     *
+     * <p>The dedup key carries a slice of the new token: the outbox drops a
+     * second row with the same key, and {@code USER_INVITED:<id>} is already
+     * taken by the first invite, which would have made every resend a silent
+     * no-op.
+     *
+     * <p>Authorization (caller's tenant and role rank) is the controller's job,
+     * the same as every other {@code /api/admin/users} mutation.
+     */
+    @Transactional
+    public User resendInvite(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("User not found"));
+        if (user.getInviteToken() == null) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has no outstanding invite: they have already set a password.");
+        }
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has no email address to send an invite to.");
+        }
+        user.setInviteToken(generateInviteToken());
+        user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
+        User saved = userRepository.saveAndFlush(user);
+        publishInvite(saved, "USER_INVITED:" + saved.getId() + ":" + saved.getInviteToken().substring(0, 12));
+        return saved;
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -209,19 +276,31 @@ public class UserService {
         // A guard's rawPassword is ignored, whatever the caller passed — see
         // generateUnusableGuardSecret. This also makes a null rawPassword safe for
         // the one role that has no use for one.
-        user.setPasswordHash(passwordEncoder.encode(
-                role == UserRole.SECURITY_GUARD ? generateUnusableGuardSecret() : rawPassword));
+        boolean passwordSupplied = rawPassword != null && !rawPassword.isBlank();
+        boolean issuesInviteToken = issuesInviteToken(role, passwordSupplied);
+        String secret;
+        if (role == UserRole.SECURITY_GUARD) {
+            secret = generateUnusableGuardSecret();
+        } else if (passwordSupplied) {
+            secret = rawPassword;
+        } else if (issuesInviteToken) {
+            // #7: nobody invents a password for an invited user. The hash is of
+            // random bytes nobody ever sees; the invite link is how the account
+            // holder sets the first real one. This is what removed the plaintext
+            // password the renter form used to show and copy.
+            secret = generateUnusableGuardSecret();
+        } else {
+            throw new IllegalArgumentException("A password is required for the " + role + " role.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(secret));
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(normalizedPhone);
         user.setTenantId(tenantUuid);
 
-        boolean issuesInviteToken = role == UserRole.RENTER
-                || role == UserRole.PROPERTY_MANAGER
-                || role == UserRole.TENANT_USER;
         if (issuesInviteToken) {
             user.setInviteToken(generateInviteToken());
-            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
+            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(INVITE_VALIDITY));
         }
 
         // The existsBy checks above are happy-path message-quality guards, but
@@ -260,14 +339,9 @@ public class UserService {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
-        // Emit USER_INVITED for any role we issued an invite token for (RENTER, PROPERTY_MANAGER, TENANT_USER)
+        // Emit USER_INVITED for any role we issued an invite token for — see issuesInviteToken
         if (issuesInviteToken) {
-            String setPasswordUrl = "/auth/set-password?token=" + saved.getInviteToken();
-            events.publishEvent(new EmailEvent(this,
-                    EmailEventType.USER_INVITED,
-                    saved.getTenantId(),
-                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, saved.getInviteToken()),
-                    "USER_INVITED:" + saved.getId()));
+            publishInvite(saved, "USER_INVITED:" + saved.getId());
         }
 
         // Emit TENANT_ADMIN_ADDED inside the same @Transactional boundary so that

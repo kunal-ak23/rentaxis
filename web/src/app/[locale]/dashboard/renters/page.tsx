@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, User, Mail, Phone, List, LayoutGrid, Search, Copy, Check } from "lucide-react";
+import { Plus, X, User, Mail, Phone, List, LayoutGrid, Search, MailCheck } from "lucide-react";
+import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -17,11 +18,16 @@ type Renter = {
     email: string;
     phone: string;
     primaryLanguage: string;
+    userId?: string | null;
+    /** True while the portal invite is unused (#7); the API never returns a password. */
+    invitePending?: boolean;
+    inviteExpiresAt?: string | null;
 };
 
 export default function RentersPage() {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
+    const tInv = useTranslations("Invites");
     const locale = useLocale();
     const [renters, setRenters] = useState<Renter[]>([]);
     const [loading, setLoading] = useState(true);
@@ -72,8 +78,9 @@ export default function RentersPage() {
         }
     };
 
-    const [credentialsModal, setCredentialsModal] = useState<{ email: string; password: string } | null>(null);
-    const [copied, setCopied] = useState(false);
+    // #7: after creating a renter we confirm the emailed invite. There is no
+    // password to show: the backend neither generates nor returns one.
+    const [inviteNotice, setInviteNotice] = useState<{ email: string; invited: boolean } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
 
     const handleSubmit = async (ev: React.FormEvent) => {
@@ -92,10 +99,7 @@ export default function RentersPage() {
             setShowForm(false);
             fetchRenters();
 
-            // Show portal credentials if a portal account was created
-            if (data.portalPassword) {
-                setCredentialsModal({ email: formData.email, password: data.portalPassword });
-            }
+            setInviteNotice({ email: formData.email, invited: !!data.invitePending });
 
             setFormData({
                 nameEn: "",
@@ -314,7 +318,12 @@ export default function RentersPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-5 py-3.5 text-end">
-                                                    <span className="text-xs font-semibold text-primary">View</span>
+                                                    <div className="flex items-center justify-end gap-3">
+                                                        {canManageRenters && r.invitePending && r.userId && (
+                                                            <ResendInviteButton userId={r.userId} />
+                                                        )}
+                                                        <span className="text-xs font-semibold text-primary">View</span>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -380,45 +389,24 @@ export default function RentersPage() {
                     )}
                 </div>
             )}
-            {/* Portal Credentials Modal */}
-            {credentialsModal && (
+            {/* Invite confirmation (#7) — replaces the old plaintext-credentials modal */}
+            {inviteNotice && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
-                        <h2 className="text-lg font-bold text-foreground mb-1">Portal Account Created</h2>
-                        <p className="text-sm text-muted mb-6">Share these credentials with the renter so they can log in to the portal.</p>
-
-                        <div className="bg-input rounded-lg p-4 space-y-3 mb-6 border border-border">
-                            <div className="flex justify-between items-center">
-                                <span className="text-xs font-semibold text-muted uppercase tracking-wider">Email</span>
-                                <span className="text-sm font-medium text-foreground select-all">{credentialsModal.email}</span>
-                            </div>
-                            <div className="border-t border-border" />
-                            <div className="flex justify-between items-center">
-                                <span className="text-xs font-semibold text-muted uppercase tracking-wider">Password</span>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-mono font-bold text-foreground select-all">{credentialsModal.password}</span>
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(credentialsModal.password);
-                                            setCopied(true);
-                                            setTimeout(() => setCopied(false), 2000);
-                                        }}
-                                        className="p-1 rounded-md text-muted hover:text-foreground hover:bg-background transition-colors cursor-pointer"
-                                        title="Copy to clipboard"
-                                    >
-                                        {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-                                    </button>
-                                </div>
-                            </div>
+                    <div role="dialog" aria-modal="true" className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
+                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary mb-4">
+                            <MailCheck size={18} />
                         </div>
-
-                        <p className="text-[11px] text-warning mb-4">The renter should change their password after first login.</p>
-
+                        <h2 className="text-lg font-bold text-foreground mb-2">
+                            {inviteNotice.invited ? tInv("sentTitle") : t("addRenter")}
+                        </h2>
+                        <p className="text-sm text-muted mb-6">
+                            {inviteNotice.invited ? tInv("sentBody", { email: inviteNotice.email }) : tInv("noPortalBody")}
+                        </p>
                         <button
-                            onClick={() => setCredentialsModal(null)}
+                            onClick={() => setInviteNotice(null)}
                             className="w-full bg-primary text-primary-foreground py-2.5 rounded-lg text-sm font-semibold hover:bg-primary/90 transition-all cursor-pointer"
                         >
-                            Done
+                            {tInv("done")}
                         </button>
                     </div>
                 </div>

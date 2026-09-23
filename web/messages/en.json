@@ -2472,5 +2472,18 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "pageOf": "Page {page} of {total}"
+  },
+  "Invites": {
+    "resend": "Resend invite",
+    "resent": "Invite sent",
+    "resendFailed": "Could not resend the invite. Please try again.",
+    "pending": "Invite pending",
+    "expired": "Invite expired",
+    "sentTitle": "Invite sent",
+    "sentBody": "We emailed {email} a link to set their own password. The link is valid for 7 days; use Resend invite if it expires.",
+    "noPortalBody": "The renter was saved without a portal account because no email was given.",
+    "passwordNotNeeded": "No password is set here. The user gets an email invite to choose their own.",
+    "passwordRequired": "Super admins are not invited by email, so a password is required.",
+    "done": "Done"
   }
 }

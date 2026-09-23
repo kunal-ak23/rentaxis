@@ -14,5 +14,10 @@ public class RenterDTO {
     private String phone;
     private Language primaryLanguage;
     private UUID userId;
-    private String portalPassword; // Only set on creation, not stored
+    /**
+     * True while the renter's portal invite is unused (#7). The API never returns
+     * a password: onboarding is the emailed set-password link only.
+     */
+    private boolean invitePending;
+    private java.time.Instant inviteExpiresAt;
 }

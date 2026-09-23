@@ -7,12 +7,15 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -22,20 +25,39 @@ public class RenterService {
 
     private final RenterRepository renterRepository;
     private final UserService userService;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public List<RenterDTO> getAllRenters() {
         UUID tenantId = TenantContextHolder.getTenantId();
-        return renterRepository.findByTenantId(tenantId).stream()
-                .map(this::mapToDTO)
+        List<Renter> renters = renterRepository.findByTenantId(tenantId);
+        // One query for every portal account's invite state rather than one per row.
+        Map<UUID, User> users = new HashMap<>();
+        List<UUID> userIds = renters.stream().map(Renter::getUserId).filter(java.util.Objects::nonNull).toList();
+        if (!userIds.isEmpty() && tenantId != null) {
+            userRepository.findByTenantIdAndIdIn(tenantId, userIds).forEach(u -> users.put(u.getId(), u));
+        }
+        return renters.stream()
+                .map(r -> mapToDTO(r, r.getUserId() == null ? null : users.get(r.getUserId())))
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public RenterDTO getRenterById(UUID id) {
-        Renter renter = renterRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Renter not found"));
-        return mapToDTO(renter);
+        return mapToDTO(requireInTenant(id));
+    }
+
+    /**
+     * The renter with this id in the caller's tenant, or a 404.
+     *
+     * <p>{@code findById} is a primary-key load, which the Hibernate tenant filter
+     * does not narrow, so the tenant comparison here is the check, not a
+     * redundancy. A foreign id and a missing one get the same 404.</p>
+     */
+    Renter requireInTenant(UUID id) {
+        return renterRepository.findById(id)
+                .filter(r -> TenantReferences.inCurrentTenant(r.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Renter not found"));
     }
 
     @Transactional
@@ -51,7 +73,7 @@ public class RenterService {
 
         Renter saved = renterRepository.save(renter);
 
-        String generatedPassword = null;
+        User portalUser = null;
 
         // Auto-create portal User account by default. Skip only when:
         //   (a) the caller explicitly opts out (createPortalAccount=false), or
@@ -61,59 +83,36 @@ public class RenterService {
         // renter and portal user are atomically created (or neither). This
         // replaces the prior swallow-and-log behavior, which left orphan
         // renter rows with no portal access and made debugging painful.
+        //
+        // #7: no password is generated or returned. It used to be generated here
+        // and sent back as portalPassword for the form to display and copy, which
+        // is how credentials ended up pasted into WhatsApp. createUser gives an
+        // invited RENTER an unusable secret and emails USER_INVITED; the
+        // set-password link is the only way in.
         boolean shouldCreatePortal = dto.isCreatePortalAccount()
                 && dto.getEmail() != null && !dto.getEmail().isBlank();
         if (shouldCreatePortal) {
             UUID tenantId = TenantContextHolder.getTenantId();
-            generatedPassword = generatePortalPassword();
-            User user = userService.createUser(
+            portalUser = userService.createUser(
                     dto.getEmail(),
-                    generatedPassword,
+                    null,
                     dto.getNameEn(),
                     UserRole.RENTER,
                     tenantId != null ? tenantId.toString() : null,
                     dto.getPhone(),
                     "system"
             );
-            saved.setUserId(user.getId());
+            saved.setUserId(portalUser.getId());
             renterRepository.save(saved);
             // USER_INVITED is fired by UserService.createUser for RENTER role.
         }
 
-        RenterDTO result = mapToDTO(saved);
-        result.setPortalPassword(generatedPassword);
-        return result;
+        return mapToDTO(saved, portalUser);
     }
-
-    /**
-     * A fresh portal password, from {@link SecureRandom}.
-     *
-     * <p>This used to be {@code "Renter@" + renterId.substring(0, 6)} — derived
-     * from an identifier that is not a secret. A renter's id travels in API
-     * responses, in the tenant-ledger picker and in listing payloads, so anyone
-     * who could see a renter could compute that renter's password and sign in as
-     * them. Every portal account the product ever created shares the flaw, and
-     * nothing forces a rotation.</p>
-     *
-     * <p>The alphabet omits the characters people confuse when a password is read
-     * out over the phone (O/0, I/l/1), which is how these still get delivered
-     * until an invite flow exists. Twelve characters of it carry about 58 bits.</p>
-     */
-    private static String generatePortalPassword() {
-        final String alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-        StringBuilder sb = new StringBuilder("Renter@");
-        for (int i = 0; i < 12; i++) {
-            sb.append(alphabet.charAt(SECURE_RANDOM.nextInt(alphabet.length())));
-        }
-        return sb.toString();
-    }
-
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Transactional
     public RenterDTO updateRenter(UUID id, CreateRenterDTO dto) {
-        Renter renter = renterRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Renter not found"));
+        Renter renter = requireInTenant(id);
 
         renter.setNameEn(dto.getNameEn());
         renter.setNameAr(dto.getNameAr());
@@ -127,6 +126,14 @@ public class RenterService {
     }
 
     private RenterDTO mapToDTO(Renter renter) {
+        User user = renter.getUserId() == null ? null
+                : userRepository.findById(renter.getUserId())
+                        .filter(u -> renter.getTenantId() != null && renter.getTenantId().equals(u.getTenantId()))
+                        .orElse(null);
+        return mapToDTO(renter, user);
+    }
+
+    private RenterDTO mapToDTO(Renter renter, User user) {
         RenterDTO dto = new RenterDTO();
         dto.setId(renter.getId());
         dto.setNameEn(renter.getNameEn());
@@ -135,6 +142,10 @@ public class RenterService {
         dto.setPhone(renter.getPhone());
         dto.setPrimaryLanguage(renter.getPrimaryLanguage());
         dto.setUserId(renter.getUserId());
+        if (user != null && user.getInviteToken() != null) {
+            dto.setInvitePending(true);
+            dto.setInviteExpiresAt(user.getInviteTokenExpiresAt());
+        }
         return dto;
     }
 }

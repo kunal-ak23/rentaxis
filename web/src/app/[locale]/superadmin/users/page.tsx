@@ -9,13 +9,26 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { assignableRoles, getRoleLabel, getRoleLabelKey, PROVISIONABLE_ROLES, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
 const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] =
     PROVISIONABLE_ROLES.map((value) => ({ value, label: getRoleLabel(value) }));
 
-type User = { id: string; name: string; email: string; role: string; tenantId: string };
+type User = {
+    id: string; name: string; email: string; role: string; tenantId: string;
+    /** True while the set-password invite is unused (#7). */
+    invitePending?: boolean;
+};
+
+/**
+ * Roles onboarded by an emailed set-password invite when created without a
+ * password (UserService.issuesInviteToken). A SECURITY_GUARD signs in by phone
+ * OTP and its password is ignored server-side, so it needs none either. Only a
+ * SUPER_ADMIN still has a password typed in here.
+ */
+const PASSWORD_ON_CREATE_ROLES = new Set(["SUPER_ADMIN"]);
 
 export default function SuperAdminUsersPage() {
     const tRoles = useTranslations("Roles");
@@ -24,6 +37,7 @@ export default function SuperAdminUsersPage() {
     const roleLabel = (role: string) =>
         tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
     const t = useTranslations("Index"); // Or custom namespace
+    const tInv = useTranslations("Invites");
     const { data: session } = useSession();
     const currentRole = session?.user?.role as UserRole | undefined;
     const currentTenantId = (session?.user?.tenantId as string | undefined) || "";
@@ -133,7 +147,9 @@ export default function SuperAdminUsersPage() {
         setFormError(null);
         try {
             const bodyData: any = { email, name, role, tenantId, phoneNumber };
-            if (password) bodyData.password = password;
+            // #7/#2: a new user of an invited role never gets a password typed in
+            // here; the backend emails them a set-password link instead.
+            if (password && (editingUserId || PASSWORD_ON_CREATE_ROLES.has(role))) bodyData.password = password;
 
             if (role === 'PROPERTY_MANAGER') {
                 // Always send the list (including []) — the backend skips the
@@ -334,6 +350,7 @@ export default function SuperAdminUsersPage() {
                                                 </td>
                                                 <td className="py-4 px-2 text-right">
                                                     <div className="flex justify-end gap-2">
+                                                        {u.invitePending && <ResendInviteButton userId={u.id} />}
                                                         <button
                                                             onClick={() => handleEdit(u)}
                                                             className="text-xs px-3 py-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
@@ -421,10 +438,18 @@ export default function SuperAdminUsersPage() {
                                         placeholder="e.g. +971 50 123 4567"
                                     />
                                 </div>
+                                {!editingUserId && !PASSWORD_ON_CREATE_ROLES.has(role) ? (
+                                    <p className="text-[11px] text-muted font-medium bg-input border border-border rounded-lg p-3">
+                                        {tInv("passwordNotNeeded")}
+                                    </p>
+                                ) : (
                                 <div>
                                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">
                                         Password {editingUserId && "(Leave blank to keep unchanged)"}
                                     </label>
+                                    {!editingUserId && (
+                                        <p className="text-[10px] text-muted mb-2 ml-1">{tInv("passwordRequired")}</p>
+                                    )}
                                     <input
                                         type="password"
                                         required={!editingUserId}
@@ -434,6 +459,7 @@ export default function SuperAdminUsersPage() {
                                         placeholder={editingUserId ? "Leave blank to keep current" : "Secure password"}
                                     />
                                 </div>
+                                )}
                                 <div>
                                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Role</label>
                                     <select

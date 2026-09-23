@@ -107,6 +107,17 @@ public class UserController {
         return ResponseEntity.ok(UserResponseDTO.from(user));
     }
 
+    /**
+     * Re-issues an unused or expired set-password invite and emails it again (#7).
+     * The same target-user boundary as edit and delete: a TENANT_ADMIN may only
+     * reach users in their own tenant at or below their own rank.
+     */
+    @PostMapping("/{id}/resend-invite")
+    public ResponseEntity<UserResponseDTO> resendInvite(@PathVariable UUID id) {
+        authorizeTargetUser(id);
+        return ResponseEntity.ok(UserResponseDTO.from(userService.resendInvite(id)));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         authorizeTargetUser(id);
