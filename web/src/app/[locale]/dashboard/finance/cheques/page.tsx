@@ -370,7 +370,18 @@ export default function ChequeRegisterPage() {
                                     const actions = registerActionsFor(c.status, c.mode, canCancel);
                                     return (
                                         <tr key={c.id} data-testid={`cheque-row-${c.id}`} className="hover:bg-input/60 transition-colors">
-                                            <td className={`${td} font-semibold`}>{c.chequeNumber || `#${c.seqNo}`}</td>
+                                            {/*
+                                              * A numberless PDC row is a cheque still awaiting its number,
+                                              * so `#seqNo` is a fair placeholder. A CASH/TRANSFER/ONLINE row —
+                                              * e.g. the collection row an approved penalty or a settlement
+                                              * balance creates — has no cheque number by nature, and showing
+                                              * `#7` in a column headed "Cheque No" reads as cheque number 7,
+                                              * an instrument no cheque book contains. Show a dash there instead;
+                                              * the Mode and narration columns already say what the row is.
+                                              */}
+                                            <td className={`${td} font-semibold`}>
+                                                {c.chequeNumber || (c.mode === "PDC" ? `#${c.seqNo}` : "—")}
+                                            </td>
                                             <td className={`${td} tabular-nums`}>{fmtIsoDate(c.chequeDate ?? c.postingDate, locale)}</td>
                                             <td className={td}>{c.renterName || "—"}</td>
                                             <td className={td}>{c.unitIdentifier || "—"}</td>
