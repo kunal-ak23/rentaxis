@@ -70,6 +70,8 @@ clean, **259** component tests.
 
 | 25 | **The finalized settlement now names the settler**, not a UUID. The mapping resolved the name with the *tenant-filtered* `findById`, which cannot see a SUPER_ADMIN acting inside a pivoted tenant (`tenant_id = NULL`) — so a legal move-out document showed a raw id. Swapped to the native `findDisplayNameById`, purpose-built for cross-tenant audit attribution. | `SettlementServiceIT.finalizeCarriesTheSettlersNameOnTheStatement` — guards that the name is populated; see its scope note on why the harness cannot reproduce the tenant-filter half |
 
+| 21 | **Timestamps now render as their local date everywhere.** `fmtIsoDate` sliced the first ten characters — the UTC calendar date — off every value, so a lease's `postedAt` (an `Instant`) showed 22/09 on the header while the ticket history showed 23/09 for the same action. It now converts a full timestamp (one containing `T`) to the viewer's local date, and keeps the parts-based path for bare `yyyy-MM-dd` values so pure dates still can't shift a day. One function, so all 45 call sites are corrected at once. | 4 new `fmtIsoDate` tests in `leaseMath.test.ts`; full web suite 981 passing |
+
 **Remediation still required (operational, not code):** existing renter accounts keep their old derived
 passwords. Every portal password created before this change should be rotated — on the Miftah Demo tenant,
 the Al Ashram demo tenant, and any live customer. The fix stops new accounts being guessable; it does not

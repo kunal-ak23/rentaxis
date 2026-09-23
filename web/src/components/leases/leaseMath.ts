@@ -188,16 +188,36 @@ export function splitLineErrors(errors: string[]): { bySeq: Map<number, string[]
 }
 
 /**
- * `new Date("2026-09-11")` parses as UTC midnight, so west of Greenwich
- * `toLocaleDateString` renders the day before — a cheque grid that shifts every
- * date by one day is worse than no dates at all. Built from the parts, the Date
- * lands on local midnight.
+ * Renders either a bare `yyyy-MM-dd` date or a full ISO timestamp as a date.
+ *
+ * <p>The two need opposite handling, and conflating them was the "same instant,
+ * two dates" bug: a lease's `postedAt` (an {@code Instant}) showed 22/09 on the
+ * header while the ticket history showed 23/09 for the same action, because this
+ * used to slice the first ten characters — the *UTC* calendar date — off every
+ * value. West of the date line that disagrees with any screen rendering the same
+ * instant in local time.</p>
+ *
+ * <ul>
+ *   <li>A full timestamp (has a {@code T}) is an instant with a real time zone:
+ *       convert it to the viewer's local date, so it agrees everywhere.</li>
+ *   <li>A bare {@code yyyy-MM-dd} has no time zone. {@code new Date("2026-09-11")}
+ *       parses as UTC midnight, so east or west of Greenwich {@code toLocale…}
+ *       could render the neighbouring day — a cheque grid that shifts every date
+ *       is worse than no dates. Built from the parts, the Date lands on local
+ *       midnight and the day is preserved.</li>
+ * </ul>
  */
 export function fmtIsoDate(iso: string | null | undefined, locale: string): string {
     if (!iso) return "—";
+    const target = locale === "ar" ? "ar-AE" : "en-GB";
+    if (iso.includes("T")) {
+        const instant = new Date(iso);
+        if (Number.isNaN(instant.getTime())) return iso;
+        return instant.toLocaleDateString(target);
+    }
     const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
     if (!y || !m || !d) return iso;
-    return new Date(y, m - 1, d).toLocaleDateString(locale === "ar" ? "ar-AE" : "en-GB");
+    return new Date(y, m - 1, d).toLocaleDateString(target);
 }
 
 /** Today in the `yyyy-MM-dd` shape every date input and date field expects. */
