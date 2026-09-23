@@ -726,6 +726,7 @@
     "leaseRenewal": "Lease Renewal",
     "list": "List",
     "newMeeting": "New Meeting",
+    "noHostAvailable": "Your landlord hasn't set anyone up to take meetings yet. Please contact the property office directly.",
     "noMeetings": "No meetings found",
     "noShow": "Mark No Show",
     "noSlotsAvailable": "No slots available on this date",
@@ -736,6 +737,7 @@
     "propertyViewing": "Property Viewing",
     "propertyVisit": "Property Visit",
     "requester": "Requester",
+    "retry": "Retry",
     "selectDate": "Select Date",
     "selectLease": "Select Lease",
     "selectProperty": "Select Property",
@@ -743,6 +745,7 @@
     "selectSlot": "Select Time Slot",
     "selectType": "Select Meeting Type",
     "slotConflict": "This slot is already booked. Next available slot:",
+    "slotsLoadError": "Couldn't load available times. Please try again.",
     "status": {
       "REQUESTED": "Requested",
       "APPROVED": "Approved",
