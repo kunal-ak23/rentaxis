@@ -125,6 +125,25 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         TenantContextHolder.clear();
     }
 
+    /**
+     * The request's tenant comes from ApiSecurityFilter, as in production: the
+     * legacy identity headers for the {@code @WithMockUser} role, homed in this
+     * tenant. A tenant set on the test thread no longer leaks into the request
+     * (TenantContextResetFilter, security audit P1-1).
+     */
+    private org.springframework.test.web.servlet.request.RequestPostProcessor asCaller() {
+        return request -> {
+            String role = org.springframework.security.core.context.SecurityContextHolder.getContext()
+                    .getAuthentication().getAuthorities().iterator().next().getAuthority()
+                    .replace("ROLE_", "");
+            request.addHeader("X-User-Id", UUID.randomUUID().toString());
+            request.addHeader("X-User-Role", role);
+            request.addHeader("X-Tenant-Id", tenantId.toString());
+            request.addHeader("X-User-Tenant-Id", tenantId.toString());
+            return request;
+        };
+    }
+
     private Cheque saveCheque(int seqNo, LocalDate chequeDate, ChequeStatus status) {
         Cheque c = new Cheque();
         c.setTenantId(tenantId);
@@ -159,7 +178,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
                 .map(c -> buildItem(c.getId(), "C-" + c.getSeqNo(), c.getChequeDate()))
                 .toList());
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
@@ -188,7 +207,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
                 "imageBlobPath":"t/x.jpg","imageUploadedAt":"2026-05-20T10:00:00Z"}]}"""
                 .formatted(first.getId());
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
@@ -210,7 +229,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         BulkAttachChequesRequest req = new BulkAttachChequesRequest();
         req.setItems(List.of(buildItem(first.getId(), "C-X", LocalDate.now())));
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isConflict());
@@ -224,7 +243,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         BulkAttachChequesRequest req = new BulkAttachChequesRequest();
         req.setItems(List.of(buildItem(UUID.randomUUID(), "C-X", LocalDate.now())));
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isBadRequest());
@@ -236,7 +255,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         BulkAttachChequesRequest req = new BulkAttachChequesRequest();
         req.setItems(List.of());
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isBadRequest());
@@ -248,7 +267,7 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
         BulkAttachChequesRequest req = new BulkAttachChequesRequest();
         req.setItems(List.of(buildItem(UUID.randomUUID(), "C", LocalDate.now())));
 
-        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach")
+        mvc.perform(post("/api/v1/leases/" + lease.getId() + "/cheques/bulk-attach").with(asCaller())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden());

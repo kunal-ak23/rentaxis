@@ -56,6 +56,11 @@ class ChequeExtractionControllerTest {
         tenantId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);
         doAnswer(invocation -> {
+            // Stands in for ApiSecurityFilter, so it does that filter's job of
+            // setting the request's tenant. A tenant set on the test thread
+            // before perform() no longer reaches the request:
+            // TenantContextResetFilter clears it (security audit P1-1).
+            TenantContextHolder.setTenantId(tenantId);
             jakarta.servlet.FilterChain chain = invocation.getArgument(2);
             chain.doFilter(invocation.getArgument(0), invocation.getArgument(1));
             return null;
