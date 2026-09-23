@@ -66,6 +66,8 @@ clean, **259** component tests.
 
 | 34 | **Portal passwords now come from `SecureRandom`** — 12 characters of a 55-character alphabet (~58 bits), with look-alike glyphs removed because these still get read out over the phone. | `RenterPortalPasswordTest` — 4 tests; 2 of them fail against the old scheme, verified by reverting |
 
+| 5 | **Rent fields now carry a period** — the unit and property forms' *Expected Rent* / *Actual Rent* labels read "(AED/year)" in both locales, and the misleading `e.g. 5000` placeholder (which reads as a monthly figure) is now `e.g. 85000`. The model stores rent annually — `revenueAtCapacity` sums `expectedRent` directly and showed AED 85,000 against Ahmed's annual line — so "per year" is the correct label, not a guess. | web typecheck clean; no test asserted the old label |
+
 **Remediation still required (operational, not code):** existing renter accounts keep their old derived
 passwords. Every portal password created before this change should be rotated — on the Miftah Demo tenant,
 the Al Ashram demo tenant, and any live customer. The fix stops new accounts being guessable; it does not
