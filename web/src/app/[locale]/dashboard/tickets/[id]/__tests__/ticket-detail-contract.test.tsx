@@ -51,6 +51,8 @@ const baseTicket = {
     updatedAt: "2026-08-01T00:00:00Z",
     estimatedResolutionHours: null as number | null,
     closureOtp: null,
+    closableWithoutOtp: false,
+    otpLocked: false,
     satisfactionRating: null,
     satisfactionComment: null,
     attachments: [],
@@ -60,6 +62,7 @@ let ticket: typeof baseTicket;
 let statusActionResponse: { ok: boolean; status: number; body: unknown };
 let statusActionPending: Promise<Response> | null;
 let estimateActionPending: Promise<Response> | null;
+let reissueResponse: { ok: boolean; status: number; body: unknown };
 
 const jsonRes = (body: unknown, ok = true, status = 200) =>
     ({
@@ -74,6 +77,7 @@ beforeEach(() => {
     statusActionResponse = { ok: true, status: 200, body: {} };
     statusActionPending = null;
     estimateActionPending = null;
+    reissueResponse = { ok: true, status: 200, body: {} };
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("/admin/users")) {
@@ -85,6 +89,9 @@ beforeEach(() => {
         if (u.endsWith(`/v1/tickets/${TICKET_ID}/status`)) {
             if (statusActionPending) return statusActionPending;
             return jsonRes(statusActionResponse.body, statusActionResponse.ok, statusActionResponse.status);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}/closure-otp`)) {
+            return jsonRes(reissueResponse.body, reissueResponse.ok, reissueResponse.status);
         }
         if (u.endsWith(`/v1/tickets/${TICKET_ID}/estimate`) && estimateActionPending) {
             return estimateActionPending;
@@ -193,5 +200,133 @@ describe("TicketDetailPage API contract", () => {
             resolveAction(jsonRes({ ...ticket, estimatedResolutionHours: 4 }));
             await estimateActionPending;
         });
+    });
+});
+
+// PR #342: a RESOLVED ticket nobody can confirm with a code is closed through
+// the status route, and staff can re-issue a closure code where a renter can
+// receive one. The page follows the DTO's closableWithoutOtp / otpLocked flags.
+describe("TicketDetailPage closing a resolved ticket", () => {
+    const calls = () =>
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => ({
+            url: String(c[0]),
+            init: c[1] as RequestInit | undefined,
+        }));
+
+    it("offers Close ticket with a confirm when no renter can confirm, and closes through the status route", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        ticket.closableWithoutOtp = true;
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("closeTicket"));
+        // Nothing is sent until the confirm, which explains the closure.
+        expect(calls().some((c) => c.url.endsWith("/status"))).toBe(false);
+        expect(screen.getByText("closeWithoutOtpNoRenter")).toBeTruthy();
+        // No code to enter or re-send when nobody can confirm.
+        expect(screen.queryByPlaceholderText("6-digit OTP")).toBeNull();
+        expect(screen.queryByText("reissueOtp")).toBeNull();
+
+        await act(async () => {
+            fireEvent.click(screen.getByText("closeTicketConfirm"));
+        });
+
+        const statusCall = calls().find((c) => c.url.endsWith(`/v1/tickets/${TICKET_ID}/status`));
+        expect(statusCall?.init?.method).toBe("PUT");
+        expect(JSON.parse(String(statusCall?.init?.body))).toEqual({ status: "CLOSED" });
+    });
+
+    it("cancelling the confirm sends nothing", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "RESOLVED";
+        ticket.closableWithoutOtp = true;
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("closeTicket"));
+        fireEvent.click(screen.getByText("cancel"));
+
+        expect(screen.queryByText("closeWithoutOtpNoRenter")).toBeNull();
+        expect(calls().some((c) => c.url.endsWith("/status"))).toBe(false);
+    });
+
+    it("explains the lockout in the confirm when an admin closes a locked ticket", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "RESOLVED";
+        ticket.closableWithoutOtp = true;
+        ticket.otpLocked = true;
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("closeTicket"));
+        expect(screen.getByText("closeWithoutOtpLocked")).toBeTruthy();
+        expect(screen.queryByText("reissueOtp")).toBeNull();
+    });
+
+    it("shows nothing new when the renter can confirm: OTP closure plus a re-send", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
+        expect(screen.queryByText("closeTicket")).toBeNull();
+        expect(screen.getByText("reissueOtp")).toBeTruthy();
+    });
+
+    it("does not offer Close ticket on a ticket that is not resolved", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "IN_PROGRESS";
+        ticket.closableWithoutOtp = true;
+        render(<TicketDetailPage />);
+
+        await screen.findByText("Mark Resolved");
+        expect(screen.queryByText("closeTicket")).toBeNull();
+    });
+
+    it("tells a property manager a locked ticket needs an admin, with no close or re-send", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        ticket.otpLocked = true;
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByText("otpLockedStaffHint")).toBeTruthy();
+        expect(screen.queryByText("closeTicket")).toBeNull();
+        expect(screen.queryByText("reissueOtp")).toBeNull();
+        expect(screen.queryByPlaceholderText("6-digit OTP")).toBeNull();
+    });
+
+    it("re-sends a closure code with POST and confirms it was sent", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        render(<TicketDetailPage />);
+
+        const resend = await screen.findByText("reissueOtp");
+        await act(async () => {
+            fireEvent.click(resend);
+        });
+
+        const reissue = calls().find((c) => c.url.endsWith(`/v1/tickets/${TICKET_ID}/closure-otp`));
+        expect(reissue?.init?.method).toBe("POST");
+        expect(await screen.findByText("reissueOtpSent")).toBeTruthy();
+    });
+
+    it("surfaces the 3-per-24-hours cap when re-sending is refused", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        reissueResponse = {
+            ok: false,
+            status: 400,
+            body: {
+                error: true,
+                message: "A closure OTP can be re-issued at most 3 times in 24 hours. Try again later.",
+                status: 400,
+            },
+        };
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("reissueOtp"));
+
+        expect(
+            await screen.findByText("A closure OTP can be re-issued at most 3 times in 24 hours. Try again later.")
+        ).toBeTruthy();
+        expect(screen.queryByText("reissueOtpSent")).toBeNull();
     });
 });

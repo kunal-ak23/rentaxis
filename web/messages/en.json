@@ -2457,7 +2457,16 @@
     "onBehalfOfNone": "Nobody — staff reported it",
     "onBehalfOfHint": "Pick the renter who phoned or messaged, so the ticket appears in their record.",
     "onBehalfOfLabel": "On behalf of: {name}",
-    "reportedOn": "Reported On"
+    "reportedOn": "Reported On",
+    "closeTicket": "Close ticket",
+    "closeTicketConfirmTitle": "Close this ticket without a code?",
+    "closeWithoutOtpNoRenter": "No renter can confirm with a code; this closure is recorded in the ticket history.",
+    "closeWithoutOtpLocked": "OTP closure is locked after too many wrong codes; this closure is recorded in the ticket history.",
+    "closeTicketConfirm": "Yes, close ticket",
+    "cancel": "Cancel",
+    "reissueOtp": "Send a new closure code",
+    "reissueOtpSent": "A new closure code was sent to the renter.",
+    "otpLockedStaffHint": "OTP closure is locked for this ticket after too many wrong codes. A tenant admin can close it."
   },
   "RenterHome": {
     "renterFallback": "Renter",

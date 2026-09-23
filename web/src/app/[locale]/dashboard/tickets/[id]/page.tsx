@@ -40,6 +40,14 @@ type Ticket = {
     updatedAt: string;
     estimatedResolutionHours: number | null;
     closureOtp: string | null;
+    /**
+     * Staff only: PUT /tickets/{id}/status with CLOSED would succeed for this
+     * caller (no renter can confirm with a code, the tenant does not require
+     * one, or OTP closure is locked and the caller is an admin).
+     */
+    closableWithoutOtp?: boolean;
+    /** Staff only: OTP closure is locked for good after too many wrong codes. */
+    otpLocked?: boolean;
     satisfactionRating: number | null;
     satisfactionComment: string | null;
     attachments: Attachment[];
@@ -114,6 +122,8 @@ export default function TicketDetailPage() {
     const [actionError, setActionError] = useState<string | null>(null);
     const [staffError, setStaffError] = useState<string | null>(null);
     const [otpInput, setOtpInput] = useState("");
+    const [confirmingClose, setConfirmingClose] = useState(false);
+    const [actionNotice, setActionNotice] = useState<string | null>(null);
     const [etaInput, setEtaInput] = useState("");
     const [showAssignDropdown, setShowAssignDropdown] = useState(false);
 
@@ -205,12 +215,17 @@ export default function TicketDetailPage() {
 
     // ── Status actions ──────────────────────────────────────────────────
 
-    const performAction = async (action: string, body?: Record<string, unknown>) => {
+    const performAction = async (
+        action: string,
+        body?: Record<string, unknown>,
+        method: "PUT" | "POST" = "PUT",
+    ): Promise<boolean> => {
         setActionLoading(action);
         setActionError(null);
+        setActionNotice(null);
         try {
             const res = await fetch(`/api/proxy/v1/tickets/${ticketId}/${action}`, {
-                method: "PUT",
+                method,
                 headers: { "Content-Type": "application/json" },
                 body: body ? JSON.stringify(body) : undefined,
             });
@@ -219,8 +234,10 @@ export default function TicketDetailPage() {
             await throwIfNotOk(res);
             fetchTicket();
             fetchHistory();
+            return true;
         } catch (err) {
             setActionError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+            return false;
         } finally {
             setActionLoading(null);
         }
@@ -237,6 +254,20 @@ export default function TicketDetailPage() {
     const handleClose = () => {
         if (otpInput.length !== 6) return;
         performAction("close", { otp: otpInput });
+    };
+    // Closing without a code goes through the status route, which the backend
+    // allows only when nobody can confirm (closableWithoutOtp) and records in
+    // the ticket history.
+    const handleCloseWithoutOtp = async () => {
+        setConfirmingClose(false);
+        await performAction("status", { status: "CLOSED" });
+    };
+    // POST /closure-otp: a fresh code to the renter. The backend caps it at 3
+    // per 24 hours; its message is shown as any other action error.
+    const handleReissueOtp = async () => {
+        if (await performAction("closure-otp", undefined, "POST")) {
+            setActionNotice(t("reissueOtpSent"));
+        }
     };
     const handleSetEta = () => {
         if (!etaInput) return;
@@ -549,6 +580,11 @@ export default function TicketDetailPage() {
                                     {actionError}
                                 </div>
                             )}
+                            {actionNotice && (
+                                <div className="bg-success/10 border border-success/20 text-success text-xs font-medium rounded-lg px-3 py-2" role="status">
+                                    {actionNotice}
+                                </div>
+                            )}
                             {staffError && (
                                 <p className="text-[10px] text-warning font-medium">{staffError}</p>
                             )}
@@ -581,8 +617,33 @@ export default function TicketDetailPage() {
                                     {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> Mark Resolved
                                 </button>
                             )}
+                            {ticket.status === "RESOLVED" && ticket.closableWithoutOtp && (
+                                confirmingClose ? (
+                                    <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3" role="alertdialog" aria-labelledby="close-without-otp-title">
+                                        <p id="close-without-otp-title" className="text-xs font-semibold text-foreground">{t("closeTicketConfirmTitle")}</p>
+                                        <p className="text-xs text-muted">{ticket.otpLocked ? t("closeWithoutOtpLocked") : t("closeWithoutOtpNoRenter")}</p>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={handleCloseWithoutOtp} disabled={actionLoading === "status"} className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
+                                                {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} {t("closeTicketConfirm")}
+                                            </button>
+                                            <button onClick={() => setConfirmingClose(false)} className="flex-1 bg-input text-foreground px-3 py-2 rounded-lg text-xs font-semibold hover:bg-input/80 transition-all cursor-pointer">
+                                                {t("cancel")}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setConfirmingClose(true)} disabled={actionLoading === "status"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
+                                        <CheckCircle size={12} /> {t("closeTicket")}
+                                    </button>
+                                )
+                            )}
+                            {ticket.status === "RESOLVED" && !ticket.closableWithoutOtp && ticket.otpLocked && (
+                                <p className="text-xs text-warning font-medium">{t("otpLockedStaffHint")}</p>
+                            )}
                             {ticket.status === "RESOLVED" && (
                                 <>
+                                    {!ticket.closableWithoutOtp && !ticket.otpLocked && (
+                                    <>
                                     <div className="space-y-2">
                                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">Close with OTP</label>
                                         <div className="flex items-center gap-2">
@@ -594,6 +655,11 @@ export default function TicketDetailPage() {
                                             </button>
                                         </div>
                                     </div>
+                                    <button onClick={handleReissueOtp} disabled={actionLoading === "closure-otp"} className="w-full flex items-center justify-center gap-2 bg-info/10 text-info px-4 py-2 rounded-lg text-xs font-semibold hover:bg-info/20 transition-all cursor-pointer disabled:opacity-50">
+                                        {actionLoading === "closure-otp" && <Loader2 size={12} className="animate-spin" />} {t("reissueOtp")}
+                                    </button>
+                                    </>
+                                    )}
                                     <button onClick={handleReopen} disabled={actionLoading === "reopen"} className="w-full flex items-center justify-center gap-2 bg-error/10 text-error px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer disabled:opacity-50">
                                         {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} Reopen
                                     </button>
