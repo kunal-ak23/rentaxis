@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin } from "lucide-react";
+import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { autoMapChequesToRows } from "./autoMapChequesToRows";
@@ -183,6 +183,34 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
         return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
       }
       return next;
+    });
+  };
+
+  // Re-extract a failed scan and merge the result into its table row. Each
+  // field is filled only while it is still blank, so anything the operator
+  // typed while the row was failed survives; a newly-read date re-runs the
+  // auto-map exactly as a typed date would (unless the row is pinned).
+  const retryRow = async (itemId: string) => {
+    const ex = (await extract.retry(itemId))?.extracted;
+    if (!ex) return;
+    setTableRows(prev => {
+      let dateFilled = false;
+      const next = prev.map(r => {
+        if (r.itemId !== itemId) return r;
+        const chequeDate = r.chequeDate ?? ex.chequeDate ?? null;
+        dateFilled = r.chequeDate == null && chequeDate != null;
+        return {
+          ...r,
+          chequeNumber: r.chequeNumber.trim() ? r.chequeNumber : ex.chequeNumber ?? "",
+          bankName: r.bankName.trim() ? r.bankName : ex.bankName ?? "",
+          payerName: r.payerName.trim() ? r.payerName : ex.payerName ?? "",
+          chequeDate,
+          amount: r.amount ?? ex.amount ?? null,
+        };
+      });
+      if (!dateFilled || next.find(r => r.itemId === itemId)?.pinned) return next;
+      const map = remap(next);
+      return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
     });
   };
 
@@ -399,6 +427,24 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                             <p className="mt-1 text-[10px] text-red-700">
                               <AlertTriangle size={10} className="inline" /> {t("extractionFailed")}
                             </p>
+                          )}
+                          {(item.status === "failed" || item.status === "extracting") && (
+                            <button
+                              type="button"
+                              onClick={() => void retryRow(row.itemId)}
+                              disabled={item.status === "extracting"}
+                              className="mt-1 inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium hover:bg-input/40 disabled:opacity-50"
+                            >
+                              {item.status === "extracting" ? (
+                                <>
+                                  <Loader2 size={10} className="animate-spin" /> {t("retryingExtraction")}
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCw size={10} /> {t("retryExtraction")}
+                                </>
+                              )}
+                            </button>
                           )}
                         </td>
                         <td className="pr-2">

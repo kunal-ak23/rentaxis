@@ -166,6 +166,48 @@ describe("BulkChequeUploadFlow", () => {
     expect(labels.some(l => l.includes("20/04/2026") || l.includes("2026-04-20"))).toBe(false);
   });
 
+  it("a failed extraction can be retried and fills the row, keeping operator edits (#64)", async () => {
+    global.fetch = vi.fn()
+      // First attempt fails outright.
+      .mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: "upstream" }) })
+      // Retry succeeds.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-9", bankName: "ENBD", payerName: "GULF BREW CAFE LLC", chequeDate: "2026-07-04", amount: 5000, confidence: "HIGH" },
+          warnings: [],
+        }),
+      });
+
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText("extractionFailed"));
+    const [chequeNo, bank, payer] = Array.from(document.querySelectorAll("tbody input")) as HTMLInputElement[];
+    expect(chequeNo.value).toBe("");
+    expect((document.querySelector("select") as HTMLSelectElement).value).toBe("");
+
+    // The operator typed a bank while the row was failed; retry must not clobber it.
+    fireEvent.change(bank, { target: { value: "Mashreq" } });
+
+    fireEvent.click(screen.getByText("retryExtraction"));
+
+    await waitFor(() => expect(chequeNo.value).toBe("C-9"));
+    expect(payer.value).toBe("GULF BREW CAFE LLC");
+    expect(bank.value).toBe("Mashreq");
+    expect((document.querySelector('tbody input[type="date"]') as HTMLInputElement).value).toBe("2026-07-04");
+    // The newly-read date auto-maps the row, and the failure notice is gone.
+    expect((document.querySelector("select") as HTMLSelectElement).value).toBe("s2");
+    expect(screen.queryByText("extractionFailed")).toBeNull();
+    expect(screen.queryByText("retryExtraction")).toBeNull();
+    // With the image now uploaded, approve is enabled.
+    expect(screen.getByText(/^approveAll/).closest("button")).not.toBeDisabled();
+  });
+
   it("only offers REGISTERED PDC rows — a DEPOSITED row is not a bulk-attach target", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,

@@ -512,6 +512,8 @@
     "continueToExtract": "استخراج الشيكات",
     "extractingCount": "جارٍ الاستخراج {done} من {total}…",
     "extractionFailed": "فشل الاستخراج — املأ الحقول أو احذف",
+    "retryExtraction": "إعادة المحاولة",
+    "retryingExtraction": "جارٍ إعادة المحاولة…",
     "colImage": "الصورة",
     "colChequeNumber": "رقم الشيك",
     "colBank": "البنك",
