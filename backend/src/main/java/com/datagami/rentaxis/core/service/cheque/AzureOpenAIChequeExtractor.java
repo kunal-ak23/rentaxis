@@ -37,6 +37,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
             chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
             Add short warnings for obscured, missing, or uncertain fields.
             amount is the numeric cheque value from the figures (AED) box; cross-check it against the amount in words. Return a plain number with no thousands separators or currency symbol. Use null if unreadable.
+            payerName is the drawer: the account holder who issues and signs the cheque, often printed under the signature line or as the account name. It is never the name on the "Pay" line, which is the payee (the landlord). Use null if unreadable.
             """;
 
     private static final String SCHEMA = """
