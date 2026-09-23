@@ -94,6 +94,44 @@ class PropertyAccountServiceIT {
         assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Belle Vue");
     }
 
+    /**
+     * D-01 describes itself as holding "building running costs, one leaf per
+     * property per category" and used to ship with no children, which left a new
+     * tenant with nothing but Rounding Off, Discount Allowed and Bank Charges to
+     * code a supplier invoice to.
+     */
+    @Test
+    void creatingAPropertyGeneratesItsDirectExpenseLeaves() {
+        Property p = newProperty("Nakheel Court");
+        Account directExpense = accounts.getAccountByCode("D-01");
+
+        assertThat(accountRepo.findByProperty_Id(p.getId()))
+                .filteredOn(a -> a.getParent() != null
+                        && a.getParent().getId().equals(directExpense.getId()))
+                .extracting(Account::getName)
+                .contains("Repairs & Maintenance - Nakheel Court",
+                        "Cleaning - Nakheel Court",
+                        "Security - Nakheel Court",
+                        "Utilities - Nakheel Court",
+                        "Insurance - Nakheel Court",
+                        "Management Fees - Nakheel Court");
+        assertThat(accountRepo.findByProperty_Id(p.getId()))
+                .filteredOn(a -> a.getName().startsWith("Repairs & Maintenance"))
+                .singleElement()
+                .satisfies(a -> assertThat(a.getAccountType()).isEqualTo(AccountType.EXPENSE));
+    }
+
+    /** A second generation run must not duplicate the expense leaves. */
+    @Test
+    void regeneratingDoesNotDuplicateDirectExpenseLeaves() {
+        Property p = newProperty("Nakheel Court 2");
+        int before = accountRepo.findByProperty_Id(p.getId()).size();
+
+        service.generateMissing(p.getId());
+
+        assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
+    }
+
     @Test
     void manualMappingToASharedAccountAndTypeCheck() {
         Property galah = newProperty("Galah Residence 2");

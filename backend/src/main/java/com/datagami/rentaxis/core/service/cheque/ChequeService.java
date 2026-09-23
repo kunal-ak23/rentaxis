@@ -296,6 +296,9 @@ public class ChequeService {
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "deposit", ChequeStatus.REGISTERED);
         requireDepositable(cheque);
+        if (replay == null) {
+            requireNotPresentedEarly(cheque, r.dateOrToday());
+        }
 
         applyDeposit(cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
         chequeRepository.save(cheque);
@@ -334,6 +337,9 @@ public class ChequeService {
             requireSameTenant(c);
             byId.put(c.getId(), c);
         }
+        // Read before the loop so the rows can be checked against the date the
+        // clerk actually chose, not just against each other.
+        LocalDate date = request.dateOrToday();
         List<String> problems = new ArrayList<>();
         for (UUID id : ids) {
             Cheque c = byId.get(id);
@@ -353,6 +359,10 @@ public class ChequeService {
                 problems.add(label(c) + " is " + c.getStatus());
             } else if (c.getMode() != ChequeMode.PDC) {
                 problems.add(label(c) + " is a " + c.getMode() + " receipt, not a cheque");
+            } else if (c.getChequeDate() != null && date.isBefore(c.getChequeDate())) {
+                // One date covers the whole selection, so a clerk banking
+                // October's pile can easily sweep up a November cheque.
+                problems.add(earlyPresentation(c, date));
             }
         }
         if (!problems.isEmpty()) {
@@ -363,7 +373,6 @@ public class ChequeService {
                             + ". Only REGISTERED post-dated cheques can be banked, and nothing was deposited.");
         }
 
-        LocalDate date = request.dateOrToday();
         List<ChequeDTO> out = new ArrayList<>(ids.size());
         for (UUID id : ids) {
             Cheque c = byId.get(id);
@@ -1466,6 +1475,32 @@ public class ChequeService {
                     "Only a post-dated cheque can be deposited; " + label(cheque)
                             + " is a " + cheque.getMode() + " receipt. Record it as received instead.");
         }
+    }
+
+    /**
+     * A post-dated cheque cannot be banked before the day it is payable.
+     *
+     * <p>The clue is in the name: a bank refuses a PDC presented early, so a
+     * register that accepted one would be claiming cash in transit that could
+     * not exist, and the CRT that follows would carry a value date before the
+     * instrument was payable.</p>
+     *
+     * <p>Not applied to a {@link Replay}: a cut-over import states what the
+     * previous system recorded, and history has to be reproducible even where
+     * it was irregular.</p>
+     */
+    private static void requireNotPresentedEarly(Cheque cheque, LocalDate depositDate) {
+        LocalDate payableOn = cheque.getChequeDate();
+        if (payableOn != null && depositDate != null && depositDate.isBefore(payableOn)) {
+            throw new BusinessRuleViolationException(earlyPresentation(cheque, depositDate));
+        }
+    }
+
+    /** Shared wording so the single-cheque and batch paths read the same. */
+    private static String earlyPresentation(Cheque cheque, LocalDate depositDate) {
+        return label(cheque) + " is dated " + cheque.getChequeDate()
+                + " and cannot be banked on " + depositDate
+                + " — a post-dated cheque may not be presented before its date.";
     }
 
     /** Where a receipt of this kind lands when the row names no account of its own. */

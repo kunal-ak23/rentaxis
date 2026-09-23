@@ -7,16 +7,13 @@ import { Plus, X, Users, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { assignableRoles, getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
+import { assignableRoles, getRoleLabel, getRoleLabelKey, PROVISIONABLE_ROLES, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
-const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-    { value: "SUPER_ADMIN", label: "Super Admin" },
-    { value: "TENANT_ADMIN", label: "Tenant Admin" },
-    { value: "PROPERTY_MANAGER", label: "Property Manager" },
-    { value: "SECURITY_GUARD", label: "Security Guard" },
-    { value: "TENANT_USER", label: "Tenant User" },
-];
+// Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
+// is how ACCOUNTANT came to be grantable by the API but absent from this form.
+const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] =
+    PROVISIONABLE_ROLES.map((value) => ({ value, label: getRoleLabel(value) }));
 
 type User = { id: string; name: string; email: string; role: string; tenantId: string };
 

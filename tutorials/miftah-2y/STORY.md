@@ -1,0 +1,153 @@
+# Miftah — two years in the life of a Dubai landlord
+
+**Run:** `wt-miftah2y-20260922-1a5b5e70` · **Target:** production, disposable org ·
+**Build:** `0c110a2` (accounting v2 release) · **Surfaces:** web dashboard + renter portal ·
+**Method:** every beat driven through the UI. The API is used only where the UI cannot do
+the thing — and **each such fallback is itself a finding**, logged in `gaps.md`.
+
+## Simulated clock
+
+The product has no time machine, so two years are simulated by **back-dating**: the org's
+books open 2024-01-01 and the story runs **1 Oct 2024 → 23 Sep 2026 (today)**, so the final
+state is a live "today" with two years of history behind it. Whether the UI *lets* a human
+enter those back-dated dates is one of the questions this run answers.
+
+## Cast
+
+| Who | Unit | Role in the story |
+|---|---|---|
+| Miftah Residences | — | the disposable org (`TUTORIAL-MIFTAH-2Y-…`) |
+| Ahmed Al Mansoori | A-101, 2BR | the good tenant — buys parking mid-year, renews at +8% |
+| Fatima Hassan | A-102, 1BR | the problem tenant — bounce, signature mismatch, account closed, eviction, settlement |
+| Rajesh Kumar | A-103, studio | the complainer — monthly cheques, AC saga, SLA breach, compensation, rent freeze |
+| Sara Mansour | A-201, 3BR | mid-year move-in off the marketplace; early notice in year 2 |
+| Omar Khalid | A-102 → A-201 | year-2 replacement tenant; attempts a mid-lease unit transfer |
+
+## Beats
+
+Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
+
+### Y0 — setup (Sep 2024)
+
+| ID | Beat | UI proof | Status |
+|---|---|---|---|
+| S01 | Provision the org, enable LISTINGS/MEETINGS/RENEWALS/GATEPASS, create the tenant admin | org appears in the superadmin list with features on | planned |
+| S02 | Seed chart of accounts, charge types, property-account template | accounts tree renders | planned |
+| S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | planned |
+| S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | planned |
+| S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | planned |
+| S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | planned |
+| S07 | Bank account + two vendors | lists render | planned |
+
+### Y1 — Oct 2024 → Sep 2025
+
+| ID | Month | Beat | Status |
+|---|---|---|---|
+| M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | planned |
+| M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | planned |
+| M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | planned |
+| M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
+| M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | planned |
+| M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | planned |
+| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | planned |
+| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
+| M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | planned |
+| M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | planned |
+| M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | planned |
+| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | planned |
+| M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | planned |
+| M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | planned |
+
+### Y2 — Oct 2025 → Sep 2026
+
+| ID | Month | Beat | Status |
+|---|---|---|---|
+| M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | planned |
+| M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | planned |
+| M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | planned |
+| M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | planned |
+| M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
+| M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | planned |
+| M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
+| M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | planned |
+| M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
+| M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
+| M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | planned |
+| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | planned |
+| M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
+
+### Cross-cutting
+
+| ID | Beat | Status |
+|---|---|---|
+| X01 | Renter sees only their own ledger (tenant + renter isolation) | planned |
+| X02 | Arabic / RTL pass on the renter portal and the dashboard | planned |
+| X03 | RBAC: property manager cannot post or reverse a journal; accountant cannot create a lease | planned |
+| X04 | The disposable org cannot see Miftah Demo's data | planned |
+
+---
+
+## Narrative log
+
+**Y0 · Sep 2024 — the org opens.** `TUTORIAL-MIFTAH-2Y 2026-09-23 k7x2m` provisioned from
+Super Admin with Listings, Meetings, Email Notifications, Lease Renewals and Gate Passes on
+and mobile finance off. Chart of accounts seeded from the empty state (33 accounts). Books
+opened 01/01/2024, everything before it locked. *Miftah Residences* created in Al Barsha with
+eight units (A-101 … A-302), ten covered bays on level B1, and a bilingual Swimming Pool
+amenity. Four renters — Ahmed, Fatima, Rajesh, Sara — each with a portal account.
+
+**M01 · Oct 2024 — Ahmed signs for A-101.** Contract drafted through the five-step wizard:
+agreement 20/09/2024, term 01/10/2024–30/09/2025, five days' grace, Ejari `EJ-2024-100101`.
+Three charge lines — security deposit 22,000, rent 85,000, admin fee 1,500 — for a contract
+value of **108,500**. The grid generator folded the deposit and the fee into cheque 1
+(44,750) and spread three quarterly cheques of 21,250, numbered 200101–200104 on Emirates
+NBD, and confirmed the grid matched the contract value before letting the post proceed.
+Posted as **TCO-24/1** with four PDRs, all dated 01/10/2024 — a back-dated post two years
+before today, accepted because the books were opened first.
+
+The resulting ledger is right: Rent Receivable takes 108,500 Dr from the TCO and is
+relieved to nil by the four PDRs; PDC Receivable holds 108,500 Dr; Advance Rent carries
+85,000 Cr waiting for recognition to earn it month by month.
+
+**M05–M10 · Feb–Aug 2025 — Fatima unravels.** Her February cheque came back for want of
+funds (`CBR-25/1`). She replaced it with two smaller ones through *Return & Replace*, which
+reconciled the split against the 15,500 live on screen. The March half cleared; the April
+half came back **signature mismatch**, and because the org's threshold is two returns the
+system proposed a penalty by itself — 750, the signature-mismatch rate, narrated *"bounce #2
+on this lease"*, counting the replaced cheque's failure as the first. Approved on 10/04/2025
+as `PEN-25/1`. In August her last cheque came back **account closed**; the system proposed
+1,000 and the landlord waived it to buy a quiet exit.
+
+**M13 · Aug 2026 — the books close.** Month-end recognition posted 48 CIL journals for
+305,000, per-day to the fils. Trial balance tied at 1,198,250.00.
+
+**M14 · Sep 2025 — Ahmed renews.** The old contract went to *Renewed*, a draft appeared for
+01/10/2025–30/09/2026 with the deposit carried forward, the rent was lifted by hand to 91,800
+(+8%) and posted as `TCO-25/2`.
+
+**M15–M16 · Sep–Oct 2025 — Fatima leaves.** Notice given, then terminated on 30/09/2025: the
+screen computed earned rent of 56,734.25 against 62,000 recognised and reversed the 5,265.75
+difference as `TCR-25/1`, and separately reversed the October recognition it had already
+posted (`CIL-25/35` → `CIL-25/39`). The settlement applied her 16,000 deposit, deducted 2,000
+for a wardrobe door and 1,500 for cleaning, and locked at **5,234.25 due from the renter** as
+`STL-25/1`. Unit A-102 returned to vacant; occupancy fell to 37.5%.
+
+Closing trial balance after two years: **1,461,307.59 on both sides.**
+
+**M09 · Apr 2025 — the repair bill.** Gulf Cool HVAC was created as a vendor (its payable
+account `100015` generated automatically) and billed 2,800 + 5% VAT for the A-103 compressor.
+The invoice posted as **PISR-25/1** — but only after an expense account had to be created by
+hand, because the seeded chart contains no expense leaf to code a repair to (finding #31).
+
+## Coverage
+
+Proven end to end: org provisioning, feature flags, chart seeding, fiscal window, portfolio,
+parking, amenities, renters with portal accounts, the five-step contract wizard, cheque
+generation and numbering, deposit / clear / bounce / replace, all three failure reasons,
+penalty auto-proposal + approve + waive, month-end per-day recognition, renewal with deposit
+carry-forward, notice, termination with unearned-rent reversal, settlement with deductions,
+vendor + purchase invoice with VAT, trial balance, tenant ledger, journal reversal pairs,
+Arabic/RTL, and the dashboard.
+
+Not reached: the renter portal as an actual renter, and role-boundary checks for
+PROPERTY_MANAGER / ACCOUNTANT — both need logins that only the account owner can create.

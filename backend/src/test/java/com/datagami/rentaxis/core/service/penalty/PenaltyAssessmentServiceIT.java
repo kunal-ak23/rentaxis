@@ -740,8 +740,11 @@ class PenaltyAssessmentServiceIT {
         assertThat(assessmentRows()).isZero();
 
         // Second bounce on a different instrument: the threshold is crossed.
-        UUID second = r.cheques().get(1).id();
-        chequeService.deposit(second, ChequeActionRequest.on(DEPOSIT_DATE));
+        ChequeDTO secondRow = r.cheques().get(1);
+        UUID second = secondRow.id();
+        // Banked on its own date: this row falls due a quarter after the first,
+        // and a post-dated cheque may not be presented before its date.
+        chequeService.deposit(second, ChequeActionRequest.on(secondRow.chequeDate()));
         chequeService.bounce(second,
                 new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.SIGNATURE_MISMATCH, null));
 
@@ -785,20 +788,20 @@ class PenaltyAssessmentServiceIT {
         // Flag off: six days late by the lease's grace, and nothing is proposed.
         fineSettings(2, true, false);
         UUID first = cheques.get(0).id();
-        chequeService.deposit(first, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(first, ChequeActionRequest.on(cheques.get(0).chequeDate()));
         chequeService.clear(first, ChequeActionRequest.on(cheques.get(0).chequeDate().plusDays(6)));
         assertThat(assessmentRows()).isZero();
 
         // Flag on, cleared on the last acceptable day (chequeDate + 5): still nothing.
         fineSettings(2, true, true);
         UUID second = cheques.get(1).id();
-        chequeService.deposit(second, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(second, ChequeActionRequest.on(cheques.get(1).chequeDate()));
         chequeService.clear(second, ChequeActionRequest.on(cheques.get(1).chequeDate().plusDays(5)));
         assertThat(assessmentRows()).isZero();
 
         // One day past it: one proposal, one day at 50.
         UUID third = cheques.get(2).id();
-        chequeService.deposit(third, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.deposit(third, ChequeActionRequest.on(cheques.get(2).chequeDate()));
         chequeService.clear(third, ChequeActionRequest.on(cheques.get(2).chequeDate().plusDays(6)));
 
         List<PenaltyAssessment> raised = assessmentsOf(leaseId);

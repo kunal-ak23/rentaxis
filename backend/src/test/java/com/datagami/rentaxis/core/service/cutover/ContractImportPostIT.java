@@ -256,17 +256,22 @@ class ContractImportPostIT {
         postService.post(batchId);
         int imported = batchJournals(batchId).size();
 
-        UUID registered = tx.execute(s -> chequeRepo
+        // The imported row keeps its own cheque date, and a post-dated cheque may
+        // not be banked before it — so the date the clerk would actually use is
+        // the cheque's own, not a fixed one.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID registered = row.getId();
+        LocalDate payableOn = row.getChequeDate();
 
-        chequeService.deposit(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.clear(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+        chequeService.deposit(registered, ChequeActionRequest.on(payableOn));
+        chequeService.clear(registered, ChequeActionRequest.on(payableOn.plusDays(1)));
 
         assertThat(batchJournals(batchId)).hasSize(imported);
         tx.executeWithoutResult(s -> assertThat(entries.findAll())
                 .filteredOn(e -> e.getDocType() == JournalDocType.CRT
-                        && e.getEntryDate().isEqual(LocalDate.of(2026, 10, 6)))
+                        && e.getEntryDate().isEqual(payableOn.plusDays(1)))
                 .singleElement()
                 .satisfies(e -> assertThat(e.getImportBatchId()).isNull()));
     }
@@ -319,11 +324,16 @@ class ContractImportPostIT {
         UUID batchId = importTheTemplate();
         postService.post(batchId);
 
-        UUID registered = tx.execute(s -> chequeRepo
+        // The imported row keeps its own cheque date, and a post-dated cheque may
+        // not be banked before it — so the date the clerk would actually use is
+        // the cheque's own, not a fixed one.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
-        chequeService.deposit(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.bounce(registered, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID registered = row.getId();
+        LocalDate payableOn = row.getChequeDate();
+        chequeService.deposit(registered, ChequeActionRequest.on(payableOn));
+        chequeService.bounce(registered, ChequeActionRequest.on(payableOn.plusDays(1)));
 
         tx.executeWithoutResult(s -> assertThat(penalties.findAll()).hasSize(1));
     }

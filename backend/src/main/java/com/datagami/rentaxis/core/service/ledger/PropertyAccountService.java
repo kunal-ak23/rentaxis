@@ -33,6 +33,23 @@ import java.util.UUID;
 @Service
 public class PropertyAccountService {
 
+    /** Parent of the per-property building-cost leaves. */
+    private static final String DIRECT_EXPENSE_PARENT_CODE = "D-01";
+
+    /**
+     * The running costs a UAE residential building actually incurs, and the set a
+     * supplier invoice has to be codeable to on day one. Kept deliberately short —
+     * anything more specific is a leaf the customer adds themselves from the Chart
+     * of Accounts screen.
+     */
+    private static final List<String> DIRECT_EXPENSE_CATEGORIES = List.of(
+            "Repairs & Maintenance",
+            "Cleaning",
+            "Security",
+            "Utilities",
+            "Insurance",
+            "Management Fees");
+
     private final PropertyAccountTemplateRowRepository templateRepo;
     private final PropertyAccountMappingRepository mappingRepo;
     private final TenantDefaultAccountMappingRepository defaultRepo;
@@ -172,7 +189,39 @@ public class PropertyAccountService {
             m.setAccount(leaf);
             mappingRepo.save(m);
         }
+        generateDirectExpenseLeaves(property, propertyId);
         return getMappings(propertyId);
+    }
+
+    /**
+     * Building running costs, one leaf per property per category — which is what
+     * {@code D-01 Direct Expense} has always described itself as holding, while
+     * shipping with no children at all.
+     *
+     * <p>Consequence of the gap: a fresh tenant's only postable expense accounts
+     * were {@code Rounding Off}, {@code Discount Allowed} and {@code Bank Charges},
+     * so the account lookup on the Purchase / Service Invoice screen answered
+     * nothing for "Repairs" and a supplier bill could not be coded at all. Every
+     * P&L and NOI report showed income with no costs against it.</p>
+     *
+     * <p>These leaves deliberately carry no {@link AccountRole}: nothing posts to
+     * them automatically. A voucher line picks the account by name, so they need
+     * to exist and be postable, not to be resolvable from a posting rule.</p>
+     */
+    private void generateDirectExpenseLeaves(Property property, UUID propertyId) {
+        Optional<Account> parent = accountRepo.findByCode(DIRECT_EXPENSE_PARENT_CODE);
+        if (parent.isEmpty()) {
+            // A tenant whose chart is not the standard seed has no D-01 to hang
+            // these from. Skip quietly rather than failing the whole generation.
+            log.warn("no account {} — skipping direct-expense leaves for property {}",
+                    DIRECT_EXPENSE_PARENT_CODE, propertyId);
+            return;
+        }
+        for (String category : DIRECT_EXPENSE_CATEGORIES) {
+            String name = category + " - " + property.getNameEn();
+            if (accountRepo.findByNameAndParent_Id(name, parent.get().getId()).isPresent()) continue;
+            accountService.createLeaf(name, parent.get(), propertyId);
+        }
     }
 
     @Transactional(readOnly = true)

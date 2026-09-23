@@ -226,7 +226,7 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                         </select>
                     </div>
                     <div>
-                        <label className={label} htmlFor="cash-receipt-date">{t("depositDate")}</label>
+                        <label className={label} htmlFor="cash-receipt-date">{t("receiptDate")}</label>
                         <input
                             id="cash-receipt-date"
                             data-testid="cash-receipt-date"

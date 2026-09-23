@@ -390,11 +390,14 @@ class ImportBatchRoundTripIT {
         postService.post(batchId);
         int journals = batchJournals(batchId).size();
 
-        UUID outstanding = tx.execute(s -> chequeRepo
+        // Banked on the cheque's own date: a post-dated cheque may not be
+        // presented early, and this is an ordinary action taken after the cut-over.
+        Cheque row = tx.execute(s -> chequeRepo
                 .findByLease_IdOrderBySeqNoAsc(leaseOf("SAMPLE-0001").getId()).stream()
-                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow().getId());
-        chequeService.deposit(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
-        chequeService.clear(outstanding, ChequeActionRequest.on(LocalDate.of(2026, 10, 6)));
+                .filter(c -> "100002".equals(c.getChequeNumber())).findFirst().orElseThrow());
+        UUID outstanding = row.getId();
+        chequeService.deposit(outstanding, ChequeActionRequest.on(row.getChequeDate()));
+        chequeService.clear(outstanding, ChequeActionRequest.on(row.getChequeDate().plusDays(1)));
 
         assertThatThrownBy(() -> batches.reverse(batchId, "oops"))
                 .isInstanceOf(BusinessRuleViolationException.class)
