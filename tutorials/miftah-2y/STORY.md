@@ -70,7 +70,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | proven (on Omar; Sara's lease had already expired) |
 | M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
 | M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
-| M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
+| M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | proven with gaps (#54 header flag inert, #55 no VAT return, #56 VAT timing) |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
 | M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | partly proven (recognition to 31/08/2026) |
@@ -256,6 +256,18 @@ The finalized page still offered *Terminate contract* (#51). Then a fresh A-201 
 (105,000 rent, a new 10,500 deposit, 1,050 fee; 116,550; PDCs 600201–600204) posted from
 01/04/2026. That is the whole of "transfer": there is none (#52), so the renter paid an exit
 fee to stay.
+
+**M23 · May 2026 — a shop on the ground floor.** A retail unit, G-01 (700 sq ft,
+120,000), was added to Miftah Residences and let to Gulf Brew Cafe LLC (no portal
+account) from 01/05/2026 to 30/04/2027, with four Emirates NBD cheques 700101–700104.
+Ticking "Rent carries VAT" in step 2 changed nothing: step 3 still showed VAT 0.00 until
+the rent line's own VAT box was ticked (#54). With it ticked: 120,000 + 6,000 VAT =
+126,000, four cheques of 31,500, posted as **TCO-26/3**: Dr Rent Receivable 120,000 / Cr
+Advance Rent 120,000 and Dr Rent Receivable 6,000 / Cr **Output VAT on Sales** 6,000. The
+trial balance shows Output VAT 6,000 Cr beside Input VAT 200 Dr from the HVAC invoice.
+That is the only VAT reporting: there is no return view (#55). All of the year's VAT
+lands on the contract date rather than per payment period, which an accountant needs to
+rule on (#56).
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
