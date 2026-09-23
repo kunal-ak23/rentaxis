@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.lease;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
 import com.datagami.rentaxis.api.dto.lease.AddendumResponse;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.LeaseAddendumDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
@@ -334,6 +335,44 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Cannot post on 2027-02-10: books are locked through 2027-02-28");
         assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
+    /**
+     * Stage 2's own lock check (review point at addCharge's stage-2 comment,
+     * {@code LeaseVariationService.java:166}): the addendum's entry date can be
+     * open while one of its cheque rows posts into a month that is locked. Stage
+     * 1 only checks the entry date against the lock ({@code periodLockErrors(entryDate,
+     * List.of())}), so this path is refused only if stage 2 asks the same
+     * question of the rows' own posting dates — which is exactly the line this
+     * test is here to keep honest.
+     */
+    @Test
+    void aChequeRowDatedInALockedMonthRefusesTheAddendumWhole() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        // January is locked; the addendum's own entry date (ADDENDUM_DATE,
+        // 2027-02-10) is after it and so is open by itself.
+        fiscal.lockThrough(LocalDate.of(2027, 1, 31));
+        LocalDate lockedChequeDate = LocalDate.of(2027, 1, 20);
+        ChequeRowInput rowInLockedMonth = new ChequeRowInput(null, null, lockedChequeDate, null,
+                LocalDate.of(2027, 3, 1), "Emirates NBD", null, null, new BigDecimal("6000"), null, null);
+
+        // The specific "Cheque row N cannot post on ..." phrasing is what
+        // periodLockErrors(entryDate, newRows) produces for a row's own date; a
+        // generic "Cannot post on ..." from a lower-level check catching the same
+        // date later would not name the cheque at all. Asserting the row-specific
+        // wording is what makes this test fail (rather than pass for the wrong
+        // reason) if that stage-2 line is ever deleted.
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Parking bay P-12", List.of(line("PARKING_FEE", "6000")), List.of(rowInLockedMonth))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque row")
+                .hasMessageContaining("cannot post on 2027-01-20: books are locked through 2027-01-31");
+
+        // Nothing written: not the TCO, not the addendum row, not the register.
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(addendaOf(leaseId)).isEmpty();
         assertThat(registerOf(leaseId)).hasSize(5);
     }
 
