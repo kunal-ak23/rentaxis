@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.ImageTypes;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -62,8 +63,12 @@ public class RentReceiptService {
     private final ApplicationEventPublisher events;
     private final BlobStorageService blobStorageService;
 
-    /** The largest logo inlined into a receipt; the upload form caps logos at 2 MB. */
-    private static final long MAX_LOGO_BYTES = 2L * 1024 * 1024;
+    /**
+     * The largest logo inlined into a receipt: anything bigger is left off rather
+     * than base64-inflated into every PDF. The upload form caps logos at 2 MB, but
+     * a receipt logo is 40 px tall and 1 MB is already generous.
+     */
+    static final long MAX_LOGO_BYTES = 1024L * 1024;
 
     /**
      * @param chequeId a CLEARED row on a lease the caller may read. A renter passes
@@ -196,10 +201,13 @@ public class RentReceiptService {
         if (url.strip().regionMatches(true, 0, "data:image/", 0, 11)) {
             src = url.strip();
         } else {
+            // The stored content type is ignored: uploads have been stored as
+            // application/octet-stream, and it is the uploader's claim anyway. The
+            // bytes decide, and the data: URI carries the type they prove.
             src = blobStorageService.downloadOwnedUrl(tenantId, url.strip(), MAX_LOGO_BYTES)
-                    .filter(d -> d.contentType() != null
-                            && d.contentType().toLowerCase(Locale.ROOT).matches("image/(png|jpe?g|gif)"))
-                    .map(d -> "data:" + d.contentType() + ";base64," + Base64.getEncoder().encodeToString(d.bytes()))
+                    .filter(d -> d.bytes() != null && d.bytes().length <= MAX_LOGO_BYTES)
+                    .flatMap(d -> ImageTypes.sniff(d.bytes())
+                            .map(type -> "data:" + type + ";base64," + Base64.getEncoder().encodeToString(d.bytes())))
                     .orElse(null);
         }
         if (src == null) {
