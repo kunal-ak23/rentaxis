@@ -87,6 +87,13 @@ export default async function middleware(req: NextRequest) {
         // assert it, so any inbound value is forged — drop it before deciding
         // whether to attach the real one.
         requestHeaders.delete('X-Internal-Auth');
+        // The web authenticates to the backend with the headers below, never a
+        // backend bearer token: the NextAuth session carries none, so the
+        // marketplace helpers send "Bearer " or "Bearer undefined". Once
+        // APP_AUTH_TOKEN_SECRET is set the backend takes any presented Bearer
+        // over the headers and 401s an unverifiable one, which would break
+        // every such call. Drop it so the session is what authenticates.
+        requestHeaders.delete('Authorization');
         const internalProxySecret = process.env.INTERNAL_PROXY_SECRET;
         if (internalProxySecret) {
             // Proves to the backend that SUPER_ADMIN (and other identity headers)

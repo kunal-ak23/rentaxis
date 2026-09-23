@@ -46,6 +46,21 @@ describe("proxy middleware — /api/proxy auth gate", () => {
     expect(res.headers.get("x-middleware-request-x-tenant-id")).toBe("tenant-1");
   });
 
+  it("drops an inbound Authorization so a non-backend bearer cannot shadow the session", async () => {
+    // The marketplace helpers send "Bearer undefined" (the session has no
+    // backend token); with APP_AUTH_TOKEN_SECRET set the backend would 401 it.
+    getTokenMock.mockResolvedValue({ id: "user-1", role: "RENTER", tenantId: "tenant-1" });
+
+    const res = await middleware(
+      makeRequest("/api/proxy/marketplace/me/wishlist", { Authorization: "Bearer undefined" })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-middleware-request-authorization")).toBeNull();
+    expect(res.headers.get("x-middleware-override-headers") ?? "").not.toContain("authorization");
+    expect(res.headers.get("x-middleware-request-x-user-id")).toBe("user-1");
+  });
+
   describe("public pre-auth allowlist", () => {
     it.each([
       "/api/proxy/auth/register",
