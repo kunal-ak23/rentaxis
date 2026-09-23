@@ -2469,6 +2469,8 @@
     "colProperty": "Property",
     "colStatus": "Status",
     "unitLabel": "Unit {unit}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
     "pageOf": "Page {page} of {total}"
   }
 }

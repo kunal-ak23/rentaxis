@@ -2469,6 +2469,8 @@
     "colProperty": "العقار",
     "colStatus": "الحالة",
     "unitLabel": "الوحدة {unit}",
+    "previousPage": "الصفحة السابقة",
+    "nextPage": "الصفحة التالية",
     "pageOf": "صفحة {page} من {total}"
   }
 }

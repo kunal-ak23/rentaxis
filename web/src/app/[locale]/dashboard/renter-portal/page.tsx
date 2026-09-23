@@ -731,9 +731,11 @@ export default function RenterPortalPage() {
                                     <button
                                         onClick={() => setMeetingsPage(p => Math.max(1, p - 1))}
                                         disabled={meetingsPage === 1}
+                                        aria-label={tHome("previousPage")}
+                                        data-testid="renter-meetings-prev"
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                     >
-                                        <ChevronLeft size={13} />
+                                        <ChevronLeft size={13} className="rtl:rotate-180" />
                                     </button>
                                     <span className="text-[10px] font-semibold text-foreground px-2">
                                         {meetingsPage} / {meetingsTotalPages}
@@ -741,9 +743,11 @@ export default function RenterPortalPage() {
                                     <button
                                         onClick={() => setMeetingsPage(p => Math.min(meetingsTotalPages, p + 1))}
                                         disabled={meetingsPage >= meetingsTotalPages}
+                                        aria-label={tHome("nextPage")}
+                                        data-testid="renter-meetings-next"
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                     >
-                                        <ChevronRight size={13} />
+                                        <ChevronRight size={13} className="rtl:rotate-180" />
                                     </button>
                                 </div>
                             </div>

@@ -97,4 +97,26 @@ describe("Renter home in Arabic (#36)", () => {
             expect(body).not.toContain(english);
         }
     });
+
+    it("labels the meetings pager and flips its arrows in RTL (M-9)", async () => {
+        const base = global.fetch;
+        global.fetch = vi.fn(async (url: RequestInfo | URL) => {
+            if (String(url).includes("/meetings/my")) {
+                return { ok: true, status: 200, json: async () => ({ content: [MEETING], totalElements: 7, totalPages: 2, number: 0, size: 5 }) };
+            }
+            return (base as unknown as (u: RequestInfo | URL) => Promise<unknown>)(url);
+        }) as unknown as typeof fetch;
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <RenterPortalPage />
+            </NextIntlClientProvider>,
+        );
+
+        const prev = await screen.findByTestId("renter-meetings-prev");
+        const next = screen.getByTestId("renter-meetings-next");
+        expect(prev).toHaveAttribute("aria-label", ar.RenterHome.previousPage);
+        expect(next).toHaveAttribute("aria-label", ar.RenterHome.nextPage);
+        expect(prev.querySelector("svg")?.getAttribute("class")).toContain("rtl:rotate-180");
+        expect(next.querySelector("svg")?.getAttribute("class")).toContain("rtl:rotate-180");
+    });
 });
