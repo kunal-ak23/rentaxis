@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../../messages/en.json";
@@ -196,11 +196,18 @@ describe("Termination page", () => {
 
     it("ignores a pricing that the user's edit has already superseded", async () => {
         // The page opens priced for today and the user moves the date before
-        // that answer lands. The two responses come back out of order.
+        // that answer lands; the two responses come back out of order. The mock
+        // keys on the requested *date*, not on call order, so the test holds no
+        // matter how many times the mount re-prices for today under load — the
+        // ordering of the two dates is the only thing this test is about. (An
+        // order-based mock here was the suite's one load-dependent flake: extra
+        // mount-time `price(today)` calls consumed the queued responses, leaving
+        // `preview` null and the receivable row unrendered until the timeout.)
         let releaseFirst: (p: TerminationPreview) => void = () => {};
-        api.preview
-            .mockImplementationOnce(() => new Promise<TerminationPreview>(res => { releaseFirst = res; }))
-            .mockResolvedValueOnce({ ...PREVIEW, terminationDate: "2026-06-15", receivableAfter: 7000 });
+        api.preview.mockImplementation((_leaseId: string, on: string) =>
+            on === "2026-06-15"
+                ? Promise.resolve({ ...PREVIEW, terminationDate: "2026-06-15", receivableAfter: 7000 })
+                : new Promise<TerminationPreview>(res => { releaseFirst = res; }));
 
         renderPage();
         const date = await screen.findByTestId("terminate-date");
@@ -208,9 +215,12 @@ describe("Termination page", () => {
 
         await waitFor(() => expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("7,000.00"));
 
-        // …and only now does the first one arrive.
-        releaseFirst({ ...PREVIEW, terminationDate: "2026-06-30", receivableAfter: 5000 });
-        await waitFor(() => expect(api.preview).toHaveBeenCalledTimes(2));
+        // …and only now does the first (superseded) answer arrive. Flush it
+        // inside act so the component's continuation runs to completion before
+        // we assert it was ignored — no reliance on a wall-clock delay.
+        await act(async () => {
+            releaseFirst({ ...PREVIEW, terminationDate: "2026-06-30", receivableAfter: 5000 });
+        });
 
         // It must not land: the confirm posts `preview.terminationDate`, so a
         // stale answer here ends the contract on the date the user moved off.
