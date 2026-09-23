@@ -216,14 +216,13 @@ test.describe('Cheque register lifecycle', () => {
     await page.goto(`/en/dashboard/leases/${draft.id}`);
     await page.getByTestId('lease-tab-penalties').click();
     await page.getByTestId('penalty-propose-open').click();
-    // The propose panel's three fields are addressed by `id`, not by testid —
-    // they carry `htmlFor` labels and nothing else (LeasePenaltiesTab :84-97).
-    // `getByTestId` found none of them and the fill timed out on a panel that
-    // was on screen the whole time.
-    await page.locator('#penalty-reason').selectOption('CHEQUE_RETURN');
-    await page.locator('#penalty-amount').fill('500');
-    await page.locator('#penalty-description').fill(`TEST-E2E late return ${suffix}`);
-    await page.getByTestId('penalty-propose-confirm').click();
+    // The tab opens RaisePenaltyDialog (#12). Its fields are addressed by `id`,
+    // not by testid — they carry `htmlFor` labels and nothing else. The
+    // incident date defaults to today (Dubai), which is what this case wants.
+    await page.locator('#raise-penalty-reason').selectOption('CHEQUE_RETURN');
+    await page.locator('#raise-penalty-amount').fill('500');
+    await page.locator('#raise-penalty-narration').fill(`TEST-E2E late return ${suffix}`);
+    await page.getByTestId('raise-penalty-confirm').click();
 
     // Row 0 is NOT this proposal. The two bounces above already had the rule
     // engine propose their own CHEQUE_RETURN fines, so the PROPOSED tab holds

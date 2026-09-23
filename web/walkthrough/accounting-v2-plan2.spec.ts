@@ -258,7 +258,7 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
     await api(scoped, 'POST', `/api/admin/users/${manager.id}/properties/${property.id}`);
 
     const renterEmail = `wt2-renter-${SUFFIX}@example.invalid`;
-    const renter = await api<{ id: string; userId: string; portalPassword: string | null }>(scoped, 'POST', '/api/v1/renters', {
+    const renter = await api<{ id: string; userId: string | null; invitePending: boolean }>(scoped, 'POST', '/api/v1/renters', {
         nameEn: RENTER,
         nameAr: RENTER,
         email: renterEmail,
@@ -266,7 +266,22 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
         primaryLanguage: 'EN',
         createPortalAccount: true,
     });
-    expect(renter.portalPassword, 'a portal account must generate a password').toBeTruthy();
+    // #7: no API returns a password any more; the renter is invited by email
+    // and sets their own. The harness cannot read the emailed link (no API
+    // exposes the invite token, deliberately), so it takes the admin route that
+    // remains: set the renter's password on their user account. That also
+    // retires the invite, as a real password would.
+    expect(renter.userId, 'a portal account must be created').toBeTruthy();
+    expect(renter.invitePending, 'the portal account starts on an emailed invite').toBe(true);
+    const renterPassword = `Walk!${SUFFIX}9r`;
+    await api(scoped, 'PUT', `/api/admin/users/${renter.userId}`, {
+        email: renterEmail,
+        password: renterPassword,
+        name: RENTER,
+        role: 'RENTER',
+        tenantId: tenant.id,
+        phoneNumber: '+971500000001',
+    });
     record('renter', renter.id, RENTER);
 
     fx = {
@@ -274,7 +289,7 @@ test('provision a disposable tenant with an admin, an accountant, a manager and 
         admin,
         accountant,
         manager,
-        renter: { id: renter.id, email: renterEmail, password: renter.portalPassword! },
+        renter: { id: renter.id, email: renterEmail, password: renterPassword },
         propertyId: property.id,
     };
 });
@@ -677,15 +692,16 @@ test('09 propose, approve and collect a penalty for the bounce', async ({ browse
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
         await page.getByTestId('lease-tab-penalties').click();
         await page.getByTestId('penalty-propose-open').click();
-        // LeasePenaltiesTab's propose fields carry plain `id`s, not
-        // data-testids — #penalty-reason/#penalty-amount/#penalty-description.
-        await page.locator('#penalty-reason').selectOption({ label: 'Cheque Return' });
-        await page.locator('#penalty-amount').fill('500');
-        await page.locator('#penalty-description').fill(`WT2 bounced cheque ${SUFFIX}`);
+        // The tab opens RaisePenaltyDialog (#12), whose fields carry plain
+        // `id`s, not data-testids — #raise-penalty-reason/-amount/-narration.
+        // The incident date defaults to today.
+        await page.locator('#raise-penalty-reason').selectOption({ label: 'Cheque Return' });
+        await page.locator('#raise-penalty-amount').fill('500');
+        await page.locator('#raise-penalty-narration').fill(`WT2 bounced cheque ${SUFFIX}`);
 
         const [proposeRes] = await Promise.all([
             page.waitForResponse((r) => /\/api\/proxy\/v1\/penalties$/.test(r.url()) && r.request().method() === 'POST'),
-            page.getByTestId('penalty-propose-confirm').click(),
+            page.getByTestId('raise-penalty-confirm').click(),
         ]);
         expect(proposeRes.status()).toBe(201);
         const proposed = await proposeRes.json();
