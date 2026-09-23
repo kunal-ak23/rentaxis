@@ -211,6 +211,12 @@ class PropertyManagerScopeIT extends AbstractPostgresIT {
         assertThat(status(pm, HttpMethod.POST, "/api/listings/" + palmListing + "/unlist")).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(status(pm, HttpMethod.DELETE, "/api/listings/" + palmListing)).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(status(admin, HttpMethod.GET, "/api/listings/" + palmListing)).isEqualTo(HttpStatus.OK);
+
+        // Nor may a manager list another building's unit.
+        Unit palmOther = fixtures.createUnit(palm, "902");
+        assertThat(call(pm, HttpMethod.POST, "/api/listings",
+                Map.of("unitId", palmOther.getId().toString(), "titleEn", "Palm 902")).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     // ----------------------------------------------------------------- gate
