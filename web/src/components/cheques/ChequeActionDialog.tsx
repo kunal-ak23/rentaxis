@@ -15,7 +15,7 @@ import {
 } from "@/lib/api/leasing";
 import type { RegisterAction } from "./registerActions";
 import { chequeRowIsValid } from "./chequeRowRules";
-import { chequeLabel } from "./chequeLabel";
+import { chequeTitle } from "./chequeLabel";
 
 /**
  * Deposit, receive, correct or cancel one cheque — the register's own
@@ -166,7 +166,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         }
     };
 
-    const title = `${t(action)} — ${chequeLabel(cheque)} · ${fmtAmount(cheque.amount)}`;
+    const title = chequeTitle(t(action), cheque, fmtAmount(cheque.amount));
 
     return (
         <LeaseDialog

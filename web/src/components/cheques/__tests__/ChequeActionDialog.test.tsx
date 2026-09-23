@@ -102,7 +102,9 @@ describe("ChequeActionDialog — title (#43)", () => {
         renderDialog("receive", { mode: "CASH", chequeNumber: null, seqNo: 6 });
         const title = screen.getByRole("heading", { level: 3 }).textContent ?? "";
         expect(title).not.toContain("#");
-        expect(title).toContain("—");
+        // No empty label segment: "Receive · 1,000.00", not "Receive — — · 1,000.00".
+        expect(title).not.toContain("—");
+        expect(title).toMatch(/ · /);
     });
 });
 

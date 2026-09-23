@@ -6,6 +6,7 @@ import LeaseDialog from "@/components/leases/LeaseDialog";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque, type ChequeFailureReason } from "@/lib/api/leasing";
+import { chequeTitle } from "./chequeLabel";
 
 /**
  * A cheque bounced — from DEPOSITED (the ordinary case) or from CLEARED, PDC
@@ -70,7 +71,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
         }
     };
 
-    const title = `${t("bounce")} — ${cheque.chequeNumber || `#${cheque.seqNo}`} · ${fmtAmount(cheque.amount)}`;
+    const title = chequeTitle(t("bounce"), cheque, fmtAmount(cheque.amount));
 
     return (
         <LeaseDialog

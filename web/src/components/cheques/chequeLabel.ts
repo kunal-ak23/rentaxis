@@ -15,3 +15,18 @@ import type { ChequeMode } from "@/lib/api/leasing";
 export function chequeLabel(c: { chequeNumber: string | null; seqNo: number; mode: ChequeMode }): string {
     return c.chequeNumber || (c.mode === "PDC" ? `#${c.seqNo}` : "—");
 }
+
+/**
+ * A single-cheque dialog's title: "Bounce — 100041 · 13,700.00". The label
+ * segment is left out when there is no label to show (a numberless CASH row),
+ * so the title reads "Receive · 1,000.00" rather than "Receive — — · 1,000.00".
+ * Shared by ChequeActionDialog, BounceChequeDialog and ReplaceChequeDialog.
+ */
+export function chequeTitle(
+    action: string,
+    c: { chequeNumber: string | null; seqNo: number; mode: ChequeMode },
+    amount: string,
+): string {
+    const label = chequeLabel(c);
+    return label === "—" ? `${action} · ${amount}` : `${action} — ${label} · ${amount}`;
+}
