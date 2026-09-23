@@ -68,6 +68,8 @@ clean, **259** component tests.
 
 | 5 | **Rent fields now carry a period** — the unit and property forms' *Expected Rent* / *Actual Rent* labels read "(AED/year)" in both locales, and the misleading `e.g. 5000` placeholder (which reads as a monthly figure) is now `e.g. 85000`. The model stores rent annually — `revenueAtCapacity` sums `expectedRent` directly and showed AED 85,000 against Ahmed's annual line — so "per year" is the correct label, not a guess. | web typecheck clean; no test asserted the old label |
 
+| 25 | **The finalized settlement now names the settler**, not a UUID. The mapping resolved the name with the *tenant-filtered* `findById`, which cannot see a SUPER_ADMIN acting inside a pivoted tenant (`tenant_id = NULL`) — so a legal move-out document showed a raw id. Swapped to the native `findDisplayNameById`, purpose-built for cross-tenant audit attribution. | `SettlementServiceIT.finalizeCarriesTheSettlersNameOnTheStatement` — guards that the name is populated; see its scope note on why the harness cannot reproduce the tenant-filter half |
+
 **Remediation still required (operational, not code):** existing renter accounts keep their old derived
 passwords. Every portal password created before this change should be rotated — on the Miftah Demo tenant,
 the Al Ashram demo tenant, and any live customer. The fix stops new accounts being guessable; it does not
