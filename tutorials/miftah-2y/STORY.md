@@ -80,10 +80,10 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 
 | ID | Beat | Status |
 |---|---|---|
-| X01 | Renter sees only their own ledger (tenant + renter isolation) | planned |
+| X01 | Renter sees only their own ledger (tenant + renter isolation) | proven by test (LeaseAccessPolicyTest 21/21); live portal walk needs a renter sign-in |
 | X02 | Arabic / RTL pass on the renter portal and the dashboard | planned |
-| X03 | RBAC: property manager cannot post or reverse a journal; accountant cannot create a lease | planned |
-| X04 | The disposable org cannot see Miftah Demo's data | planned |
+| X03 | RBAC: property manager cannot post or reverse a journal; accountant cannot create a lease | proven by test (JournalControllerIT 12/12, LeaseControllerReadAccessIT 7/7) |
+| X04 | The disposable org cannot see Miftah Demo's data | proven by test (TenantAspectIT 9/9, JournalControllerIT cross-tenant cases) + live: every list in the org shows only its own rows |
 
 ---
 
@@ -318,6 +318,22 @@ compares against the posting date and every row carries the contract date 20/04/
 wizard (#44). An agreement date of 20/09/2026 carries into step 2's contract date (#45).
 Ticking "Rent carries VAT" and choosing Rent in step 3 ticks the line's VAT box by itself:
 64,000 + 3,200 = 67,200 (#54). The wizard was closed without saving.
+
+**X01 · X03 · X04 · proven through the test suite (full suite at e99531a4, merged as
+108d93ad: 2358/0/0).** Walking these live needs a renter's or a manager's own sign-in, so
+they rest on the integration tests that pin each rule:
+- **X03:** `JournalController` is limited to SUPER_ADMIN / TENANT_ADMIN / ACCOUNTANT at
+  class level, so a property manager can neither post nor reverse
+  (`JournalControllerIT.propertyManagerIsForbidden`). `POST /leases` is SUPER_ADMIN /
+  TENANT_ADMIN only
+  (`LeaseControllerReadAccessIT.anAccountantStillMayNotCreateEditOrDeleteAContract`).
+- **X04:** `TenantAspectIT` (9/9) pins the tenant filter: find, count and exists inside a
+  transaction see only the current tenant.
+  `JournalControllerIT.anotherTenantsAccountantSeesNeitherTheEntryNorTheList` does the
+  same for the ledger. Live, every register, list and trial balance in this org shows
+  only its own rows.
+- **X01:** `LeaseAccessPolicyTest` (21/21): a renter sees only their own lease, is refused
+  anyone else's, and the refusal does not reveal that the lease exists.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
