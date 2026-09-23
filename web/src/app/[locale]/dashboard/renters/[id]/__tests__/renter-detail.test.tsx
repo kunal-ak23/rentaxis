@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chequeSummary } from "@/components/renters/chequeSummary";
 
@@ -41,16 +41,31 @@ const tickets = [
 ];
 
 let renterStatus = 200;
+let leasesStatus = 200;
+let chequesStatus = 200;
+let ticketsStatus = 200;
+const twoLeases = [
+    ...leases,
+    { id: "L2", unitIdentifier: "102", propertyName: "Tower", startDate: "2025-01-01", endDate: "2025-12-31", status: "EXPIRED", rentAmount: 55000, displayContractNumber: "TCO-25/9" },
+];
+let leaseRows: typeof twoLeases = leases;
+
+const res = (status: number, body: unknown) => (status === 200 ? jsonRes(body) : jsonRes({ message: "boom" }, false, status));
 
 beforeEach(() => {
     role = "TENANT_ADMIN";
     renterStatus = 200;
+    leasesStatus = 200;
+    chequesStatus = 200;
+    ticketsStatus = 200;
+    leaseRows = leases;
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
-        if (u.endsWith("/v1/renters/r1")) return renterStatus === 200 ? jsonRes(renter) : jsonRes({}, false, renterStatus);
-        if (u.endsWith("/v1/renters/r1/leases")) return jsonRes(leases);
+        if (u.endsWith("/v1/renters/r1")) return res(renterStatus, renter);
+        if (u.endsWith("/v1/renters/r1/leases")) return res(leasesStatus, leaseRows);
         if (u.includes("/leases/L1/cheques")) return jsonRes(cheques);
-        if (u.endsWith("/v1/tickets")) return jsonRes(tickets);
+        if (u.includes("/leases/L2/cheques")) return res(chequesStatus, []);
+        if (u.includes("/v1/tickets")) return res(ticketsStatus, tickets);
         return jsonRes({}, false, 404);
     }) as unknown as typeof fetch;
 });
@@ -88,6 +103,60 @@ describe("RenterDetailPage", () => {
         render(<RenterDetailPage />);
 
         expect(await screen.findByText("notFound")).toBeTruthy();
+        expect(screen.queryByText("loadFailed")).toBeNull();
+    });
+
+    // Web review I2: a failed load is not "not found" or "nothing here".
+    it("shows a load error with a retry, not not-found, when the renter fails to load", async () => {
+        renterStatus = 500;
+        render(<RenterDetailPage />);
+
+        expect(await screen.findByText("loadFailed")).toBeTruthy();
+        expect(screen.queryByText("notFound")).toBeNull();
+
+        renterStatus = 200;
+        fireEvent.click(screen.getByText("retry"));
+        expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
+    });
+
+    it("hides the cheque totals and says so when one contract's cheques fail to load", async () => {
+        leaseRows = twoLeases;
+        chequesStatus = 500;
+        render(<RenterDetailPage />);
+
+        expect(await screen.findByText("chequesLoadFailed")).toBeTruthy();
+        // The cheques that did load are listed, but no total pretends to be complete.
+        expect(screen.getByText("000102")).toBeTruthy();
+        const tiles = screen.getByTestId("renter-summary");
+        expect(tiles.textContent).not.toContain("60,000");
+        expect(tiles.textContent).not.toContain("30,000");
+        expect(tiles.textContent).toContain("—");
+    });
+
+    it("shows the totals when every cheque call succeeds", async () => {
+        leaseRows = twoLeases;
+        render(<RenterDetailPage />);
+
+        await waitFor(() => expect(screen.getByText("000102")).toBeTruthy());
+        expect(screen.queryByText("chequesLoadFailed")).toBeNull();
+        expect(screen.getByTestId("renter-summary").textContent).toContain("60,000");
+    });
+
+    it("says the contracts failed to load instead of 'no contracts'", async () => {
+        leasesStatus = 502;
+        render(<RenterDetailPage />);
+
+        expect(await screen.findByText("contractsLoadFailed")).toBeTruthy();
+        expect(screen.queryByText("noContracts")).toBeNull();
+        expect(screen.getByText("chequesLoadFailed")).toBeTruthy();
+    });
+
+    it("says the tickets failed to load instead of 'no tickets'", async () => {
+        ticketsStatus = 500;
+        render(<RenterDetailPage />);
+
+        expect(await screen.findByText("ticketsLoadFailed")).toBeTruthy();
+        expect(screen.queryByText("noTickets")).toBeNull();
     });
 });
 

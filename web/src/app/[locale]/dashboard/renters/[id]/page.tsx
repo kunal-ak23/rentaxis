@@ -13,6 +13,7 @@ import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 import { ApiError, leaseApi, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
 import { chequeSummary } from "@/components/renters/chequeSummary";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 /**
  * One renter, for staff (#8): their profile, their contracts, the cheques on
@@ -93,6 +94,16 @@ export default function RenterDetailPage() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // A failed request is not "nothing here" (web review I2): the renter itself
+    // (404 vs anything else), and each section, keep their own failure so the
+    // page never shows an empty state, or an understated total, for a load that
+    // did not happen.
+    const [renterFailed, setRenterFailed] = useState(false);
+    const [leasesFailed, setLeasesFailed] = useState(false);
+    const [chequesFailed, setChequesFailed] = useState(false);
+    const [ticketsFailed, setTicketsFailed] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
+    const retry = () => setReloadKey(k => k + 1);
 
     useEffect(() => {
         if (userRole && !canView) {
@@ -100,41 +111,73 @@ export default function RenterDetailPage() {
             return;
         }
         let cancelled = false;
+        setLoading(true);
+        setError(null);
+        setRenterFailed(false);
+        setLeasesFailed(false);
+        setChequesFailed(false);
+        setTicketsFailed(false);
         (async () => {
             try {
-                const r = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}`);
+                let r: Response;
+                try {
+                    r = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}`);
+                } catch {
+                    if (!cancelled) setRenterFailed(true);
+                    return;
+                }
                 if (!r.ok) {
-                    if (!cancelled) setError(r.status === 403 ? t("accessDenied") : t("notFound"));
+                    if (cancelled) return;
+                    if (r.status === 403) setError(t("accessDenied"));
+                    else if (r.status === 404) setError(t("notFound"));
+                    else setRenterFailed(true);
                     return;
                 }
                 const loaded: Renter = await r.json();
                 if (cancelled) return;
                 setRenter(loaded);
 
-                const lr = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}/leases`);
-                const ls: RenterLease[] = lr.ok ? await lr.json() : [];
+                let ls: RenterLease[] = [];
+                try {
+                    const lr = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}/leases`);
+                    if (!lr.ok) throw new Error(String(lr.status));
+                    ls = await lr.json();
+                } catch {
+                    if (!cancelled) setLeasesFailed(true);
+                }
                 if (cancelled) return;
                 setLeases(ls);
 
                 const perLease = await Promise.all(
-                    ls.map(l => leaseApi.cheques(l.id).catch(() => [] as Cheque[])),
+                    ls.map(l => leaseApi.cheques(l.id).then(cs => ({ ok: true, cs }), () => ({ ok: false, cs: [] as Cheque[] }))),
                 );
-                if (!cancelled) setCheques(perLease.flat());
+                if (!cancelled) {
+                    setCheques(perLease.flatMap(p => p.cs));
+                    setChequesFailed(perLease.some(p => !p.ok));
+                }
 
                 // The ticket list is already scoped to what the caller may see;
                 // a ticket is this renter's when they reported it, it was raised
                 // on one of their contracts, or it was logged on their behalf.
-                const tr = await fetch("/api/proxy/v1/tickets");
-                if (tr.ok && !cancelled) {
+                try {
+                    const tr = await fetch("/api/proxy/v1/tickets");
+                    if (!tr.ok) throw new Error(String(tr.status));
                     const leaseIds = new Set(ls.map(l => l.id));
                     const all: Ticket[] = await tr.json();
-                    setTickets(all.filter(tk =>
-                        (loaded.userId && tk.reportedBy === loaded.userId)
-                        || (tk.leaseId && leaseIds.has(tk.leaseId))
-                        || tk.onBehalfOfRenterId === loaded.id));
+                    if (!cancelled) {
+                        setTickets(all.filter(tk =>
+                            (loaded.userId && tk.reportedBy === loaded.userId)
+                            || (tk.leaseId && leaseIds.has(tk.leaseId))
+                            || tk.onBehalfOfRenterId === loaded.id));
+                    }
+                } catch {
+                    if (!cancelled) setTicketsFailed(true);
                 }
             } catch (e) {
-                if (!cancelled) setError(e instanceof ApiError ? e.message : t("notFound"));
+                if (!cancelled) {
+                    if (e instanceof ApiError) setError(e.message);
+                    else setRenterFailed(true);
+                }
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -142,7 +185,7 @@ export default function RenterDetailPage() {
         return () => {
             cancelled = true;
         };
-    }, [renterId, userRole, canView, t]);
+    }, [renterId, userRole, canView, t, reloadKey]);
 
     const summary = useMemo(() => chequeSummary(cheques), [cheques]);
     const unitOf = useMemo(() => new Map(leases.map(l => [l.id, l.unitIdentifier ?? "—"])), [leases]);
@@ -158,6 +201,16 @@ export default function RenterDetailPage() {
             </div>
         );
     }
+    if (!renter && renterFailed) {
+        return (
+            <div className="py-12">
+                <LoadErrorBanner message={t("loadFailed")} onRetry={retry} />
+                <Link href="/dashboard/renters" className="text-xs text-primary font-semibold">
+                    {t("backToRenters")}
+                </Link>
+            </div>
+        );
+    }
     if (!renter) {
         return (
             <div className="text-center py-24">
@@ -169,6 +222,9 @@ export default function RenterDetailPage() {
         );
     }
 
+    // Cheques hang off contracts: if either load failed, every cheque figure is
+    // a partial sum, and a partial "Outstanding" reads as a real one.
+    const chequeFiguresIncomplete = leasesFailed || chequesFailed;
     const displayName = locale === "ar" && renter.nameAr ? renter.nameAr : renter.nameEn;
     const otherName = locale === "ar" ? renter.nameEn : renter.nameAr;
     const inviteExpired = !!renter.inviteExpiresAt && new Date(renter.inviteExpiresAt).getTime() < Date.now();
@@ -219,11 +275,11 @@ export default function RenterDetailPage() {
             {/* ── Summary ────────────────────────────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="renter-summary">
                 {[
-                    { label: t("activeContracts"), value: String(activeLeases) },
-                    { label: t("chequesTotal"), value: formatCurrency(summary.total) },
-                    { label: t("chequesCleared"), value: formatCurrency(summary.cleared) },
-                    { label: t("chequesOutstanding"), value: formatCurrency(summary.outstanding) },
-                    { label: t("chequesBounced"), value: String(summary.bounced) },
+                    { label: t("activeContracts"), value: leasesFailed ? "—" : String(activeLeases) },
+                    { label: t("chequesTotal"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.total) },
+                    { label: t("chequesCleared"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.cleared) },
+                    { label: t("chequesOutstanding"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.outstanding) },
+                    { label: t("chequesBounced"), value: chequeFiguresIncomplete ? "—" : String(summary.bounced) },
                 ].map(k => (
                     <div key={k.label} className="bg-surface border border-border rounded-xl p-4">
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{k.label}</p>
@@ -235,7 +291,9 @@ export default function RenterDetailPage() {
             {/* ── Contracts ──────────────────────────────────────── */}
             <section>
                 <h2 className="text-sm font-bold text-foreground mb-3">{t("contracts")}</h2>
-                {leases.length === 0 ? (
+                {leasesFailed ? (
+                    <LoadErrorBanner message={t("contractsLoadFailed")} onRetry={retry} className="mb-0" />
+                ) : leases.length === 0 ? (
                     <p className="text-xs text-muted bg-surface border border-dashed border-border rounded-xl p-6 text-center">{t("noContracts")}</p>
                 ) : (
                     <div className="bg-surface rounded-xl border border-border overflow-x-auto">
@@ -279,8 +337,13 @@ export default function RenterDetailPage() {
                 <h2 className="text-sm font-bold text-foreground mb-3">
                     {t("cheques")} <span className="text-muted font-medium">· {t("chequeCount", { count: summary.count })}</span>
                 </h2>
+                {chequeFiguresIncomplete && (
+                    <LoadErrorBanner message={t("chequesLoadFailed")} onRetry={retry} className="mb-3" />
+                )}
                 {cheques.length === 0 ? (
-                    <p className="text-xs text-muted bg-surface border border-dashed border-border rounded-xl p-6 text-center">{t("noCheques")}</p>
+                    !chequeFiguresIncomplete && (
+                        <p className="text-xs text-muted bg-surface border border-dashed border-border rounded-xl p-6 text-center">{t("noCheques")}</p>
+                    )
                 ) : (
                     <div className="bg-surface rounded-xl border border-border overflow-x-auto">
                         <table className="w-full" data-testid="renter-cheques">
@@ -310,7 +373,9 @@ export default function RenterDetailPage() {
             {/* ── Tickets ────────────────────────────────────────── */}
             <section>
                 <h2 className="text-sm font-bold text-foreground mb-3">{t("tickets")}</h2>
-                {tickets.length === 0 ? (
+                {ticketsFailed ? (
+                    <LoadErrorBanner message={t("ticketsLoadFailed")} onRetry={retry} className="mb-0" />
+                ) : tickets.length === 0 ? (
                     <p className="text-xs text-muted bg-surface border border-dashed border-border rounded-xl p-6 text-center">{t("noTickets")}</p>
                 ) : (
                     <div className="bg-surface rounded-xl border border-border overflow-x-auto">
