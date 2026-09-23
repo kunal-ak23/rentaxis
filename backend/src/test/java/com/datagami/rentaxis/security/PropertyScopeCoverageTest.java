@@ -58,10 +58,28 @@ class PropertyScopeCoverageTest {
             ROOT + "core/security/LeaseAccessPolicy");
     private static final int MAX_DEPTH = 6;
 
-    /** Parameter names that name a property-bound object. {@code id} is the controller's own resource. */
-    private static final Pattern ID_PARAM = Pattern.compile(
-            "(?i)^(id|.*(property|lease|unit|ticket|listing|building|meeting|pass|walkin|attachment"
-                    + "|contact|interaction|settlement|deduction|opportunity|booking|amenity|spot|profile).*id)$");
+    /**
+     * The helper methods that enforce: they throw, or narrow a result, for a
+     * caller out of scope. A call to anything else on the helpers — the
+     * query-only {@code isScoped}, {@code isRestricted},
+     * {@code scopedPropertyIds}, {@code visiblePropertyIds},
+     * {@code hasAuthenticatedCaller} — answers a question and guards nothing, so
+     * it is not coverage.
+     */
+    private static final Pattern ENFORCING = Pattern.compile(
+            "^(require.*|filter.*|canManage|canRead|canAccess.*)$");
+
+    /**
+     * Methods whose helper calls decorate a response rather than gate it: a DTO
+     * mapper computing a flag (e.g. {@code canReissueOtp} from {@code mapToDTO})
+     * reaches {@code canAccessProperty} on every read, guarded or not. The walk
+     * does not go through them.
+     */
+    private static final Pattern NON_GATING = Pattern.compile(
+            "^(mapToDTO.*|mapToDto.*|toDto.*|toDTO.*|canReissueOtp)$");
+
+    /** Any parameter whose name ends in "id" names an object ({@code id}, {@code leaseId}, {@code chequeIds}...). */
+    private static final Pattern ID_PARAM = Pattern.compile("(?i).*ids?$");
 
     /**
      * Reviewed: reachable by PROPERTY_MANAGER, takes an id, and is deliberately not
@@ -73,7 +91,25 @@ class PropertyScopeCoverageTest {
             // A renter has no property FK; whether a manager's renter directory is
             // property-scoped is the open product question noted under audit #72.
             // The renter's leases (/renters/{id}/leases) ARE filtered by LeaseAccessPolicy.
-            Map.entry("RenterController#getRenterById", "renters are tenant-wide by product decision (open, #72)")
+            Map.entry("RenterController#getRenterById", "renters are tenant-wide by product decision (open, #72)"),
+
+            // Lists scoped in SQL: the caller's property set (visiblePropertyIds /
+            // scopedPropertyIds) is a query parameter, and an explicit propertyId
+            // outside it answers empty. Query-only helpers are not counted as
+            // coverage, so each such list is named here.
+            Map.entry("ChequeController#aging", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#due", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#postDated", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#search", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#summary", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#toDeposit", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("PenaltyAssessmentController#list", "SQL-scoped: repository.search(..., visiblePropertyIds)"),
+            Map.entry("UnitListingController#list", "SQL-scoped: service.list(..., scopedPropertyIds)"),
+            Map.entry("MaintenanceTicketController#listTickets",
+                    "PM branch queries findByPropertyIdIn(scopedPropertyIds); unitId/renterId only narrow it"),
+
+            // Not a property-bound id: a host is a staff user, checked by requireEligibleHost.
+            Map.entry("MeetingController#getAvailableSlots", "hostUserId is a user; requireEligibleHost bounds it to this tenant")
     );
 
     private static final Map<String, ClassInfo> CLASSES = new HashMap<>();
@@ -82,6 +118,8 @@ class PropertyScopeCoverageTest {
     static void loadBytecode() throws Exception {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         for (Resource r : resolver.getResources("classpath*:" + ROOT + "**/*.class")) {
+            // Application classes only: a test's own probe controller is not an endpoint.
+            if (r.getURL().toString().contains("/classes/java/test/")) continue;
             try (InputStream in = r.getInputStream()) {
                 ClassInfo info = new ClassInfo();
                 new ClassReader(in).accept(info, ClassReader.SKIP_FRAMES);
@@ -132,11 +170,16 @@ class PropertyScopeCoverageTest {
         assertThat(stale).as("EXEMPT entries that are now covered or no longer exist; remove them").isEmpty();
     }
 
-    /** The handler's effective @PreAuthorize lets a PROPERTY_MANAGER in. */
+    /**
+     * The handler's effective @PreAuthorize lets a PROPERTY_MANAGER in — or there
+     * is none, and whatever SecurityConfig lets through reaches it, a signed-in
+     * manager included. Routes with no @PreAuthorize used to be skipped, which is
+     * exactly where an unguarded id handler would hide.
+     */
     private static boolean reachableByPropertyManager(Class<?> type, Method m) {
         PreAuthorize pa = AnnotatedElementUtils.findMergedAnnotation(m, PreAuthorize.class);
         if (pa == null) pa = AnnotatedElementUtils.findMergedAnnotation(type, PreAuthorize.class);
-        if (pa == null) return false; // public or filter-gated routes; not role-bound
+        if (pa == null) return true;
         String expr = pa.value();
         return expr.contains("PROPERTY_MANAGER") || expr.contains("isAuthenticated()");
     }
@@ -150,10 +193,25 @@ class PropertyScopeCoverageTest {
             if (pv != null) name = !pv.value().isEmpty() ? pv.value() : !pv.name().isEmpty() ? pv.name() : p.getName();
             else if (rp != null) name = !rp.value().isEmpty() ? rp.value() : !rp.name().isEmpty() ? rp.name() : p.getName();
             if (name == null) continue;
-            boolean idType = p.getType() == UUID.class || p.getType() == String.class;
-            if (idType && ID_PARAM.matcher(name).matches()) ids.add(name);
+            if (isIdType(p) && ID_PARAM.matcher(name).matches()) ids.add(name);
         }
         return ids;
+    }
+
+    /** UUID or String, or a List/Set/Collection of UUID, or UUID[]. */
+    private static boolean isIdType(Parameter p) {
+        Class<?> t = p.getType();
+        if (t == UUID.class || t == String.class || t == UUID[].class) return true;
+        if (java.util.Collection.class.isAssignableFrom(t)
+                && p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt) {
+            return pt.getActualTypeArguments().length == 1 && pt.getActualTypeArguments()[0] == UUID.class;
+        }
+        return false;
+    }
+
+    /** A call that counts as coverage: an enforcing method on one of the helpers. */
+    private static boolean isEnforcing(Call c) {
+        return HELPERS.contains(c.owner) && ENFORCING.matcher(c.name).matches();
     }
 
     private static boolean reachesHelper(String owner, String name, String desc) {
@@ -164,14 +222,19 @@ class PropertyScopeCoverageTest {
             Object[] next = queue.poll();
             Call call = (Call) next[0];
             int depth = (int) next[1];
-            if (HELPERS.contains(call.owner)) return true;
+            if (isEnforcing(call)) return true;
             if (depth >= MAX_DEPTH || !seen.add(call.key())) continue;
             for (Call target : resolve(call)) {
                 MethodInfo mi = CLASSES.get(target.owner).methods.get(target.name + target.desc);
                 if (mi == null) continue;
                 for (Call callee : mi.callees) {
-                    if (HELPERS.contains(callee.owner)) return true;
-                    if (callee.owner.startsWith(ROOT)) queue.add(new Object[]{callee, depth + 1});
+                    if (isEnforcing(callee)) return true;
+                    // Never walk into the helpers (a query-only method's internals
+                    // are not an enforcing call) or through a response decorator.
+                    if (callee.owner.startsWith(ROOT) && !HELPERS.contains(callee.owner)
+                            && !NON_GATING.matcher(callee.name).matches()) {
+                        queue.add(new Object[]{callee, depth + 1});
+                    }
                 }
             }
         }
