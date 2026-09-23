@@ -391,21 +391,17 @@ public class MaintenanceTicketService {
         // close it only when nobody could hand one over (or the tenant does not
         // ask for OTPs); otherwise it would let staff skip the renter.
         String closeNote = null;
-        if (ticket.getStatus() == TicketStatus.RESOLVED && targetStatus == TicketStatus.CLOSED
-                && otpRequired(ticket)) {
-            if (otpClosureLocked(ticket)) {
-                // Too many wrong OTPs: only an admin may close it, on the record.
-                if (!callerHasRole("TENANT_ADMIN") && !callerHasRole("SUPER_ADMIN")) {
-                    throw new AccessDeniedException(
-                            "OTP closure is locked for this ticket. Only a tenant admin can close it.");
-                }
-                closeNote = "Ticket closed without OTP (OTP closure locked after "
+        if (targetStatus == TicketStatus.CLOSED) {
+            switch (statusRouteCloseGate(ticket)) {
+                case NOT_GATED -> { }
+                case LOCKED_ADMIN -> closeNote = "Ticket closed without OTP (OTP closure locked after "
                         + MAX_TOTAL_OTP_FAILURES + " wrong OTPs)";
-            } else if (hasRenterToConfirm(ticket)) {
-                throw new BusinessRuleViolationException(
+                // Too many wrong OTPs: only an admin may close it, on the record.
+                case LOCKED_NOT_ADMIN -> throw new AccessDeniedException(
+                        "OTP closure is locked for this ticket. Only a tenant admin can close it.");
+                case RENTER_CONFIRMS -> throw new BusinessRuleViolationException(
                         "A resolved ticket is closed with the renter's OTP. Use OTP closure (PUT /tickets/{id}/close).");
-            } else {
-                closeNote = "Ticket closed without OTP (no renter to confirm)";
+                case NO_RENTER -> closeNote = "Ticket closed without OTP (no renter to confirm)";
             }
         }
 
@@ -474,6 +470,43 @@ public class MaintenanceTicketService {
 
     /** Closure OTP re-issues allowed per ticket in any 24 hours. */
     static final int MAX_OTP_REISSUES_PER_DAY = 3;
+
+    /**
+     * How the status route treats a request to close this ticket for the
+     * calling user. A resolved ticket is closed by its renter's OTP; the status
+     * route may close it only when nobody could hand one over (or the tenant
+     * does not ask for OTPs), otherwise it would let staff skip the renter.
+     * {@link #updateStatus} enforces it and {@link #mapToDTO} reports it as
+     * {@code closableWithoutOtp}, so the two cannot drift.
+     */
+    private enum StatusCloseGate { NOT_GATED, LOCKED_ADMIN, LOCKED_NOT_ADMIN, RENTER_CONFIRMS, NO_RENTER }
+
+    private StatusCloseGate statusRouteCloseGate(MaintenanceTicket ticket) {
+        if (ticket.getStatus() != TicketStatus.RESOLVED || !otpRequired(ticket)) return StatusCloseGate.NOT_GATED;
+        if (otpClosureLocked(ticket)) {
+            return callerHasRole("TENANT_ADMIN") || callerHasRole("SUPER_ADMIN")
+                    ? StatusCloseGate.LOCKED_ADMIN : StatusCloseGate.LOCKED_NOT_ADMIN;
+        }
+        return hasRenterToConfirm(ticket) ? StatusCloseGate.RENTER_CONFIRMS : StatusCloseGate.NO_RENTER;
+    }
+
+    /** Roles the status route admits (its {@code @PreAuthorize}). */
+    private static boolean callerIsStaff() {
+        return callerHasRole("PROPERTY_MANAGER") || callerHasRole("TENANT_ADMIN") || callerHasRole("SUPER_ADMIN");
+    }
+
+    /**
+     * Whether {@code PUT /tickets/{id}/status} with CLOSED would succeed for the
+     * caller: a staff role, a transition to CLOSED allowed from the current
+     * status, and the OTP gate open.
+     */
+    private boolean closableWithoutOtp(MaintenanceTicket ticket) {
+        if (!callerIsStaff()) return false;
+        if (!allowedTransitions(ticket.getStatus()).contains(TicketStatus.CLOSED)) return false;
+        StatusCloseGate gate = statusRouteCloseGate(ticket);
+        return gate == StatusCloseGate.NOT_GATED || gate == StatusCloseGate.LOCKED_ADMIN
+                || gate == StatusCloseGate.NO_RENTER;
+    }
 
     private static boolean otpClosureLocked(MaintenanceTicket ticket) {
         return ticket.getClosureOtpTotalFailedAttempts() >= MAX_TOTAL_OTP_FAILURES;
@@ -925,7 +958,14 @@ public class MaintenanceTicketService {
     // ---- Status transition validation ----
 
     private void validateStatusTransition(TicketStatus current, TicketStatus target) {
-        Set<TicketStatus> allowed = switch (current) {
+        if (!allowedTransitions(current).contains(target)) {
+            throw new BusinessRuleViolationException(
+                    String.format("Cannot transition from %s to %s", current, target));
+        }
+    }
+
+    private static Set<TicketStatus> allowedTransitions(TicketStatus current) {
+        return switch (current) {
             case OPEN -> Set.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, TicketStatus.CLOSED);
             case ASSIGNED -> Set.of(TicketStatus.IN_PROGRESS, TicketStatus.OPEN, TicketStatus.CLOSED);
             case IN_PROGRESS -> Set.of(TicketStatus.RESOLVED, TicketStatus.ASSIGNED, TicketStatus.CLOSED);
@@ -933,11 +973,6 @@ public class MaintenanceTicketService {
             case CLOSED -> Set.of(TicketStatus.REOPENED);
             case REOPENED -> Set.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, TicketStatus.CLOSED);
         };
-
-        if (!allowed.contains(target)) {
-            throw new BusinessRuleViolationException(
-                    String.format("Cannot transition from %s to %s", current, target));
-        }
     }
 
     // ---- Mapping helpers ----
@@ -973,6 +1008,12 @@ public class MaintenanceTicketService {
         boolean isOtpHolder = requesterId != null && ticket.getClosureOtp() != null
                 && requesterId.equals(otpHolder(ticket));
         dto.setClosureOtp(isOtpHolder ? ticket.getClosureOtp() : null);
+        // Staff-only hints for the ticket detail's closing actions. A renter
+        // never sees them: they cannot call the status route, and the lockout
+        // state is not theirs to know.
+        boolean staff = callerIsStaff();
+        dto.setOtpLocked(staff && otpClosureLocked(ticket));
+        dto.setClosableWithoutOtp(closableWithoutOtp(ticket));
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());

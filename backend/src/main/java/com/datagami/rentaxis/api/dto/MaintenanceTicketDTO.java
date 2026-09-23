@@ -25,6 +25,15 @@ public class MaintenanceTicketDTO {
     private Instant resolvedAt;
     private Instant closedAt;
     private String closureOtp;
+    /**
+     * Staff only (false for everyone else): {@code PUT /tickets/{id}/status}
+     * with CLOSED would succeed for this caller. For a RESOLVED ticket that
+     * means no renter can confirm with a code, the tenant does not require
+     * one, or OTP closure is locked and the caller is an admin.
+     */
+    private boolean closableWithoutOtp;
+    /** Staff only: OTP closure is permanently locked after too many wrong OTPs. */
+    private boolean otpLocked;
     private Integer satisfactionRating;
     private String satisfactionComment;
     private String onBehalfOf;

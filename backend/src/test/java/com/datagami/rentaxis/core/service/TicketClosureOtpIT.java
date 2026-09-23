@@ -216,6 +216,8 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
     }
 
     private void assertRefusedThroughStatusRoute(UUID id) {
+        // The detail page offers no "Close ticket": OTP closure is the path.
+        assertThat(tickets.getTicket(id, staff.getId()).isClosableWithoutOtp()).isFalse();
         assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("OTP closure");
@@ -224,6 +226,9 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
     }
 
     private void assertClosedWithoutOtp(UUID id) {
+        MaintenanceTicketDTO before = tickets.getTicket(id, staff.getId());
+        assertThat(before.isClosableWithoutOtp()).isTrue();
+        assertThat(before.isOtpLocked()).isFalse();
         MaintenanceTicketDTO closed = tickets.updateStatus(id, "CLOSED", staff.getId());
         assertThat(closed.getStatus()).isEqualTo("CLOSED");
         assertThat(closed.getClosedAt()).isNotNull();
@@ -289,7 +294,14 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         orgRepo.save(org);
         UUID id = resolvedTicket(true);
 
+        // Staff see the close action; the renter, who cannot call the route, does not.
+        assertThat(tickets.getTicket(id, staff.getId()).isClosableWithoutOtp()).isTrue();
+        as(renterUser);
+        assertThat(tickets.getTicket(id, renterUser.getId()).isClosableWithoutOtp()).isFalse();
+        as(staff);
         assertThat(tickets.updateStatus(id, "CLOSED", staff.getId()).getStatus()).isEqualTo("CLOSED");
+        // Nothing left to close.
+        assertThat(tickets.getTicket(id, staff.getId()).isClosableWithoutOtp()).isFalse();
         assertThat(historyNotes(id)).last().isEqualTo("Status changed: RESOLVED → CLOSED");
     }
 
@@ -449,12 +461,26 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
                 .hasMessageContaining("OTP closure is locked");
 
+        // The DTO says so: locked for staff, closable only by an admin, and
+        // neither flag reaches the renter.
+        MaintenanceTicketDTO pmView = tickets.getTicket(id, staff.getId());
+        assertThat(pmView.isOtpLocked()).isTrue();
+        assertThat(pmView.isClosableWithoutOtp()).isFalse();
+        as(renterUser);
+        MaintenanceTicketDTO renterView = tickets.getTicket(id, renterUser.getId());
+        assertThat(renterView.isOtpLocked()).isFalse();
+        assertThat(renterView.isClosableWithoutOtp()).isFalse();
+        as(staff);
+
         // A property manager cannot close it through the status route; a tenant admin can, on the record.
         assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
                 .isInstanceOf(com.datagami.rentaxis.api.exception.AccessDeniedException.class);
         assertThat(status(id)).isEqualTo("RESOLVED");
         User admin = user(UserRole.TENANT_ADMIN);
         as(admin);
+        MaintenanceTicketDTO adminView = tickets.getTicket(id, admin.getId());
+        assertThat(adminView.isOtpLocked()).isTrue();
+        assertThat(adminView.isClosableWithoutOtp()).isTrue();
         assertThat(tickets.updateStatus(id, "CLOSED", admin.getId()).getStatus()).isEqualTo("CLOSED");
         assertThat(historyNotes(id)).last()
                 .isEqualTo("Ticket closed without OTP (OTP closure locked after 10 wrong OTPs)");
