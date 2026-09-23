@@ -264,6 +264,53 @@ class BankAccountControllerIT extends AbstractPostgresIT {
         assertThat(res.getStatusCode().value()).isEqualTo(400);
     }
 
+    /**
+     * A row linked under the old ASSET-wide picker to a non-BANK leaf. Saved straight
+     * through the repository, as the pre-#66 service allowed, because the endpoint now
+     * refuses to create one.
+     */
+    private String createLegacyLinked() {
+        TenantContextHolder.setTenantId(admin.getTenantId());
+        try {
+            var b = new com.datagami.rentaxis.domain.entity.BankAccount();
+            b.setBankName("Emirates NBD");
+            b.setAccountNumber("100000013");
+            b.setCurrency("AED");
+            b.setCoaAccount(accountService.getAccountById(rentReceivableLeafId));
+            return bankAccountRepo.save(b).getId().toString();
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    @Test
+    void editingOnlyTheIbanOfALegacyLinkedRowKeepsItsLink() {
+        String id = createLegacyLinked();
+        Map<String, Object> b = body("0013", rentReceivableLeafId, null);
+        b.put("iban", "AE070331234567890123456");
+        var res = call(admin, HttpMethod.PUT, "/api/v1/bank-accounts/" + id, b);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(res.getBody().get("iban")).isEqualTo("AE070331234567890123456");
+        assertThat(coaId(res)).isEqualTo(rentReceivableLeafId.toString());
+    }
+
+    @Test
+    void changingALegacyLinkedRowToAnotherNonBankLeafIs400() {
+        String id = createLegacyLinked();
+        var res = call(admin, HttpMethod.PUT, "/api/v1/bank-accounts/" + id, body("0013", bankGroupId, null));
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        var after = call(admin, HttpMethod.GET, "/api/v1/bank-accounts/" + id, null);
+        assertThat(coaId(after)).isEqualTo(rentReceivableLeafId.toString());
+    }
+
+    @Test
+    void changingALegacyLinkedRowToABankLeafSucceeds() {
+        String id = createLegacyLinked();
+        var res = call(admin, HttpMethod.PUT, "/api/v1/bank-accounts/" + id, body("0013", bankLeafId, null));
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(coaId(res)).isEqualTo(bankLeafId.toString());
+    }
+
     @Test
     void anotherTenantCannotUpdateThisTenantsBankAccount() {
         String id = createPlain();

@@ -14,14 +14,15 @@ type Account = {
     accountType: string;
     accountSubType?: string;
     group?: boolean;
+    active?: boolean;
 };
 
 /**
  * A bank account posts to a bank ledger account, so the picker offers only
- * BANK-subtype leaves: never a group, a receivable or a PDC account (gap #66).
- * The backend refuses anything else with a 400.
+ * active BANK-subtype leaves: never a group, a receivable, a PDC account or a
+ * deactivated bank leaf (gap #66). The backend refuses anything else with a 400.
  */
-const isBankLeaf = (a: Account) => a.accountSubType === "BANK" && !a.group;
+const isBankLeaf = (a: Account) => a.accountSubType === "BANK" && !a.group && a.active !== false;
 
 type Property = {
     id: string;
@@ -181,11 +182,11 @@ export default function BankAccountsPage() {
                 fetchBankAccounts();
             } else {
                 const errData = await res.json().catch(() => null);
-                setFormError(errData?.message || "Failed to save bank account");
+                setFormError(errData?.message || t("saveFailed"));
             }
         } catch (err) {
             console.error(err);
-            setFormError("Failed to save bank account");
+            setFormError(t("saveFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -193,9 +194,9 @@ export default function BankAccountsPage() {
 
     const handleDelete = (ba: BankAccount) => {
         setConfirmDialog({
-            title: "Delete Bank Account",
-            description: "Are you sure you want to delete this bank account?",
-            confirmText: "Delete",
+            title: t("deleteAccount"),
+            description: t("confirmDelete"),
+            confirmText: t("delete"),
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
@@ -208,15 +209,20 @@ export default function BankAccountsPage() {
                         fetchBankAccounts();
                     } else {
                         const errData = await res.json().catch(() => null);
-                        setPageError(errData?.message || "Failed to delete bank account");
+                        setPageError(errData?.message || t("deleteFailed"));
                     }
                 } catch (err) {
                     console.error(err);
-                    setPageError("Failed to delete bank account");
+                    setPageError(t("deleteFailed"));
                 }
             },
         });
     };
+
+    const legacyLink =
+        editingAccount?.coaAccount && !accounts.some((a) => a.id === editingAccount.coaAccount?.id)
+            ? editingAccount.coaAccount
+            : null;
 
     const propertyName = (p: Property | null) => {
         if (!p) return "\u2014";
@@ -286,32 +292,32 @@ export default function BankAccountsPage() {
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-input/70">
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("bankName")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("accountNumber")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("iban")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("branchName")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("property")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("coaAccount")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("isDefault")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                        Status
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("status")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                        Actions
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("actions")}
                                     </th>
                                 </tr>
                             </thead>
@@ -394,8 +400,8 @@ export default function BankAccountsPage() {
                                 setShowModal(false);
                                 setEditingAccount(null);
                             }}
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
-                            aria-label="Close"
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
+                            aria-label={t("close")}
                         >
                             <X size={18} />
                         </button>
@@ -408,7 +414,7 @@ export default function BankAccountsPage() {
 
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("bankName")}
                                 </label>
                                 <input
@@ -421,7 +427,7 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("accountNumber")}
                                 </label>
                                 <input
@@ -433,7 +439,7 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("iban")}
                                 </label>
                                 <input
@@ -445,7 +451,7 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("branchName")}
                                 </label>
                                 <input
@@ -457,7 +463,7 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("currency")}
                                 </label>
                                 <input
@@ -469,7 +475,7 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("property")}
                                 </label>
                                 <select
@@ -479,7 +485,7 @@ export default function BankAccountsPage() {
                                         setFormData({ ...formData, propertyId: ev.target.value })
                                     }
                                 >
-                                    <option value="">-- Select Property --</option>
+                                    <option value="">{t("selectProperty")}</option>
                                     {properties.map((s) => (
                                         <option key={s.property.id} value={s.property.id}>
                                             {locale === "ar"
@@ -490,7 +496,7 @@ export default function BankAccountsPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("coaAccount")}
                                 </label>
                                 <select
@@ -500,20 +506,30 @@ export default function BankAccountsPage() {
                                         setFormData({ ...formData, coaAccountId: ev.target.value })
                                     }
                                 >
-                                    <option value="">-- Select Account --</option>
-                                    {/* Keep a row's current link visible on edit even if it predates the filter. */}
-                                    {editingAccount?.coaAccount &&
-                                        !accounts.some((a) => a.id === editingAccount.coaAccount?.id) && (
-                                            <option value={editingAccount.coaAccount.id}>
-                                                {editingAccount.coaAccount.code} - {accountName(editingAccount.coaAccount, locale)}
-                                            </option>
-                                        )}
+                                    <option value="">{t("selectAccount")}</option>
+                                    {/*
+                                      * Keep a row's current link visible on edit even if it predates
+                                      * the filter (linked under the old ASSET-wide picker, or since
+                                      * deactivated). Saving it unchanged is accepted — the server only
+                                      * validates a change of link — but it is marked so the operator
+                                      * knows it is not a bank account (PR #340 review I-2).
+                                      */}
+                                    {legacyLink && (
+                                        <option value={legacyLink.id} data-testid="bank-account-legacy-link">
+                                            {legacyLink.code} - {accountName(legacyLink, locale)} {t("legacyLinkSuffix")}
+                                        </option>
+                                    )}
                                     {accounts.map((a) => (
                                         <option key={a.id} value={a.id}>
                                             {a.code} - {accountName(a, locale)}
                                         </option>
                                     ))}
                                 </select>
+                                {legacyLink && formData.coaAccountId === legacyLink.id && (
+                                    <p className="text-[11px] text-warning mt-1.5 ms-1" data-testid="bank-account-legacy-link-hint">
+                                        {t("legacyLinkHint")}
+                                    </p>
+                                )}
                             </div>
                             <div className="flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -550,7 +566,7 @@ export default function BankAccountsPage() {
                                     }}
                                     className="px-6 py-3 bg-input text-muted border border-border rounded-xl text-xs font-bold"
                                 >
-                                    Cancel
+                                    {t("cancel")}
                                 </button>
                                 <button
                                     type="submit"

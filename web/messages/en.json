@@ -501,7 +501,18 @@
     "noBankAccounts": "No Bank Accounts",
     "addBankAccountDesc": "Add bank accounts to track deposits and reconcile payments.",
     "active": "Active",
-    "inactive": "Inactive"
+    "inactive": "Inactive",
+    "status": "Status",
+    "actions": "Actions",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "close": "Close",
+    "selectProperty": "-- Select Property --",
+    "selectAccount": "-- Select Account --",
+    "saveFailed": "Failed to save bank account",
+    "deleteFailed": "Failed to delete bank account",
+    "legacyLinkSuffix": "(not an active bank account — pick a bank account to change)",
+    "legacyLinkHint": "The current link is not an active bank ledger account. Saving keeps it as it is; pick a bank account to change it."
   },
   "bulkChequeUpload": {
     "breadcrumb": "Cheques · Bulk upload",

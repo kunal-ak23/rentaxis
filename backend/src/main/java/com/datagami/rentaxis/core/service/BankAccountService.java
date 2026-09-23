@@ -84,7 +84,7 @@ public class BankAccountService {
         b.setBranchName(r.branchName());
         b.setCurrency(r.currency() == null || r.currency().isBlank() ? "AED" : r.currency());
         b.setProperty(resolveProperty(r.property()));
-        b.setCoaAccount(resolveBankLeaf(r.coaAccount()));
+        b.setCoaAccount(resolveBankLeaf(r.coaAccount(), b.getCoaAccount()));
     }
 
     private Property resolveProperty(BankAccountRequest.Ref ref) {
@@ -98,10 +98,19 @@ public class BankAccountService {
     /**
      * A bank account posts to its ledger account, so that account must be one of
      * this tenant's BANK-subtype leaves: not a group, not a receivable (gap #66).
+     *
+     * <p>Only a change of link is validated. A row linked under the old ASSET-wide
+     * picker (to a receivable or a group) re-sends that same id on every edit; if
+     * it were re-validated here, fixing a typo in the IBAN would 400 until the
+     * operator also re-linked it. Keeping the current link is not a new choice, so
+     * {@code current} passes through unchanged (PR #340 review I-2).</p>
      */
-    private Account resolveBankLeaf(BankAccountRequest.Ref ref) {
+    private Account resolveBankLeaf(BankAccountRequest.Ref ref, Account current) {
         if (ref == null) return null;
         if (ref.id() == null) throw new BusinessRuleViolationException("coaAccount.id is required");
+        if (current != null && ref.id().equals(current.getId()) && inCurrentTenant(current.getTenantId())) {
+            return current;
+        }
         Account a = accountRepository.findByIdScopedToTenant(ref.id())
                 .filter(acc -> inCurrentTenant(acc.getTenantId()))
                 .orElseThrow(() -> new NotFoundException("Ledger account not found"));
