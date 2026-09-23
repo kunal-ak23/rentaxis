@@ -688,6 +688,7 @@ export default function LeaseDetailPage() {
                                         contractValueInclVat={totals.inclVat}
                                         defaultInstallments={lease.paymentTerms ?? 4}
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
+                                        defaultDistribution={lease.installmentDistribution}
                                         busy={chequeBusy}
                                         error={chequeError}
                                         onRowAction={canCheques ? openChequeAction : undefined}

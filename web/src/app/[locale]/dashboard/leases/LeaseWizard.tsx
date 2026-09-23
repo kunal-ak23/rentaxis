@@ -519,6 +519,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 contractValueInclVat={totals.inclVat}
                                 defaultInstallments={terms.paymentTerms}
                                 defaultFirstDueDate={terms.firstDueDate || terms.startDate}
+                                defaultDistribution={terms.installmentDistribution}
                                 busy={busy}
                                 error={chequeError}
                                 notice={chequeNotice}

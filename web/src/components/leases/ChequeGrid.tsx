@@ -62,11 +62,15 @@ export type GenerateForm = {
     mode: ChequeMode;
 };
 
-export function blankGenerateForm(installments: number, firstDueDate: string): GenerateForm {
+export function blankGenerateForm(
+    installments: number,
+    firstDueDate: string,
+    distribution: InstallmentDistribution = "LAST_LARGER",
+): GenerateForm {
     return {
         installments: installments || 1,
         firstDueDate: firstDueDate || "",
-        distribution: "LAST_LARGER",
+        distribution,
         payeeBank: "",
         debitAccountId: null,
         foldDepositsAndFeesIntoFirst: true,
@@ -87,6 +91,8 @@ type Props = {
     contractValueInclVat: number;
     defaultInstallments?: number;
     defaultFirstDueDate?: string | null;
+    /** Installment distribution chosen in the lease's Terms step — see #46. */
+    defaultDistribution?: InstallmentDistribution | null;
     busy?: boolean;
     error?: string | null;
     /** Row actions — only rendered when a handler is supplied and the user may act. */
@@ -125,6 +131,7 @@ export default function ChequeGrid({
     contractValueInclVat,
     defaultInstallments = 4,
     defaultFirstDueDate,
+    defaultDistribution,
     busy,
     error,
     onRowAction,
@@ -140,7 +147,7 @@ export default function ChequeGrid({
 
     const [genOpen, setGenOpen] = useState(false);
     const [gen, setGen] = useState<GenerateForm>(() =>
-        blankGenerateForm(defaultInstallments, defaultFirstDueDate ?? ""),
+        blankGenerateForm(defaultInstallments, defaultFirstDueDate ?? "", defaultDistribution ?? "LAST_LARGER"),
     );
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
