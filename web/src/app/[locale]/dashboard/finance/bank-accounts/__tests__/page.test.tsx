@@ -26,6 +26,15 @@ const sampleAccounts = [
     },
 ];
 
+/** The chart of accounts as /finance/accounts returns it: groups and leaves of every subtype. */
+const chartOfAccounts = [
+    { id: "g-bank", code: "A-02-02", name: "Bank", accountType: "ASSET", accountSubType: "BANK", group: true },
+    { id: "l-bank", code: "100005", name: "Bank - Miftah Residences", accountType: "ASSET", accountSubType: "BANK", group: false },
+    { id: "l-rr", code: "100001", name: "Rent Receivable - Miftah Residences", accountType: "ASSET", accountSubType: "RECEIVABLE", group: false },
+    { id: "l-pdc", code: "100004", name: "PDC Receivable - Miftah Residences", accountType: "ASSET", accountSubType: "PDC_RECEIVABLE", group: false },
+    { id: "l-cash", code: "A-02-05-001", name: "Cash Account", accountType: "ASSET", accountSubType: "CASH", group: false },
+];
+
 type FetchCall = { url: string; init?: RequestInit };
 let calls: FetchCall[] = [];
 let failNextWrite: { status: number; message: string } | null = null;
@@ -42,6 +51,9 @@ function stubFetch() {
                 status,
                 json: async () => ({ error: "Internal Server Error", message, status }),
             } as unknown as Response;
+        }
+        if (url.includes("/v1/finance/accounts")) {
+            return { ok: true, json: async () => chartOfAccounts } as unknown as Response;
         }
         if (url.includes("/v1/bank-accounts")) {
             return { ok: true, json: async () => sampleAccounts } as unknown as Response;
@@ -106,5 +118,17 @@ describe("BankAccountsPage", () => {
         expect(screen.getByRole("alert").textContent).toContain(
             "Cannot delete bank account",
         );
+    });
+
+    it("offers only BANK-subtype leaves in the ledger account picker (gap #66)", async () => {
+        render(<BankAccountsPage />);
+        await screen.findByText("Emirates NBD");
+
+        fireEvent.click(screen.getByRole("button", { name: "addAccount" }));
+        const select = await screen.findByDisplayValue("-- Select Account --");
+        // Wait for the chart of accounts to arrive before reading the options.
+        await within(select as HTMLElement).findByText(/100005/);
+        const values = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
+        expect(values).toEqual(["", "l-bank"]);
     });
 });

@@ -11,7 +11,15 @@ type Account = {
     name: string;
     accountType: string;
     accountSubType?: string;
+    group?: boolean;
 };
+
+/**
+ * A bank account posts to a bank ledger account, so the picker offers only
+ * BANK-subtype leaves: never a group, a receivable or a PDC account (gap #66).
+ * The backend refuses anything else with a 400.
+ */
+const isBankLeaf = (a: Account) => a.accountSubType === "BANK" && !a.group;
 
 type Property = {
     id: string;
@@ -94,7 +102,7 @@ export default function BankAccountsPage() {
             const res = await fetch("/api/proxy/v1/finance/accounts");
             if (res.ok) {
                 const data: Account[] = await res.json();
-                setAccounts(data.filter((a) => a.accountType === "ASSET"));
+                setAccounts(data.filter(isBankLeaf));
             }
         } catch (err) {
             console.error(err);
@@ -491,6 +499,13 @@ export default function BankAccountsPage() {
                                     }
                                 >
                                     <option value="">-- Select Account --</option>
+                                    {/* Keep a row's current link visible on edit even if it predates the filter. */}
+                                    {editingAccount?.coaAccount &&
+                                        !accounts.some((a) => a.id === editingAccount.coaAccount?.id) && (
+                                            <option value={editingAccount.coaAccount.id}>
+                                                {editingAccount.coaAccount.code} - {editingAccount.coaAccount.name}
+                                            </option>
+                                        )}
                                     {accounts.map((a) => (
                                         <option key={a.id} value={a.id}>
                                             {a.code} - {a.name}
