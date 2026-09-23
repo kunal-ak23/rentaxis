@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import BulkChequeUploadFlow from "../BulkChequeUploadFlow";
 import type { Cheque } from "@/lib/api/leasing";
@@ -206,6 +206,43 @@ describe("BulkChequeUploadFlow", () => {
     expect(screen.queryByText("retryExtraction")).toBeNull();
     // With the image now uploaded, approve is enabled.
     expect(screen.getByText(/^approveAll/).closest("button")).not.toBeDisabled();
+  });
+
+  it("a double-clicked Retry extracts once (review m-3)", async () => {
+    let resolveRetry: (v: unknown) => void = () => {};
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: "upstream" }) })
+      .mockImplementationOnce(() => new Promise(r => { resolveRetry = r; }))
+      .mockImplementation(() => new Promise(() => {}));
+    global.fetch = fetchMock;
+
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+    await waitFor(() => screen.getByText("extractionFailed"));
+
+    // Both clicks land before React re-renders the button as disabled.
+    const retry = screen.getByText("retryExtraction").closest("button") as HTMLButtonElement;
+    act(() => {
+      retry.click();
+      retry.click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveRetry({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-9", bankName: "ENBD", payerName: "P", chequeDate: "2026-07-04", amount: 5000, confidence: "HIGH" },
+          warnings: [],
+        }),
+      });
+    });
+    await waitFor(() => expect(screen.queryByText("extractionFailed")).toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("only offers REGISTERED PDC rows — a DEPOSITED row is not a bulk-attach target", async () => {

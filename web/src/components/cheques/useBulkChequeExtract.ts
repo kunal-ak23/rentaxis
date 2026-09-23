@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ChequeExtractionResponse } from "@/types/cheque";
 
 export type BulkExtractItemStatus = "pending" | "extracting" | "extracted" | "failed";
@@ -60,6 +60,7 @@ export function buildItemsFromFiles(files: File[]): { items: BulkExtractItem[]; 
 
 export function useBulkChequeExtract() {
   const [items, setItems] = useState<BulkExtractItem[]>([]);
+  const inFlight = useRef<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
 
   const setItem = (id: string, patch: Partial<BulkExtractItem>) => {
@@ -106,6 +107,11 @@ export function useBulkChequeExtract() {
   const retry = useCallback(async (id: string): Promise<ChequeExtractionResponse | null> => {
     const target = items.find(it => it.id === id);
     if (!target) return null;
+    // The Retry button disables only once `setItem` re-renders, so a fast
+    // double-click would upload and OCR the same scan twice and orphan one
+    // blob. A ref is read synchronously, before any re-render.
+    if (inFlight.current.has(id)) return null;
+    inFlight.current.add(id);
     setItem(id, { status: "extracting", error: null });
     try {
       const response = await extractOne(target.file);
@@ -114,6 +120,8 @@ export function useBulkChequeExtract() {
     } catch (e) {
       setItem(id, { status: "failed", error: e instanceof Error ? e.message : "Failed" });
       return null;
+    } finally {
+      inFlight.current.delete(id);
     }
   }, [items]);
 
