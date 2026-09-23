@@ -67,9 +67,9 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | proven |
 | M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | proven (discount, not a true rent-free period — #50) |
 | M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
-| M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | planned |
+| M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | proven (on Omar; Sara's lease had already expired) |
 | M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
-| M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | planned |
+| M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | planned |
@@ -243,6 +243,19 @@ lease retired as RENEWED.
 books, 20 months were pending. The per-day arithmetic is exact — A-102 64,000 ÷ 365 × 31 =
 5,435.62, A-103 44,000 ÷ 365 × 31 = 3,736.99, February pro-rated to 28 days — and *Run
 recognition* posted all 20 (88,427.44) to 31/08/2026, the last month that has ended.
+
+**M20 + M22 · Mar–Apr 2026 — Omar moves up to A-201.** Sara's lease had simply run out in
+February, so early exit was played on Omar, who wanted the three-bedroom. His December and
+March cheques were banked and cleared first. *Terminate* on 31/03/2026: earned 21,216.44
+(121 days × 64,000 ÷ 365), 42,783.56 of unearned rent reversed — including the April–August
+recognition already posted — and the June and September PDCs handed back; the help text now
+says returned cheques stay owed (#26). Settlement: early-termination fee 10,000 (to Rent
+Penalty) and cleaning 500 (to Maintenance Charges) against a 10,783.56 credit and the 6,400
+deposit — refund **6,683.56**, finalized as **STL-26/1** "by System Admin", contract CLOSED.
+The finalized page still offered *Terminate contract* (#51). Then a fresh A-201 contract
+(105,000 rent, a new 10,500 deposit, 1,050 fee; 116,550; PDCs 600201–600204) posted from
+01/04/2026. That is the whole of "transfer": there is none (#52), so the renter paid an exit
+fee to stay.
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
