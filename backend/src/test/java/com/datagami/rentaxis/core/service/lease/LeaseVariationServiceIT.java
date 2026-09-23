@@ -5,6 +5,8 @@ import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
 import com.datagami.rentaxis.api.dto.lease.AddendumResponse;
 import com.datagami.rentaxis.api.dto.lease.LeaseAddendumDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
+import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -366,5 +368,108 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(recorded.ejariNumber()).isEqualTo("EJ-2027-00042");
         assertThat(recorded.ejariPending()).isFalse();
         assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::ejariPending).containsExactly(false, true);
+    }
+
+    // ------------------------------------------------------------------
+    // amend after an addendum (review I-2)
+    // ------------------------------------------------------------------
+
+    /** Every current line, re-sent exactly as it stands — period included. */
+    private static LeaseLineInput resend(LeaseLineDTO l) {
+        return new LeaseLineInput(l.chargeTypeId(), null, l.grossAmount(), l.discountAmount(),
+                l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd());
+    }
+
+    /**
+     * Amending re-inserts every line, and a RENT line that arrives without a period
+     * defaults to the whole term. The addendum's rent has to come back with its own
+     * window, or the rebuild recognises it from the lease start.
+     */
+    @Test
+    void anAmendAfterARentAddendumKeepsTheAddendumsWindow() {
+        UUID leaseId = postedWithFee();
+        variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Storage room", List.of(line("RENT", "4000")), List.of(chequeRow("4000", LocalDate.of(2027, 3, 1)))));
+
+        List<LeaseLineInput> same = leaseLines(leaseId).stream().map(LeaseVariationServiceIT::resend).toList();
+        fixtures.asTenantAdmin();
+        posting.amendLines(leaseId, same, "Narration correction");
+
+        LeaseLineDTO storage = leaseLines(leaseId).stream()
+                .filter(l -> "RENT".equals(l.chargeTypeCode()) && l.grossAmount().compareTo(new BigDecimal("4000")) == 0)
+                .findFirst().orElseThrow();
+        assertThat(storage.periodStart()).isEqualTo(EFFECTIVE);
+        assertThat(storage.periodEnd()).isEqualTo(END);
+
+        List<RentSegment> active = segmentsOf(leaseId).stream()
+                .filter(s -> s.getStatus() == SegmentStatus.ACTIVE).toList();
+        RentSegment added = active.stream()
+                .filter(s -> s.getAmount().compareTo(new BigDecimal("4000")) == 0).findFirst().orElseThrow();
+        assertThat(added.getFromDate()).isEqualTo(EFFECTIVE);
+        assertThat(added.getToDate()).isEqualTo(END);
+        // The original term is still recognised once, over its own term.
+        assertThat(active).filteredOn(s -> s.getFromDate().equals(START)).hasSize(1)
+                .allSatisfy(s -> assertThat(s.getAmount()).isEqualByComparingTo("51000"));
+    }
+
+    // ------------------------------------------------------------------
+    // recordEjari isolation (review T3/T4)
+    // ------------------------------------------------------------------
+
+    @Test
+    void anEjariCannotBeRecordedAgainstAnotherLeasesAddendum() {
+        UUID leaseA = postedWithFee();
+        UUID leaseB = fixtures.postedLease(fixtures.createUnit(fixtures.property(), "102"),
+                fixtures.createRenter("Second Renter"), CONTRACT_DATE, START, END,
+                List.of(line("RENT", "24000")), 2, null).lease().getId();
+        AddendumResponse onA = variations.addCharge(leaseA, parking("6000", "6000"));
+
+        assertThatThrownBy(() -> variations.recordEjari(leaseB, onA.addendum().id(), "X"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("Addendum not found");
+
+        assertThat(variations.list(leaseA)).singleElement()
+                .satisfies(a -> {
+                    assertThat(a.ejariPending()).isTrue();
+                    assertThat(a.ejariNumber()).isNull();
+                });
+    }
+
+    @Test
+    void anEjariCannotBeRecordedAcrossTenants() {
+        UUID leaseId = postedWithFee();
+        UUID tenantOne = fixtures.tenantId();
+        AddendumResponse r = variations.addCharge(leaseId, parking("6000", "6000"));
+
+        // A second landlord, made current.
+        new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService).bootstrap();
+        assertThat(TenantContextHolder.getTenantId()).isNotEqualTo(tenantOne);
+
+        assertThatThrownBy(() -> variations.recordEjari(leaseId, r.addendum().id(), "X"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("Lease not found");
+
+        TenantContextHolder.setTenantId(tenantOne);
+        fixtures.asTenantAdmin();
+        assertThat(variations.list(leaseId)).singleElement()
+                .satisfies(a -> {
+                    assertThat(a.ejariPending()).isTrue();
+                    assertThat(a.ejariNumber()).isNull();
+                });
+        assertThat(jdbc.queryForObject("select ejari_number from lease_addenda where id = ?",
+                String.class, r.addendum().id())).isNull();
+    }
+
+    @Test
+    void aBlankEjariNumberIsRefused() {
+        UUID leaseId = postedWithFee();
+        AddendumResponse r = variations.addCharge(leaseId, parking("6000", "6000"));
+
+        assertThatThrownBy(() -> variations.recordEjari(leaseId, r.addendum().id(), "   "))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("An Ejari number is required");
+        assertThat(variations.list(leaseId)).singleElement()
+                .satisfies(a -> assertThat(a.ejariPending()).isTrue());
     }
 }
