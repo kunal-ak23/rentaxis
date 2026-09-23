@@ -2462,6 +2462,7 @@
     "closeTicketConfirmTitle": "Close this ticket without a code?",
     "closeWithoutOtpNoRenter": "No renter can confirm with a code; this closure is recorded in the ticket history.",
     "closeWithoutOtpLocked": "OTP closure is locked after too many wrong codes; this closure is recorded in the ticket history.",
+    "closeWithoutOtpOtpOff": "Closure codes are turned off for this organisation.",
     "closeTicketConfirm": "Yes, close ticket",
     "cancel": "Cancel",
     "reissueOtp": "Send a new closure code",

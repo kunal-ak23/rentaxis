@@ -53,6 +53,8 @@ const baseTicket = {
     closureOtp: null,
     closableWithoutOtp: false,
     otpLocked: false,
+    closeWithoutOtpReason: null as "OTP_OFF" | "NO_RENTER" | "LOCKED" | null,
+    canReissueOtp: false,
     satisfactionRating: null,
     satisfactionComment: null,
     attachments: [],
@@ -264,6 +266,7 @@ describe("TicketDetailPage closing a resolved ticket", () => {
     it("shows nothing new when the renter can confirm: OTP closure plus a re-send", async () => {
         sessionUser.role = "PROPERTY_MANAGER";
         ticket.status = "RESOLVED";
+        ticket.canReissueOtp = true;
         render(<TicketDetailPage />);
 
         expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
@@ -296,6 +299,7 @@ describe("TicketDetailPage closing a resolved ticket", () => {
     it("re-sends a closure code with POST and confirms it was sent", async () => {
         sessionUser.role = "PROPERTY_MANAGER";
         ticket.status = "RESOLVED";
+        ticket.canReissueOtp = true;
         render(<TicketDetailPage />);
 
         const resend = await screen.findByText("reissueOtp");
@@ -311,6 +315,7 @@ describe("TicketDetailPage closing a resolved ticket", () => {
     it("surfaces the 3-per-24-hours cap when re-sending is refused", async () => {
         sessionUser.role = "PROPERTY_MANAGER";
         ticket.status = "RESOLVED";
+        ticket.canReissueOtp = true;
         reissueResponse = {
             ok: false,
             status: 400,
@@ -328,5 +333,30 @@ describe("TicketDetailPage closing a resolved ticket", () => {
             await screen.findByText("A closure OTP can be re-issued at most 3 times in 24 hours. Try again later.")
         ).toBeTruthy();
         expect(screen.queryByText("reissueOtpSent")).toBeNull();
+    });
+
+    // PR #342 review r3 M1: OTP switched off for the organisation is its own reason.
+    it("says closure codes are off for the organisation when that is why it closes without one", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "RESOLVED";
+        ticket.closableWithoutOtp = true;
+        ticket.closeWithoutOtpReason = "OTP_OFF";
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("closeTicket"));
+        expect(screen.getByText("closeWithoutOtpOtpOff")).toBeTruthy();
+        expect(screen.queryByText("closeWithoutOtpNoRenter")).toBeNull();
+        expect(screen.queryByText("reissueOtp")).toBeNull();
+    });
+
+    // PR #342 review r3 M5: a PM outside the property's scope gets canReissueOtp false.
+    it("hides Send a new closure code when the DTO says this caller cannot re-issue", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        ticket.status = "RESOLVED";
+        ticket.canReissueOtp = false;
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
+        expect(screen.queryByText("reissueOtp")).toBeNull();
     });
 });

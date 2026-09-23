@@ -48,6 +48,13 @@ type Ticket = {
     closableWithoutOtp?: boolean;
     /** Staff only: OTP closure is locked for good after too many wrong codes. */
     otpLocked?: boolean;
+    /** Why closableWithoutOtp is true, for the confirm's wording; null when never resolved. */
+    closeWithoutOtpReason?: "OTP_OFF" | "NO_RENTER" | "LOCKED" | null;
+    /**
+     * Staff only: POST /closure-otp can send a new code for this caller (in
+     * their property scope, codes on, not locked, a renter to receive it).
+     */
+    canReissueOtp?: boolean;
     satisfactionRating: number | null;
     satisfactionComment: string | null;
     attachments: Attachment[];
@@ -621,7 +628,7 @@ export default function TicketDetailPage() {
                                 confirmingClose ? (
                                     <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3" role="alertdialog" aria-labelledby="close-without-otp-title">
                                         <p id="close-without-otp-title" className="text-xs font-semibold text-foreground">{t("closeTicketConfirmTitle")}</p>
-                                        <p className="text-xs text-muted">{ticket.otpLocked ? t("closeWithoutOtpLocked") : t("closeWithoutOtpNoRenter")}</p>
+                                        <p className="text-xs text-muted">{ticket.closeWithoutOtpReason === "OTP_OFF" ? t("closeWithoutOtpOtpOff") : ticket.otpLocked ? t("closeWithoutOtpLocked") : t("closeWithoutOtpNoRenter")}</p>
                                         <div className="flex items-center gap-2">
                                             <button onClick={handleCloseWithoutOtp} disabled={actionLoading === "status"} className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
                                                 {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} {t("closeTicketConfirm")}
@@ -655,9 +662,11 @@ export default function TicketDetailPage() {
                                             </button>
                                         </div>
                                     </div>
+                                    {ticket.canReissueOtp && (
                                     <button onClick={handleReissueOtp} disabled={actionLoading === "closure-otp"} className="w-full flex items-center justify-center gap-2 bg-info/10 text-info px-4 py-2 rounded-lg text-xs font-semibold hover:bg-info/20 transition-all cursor-pointer disabled:opacity-50">
                                         {actionLoading === "closure-otp" && <Loader2 size={12} className="animate-spin" />} {t("reissueOtp")}
                                     </button>
+                                    )}
                                     </>
                                     )}
                                     <button onClick={handleReopen} disabled={actionLoading === "reopen"} className="w-full flex items-center justify-center gap-2 bg-error/10 text-error px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer disabled:opacity-50">
