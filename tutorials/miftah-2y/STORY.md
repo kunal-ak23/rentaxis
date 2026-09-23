@@ -68,7 +68,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | proven (discount, not a true rent-free period — #50) |
 | M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | lock proven; year-end close missing (#53) |
 | M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | proven (on Omar; Sara's lease had already expired) |
-| M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
+| M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | proven (relist + ad live); enquiry blocked (needs a marketplace sign-in); #58 |
 | M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | proven with gaps (#54 header flag inert, #55 no VAT return, #56 VAT timing) |
 | M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
@@ -279,6 +279,19 @@ for insufficient funds. The tiles now reconcile line by line: Bounced 54,500 (3:
 750 cash fee + her 5,234.25 settlement balance; aging 31–60 days: 31,500, 90+: 28,984.25;
 Registered 121,484.25 = the two cash rows + four future PDCs (Omar 600203/600204, Gulf
 Brew 700103/700104). "Due" equals "Overdue" because every lease has 0 grace days.
+
+**M21 · relist and promote.** A-201 is let to Omar, so the unit relisted was the one he
+left: A-102. The listing "Bright 1BR in Al Barsha 1, minutes from Mall of the Emirates"
+(EN + AR, 1 bed / 1 bath, 850 sq ft, unfurnished, 62,000 a year in 4 cheques, 6,200
+deposit) was saved as a draft and published. The public page at
+`/l/<org-slug>/<listing-slug>` shows the title, an AED 60k–70k band and the description,
+and gates everything else behind a sign-in. It went live with no photos and no warning
+(#58). An enquiry needs a marketplace account, which this simulation does not create.
+The promotion: the new café downstairs, Gulf Brew Cafe (Dining, one allowed link
+domain), runs "Residents get 20% off all coffee", eyebrow "New on the ground floor", EN
++ AR. It shows coupon MIFTAH20 on tap, runs 23/09–31/10/2026 in the home carousel and
+offers, is shown to Miftah Residences only, and is **Live**. Views and taps are 0 until a
+renter opens the app.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
