@@ -50,7 +50,8 @@ public class LeaseAddendum extends BaseTenantEntity {
     @Column(name = "value", nullable = false, precision = 14, scale = 2)
     private BigDecimal value;
 
-    @Column(name = "tco_journal_id", nullable = false)
+    /** Always set when the addendum posts; nullable only so a tenant purge can release it (changeset 92). */
+    @Column(name = "tco_journal_id")
     private UUID tcoJournalId;
 
     @Column(name = "tco_entry_number", nullable = false, length = 40)
