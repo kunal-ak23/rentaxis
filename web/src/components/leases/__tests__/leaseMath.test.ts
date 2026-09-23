@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChargeType, LeaseLine } from "@/lib/api/leasing";
-import { blankLine, fmtIsoDate, linesAreValid, renewalInputs, renewalRows, toInput, toInputs, toRow, type LineRow } from "../leaseMath";
+import type { LeaseLine } from "@/lib/api/leasing";
+import { blankLine, fmtIsoDate, linesAreValid, renewalRows, toInput, toInputs, toRow, withCarriedDeposit, type LineRow } from "../leaseMath";
 
 /**
  * `linesAreValid` is the one gate the amend/renew/extend dialogs and the
@@ -216,30 +216,37 @@ describe("renewalRows", () => {
     });
 });
 
-describe("renewalInputs (I2: no second deposit when the old one is carried forward)", () => {
-    const types = [
-        { id: "ct-rent", behaviour: "RENT" },
-        { id: "ct-dep", behaviour: "DEPOSIT" },
-        { id: "ct-fee", behaviour: "FEE" },
-    ] as unknown as ChargeType[];
-    const row = (key: number, chargeTypeId: string, grossAmount: number): LineRow => ({
-        ...blankLine(key), chargeTypeId, grossAmount,
+describe("renewal deposit rows (I2: no second deposit when the old one is carried forward)", () => {
+    const rent: LeaseLine = {
+        id: "line-1", seqNo: 1, chargeTypeId: "ct-rent", chargeTypeCode: "RENT", chargeTypeName: "Rent",
+        behaviour: "RENT", creditAccountId: null, creditAccountCode: null, creditAccountName: null,
+        grossAmount: 48000, discountAmount: 0, netAmount: 48000, narration: null, vatApplicable: false,
         periodStart: "2024-10-01", periodEnd: "2025-09-30", addendumId: null,
-    });
-    const rows = [row(0, "ct-rent", 48000), row(1, "ct-dep", 5000), row(2, "ct-fee", 500)];
+    };
+    const deposit: LeaseLine = { ...rent, id: "line-2", seqNo: 2, chargeTypeId: "ct-dep",
+        chargeTypeCode: "SECURITY_DEPOSIT", behaviour: "DEPOSIT", grossAmount: 5000, netAmount: 5000,
+        periodStart: null, periodEnd: null };
+    const lines = [rent, deposit];
 
-    it("drops the DEPOSIT line when the deposit is carried forward", () => {
-        const out = renewalInputs(rows, types, true);
-        expect(out.map((l) => l.chargeTypeId)).toEqual(["ct-rent", "ct-fee"]);
-    });
-
-    it("keeps it when the deposit is not carried forward (a fresh deposit is charged)", () => {
-        const out = renewalInputs(rows, types, false);
-        expect(out.map((l) => l.chargeTypeId)).toEqual(["ct-rent", "ct-dep", "ct-fee"]);
+    it("leaves last year's deposit out when it is carried forward, as the server copy does", () => {
+        expect(renewalRows(lines, "2024-10-01", { carryDepositForward: true }).map((r) => r.id)).toEqual(["line-1"]);
+        expect(renewalRows(lines, "2024-10-01").map((r) => r.id)).toEqual(["line-1", "line-2"]);
     });
 
-    it("sends no periods or addendum tie, like any renewal", () => {
-        const out = renewalInputs(rows, types, true);
-        expect(out.every((l) => l.periodStart === null && l.periodEnd === null && l.addendumId === null)).toBe(true);
+    it("restores the copied deposit row when carry forward is unticked, and drops it again when re-ticked", () => {
+        const start = renewalRows(lines, "2024-10-01", { carryDepositForward: true });
+        const off = withCarriedDeposit(start, lines, "2024-10-01", false);
+        expect(off.map((r) => r.id)).toEqual(["line-1", "line-2"]);
+        expect(new Set(off.map((r) => r.key)).size).toBe(off.length);
+        // Unticking twice does not duplicate it.
+        expect(withCarriedDeposit(off, lines, "2024-10-01", false)).toHaveLength(2);
+        expect(withCarriedDeposit(off, lines, "2024-10-01", true).map((r) => r.id)).toEqual(["line-1"]);
+    });
+
+    it("keeps a deposit line the operator added by hand (a top-up) either way", () => {
+        const topUp: LineRow = { ...blankLine(9), chargeTypeId: "ct-dep", grossAmount: 500 };
+        const rows = [...renewalRows(lines, "2024-10-01", { carryDepositForward: true }), topUp];
+        expect(withCarriedDeposit(rows, lines, "2024-10-01", true).map((r) => r.key)).toContain(9);
+        expect(withCarriedDeposit(rows, lines, "2024-10-01", false).map((r) => r.key)).toContain(9);
     });
 });

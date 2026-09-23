@@ -165,32 +165,9 @@ public class LeaseRenewalService {
                             + " (" + existing.getStatus() + "); delete that draft or renew the successor instead.");
         }
 
-        if (r.lines() != null && r.carryDepositForward()) {
-            requireNoDepositLine(r.lines());
-        }
-
         CreateLeaseDTO dto = successorHeader(predecessor, r);
         dto.setLines(r.lines() != null ? r.lines() : copiedLines(predecessor, r));
         return leaseService.createRenewalDraft(dto, predecessor, r.carryDepositForward());
-    }
-
-    /**
-     * Explicit lines may not charge a deposit while the old one is carried
-     * forward: the successor would charge (and collect) a second deposit while
-     * the {@code JV} moves the first one across — the renter pays twice and the
-     * liability is double what the landlord holds. {@link #copiedLines} skips
-     * the DEPOSIT line for the same reason; this is the same rule for a caller
-     * that sends its own lines.
-     */
-    private void requireNoDepositLine(List<LeaseLineInput> lines) {
-        for (int i = 0; i < lines.size(); i++) {
-            LeaseLineInput in = lines.get(i);
-            if (in == null) continue;
-            if (leaseService.chargeTypeOf(in, i + 1).getBehaviour() == ChargeBehaviour.DEPOSIT) {
-                throw new BusinessRuleViolationException(
-                        "The deposit is being carried forward; remove the deposit line or untick carry forward.");
-            }
-        }
     }
 
     /**

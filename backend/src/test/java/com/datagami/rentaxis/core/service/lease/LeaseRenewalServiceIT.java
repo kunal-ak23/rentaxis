@@ -523,30 +523,6 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         assertThat(posting.dryRun(successor.getId()).depositCarriedForward()).isEqualByComparingTo("0");
     }
 
-    /**
-     * I2: explicit lines that charge a deposit, sent together with the carry
-     * flag, would charge the renter a second deposit while the JV moves the
-     * first one across. Refused, and no successor is written.
-     */
-    @Test
-    void explicitLinesWithADepositAreRefusedWhenTheDepositIsCarriedForward() {
-        UUID firstId = postedWithDeposit();
-
-        RenewLeaseRequest withDeposit = new RenewLeaseRequest(RENEWAL_CONTRACT_DATE, RENEWAL_START, RENEWAL_END,
-                List.of(line("RENT", "54000"), line("SECURITY_DEPOSIT", "3000")), true);
-
-        assertThatThrownBy(() -> renewal.renew(firstId, withDeposit))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessage("The deposit is being carried forward; remove the deposit line or untick carry forward.");
-        assertThat(tx.execute(s -> leaseRepo.findByRenewedFromLeaseId(firstId))).isEmpty();
-
-        // The same lines without the carry flag are a fresh deposit, and fine.
-        LeaseDTO successor = renewal.renew(firstId, new RenewLeaseRequest(RENEWAL_CONTRACT_DATE, RENEWAL_START,
-                RENEWAL_END, List.of(line("RENT", "54000"), line("SECURITY_DEPOSIT", "3000")), false));
-        assertThat(leaseLines(successor.getId())).extracting(LeaseLineDTO::chargeTypeCode)
-                .containsExactly("RENT", "SECURITY_DEPOSIT");
-    }
-
     /** Year three, for the chained-renewal tests. */
     private static final LocalDate THIRD_CONTRACT_DATE = LocalDate.of(2028, 9, 16);
     private static final LocalDate THIRD_START = LocalDate.of(2028, 10, 2);

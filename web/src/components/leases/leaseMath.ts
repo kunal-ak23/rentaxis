@@ -93,21 +93,53 @@ export function toRows(lines: LeaseLine[]): LineRow[] {
  * Last year's lines as a renewal's editable starting point — the same copy
  * rules the server applies when the renewal sends no lines
  * (`LeaseRenewalService.copiedLines`): an addendum's charge and an
- * extension's rent belonged to the old term only and are left out, and a RENT
- * line's narration is cleared because it names the old term's dates (#49).
- *
- * The server's third rule — no DEPOSIT line when the deposit is carried
- * forward — depends on a checkbox that can change after these rows are built,
- * so it is applied at submit time by `renewalInputs`, not here.
+ * extension's rent belonged to the old term only and are left out, a RENT
+ * line's narration is cleared because it names the old term's dates (#49),
+ * and — when the deposit is carried forward — last year's DEPOSIT line is
+ * left out, because sending it too would charge the renter a second deposit
+ * while the JV moves the first one across (I2).
  */
-export function renewalRows(lines: LeaseLine[], termStart: string): LineRow[] {
+export function renewalRows(
+    lines: LeaseLine[],
+    termStart: string,
+    opts: { carryDepositForward?: boolean } = {},
+): LineRow[] {
     return lines
         .filter((l) => !l.addendumId
-            && !(l.behaviour === "RENT" && l.periodStart != null && l.periodStart > termStart))
+            && !(l.behaviour === "RENT" && l.periodStart != null && l.periodStart > termStart)
+            && !(opts.carryDepositForward && l.behaviour === "DEPOSIT"))
         .map((l, i) => {
             const row = toRow(l, i);
             return l.behaviour === "RENT" ? { ...row, narration: "" } : row;
         });
+}
+
+/**
+ * The renewal grid after "carry deposit forward" is toggled, without losing
+ * the operator's edits. Ticked: last year's copied DEPOSIT row goes. Unticked:
+ * it comes back (a fresh deposit is charged on the new contract). A DEPOSIT
+ * line the operator added by hand — a top-up charged on top of the carried
+ * deposit, which the server supports — is not last year's line and is left
+ * alone either way.
+ */
+export function withCarriedDeposit(
+    rows: LineRow[],
+    lines: LeaseLine[],
+    termStart: string,
+    carryDepositForward: boolean,
+): LineRow[] {
+    const copiedDeposits = renewalRows(lines, termStart)
+        .filter((r) => lines.find((l) => l.id === r.id)?.behaviour === "DEPOSIT");
+    const depositIds = new Set(copiedDeposits.map((r) => r.id));
+    if (carryDepositForward) {
+        return rows.filter((r) => !(r.id && depositIds.has(r.id)));
+    }
+    const present = new Set(rows.map((r) => r.id).filter(Boolean));
+    let nextKey = rows.reduce((m, r) => Math.max(m, r.key), -1) + 1;
+    const restored = copiedDeposits
+        .filter((r) => !present.has(r.id))
+        .map((r) => ({ ...r, key: nextKey++ }));
+    return [...rows, ...restored];
 }
 
 /**
@@ -142,24 +174,6 @@ export function followRentVat(
         const type = chargeTypes.find(c => c.id === r.chargeTypeId);
         return type?.behaviour === "RENT" ? { ...r, vatApplicable: rentVat } : r;
     });
-}
-
-/**
- * A renewal's explicit lines, as sent. When the old deposit is carried
- * forward, any DEPOSIT-behaviour line is dropped: sending one as well would
- * charge the renter a second deposit while the first is JV-moved across — the
- * server refuses that combination (`LeaseRenewalService.renew`).
- */
-export function renewalInputs(
-    rows: LineRow[],
-    chargeTypes: ChargeType[],
-    carryDepositForward: boolean,
-): LeaseLineInput[] {
-    const depositTypes = new Set(chargeTypes.filter(c => c.behaviour === "DEPOSIT").map(c => c.id));
-    const kept = carryDepositForward
-        ? rows.filter(r => !(r.chargeTypeId && depositTypes.has(r.chargeTypeId)))
-        : rows;
-    return toInputs(kept, { keepPeriods: false });
 }
 
 /**

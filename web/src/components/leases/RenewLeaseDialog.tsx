@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { linesAreValid, renewalInputs, renewalRows, splitLineErrors, todayIso, type LineRow } from "./leaseMath";
+import { linesAreValid, renewalRows, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail } from "@/lib/api/leasing";
 
 /**
@@ -66,7 +66,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         setEndDate(yearFrom(start));
         setCopyLines(true);
         setCarryDeposit(true);
-        setRows(renewalRows(lease.lines, lease.startDate));
+        setRows(renewalRows(lease.lines, lease.startDate, { carryDepositForward: true }));
         setErrors([]);
     }, [open, lease.startDate, lease.endDate, lease.lines]);
 
@@ -80,7 +80,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 contractDate: contractDate || null,
                 startDate,
                 endDate,
-                lines: copyLines ? null : renewalInputs(rows, chargeTypes, carryDeposit),
+                lines: copyLines ? null : toInputs(rows, { keepPeriods: false }),
                 carryDepositForward: carryDeposit,
             });
             onRenewed(successor);
@@ -155,7 +155,14 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                         type="checkbox"
                         data-testid="renew-carry-deposit"
                         checked={carryDeposit}
-                        onChange={e => setCarryDeposit(e.target.checked)}
+                        onChange={e => {
+                            // Last year's deposit line leaves the grid while the
+                            // deposit is carried forward, and comes back when it
+                            // is not — sending both would charge it twice (I2).
+                            const carry = e.target.checked;
+                            setCarryDeposit(carry);
+                            setRows(prev => withCarriedDeposit(prev, lease.lines, lease.startDate, carry));
+                        }}
                     />
                     {t("carryDepositForward")}
                 </label>
