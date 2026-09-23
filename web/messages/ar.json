@@ -2362,6 +2362,7 @@
     "renterFallback": "المستأجر",
     "nextPayment": "الدفعة التالية",
     "daysOverdue": "{count, plural, zero {متأخرة # يوم} one {متأخرة يومًا واحدًا} two {متأخرة يومين} few {متأخرة # أيام} many {متأخرة # يومًا} other {متأخرة # يوم}}",
+    "dueInGrace": "مستحقة · ضمن فترة السماح",
     "dueToday": "مستحقة اليوم",
     "dueInDays": "{count, plural, zero {مستحقة خلال # يوم} one {مستحقة خلال يوم واحد} two {مستحقة خلال يومين} few {مستحقة خلال # أيام} many {مستحقة خلال # يومًا} other {مستحقة خلال # يوم}}",
     "dueOn": "تستحق في {date}",

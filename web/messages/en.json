@@ -2362,6 +2362,7 @@
     "renterFallback": "Renter",
     "nextPayment": "Next payment",
     "daysOverdue": "{count, plural, one {# day overdue} other {# days overdue}}",
+    "dueInGrace": "Due · in grace period",
     "dueToday": "Due today",
     "dueInDays": "{count, plural, one {Due in # day} other {Due in # days}}",
     "dueOn": "Due {date}",

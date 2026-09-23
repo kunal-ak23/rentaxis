@@ -79,7 +79,7 @@ export default function RenterPortalPage() {
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
+    const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean; daysOverdue: number } | null>(null);
     // `/online-payments/my-payments` returns RenterChequeDTO rows. The local
     // shape this used to declare carried a `paymentMethod` the DTO has never
     // had, which is how the Method column came to render a hardcoded literal.
@@ -186,11 +186,17 @@ export default function RenterPortalPage() {
                     const due = new Date(next.dueDate);
                     due.setHours(0, 0, 0, 0);
                     const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    // Overdue-ness and its day count are the server's
+                    // (`ChequeDueRules.daysOverdue`, counted from the end of
+                    // the grace period) — the same numbers My Payments shows.
+                    // Counting from the cheque date here put one cheque at 630
+                    // days on this card and 625 on My Payments.
                     setNextPayment({
                         dueDate: next.dueDate,
                         amount: next.payable ?? next.amount,
                         daysUntilDue: diffDays,
-                        isOverdue: diffDays < 0,
+                        isOverdue: !!next.overdue,
+                        daysOverdue: next.daysOverdue ?? 0,
                     });
                 }
             } else {
@@ -381,8 +387,12 @@ export default function RenterPortalPage() {
                                 )}>
                                     <Clock size={11} />
                                     {nextPayment.isOverdue
-                                        ? tHome("daysOverdue", { count: Math.abs(nextPayment.daysUntilDue) })
-                                        : nextPayment.daysUntilDue === 0
+                                        ? tHome("daysOverdue", { count: nextPayment.daysOverdue })
+                                        : nextPayment.daysUntilDue < 0
+                                            // Past its date but inside the grace period:
+                                            // the server does not call it overdue yet.
+                                            ? tHome("dueInGrace")
+                                            : nextPayment.daysUntilDue === 0
                                             ? tHome("dueToday")
                                             : tHome("dueInDays", { count: nextPayment.daysUntilDue })
                                     }
