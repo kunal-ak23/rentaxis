@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -64,7 +65,7 @@ public class RenterService {
                 && dto.getEmail() != null && !dto.getEmail().isBlank();
         if (shouldCreatePortal) {
             UUID tenantId = TenantContextHolder.getTenantId();
-            generatedPassword = "Renter@" + saved.getId().toString().substring(0, 6);
+            generatedPassword = generatePortalPassword();
             User user = userService.createUser(
                     dto.getEmail(),
                     generatedPassword,
@@ -83,6 +84,31 @@ public class RenterService {
         result.setPortalPassword(generatedPassword);
         return result;
     }
+
+    /**
+     * A fresh portal password, from {@link SecureRandom}.
+     *
+     * <p>This used to be {@code "Renter@" + renterId.substring(0, 6)} — derived
+     * from an identifier that is not a secret. A renter's id travels in API
+     * responses, in the tenant-ledger picker and in listing payloads, so anyone
+     * who could see a renter could compute that renter's password and sign in as
+     * them. Every portal account the product ever created shares the flaw, and
+     * nothing forces a rotation.</p>
+     *
+     * <p>The alphabet omits the characters people confuse when a password is read
+     * out over the phone (O/0, I/l/1), which is how these still get delivered
+     * until an invite flow exists. Twelve characters of it carry about 58 bits.</p>
+     */
+    private static String generatePortalPassword() {
+        final String alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+        StringBuilder sb = new StringBuilder("Renter@");
+        for (int i = 0; i < 12; i++) {
+            sb.append(alphabet.charAt(SECURE_RANDOM.nextInt(alphabet.length())));
+        }
+        return sb.toString();
+    }
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Transactional
     public RenterDTO updateRenter(UUID id, CreateRenterDTO dto) {
