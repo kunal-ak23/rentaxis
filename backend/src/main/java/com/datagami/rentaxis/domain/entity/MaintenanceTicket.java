@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -76,6 +77,16 @@ public class MaintenanceTicket extends BaseTenantEntity {
 
     @Column(name = "on_behalf_of")
     private String onBehalfOf;
+
+    /**
+     * The day the tenant actually reported the issue, distinct from
+     * {@link #createdAt} (the instant the row was recorded). A complaint phoned in
+     * on Tuesday and logged on Thursday is reported on Tuesday; without this the
+     * two collapse and every SLA and the maintenance history are measured from the
+     * wrong day.
+     */
+    @Column(name = "reported_date", nullable = false)
+    private LocalDate reportedDate = LocalDate.now();
 
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();

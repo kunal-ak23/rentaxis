@@ -31,6 +31,7 @@ type Ticket = {
     reportedBy: string;
     assignedTo: string | null;
     assigneeName: string | null;
+    reportedDate: string;
     createdAt: string;
     updatedAt: string;
     estimatedResolutionHours: number | null;
@@ -527,6 +528,7 @@ export default function TicketDetailPage() {
                             <DetailRow icon={<Home size={12} />} label="Unit" value={ticket.unitNumber || "—"} />
                             <DetailRow icon={<User size={12} />} label="Reporter" value={ticket.reporterName || "—"} />
                             <DetailRow icon={<Wrench size={12} />} label="Assigned To" value={ticket.assigneeName || "Unassigned"} />
+                            <DetailRow icon={<Clock size={12} />} label="Reported On" value={ticket.reportedDate ? new Date(ticket.reportedDate + "T00:00:00").toLocaleDateString() : "—"} />
                             <DetailRow icon={<Clock size={12} />} label="Created" value={new Date(ticket.createdAt).toLocaleDateString()} />
                             {ticket.estimatedResolutionHours && <DetailRow icon={<Clock size={12} />} label="ETA" value={`${ticket.estimatedResolutionHours} hours`} />}
                         </div>

@@ -83,6 +83,8 @@ balance-misstatement bug; that was a misread. The genuine, narrow issue was the 
 Receivable / post-dated cheques held from tenants" understates what it holds) and the `#N` instrument
 label (#14, now fixed). Renaming the seeded account is a data/naming decision left for the owner.
 
+| 18 | **A ticket can now be dated.** `maintenance_tickets` gains a `reported_date` (migration 90, backfilled from `created_at`, NOT NULL), the Create Ticket form has a *Reported On* date field (defaulting to today, capped at today), and the service refuses a future date. So a complaint taken by phone and logged days later keeps the day it was actually raised, and SLA/history measure from the right date. Shown on the ticket detail page too. | 3 new service tests (given date / default today / future refused); migration applies clean under the ticket ITs |
+
 **Remediation still required (operational, not code):** existing renter accounts keep their old derived
 passwords. Every portal password created before this change should be rotated — on the Miftah Demo tenant,
 the Al Ashram demo tenant, and any live customer. The fix stops new accounts being guessable; it does not

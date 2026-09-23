@@ -96,6 +96,61 @@ class MaintenanceTicketServiceTest {
         verify(ticketRepository, never()).save(any());
     }
 
+    // ---- reported date: a complaint logged late keeps the day it was raised ----
+
+    @Test
+    void createTicket_usesTheGivenReportedDate() {
+        UUID propertyId = UUID.randomUUID();
+        Property property = new Property();
+        property.setId(propertyId);
+        when(propertyRepository.findById(propertyId)).thenReturn(Optional.of(property));
+        when(ticketRepository.save(any(MaintenanceTicket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("AC reported by phone last week");
+        dto.setReportedDate(java.time.LocalDate.now().minusDays(6));
+
+        MaintenanceTicketDTO created = service.createTicket(dto, UUID.randomUUID());
+
+        assertThat(created.getReportedDate()).isEqualTo(java.time.LocalDate.now().minusDays(6));
+    }
+
+    @Test
+    void createTicket_defaultsReportedDateToToday() {
+        UUID propertyId = UUID.randomUUID();
+        Property property = new Property();
+        property.setId(propertyId);
+        when(propertyRepository.findById(propertyId)).thenReturn(Optional.of(property));
+        when(ticketRepository.save(any(MaintenanceTicket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Reported now");
+
+        MaintenanceTicketDTO created = service.createTicket(dto, UUID.randomUUID());
+
+        assertThat(created.getReportedDate()).isEqualTo(java.time.LocalDate.now());
+    }
+
+    @Test
+    void createTicket_refusesAFutureReportedDate() {
+        UUID propertyId = UUID.randomUUID();
+        Property property = new Property();
+        property.setId(propertyId);
+        when(propertyRepository.findById(propertyId)).thenReturn(Optional.of(property));
+
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("From the future");
+        dto.setReportedDate(java.time.LocalDate.now().plusDays(1));
+
+        assertThatThrownBy(() -> service.createTicket(dto, UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("future");
+        verify(ticketRepository, never()).save(any());
+    }
+
     // ---- closureOtp redaction ----
 
     @Test
