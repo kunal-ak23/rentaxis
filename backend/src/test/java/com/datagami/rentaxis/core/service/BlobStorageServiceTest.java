@@ -3,6 +3,8 @@ package com.datagami.rentaxis.core.service;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.models.BlobProperties;
+import com.azure.core.util.BinaryData;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -11,6 +13,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -137,5 +140,41 @@ class BlobStorageServiceTest {
                 "https://rentaxis.blob.core.windows.net/shared/../secret")).isEmpty();
         assertThat(service.parseOwnedBlobUrl(
                 "https://rentaxis.blob.core.windows.net/shared")).isEmpty();
+    }
+
+    @Test
+    void downloadOwnedUrl_readsSharedOnlyUnderThePublicAssetsFolder() {
+        UUID tenantId = UUID.randomUUID();
+        BlobServiceClient serviceClient = mock(BlobServiceClient.class);
+        when(serviceClient.getAccountUrl()).thenReturn("https://rentaxis.blob.core.windows.net");
+        BlobContainerClient shared = mock(BlobContainerClient.class);
+        BlobContainerClient own = mock(BlobContainerClient.class);
+        when(serviceClient.getBlobContainerClient("shared")).thenReturn(shared);
+        when(serviceClient.getBlobContainerClient("tenant-" + tenantId)).thenReturn(own);
+        BlobClient blob = mock(BlobClient.class);
+        BlobProperties props = mock(BlobProperties.class);
+        when(props.getBlobSize()).thenReturn(3L);
+        when(blob.getProperties()).thenReturn(props);
+        when(blob.downloadContent()).thenReturn(BinaryData.fromBytes(new byte[]{1, 2, 3}));
+        when(shared.getBlobClient(anyString())).thenReturn(blob);
+        when(own.getBlobClient(anyString())).thenReturn(blob);
+
+        var service = new BlobStorageService();
+        ReflectionTestUtils.setField(service, "serviceClient", serviceClient);
+        ReflectionTestUtils.setField(service, "containerPrefix", "tenant-");
+        String base = "https://rentaxis.blob.core.windows.net/";
+
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/assets/logo.png", 10)).isPresent();
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/assets/org/logo.png", 10)).isPresent();
+        // Other features write lease documents and ticket attachments to shared.
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/lease-docs/x.png", 10)).isEmpty();
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/ticket-attachments/x.png", 10)).isEmpty();
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/assetsx/logo.png", 10)).isEmpty();
+        assertThat(service.downloadOwnedUrl(tenantId, base + "shared/assets", 10)).isEmpty();
+        verify(shared, never()).getBlobClient("lease-docs/x.png");
+        // The tenant's own container keeps its rule: any folder.
+        assertThat(service.downloadOwnedUrl(tenantId, base + "tenant-" + tenantId + "/lease-docs/x.png", 10)).isPresent();
+        // Another tenant's container stays out.
+        assertThat(service.downloadOwnedUrl(tenantId, base + "tenant-" + UUID.randomUUID() + "/assets/x.png", 10)).isEmpty();
     }
 }
