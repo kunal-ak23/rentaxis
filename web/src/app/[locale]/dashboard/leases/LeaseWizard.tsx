@@ -326,7 +326,12 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     };
 
     return (
-        <div data-testid="lease-wizard" className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:p-6">
+        <div
+            data-testid="lease-wizard"
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:p-6"
+        >
             <div className="bg-surface w-full max-w-6xl rounded-none sm:rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <div>
