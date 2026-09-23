@@ -22,9 +22,15 @@ type Props = {
     busy: boolean;
     onClose: () => void;
     onConfirm: (input: GiveNoticeInput) => void;
+    /**
+     * The server's refusal, shown inside the dialog. A failed notice keeps the
+     * dialog open with what was typed, instead of closing it and making the user
+     * enter the date, party, move-out and notes again (web review M8).
+     */
+    error?: string | null;
 };
 
-export default function GiveNoticeDialog({ open, busy, onClose, onConfirm }: Props) {
+export default function GiveNoticeDialog({ open, busy, onClose, onConfirm, error }: Props) {
     const t = useTranslations("Leasing");
     const [noticeDate, setNoticeDate] = useState(businessTodayIso());
     const [givenBy, setGivenBy] = useState<NoticeParty>("RENTER");
@@ -85,6 +91,7 @@ export default function GiveNoticeDialog({ open, busy, onClose, onConfirm }: Pro
             {givenBy === "LANDLORD" && (
                 <p className="mt-3 text-[11px] text-warning">{t("landlordNoticeHint")}</p>
             )}
+            {error && <p role="alert" data-testid="give-notice-error" className="mt-3 text-[11px] text-error bg-error/10 rounded-lg px-3 py-2">{error}</p>}
         </LeaseDialog>
     );
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
 import type { Cheque, LeaseDetail, LeaseStatus } from "@/lib/api/leasing";
+import { ApiError } from "@/lib/api/facilities";
 
 /**
  * The lease detail page's lifecycle action bar, against the Java sets it
@@ -202,6 +203,21 @@ describe("Give notice — particulars (#27)", () => {
         await waitFor(() => expect(api.notice).toHaveBeenCalledWith("lease-1", {
             givenBy: "LANDLORD", noticeDate: "2026-09-01", intendedMoveOutDate: "2027-09-01", notes: null,
         }));
+    });
+
+    // Web review M8: a refused notice keeps the dialog, and what was typed, open.
+    it("keeps the dialog and its input open when the server refuses the notice", async () => {
+        api.notice.mockRejectedValue(new ApiError(400, "Notice date is before the lease start"));
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-give-notice"));
+        fireEvent.change(screen.getByLabelText(en.Leasing.noticeDate), { target: { value: "2026-09-01" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.noticeNotes), { target: { value: "Called on Monday" } });
+        fireEvent.click(screen.getByTestId("lease-give-notice-confirm"));
+
+        expect(await screen.findByTestId("give-notice-error")).toHaveTextContent("Notice date is before the lease start");
+        expect(screen.getByTestId("lease-give-notice-confirm")).toBeInTheDocument();
+        expect(screen.getByLabelText(en.Leasing.noticeDate)).toHaveValue("2026-09-01");
+        expect(screen.getByLabelText(en.Leasing.noticeNotes)).toHaveValue("Called on Monday");
     });
 
     it("will not take a move-out before the notice date", async () => {

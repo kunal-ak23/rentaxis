@@ -209,6 +209,7 @@ export default function LeaseDetailPage() {
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
+    const [noticeError, setNoticeError] = useState<string | null>(null);
     const [penaltyOpen, setPenaltyOpen] = useState(false);
     const [penaltyKey, setPenaltyKey] = useState(0);
     const [noticeBusy, setNoticeBusy] = useState(false);
@@ -338,14 +339,14 @@ export default function LeaseDetailPage() {
      */
     const handleGiveNotice = async (input: GiveNoticeInput) => {
         setNoticeBusy(true);
-        setError(null);
+        setNoticeError(null);
         try {
             await terminationApi.notice(leaseId, input);
             setNoticeOpen(false);
             await loadLease();
         } catch (e) {
-            setNoticeOpen(false);
-            setError(e instanceof ApiError ? e.message : t("saveFailed"));
+            // Stay open: the dialog keeps what was typed and shows why.
+            setNoticeError(e instanceof ApiError ? e.message : t("saveFailed"));
         } finally {
             setNoticeBusy(false);
         }
@@ -620,7 +621,7 @@ export default function LeaseDetailPage() {
                         )}
                         {lease.status === "ACTIVE" && canGiveNotice && (
                             <button
-                                onClick={() => setNoticeOpen(true)}
+                                onClick={() => { setNoticeError(null); setNoticeOpen(true); }}
                                 data-testid="lease-give-notice"
                                 className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
                             >
@@ -1078,6 +1079,7 @@ export default function LeaseDetailPage() {
                 busy={noticeBusy}
                 onClose={() => setNoticeOpen(false)}
                 onConfirm={handleGiveNotice}
+                error={noticeError}
             />
 
             <ConfirmDialog
