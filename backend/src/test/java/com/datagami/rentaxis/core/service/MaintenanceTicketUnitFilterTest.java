@@ -69,7 +69,8 @@ class MaintenanceTicketUnitFilterTest {
                 mock(TicketHistoryRepository.class),
                 mock(LandlordOrgRepository.class),
                 mock(NotificationService.class),
-                mock(ApplicationEventPublisher.class));
+                mock(ApplicationEventPublisher.class),
+                mock(com.datagami.rentaxis.core.service.ledger.EntryNumberService.class));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
         when(ticketRepository.findByUnitId(any())).thenReturn(List.of(ticket()));

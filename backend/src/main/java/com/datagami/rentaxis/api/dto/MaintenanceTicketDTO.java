@@ -8,6 +8,8 @@ import java.util.UUID;
 @Data
 public class MaintenanceTicketDTO {
     private UUID id;
+    /** "TKT-yy/n" (#20); null only on a row written outside the service. */
+    private String reference;
     private UUID tenantId;
     private UUID propertyId;
     private UUID unitId;

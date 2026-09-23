@@ -78,6 +78,10 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "on_behalf_of")
     private String onBehalfOf;
 
+    /** Human reference, "TKT-yy/n" per tenant and calendar year (#20); set at creation. */
+    @Column(name = "reference", length = 20)
+    private String reference;
+
     /**
      * The day the tenant actually reported the issue, distinct from
      * {@link #createdAt} (the instant the row was recorded). A complaint phoned in

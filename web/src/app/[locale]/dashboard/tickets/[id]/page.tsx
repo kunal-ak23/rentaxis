@@ -20,6 +20,8 @@ import { assetSrc } from "@/lib/assetUrl";
 
 type Ticket = {
     id: string;
+    /** "TKT-yy/n" (#20). */
+    reference?: string | null;
     title: string;
     description: string;
     status: string;
@@ -345,7 +347,7 @@ export default function TicketDetailPage() {
                         </span>
                     </div>
                     <p className="text-xs text-muted mt-0.5">
-                        {ticket.id.substring(0, 8)} &bull; {ticket.propertyName} &bull; Unit {ticket.unitNumber}
+                        <span dir="ltr" data-testid="ticket-detail-reference">{ticket.reference ?? ticket.id.substring(0, 8)}</span> &bull; {ticket.propertyName} &bull; Unit {ticket.unitNumber}
                     </p>
                 </div>
             </div>

@@ -1,0 +1,55 @@
+databaseChangeLog:
+  # #20: a ticket had no human reference — the list showed a UUID prefix, which
+  # nobody can read over the phone. reference is "TKT-yy/n": a per-tenant counter
+  # per calendar year from the same journal_entry_sequences table the journal
+  # and addendum numbers use (series 'TKT'), assigned at creation.
+  #
+  # Existing tickets are backfilled per tenant and year in creation order, and
+  # the counter is seeded one past the highest backfilled number so the next
+  # ticket does not collide. The column stays nullable at the database level
+  # (rows written outside the service, such as fixtures, have none); the service
+  # always sets it, and the unique index holds for every row that has one.
+  - changeSet:
+      id: 95-ticket-reference
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: reference
+                  type: varchar(20)
+        - sql:
+            sql: |
+              WITH numbered AS (
+                SELECT id,
+                       tenant_id,
+                       EXTRACT(YEAR FROM COALESCE(created_at, now()))::int AS yr,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at, now()))
+                         ORDER BY created_at, id) AS n
+                FROM maintenance_tickets
+                WHERE tenant_id IS NOT NULL
+              )
+              UPDATE maintenance_tickets t
+              SET reference = 'TKT-' || lpad((numbered.yr % 100)::text, 2, '0') || '/' || numbered.n
+              FROM numbered
+              WHERE t.id = numbered.id;
+        - sql:
+            sql: |
+              INSERT INTO journal_entry_sequences (tenant_id, doc_type, fiscal_year, next_value)
+              SELECT tenant_id, 'TKT', EXTRACT(YEAR FROM COALESCE(created_at, now()))::int, COUNT(*) + 1
+              FROM maintenance_tickets
+              WHERE tenant_id IS NOT NULL
+              GROUP BY tenant_id, EXTRACT(YEAR FROM COALESCE(created_at, now()))
+              ON CONFLICT (tenant_id, doc_type, fiscal_year)
+              DO UPDATE SET next_value = GREATEST(journal_entry_sequences.next_value, EXCLUDED.next_value);
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: ux_maintenance_tickets_tenant_reference
+            unique: true
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: reference

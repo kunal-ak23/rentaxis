@@ -16,6 +16,8 @@ import {
 
 type Ticket = {
     id: string;
+    /** "TKT-yy/n" (#20); absent only on rows written outside the service. */
+    reference?: string | null;
     title: string;
     description: string;
     status: string;
@@ -173,9 +175,12 @@ export default function TicketsPage() {
         if (priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
+            // #20: the reference is what a caller quotes over the phone, so it
+            // is searchable, with or without the "TKT-" prefix.
             if (
                 !t.title.toLowerCase().includes(q) &&
-                !t.description.toLowerCase().includes(q)
+                !(t.description ?? "").toLowerCase().includes(q) &&
+                !(t.reference ?? "").toLowerCase().includes(q)
             )
                 return false;
         }
@@ -355,8 +360,8 @@ export default function TicketsPage() {
                         <tbody>
                             {paginated.map((ticket) => (
                                 <tr key={ticket.id} className="border-b border-border hover:bg-input/30 transition-colors">
-                                    <td className="px-4 py-2.5 text-xs text-muted font-mono">
-                                        {ticket.id.substring(0, 8)}
+                                    <td className="px-4 py-2.5 text-xs text-foreground font-mono font-semibold whitespace-nowrap" dir="ltr" data-testid="ticket-reference">
+                                        {ticket.reference ?? ticket.id.substring(0, 8)}
                                     </td>
                                     <td className="px-4 py-2.5 max-w-[200px]">
                                         <div className="text-xs font-medium text-foreground truncate">{ticket.title}</div>

@@ -53,6 +53,7 @@ public class MaintenanceTicketService {
     private final LandlordOrgRepository landlordOrgRepository;
     private final NotificationService notificationService;
     private final ApplicationEventPublisher events;
+    private final com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumberService;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -64,6 +65,9 @@ public class MaintenanceTicketService {
     private String localStoragePath;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /** The journal_entry_sequences series for ticket references (#20). */
+    static final String TICKET_SERIES = "TKT";
 
     // ---- Ticket CRUD ----
 
@@ -116,6 +120,12 @@ public class MaintenanceTicketService {
             throw new BusinessRuleViolationException("A ticket cannot be reported in the future");
         }
         ticket.setReportedDate(reportedDate);
+
+        // #20: a reference people can read out, "TKT-26/14" — per tenant (the
+        // property's) and calendar year of entry, from the same locked counter
+        // the journal numbers use, so two concurrent tickets never share one.
+        ticket.setReference(entryNumberService.nextNumberForYear(
+                property.getTenantId(), TICKET_SERIES, LocalDate.now().getYear()));
 
         MaintenanceTicket saved = ticketRepository.save(ticket);
         log.info("Created maintenance ticket {} for property {}", saved.getId(), property.getId());
@@ -616,6 +626,7 @@ public class MaintenanceTicketService {
     private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket, UUID requesterId) {
         MaintenanceTicketDTO dto = new MaintenanceTicketDTO();
         dto.setId(ticket.getId());
+        dto.setReference(ticket.getReference());
         dto.setTenantId(ticket.getTenantId());
         dto.setPropertyId(ticket.getProperty().getId());
         dto.setUnitId(ticket.getUnit() != null ? ticket.getUnit().getId() : null);
