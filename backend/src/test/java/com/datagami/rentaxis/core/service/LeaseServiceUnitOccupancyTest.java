@@ -163,6 +163,55 @@ class LeaseServiceUnitOccupancyTest {
         verify(unitRepository, org.mockito.Mockito.never()).save(any(Unit.class));
     }
 
+    /** #79: once the renter has accepted, they cannot reject — the lease stays with the landlord. */
+    @Test
+    void rejectAfterAcceptance_isRefusedAndTheLeaseStaysPending() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        lease.setRenterAcceptedAt(java.time.Instant.parse("2026-09-20T21:30:00Z"));
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.rejectLease(lease.getId(), userId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                // 21:30Z is already the 21st in Dubai.
+                .hasMessageContaining("accepted this contract on 21/09/2026")
+                .hasMessageContaining("can no longer be rejected");
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.PENDING_SIGNATURE);
+        verify(leaseRepository, org.mockito.Mockito.never()).save(any(Lease.class));
+    }
+
+    @Test
+    void rejectBeforeAcceptance_stillSendsTheLeaseBackToDraft() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.rejectLease(lease.getId(), userId);
+
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    @Test
+    void acceptingTwice_isRefusedAndKeepsTheFirstDate() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        java.time.Instant first = java.time.Instant.parse("2026-09-20T08:00:00Z");
+        lease.setRenterAcceptedAt(first);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.acceptLease(lease.getId(), userId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("waiting for your landlord");
+        assertThat(lease.getRenterAcceptedAt()).isEqualTo(first);
+    }
+
     @Test
     void termination_clearsUnitRevenueAndTenantName() {
         Lease lease = lease(LeaseStatus.ACTIVE);

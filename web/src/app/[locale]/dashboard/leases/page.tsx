@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
 import LeaseWizard from "./LeaseWizard";
 import { Link, useRouter } from "@/i18n/routing";
@@ -439,6 +440,15 @@ export default function LeasesPage() {
         return r.nameEn;
     };
 
+    // #79: a PENDING_SIGNATURE lease the renter has already accepted is ready to
+    // post; without this the list cannot tell it from one still waiting on them.
+    const acceptedBadge = (lease: Lease) =>
+        lease.status === "PENDING_SIGNATURE" && lease.renterAcceptedAt ? (
+            <span data-testid="lease-renter-accepted" className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-success/10 text-success border border-success/20">
+                {tl("acceptedByRenter", { date: fmtIsoDate(lease.renterAcceptedAt, locale) })}
+            </span>
+        ) : null;
+
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'ACTIVE': return 'bg-success/10 text-success border border-success/20';
@@ -533,9 +543,12 @@ export default function LeasesPage() {
                         </div>
                     </div>
                     {!compact && (
-                        <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
-                            {tl(`leaseStatus.${lease.status}`)}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                            <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
+                                {tl(`leaseStatus.${lease.status}`)}
+                            </span>
+                            {acceptedBadge(lease)}
+                        </div>
                     )}
                 </div>
 
@@ -861,6 +874,7 @@ export default function LeasesPage() {
                                                     <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold", getStatusColor(lease.status))}>
                                                         {tl(`leaseStatus.${lease.status}`)}
                                                     </span>
+                                                    {acceptedBadge(lease)}
                                                 </td>
                                                 <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center justify-center gap-1.5">

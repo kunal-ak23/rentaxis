@@ -29,6 +29,8 @@ type Lease = {
     paymentTerms: number;
     propertyName: string;
     hasContract: boolean;
+    /** When the renter accepted the contract; null until then (#79). */
+    renterAcceptedAt?: string | null;
 };
 
 type Meeting = {
@@ -500,6 +502,17 @@ export default function RenterPortalPage() {
                             <Download size={14} />
                             {t("downloadContract")}
                         </button>
+                        {/*
+                          #79: once accepted the contract waits on the landlord's
+                          post. Accept again or Reject would only confuse — the
+                          server refuses a reject after acceptance anyway.
+                        */}
+                        {lease.renterAcceptedAt ? (
+                            <div data-testid="lease-accepted" className="flex items-center gap-2 text-xs text-success font-semibold">
+                                <CheckCircle size={14} />
+                                {t("acceptedAwaitingLandlord", { date: fmtIsoDate(lease.renterAcceptedAt, locale) })}
+                            </div>
+                        ) : (<>
                         <button
                             onClick={() => handleAccept(lease.id)}
                             className="flex items-center gap-2 bg-success/10 text-success hover:bg-success/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-success/30"
@@ -514,6 +527,7 @@ export default function RenterPortalPage() {
                             <XCircle size={14} />
                             {t("rejectLease")}
                         </button>
+                        </>)}
                     </>
                 )}
                 {/*

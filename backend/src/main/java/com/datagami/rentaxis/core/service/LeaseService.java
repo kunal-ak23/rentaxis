@@ -1395,6 +1395,11 @@ public class LeaseService {
         if (!lease.getRenter().getId().equals(renter.getId())) {
             throw new com.datagami.rentaxis.api.exception.AccessDeniedException("You are not authorized to accept this lease");
         }
+        if (lease.getRenterAcceptedAt() != null) {
+            // Accepting twice would move the date the landlord relies on (#79).
+            throw new BusinessRuleViolationException("You accepted this contract on "
+                    + acceptedOn(lease) + "; it is waiting for your landlord.");
+        }
 
         lease.setRenterAcceptedAt(Instant.now());
         Lease savedLease = leaseRepository.save(lease);
@@ -1423,6 +1428,14 @@ public class LeaseService {
         if (!lease.getRenter().getId().equals(renter.getId())) {
             throw new com.datagami.rentaxis.api.exception.AccessDeniedException("You are not authorized to reject this lease");
         }
+        if (lease.getRenterAcceptedAt() != null) {
+            // #79: accepting and then rejecting sent the lease back to DRAFT behind
+            // the landlord's back, after they had been told it was signed. Once
+            // accepted, only the landlord can take it further or back.
+            throw new BusinessRuleViolationException("You accepted this contract on "
+                    + acceptedOn(lease) + ", so it can no longer be rejected. Contact your landlord"
+                    + " if something needs to change.");
+        }
 
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.DRAFT);
@@ -1430,6 +1443,12 @@ public class LeaseService {
         recordEvent(savedLease, previousStatus, LeaseStatus.DRAFT, "Lease rejected by renter");
 
         return mapToDTO(savedLease);
+    }
+
+    /** The acceptance day as the landlord's calendar reads it (UAE). */
+    private static String acceptedOn(Lease lease) {
+        return lease.getRenterAcceptedAt().atZone(java.time.ZoneId.of("Asia/Dubai")).toLocalDate()
+                .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     }
 
     @Transactional(readOnly = true)

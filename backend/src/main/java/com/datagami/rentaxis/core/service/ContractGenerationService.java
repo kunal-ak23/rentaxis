@@ -178,9 +178,13 @@ public class ContractGenerationService {
         doc.setType(DocumentType.CONTRACT);
         LeaseDocument savedDoc = leaseDocumentRepository.save(doc);
 
-        // Transition lease to PENDING_SIGNATURE
-        if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+        // Transition lease to PENDING_SIGNATURE. A new contract document is a new
+        // thing to agree to, so any earlier acceptance was of a different document
+        // and is cleared (#79) — otherwise the renter would be shown "accepted" for
+        // a contract they have never seen, and could no longer reject it.
+        if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE || lease.getRenterAcceptedAt() != null) {
             lease.setStatus(LeaseStatus.PENDING_SIGNATURE);
+            lease.setRenterAcceptedAt(null);
             leaseRepository.save(lease);
         }
 
