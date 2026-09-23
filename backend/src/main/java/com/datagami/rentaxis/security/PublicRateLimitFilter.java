@@ -309,12 +309,57 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            // X-Forwarded-For may be a comma-separated list; take first entry
-            int commaIdx = forwarded.indexOf(',');
-            return commaIdx >= 0 ? forwarded.substring(0, commaIdx).trim() : forwarded.trim();
+        return clientIp(request.getRemoteAddr(), request.getHeader("X-Forwarded-For"));
+    }
+
+    /**
+     * The address a bucket is keyed on.
+     *
+     * <p>{@code X-Forwarded-For} is honoured only when the connection comes from
+     * a trusted proxy — loopback or a private network, which in production is
+     * Caddy or the web container on the Docker network (the backend is not
+     * published to the internet). Anyone else's header is their own claim, and
+     * rotating it used to buy a fresh login budget per request, because the
+     * <em>left-most</em> entry — the one the client writes — was taken.</p>
+     *
+     * <p>From a trusted proxy the <em>right-most</em> entry is used: the address
+     * that proxy itself saw. Caddy (2.5+, no {@code trusted_proxies}) replaces
+     * any incoming header with the peer address, and the web server forwards the
+     * header Caddy gave it, so today there is one entry; if a proxy ever appends
+     * instead, the right-most entry is still the one a client cannot forge.</p>
+     */
+    static String clientIp(String remoteAddr, String forwardedFor) {
+        if (forwardedFor == null || forwardedFor.isBlank() || !isTrustedProxy(remoteAddr)) {
+            return remoteAddr;
         }
-        return request.getRemoteAddr();
+        String[] hops = forwardedFor.split(",");
+        for (int i = hops.length - 1; i >= 0; i--) {
+            String hop = hops[i].trim();
+            if (!hop.isEmpty()) {
+                return hop;
+            }
+        }
+        return remoteAddr;
+    }
+
+    /** Loopback, RFC 1918 / IPv6 unique-local, or link-local: a peer on our own network. */
+    static boolean isTrustedProxy(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+        // Only IP literals: never let a hostname trigger a DNS lookup here.
+        if (!remoteAddr.matches("[0-9a-fA-F:.%]+") || !remoteAddr.matches(".*[.:].*")) {
+            return false;
+        }
+        try {
+            java.net.InetAddress a = java.net.InetAddress.getByName(remoteAddr);
+            if (a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()) {
+                return true;
+            }
+            byte[] b = a.getAddress();
+            return b.length == 16 && (b[0] & 0xFE) == 0xFC; // fc00::/7
+        } catch (java.net.UnknownHostException e) {
+            return false;
+        }
     }
 }
