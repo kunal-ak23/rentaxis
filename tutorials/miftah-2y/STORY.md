@@ -71,7 +71,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | proven (relist + ad live); enquiry blocked (needs a marketplace sign-in); #58 |
 | M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
 | M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | proven with gaps (#54 header flag inert, #55 no VAT return, #56 VAT timing) |
-| M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
+| M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | proven with gaps (#62 wrong-date matching, #63 payer/payee, #64 no retry) |
 | M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
 | M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | proven (recognition to 31/08/2026; banking run + aging; #57) |
 | M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | dashboard + inbox proven (#59, #60); renter portals need the renters' own sign-ins |
@@ -303,6 +303,15 @@ expected": the catch-up banking run's clearances measured against one cheque dat
 month (#59). The activity feed lists every clearance and the bounce, with raw amounts
 (#60). A bounce notifies the renter only; the super admin's inbox has the ticket
 assignments and org provisioning, and nothing for the bounce.
+
+**M24 · scanning Gulf Brew's cheques.** Two cheque images, Emirates NBD 700103 (01/11/2026)
+and 700104 (01/02/2027), 31,500 each and signed "For GULF BREW CAFE LLC", were uploaded
+through the G-01 lease's *Bulk upload cheques*. Extraction ran on Azure OpenAI. 700103
+failed with a 500 that did not recur in eight later calls, and the row could not be
+retried (#64). 700104 came back with the right number, bank, date and amount, but with
+the payee as the payer (#63), and it was auto-matched to **row #3**, because matching
+compares against the posting date and every row carries the contract date 20/04/2026
+(#62). Fixed by hand (row #4, payer Gulf Brew) and approved: row 4 now holds the scan.
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
