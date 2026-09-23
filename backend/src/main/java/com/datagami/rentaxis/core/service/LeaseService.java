@@ -1297,6 +1297,34 @@ public class LeaseService {
     // (LeaseTerminationService.terminate), and a settlement is a statement drawn
     // from the ledger afterwards. They are two acts on two screens now.
 
+    /**
+     * One renter's contracts, for the staff renter-detail page (#8).
+     *
+     * <p>The renter must be in the caller's tenant, and a foreign id is the same
+     * 404 as a missing one. Inside this transaction the tenant filter already
+     * hides a foreign row ({@code applyToLoadByKey}); the explicit comparisons
+     * are the belt and braces that still hold if the method is ever reached
+     * without one. The leases are then compared
+     * against the tenant explicitly and passed through {@link LeaseAccessPolicy},
+     * so a property manager sees only the contracts on their own buildings, the
+     * same rule the contracts list applies.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<LeaseDTO> getLeasesForRenter(UUID renterId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        Renter renter = renterRepository.findById(renterId)
+                .filter(r -> tenantId != null && tenantId.equals(r.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Renter not found"));
+        List<Lease> own = leaseRepository.findByRenterId(renter.getId()).stream()
+                .filter(l -> tenantId.equals(l.getTenantId()))
+                .toList();
+        return leaseAccessPolicy.filterReadable(own).stream()
+                .sorted(java.util.Comparator.comparing(Lease::getStartDate,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
         Renter renter = renterRepository.findByUserId(userId)

@@ -50,9 +50,10 @@ public class RenterService {
     /**
      * The renter with this id in the caller's tenant, or a 404.
      *
-     * <p>{@code findById} is a primary-key load, which the Hibernate tenant filter
-     * does not narrow, so the tenant comparison here is the check, not a
-     * redundancy. A foreign id and a missing one get the same 404.</p>
+     * <p>Inside a transaction the tenant filter already hides a foreign row on a
+     * primary-key load ({@code applyToLoadByKey}); the explicit comparison is the
+     * belt and braces for a caller without one. A foreign id and a missing one
+     * get the same 404 (these used to be a bare RuntimeException, a 500).</p>
      */
     Renter requireInTenant(UUID id) {
         return renterRepository.findById(id)

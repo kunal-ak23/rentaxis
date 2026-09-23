@@ -13,6 +13,12 @@ vi.mock("next-intl", () => ({
     useLocale: () => "en",
 }));
 
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+        <a href={href} {...rest}>{children}</a>
+    ),
+}));
+
 import RentersPage from "../page";
 
 const jsonRes = (body: unknown, ok = true, status = 200) =>
@@ -99,5 +105,17 @@ describe("RentersPage create form", () => {
         fireEvent.click(buttons[0]);
 
         await waitFor(() => expect(resendUrls).toEqual(["/api/proxy/admin/users/u1/resend-invite"]));
+    });
+
+    // #8: every row leads to the renter's detail page.
+    it("links each renter to their detail page", async () => {
+        listBody = [
+            { id: "r1", nameEn: "Ahmed", nameAr: "", email: "a@x.com", phone: "", primaryLanguage: "EN", userId: null },
+        ];
+        render(<RentersPage />);
+
+        const view = await screen.findByText("view");
+        expect(view.closest("a")?.getAttribute("href")).toBe("/dashboard/renters/r1");
+        expect(screen.getByText("Ahmed").closest("a")?.getAttribute("href")).toBe("/dashboard/renters/r1");
     });
 });

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, X, User, Mail, Phone, List, LayoutGrid, Search, MailCheck } from "lucide-react";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
+import { Link } from "@/i18n/routing";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -306,7 +307,7 @@ export default function RentersPage() {
                                         {paginatedItems.map(r => (
                                             <tr key={r.id} className="border-b border-border hover:bg-input/30 transition-colors">
                                                 <td className="px-5 py-3.5 text-sm text-foreground">
-                                                    <div className="font-medium">{getRenterDisplayName(r)}</div>
+                                                    <Link href={`/dashboard/renters/${r.id}`} className="font-medium hover:text-primary hover:underline">{getRenterDisplayName(r)}</Link>
                                                     {r.nameAr && locale !== 'ar' && <div className="text-[10px] text-muted">{r.nameAr}</div>}
                                                     {r.nameEn && locale === 'ar' && <div className="text-[10px] text-muted">{r.nameEn}</div>}
                                                 </td>
@@ -322,7 +323,9 @@ export default function RentersPage() {
                                                         {canManageRenters && r.invitePending && r.userId && (
                                                             <ResendInviteButton userId={r.userId} />
                                                         )}
-                                                        <span className="text-xs font-semibold text-primary">View</span>
+                                                        <Link href={`/dashboard/renters/${r.id}`} className="text-xs font-semibold text-primary hover:underline">
+                                                            {t("view")}
+                                                        </Link>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -340,7 +343,9 @@ export default function RentersPage() {
                                             <User size={20} />
                                         </div>
                                         <div>
-                                            <h3 className="text-sm font-bold text-foreground tracking-tight">{getRenterDisplayName(r)}</h3>
+                                            <h3 className="text-sm font-bold text-foreground tracking-tight">
+                                                <Link href={`/dashboard/renters/${r.id}`} className="hover:text-primary hover:underline">{getRenterDisplayName(r)}</Link>
+                                            </h3>
                                             {r.nameAr && locale !== 'ar' && <p className="text-[10px] text-muted font-bold mb-1">{r.nameAr}</p>}
                                             {r.nameEn && locale === 'ar' && <p className="text-[10px] text-muted font-bold mb-1">{r.nameEn}</p>}
                                             <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[9px] font-bold bg-input text-muted border border-border tracking-wider">

@@ -2,6 +2,8 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.api.dto.LeaseDTO;
+import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.RenterService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.UUID;
 public class RenterController {
 
     private final RenterService renterService;
+    private final LeaseService leaseService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
@@ -30,6 +33,13 @@ public class RenterController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<RenterDTO> getRenterById(@PathVariable UUID id) {
         return ResponseEntity.ok(renterService.getRenterById(id));
+    }
+
+    /** The renter's contracts, newest first (#8, renter detail page). */
+    @GetMapping("/{id}/leases")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<LeaseDTO>> getRenterLeases(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseService.getLeasesForRenter(id));
     }
 
     @PostMapping
