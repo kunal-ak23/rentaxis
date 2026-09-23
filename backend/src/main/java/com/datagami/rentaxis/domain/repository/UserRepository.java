@@ -126,6 +126,77 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByRole(UserRole role);
 
+    /** A user as a staff candidate: identity, role and status, and nothing else. */
+    interface StaffCandidate {
+        UUID getId();
+        String getName();
+        String getRole();
+        String getStatus();
+    }
+
+    /**
+     * The user, when they belong to {@code tenantId} — home tenant, or a
+     * {@code user_tenant_memberships} row — or are a SUPER_ADMIN (who belongs to
+     * no tenant and may act in any). Role and status are left to the caller to
+     * judge, so "not one of ours" (empty) stays distinct from "one of ours who
+     * cannot take this".
+     *
+     * <p>Native on purpose: the tenant filter on {@code users} hides a
+     * multi-tenant admin whose home tenant is another organisation, which is
+     * exactly the user this has to find. The tenant is the explicit argument.</p>
+     */
+    @Query(value = """
+            SELECT u.id AS id, u.name AS name, u.role AS role, u.status AS status
+            FROM users u
+            WHERE u.id = :userId
+              AND (u.tenant_id = :tenantId
+                   OR u.role = 'SUPER_ADMIN'
+                   OR EXISTS (SELECT 1 FROM user_tenant_memberships m
+                              WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
+            """, nativeQuery = true)
+    Optional<StaffCandidate> findStaffCandidateInTenant(@Param("userId") UUID userId,
+                                                        @Param("tenantId") UUID tenantId);
+
+    /**
+     * Who a ticket on {@code propertyId} can be assigned to: ACTIVE tenant admins
+     * of {@code tenantId}, and ACTIVE property managers of it who run that
+     * property — by home tenant or membership. The same rule
+     * {@code MaintenanceTicketService.requireAssignableStaff} enforces, so the
+     * picker offers nobody the assign call would refuse. Native for the reason
+     * above.
+     */
+    @Query(value = """
+            SELECT u.id AS id, u.name AS name, u.role AS role, u.status AS status
+            FROM users u
+            WHERE u.status = 'ACTIVE'
+              AND (u.tenant_id = :tenantId
+                   OR EXISTS (SELECT 1 FROM user_tenant_memberships m
+                              WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
+              AND (u.role = 'TENANT_ADMIN'
+                   OR (u.role = 'PROPERTY_MANAGER'
+                       AND EXISTS (SELECT 1 FROM user_property_assignments a
+                                   WHERE a.user_id = u.id AND a.property_id = :propertyId)))
+            ORDER BY lower(u.name), u.id
+            """, nativeQuery = true)
+    List<StaffCandidate> findTicketAssignees(@Param("tenantId") UUID tenantId,
+                                             @Param("propertyId") UUID propertyId);
+
+    /**
+     * ACTIVE users of {@code role} who belong to {@code tenantId} (home tenant or
+     * membership), oldest account first, id as the tie-break — a deterministic
+     * answer to "who is the default". Native for the reason above.
+     */
+    @Query(value = """
+            SELECT u.id FROM users u
+            WHERE u.status = 'ACTIVE' AND u.role = :role
+              AND (u.tenant_id = :tenantId
+                   OR EXISTS (SELECT 1 FROM user_tenant_memberships m
+                              WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
+            ORDER BY u.created_at ASC NULLS LAST, u.id ASC
+            """, nativeQuery = true)
+    List<UUID> findActiveIdsInTenantByRoleOldestFirst(@Param("tenantId") UUID tenantId,
+                                                      @Param("role") String role);
+
     List<User> findByTenantIdAndRole(UUID tenantId, UserRole role);
 
     /**

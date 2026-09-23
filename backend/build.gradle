@@ -116,4 +116,9 @@ tasks.named('test') {
 	// (GatePassScanConcurrencyIT, OtpLoginRollbackIT) exceed it and the worker
 	// dies with OutOfMemoryError part-way through rather than reporting failures.
 	maxHeapSize = '2g'
+	// The login/set-password buckets (PublicRateLimitFilter) are per client IP, and
+	// every test logs in from 127.0.0.1 through contexts cached across the suite.
+	// PublicRateLimitFilterTest pins the production defaults on its own instance.
+	systemProperty 'app.rate-limit.login-per-minute', '100000'
+	systemProperty 'app.rate-limit.set-password-per-minute', '100000'
 }

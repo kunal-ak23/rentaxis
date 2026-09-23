@@ -78,10 +78,10 @@ type Attachment = {
     uploadedAt: string;
 };
 
+/** One entry of GET /v1/tickets/{id}/assignees. */
 type StaffUser = {
     id: string;
     name: string;
-    email: string;
     role: string;
 };
 
@@ -175,15 +175,13 @@ export default function TicketDetailPage() {
     }, [ticketId]);
 
     const fetchStaff = useCallback(async () => {
-        // GET /api/admin/users is restricted to SUPER_ADMIN/TENANT_ADMIN
-        // (UserController), so a PROPERTY_MANAGER would always get a 403 —
-        // don't fire a guaranteed-failing request. PMs keep "Assign to Me"
-        // (PUT /v1/tickets/{id}/assign allows PROPERTY_MANAGER); the
-        // "Assign To..." staff list stays admin-only until a PM-accessible
-        // assignee endpoint exists.
-        if (!hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"])) return;
+        // GET /v1/tickets/{id}/assignees returns exactly who the assign call
+        // accepts: active admins, and active managers of THIS ticket's building.
+        // The old /admin/users list offered every manager in the org (and was
+        // admin-only), so picking one from another building failed on submit.
+        if (!hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"])) return;
         try {
-            const res = await fetch("/api/proxy/admin/users");
+            const res = await fetch(`/api/proxy/v1/tickets/${ticketId}/assignees`);
             if (res.ok) {
                 const data = await res.json();
                 setStaffUsers(Array.isArray(data) ? data : []);
@@ -194,7 +192,7 @@ export default function TicketDetailPage() {
         } catch {
             setStaffError('Couldn\'t load the staff list — "Assign To..." is unavailable.');
         }
-    }, [userRole]);
+    }, [userRole, ticketId]);
 
     useEffect(() => {
         Promise.all([fetchTicket(), fetchReplies(), fetchAttachments(), fetchHistory(), fetchStaff()]).finally(() => setLoading(false));
@@ -605,7 +603,7 @@ export default function TicketDetailPage() {
                                     <button onClick={() => setShowAssignDropdown(!showAssignDropdown)} className="w-full flex items-center justify-center gap-2 bg-info/10 text-info px-4 py-2 rounded-lg text-xs font-semibold hover:bg-info/20 transition-all cursor-pointer">Assign To...</button>
                                     {showAssignDropdown && (
                                         <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                                            {staffUsers.filter(u => u.role === "PROPERTY_MANAGER" || u.role === "TENANT_ADMIN").map(user => (
+                                            {staffUsers.map(user => (
                                                 <button key={user.id} onClick={() => handleAssign(user.id)} className="w-full text-left px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
                                                     <span className="font-medium text-foreground">{user.name}</span> <span className="text-muted">({user.role.replace(/_/g, " ")})</span>
                                                 </button>

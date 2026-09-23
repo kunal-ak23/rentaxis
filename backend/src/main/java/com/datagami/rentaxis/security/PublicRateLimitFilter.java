@@ -37,6 +37,17 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern APPLE_AUTH_PATH = PARSER.parse("/api/auth/apple");
     private static final PathPattern REGISTRATION_PATH = PARSER.parse("/api/auth/register");
 
+    /**
+     * Password login and invite redemption (audit A-F4). Both are unauthenticated
+     * and answer a guess: login a password, set-password (and its GET validate) a
+     * 256-bit invite token. The token is not guessable, so that bucket is about
+     * noise; login is the one an attacker would hammer. Keyed on the client IP,
+     * which the web's NextAuth call forwards (X-Forwarded-For) so web logins are
+     * not all counted against the web container's address.
+     */
+    private static final PathPattern LOGIN_PATH = PARSER.parse("/api/auth/login");
+    private static final PathPattern SET_PASSWORD_PATH = PARSER.parse("/api/auth/set-password/**");
+
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
     /**
@@ -83,6 +94,20 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, Bucket> registrationBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> promoEventBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> loginBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> setPasswordBuckets = new ConcurrentHashMap<>();
+
+    /**
+     * Logins per minute per client IP. 20 leaves room for an office NAT and a few
+     * typos per person while turning an online guessing run into a trickle.
+     * A property, not a constant, only so the test JVM (hundreds of logins from
+     * 127.0.0.1 across cached contexts) can raise it; prod keeps the default.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.login-per-minute:20}")
+    private int loginPerMinute = 20;
+
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.set-password-per-minute:10}")
+    private int setPasswordPerMinute = 10;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -103,8 +128,11 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
         boolean isPromoEvents =
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
+        boolean isLogin = "POST".equals(request.getMethod()) && LOGIN_PATH.matches(path);
+        boolean isSetPassword = SET_PASSWORD_PATH.matches(path);
 
-        if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents) {
+        if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents
+                && !isLogin && !isSetPassword) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -115,6 +143,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         Bucket bucket;
         if (isRegistration) {
             bucket = registrationBuckets.computeIfAbsent(ip, k -> createRegistrationBucket());
+        } else if (isLogin) {
+            bucket = loginBuckets.computeIfAbsent(ip, k -> perMinute(loginPerMinute));
+        } else if (isSetPassword) {
+            bucket = setPasswordBuckets.computeIfAbsent(ip, k -> perMinute(setPasswordPerMinute));
         } else if (isFirebaseAuth || isAppleAuth) {
             bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
@@ -154,6 +186,13 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
                 .refillGreedy(20, Duration.ofMinutes(1))
                 .build();
         return Bucket.builder().addLimit(limit).build();
+    }
+
+    private static Bucket perMinute(int n) {
+        return Bucket.builder().addLimit(Bandwidth.builder()
+                .capacity(n)
+                .refillGreedy(n, Duration.ofMinutes(1))
+                .build()).build();
     }
 
     private Bucket createBucket() {
@@ -270,12 +309,57 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            // X-Forwarded-For may be a comma-separated list; take first entry
-            int commaIdx = forwarded.indexOf(',');
-            return commaIdx >= 0 ? forwarded.substring(0, commaIdx).trim() : forwarded.trim();
+        return clientIp(request.getRemoteAddr(), request.getHeader("X-Forwarded-For"));
+    }
+
+    /**
+     * The address a bucket is keyed on.
+     *
+     * <p>{@code X-Forwarded-For} is honoured only when the connection comes from
+     * a trusted proxy — loopback or a private network, which in production is
+     * Caddy or the web container on the Docker network (the backend is not
+     * published to the internet). Anyone else's header is their own claim, and
+     * rotating it used to buy a fresh login budget per request, because the
+     * <em>left-most</em> entry — the one the client writes — was taken.</p>
+     *
+     * <p>From a trusted proxy the <em>right-most</em> entry is used: the address
+     * that proxy itself saw. Caddy (2.5+, no {@code trusted_proxies}) replaces
+     * any incoming header with the peer address, and the web server forwards the
+     * header Caddy gave it, so today there is one entry; if a proxy ever appends
+     * instead, the right-most entry is still the one a client cannot forge.</p>
+     */
+    static String clientIp(String remoteAddr, String forwardedFor) {
+        if (forwardedFor == null || forwardedFor.isBlank() || !isTrustedProxy(remoteAddr)) {
+            return remoteAddr;
         }
-        return request.getRemoteAddr();
+        String[] hops = forwardedFor.split(",");
+        for (int i = hops.length - 1; i >= 0; i--) {
+            String hop = hops[i].trim();
+            if (!hop.isEmpty()) {
+                return hop;
+            }
+        }
+        return remoteAddr;
+    }
+
+    /** Loopback, RFC 1918 / IPv6 unique-local, or link-local: a peer on our own network. */
+    static boolean isTrustedProxy(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+        // Only IP literals: never let a hostname trigger a DNS lookup here.
+        if (!remoteAddr.matches("[0-9a-fA-F:.%]+") || !remoteAddr.matches(".*[.:].*")) {
+            return false;
+        }
+        try {
+            java.net.InetAddress a = java.net.InetAddress.getByName(remoteAddr);
+            if (a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()) {
+                return true;
+            }
+            byte[] b = a.getAddress();
+            return b.length == 16 && (b[0] & 0xFE) == 0xFC; // fc00::/7
+        } catch (java.net.UnknownHostException e) {
+            return false;
+        }
     }
 }

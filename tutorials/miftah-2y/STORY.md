@@ -46,11 +46,11 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | proven |
 | M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | proven |
 | M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | proven |
-| M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
+| M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | proven live 24/09/2026 (Ahmed, TKT-26/3): raise, assign, resolve, bypasses refused, OTP close, 4★ rating |
 | M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
 | M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | proven |
 | M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | proven (on the year-2 lease, after PR #338) |
-| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | contract proven earlier (Sara's A-201 lease); listing proven in M21; viewing blocked by #61; renter accept needs her sign-in |
+| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | proven live 24/09/2026 (Ahmed, A-203): draft → generate contract → renter downloads + accepts → accountant posts; #79, #80 |
 | M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
 | M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
 | M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | proven |
@@ -372,6 +372,34 @@ panel (#47, generalised in #339).
 which returned a 500 before (#67). A unit posted against a property outside the org is
 refused, "Property not found" (404) (#70). The ITs prove the cross-tenant case for units,
 buildings, staff and bank accounts.
+
+**Renter session · 24 Sep 2026 — Ahmed signs in (after PR #342's deploy).**
+- **X01, live:** Ahmed's session gets 403/404 on Rajesh's and Omar's leases, cheques and contracts, on the staff lease list, the trial balance, the renters list and the org list. He sees only his three A-101 leases and his own tickets.
+- **Contract download (#38) fails:** it returns 500 on all his leases (#75). The home also lists the ACTIVE lease below two RENEWED ones (#76).
+- **Arabic portal:** the renter home, My Payments and My Penalties are fully Arabic and RTL (#36 verified). The shared Tickets and Meetings pages are still English (#77).
+- **M04 (renter half):** Ahmed raised **TKT-26/3** "Kitchen sink leaking under the cabinet" (Plumbing, High). It got its reference at once (#20), and his list shows only his own two tickets. The resolve → code → close → rate loop needs staff and renter sessions alternating.
+- **M12 (renter half):** he requested the pool for 10/10/2026 (Pending). His earlier requests show as approved: the pool on 3 Oct and bay B1-01, whose note says the annual fee will be charged. The year-3 renewal carries no parking charge (#78).
+- **M21:** the promotions feed serves him the Gulf Brew "Residents get 20% off" ad, targeted to Miftah Residences. The meeting request correctly explains there's no host, since the org has no staff (#41).
+
+**M04 + M08 · 24 Sep 2026 — two sessions at once** (admin in Chrome, Ahmed in the app's browser).
+- **M04:** staff assigned and resolved TKT-26/3. Staff never saw the code, a direct close was refused ("closed with the renter's OTP") and a guessed code was rejected. Ahmed's page showed "Share this code with your property manager: 687551"; staff closed the ticket with it ("Ticket closed with OTP verification by System Admin"), and Ahmed rated it 4★ with a comment.
+- **M08:** Ahmed takes a second unit, A-203, for his parents: 64,000 plus a 6,400 deposit, 4 uniform cheques, from 15/10/2026. Staff drafted the lease and generated the contract (PENDING SIGNATURE, stored PDF). Ahmed downloaded it (47 KB) and pressed **Accept Lease**, and the accountant posted it (**ACTIVE**, 1 TCO and 4 PDRs).
+- **Found along the way:** the accept/reject buttons stay after acceptance and staff never see it (#79). The PDCs posted without cheque numbers (#80). Stored contracts download fine, so #75 is only the render-from-posted-lease fallback.
+
+**S08 · 24 Sep 2026 — onboarding a second building by Excel.** Using the app's own template headers:
+- **Messy file** (unknown unit, unknown renter, end date before start, dd/mm dates, non-numeric rent, an orphan cheque): refused with 7 precise sheet/row/column errors, and nothing imported. The dd/mm refusal is harsh for the UAE (#82).
+- **Clean file:** "Import Successful". **Al Waha Towers** now lists 6 units, 50% occupied.
+- **The accounting behind it is wrong (#83):** the three ACTIVE leases were never posted. Their cheques are DRAFT, and they cover rent only, not deposit or fee. The property has no ledger accounts, and a monthly rent was annualised to 98,000.04. The dashboard still counts all of it as active revenue.
+
+**M26 (cont.) · 24 Sep 2026 — Gulf Brew replaces its bounced cheque.** *Return & Replace* lists the three bounced cheques (Fatima's 300206 signature mismatch and 300204 account closed; Gulf Brew's 700102). Replacing 700102 with Emirates NBD **700105** dated 01/10/2026 for 31,500 ("residual 0.00 stays in rent receivable"): 700102 → REPLACED ↔ 700105 REGISTERED, linked both ways. No bounce fine was proposed, by policy: fines start at the 2nd bounce on a lease (`DEFAULT_BOUNCES_BEFORE_PENALTY = 2`); Fatima's second did get one. Small UI gaps: #84 (a "Deposit date" label on Replace) and #85 (the register ignores `?status=`).
+
+**#12 live + a renter ledger check · 24 Sep 2026.**
+- **Raise penalty (#12):** on G-01 staff raised a manual Cheque Return penalty of 500 for 700102 ("proposed, not charged; finance approves"). It showed as PROPOSED, and approving it posted **PEN-26/2**: Dr Rent Receivable 500 / Cr Cheque Return Penalty 500, with no VAT (a penalty is compensation, outside VAT scope).
+- **Ahmed's tenant ledger across two contracts reconciles:**
+  - Rent receivable nets to 0: TCO-26/4 91,800 and TCO-26/5 70,400, fully covered by PDR-26/13–20.
+  - Advance rent opens at 7,545.21 Cr, which is year 2's unrecognised September (91,800 ÷ 365 × 30).
+  - The security deposit is 28,400 Cr (22,000 carried + 6,400 new).
+  - The carry-forward narration shows a raw UUID (#86).
 
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date

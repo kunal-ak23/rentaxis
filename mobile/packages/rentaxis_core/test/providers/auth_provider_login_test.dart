@@ -170,6 +170,44 @@ void main() {
       expect(notifier.state.error, 'Invalid email or password');
       expect(notifier.state.tenantChoices, isEmpty);
     });
+
+    Future<AuthNotifier> failLogin(int status, [Object? body]) async {
+      _stubSecureStorage();
+      final request = RequestOptions(path: '/auth/login');
+      final service = _FakeAuthService(
+        loginError: DioException(
+          requestOptions: request,
+          response: Response<Object?>(
+              requestOptions: request, statusCode: status, data: body),
+          type: DioExceptionType.badResponse,
+        ),
+      );
+      final notifier = AuthNotifier(service);
+      addTearDown(notifier.dispose);
+      await _settle(notifier);
+      expect(await notifier.login('user@example.com', 'right'), isFalse);
+      return notifier;
+    }
+
+    test('a deactivated account shows the server message, not "invalid password"', () async {
+      final notifier = await failLogin(403, {
+        'error': 'ACCOUNT_INACTIVE',
+        'message': 'This account has been deactivated. Contact your administrator.',
+      });
+      expect(notifier.state.error,
+          'This account has been deactivated. Contact your administrator.');
+    });
+
+    test('a 403 without a message still does not blame the password', () async {
+      final notifier = await failLogin(403);
+      expect(notifier.state.error, isNot('Invalid email or password'));
+    });
+
+    test('the login rate limit asks the user to wait', () async {
+      final notifier = await failLogin(429);
+      expect(notifier.state.error,
+          'Too many sign-in attempts. Wait a minute and try again.');
+    });
   });
 
   group('AuthNotifier session restore tenant fallback', () {

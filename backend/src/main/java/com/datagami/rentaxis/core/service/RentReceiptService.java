@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.ImageTypes;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -26,6 +27,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.HtmlUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -59,6 +61,14 @@ public class RentReceiptService {
     private final OnlinePaymentRepository onlinePaymentRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
+    private final BlobStorageService blobStorageService;
+
+    /**
+     * The largest logo inlined into a receipt: anything bigger is left off rather
+     * than base64-inflated into every PDF. The upload form caps logos at 2 MB, but
+     * a receipt logo is 40 px tall and 1 MB is already generous.
+     */
+    static final long MAX_LOGO_BYTES = 1024L * 1024;
 
     /**
      * @param chequeId a CLEARED row on a lease the caller may read. A renter passes
@@ -109,9 +119,7 @@ public class RentReceiptService {
         DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
         String html = template
-                .replace("{{ORG_LOGO}}", org != null && org.getLogoUrl() != null && !org.getLogoUrl().isEmpty()
-                        ? "<img src=\"" + org.getLogoUrl() + "\" style=\"height: 40px; margin-bottom: 8px;\" />"
-                        : "")
+                .replace("{{ORG_LOGO}}", logoImg(org, tenantId))
                 .replace("{{ORG_NAME}}", org != null ? safe(org.getName()) : "Property Management")
                 .replace("{{ORG_ADDRESS}}", org != null && org.getAddress() != null ? safe(org.getAddress()) : "")
                 .replace("{{ORG_TRN}}", org != null && org.getTrn() != null ? "TRN: " + safe(org.getTrn()) : "")
@@ -130,7 +138,7 @@ public class RentReceiptService {
                 .replace("{{PARTICULARS}}", cheque.getNarration() != null ? safe(cheque.getNarration()) : "N/A")
                 .replace("{{CHEQUE_NUMBER}}", cheque.getChequeNumber() != null ? safe(cheque.getChequeNumber()) : "N/A")
                 .replace("{{BANK_NAME}}", cheque.getPayeeBank() != null ? safe(cheque.getPayeeBank()) : "N/A")
-                .replace("{{ONLINE_PAYMENT_ID}}", gatewayReference(chequeId))
+                .replace("{{ONLINE_PAYMENT_ID}}", safe(gatewayReference(chequeId)))
                 .replace("{{GENERATED_AT}}", java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm")));
 
         byte[] pdfBytes = renderPdf(html);
@@ -173,6 +181,42 @@ public class RentReceiptService {
         }
     }
 
+    /**
+     * The org logo as an inline {@code data:} image, or nothing.
+     *
+     * <p>The logo URL is free text on the org, and it used to be dropped raw into
+     * {@code <img src="...">} for the renderer to fetch: a server-side request to
+     * any host (cloud metadata included) or a {@code file:} read, and an attribute
+     * break-out on a {@code "}. Now the renderer loads nothing but {@code data:}
+     * URIs ({@link com.datagami.rentaxis.core.util.PdfResourcePolicy}); an uploaded
+     * logo is read through the storage SDK — only from this account's
+     * {@code shared} container or this tenant's own — and inlined.</p>
+     */
+    String logoImg(LandlordOrg org, UUID tenantId) {
+        String url = org != null ? org.getLogoUrl() : null;
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        String src;
+        if (url.strip().regionMatches(true, 0, "data:image/", 0, 11)) {
+            src = url.strip();
+        } else {
+            // The stored content type is ignored: uploads have been stored as
+            // application/octet-stream, and it is the uploader's claim anyway. The
+            // bytes decide, and the data: URI carries the type they prove.
+            src = blobStorageService.downloadOwnedUrl(tenantId, url.strip(), MAX_LOGO_BYTES)
+                    .filter(d -> d.bytes() != null && d.bytes().length <= MAX_LOGO_BYTES)
+                    .flatMap(d -> ImageTypes.sniff(d.bytes())
+                            .map(type -> "data:" + type + ";base64," + Base64.getEncoder().encodeToString(d.bytes())))
+                    .orElse(null);
+        }
+        if (src == null) {
+            return "";
+        }
+        return "<img src=\"" + HtmlUtils.htmlEscape(src, "UTF-8")
+                + "\" style=\"height: 40px; margin-bottom: 8px;\" />";
+    }
+
     private String safe(String value) {
         if (value == null) return "";
         return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
@@ -196,6 +240,8 @@ public class RentReceiptService {
                 log.warn("Could not load custom fonts: {}", e.getMessage());
             }
 
+            // Only inline data: URIs load; no http(s), no file:, no jar:.
+            com.datagami.rentaxis.core.util.PdfResourcePolicy.apply(builder);
             builder.withHtmlContent(html, null);
             builder.toStream(baos);
             builder.run();

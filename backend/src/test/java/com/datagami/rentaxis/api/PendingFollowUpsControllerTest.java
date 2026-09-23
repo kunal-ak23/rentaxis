@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
+
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -36,6 +38,7 @@ class PendingFollowUpsControllerTest extends AbstractPostgresIT {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired LeaseInteractionRepository interactionRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private UUID tenantId;
     private UUID managerUserId;
@@ -67,6 +70,11 @@ class PendingFollowUpsControllerTest extends AbstractPostgresIT {
                 tenantId,
                 LocalDate.of(2025, 6, 1),
                 LocalDate.of(2026, 5, 31));
+        // The manager runs the lease's building: follow-ups are scoped to it (round 5).
+        UserPropertyAssignment assignment = new UserPropertyAssignment();
+        assignment.setUserId(managerUserId);
+        assignment.setPropertyId(lease.getUnit().getProperty().getId());
+        assignmentRepo.save(assignment);
 
         TenantContextHolder.clear();
     }

@@ -17,8 +17,11 @@ public class UnitService {
 
     private final UnitRepository repository;
     private final TenantReferences refs;
+    private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
 
-    public UnitService(UnitRepository repository, TenantReferences refs) {
+    public UnitService(UnitRepository repository, TenantReferences refs,
+                       com.datagami.rentaxis.core.security.PropertyScope propertyScope) {
+        this.propertyScope = propertyScope;
         this.repository = repository;
         this.refs = refs;
     }
@@ -65,12 +68,18 @@ public class UnitService {
 
     @Transactional(readOnly = true)
     public List<Unit> getUnitsByProperty(UUID propertyId) {
+        // A property manager lists units of their own buildings only (audit D-F7):
+        // another building's list, with its current tenants' names, is empty.
+        if (!propertyScope.canAccessProperty(propertyId)) {
+            return List.of();
+        }
         return repository.findByPropertyId(propertyId);
     }
 
     @Transactional(readOnly = true)
     public List<Unit> getAllUnits() {
-        return repository.findAll();
+        return propertyScope.filter(repository.findAll(),
+                u -> u.getProperty() != null ? u.getProperty().getId() : null);
     }
 
     /**

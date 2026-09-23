@@ -21,9 +21,36 @@ import java.util.UUID;
 @Slf4j
 public class RenewalTokenService {
 
+    /**
+     * The literal committed in application.yml for local dev. Anyone can read it,
+     * so a prod that signs with it lets anyone mint a renewal link for any
+     * opportunity id in any tenant (audit B-F5, #129).
+     */
+    static final String COMMITTED_DEV_SECRET = "dev-only-please-rotate-in-prod-min-32-bytes-please";
+
     private final SecretKey key;
 
-    public RenewalTokenService(@Value("${app.renewal.token-secret}") String secret) {
+    public RenewalTokenService(String secret) {
+        this(secret, null, false);
+    }
+
+    /**
+     * Refuses to start under the prod profile when the secret is missing or is the
+     * committed dev literal, the way {@code FirebaseAdminIdTokenVerifier} refuses
+     * without its credentials. {@code app.renewal.allow-dev-secret-in-prod} is the
+     * break-glass switch, off by default; dev and tests never run the prod profile.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public RenewalTokenService(@Value("${app.renewal.token-secret:}") String secret,
+                               org.springframework.core.env.Environment environment,
+                               @Value("${app.renewal.allow-dev-secret-in-prod:false}") boolean allowDevSecretInProd) {
+        if (environment != null && environment.matchesProfiles("prod") && !allowDevSecretInProd
+                && (secret == null || secret.isBlank() || COMMITTED_DEV_SECRET.equals(secret.trim()))) {
+            throw new IllegalStateException("APP_RENEWAL_TOKEN_SECRET must be set to a real secret when the prod"
+                    + " profile is active (it is unset or the committed dev default). Generate one with"
+                    + " `openssl rand -base64 48`.");
+        }
+        if (secret == null) secret = "";
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) throw new IllegalStateException("app.renewal.token-secret must be >= 32 bytes");
         this.key = Keys.hmacShaKeyFor(bytes);

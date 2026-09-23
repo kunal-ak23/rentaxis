@@ -50,7 +50,10 @@ class PropertyServiceStatsTest {
         userService = mock(UserService.class);
 
         service = new PropertyService(
-                propertyRepository, unitRepository, buildingRepository, propertyAssignmentRepository, userService,
+                propertyRepository, unitRepository, buildingRepository,
+                new com.datagami.rentaxis.core.security.PropertyScope(new com.datagami.rentaxis.core.security.LeaseAccessPolicy(
+                        propertyAssignmentRepository, mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))),
+                userService,
                 mock(PropertyAccountService.class));
 
         // filterByRole reads SecurityContextHolder; no authentication set

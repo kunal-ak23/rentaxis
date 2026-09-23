@@ -117,11 +117,16 @@ class RenewalIntentServiceTest extends AbstractPostgresIT {
     }
 
     @Test
-    void replay_changes_intent_and_logs_second_interaction() {
+    void a_link_is_spent_once_a_choice_is_recorded_but_the_renter_can_still_change_it_signed_in() {
         RenewalOpportunity o = openOpportunity();
 
         service.captureIntentFromToken(o.getId(), RenewalIntent.RENEW);
-        RenewalOpportunity updated = service.captureIntentFromToken(o.getId(), RenewalIntent.DISCUSS);
+        // Round 5 (audit B-F5): the emailed links are single-use.
+        assertThatThrownBy(() -> service.captureIntentFromToken(o.getId(), RenewalIntent.DISCUSS))
+                .isInstanceOf(RenewalIntentService.IntentAlreadyRecordedException.class);
+
+        RenewalOpportunity updated = service.captureIntentFromRenter(o.getId(), RenewalIntent.DISCUSS,
+                o.getLease().getRenter().getUserId());
 
         assertThat(updated.getIntent()).isEqualTo(RenewalIntent.DISCUSS);
 

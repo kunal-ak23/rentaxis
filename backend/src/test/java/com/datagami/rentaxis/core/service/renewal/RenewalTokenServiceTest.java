@@ -38,4 +38,41 @@ class RenewalTokenServiceTest {
         assertThatThrownBy(() -> service.verify(tampered))
                 .isInstanceOf(RenewalTokenService.TokenInvalidException.class);
     }
+
+    // ---- audit B-F5: the prod profile refuses a missing or committed secret ----
+
+    private static org.springframework.mock.env.MockEnvironment env(String... profiles) {
+        org.springframework.mock.env.MockEnvironment e = new org.springframework.mock.env.MockEnvironment();
+        e.setActiveProfiles(profiles);
+        return e;
+    }
+
+    @org.junit.jupiter.api.Test
+    void prodRefusesTheCommittedDevSecretAndAMissingOne() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new RenewalTokenService(
+                        RenewalTokenService.COMMITTED_DEV_SECRET, env("prod"), false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_RENEWAL_TOKEN_SECRET");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new RenewalTokenService("", env("prod"), false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_RENEWAL_TOKEN_SECRET");
+    }
+
+    @org.junit.jupiter.api.Test
+    void prodStartsWithARealSecretAndDevStartsWithTheDefault() {
+        new RenewalTokenService("a-real-prod-secret-that-is-at-least-32-bytes-long", env("prod"), false);
+        new RenewalTokenService(RenewalTokenService.COMMITTED_DEV_SECRET, env("dev"), false);
+        new RenewalTokenService(RenewalTokenService.COMMITTED_DEV_SECRET, env(), false);
+        // Break-glass, explicitly set.
+        new RenewalTokenService(RenewalTokenService.COMMITTED_DEV_SECRET, env("prod"), true);
+    }
+
+    /** The literal the guard compares against is the one application.yml actually ships. */
+    @org.junit.jupiter.api.Test
+    void theGuardKnowsTheCommittedDefault() throws Exception {
+        String yml = new String(getClass().getResourceAsStream("/application.yml").readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(yml)
+                .contains("${APP_RENEWAL_TOKEN_SECRET:" + RenewalTokenService.COMMITTED_DEV_SECRET + "}");
+    }
 }

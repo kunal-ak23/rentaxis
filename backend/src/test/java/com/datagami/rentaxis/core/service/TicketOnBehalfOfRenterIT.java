@@ -87,7 +87,7 @@ class TicketOnBehalfOfRenterIT extends AbstractPostgresIT {
     @Test
     void staffLogATicketForAPickedRenter() {
         tenant();
-        as("PROPERTY_MANAGER");
+        as("TENANT_ADMIN"); // staff; manager scope is covered by PropertyManagerScopeIT
         UUID propertyId = property();
         Renter rajesh = renter("Rajesh Kumar");
 
@@ -125,7 +125,7 @@ class TicketOnBehalfOfRenterIT extends AbstractPostgresIT {
     @Test
     void deletingTheRenterClearsTheLinkAndKeepsTheTicket() {
         tenant();
-        as("PROPERTY_MANAGER");
+        as("TENANT_ADMIN"); // staff; manager scope is covered by PropertyManagerScopeIT
         Renter gone = renter("Former Renter");
         MaintenanceTicketDTO created = tickets.createTicket(dto(property(), gone.getId()), UUID.randomUUID());
 
@@ -140,7 +140,7 @@ class TicketOnBehalfOfRenterIT extends AbstractPostgresIT {
     @Test
     void freeTextAloneStillWorksForLegacyCallers() {
         tenant();
-        as("PROPERTY_MANAGER");
+        as("TENANT_ADMIN"); // staff; manager scope is covered by PropertyManagerScopeIT
         MaintenanceTicketDTO created = tickets.createTicket(dto(property(), null), UUID.randomUUID());
 
         assertThat(created.getOnBehalfOfRenterId()).isNull();

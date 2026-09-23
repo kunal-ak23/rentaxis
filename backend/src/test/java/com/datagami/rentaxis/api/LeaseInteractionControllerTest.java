@@ -38,6 +38,7 @@ class LeaseInteractionControllerTest extends AbstractPostgresIT {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired LeaseInteractionRepository interactionRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private UUID tenantId;
     private UUID managerUserId;
@@ -79,6 +80,12 @@ class LeaseInteractionControllerTest extends AbstractPostgresIT {
                 tenantId,
                 LocalDate.of(2025, 6, 1),
                 LocalDate.of(2026, 5, 31));
+        // The manager runs the lease's building (round 5: interactions are property-scoped).
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment assignment =
+                new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        assignment.setUserId(managerUserId);
+        assignment.setPropertyId(lease.getUnit().getProperty().getId());
+        assignmentRepo.save(assignment);
 
         TenantContextHolder.clear();
     }

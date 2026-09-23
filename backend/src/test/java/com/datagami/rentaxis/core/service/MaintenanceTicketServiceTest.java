@@ -65,9 +65,22 @@ class MaintenanceTicketServiceTest {
                 userRepository, propertyAssignmentRepository, historyRepository,
                 landlordOrgRepository, notificationService, events,
                 mock(com.datagami.rentaxis.core.service.ledger.EntryNumberService.class),
-                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class));
+                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class),
+                new com.datagami.rentaxis.core.security.PropertyScope(
+                        new com.datagami.rentaxis.core.security.LeaseAccessPolicy(propertyAssignmentRepository,
+                                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
+        // The ticket service resolves the caller's reach (round 5): act as a tenant admin.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        java.util.UUID.randomUUID().toString(), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     private MaintenanceTicket ticket(UUID reportedBy, String closureOtp) {
@@ -227,6 +240,8 @@ class MaintenanceTicketServiceTest {
         attachment.setUploadedAt(Instant.parse("2026-08-01T10:00:00Z"));
 
         when(attachmentRepository.findByTicketId(ticketId)).thenReturn(List.of(attachment));
+        // Every role now resolves the ticket first: the reach check is not renter-only.
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(t));
 
         List<TicketAttachmentDTO> dtos = service.getAttachments(ticketId);
 

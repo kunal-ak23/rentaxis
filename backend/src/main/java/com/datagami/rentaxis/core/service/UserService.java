@@ -31,6 +31,16 @@ import java.util.UUID;
 @Service
 public class UserService {
 
+    /** Minimum length for any password a person chooses or is given (audit A-F4). */
+    public static final int MIN_PASSWORD_LENGTH = 8;
+
+    private static void requireStrongEnough(String rawPassword) {
+        if (rawPassword.length() < MIN_PASSWORD_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Password must be at least " + MIN_PASSWORD_LENGTH + " characters.");
+        }
+    }
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
@@ -308,6 +318,7 @@ public class UserService {
         if (role == UserRole.SECURITY_GUARD) {
             secret = generateUnusableGuardSecret();
         } else if (passwordSupplied) {
+            requireStrongEnough(rawPassword);
             secret = rawPassword;
         } else if (issuesInviteToken) {
             // #7: nobody invents a password for an invited user. The hash is of
@@ -450,7 +461,7 @@ public class UserService {
      */
     @Transactional
     public InviteResult acceptInvite(String token, String newRawPassword) {
-        if (newRawPassword == null || newRawPassword.length() < 8) {
+        if (newRawPassword == null || newRawPassword.length() < MIN_PASSWORD_LENGTH) {
             return InviteResult.WEAK_PASSWORD;
         }
         // Pre-flight read: lets us return distinct error codes (NOT_FOUND / EXPIRED / ALREADY_USED)
@@ -591,6 +602,7 @@ public class UserService {
         user.setTenantId(newTenantId);
 
         if (rawPassword != null && !rawPassword.isBlank()) {
+            requireStrongEnough(rawPassword);
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
             // A set password retires the invite: otherwise the old link, or a
             // resend, could replace it (PR #342 review I1).
@@ -622,6 +634,12 @@ public class UserService {
         // SECURITY_GUARD omission.
         if (newTenantId != null && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), newTenantId);
+        }
+        // A move is a move, not an addition (audit A-F3): the old organisation's
+        // membership row would otherwise keep the user's role there through
+        // X-Tenant-Id, and every later login would put it back in the token.
+        if (previousTenantId != null && !previousTenantId.equals(newTenantId)) {
+            tenantMembershipRepository.deleteByUserIdAndTenantId(saved.getId(), previousTenantId);
         }
 
         // A token carries the role and tenants it was minted with; once any of

@@ -1,0 +1,23 @@
+databaseChangeLog:
+  # A cheque claims at most one issued scan (round-5 review of PR #343).
+  # Bulk-attach locks the scan row before claiming it; this index is the
+  # backstop for a cheque claiming two scans at once. Rows a cheque no
+  # longer shows (its image was replaced before claims were released) are
+  # released first, so existing data cannot fail the index.
+  - changeSet:
+      id: 105-cheque-image-upload-claim-unique
+      author: rentaxis-system
+      changes:
+        - sql:
+            sql: >
+              UPDATE cheque_image_uploads u SET cheque_id = NULL
+              WHERE u.cheque_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM cheques c
+                                WHERE c.id = u.cheque_id AND c.image_blob_path = u.blob_path)
+        - sql:
+            sql: >
+              CREATE UNIQUE INDEX uq_cheque_image_uploads_cheque
+              ON cheque_image_uploads (cheque_id) WHERE cheque_id IS NOT NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS uq_cheque_image_uploads_cheque

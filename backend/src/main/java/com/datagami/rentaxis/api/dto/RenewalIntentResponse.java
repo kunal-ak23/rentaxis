@@ -1,5 +1,4 @@
 package com.datagami.rentaxis.api.dto;
 
-import java.util.UUID;
-
-public record RenewalIntentResponse(String intent, UUID leaseId, String redirectTo) {}
+/** The public (link) answer: what was recorded and where to go. No lease id for an anonymous caller. */
+public record RenewalIntentResponse(String intent, String redirectTo) {}

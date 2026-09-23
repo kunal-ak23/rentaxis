@@ -37,6 +37,9 @@ class ChequeExtractionIT extends AbstractPostgresIT {
     @MockitoBean
     private ChequeExtractor chequeExtractor;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+
     @Test
     void extract_returns200_withImageAndExtractedData_andUsesTenantScope() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -63,6 +66,9 @@ class ChequeExtractionIT extends AbstractPostgresIT {
                 .andExpect(jsonPath("$.extracted.bankName").value("ENBD"));
 
         verify(blobStorageService).uploadCheque(eq(tenantId), any());
+        // The issued path is on record: it is the only one bulk-attach accepts (C-F2).
+        org.assertj.core.api.Assertions.assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, "cheques/a.jpg"))
+                .isPresent();
         verify(chequeExtractor).extract(any(), eq(MediaType.IMAGE_JPEG_VALUE));
     }
 }

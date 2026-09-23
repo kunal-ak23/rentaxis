@@ -1,6 +1,20 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
+/** Error codes authorize() surfaces to the login page (besides LOGIN_AMBIGUOUS). */
+const LOGIN_ERROR_CODES = ["ACCOUNT_INACTIVE", "ORG_INACTIVE", "RATE_LIMITED"];
+
+/** A request header from NextAuth's req, whose headers may be a Headers or a plain record. */
+function headerValue(headers: unknown, name: string): string | undefined {
+    if (!headers) return undefined;
+    if (typeof (headers as Headers).get === "function") {
+        return (headers as Headers).get(name) ?? undefined;
+    }
+    const record = headers as Record<string, string | string[] | undefined>;
+    const value = record[name] ?? record[name.toLowerCase()];
+    return Array.isArray(value) ? value[0] : value;
+}
+
 /** How often an existing session is re-checked against current user state. */
 export const REVALIDATE_INTERVAL_MS = Number(
     process.env.SESSION_REVALIDATE_INTERVAL_MS ?? 5 * 60 * 1000,
@@ -74,7 +88,7 @@ export const authOptions: NextAuthOptions = {
                 email: { label: "Email", type: "email" },
                 password: { label: "Password", type: "password" },
             },
-            async authorize(credentials) {
+            async authorize(credentials, req) {
                 if (!credentials?.email || !credentials?.password) return null;
 
                 try {
@@ -89,9 +103,15 @@ export const authOptions: NextAuthOptions = {
                         password: credentials.password,
                     };
                     if (tenantId) body.tenantId = tenantId;
+                    // The backend rate-limits login per client IP. This call
+                    // comes from the web server, so without the browser's
+                    // address every web login would share one bucket.
+                    const headers: Record<string, string> = { "Content-Type": "application/json" };
+                    const forwardedFor = headerValue(req?.headers, "x-forwarded-for");
+                    if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
                     const res = await fetch(`${process.env.BACKEND_URL || "http://localhost:8080"}/api/auth/login`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers,
                         body: JSON.stringify(body),
                     });
 
@@ -120,10 +140,22 @@ export const authOptions: NextAuthOptions = {
                         // Error code prefix recognized by /auth/login page.
                         throw new Error("LOGIN_AMBIGUOUS:" + JSON.stringify(body.tenants ?? []));
                     }
+                    // 403 after a correct password: the account or its
+                    // organisation is deactivated. 429: too many attempts.
+                    if (res.status === 403) {
+                        const body = await res.json().catch(() => ({}));
+                        if (body?.error === "ACCOUNT_INACTIVE" || body?.error === "ORG_INACTIVE") {
+                            throw new Error(body.error);
+                        }
+                    }
+                    if (res.status === 429) {
+                        throw new Error("RATE_LIMITED");
+                    }
                 } catch (e) {
-                    // Re-throw the structured ambiguous-login signal; swallow
-                    // anything else (network, JSON parse) as a generic 401.
-                    if (e instanceof Error && e.message.startsWith("LOGIN_AMBIGUOUS:")) {
+                    // Re-throw the structured signals; swallow anything else
+                    // (network, JSON parse) as a generic 401.
+                    if (e instanceof Error && (e.message.startsWith("LOGIN_AMBIGUOUS:")
+                        || LOGIN_ERROR_CODES.includes(e.message))) {
                         throw e;
                     }
                     console.error("Auth Exception:", e);

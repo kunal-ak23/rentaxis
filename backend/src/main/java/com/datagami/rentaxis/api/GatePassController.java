@@ -10,6 +10,7 @@ import com.datagami.rentaxis.api.dto.GatePassDtos.ScanRequest;
 import com.datagami.rentaxis.api.dto.GatePassDtos.ScanResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.GatePassScanService;
 import com.datagami.rentaxis.core.service.GatePassScanService.ScanOutcome;
 import com.datagami.rentaxis.core.service.GatePassService;
@@ -107,6 +108,7 @@ public class GatePassController {
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
     private final UserRepository userRepository;
+    private final PropertyScope propertyScope;
 
     public GatePassController(GatePassService gatePassService,
                               GatePassScanService gatePassScanService,
@@ -117,7 +119,8 @@ public class GatePassController {
                               PropertyRepository propertyRepository,
                               RenterRepository renterRepository,
                               LeaseRepository leaseRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              PropertyScope propertyScope) {
         this.gatePassService = gatePassService;
         this.gatePassScanService = gatePassScanService;
         this.gatePassRepository = gatePassRepository;
@@ -128,6 +131,7 @@ public class GatePassController {
         this.renterRepository = renterRepository;
         this.leaseRepository = leaseRepository;
         this.userRepository = userRepository;
+        this.propertyScope = propertyScope;
     }
 
     // ---------------------------------------------------------------- renter
@@ -251,17 +255,18 @@ public class GatePassController {
     /**
      * The approvals queue. Same endpoint for guards and managers, different scope:
      * a guard sees only passes awaiting approval at properties they are assigned to,
-     * a manager sees the whole tenant's.
+     * a tenant admin sees the whole tenant's, and a property manager the passes of
+     * the buildings they manage (audit P1-6).
      */
     @GetMapping("/approvals")
     @PreAuthorize("hasAnyRole('SECURITY_GUARD','TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<GatePassSummary> approvals() {
         UUID tenantId = tenantId();
         if (!isGuard()) {
-            return toSummaries(gatePassRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
+            return toSummaries(propertyScope.filter(gatePassRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
                             tenantId, GatePassStatus.PENDING_APPROVAL).stream()
                     .filter(pass -> pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN)
-                    .toList());
+                    .toList(), GatePass::getPropertyId));
         }
 
         List<UUID> propertyIds = assignedPropertyIds(currentUserId());
@@ -299,6 +304,8 @@ public class GatePassController {
                 throw new NotFoundException("Gate pass not found");
             }
         }
+        // A property manager decides only for the buildings they manage.
+        propertyScope.requireCanAccessProperty(requested.getPropertyId(), "Gate pass not found");
         return toSummary(gatePassService.approve(tenantId, id, currentUserId(), decision.approved()));
     }
 
@@ -317,6 +324,9 @@ public class GatePassController {
 
         if (to.isBefore(from)) {
             throw new BusinessRuleViolationException("'to' must not be before 'from'");
+        }
+        if (propertyId != null) {
+            propertyScope.requireCanAccessProperty(propertyId);
         }
 
         List<GatePassScan> scans = gatePassScanRepository.findByTenantIdAndScannedAtBetween(tenantId(), from, to);
@@ -345,6 +355,10 @@ public class GatePassController {
             if (propertyId != null && !propertyId.equals(pass.getPropertyId())) {
                 continue;
             }
+            // Guest names and phones: a property manager gets their buildings' traffic only.
+            if (!propertyScope.canAccessProperty(pass.getPropertyId())) {
+                continue;
+            }
             rows.add(new GatePassReportRow(scan.getId(), scan.getScannedAt(), scan.getDirection(), scan.getResult(),
                     scan.getRejectionReason(), scan.getScannedByUserId(),
                     guardNames.get(scan.getScannedByUserId()), pass.getId(), pass.getPropertyId(),
@@ -359,7 +373,8 @@ public class GatePassController {
     @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<UUID> guardProperties(@PathVariable UUID userId) {
         requireGuardInTenant(tenantId(), userId);
-        return assignedPropertyIds(userId);
+        // A property manager sees (and manages) the guard's postings at their own buildings.
+        return propertyScope.filter(assignedPropertyIds(userId), p -> p);
     }
 
     /**
@@ -386,9 +401,15 @@ public class GatePassController {
             if (!propertyRepository.existsByIdAndTenantId(propertyId, tenantId)) {
                 throw new BusinessRuleViolationException("Property is not in this tenant: " + propertyId);
             }
+            // A property manager may post a guard only to a building they manage.
+            propertyScope.requireCanAccessProperty(propertyId);
         }
 
-        guardPropertyAssignmentRepository.deleteAll(guardPropertyAssignmentRepository.findByUserId(userId));
+        // Replace-all within the caller's reach: a property manager's PUT must not
+        // strip the guard's postings at buildings that manager does not manage.
+        guardPropertyAssignmentRepository.deleteAll(guardPropertyAssignmentRepository.findByUserId(userId).stream()
+                .filter(a -> propertyScope.canAccessProperty(a.getPropertyId()))
+                .toList());
         // uq_gpa_user_property is checked per-statement, so without a flush the re-insert
         // of a property the guard already had would collide with its own pending delete.
         guardPropertyAssignmentRepository.flush();

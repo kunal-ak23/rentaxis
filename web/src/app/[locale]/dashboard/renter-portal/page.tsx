@@ -355,6 +355,187 @@ export default function RenterPortalPage() {
         fetchPendingPayments();
     };
 
+
+    // #76: ACTIVE (and NOTICE_GIVEN) first, then upcoming/pending ones by start
+    // date; ended contracts (RENEWED/EXPIRED/TERMINATED/CLOSED), newest first,
+    // go under "Past contracts".
+    const liveRank = (status: string) => (CURRENT_CONTRACT.includes(status) ? 0 : 1);
+    const currentLeases = leases
+        .filter(l => !PAST_CONTRACT.includes(l.status))
+        .sort((a, b) => liveRank(a.status) - liveRank(b.status)
+            || String(a.startDate).localeCompare(String(b.startDate)));
+    const pastLeases = leases
+        .filter(l => PAST_CONTRACT.includes(l.status))
+        .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+
+    const renderLeaseCard = (lease: Lease) => (
+        <div key={lease.id} className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200">
+            <div className="flex justify-between items-start mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                        <FileText size={22} />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-bold text-foreground tracking-tight">
+                            {t("unit")} {lease.unitIdentifier}
+                        </h3>
+                        <p className="text-[10px] font-bold text-muted">{lease.propertyName}</p>
+                    </div>
+                </div>
+                <span className={cn("inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
+                    {tLeasing(`leaseStatus.${lease.status}`)}
+                </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-input/70 rounded-xl p-3 border border-border">
+                    <div className="flex items-center gap-2 mb-1">
+                        <DollarSign size={12} className="text-muted" />
+                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("rent")}</span>
+                    </div>
+                    <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(lease.rentAmount)}</p>
+                </div>
+                <div className="bg-input/70 rounded-xl p-3 border border-border">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Calendar size={12} className="text-muted" />
+                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("start")}</span>
+                    </div>
+                    <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.startDate, locale)}</p>
+                </div>
+                <div className="bg-input/70 rounded-xl p-3 border border-border">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Calendar size={12} className="text-muted" />
+                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("end")}</span>
+                    </div>
+                    <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.endDate, locale)}</p>
+                </div>
+                {lease.ejariNumber && (
+                    <div className="bg-input/70 rounded-xl p-3 border border-border">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Home size={12} className="text-muted" />
+                            <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("ejari")}</span>
+                        </div>
+                        <p className="text-xs font-bold text-foreground">{lease.ejariNumber}</p>
+                    </div>
+                )}
+            </div>
+
+            {lease.status === 'PENDING_SIGNATURE' && paymentsByLease[lease.id]?.length > 0 && (() => {
+                const plan = paymentsByLease[lease.id];
+                const isExpanded = expandedPlanLeaseId === lease.id;
+                const lastAmount = plan[plan.length - 1].amount;
+                const firstAmount = plan[0].amount;
+                const hasResidualLast = plan.length > 1 && lastAmount > firstAmount;
+                return (
+                    <div className="border-t border-border pt-4 mb-4">
+                        <button
+                            type="button"
+                            onClick={() => setExpandedPlanLeaseId(isExpanded ? null : lease.id)}
+                            className="w-full flex items-center justify-between text-xs font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
+                        >
+                            <span className="flex items-center gap-2">
+                                <CreditCard size={14} className="text-primary" />
+                                {t("paymentPlan")} ({t("paymentPlanCheques", { count: plan.length })})
+                            </span>
+                            <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
+                        </button>
+                        {isExpanded && (
+                            <div className="mt-3 bg-input/40 rounded-xl border border-border overflow-hidden">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-input/70">
+                                        <tr className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+                                            <th className="px-3 py-2 text-start">#</th>
+                                            <th className="px-3 py-2 text-start">{t("paymentPlanDueDate")}</th>
+                                            <th className="px-3 py-2 text-end">{t("paymentPlanAmount")}</th>
+                                            <th className="px-3 py-2 text-start">{t("paymentPlanMethod")}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {plan.map((p, idx) => {
+                                            const isLast = idx === plan.length - 1;
+                                            return (
+                                                <tr key={p.id} className={cn("border-t border-border", isLast && hasResidualLast && "bg-primary/5 font-semibold")}>
+                                                    <td className="px-3 py-2 tabular-nums">{p.installmentNumber}</td>
+                                                    <td className="px-3 py-2 tabular-nums">{fmtIsoDate(p.dueDate, locale)}</td>
+                                                    <td className="px-3 py-2 text-end tabular-nums">{formatCurrencyCompact(p.amount)}</td>
+                                                    {/*
+                                                      * These rows are RenterChequeDTO, which has
+                                                      * no `paymentMethod` — the column was a
+                                                      * hardcoded, untranslated "CHEQUE" on every
+                                                      * row, bank transfers and online ones
+                                                      * included. `mode` is the field that exists.
+                                                      */}
+                                                    <td className="px-3 py-2 text-muted">
+                                                        {p.mode ? tLeasing(`mode.${p.mode}`) : "—"}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                                {hasResidualLast && (
+                                    <p className="px-3 py-2 text-[10px] text-muted border-t border-border bg-input/30">
+                                        {t("paymentPlanDepositNote", { deposit: formatCurrencyCompact(lease.depositAmount) })}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
+            <div className="flex gap-3 border-t border-border pt-4">
+                {lease.status === 'DRAFT' && (
+                    <div className="flex items-center gap-2 text-xs text-muted font-medium">
+                        <Clock size={14} />
+                        {t("awaitingContract")}
+                    </div>
+                )}
+                {lease.status === 'PENDING_SIGNATURE' && (
+                    <>
+                        <button
+                            onClick={() => handleDownloadContract(lease.id)}
+                            className="flex items-center gap-2 bg-info/10 text-info hover:bg-info/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-info/30"
+                        >
+                            <Download size={14} />
+                            {t("downloadContract")}
+                        </button>
+                        <button
+                            onClick={() => handleAccept(lease.id)}
+                            className="flex items-center gap-2 bg-success/10 text-success hover:bg-success/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-success/30"
+                        >
+                            <CheckCircle size={14} />
+                            {t("acceptLease")}
+                        </button>
+                        <button
+                            onClick={() => handleReject(lease.id)}
+                            className="flex items-center gap-2 bg-error/10 text-error hover:bg-error/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-error/30"
+                        >
+                            <XCircle size={14} />
+                            {t("rejectLease")}
+                        </button>
+                    </>
+                )}
+                {/*
+                  #38: the live contract (ACTIVE or under notice) always offers
+                  its contract — rendered from the posted lease when nothing was
+                  generated, as after a renewal. An ended one offers it when a
+                  signed contract was stored.
+                */}
+                {(CURRENT_CONTRACT.includes(lease.status) || (PAST_CONTRACT.includes(lease.status) && lease.hasContract)) && (
+                    <button
+                        data-testid={`download-contract-${lease.id}`}
+                        onClick={() => handleDownloadContract(lease.id)}
+                        className="flex items-center gap-2 bg-info/10 text-info hover:bg-info/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                    >
+                        <Download size={14} />
+                        {t("downloadContract")}
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+
     return (
         <div className="p-8 max-w-5xl mx-auto">
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
@@ -448,175 +629,21 @@ export default function RenterPortalPage() {
                 </div>
             </Link>
 
+            {/* #76: the live contract first; ended ones folded under "Past contracts". */}
             <div className="space-y-6">
-                {leases.map(lease => (
-                    <div key={lease.id} className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
-                                    <FileText size={22} />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-foreground tracking-tight">
-                                        {t("unit")} {lease.unitIdentifier}
-                                    </h3>
-                                    <p className="text-[10px] font-bold text-muted">{lease.propertyName}</p>
-                                </div>
-                            </div>
-                            <span className={cn("inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
-                                {tLeasing(`leaseStatus.${lease.status}`)}
-                            </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                            <div className="bg-input/70 rounded-xl p-3 border border-border">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <DollarSign size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("rent")}</span>
-                                </div>
-                                <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(lease.rentAmount)}</p>
-                            </div>
-                            <div className="bg-input/70 rounded-xl p-3 border border-border">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Calendar size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("start")}</span>
-                                </div>
-                                <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.startDate, locale)}</p>
-                            </div>
-                            <div className="bg-input/70 rounded-xl p-3 border border-border">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Calendar size={12} className="text-muted" />
-                                    <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("end")}</span>
-                                </div>
-                                <p className="text-xs font-bold text-foreground">{fmtIsoDate(lease.endDate, locale)}</p>
-                            </div>
-                            {lease.ejariNumber && (
-                                <div className="bg-input/70 rounded-xl p-3 border border-border">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <Home size={12} className="text-muted" />
-                                        <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">{tHome("ejari")}</span>
-                                    </div>
-                                    <p className="text-xs font-bold text-foreground">{lease.ejariNumber}</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {lease.status === 'PENDING_SIGNATURE' && paymentsByLease[lease.id]?.length > 0 && (() => {
-                            const plan = paymentsByLease[lease.id];
-                            const isExpanded = expandedPlanLeaseId === lease.id;
-                            const lastAmount = plan[plan.length - 1].amount;
-                            const firstAmount = plan[0].amount;
-                            const hasResidualLast = plan.length > 1 && lastAmount > firstAmount;
-                            return (
-                                <div className="border-t border-border pt-4 mb-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setExpandedPlanLeaseId(isExpanded ? null : lease.id)}
-                                        className="w-full flex items-center justify-between text-xs font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
-                                    >
-                                        <span className="flex items-center gap-2">
-                                            <CreditCard size={14} className="text-primary" />
-                                            {t("paymentPlan")} ({t("paymentPlanCheques", { count: plan.length })})
-                                        </span>
-                                        <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
-                                    </button>
-                                    {isExpanded && (
-                                        <div className="mt-3 bg-input/40 rounded-xl border border-border overflow-hidden">
-                                            <table className="w-full text-xs">
-                                                <thead className="bg-input/70">
-                                                    <tr className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                                                        <th className="px-3 py-2 text-start">#</th>
-                                                        <th className="px-3 py-2 text-start">{t("paymentPlanDueDate")}</th>
-                                                        <th className="px-3 py-2 text-end">{t("paymentPlanAmount")}</th>
-                                                        <th className="px-3 py-2 text-start">{t("paymentPlanMethod")}</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {plan.map((p, idx) => {
-                                                        const isLast = idx === plan.length - 1;
-                                                        return (
-                                                            <tr key={p.id} className={cn("border-t border-border", isLast && hasResidualLast && "bg-primary/5 font-semibold")}>
-                                                                <td className="px-3 py-2 tabular-nums">{p.installmentNumber}</td>
-                                                                <td className="px-3 py-2 tabular-nums">{fmtIsoDate(p.dueDate, locale)}</td>
-                                                                <td className="px-3 py-2 text-end tabular-nums">{formatCurrencyCompact(p.amount)}</td>
-                                                                {/*
-                                                                  * These rows are RenterChequeDTO, which has
-                                                                  * no `paymentMethod` — the column was a
-                                                                  * hardcoded, untranslated "CHEQUE" on every
-                                                                  * row, bank transfers and online ones
-                                                                  * included. `mode` is the field that exists.
-                                                                  */}
-                                                                <td className="px-3 py-2 text-muted">
-                                                                    {p.mode ? tLeasing(`mode.${p.mode}`) : "—"}
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                            {hasResidualLast && (
-                                                <p className="px-3 py-2 text-[10px] text-muted border-t border-border bg-input/30">
-                                                    {t("paymentPlanDepositNote", { deposit: formatCurrencyCompact(lease.depositAmount) })}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-
-                        <div className="flex gap-3 border-t border-border pt-4">
-                            {lease.status === 'DRAFT' && (
-                                <div className="flex items-center gap-2 text-xs text-muted font-medium">
-                                    <Clock size={14} />
-                                    {t("awaitingContract")}
-                                </div>
-                            )}
-                            {lease.status === 'PENDING_SIGNATURE' && (
-                                <>
-                                    <button
-                                        onClick={() => handleDownloadContract(lease.id)}
-                                        className="flex items-center gap-2 bg-info/10 text-info hover:bg-info/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-info/30"
-                                    >
-                                        <Download size={14} />
-                                        {t("downloadContract")}
-                                    </button>
-                                    <button
-                                        onClick={() => handleAccept(lease.id)}
-                                        className="flex items-center gap-2 bg-success/10 text-success hover:bg-success/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-success/30"
-                                    >
-                                        <CheckCircle size={14} />
-                                        {t("acceptLease")}
-                                    </button>
-                                    <button
-                                        onClick={() => handleReject(lease.id)}
-                                        className="flex items-center gap-2 bg-error/10 text-error hover:bg-error/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-error/30"
-                                    >
-                                        <XCircle size={14} />
-                                        {t("rejectLease")}
-                                    </button>
-                                </>
-                            )}
-                            {/*
-                              #38: the live contract (ACTIVE or under notice) always offers
-                              its contract — rendered from the posted lease when nothing was
-                              generated, as after a renewal. An ended one offers it when a
-                              signed contract was stored.
-                            */}
-                            {(CURRENT_CONTRACT.includes(lease.status) || (PAST_CONTRACT.includes(lease.status) && lease.hasContract)) && (
-                                <button
-                                    data-testid={`download-contract-${lease.id}`}
-                                    onClick={() => handleDownloadContract(lease.id)}
-                                    className="flex items-center gap-2 bg-info/10 text-info hover:bg-info/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
-                                >
-                                    <Download size={14} />
-                                    {t("downloadContract")}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ))}
+                {currentLeases.map(renderLeaseCard)}
             </div>
+
+            {pastLeases.length > 0 && (
+                <details data-testid="past-contracts" className="mt-6 group">
+                    <summary className="cursor-pointer select-none text-xs font-bold text-muted uppercase tracking-widest mb-4">
+                        {tHome("pastContracts", { count: pastLeases.length })}
+                    </summary>
+                    <div className="space-y-6 mt-4">
+                        {pastLeases.map(renderLeaseCard)}
+                    </div>
+                </details>
+            )}
 
             {leases.length === 0 && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">

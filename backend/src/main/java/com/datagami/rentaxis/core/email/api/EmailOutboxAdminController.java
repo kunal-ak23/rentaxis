@@ -25,8 +25,32 @@ public class EmailOutboxAdminController {
 
     private final EmailOutboxRepository repo;
 
+    /**
+     * What an admin needs to see about a queued email, and nothing that works as
+     * a credential. The rendered body is left out on purpose (audit A-F9): a
+     * USER_INVITED email carries the live set-password link, so returning
+     * {@code bodyHtml} let a tenant admin redeem any pending invite in the tenant
+     * — renters, managers, co-admins — before the invitee did, with no trail.
+     * Marketing bodies likewise carry unsubscribe tokens.
+     */
+    public record OutboxRow(UUID id, UUID tenantId, String eventType, String eventCategory,
+                            UUID recipientUserId, String recipientEmail, String recipientLocale,
+                            String subject, EmailOutbox.Status status, Instant scheduledAt,
+                            int attempts, int maxAttempts, Instant lastAttemptAt, String lastError,
+                            String azureDeliveryStatus, String referenceType, UUID referenceId,
+                            Instant createdAt, Instant updatedAt) {
+        static OutboxRow of(EmailOutbox e) {
+            return new OutboxRow(e.getId(), e.getTenantId(), e.getEventType(), e.getEventCategory(),
+                    e.getRecipientUserId(), e.getRecipientEmail(), e.getRecipientLocale(),
+                    e.getSubject(), e.getStatus(), e.getScheduledAt(),
+                    e.getAttempts(), e.getMaxAttempts(), e.getLastAttemptAt(), e.getLastError(),
+                    e.getAzureDeliveryStatus(), e.getReferenceType(), e.getReferenceId(),
+                    e.getCreatedAt(), e.getUpdatedAt());
+        }
+    }
+
     @GetMapping
-    public List<EmailOutbox> list(
+    public List<OutboxRow> list(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String eventType,
             @RequestParam(defaultValue = "0") int page,
@@ -35,12 +59,12 @@ public class EmailOutboxAdminController {
         Page<EmailOutbox> result = isSuperAdmin()
                 ? repo.findAll(pageable)
                 : repo.findByTenantId(currentTenantId(), pageable);
-        return result.getContent();
+        return result.getContent().stream().map(OutboxRow::of).toList();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<EmailOutbox> get(@PathVariable UUID id) {
-        return scopedFind(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<OutboxRow> get(@PathVariable UUID id) {
+        return scopedFind(id).map(OutboxRow::of).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/retry")

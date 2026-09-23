@@ -511,7 +511,7 @@ public class ContractGenerationService {
 
         sb.append("<tr>")
                 .append("<td class=\"center\">").append(sNo).append("</td>")
-                .append("<td>").append(safe(label)).append("</td>")
+                .append("<td>").append(escapeUserText(label)).append("</td>")
                 .append("<td class=\"num\">").append(formatAmount(amt)).append("</td>")
                 .append("<td class=\"center\">").append(vatPctDisplay).append("</td>")
                 .append("<td class=\"num\">").append(formatAmount(vatAmount)).append("</td>")
@@ -606,21 +606,17 @@ public class ContractGenerationService {
     }
 
     /**
-     * Returns the empty string for null, otherwise the value as-is.
-     * NOT for HTML — use {@link #escapeUserText(String)} for any value
-     * coming from a user-controlled field.
-     */
-    private static String safe(String s) {
-        return s == null ? "" : s;
-    }
-
-    /**
      * HTML-escape a user-provided string before it is embedded in the contract
      * HTML template. Returns "" for null. Apply to every value that originated
      * from user input (names, addresses, phone numbers, cheque numbers, etc.).
      */
     private static String escapeUserText(String s) {
-        return s == null ? "" : HtmlUtils.htmlEscape(s);
+        // UTF-8: escape only the markup characters (< > & " '). The default
+        // (ISO-8859-1) turns an em dash, curly quotes or accented letters into
+        // HTML-4 named entities (&mdash;, &rsquo;, &eacute;), which the renderer's
+        // XML parser does not know, so the whole PDF failed with a 500. The "—"
+        // shown for a renewal's missing contract number did exactly that (#75).
+        return s == null ? "" : HtmlUtils.htmlEscape(s, "UTF-8");
     }
 
     private static BigDecimal nz(BigDecimal v) {
@@ -647,6 +643,8 @@ public class ContractGenerationService {
                 log.warn("Could not load custom fonts, Arabic text may not render: {}", e.getMessage());
             }
 
+            // Only inline data: URIs load; no http(s), no file:, no jar:.
+            com.datagami.rentaxis.core.util.PdfResourcePolicy.apply(builder);
             builder.withHtmlContent(html, null);
             builder.toStream(baos);
             builder.run();
@@ -807,7 +805,18 @@ public class ContractGenerationService {
             throw new NotFoundException("No contract has been issued for this lease yet");
         }
         String number = lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : "—";
-        return renderPdf(renderContractHtml(lease, number));
+        try {
+            return renderPdf(renderContractHtml(lease, number));
+        } catch (NotFoundException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // A contract that cannot be produced is the caller's answer, not a
+            // server fault page (#75). Logged with the lease so it can be fixed.
+            log.error("Could not render the contract for lease {}", leaseId, e);
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "The contract for this lease could not be produced. Contact your landlord.");
+        }
     }
 
     @Transactional(readOnly = true)

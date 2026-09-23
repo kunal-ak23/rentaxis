@@ -87,7 +87,8 @@ class PublicRenewalControllerTest extends AbstractPostgresIT {
                 .retrieve().body(Map.class);
 
         assertThat(body.get("intent")).isEqualTo("RENEW");
-        assertThat(body.get("leaseId")).isEqualTo(o.getLease().getId().toString());
+        // An anonymous link holder gets no lease id (audit B-F5).
+        assertThat(body.containsKey("leaseId")).isFalse();
         assertThat(body.get("redirectTo")).isEqualTo("/dashboard/renter-portal/renewals");
 
         TenantContextHolder.setTenantId(o.getTenantId());
@@ -173,5 +174,35 @@ class PublicRenewalControllerTest extends AbstractPostgresIT {
         assertThat(ex).isNotNull();
         assertThat(ex.getStatusCode().value()).isEqualTo(404);
         assertThat(ex.getResponseBodyAsString()).contains("NOT_FOUND");
+    }
+
+    /**
+     * Audit B-F5: once a choice is on record the emailed links are spent. Both
+     * links of one email used to stay live until lease end, so whoever the email
+     * was forwarded to could flip the renter's decision.
+     */
+    @Test
+    void a_link_works_once_then_both_links_of_the_email_are_spent_409() {
+        LocalDate endDate = LocalDate.now().plusDays(30);
+        RenewalOpportunity o = createOpportunity(endDate, RenewalStage.OPEN);
+        String renew = tokenService.sign(o.getId(), RenewalIntent.RENEW, endDate);
+        String moveOut = tokenService.sign(o.getId(), RenewalIntent.MOVE_OUT, endDate);
+
+        client().post().uri("/api/v1/public/renewal-intent").contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("token", renew)).retrieve().toBodilessEntity();
+
+        for (String token : java.util.List.of(renew, moveOut)) {
+            HttpStatusCodeException ex = null;
+            try {
+                client().post().uri("/api/v1/public/renewal-intent").contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("token", token)).retrieve().toBodilessEntity();
+            } catch (HttpStatusCodeException e) { ex = e; }
+            assertThat(ex).isNotNull();
+            assertThat(ex.getStatusCode().value()).isEqualTo(409);
+            assertThat(ex.getResponseBodyAsString()).contains("ALREADY_RECORDED");
+        }
+
+        TenantContextHolder.setTenantId(o.getTenantId());
+        assertThat(oppRepo.findById(o.getId()).orElseThrow().getIntent()).isEqualTo(RenewalIntent.RENEW);
     }
 }

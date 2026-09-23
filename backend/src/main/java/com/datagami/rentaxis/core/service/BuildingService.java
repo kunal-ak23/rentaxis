@@ -16,8 +16,11 @@ public class BuildingService {
 
     private final BuildingRepository repository;
     private final TenantReferences refs;
+    private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
 
-    public BuildingService(BuildingRepository repository, TenantReferences refs) {
+    public BuildingService(BuildingRepository repository, TenantReferences refs,
+                           com.datagami.rentaxis.core.security.PropertyScope propertyScope) {
+        this.propertyScope = propertyScope;
         this.repository = repository;
         this.refs = refs;
     }
@@ -55,17 +58,25 @@ public class BuildingService {
 
     @Transactional(readOnly = true)
     public List<Building> getBuildingsByProperty(UUID propertyId) {
+        // Property managers: their own buildings only (audit D-F7).
+        if (!propertyScope.canAccessProperty(propertyId)) {
+            return List.of();
+        }
         return repository.findByPropertyId(propertyId);
     }
 
     @Transactional(readOnly = true)
     public List<Building> getAllBuildings() {
-        return repository.findAll();
+        return propertyScope.filter(repository.findAll(),
+                b -> b.getProperty() != null ? b.getProperty().getId() : null);
     }
 
     @Transactional(readOnly = true)
     public Building getBuildingById(UUID id) {
-        return repository.findById(id).orElseThrow(() -> new NotFoundException("Building not found"));
+        Building building = repository.findById(id).orElseThrow(() -> new NotFoundException("Building not found"));
+        propertyScope.requireCanAccessProperty(
+                building.getProperty() != null ? building.getProperty().getId() : null, "Building not found");
+        return building;
     }
 
     @Transactional

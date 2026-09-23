@@ -47,10 +47,12 @@ public class PublicRenewalController {
         TenantContextHolder.setTenantId(o.getTenantId());
         try {
             RenewalOpportunity updated = intentService.captureIntentFromToken(o.getId(), v.intent());
+            // No lease id: this caller is anonymous, holding only an emailed link.
             return ResponseEntity.ok(new RenewalIntentResponse(
                     updated.getIntent().name(),
-                    updated.getLease().getId(),
                     "/dashboard/renter-portal/renewals"));
+        } catch (RenewalIntentService.IntentAlreadyRecordedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "ALREADY_RECORDED"));
         } catch (BusinessRuleViolationException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "ALREADY_RESOLVED"));
         } finally {

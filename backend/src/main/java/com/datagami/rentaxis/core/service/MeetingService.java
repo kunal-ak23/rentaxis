@@ -7,13 +7,16 @@ import com.datagami.rentaxis.api.dto.SlotDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
+import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Meeting;
 import com.datagami.rentaxis.domain.entity.MeetingDetail;
-import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.MeetingPurpose;
 import com.datagami.rentaxis.domain.entity.enums.MeetingStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +54,17 @@ public class MeetingService {
     private final PropertyRepository propertyRepository;
     private final UnitRepository unitRepository;
     private final NotificationService notificationService;
+    private final ChequeRepository chequeRepository;
+    private final LeaseAccessPolicy leaseAccessPolicy;
+    private final PropertyScope propertyScope;
+
+    /** Roles that host meetings. A renter, guard or accountant is never a host. */
+    private static final java.util.Set<UserRole> HOST_ROLES =
+            java.util.EnumSet.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
+
+    /** Roles that manage meetings tenant-wide (a property manager: within their buildings). */
+    private static final java.util.Set<String> MANAGER_ROLES =
+            java.util.Set.of("PROPERTY_MANAGER", "TENANT_ADMIN", "SUPER_ADMIN");
 
     // ---- Create ----
 
@@ -69,9 +83,10 @@ public class MeetingService {
             throw new BusinessRuleViolationException("Slot must be on a 30-minute boundary between 9:00 AM and 9:00 PM UAE time");
         }
 
-        // Validate host exists
-        userRepository.findById(dto.getHostUserId())
-                .orElseThrow(() -> new NotFoundException("Host user not found"));
+        // The host must be a tenant staff member who hosts meetings. It used to be
+        // any user id, so a renter could name another renter as "host" and that
+        // renter received the request and its notes (audit D-F4).
+        requireEligibleHost(dto.getHostUserId());
 
         // Check for conflicts
         List<Meeting> conflicts = meetingRepository.findConflicts(
@@ -94,8 +109,13 @@ public class MeetingService {
         meeting.setStatus(MeetingStatus.REQUESTED);
 
         if (dto.getLeaseId() != null) {
-            meeting.setLease(leaseRepository.findById(dto.getLeaseId())
-                    .orElseThrow(() -> new NotFoundException("Lease not found")));
+            Lease lease = leaseRepository.findById(dto.getLeaseId())
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+            // A renter may reference only their own lease; a property manager only
+            // a lease on a building they manage. Before, any lease id worked and the
+            // response's leaseLabel read back the other renter's name (audit D-F4).
+            leaseAccessPolicy.requireReadable(lease);
+            meeting.setLease(lease);
         }
         if (dto.getPropertyId() != null) {
             meeting.setProperty(propertyRepository.findById(dto.getPropertyId())
@@ -105,6 +125,7 @@ public class MeetingService {
             meeting.setUnit(unitRepository.findById(dto.getUnitId())
                     .orElseThrow(() -> new NotFoundException("Unit not found")));
         }
+        requireReferencesInReach(meeting, dto.getChequeIds());
 
         Meeting saved = meetingRepository.save(meeting);
 
@@ -156,6 +177,7 @@ public class MeetingService {
     public MeetingDTO approveMeeting(UUID meetingId, UUID approverUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, approverUserId);
 
         if (meeting.getStatus() != MeetingStatus.REQUESTED) {
             throw new BusinessRuleViolationException(
@@ -187,9 +209,7 @@ public class MeetingService {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
 
-        boolean isManager = "PROPERTY_MANAGER".equals(role) || "TENANT_ADMIN".equals(role) || "SUPER_ADMIN".equals(role);
-        boolean isInvolved = meeting.getRequesterUserId().equals(cancelledByUserId) || meeting.getHostUserId().equals(cancelledByUserId);
-        if (!isManager && !isInvolved) {
+        if (!canSee(meeting, cancelledByUserId, role)) {
             throw new NotFoundException("Meeting not found");
         }
 
@@ -224,6 +244,7 @@ public class MeetingService {
     public MeetingDTO completeMeeting(UUID meetingId, UUID performedByUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, performedByUserId);
 
         if (meeting.getStatus() != MeetingStatus.APPROVED) {
             throw new BusinessRuleViolationException(
@@ -254,6 +275,7 @@ public class MeetingService {
     public MeetingDTO noShowMeeting(UUID meetingId, UUID performedByUserId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        requireManagerReach(meeting, performedByUserId);
 
         if (meeting.getStatus() != MeetingStatus.APPROVED) {
             throw new BusinessRuleViolationException(
@@ -284,9 +306,7 @@ public class MeetingService {
     public MeetingDTO getMeeting(UUID meetingId, UUID userId, String role) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
-        boolean isManager = role.equals("PROPERTY_MANAGER") || role.equals("TENANT_ADMIN") || role.equals("SUPER_ADMIN");
-        boolean isInvolved = meeting.getRequesterUserId().equals(userId) || meeting.getHostUserId().equals(userId);
-        if (!isManager && !isInvolved) {
+        if (!canSee(meeting, userId, role)) {
             throw new NotFoundException("Meeting not found");
         }
         return mapToDTO(meeting);
@@ -294,6 +314,14 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> listMeetings(Pageable pageable) {
+        List<UUID> scope = propertyScope.scopedPropertyIds();
+        if (scope != null) {
+            // A property manager: meetings they host or requested, and meetings on
+            // the buildings they manage (audit P1-6). Scoped in the query so the
+            // page and its total agree.
+            return meetingRepository.findScoped(TenantContextHolder.getTenantId(), callerIdOrNull(),
+                    nonEmpty(scope), pageable).map(this::mapToDTO);
+        }
         return meetingRepository.findByTenantId(TenantContextHolder.getTenantId(), pageable).map(this::mapToDTO);
     }
 
@@ -307,22 +335,33 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> getCalendarMeetings(Instant rangeStart, Instant rangeEnd, Pageable pageable) {
+        List<UUID> scope = propertyScope.scopedPropertyIds();
+        if (scope != null) {
+            return meetingRepository.findScopedInRange(TenantContextHolder.getTenantId(), callerIdOrNull(),
+                    nonEmpty(scope), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
+        }
         return meetingRepository.findByTenantIdAndDateRange(TenantContextHolder.getTenantId(), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
     }
 
     // ---- Default host (for renters who cannot derive a PM) ----
 
+    /**
+     * The host a renter's request goes to when they cannot name one: the oldest
+     * ACTIVE tenant admin, else the oldest ACTIVE property manager.
+     *
+     * <p>It used to be the first row of an unordered, unfiltered query: a
+     * deactivated admin could be handed every renter's request (and
+     * {@link #requireEligibleHost} then refused the booking), and which admin came
+     * back could change from one call to the next.</p>
+     */
     @Transactional(readOnly = true)
     public UUID getDefaultHostId() {
         UUID tenantId = TenantContextHolder.getTenantId();
-        // Prefer TENANT_ADMIN, fall back to any user with PROPERTY_MANAGER role
-        List<User> admins = userRepository.findByTenantIdAndRole(tenantId, UserRole.TENANT_ADMIN);
-        if (!admins.isEmpty()) {
-            return admins.get(0).getId();
-        }
-        List<User> managers = userRepository.findByTenantIdAndRole(tenantId, UserRole.PROPERTY_MANAGER);
-        if (!managers.isEmpty()) {
-            return managers.get(0).getId();
+        for (UserRole role : List.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER)) {
+            List<UUID> ids = userRepository.findActiveIdsInTenantByRoleOldestFirst(tenantId, role.name());
+            if (!ids.isEmpty()) {
+                return ids.get(0);
+            }
         }
         throw new NotFoundException("No host user found for this tenant");
     }
@@ -331,6 +370,9 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public List<SlotDTO> getAvailableSlots(UUID hostUserId, java.time.LocalDate date) {
+        // Only a real host's calendar is bookable, so only a real host's busy slots
+        // are shown; any other user's day is not a renter's business.
+        requireEligibleHost(hostUserId);
         ZonedDateTime dayStartZdt = date.atTime(DAY_START_HOUR, 0).atZone(UAE_ZONE);
         ZonedDateTime dayEndZdt = date.atTime(DAY_END_HOUR, 0).atZone(UAE_ZONE);
 
@@ -373,6 +415,126 @@ public class MeetingService {
         }
 
         return null; // No slots available within 14 days
+    }
+
+    // ---- Access ----
+
+    /**
+     * The host must be ACTIVE and belong to this tenant as a tenant admin or
+     * property manager — by home tenant or by a {@code user_tenant_memberships}
+     * row (the tenant filter on {@code users} used to hide a multi-tenant admin
+     * working in a secondary organisation, so they could not be booked there). A
+     * SUPER_ADMIN, who belongs to no tenant, qualifies only as the caller acting
+     * in this tenant: an organisation run by the platform team has no other staff.
+     */
+    private void requireEligibleHost(UUID hostUserId) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        UserRepository.StaffCandidate host = hostUserId == null || tenantId == null ? null
+                : userRepository.findStaffCandidateInTenant(hostUserId, tenantId).orElse(null);
+        boolean eligible = host != null && UserStatus.ACTIVE.name().equals(host.getStatus())
+                && (HOST_ROLES.stream().anyMatch(r -> r.name().equals(host.getRole()))
+                    || (UserRole.SUPER_ADMIN.name().equals(host.getRole())
+                        && hostUserId.equals(callerIdOrNull()) && callerHasRole("SUPER_ADMIN")));
+        if (!eligible) {
+            throw new NotFoundException("Host user not found");
+        }
+    }
+
+    /**
+     * Unit, property and cheques must be consistent with what the caller may
+     * reference. Staff are bounded by their scope (a property manager: their
+     * buildings); a renter by their own lease, from which unit and property follow.
+     */
+    private void requireReferencesInReach(Meeting meeting, UUID[] chequeIds) {
+        Lease lease = meeting.getLease();
+        boolean staff = !leaseAccessPolicy.isRestricted() || propertyScope.isScoped();
+        if (!staff) {
+            // Renter / tenant user: unit and property may only restate their lease's.
+            UUID leaseUnit = lease != null && lease.getUnit() != null ? lease.getUnit().getId() : null;
+            UUID leaseProperty = propertyOf(lease);
+            if (meeting.getUnit() != null && !meeting.getUnit().getId().equals(leaseUnit)) {
+                throw new NotFoundException("Unit not found");
+            }
+            if (meeting.getProperty() != null && !meeting.getProperty().getId().equals(leaseProperty)) {
+                throw new NotFoundException("Property not found");
+            }
+        } else {
+            if (meeting.getUnit() != null) {
+                propertyScope.requireCanAccessUnit(meeting.getUnit(), "Unit not found");
+            }
+            if (meeting.getProperty() != null) {
+                propertyScope.requireCanAccessProperty(meeting.getProperty().getId());
+            }
+        }
+        if (chequeIds != null && chequeIds.length > 0) {
+            // Cheques are always the meeting's lease's cheques (cheque replacement).
+            for (UUID chequeId : chequeIds) {
+                boolean onLease = lease != null && chequeRepository.findById(chequeId)
+                        .map(c -> c.getLease() != null && lease.getId().equals(c.getLease().getId()))
+                        .orElse(false);
+                if (!onLease) {
+                    throw new NotFoundException("Cheque not found");
+                }
+            }
+        }
+    }
+
+    /** Who may read or cancel: the two parties, and managers within their reach. */
+    private boolean canSee(Meeting meeting, UUID userId, String role) {
+        boolean isInvolved = meeting.getRequesterUserId().equals(userId) || meeting.getHostUserId().equals(userId);
+        if (isInvolved) {
+            return true;
+        }
+        return role != null && MANAGER_ROLES.contains(role) && inManagerScope(meeting);
+    }
+
+    /** approve / complete / no-show: the host, or a manager whose buildings it concerns. */
+    private void requireManagerReach(Meeting meeting, UUID actorUserId) {
+        if (meeting.getHostUserId().equals(actorUserId)) {
+            return;
+        }
+        if (!inManagerScope(meeting)) {
+            throw new NotFoundException("Meeting not found");
+        }
+    }
+
+    private boolean inManagerScope(Meeting meeting) {
+        if (!propertyScope.isScoped()) {
+            return true;
+        }
+        UUID propertyId = propertyOf(meeting);
+        return propertyId != null && propertyScope.canAccessProperty(propertyId);
+    }
+
+    private static UUID propertyOf(Meeting m) {
+        if (m.getProperty() != null) return m.getProperty().getId();
+        if (m.getUnit() != null && m.getUnit().getProperty() != null) return m.getUnit().getProperty().getId();
+        return propertyOf(m.getLease());
+    }
+
+    private static UUID propertyOf(Lease lease) {
+        return lease != null && lease.getUnit() != null && lease.getUnit().getProperty() != null
+                ? lease.getUnit().getProperty().getId() : null;
+    }
+
+    private static UUID callerIdOrNull() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            return auth == null ? null : UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static boolean callerHasRole(String role) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> ("ROLE_" + role).equals(a.getAuthority()));
+    }
+
+    /** JPQL {@code IN ()} is not valid SQL; an unmatchable id stands in for "nothing". */
+    private static List<UUID> nonEmpty(List<UUID> ids) {
+        return ids.isEmpty() ? List.of(new UUID(0L, 0L)) : ids;
     }
 
     private String formatSlotForDisplay(Instant slotStart) {

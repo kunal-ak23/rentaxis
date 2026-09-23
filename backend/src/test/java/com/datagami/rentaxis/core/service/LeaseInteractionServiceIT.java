@@ -58,6 +58,11 @@ class LeaseInteractionServiceIT extends AbstractPostgresIT {
         UUID superAdminId = userRepo.saveAndFlush(superAdmin).getId();
 
         TenantContextHolder.setTenantId(tenantId);
+        // The service now asks LeaseAccessPolicy whose lease this is; answer as the SA.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        superAdminId.toString(), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))));
         CreateInteractionRequest req = new CreateInteractionRequest(
                 InteractionType.NOTE, InteractionDirection.INTERNAL,
                 Instant.now(), "Called renter about renewal", null, null);

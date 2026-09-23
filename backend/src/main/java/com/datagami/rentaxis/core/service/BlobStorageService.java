@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.AssetController;
+
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
@@ -201,6 +203,52 @@ public class BlobStorageService {
         } catch (IllegalArgumentException | BlobStorageException e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Reads a blob named by a stored URL, but only when the URL is in this
+     * service's own storage account and in the {@code shared} container or the
+     * given tenant's container. Used to inline an org logo into a PDF through the
+     * SDK, so the PDF renderer never fetches a URL itself. Anything else, and any
+     * blob larger than {@code maxBytes}, is {@link Optional#empty()}.
+     */
+    public Optional<DownloadResult> downloadOwnedUrl(UUID tenantId, String url, long maxBytes) {
+        Optional<BlobLocation> location = parseOwnedBlobUrl(url);
+        if (location.isEmpty()) {
+            return Optional.empty();
+        }
+        String container = location.get().containerName();
+        // The shared container also holds lease documents and ticket attachments
+        // written with no tenant in context, so only its public-assets folder (the
+        // one AssetController writes logos to) is readable here. A tenant's own
+        // container is readable in full.
+        boolean allowed = ("shared".equals(container) && isPublicAssetPath(location.get().blobPath()))
+                || (tenantId != null && container.equals((containerPrefix + tenantId).toLowerCase(Locale.ROOT)));
+        if (!allowed) {
+            return Optional.empty();
+        }
+        try {
+            BlobClient client = getServiceClient().getBlobContainerClient(container)
+                    .getBlobClient(location.get().blobPath());
+            var props = client.getProperties();
+            if (props.getBlobSize() > maxBytes) {
+                return Optional.empty();
+            }
+            return Optional.of(new DownloadResult(client.downloadContent().toBytes(), props.getContentType()));
+        } catch (RuntimeException e) {
+            log.warn("Could not read owned blob {}/{}: {}", container, location.get().blobPath(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * A blob under {@link AssetController#PUBLIC_PREFIX}{@code /}. Case-insensitive
+     * because {@code AssetController} accepts the folder case-insensitively.
+     */
+    static boolean isPublicAssetPath(String blobPath) {
+        String prefix = AssetController.PUBLIC_PREFIX + "/";
+        return blobPath != null && blobPath.length() > prefix.length()
+                && blobPath.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
     /** Reads a tenant-scoped blob for an authenticated controller response. */

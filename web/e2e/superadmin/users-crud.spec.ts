@@ -47,7 +47,7 @@ test.describe('Users CRUD', () => {
     // Email - placeholder "e.g. admin@acmecorp.com"
     await page.locator('input[placeholder*="acmecorp"]').fill(`e2e-user-${timestamp}@test.com`);
     // Password - placeholder "Secure password"
-    await page.locator('input[placeholder*="Secure"]').fill('test123');
+    await page.locator('input[placeholder*="Secure"]').fill('test1234');
 
     // Role select — scoped to the dialog's <form>. The list below the modal now
     // carries a <Pagination> whose "n per page" <select> sorts first in document

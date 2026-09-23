@@ -51,6 +51,7 @@ class RenterContractDownloadIT extends AbstractPostgresIT {
     private Lease withStoredContract;   // renter A
     private Lease renewedWithoutDoc;    // renter B, posted, nothing generated
     private Lease draftWithoutDoc;      // renter C, never posted
+    private Lease numberlessRenewal;    // renter D: #75, a posted renewal with no contract number
 
     @BeforeEach
     void setUp() throws Exception {
@@ -70,6 +71,18 @@ class RenterContractDownloadIT extends AbstractPostgresIT {
         leaseRepo.save(renewedWithoutDoc); // keep the instance whose renter is loaded
         draftWithoutDoc = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo,
                 unitRepo, leaseRepo, tenantId, start, end);
+        // #75 as it was on prod: a renewal posted with no generated contract, so no
+        // contract number (rendered as "—"), no agreement date, and a renter name
+        // with a typographic apostrophe. Both used to become HTML-4 named entities
+        // (&mdash;, &rsquo;) that the PDF renderer's XML parser rejects: a 500.
+        numberlessRenewal = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo,
+                unitRepo, leaseRepo, tenantId, end.plusDays(1), end.plusYears(1));
+        numberlessRenewal.setPostedAt(Instant.now());
+        numberlessRenewal.setContractNumber(null);
+        numberlessRenewal.setAgreementDate(null);
+        numberlessRenewal.getRenter().setNameEn("Ahmed O’Brien — Café");
+        renterRepo.save(numberlessRenewal.getRenter());
+        leaseRepo.save(numberlessRenewal);
 
         Path pdf = Files.createTempFile("renter-contract-", ".pdf");
         Files.write(pdf, PDF_BYTES);
@@ -137,5 +150,24 @@ class RenterContractDownloadIT extends AbstractPostgresIT {
     @Test
     void anUnpostedLeaseWithNoContractHasNothingToDownload() {
         assertThat(getAsRenterOf(draftWithoutDoc, draftWithoutDoc).getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** #75: the renewal with no contract number, as its renter, and as staff previewing it. */
+    @Test
+    void aRenewalWithNoContractNumberRendersInsteadOf500() {
+        ResponseEntity<byte[]> res = getAsRenterOf(numberlessRenewal, numberlessRenewal);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(new String(res.getBody(), 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+
+        ResponseEntity<byte[]> preview = RestClient.builder().baseUrl("http://localhost:" + port).build()
+                .post().uri("/api/v1/leases/" + numberlessRenewal.getId() + "/generate-contract/preview")
+                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Role", "TENANT_ADMIN")
+                .header("X-Tenant-Id", tenantId.toString())
+                .header("X-User-Tenant-Id", tenantId.toString())
+                .retrieve().onStatus(st -> true, (rq, rs) -> { })
+                .toEntity(byte[].class);
+        assertThat(preview.getStatusCode().value()).isEqualTo(200);
     }
 }

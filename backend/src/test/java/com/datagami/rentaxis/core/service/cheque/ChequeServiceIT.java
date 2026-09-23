@@ -563,6 +563,38 @@ class ChequeServiceIT extends AbstractPostgresIT {
                 mashreq, leaf(AccountRole.PDC_RECEIVABLE), "12750");
     }
 
+    /**
+     * Audit C-F1: a bank leaf of ANOTHER building of the same landlord. The receipt
+     * would settle this lease's receivable while the money showed up in the other
+     * building's bank, breaking both reconciliations. A tenant-level leaf (no
+     * property) stays acceptable.
+     */
+    @Test
+    void anotherBuildingsBankIsRefusedAndATenantLevelBankIsFine() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        com.datagami.rentaxis.domain.entity.Property elsewhere = fixtures.createProperty("ELSE");
+        Account theirBank = tx.execute(s -> accountService.createLeaf(
+                "Elsewhere - collections", accountService.getAccountByCode("A-02-02"), elsewhere.getId()));
+        Account headOffice = tx.execute(s -> accountService.createLeaf(
+                "Head office - collections", accountService.getAccountByCode("A-02-02"), null));
+
+        assertThatThrownBy(() -> service.deposit(chequeId,
+                new ChequeActionRequest(DEPOSIT_DATE, null, null, theirBank.getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("does not belong to this property");
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+        assertThatThrownBy(() -> service.clear(chequeId,
+                new ChequeActionRequest(CLEAR_DATE, null, null, theirBank.getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("does not belong to this property");
+        assertThat(reread(chequeId).getCrtJournalId()).isNull();
+
+        ChequeDTO cleared = service.clear(chequeId,
+                new ChequeActionRequest(CLEAR_DATE, null, null, headOffice.getId()));
+        assertThat(cleared.debitAccountId()).isEqualTo(headOffice.getId());
+    }
+
     /** The same rule on the deposit run, where the account is only remembered. */
     @Test
     void depositBatchRefusesADebitAccountThatIsNotBankOrCash() {

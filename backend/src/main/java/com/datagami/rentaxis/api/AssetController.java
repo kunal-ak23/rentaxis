@@ -1,10 +1,15 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.ImageTypes;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.models.BlobHttpHeaders;
+import com.azure.storage.blob.options.BlobParallelUploadOptions;
+import com.azure.core.util.BinaryData;
+import com.azure.core.util.Context;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +17,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,7 +103,15 @@ public class AssetController {
 
         String blobPath = folder + "/" + fileName;
         BlobClient blobClient = containerClient.getBlobClient(blobPath);
-        blobClient.upload(new ByteArrayInputStream(bytes), bytes.length, true);
+        // Without headers Azure stores application/octet-stream. Record the type
+        // the bytes prove (PNG/JPEG/GIF), not the one the client declared, so an
+        // SVG or HTML file labelled image/* is never served back as markup.
+        // No request conditions, so this overwrites like upload(..., true).
+        BlobHttpHeaders headers = new BlobHttpHeaders().setContentType(
+                ImageTypes.sniff(bytes).orElse("application/octet-stream"));
+        blobClient.uploadWithResponse(
+                new BlobParallelUploadOptions(BinaryData.fromBytes(bytes)).setHeaders(headers),
+                null, Context.NONE);
 
         String accountUrl = blobServiceClient.getAccountUrl();
         return accountUrl + "/" + containerName + "/" + blobPath;

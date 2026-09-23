@@ -649,7 +649,9 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
 
         User otherPm = user(UserRole.PROPERTY_MANAGER);
         as(otherPm);
-        assertThat(tickets.getTicket(id, otherPm.getId()).isCanReissueOtp()).isFalse();
+        // A manager of another building does not reach the ticket at all (round 5, #72).
+        assertThatThrownBy(() -> tickets.getTicket(id, otherPm.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
 
         User admin = user(UserRole.TENANT_ADMIN);
         as(admin);

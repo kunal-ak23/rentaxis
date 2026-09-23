@@ -48,6 +48,14 @@ public class MaintenanceTicketController {
         return ResponseEntity.ok(ticketService.getTicket(id, callerId()));
     }
 
+    /** Who the ticket can be assigned to: admins, and managers of its building. */
+    @GetMapping("/{id}/assignees")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<java.util.List<com.datagami.rentaxis.core.service.MaintenanceTicketService.AssigneeOption>>
+            getAssignees(@PathVariable UUID id) {
+        return ResponseEntity.ok(ticketService.eligibleAssignees(id));
+    }
+
     @PutMapping("/{id}/assign")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> assignTicket(

@@ -27,7 +27,9 @@ public class ChequeExtractionController {
     }
 
     @PostMapping(value = "/extract", consumes = "multipart/form-data")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER','TENANT_USER')")
+    // Staff who attach scans to a lease's cheques. TENANT_USER has no cheque
+    // register to attach to, so this was free storage and OCR spend (audit C-F4).
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public ResponseEntity<ChequeExtractionResponseDTO> extract(@RequestPart("file") MultipartFile file) {
         var tenantId = TenantContextHolder.getTenantId();
         if (tenantId == null) {

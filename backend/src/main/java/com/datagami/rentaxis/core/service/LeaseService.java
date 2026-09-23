@@ -1434,6 +1434,10 @@ public class LeaseService {
 
     @Transactional(readOnly = true)
     public List<LeaseEventDTO> getLeaseEvents(UUID leaseId) {
+        // Same guard as the lease itself: a manager reads events only on their
+        // buildings (audit P1-3 / B-F2).
+        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found")));
         return leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId).stream()
                 .map(this::mapEventToDTO)
                 .collect(Collectors.toList());

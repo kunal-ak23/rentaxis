@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.AmenityCreateRequest;
 import com.datagami.rentaxis.api.dto.AmenityDTO;
 import com.datagami.rentaxis.api.dto.AmenityUpdateRequest;
 import com.datagami.rentaxis.api.exception.AccessDeniedException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.BookingService;
 import com.datagami.rentaxis.core.service.FacilityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -17,7 +18,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -69,7 +69,6 @@ class AmenityControllerTest {
     @Mock
     UserPropertyAssignmentRepository assignmentRepository;
 
-    @InjectMocks
     AmenityController controller;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -79,6 +78,7 @@ class AmenityControllerTest {
 
     @BeforeEach
     void setUp() {
+        controller = new AmenityController(facilityService, bookingService, bookingRequestRepository, amenityScopeRepository, propertyScope());
         TenantContextHolder.setTenantId(tenantId);
         authenticateAs(adminUserId, "ROLE_TENANT_ADMIN");
     }
@@ -173,19 +173,19 @@ class AmenityControllerTest {
     }
 
     @Test
-    void create_pmWithoutAssignment_throwsAccessDenied() {
+    void create_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.create(
                 new AmenityCreateRequest(propertyId, "Gym", null, null, null, null)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
     void create_pmWithAssignment_allowed() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(true);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(assignedTo(propertyId));
         PropertyAmenity a = amenity();
         when(facilityService.createAmenity(eq(tenantId), any())).thenReturn(a);
         when(facilityService.amenityBuildingIds(a.getId())).thenReturn(List.of());
@@ -218,15 +218,15 @@ class AmenityControllerTest {
     }
 
     @Test
-    void update_pmWithoutAssignment_throwsAccessDenied() {
+    void update_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
         PropertyAmenity a = amenity();
         when(facilityService.getAmenity(tenantId, a.getId())).thenReturn(a);
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.update(a.getId(),
                 new AmenityUpdateRequest("Gym 2", null, null, null, null, null)))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -241,13 +241,27 @@ class AmenityControllerTest {
     }
 
     @Test
-    void delete_pmWithoutAssignment_throwsAccessDenied() {
+    void delete_pmWithoutAssignment_throwsNotFound() {
         authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
         PropertyAmenity a = amenity();
         when(facilityService.getAmenity(tenantId, a.getId())).thenReturn(a);
-        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(false);
+        when(assignmentRepository.findByUserId(pmUserId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.deactivate(a.getId()))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    /** The real shared scope over the mocked assignment table: the assignment check is what is under test. */
+    private com.datagami.rentaxis.core.security.PropertyScope propertyScope() {
+        return new com.datagami.rentaxis.core.security.PropertyScope(
+                new com.datagami.rentaxis.core.security.LeaseAccessPolicy(assignmentRepository, scopeRenterRepository));
+    }
+
+    @Mock com.datagami.rentaxis.domain.repository.RenterRepository scopeRenterRepository;
+
+    private static List<com.datagami.rentaxis.domain.entity.UserPropertyAssignment> assignedTo(UUID propertyId) {
+        var a = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        a.setPropertyId(propertyId);
+        return List.of(a);
     }
 }

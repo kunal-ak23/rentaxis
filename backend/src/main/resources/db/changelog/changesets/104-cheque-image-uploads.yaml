@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # Audit C-F2 (round 5): bulk-attach stored whatever imageBlobPath the client
+  # sent, and the nightly retention purge then deleted that path from the
+  # tenant's container, so a staff member could schedule the deletion of any
+  # same-tenant blob (a lease contract, a voucher PDF) by attaching its path to
+  # a cheque with an old date. The server now records every image it issues
+  # through POST /api/v1/cheques/extract, and bulk-attach accepts only a path
+  # from this table, for this tenant, not yet claimed by another cheque.
+  - changeSet:
+      id: 104-cheque-image-uploads
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: cheque_image_uploads
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: blob_path, type: varchar(300), constraints: { nullable: false } }
+              - column: { name: image_url, type: varchar(1000) }
+              - column: { name: uploaded_by, type: uuid }
+              - column: { name: uploaded_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: cheque_id, type: uuid }
+        - addUniqueConstraint:
+            tableName: cheque_image_uploads
+            columnNames: tenant_id, blob_path
+            constraintName: uq_cheque_image_uploads_path
+      rollback:
+        - dropTable:
+            tableName: cheque_image_uploads

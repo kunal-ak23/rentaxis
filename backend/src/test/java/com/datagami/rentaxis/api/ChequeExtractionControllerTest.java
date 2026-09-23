@@ -125,14 +125,14 @@ class ChequeExtractionControllerTest {
         mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
     }
 
+    /** Audit C-F4: a tenant user has no cheque register to attach a scan to. */
     @Test
     @WithMockUser(roles = "TENANT_USER")
-    void extract_authorizedRole_tenantUser_returns200() throws Exception {
-        when(service.extractAndStore(eq(tenantId), any())).thenReturn(
-                new ChequeExtractionResponseDTO(new ChequeImageMetaDTO("https://blob", "cheques/abc.jpg", OffsetDateTime.now()), null, List.of("w"))
-        );
+    void extract_tenantUser_isForbidden() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
-        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant()))
+                .andExpect(status().isForbidden());
+        org.mockito.Mockito.verifyNoInteractions(service);
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor withTenant() {

@@ -849,4 +849,55 @@ class ContractGenerationServiceTest {
         f.setAccessible(true);
         return (LeaseRepository) f.get(svc);
     }
+
+    /**
+     * A charge-type name is catalogue text a TENANT_ADMIN or accountant edits, and
+     * Section 3 used to print it raw. With markup in it, the renderer fetched
+     * whatever the markup pointed at — a cloud-metadata URL, a local file. The name
+     * must come out as text, and the renderer itself must not fetch even when a
+     * value slips through unescaped.
+     */
+    @Test
+    void chargeTypeNameWithMarkup_isEscapedAndNothingIsFetched() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", ex -> { hits.incrementAndGet(); ex.sendResponseHeaders(404, -1); ex.close(); });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/latest/meta-data";
+            String name = "Maintenance & Repairs <img src=\"" + url + "\"/> <img src=\"file:///etc/passwd\"/>";
+
+            UUID tenantId = UUID.randomUUID();
+            Lease lease = buildLease(tenantId, buildUnit(tenantId, buildProperty(tenantId, PropertyType.RESIDENTIAL)),
+                    buildRenter(tenantId), false);
+            lease.setContractNumber(9L);
+            List<LeaseLine> lines = new ArrayList<>(buildLines(false));
+            lines.add(leaseLine(5, name, ChargeBehaviour.FEE, new BigDecimal("150"), false));
+            ContractGenerationService svc = buildSpyForFullFlow(lease, buildLandlordOrg(tenantId),
+                    buildRegister(), lines, 8L, Files.createTempDirectory("contract-test-"));
+
+            ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+            svc.previewContract(lease.getId());
+            verify(svc).renderPdf(htmlCaptor.capture());
+            String html = htmlCaptor.getValue();
+
+            assertThat(html).contains("Maintenance &amp; Repairs &lt;img src=&quot;" + url + "&quot;/&gt;");
+            assertThat(html).contains("&lt;img src=&quot;file:///etc/passwd&quot;/&gt;");
+            assertThat(html).doesNotContain("<img");
+
+            // The escaped contract renders, and makes no request.
+            byte[] pdf = service.renderPdf(html);
+            assertThat(new String(pdf, 0, 5, java.nio.charset.StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+            assertThat(hits.get()).isZero();
+
+            // Defence in depth: the same markup unescaped still fetches nothing.
+            String raw = "<html><head><link rel=\"stylesheet\" href=\"" + url + "/c.css\"/></head><body>"
+                    + "<img src=\"" + url + "\"/><img src=\"file:///etc/passwd\"/></body></html>";
+            service.renderPdf(raw);
+            assertThat(hits.get()).isZero();
+        } finally {
+            server.stop(0);
+        }
+    }
 }

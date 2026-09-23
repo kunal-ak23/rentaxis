@@ -23,10 +23,13 @@ public class ChequeExtractionService {
 
     private final BlobStorageService blobStorage;
     private final ChequeExtractor extractor;
+    private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository uploads;
 
-    public ChequeExtractionService(BlobStorageService blobStorage, ChequeExtractor extractor) {
+    public ChequeExtractionService(BlobStorageService blobStorage, ChequeExtractor extractor,
+                                   com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository uploads) {
         this.blobStorage = blobStorage;
         this.extractor = extractor;
+        this.uploads = uploads;
     }
 
     public ChequeExtractionResponseDTO extractAndStore(UUID tenantId, MultipartFile file) {
@@ -34,6 +37,13 @@ public class ChequeExtractionService {
 
         var uploadResult = blobStorage.uploadCheque(tenantId, file);
         var uploadedAt = OffsetDateTime.now();
+        // The server-issued path is the only one bulk-attach will accept (audit C-F2).
+        var issued = new com.datagami.rentaxis.domain.entity.ChequeImageUpload();
+        issued.setTenantId(tenantId);
+        issued.setBlobPath(uploadResult.blobPath());
+        issued.setImageUrl(uploadResult.url());
+        issued.setUploadedBy(callerIdOrNull());
+        uploads.save(issued);
 
         ChequeExtractor.ExtractionResult extractionResult;
         try {
@@ -48,6 +58,15 @@ public class ChequeExtractionService {
                 extractionResult.extracted(),
                 extractionResult.warnings()
         );
+    }
+
+    private static java.util.UUID callerIdOrNull() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            return auth == null ? null : java.util.UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private void validate(MultipartFile file) {

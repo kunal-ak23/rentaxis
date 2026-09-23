@@ -633,6 +633,9 @@
     "saving": "Saving...",
     "savedSuccess": "Listing saved successfully.",
     "saveError": "Failed to save listing. Please try again.",
+    "listingNotFound": "This listing was not found. It may have been deleted, or it belongs to another organisation.",
+    "listingLoadFailed": "This listing could not be loaded. Please try again.",
+    "backToListingsLink": "Back to listings",
     "publishSuccess": "Listing published successfully.",
     "unlistSuccess": "Listing unlisted successfully.",
     "titleEn": "Title (English)",
@@ -2470,6 +2473,7 @@
     "otpLockedStaffHint": "OTP closure is locked for this ticket after too many wrong codes. A tenant admin can close it."
   },
   "RenterHome": {
+    "pastContracts": "Past contracts ({count})",
     "renterFallback": "Renter",
     "nextPayment": "Next payment",
     "daysOverdue": "{count, plural, one {# day overdue} other {# days overdue}}",

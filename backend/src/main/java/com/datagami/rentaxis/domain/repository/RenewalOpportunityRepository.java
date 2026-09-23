@@ -25,4 +25,8 @@ public interface RenewalOpportunityRepository extends JpaRepository<RenewalOppor
      */
     @Query(value = "SELECT * FROM renewal_opportunities WHERE id = :id", nativeQuery = true)
     Optional<RenewalOpportunity> findByIdAcrossTenants(@Param("id") UUID id);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM RenewalOpportunity o WHERE o.id = :id")
+    Optional<RenewalOpportunity> findByIdForUpdate(@Param("id") UUID id);
 }

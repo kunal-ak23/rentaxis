@@ -33,12 +33,27 @@ public class RenewalIntentService {
     /** Called from the public token endpoint AFTER token verify + tenant context set. */
     @Transactional
     public RenewalOpportunity captureIntentFromToken(UUID opportunityId, RenewalIntent intent) {
-        RenewalOpportunity o = opportunityRepository.findById(opportunityId)
+        // Locked, so two clicks on the same email cannot both see "no choice yet".
+        RenewalOpportunity o = opportunityRepository.findByIdForUpdate(opportunityId)
                 .orElseThrow(() -> new NotFoundException("Opportunity not found"));
         if (o.getStage() == RenewalStage.CLOSED_WON || o.getStage() == RenewalStage.CLOSED_LOST) {
             throw new BusinessRuleViolationException("Renewal is already resolved");
         }
+        // Single use (audit B-F5): once a choice is on record, the emailed links
+        // are spent. Both links of one email used to stay live until lease end, so
+        // anyone the email was forwarded to could flip the renter's decision. A
+        // renter who changes their mind does so signed in, in the portal.
+        if (o.getIntentCapturedAt() != null || o.getStage() == RenewalStage.INTENT_CAPTURED) {
+            throw new IntentAlreadyRecordedException();
+        }
         return applyIntent(o, intent, o.getLease().getRenter().getUserId());
+    }
+
+    /** A renewal link used after the renter's choice was already recorded. */
+    public static class IntentAlreadyRecordedException extends BusinessRuleViolationException {
+        public IntentAlreadyRecordedException() {
+            super("A choice is already recorded for this renewal");
+        }
     }
 
     /** Called from the authenticated renter endpoint. */
