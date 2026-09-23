@@ -386,6 +386,11 @@ buildings, staff and bank accounts.
 - **M08:** Ahmed takes a second unit, A-203, for his parents: 64,000 plus a 6,400 deposit, 4 uniform cheques, from 15/10/2026. Staff drafted the lease and generated the contract (PENDING SIGNATURE, stored PDF). Ahmed downloaded it (47 KB) and pressed **Accept Lease**, and the accountant posted it (**ACTIVE**, 1 TCO and 4 PDRs).
 - **Found along the way:** the accept/reject buttons stay after acceptance and staff never see it (#79). The PDCs posted without cheque numbers (#80). Stored contracts download fine, so #75 is only the render-from-posted-lease fallback.
 
+**S08 · 24 Sep 2026 — onboarding a second building by Excel.** Using the app's own template headers:
+- **Messy file** (unknown unit, unknown renter, end date before start, dd/mm dates, non-numeric rent, an orphan cheque): refused with 7 precise sheet/row/column errors, and nothing imported. The dd/mm refusal is harsh for the UAE (#82).
+- **Clean file:** "Import Successful". **Al Waha Towers** now lists 6 units, 50% occupied.
+- **The accounting behind it is wrong (#83):** the three ACTIVE leases were never posted. Their cheques are DRAFT, and they cover rent only, not deposit or fee. The property has no ledger accounts, and a monthly rent was annualised to 98,000.04. The dashboard still counts all of it as active revenue.
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
