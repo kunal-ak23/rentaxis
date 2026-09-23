@@ -111,6 +111,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
     const [pmUsers, setPmUsers] = useState<PMUser[]>([]);
     const [selectedPmId, setSelectedPmId] = useState("");
+    const [pmLoadState, setPmLoadState] = useState<"idle" | "loading" | "loaded">("idle");
     const [defaultHostId, setDefaultHostId] = useState<string>("");
     const [defaultHostStatus, setDefaultHostStatus] = useState<"idle" | "loading" | "ok" | "not_found" | "error">("idle");
 
@@ -140,6 +141,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setSelectedSlot(null);
             setPmUsers([]);
             setSelectedPmId("");
+            setPmLoadState("idle");
             setDefaultHostId("");
             setDefaultHostStatus("idle");
             setNotes("");
@@ -210,6 +212,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     const fetchPmUsers = useCallback(async (propertyId: string) => {
         if (!propertyId) return;
+        setPmLoadState("loading");
         try {
             const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
             if (res.ok) {
@@ -221,7 +224,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     email: u.email ?? "",
                 })));
             }
-        } catch { /* ignore */ }
+        } catch { /* ignore */ } finally {
+            setPmLoadState("loaded");
+        }
     }, []);
 
     const fetchSlots = useCallback(async (date: string, hostUserId: string) => {
@@ -254,7 +259,17 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         else setUnits([]);
         setPmUsers([]);
         setSelectedPmId("");
+        setPmLoadState("idle");
     }, [selectedPropertyId, fetchUnits]);
+
+    // A property with no assigned managers (common in an owner-run org) leaves
+    // the staff PM picker empty. Fall back to the org's default host — the same
+    // TENANT_ADMIN-then-PROPERTY_MANAGER pick renters get from
+    // /meetings/default-host. It is scoped to the current tenant, so a
+    // SUPER_ADMIN (NULL tenant_id) is never offered as a host.
+    const staffUsesDefaultHost = !isRenter && pmLoadState === "loaded" && pmUsers.length === 0;
+    const usesDefaultHost = isRenter || staffUsesDefaultHost;
+    const hostBlocked = usesDefaultHost && (defaultHostStatus === "not_found" || defaultHostStatus === "error");
 
     // Derive hostUserId for slot fetching.
     // LeaseDTO carries no manager id, so office-visit hosts always come from
@@ -262,10 +277,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const deriveHostUserId = useCallback((): string => {
         if (meetingType === "PROPERTY_VISIT") {
             const prop = properties.find((p) => p.id === selectedPropertyId);
-            return prop?.managerId || selectedPmId || defaultHostId;
+            return prop?.managerId || selectedPmId || (usesDefaultHost ? defaultHostId : "");
         }
-        return selectedPmId || defaultHostId;
-    }, [meetingType, properties, selectedPropertyId, selectedPmId, defaultHostId]);
+        return selectedPmId || (usesDefaultHost ? defaultHostId : "");
+    }, [meetingType, properties, selectedPropertyId, selectedPmId, defaultHostId, usesDefaultHost]);
 
     // Determine if we need to show PM picker (can't derive host)
     const needsPmPicker = useCallback((): boolean => {
@@ -285,7 +300,8 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         if (propertyId) fetchPmUsers(propertyId);
     }, [step, meetingType, selectedPropertyId, selectedLeaseId, leases, needsPmPicker, fetchPmUsers]);
 
-    // For renters: fetch the default host when entering step 3 (no PM picker shown).
+    // For renters (no PM picker), and for staff whose property has no assigned
+    // managers: fetch the default host when entering step 3.
     // The backend 404s when the org has no TENANT_ADMIN/PROPERTY_MANAGER to assign —
     // that must surface as an explanation, not a silently dead slot grid.
     const fetchDefaultHost = useCallback(async () => {
@@ -313,10 +329,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     }, []);
 
     useEffect(() => {
-        if (step === 3 && isRenter && defaultHostStatus === "idle") {
+        if (step === 3 && usesDefaultHost && defaultHostStatus === "idle") {
             fetchDefaultHost();
         }
-    }, [step, isRenter, defaultHostStatus, fetchDefaultHost]);
+    }, [step, usesDefaultHost, defaultHostStatus, fetchDefaultHost]);
 
     useEffect(() => {
         const hostId = deriveHostUserId();
@@ -334,7 +350,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             if (meetingType === "PROPERTY_VISIT") return selectedPropertyId !== "";
         }
         if (step === 3) {
-            if (isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) return false;
+            if (hostBlocked) return false;
             return selectedSlot !== null;
         }
         if (step === 4) return true;
@@ -582,7 +598,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {step === 3 && (
                         <div className="space-y-4">
                             {/* PM Picker — shown when we can't derive host */}
-                            {showPmPicker && (
+                            {showPmPicker && !staffUsesDefaultHost && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property Manager *</label>
                                     <select
@@ -598,14 +614,21 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 </div>
                             )}
 
-                            {/* Renter: no host available to meet with — replace the picker with an explanation */}
-                            {isRenter && defaultHostStatus === "not_found" && (
-                                <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3">
-                                    <p className="text-xs text-start text-warning">{t("noHostAvailable")}</p>
+                            {/* Staff, property has no assigned manager: say who will host instead of an empty picker */}
+                            {showPmPicker && staffUsesDefaultHost && defaultHostStatus === "ok" && (
+                                <div className="bg-input/40 border border-border rounded-lg px-4 py-3">
+                                    <p className="text-xs text-start text-muted">{t("defaultHostFallback")}</p>
                                 </div>
                             )}
 
-                            {isRenter && defaultHostStatus === "error" && (
+                            {/* No host available to meet with — replace the picker with an explanation */}
+                            {usesDefaultHost && defaultHostStatus === "not_found" && (
+                                <div className="bg-warning/10 border border-warning/30 rounded-lg px-4 py-3">
+                                    <p className="text-xs text-start text-warning">{t(isRenter ? "noHostAvailable" : "staffNoHostAvailable")}</p>
+                                </div>
+                            )}
+
+                            {usesDefaultHost && defaultHostStatus === "error" && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 space-y-2">
                                     <p className="text-xs text-start text-error">{t("slotsLoadError")}</p>
                                     <button
@@ -619,7 +642,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             )}
 
                             {/* Date */}
-                            {!(isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) && (
+                            {!hostBlocked && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Preferred Date *</label>
                                     <input
@@ -633,7 +656,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             )}
 
                             {/* Slot Grid */}
-                            {selectedDate && !(isRenter && (defaultHostStatus === "not_found" || defaultHostStatus === "error")) && (
+                            {selectedDate && !hostBlocked && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">
                                         Available Slots

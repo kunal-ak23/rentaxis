@@ -108,6 +108,61 @@ describe("CreateMeetingModal (property visit data contracts)", () => {
     });
 });
 
+describe("CreateMeetingModal (staff, property with no assigned manager — #61)", () => {
+    async function goToStep3(fetchMock: ReturnType<typeof vi.fn>) {
+        global.fetch = fetchMock as unknown as typeof fetch;
+        render(
+            <CreateMeetingModal isOpen onClose={() => {}} onSuccess={() => {}} session={staffSession} />,
+        );
+        await goToPropertyVisitStep2();
+        const [propertySelect] = screen.getAllByRole("combobox");
+        fireEvent.change(propertySelect, { target: { value: "p1" } });
+        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    }
+
+    function routes(defaultHost: { ok: boolean; status: number; body: unknown }) {
+        return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            const json = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+            if (url.startsWith("/api/proxy/v1/meetings/default-host")) {
+                return Promise.resolve({ ok: defaultHost.ok, status: defaultHost.status, json: () => Promise.resolve(defaultHost.body) });
+            }
+            if (url.startsWith("/api/proxy/v1/meetings/slots")) {
+                return json([{ start: "2027-01-01T09:00:00Z", end: "2027-01-01T09:30:00Z", available: true }]);
+            }
+            if (url.startsWith("/api/proxy/v1/properties/p1/managers")) return json([]);
+            if (url.startsWith("/api/proxy/v1/properties")) return json(propertyRows([]));
+            return json([]);
+        });
+    }
+
+    it("falls back to the org's default host instead of an empty manager picker", async () => {
+        const fetchMock = routes({ ok: true, status: 200, body: { userId: "admin-1" } });
+        await goToStep3(fetchMock);
+
+        await screen.findByText("defaultHostFallback");
+        expect(screen.queryByText("Property Manager *")).toBeNull();
+
+        const dateInput = document.querySelector('input[type="date"]');
+        if (!dateInput) throw new Error("date input not found");
+        fireEvent.change(dateInput, { target: { value: "2027-01-01" } });
+        await vi.waitFor(() => {
+            const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+            expect(calls.some((u) => u.includes("/api/proxy/v1/meetings/slots?hostUserId=admin-1"))).toBe(true);
+        });
+    });
+
+    it("explains the dead end when the org has no eligible host at all", async () => {
+        const fetchMock = routes({ ok: false, status: 404, body: {} });
+        await goToStep3(fetchMock);
+
+        await screen.findByText("staffNoHostAvailable");
+        expect(screen.queryByText("Property Manager *")).toBeNull();
+        expect(screen.queryByText("Preferred Date *")).toBeNull();
+        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+    });
+});
+
 const renterSession = { user: { role: "RENTER" } };
 
 const leaseRows = [
