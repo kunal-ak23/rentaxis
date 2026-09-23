@@ -76,6 +76,27 @@ public enum EmailEventType {
         this.recipientRoles = recipientRoles;
     }
 
+    /**
+     * Account-access mail that goes out whether or not the tenant has turned on
+     * EMAIL_NOTIFICATIONS (PR #342 review C1).
+     *
+     * <p>Invite-only onboarding (#7, #2) makes the set-password link the only way
+     * into a new account, and the flag defaults to OFF, so gating these would lock
+     * out every renter and staff member of a tenant that has not opted in —
+     * including a new organisation's first admin. The flag exists to hold back
+     * notification mail during rollout; these are credentials, not notifications.
+     *
+     * <p>An explicit list on purpose, not "every TRANSACTIONAL event": receipts,
+     * reminders and the rest are exactly what the rollout flag holds back. The
+     * global {@code rentaxis.email.outbox.enabled} kill-switch still applies.
+     */
+    public boolean bypassesTenantGate() {
+        return switch (this) {
+            case USER_INVITED, PASSWORD_RESET_REQUESTED, PASSWORD_CHANGED -> true;
+            default -> false;
+        };
+    }
+
     public EmailCategory category() { return category; }
     public AttachmentPolicy attachmentPolicy() { return attachmentPolicy; }
     public Set<RecipientRole> recipientRoles() { return recipientRoles; }

@@ -57,7 +57,10 @@ public class EmailDispatcher {
 
         // Per-tenant kill-switch: gate email dispatch on the EMAIL_NOTIFICATIONS feature flag.
         // Defaults to OFF — flipped on per-tenant from the admin UI during phased rollout.
-        if (!tenantFeatureService.isEnabled(event.getTenantId(), TenantFeature.EMAIL_NOTIFICATIONS)) {
+        // Account-access mail (invites, password reset/changed) is exempt: see
+        // EmailEventType.bypassesTenantGate.
+        if (!event.getType().bypassesTenantGate()
+                && !tenantFeatureService.isEnabled(event.getTenantId(), TenantFeature.EMAIL_NOTIFICATIONS)) {
             log.info("email.dispatch.skipped reason=feature_disabled tenant_id={} event_type={}",
                     event.getTenantId(), event.getType());
             return;
