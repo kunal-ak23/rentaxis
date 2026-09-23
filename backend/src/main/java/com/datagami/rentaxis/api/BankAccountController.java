@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.BankAccountRequest;
 import com.datagami.rentaxis.core.service.BankAccountService;
 import com.datagami.rentaxis.domain.entity.BankAccount;
 import org.springframework.http.ResponseEntity;
@@ -35,13 +36,13 @@ public class BankAccountController {
     }
 
     @PostMapping
-    public ResponseEntity<BankAccount> createBankAccount(@RequestBody BankAccount bankAccount) {
-        return ResponseEntity.ok(service.createBankAccount(bankAccount));
+    public ResponseEntity<BankAccount> createBankAccount(@RequestBody BankAccountRequest request) {
+        return ResponseEntity.ok(service.createBankAccount(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<BankAccount> updateBankAccount(@PathVariable UUID id, @RequestBody BankAccount bankAccount) {
-        return ResponseEntity.ok(service.updateBankAccount(id, bankAccount));
+    public ResponseEntity<BankAccount> updateBankAccount(@PathVariable UUID id, @RequestBody BankAccountRequest request) {
+        return ResponseEntity.ok(service.updateBankAccount(id, request));
     }
 
     @DeleteMapping("/{id}")
