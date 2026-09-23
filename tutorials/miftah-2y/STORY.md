@@ -393,6 +393,14 @@ buildings, staff and bank accounts.
 
 **M26 (cont.) · 24 Sep 2026 — Gulf Brew replaces its bounced cheque.** *Return & Replace* lists the three bounced cheques (Fatima's 300206 signature mismatch and 300204 account closed; Gulf Brew's 700102). Replacing 700102 with Emirates NBD **700105** dated 01/10/2026 for 31,500 ("residual 0.00 stays in rent receivable"): 700102 → REPLACED ↔ 700105 REGISTERED, linked both ways. No bounce fine was proposed, by policy: fines start at the 2nd bounce on a lease (`DEFAULT_BOUNCES_BEFORE_PENALTY = 2`); Fatima's second did get one. Small UI gaps: #84 (a "Deposit date" label on Replace) and #85 (the register ignores `?status=`).
 
+**#12 live + a renter ledger check · 24 Sep 2026.**
+- **Raise penalty (#12):** on G-01 staff raised a manual Cheque Return penalty of 500 for 700102 ("proposed, not charged; finance approves"). It showed as PROPOSED, and approving it posted **PEN-26/2**: Dr Rent Receivable 500 / Cr Cheque Return Penalty 500, with no VAT (a penalty is compensation, outside VAT scope).
+- **Ahmed's tenant ledger across two contracts reconciles:**
+  - Rent receivable nets to 0: TCO-26/4 91,800 and TCO-26/5 70,400, fully covered by PDR-26/13–20.
+  - Advance rent opens at 7,545.21 Cr, which is year 2's unrecognised September (91,800 ÷ 365 × 30).
+  - The security deposit is 28,400 Cr (22,000 carried + 6,400 new).
+  - The carry-forward narration shows a raw UUID (#86).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
