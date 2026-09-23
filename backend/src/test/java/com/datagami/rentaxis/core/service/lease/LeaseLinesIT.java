@@ -140,24 +140,13 @@ class LeaseLinesIT extends AbstractPostgresIT {
     }
 
     /**
-     * A lease drafted without an explicit grace takes the property's collection
-     * policy, not zero.
-     *
-     * <p>{@code rent_collection_settings.grace_period_days} had lost its last
-     * consumer: the settings screen went on saving a number that did nothing, while
-     * every lease created without an explicit grace was overdue on day one —
-     * chased by the reminder job and eligible for a late-payment fine the moment a
-     * cheque cleared a day late. Read at draft time and written onto the lease, so
-     * the window a renter agreed to does not move when somebody edits the
-     * property's policy in month nine.</p>
-     */
-    /**
      * #54: the header's "Rent carries VAT" flag was stored and ignored. A RENT
      * line sent without its own flag took the charge type's catalogue default
      * (off), so a commercial lease charged no VAT on rent until the operator also
      * ticked the line. A RENT line now follows the header; an explicit per-line
-     * flag still wins; other lines keep the catalogue default; and a deposit
-     * never carries VAT whatever its flag.
+     * flag still wins; other lines, the deposit included, keep the catalogue
+     * default. (That a deposit is never taxed whatever its flag says is
+     * {@code LeaseVatTest}'s to prove; nothing here would observe it.)
      */
     @Test
     void aRentLineWithNoFlagOfItsOwnFollowsTheHeadersRentVatFlag() {
@@ -182,6 +171,18 @@ class LeaseLinesIT extends AbstractPostgresIT {
                 .extracting(LeaseLineDTO::vatApplicable).containsExactly(false);
     }
 
+    /**
+     * A lease drafted without an explicit grace takes the property's collection
+     * policy, not zero.
+     *
+     * <p>{@code rent_collection_settings.grace_period_days} had lost its last
+     * consumer: the settings screen went on saving a number that did nothing, while
+     * every lease created without an explicit grace was overdue on day one —
+     * chased by the reminder job and eligible for a late-payment fine the moment a
+     * cheque cleared a day late. Read at draft time and written onto the lease, so
+     * the window a renter agreed to does not move when somebody edits the
+     * property's policy in month nine.</p>
+     */
     @Test
     void aDraftTakesItsGraceFromThePropertysCollectionSettings() {
         propertyGrace(5);
