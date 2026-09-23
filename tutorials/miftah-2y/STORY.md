@@ -53,7 +53,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
 | M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
 | M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
-| M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | planned |
+| M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | proven |
 | M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | in progress (bookings approved, ticket in progress; gate pass not on web — see M12 note) |
 | M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | proven |
 | M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | proven |
@@ -208,6 +208,15 @@ trial balance closed at **1,898,802.38 = 1,898,802.38**.
 were locked through 31/12/2024. A balanced manual JV dated 15/12/2024 (Bank Charges Dr 100 /
 Rounding Off Cr 100) was refused: *"Cannot post on 2024-12-15: books are locked through
 2024-12-31"*.
+
+**M11 · Apr–May 2026 — late rent and a goodwill waiver.** From the Penalties tab of
+Ahmed's lease, finance proposed a **Late Payment 460** (April instalment, 23 days past
+grace at 20/day) and an **Other 250** (lost access card). The 460 was approved as of
+28/04/2026 — `PEN-26/1` plus a CASH collection row on his register — and received on
+02/05/2026; the 250 was waived with a goodwill note and posted nothing. Late-payment
+penalties are proposed by hand here: the automatic proposal on a late clearing is off by
+default (`FineSettingsInitializer.DEFAULT_AUTO_PROPOSE_LATE_PAYMENT = false`). The receive
+dialog still titles the cash row *"#6"* although the register shows "—" (#43).
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
