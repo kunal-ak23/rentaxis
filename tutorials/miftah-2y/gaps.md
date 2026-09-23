@@ -50,6 +50,14 @@ Kind: **BUG** (behaves wrong) · **UI-GAP** (API can, screens cannot) · **MISSI
 | 9 | **A post-dated cheque can no longer be banked before its date.** `requireNotPresentedEarly` guards both the single deposit and the batch; the batch names the offending row and banks nothing. A cut-over `Replay` is exempt, because history has to stay reproducible. | 3 new tests in `ChequeServiceIT`; 5 existing tests updated — they had encoded the old behaviour by banking the whole grid on one early date |
 | 31 | **Per-property expense leaves are now generated** under `D-01 Direct Expense` — Repairs & Maintenance, Cleaning, Security, Utilities, Insurance, Management Fees — so a supplier invoice can be coded on a fresh tenant. Idempotent, and skipped quietly for a tenant whose chart has no `D-01`. | 2 new tests in `PropertyAccountServiceIT` |
 
+| 11 | **The Clear dialog's date is labelled "Clearing Date"** instead of "Deposit Date", and a cash receipt says "Receipt Date" (`ReceiveCashDialog` had the same mislabel). That field sets the value date of the CRT, i.e. which period the cash lands in. | en + ar locale keys; web typecheck + 259 component tests |
+| 26 | **The termination help text now matches the arithmetic** — "Returning a row reverses its registration and hands the instrument back — the amount goes back to rent receivable and is still owed." Previously it claimed the debt disappeared while the figure on screen rose by the cheque amount. | en + ar locale keys |
+
+Committed as `a52eda2f` on `fix/miftah-2y-simulation-gaps`. Verification run:
+**320 tests** across the 15 cheque/account suites, the **golden ledger gate
+(16 tests, 0 failures — both PACT replays still tie row by row)**, web typecheck
+clean, **259** component tests.
+
 **Note on the expense categories:** the six names above are a starting set, not a
 decision. They are plain leaves carrying no `AccountRole`, so nothing posts to them
 automatically and the list can be changed freely — but it is the chart every new
