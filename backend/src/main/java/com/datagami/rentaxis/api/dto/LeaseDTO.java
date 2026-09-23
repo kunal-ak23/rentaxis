@@ -80,6 +80,10 @@ public class LeaseDTO {
     /** The {@code TCR} that reversed the unearned rent, when there was any. */
     private UUID terminationJournalId;
     private String terminationNotes;
+    /** #27: when notice was given, by whom, and the move-out date it names. */
+    private LocalDate noticeDate;
+    private com.datagami.rentaxis.domain.entity.enums.NoticeParty noticeGivenBy;
+    private LocalDate intendedMoveOutDate;
 
     /** Σ of every line's net — what the contract is worth in total. */
     private BigDecimal contractValue;

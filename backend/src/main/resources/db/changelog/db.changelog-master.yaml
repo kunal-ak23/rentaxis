@@ -193,3 +193,5 @@ databaseChangeLog:
       file: db/changelog/changesets/92-lease-addenda-purge.yaml
   - include:
       file: db/changelog/changesets/93-penalty-incident-date.yaml
+  - include:
+      file: db/changelog/changesets/94-lease-notice-details.yaml

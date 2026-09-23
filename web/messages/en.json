@@ -1720,6 +1720,14 @@
     "removeFilter": "Remove this filter"
   },
   "Leasing": {
+    "noticeGivenBy": "Given by",
+    "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
+    "noticeDate": "Notice date",
+    "intendedMoveOut": "Intended move-out",
+    "noticeNotes": "Notes",
+    "landlordNoticeHint": "A landlord's notice to vacate generally has to be notarised or sent by registered mail, and served 12 months ahead. Keep the served copy with the lease documents.",
+    "noticeSummary": "Notice given by {party} on {date}",
+    "noticeMoveOut": "move-out {date}",
     "raisePenalty": "Raise penalty",
     "penaltyCategory": "Category",
     "penaltyIncidentDate": "Date of incident",

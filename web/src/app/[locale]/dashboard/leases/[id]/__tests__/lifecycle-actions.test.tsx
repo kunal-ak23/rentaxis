@@ -111,7 +111,10 @@ describe("Give notice", () => {
         renderPage();
         fireEvent.click(await screen.findByTestId("lease-give-notice"));
         fireEvent.click(await screen.findByTestId("lease-give-notice-confirm"));
-        await waitFor(() => expect(api.notice).toHaveBeenCalledWith("lease-1"));
+        // #27: the notice carries its date (today, Dubai) and party (renter by default).
+        await waitFor(() => expect(api.notice).toHaveBeenCalledWith("lease-1", expect.objectContaining({
+            givenBy: "RENTER", noticeDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), intendedMoveOutDate: null,
+        })));
         // The page re-reads the lease rather than assuming the new status.
         await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
     });
@@ -183,5 +186,41 @@ describe("Settle link", () => {
         renderPage();
         await screen.findByTestId("lease-actions");
         expect(screen.queryByTestId("lease-settle")).not.toBeInTheDocument();
+    });
+});
+
+describe("Give notice — particulars (#27)", () => {
+    it("records a landlord's notice with its date and move-out", async () => {
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-give-notice"));
+        fireEvent.change(screen.getByLabelText(en.Leasing.noticeGivenBy), { target: { value: "LANDLORD" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.noticeDate), { target: { value: "2026-09-01" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.intendedMoveOut), { target: { value: "2027-09-01" } });
+        expect(screen.getByText(en.Leasing.landlordNoticeHint)).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("lease-give-notice-confirm"));
+
+        await waitFor(() => expect(api.notice).toHaveBeenCalledWith("lease-1", {
+            givenBy: "LANDLORD", noticeDate: "2026-09-01", intendedMoveOutDate: "2027-09-01", notes: null,
+        }));
+    });
+
+    it("will not take a move-out before the notice date", async () => {
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-give-notice"));
+        fireEvent.change(screen.getByLabelText(en.Leasing.noticeDate), { target: { value: "2026-09-01" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.intendedMoveOut), { target: { value: "2026-08-01" } });
+
+        expect(screen.getByTestId("lease-give-notice-confirm")).toBeDisabled();
+    });
+
+    it("shows who gave notice, when, and the move-out on the lease", async () => {
+        api.get.mockImplementation(async () => ({
+            ...lease("NOTICE_GIVEN"), noticeDate: "2026-09-01", noticeGivenBy: "LANDLORD", intendedMoveOutDate: "2027-09-01",
+        }));
+        renderPage();
+
+        const summary = await screen.findByTestId("lease-notice-summary");
+        expect(summary).toHaveTextContent("Notice given by Landlord on 01/09/2026");
+        expect(summary).toHaveTextContent("move-out 01/09/2027");
     });
 });

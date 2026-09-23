@@ -1,0 +1,22 @@
+databaseChangeLog:
+  # #27: "Give notice" recorded only the status flip, with no date and no party.
+  # Notice periods are counted from a date, and a renter's notice and a
+  # landlord's are different instruments, so both are stored now, with the move-
+  # out date the notice names when it names one. Nullable: leases put under
+  # notice before this carry none of it, and nothing is invented for them.
+  - changeSet:
+      id: 94-lease-notice-details
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: notice_date
+                  type: date
+              - column:
+                  name: notice_given_by
+                  type: varchar(20)
+              - column:
+                  name: intended_move_out_date
+                  type: date

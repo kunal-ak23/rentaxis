@@ -1720,6 +1720,14 @@
     "removeFilter": "إزالة هذا المرشّح"
   },
   "Leasing": {
+    "noticeGivenBy": "مقدَّم من",
+    "noticeParty": {"RENTER": "المستأجر", "LANDLORD": "المالك"},
+    "noticeDate": "تاريخ الإشعار",
+    "intendedMoveOut": "تاريخ الإخلاء المتوقع",
+    "noticeNotes": "ملاحظات",
+    "landlordNoticeHint": "يجب عادةً أن يكون إشعار المالك بالإخلاء موثقًا لدى كاتب العدل أو مرسلًا بالبريد المسجل، وأن يُبلَّغ قبل 12 شهرًا. احتفظ بالنسخة المُبلَّغة مع مستندات العقد.",
+    "noticeSummary": "إشعار مقدَّم من {party} بتاريخ {date}",
+    "noticeMoveOut": "الإخلاء {date}",
     "raisePenalty": "فرض غرامة",
     "penaltyCategory": "الفئة",
     "penaltyIncidentDate": "تاريخ الواقعة",

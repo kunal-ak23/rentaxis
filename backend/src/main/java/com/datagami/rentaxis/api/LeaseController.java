@@ -261,7 +261,8 @@ public class LeaseController {
             HttpServletRequest httpRequest) {
         String userIdStr = httpRequest.getHeader("X-User-Id");
         UUID byUser = userIdStr != null ? UUID.fromString(userIdStr) : null;
-        return ResponseEntity.ok(leaseService.giveNotice(id, request == null ? null : request.notes(), byUser));
+        return ResponseEntity.ok(leaseService.giveNotice(id,
+                request == null ? new GiveNoticeRequest(null) : request, byUser));
     }
 
     /**

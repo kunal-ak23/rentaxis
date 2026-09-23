@@ -31,11 +31,12 @@ import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
+import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
-    type ChargeType, type Cheque, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
+    type ChargeType, type Cheque, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
 } from "@/lib/api/leasing";
 
 /**
@@ -335,11 +336,11 @@ export default function LeaseDetailPage() {
      * `LeaseTerminationService.TERMINABLE`), so the page re-reads the lease
      * rather than assuming what came back.
      */
-    const handleGiveNotice = async () => {
+    const handleGiveNotice = async (input: GiveNoticeInput) => {
         setNoticeBusy(true);
         setError(null);
         try {
-            await terminationApi.notice(leaseId);
+            await terminationApi.notice(leaseId, input);
             setNoticeOpen(false);
             await loadLease();
         } catch (e) {
@@ -500,6 +501,15 @@ export default function LeaseDetailPage() {
                         </div>
                         <p className="text-[12.5px] text-[var(--ink-500)]">{lease.propertyName}</p>
                         <p className="text-sm text-muted">{lease.renterName}</p>
+                        {lease.noticeDate && (
+                            <p className="text-[11px] text-warning font-medium mt-0.5" data-testid="lease-notice-summary">
+                                {t("noticeSummary", {
+                                    party: t(`noticeParty.${lease.noticeGivenBy ?? "RENTER"}`),
+                                    date: fmtIsoDate(lease.noticeDate, locale),
+                                })}
+                                {lease.intendedMoveOutDate && ` · ${t("noticeMoveOut", { date: fmtIsoDate(lease.intendedMoveOutDate, locale) })}`}
+                            </p>
+                        )}
                         <div className="flex items-center gap-3 flex-wrap mt-1 text-[11px]">
                             {lease.renewedFromLeaseId && (
                                 <Link href={`/dashboard/leases/${lease.renewedFromLeaseId}`} className="text-primary hover:underline" data-testid="lease-renewed-from">
@@ -1063,16 +1073,11 @@ export default function LeaseDetailPage() {
                 }}
             />
 
-            <ConfirmDialog
-                isOpen={noticeOpen}
+            <GiveNoticeDialog
+                open={noticeOpen}
+                busy={noticeBusy}
                 onClose={() => setNoticeOpen(false)}
                 onConfirm={handleGiveNotice}
-                isLoading={noticeBusy}
-                title={t("giveNotice")}
-                description={t("giveNoticeConfirm")}
-                confirmText={t("giveNotice")}
-                cancelText={t("cancel")}
-                confirmTestId="lease-give-notice-confirm"
             />
 
             <ConfirmDialog

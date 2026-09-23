@@ -256,6 +256,10 @@ export type LeaseDetail = {
   /** The `TCR`, or null when nothing was unearned. */
   terminationJournalId: string | null;
   terminationNotes: string | null;
+  /** #27: when notice was given, by whom, and the move-out date it names. Absent on older rows. */
+  noticeDate?: string | null;
+  noticeGivenBy?: NoticeParty | null;
+  intendedMoveOutDate?: string | null;
   lines: LeaseLine[];
 };
 
@@ -974,6 +978,17 @@ export const recognitionApi = {
   leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
 };
 
+/** Who gave notice (#27): the renter leaving, or the landlord serving notice. */
+export type NoticeParty = "RENTER" | "LANDLORD";
+
+/** GiveNoticeRequest — every field optional; the server defaults the date to today and the party to RENTER. */
+export type GiveNoticeInput = {
+  notes?: string | null;
+  noticeDate?: string | null;
+  givenBy?: NoticeParty | null;
+  intendedMoveOutDate?: string | null;
+};
+
 /** Notice and termination (spec §9.1) — `LeaseController` :250-296. */
 export const terminationApi = {
   /** Readable by a PROPERTY_MANAGER on their own buildings; writing is one role narrower. */
@@ -981,7 +996,7 @@ export const terminationApi = {
     get<TerminationPreview>(`/leases/${id}/terminate/preview${qs({ date })}`),
   terminate: (id: string, body: TerminateLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/terminate`, body),
   /** ACTIVE → NOTICE_GIVEN. Writes no journal, which is why it admits a manager. */
-  notice: (id: string, notes?: string | null) => send<LeaseDetail>("POST", `/leases/${id}/notice`, { notes }),
+  notice: (id: string, body: GiveNoticeInput = {}) => send<LeaseDetail>("POST", `/leases/${id}/notice`, body),
 };
 
 /**

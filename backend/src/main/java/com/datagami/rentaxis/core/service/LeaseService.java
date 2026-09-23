@@ -1118,6 +1118,20 @@ public class LeaseService {
      */
     @Transactional
     public LeaseDTO giveNotice(UUID leaseId, String notes, UUID byUser) {
+        return giveNotice(leaseId, new com.datagami.rentaxis.api.dto.lease.GiveNoticeRequest(notes), byUser);
+    }
+
+    /**
+     * {@link #giveNotice(UUID, String, UUID)} with the notice's particulars (#27):
+     * the day it was given (default today on the app clock, never in the future),
+     * who gave it (default RENTER, which is all this used to mean) and the move-out
+     * date it names, if any (not before the notice date). They are stored on the
+     * lease and written into the lease event, so the trail says what was served,
+     * by whom and when.
+     */
+    @Transactional
+    public LeaseDTO giveNotice(UUID leaseId, com.datagami.rentaxis.api.dto.lease.GiveNoticeRequest request,
+                               UUID byUser) {
         // Locked, like every sibling transition (markExpired, markTerminated,
         // finalizeSettlement, terminate). Without it a notice racing a termination
         // is caught only by @Version, which surfaces as a 500-shaped optimistic-lock
@@ -1129,13 +1143,31 @@ public class LeaseService {
                     "Only an ACTIVE lease can be given notice; this one is " + lease.getStatus() + ".");
         }
 
+        LocalDate today = LocalDate.now();
+        LocalDate noticeDate = request.noticeDate() != null ? request.noticeDate() : today;
+        if (noticeDate.isAfter(today)) {
+            throw new BusinessRuleViolationException("The notice date cannot be in the future.");
+        }
+        com.datagami.rentaxis.domain.entity.enums.NoticeParty party = request.givenBy() != null
+                ? request.givenBy() : com.datagami.rentaxis.domain.entity.enums.NoticeParty.RENTER;
+        LocalDate moveOut = request.intendedMoveOutDate();
+        if (moveOut != null && moveOut.isBefore(noticeDate)) {
+            throw new BusinessRuleViolationException("The intended move-out date cannot be before the notice date.");
+        }
+
         lease.setStatus(LeaseStatus.NOTICE_GIVEN);
+        lease.setNoticeDate(noticeDate);
+        lease.setNoticeGivenBy(party);
+        lease.setIntendedMoveOutDate(moveOut);
         Lease saved = leaseRepository.save(lease);
-        recordEvent(saved, LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
-                notes != null && !notes.isBlank()
-                        ? "Notice given: " + notes.trim()
-                        : "Notice given",
-                byUser);
+
+        StringBuilder description = new StringBuilder("Notice given by ")
+                .append(party == com.datagami.rentaxis.domain.entity.enums.NoticeParty.LANDLORD ? "landlord" : "renter")
+                .append(" on ").append(noticeDate);
+        if (moveOut != null) description.append("; intended move-out ").append(moveOut);
+        String notes = request.notes();
+        if (notes != null && !notes.isBlank()) description.append(": ").append(notes.trim());
+        recordEvent(saved, LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, description.toString(), byUser);
         return mapToDTO(saved);
     }
 
@@ -1460,6 +1492,9 @@ public class LeaseService {
         dto.setTerminatedOn(lease.getTerminatedOn());
         dto.setTerminationJournalId(lease.getTerminationJournalId());
         dto.setTerminationNotes(lease.getTerminationNotes());
+        dto.setNoticeDate(lease.getNoticeDate());
+        dto.setNoticeGivenBy(lease.getNoticeGivenBy());
+        dto.setIntendedMoveOutDate(lease.getIntendedMoveOutDate());
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));

@@ -203,6 +203,19 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "terminated_on")
     private LocalDate terminatedOn;
 
+    /** The day notice was given (#27); null unless the lease went through NOTICE_GIVEN after changeset 94. */
+    @Column(name = "notice_date")
+    private LocalDate noticeDate;
+
+    /** Who gave it: the renter leaving, or the landlord serving notice (#27). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notice_given_by", length = 20)
+    private com.datagami.rentaxis.domain.entity.enums.NoticeParty noticeGivenBy;
+
+    /** The move-out date the notice names, when it names one (#27). */
+    @Column(name = "intended_move_out_date")
+    private LocalDate intendedMoveOutDate;
+
     /** The {@code TCR} that reversed the unearned rent, or null when nothing was unearned. */
     @Column(name = "termination_journal_id")
     private UUID terminationJournalId;
