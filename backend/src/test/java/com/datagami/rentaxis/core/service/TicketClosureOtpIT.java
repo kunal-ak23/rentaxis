@@ -485,4 +485,182 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         assertThat(historyNotes(id)).last()
                 .isEqualTo("Ticket closed without OTP (OTP closure locked after 10 wrong OTPs)");
     }
+
+    // ---- r3 I1: a ticket that has been resolved keeps its OTP gate after a reopen ----
+
+    private void reopen(UUID id) {
+        tickets.updateStatus(id, "REOPENED", staff.getId());
+    }
+
+    @Test
+    void reopeningAResolvedTicketDoesNotLetStaffCloseItWithoutTheRenter() {
+        UUID id = resolvedTicket(true);
+        String otp = storedOtp(id);
+        reopen(id);
+
+        // REOPENED → CLOSED, and via ASSIGNED / IN_PROGRESS, are all refused.
+        assertThat(tickets.getTicket(id, staff.getId()).isClosableWithoutOtp()).isFalse();
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("OTP closure");
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        assertThat(tickets.getTicket(id, staff.getId()).isClosableWithoutOtp()).isFalse();
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        tickets.updateStatus(id, "ASSIGNED", staff.getId());
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        // A tenant admin is held to it too: the renter can confirm.
+        User admin = user(UserRole.TENANT_ADMIN);
+        as(admin);
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", admin.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        as(staff);
+        assertThat(status(id)).isEqualTo("ASSIGNED");
+
+        // The way out is the renter's code: resolve again (the code is kept) and close with it.
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+        assertThat(storedOtp(id)).isEqualTo(otp);
+        assertThat(tickets.closeWithOtp(id, otp, staff.getId()).getStatus()).isEqualTo("CLOSED");
+    }
+
+    @Test
+    void reopeningALockedTicketStillLeavesClosingToAnAdmin() {
+        UUID id = resolvedTicket(true);
+        jdbc.update("UPDATE maintenance_tickets SET closure_otp_total_failed_attempts = ?, closure_otp = NULL"
+                + " WHERE id = ?", MaintenanceTicketService.MAX_TOTAL_OTP_FAILURES, id);
+        reopen(id);
+
+        assertThatThrownBy(() -> tickets.updateStatus(id, "CLOSED", staff.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.AccessDeniedException.class);
+        assertThat(status(id)).isEqualTo("REOPENED");
+
+        User admin = user(UserRole.TENANT_ADMIN);
+        as(admin);
+        MaintenanceTicketDTO adminView = tickets.getTicket(id, admin.getId());
+        assertThat(adminView.isClosableWithoutOtp()).isTrue();
+        assertThat(adminView.getCloseWithoutOtpReason()).isEqualTo("LOCKED");
+        assertThat(tickets.updateStatus(id, "CLOSED", admin.getId()).getStatus()).isEqualTo("CLOSED");
+        assertThat(historyNotes(id)).last()
+                .isEqualTo("Ticket closed without OTP (OTP closure locked after 10 wrong OTPs)");
+    }
+
+    @Test
+    void aReopenedTicketWithNoRenterBehindItIsStillClosableByStaff() {
+        UUID id = resolvedTicket(false);
+        reopen(id);
+
+        MaintenanceTicketDTO view = tickets.getTicket(id, staff.getId());
+        assertThat(view.isClosableWithoutOtp()).isTrue();
+        assertThat(view.getCloseWithoutOtpReason()).isEqualTo("NO_RENTER");
+        assertThat(tickets.updateStatus(id, "CLOSED", staff.getId()).getStatus()).isEqualTo("CLOSED");
+        assertThat(historyNotes(id)).last().isEqualTo(CLOSED_WITHOUT_OTP);
+    }
+
+    @Test
+    void aNeverResolvedDuplicateCanStillBeClosedStraightAway() {
+        CreateTicketDTO dto = new CreateTicketDTO();
+        dto.setPropertyId(propertyId);
+        dto.setTitle("Duplicate");
+        dto.setOnBehalfOfRenterId(renter.getId());
+        UUID id = tickets.createTicket(dto, staff.getId()).getId();
+
+        MaintenanceTicketDTO view = tickets.getTicket(id, staff.getId());
+        assertThat(view.isClosableWithoutOtp()).isTrue();
+        assertThat(view.getCloseWithoutOtpReason()).isNull();
+        assertThat(tickets.updateStatus(id, "CLOSED", staff.getId()).getStatus()).isEqualTo("CLOSED");
+        assertThat(historyNotes(id)).last().isEqualTo("Status changed: OPEN → CLOSED");
+    }
+
+    // ---- r3 M2: resolving again keeps a valid code and cannot mint uncapped ones ----
+
+    @Test
+    void resolvingAgainKeepsTheCodeTheRenterAlreadyHas() {
+        UUID id = resolvedTicket(true);
+        String otp = storedOtp(id);
+        reopen(id);
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+
+        assertThat(storedOtp(id)).isEqualTo(otp);
+        assertThat(reissues(id)).isZero();
+    }
+
+    @Test
+    void aCodeIssuedOnResolvingAgainCountsAgainstTheDailyCap() {
+        UUID id = resolvedTicket(true);
+        // Closed with the code, then reopened: no valid code left.
+        tickets.closeWithOtp(id, storedOtp(id), staff.getId());
+        reopen(id);
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+        String second = storedOtp(id);
+        assertThat(second).isNotNull();
+        assertThat(reissues(id)).isEqualTo(1);
+
+        // Two more re-issues spend the cap...
+        tickets.reissueClosureOtp(id, staff.getId());
+        tickets.reissueClosureOtp(id, staff.getId());
+        assertThat(reissues(id)).isEqualTo(MaintenanceTicketService.MAX_OTP_REISSUES_PER_DAY);
+        String last = storedOtp(id);
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                .hasMessageContaining("at most 3 times in 24 hours");
+
+        // ...and a close-reopen-resolve cycle does not get round it.
+        tickets.closeWithOtp(id, last, staff.getId());
+        reopen(id);
+        tickets.updateStatus(id, "IN_PROGRESS", staff.getId());
+        tickets.updateStatus(id, "RESOLVED", staff.getId());
+        assertThat(storedOtp(id)).isNull();
+        assertThat(reissues(id)).isEqualTo(MaintenanceTicketService.MAX_OTP_REISSUES_PER_DAY);
+    }
+
+    // ---- r3 M3: OTP off means no code and no "share the OTP" ----
+
+    @Test
+    void aTenantWithOtpOffGetsNoCodeAndNoPromptToShareOne() {
+        LandlordOrg org = orgRepo.findById(tenantId).orElseThrow();
+        org.setTicketOtpRequired(false);
+        orgRepo.save(org);
+        UUID id = resolvedTicket(true);
+
+        assertThat(storedOtp(id)).isNull();
+        List<String> messages = jdbc.queryForList(
+                "SELECT message FROM notifications WHERE reference_id = ? AND type = 'TICKET_RESOLVED'", String.class, id);
+        assertThat(messages).hasSize(1);
+        assertThat(messages.get(0)).doesNotContain("OTP");
+
+        MaintenanceTicketDTO view = tickets.getTicket(id, staff.getId());
+        assertThat(view.getCloseWithoutOtpReason()).isEqualTo("OTP_OFF");
+        assertThat(view.isCanReissueOtp()).isFalse();
+        assertThatThrownBy(() -> tickets.reissueClosureOtp(id, staff.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Closure codes are turned off");
+        assertThat(storedOtp(id)).isNull();
+    }
+
+    // ---- r3 M5: canReissueOtp follows the re-issue route's property scope ----
+
+    @Test
+    void canReissueOtpIsTrueOnlyWhereTheReissueRouteWouldAct() {
+        UUID id = resolvedTicket(true);
+        assertThat(tickets.getTicket(id, staff.getId()).isCanReissueOtp()).isTrue();
+
+        User otherPm = user(UserRole.PROPERTY_MANAGER);
+        as(otherPm);
+        assertThat(tickets.getTicket(id, otherPm.getId()).isCanReissueOtp()).isFalse();
+
+        User admin = user(UserRole.TENANT_ADMIN);
+        as(admin);
+        assertThat(tickets.getTicket(id, admin.getId()).isCanReissueOtp()).isTrue();
+
+        as(renterUser);
+        assertThat(tickets.getTicket(id, renterUser.getId()).isCanReissueOtp()).isFalse();
+
+        // No renter to receive one: false, as the route refuses.
+        as(staff);
+        UUID noRenter = resolvedTicket(false);
+        assertThat(tickets.getTicket(noRenter, staff.getId()).isCanReissueOtp()).isFalse();
+    }
 }

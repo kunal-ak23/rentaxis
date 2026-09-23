@@ -1,0 +1,25 @@
+databaseChangeLog:
+  # PR #342 review r3 M8: a renter could delete any attachment on a ticket they
+  # can see, staff's evidence photos and invoices included. The uploader is now
+  # recorded, and a renter deletes only what they uploaded. Existing rows keep
+  # NULL (uploader unknown): staff can still delete them, a renter cannot.
+  - changeSet:
+      id: 102-ticket-attachment-uploaded-by
+      author: rentaxis-system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: ticket_attachments
+                columnName: uploaded_by
+      changes:
+        - addColumn:
+            tableName: ticket_attachments
+            columns:
+              - column:
+                  name: uploaded_by
+                  type: uuid
+      rollback:
+        - dropColumn:
+            tableName: ticket_attachments
+            columnName: uploaded_by

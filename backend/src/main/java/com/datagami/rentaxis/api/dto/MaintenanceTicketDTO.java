@@ -34,6 +34,20 @@ public class MaintenanceTicketDTO {
     private boolean closableWithoutOtp;
     /** Staff only: OTP closure is permanently locked after too many wrong OTPs. */
     private boolean otpLocked;
+    /**
+     * Why {@link #closableWithoutOtp} is true, for the close dialog's wording:
+     * {@code OTP_OFF} (the organisation does not use closure codes),
+     * {@code NO_RENTER} (nobody can confirm with a code), {@code LOCKED} (OTP
+     * closure locked, caller is an admin). Null when not closable, or when the
+     * ticket was never resolved.
+     */
+    private String closeWithoutOtpReason;
+    /**
+     * Staff only: {@code POST /tickets/{id}/closure-otp} can send a new code for
+     * this caller (in their property scope, resolved, codes on, not locked, a
+     * renter to receive it). The 24-hour cap is not reflected.
+     */
+    private boolean canReissueOtp;
     private Integer satisfactionRating;
     private String satisfactionComment;
     private String onBehalfOf;

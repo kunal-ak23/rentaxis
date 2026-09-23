@@ -30,6 +30,13 @@ public class TicketAttachment extends BaseTenantEntity {
     @Column(name = "file_size")
     private Long fileSize;
 
+    /**
+     * Who uploaded it (PR #342 review r3 M8): a renter deletes only their own
+     * uploads. NULL on rows from before the column, whose uploader is unknown.
+     */
+    @Column(name = "uploaded_by")
+    private UUID uploadedBy;
+
     @Column(name = "uploaded_at")
     private Instant uploadedAt = Instant.now();
 }

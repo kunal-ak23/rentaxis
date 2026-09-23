@@ -13,4 +13,6 @@ public class TicketAttachmentDTO {
     private String fileType;
     private Long fileSize;
     private Instant uploadedAt;
+    /** Who uploaded it; null on attachments from before this was recorded. */
+    private UUID uploadedBy;
 }

@@ -207,3 +207,9 @@ databaseChangeLog:
       file: db/changelog/changesets/99-ticket-on-behalf-renter-fk.yaml
   - include:
       file: db/changelog/changesets/100-ticket-closure-otp-total-failures.yaml
+  - include:
+      file: db/changelog/changesets/101-ticket-version.yaml
+  - include:
+      file: db/changelog/changesets/102-ticket-attachment-uploaded-by.yaml
+  - include:
+      file: db/changelog/changesets/103-user-token-version.yaml

@@ -154,6 +154,21 @@ public class MaintenanceTicketController {
         return ResponseEntity.ok(ticketService.getReport(propertyId, startDate, endDate));
     }
 
+    /**
+     * A ticket changed by someone else between this request's read and its write
+     * (MaintenanceTicket's {@code @Version}, PR #342 review r3 I2). The writers
+     * lock the row first, so this is the backstop; the answer is a 409 to reload,
+     * not a 500.
+     */
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+            jakarta.persistence.OptimisticLockException.class})
+    public ResponseEntity<Map<String, Object>> handleConcurrentChange(RuntimeException ex) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT).body(Map.of(
+                "error", true,
+                "message", "This ticket was changed by someone else at the same time. Reload it and try again.",
+                "status", 409));
+    }
+
     @PutMapping("/{id}/estimate")
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<MaintenanceTicketDTO> setEstimate(

@@ -1,0 +1,31 @@
+databaseChangeLog:
+  # PR #342 review r3 I2: every ticket writer loaded the row, then saved the
+  # whole of it back. A save that read before a wrong-OTP guess and committed
+  # after it wrote the old closure OTP and failure counters back, resetting the
+  # 5-per-code and 10-per-lifetime limits. The writers now lock the row; this
+  # version column is the backstop (@Version on MaintenanceTicket), so a stale
+  # write fails instead of overwriting. Existing rows start at 0. Constant
+  # default: metadata-only on Postgres 11+, no table rewrite.
+  - changeSet:
+      id: 101-ticket-version
+      author: rentaxis-system
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: maintenance_tickets
+                columnName: version
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: maintenance_tickets
+            columnName: version

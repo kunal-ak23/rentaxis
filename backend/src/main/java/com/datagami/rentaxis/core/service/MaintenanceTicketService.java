@@ -123,6 +123,24 @@ public class MaintenanceTicketService {
         return ticket;
     }
 
+    /**
+     * {@link #visibleTicket} for a writer: the row is locked for the rest of the
+     * transaction (PR #342 review r3 I2). Every path that loads a ticket and saves
+     * it back goes through a lock, so it reads only after any concurrent writer
+     * (a wrong-OTP guess, a re-issue) has committed, and cannot write that
+     * writer's closure OTP or failure counters back to their old values.
+     */
+    private MaintenanceTicket lockedVisibleTicket(UUID ticketId) {
+        MaintenanceTicket ticket = lockedTicket(ticketId);
+        requireRenterOwns(ticket);
+        return ticket;
+    }
+
+    private MaintenanceTicket lockedTicket(UUID ticketId) {
+        return ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+    }
+
     /** For the sub-resource reads: a renter must own the ticket first. */
     private void requireRenterOwns(UUID ticketId) {
         if (callerIsRenter()) visibleTicket(ticketId);
@@ -344,8 +362,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO assignTicket(UUID ticketId, UUID assignTo, UUID performedBy) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = lockedTicket(ticketId);
 
         UUID previousAssignee = ticket.getAssignedTo();
         String previousStatus = ticket.getStatus() != null ? ticket.getStatus().name() : null;
@@ -381,26 +398,30 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO updateStatus(UUID ticketId, String newStatus, UUID performedBy) {
-        MaintenanceTicket ticket = visibleTicket(ticketId);
+        MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
         String fromStatus = ticket.getStatus().name();
         TicketStatus targetStatus = TicketStatus.valueOf(newStatus);
         validateStatusTransition(ticket.getStatus(), targetStatus);
 
-        // A resolved ticket is closed by its renter's OTP. The status route may
-        // close it only when nobody could hand one over (or the tenant does not
-        // ask for OTPs); otherwise it would let staff skip the renter.
+        // A ticket that has been resolved is closed by its renter's OTP, whatever
+        // its status now. The status route may close it only when nobody could
+        // hand one over (or the tenant does not ask for OTPs); otherwise staff
+        // could skip the renter, directly or by reopening first (r3 I1).
         String closeNote = null;
         if (targetStatus == TicketStatus.CLOSED) {
             switch (statusRouteCloseGate(ticket)) {
-                case NOT_GATED -> { }
+                case NEVER_RESOLVED, OTP_OFF -> { }
                 case LOCKED_ADMIN -> closeNote = "Ticket closed without OTP (OTP closure locked after "
                         + MAX_TOTAL_OTP_FAILURES + " wrong OTPs)";
                 // Too many wrong OTPs: only an admin may close it, on the record.
                 case LOCKED_NOT_ADMIN -> throw new AccessDeniedException(
                         "OTP closure is locked for this ticket. Only a tenant admin can close it.");
                 case RENTER_CONFIRMS -> throw new BusinessRuleViolationException(
-                        "A resolved ticket is closed with the renter's OTP. Use OTP closure (PUT /tickets/{id}/close).");
+                        ticket.getStatus() == TicketStatus.RESOLVED
+                                ? "A resolved ticket is closed with the renter's OTP. Use OTP closure (PUT /tickets/{id}/close)."
+                                : "This ticket has been resolved before, so it is closed with the renter's OTP."
+                                        + " Resolve it, then use OTP closure (PUT /tickets/{id}/close).");
                 case NO_RENTER -> closeNote = "Ticket closed without OTP (no renter to confirm)";
             }
         }
@@ -411,10 +432,14 @@ public class MaintenanceTicketService {
             ticket.setClosureOtp(null);
         }
 
+        OtpOnResolve otpOnResolve = null;
         if (targetStatus == TicketStatus.RESOLVED) {
+            otpOnResolve = closureOtpOnResolve(ticket);
             ticket.setResolvedAt(Instant.now());
-            if (!otpClosureLocked(ticket)) issueClosureOtp(ticket);
-            log.info("Ticket {} resolved. Closure OTP generated.", ticketId);
+            if (otpOnResolve == OtpOnResolve.ISSUED || otpOnResolve == OtpOnResolve.REISSUED) {
+                issueClosureOtp(ticket);
+            }
+            log.info("Ticket {} resolved; closure OTP {}.", ticketId, otpOnResolve);
         }
 
         if (targetStatus == TicketStatus.IN_PROGRESS && ticket.getAssignedTo() == null) {
@@ -426,11 +451,25 @@ public class MaintenanceTicketService {
                 null, null, performedBy != null ? performedBy : ticket.getReportedBy(),
                 closeNote != null ? closeNote : "Status changed: " + fromStatus + " → " + targetStatus.name());
 
+        // A code issued on re-resolving counts against the same 24-hour cap as a
+        // re-issue, so reopen/resolve cycles cannot send the renter unlimited codes.
+        if (otpOnResolve == OtpOnResolve.REISSUED) {
+            recordHistory(saved, "OTP_REISSUED", null, null, null, null,
+                    performedBy != null ? performedBy : ticket.getReportedBy(),
+                    "A new closure OTP was sent to the renter (ticket resolved again)");
+        }
+
         // Notify the OTP holder when the ticket is resolved: the renter it was
         // logged for, never the staff member who logged it (PR #342 review I2).
-        if (targetStatus == TicketStatus.RESOLVED && !otpClosureLocked(ticket)) {
-            notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
-                    "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.");
+        // "Share the OTP" only when there is a live code to share (r3 M3).
+        if (otpOnResolve != null) {
+            switch (otpOnResolve) {
+                case ISSUED, REISSUED, KEPT -> notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
+                        "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.");
+                case OTP_OFF, CAPPED -> notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
+                        "Your ticket '" + ticket.getTitle() + "' has been resolved.");
+                case LOCKED -> { }
+            }
         }
 
         // Emit TICKET_REOPENED event when transitioning to REOPENED status
@@ -479,10 +518,22 @@ public class MaintenanceTicketService {
      * {@link #updateStatus} enforces it and {@link #mapToDTO} reports it as
      * {@code closableWithoutOtp}, so the two cannot drift.
      */
-    private enum StatusCloseGate { NOT_GATED, LOCKED_ADMIN, LOCKED_NOT_ADMIN, RENTER_CONFIRMS, NO_RENTER }
+    private enum StatusCloseGate {
+        /** Never resolved: a duplicate or a mistake, closable as before (gap #74 is separate). */
+        NEVER_RESOLVED,
+        /** The tenant does not ask for closure OTPs. */
+        OTP_OFF,
+        LOCKED_ADMIN, LOCKED_NOT_ADMIN, RENTER_CONFIRMS, NO_RENTER
+    }
 
+    /**
+     * Keyed on "has ever been resolved" ({@code resolvedAt}, which is never
+     * cleared), not on the current status: RESOLVED → REOPENED → CLOSED used to
+     * skip the renter's OTP and the admin-only lock (PR #342 review r3 I1).
+     */
     private StatusCloseGate statusRouteCloseGate(MaintenanceTicket ticket) {
-        if (ticket.getStatus() != TicketStatus.RESOLVED || !otpRequired(ticket)) return StatusCloseGate.NOT_GATED;
+        if (ticket.getResolvedAt() == null) return StatusCloseGate.NEVER_RESOLVED;
+        if (!otpRequired(ticket)) return StatusCloseGate.OTP_OFF;
         if (otpClosureLocked(ticket)) {
             return callerHasRole("TENANT_ADMIN") || callerHasRole("SUPER_ADMIN")
                     ? StatusCloseGate.LOCKED_ADMIN : StatusCloseGate.LOCKED_NOT_ADMIN;
@@ -497,15 +548,65 @@ public class MaintenanceTicketService {
 
     /**
      * Whether {@code PUT /tickets/{id}/status} with CLOSED would succeed for the
-     * caller: a staff role, a transition to CLOSED allowed from the current
-     * status, and the OTP gate open.
+     * caller (a staff role, a transition to CLOSED allowed from the current
+     * status, and the OTP gate open): the gate that lets them, or {@code null}
+     * when they cannot. The DTO's {@code closableWithoutOtp} and
+     * {@code closeWithoutOtpReason} both come from here.
      */
-    private boolean closableWithoutOtp(MaintenanceTicket ticket) {
-        if (!callerIsStaff()) return false;
-        if (!allowedTransitions(ticket.getStatus()).contains(TicketStatus.CLOSED)) return false;
+    private StatusCloseGate closeWithoutOtpGate(MaintenanceTicket ticket) {
+        if (!callerIsStaff()) return null;
+        if (!allowedTransitions(ticket.getStatus()).contains(TicketStatus.CLOSED)) return null;
         StatusCloseGate gate = statusRouteCloseGate(ticket);
-        return gate == StatusCloseGate.NOT_GATED || gate == StatusCloseGate.LOCKED_ADMIN
-                || gate == StatusCloseGate.NO_RENTER;
+        return switch (gate) {
+            case NEVER_RESOLVED, OTP_OFF, LOCKED_ADMIN, NO_RENTER -> gate;
+            case LOCKED_NOT_ADMIN, RENTER_CONFIRMS -> null;
+        };
+    }
+
+    /** What resolving does with the closure OTP. */
+    private enum OtpOnResolve {
+        /** The tenant does not ask for closure OTPs: no code, no "share the OTP" (r3 M3). */
+        OTP_OFF,
+        /** OTP closure is locked for good. */
+        LOCKED,
+        /** A code from an earlier resolve is still valid and is kept (r3 M2). */
+        KEPT,
+        /** First resolve: a new code. */
+        ISSUED,
+        /** Resolved again with no valid code: a new one, counted against the re-issue cap. */
+        REISSUED,
+        /** Resolved again, but the 24-hour re-issue cap is spent: no code until a later re-issue. */
+        CAPPED
+    }
+
+    private OtpOnResolve closureOtpOnResolve(MaintenanceTicket ticket) {
+        if (!otpRequired(ticket)) return OtpOnResolve.OTP_OFF;
+        if (otpClosureLocked(ticket)) return OtpOnResolve.LOCKED;
+        if (ticket.getClosureOtp() != null) return OtpOnResolve.KEPT;
+        if (ticket.getResolvedAt() == null) return OtpOnResolve.ISSUED;
+        return reissueCapReached(ticket) ? OtpOnResolve.CAPPED : OtpOnResolve.REISSUED;
+    }
+
+    /** Closure OTPs re-issued in the last 24 hours, by the re-issue route or by resolving again. */
+    private boolean reissueCapReached(MaintenanceTicket ticket) {
+        return historyRepository.countByTicketIdAndActionAndCreatedAtAfter(
+                ticket.getId(), "OTP_REISSUED", Instant.now().minus(24, ChronoUnit.HOURS))
+                >= MAX_OTP_REISSUES_PER_DAY;
+    }
+
+    /**
+     * Whether {@code POST /tickets/{id}/closure-otp} can send a code for this
+     * caller: staff, in their property scope, on a resolved ticket whose tenant
+     * asks for OTPs, not locked, with a renter to receive it. The 24-hour cap is
+     * not part of it; the route's refusal says when to try again.
+     */
+    private boolean canReissueOtp(MaintenanceTicket ticket) {
+        return ticket.getStatus() == TicketStatus.RESOLVED
+                && callerIsStaff()
+                && !otpClosureLocked(ticket)
+                && propertyManagerAssigned(ticket)
+                && otpRequired(ticket)
+                && hasRenterToConfirm(ticket);
     }
 
     private static boolean otpClosureLocked(MaintenanceTicket ticket) {
@@ -592,11 +693,15 @@ public class MaintenanceTicketService {
      */
     @Transactional
     public MaintenanceTicketDTO reissueClosureOtp(UUID ticketId, UUID performedBy) {
-        MaintenanceTicket ticket = ticketRepository.findByIdForUpdate(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = lockedTicket(ticketId);
         requirePropertyManagerAssigned(ticket);
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("A closure OTP can only be issued for a resolved ticket");
+        }
+        if (!otpRequired(ticket)) {
+            throw new BusinessRuleViolationException(
+                    "Closure codes are turned off for this organisation. Close the ticket through the status route"
+                            + " (PUT /tickets/{id}/status).");
         }
         if (otpClosureLocked(ticket)) {
             throw new BusinessRuleViolationException(
@@ -608,9 +713,7 @@ public class MaintenanceTicketService {
                     "No renter can receive a closure OTP for this ticket. Close it through the status route"
                             + " (PUT /tickets/{id}/status).");
         }
-        long recent = historyRepository.countByTicketIdAndActionAndCreatedAtAfter(
-                ticket.getId(), "OTP_REISSUED", Instant.now().minus(24, ChronoUnit.HOURS));
-        if (recent >= MAX_OTP_REISSUES_PER_DAY) {
+        if (reissueCapReached(ticket)) {
             throw new BusinessRuleViolationException(
                     "A closure OTP can be re-issued at most " + MAX_OTP_REISSUES_PER_DAY
                             + " times in 24 hours. Try again later.");
@@ -629,18 +732,29 @@ public class MaintenanceTicketService {
      * as their list does; anything else is "not found". Other roles pass.
      */
     private void requirePropertyManagerAssigned(MaintenanceTicket ticket) {
-        if (!callerHasRole("PROPERTY_MANAGER")) return;
-        UUID caller;
-        try {
-            caller = UUID.fromString(org.springframework.security.core.context.SecurityContextHolder
-                    .getContext().getAuthentication().getName());
-        } catch (IllegalArgumentException | NullPointerException e) {
-            throw new NotFoundException("Ticket not found");
-        }
+        if (!propertyManagerAssigned(ticket)) throw new NotFoundException("Ticket not found");
+    }
+
+    /** False only for a property manager not assigned to the ticket's property. */
+    private boolean propertyManagerAssigned(MaintenanceTicket ticket) {
+        if (!callerHasRole("PROPERTY_MANAGER")) return true;
+        UUID caller = callerUserId();
+        if (caller == null) return false;
         UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
-        boolean assigned = propertyAssignmentRepository.findByUserId(caller).stream()
+        return propertyAssignmentRepository.findByUserId(caller).stream()
                 .anyMatch(a -> a.getPropertyId().equals(propertyId));
-        if (!assigned) throw new NotFoundException("Ticket not found");
+    }
+
+    /** The caller's user id from the verified principal, or {@code null}. */
+    private static UUID callerUserId() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return null;
+        try {
+            return UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return null;
+        }
     }
 
     /**
@@ -651,9 +765,7 @@ public class MaintenanceTicketService {
     public MaintenanceTicketDTO closeWithOtp(UUID ticketId, String otp, UUID performedBy) {
         // Locked for the read-check-increment below, so parallel guesses cannot
         // each read the same count and exceed the limit.
-        MaintenanceTicket ticket = ticketRepository.findByIdForUpdate(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
-        requireRenterOwns(ticket);
+        MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("Ticket must be in RESOLVED status to close with OTP");
@@ -709,8 +821,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO setEstimate(UUID ticketId, Integer hours) {
-        MaintenanceTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new NotFoundException("Ticket not found"));
+        MaintenanceTicket ticket = lockedTicket(ticketId);
 
         ticket.setEstimatedResolutionHours(hours);
         MaintenanceTicket saved = ticketRepository.save(ticket);
@@ -719,7 +830,7 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO rateTicket(UUID ticketId, int rating, String comment) {
-        MaintenanceTicket ticket = visibleTicket(ticketId);
+        MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
         if (ticket.getStatus() != TicketStatus.CLOSED && ticket.getStatus() != TicketStatus.RESOLVED) {
             throw new BusinessRuleViolationException("Can only rate resolved or closed tickets");
@@ -794,6 +905,11 @@ public class MaintenanceTicketService {
         TicketAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
         requireRenterOwnsAttachment(attachment);
+        // A renter deletes only what they uploaded, never staff's evidence
+        // photos or invoices on their ticket (PR #342 review r3 M8).
+        if (callerIsRenter() && !Objects.equals(attachment.getUploadedBy(), callingRenterUserId())) {
+            throw new AccessDeniedException("You can only delete attachments you uploaded");
+        }
         attachmentRepository.delete(attachment);
     }
 
@@ -846,6 +962,7 @@ public class MaintenanceTicketService {
         attachment.setFileUrl(fileUrl);
         attachment.setFileType(file.getContentType());
         attachment.setFileSize(file.getSize());
+        attachment.setUploadedBy(callerUserId());
         attachment.setUploadedAt(Instant.now());
 
         return mapAttachmentToDTO(attachmentRepository.save(attachment));
@@ -874,6 +991,7 @@ public class MaintenanceTicketService {
         dto.setFileType(attachment.getFileType());
         dto.setFileSize(attachment.getFileSize());
         dto.setUploadedAt(attachment.getUploadedAt());
+        dto.setUploadedBy(attachment.getUploadedBy());
         return dto;
     }
 
@@ -1013,7 +1131,15 @@ public class MaintenanceTicketService {
         // state is not theirs to know.
         boolean staff = callerIsStaff();
         dto.setOtpLocked(staff && otpClosureLocked(ticket));
-        dto.setClosableWithoutOtp(closableWithoutOtp(ticket));
+        StatusCloseGate closeGate = closeWithoutOtpGate(ticket);
+        dto.setClosableWithoutOtp(closeGate != null);
+        dto.setCloseWithoutOtpReason(closeGate == null ? null : switch (closeGate) {
+            case OTP_OFF -> "OTP_OFF";
+            case LOCKED_ADMIN -> "LOCKED";
+            case NO_RENTER -> "NO_RENTER";
+            default -> null;
+        });
+        dto.setCanReissueOtp(canReissueOtp(ticket));
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());

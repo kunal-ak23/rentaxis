@@ -118,6 +118,17 @@ public class MaintenanceTicket extends BaseTenantEntity {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
+    /**
+     * Optimistic lock (PR #342 review r3 I2). The service's writers take the row
+     * lock ({@code findByIdForUpdate}) before they read; this is the backstop, so
+     * a save that read a stale row fails instead of writing old closure-OTP
+     * counters back. Never client-sent: the DTO does not carry it.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private Long version;
+
     @PreUpdate
     public void onPreUpdate() {
         this.updatedAt = Instant.now();

@@ -152,10 +152,11 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
         SecurityContextHolder.clearContext();
     }
 
-    private UUID attachmentOn(UUID ticketId) {
+    private UUID attachmentOn(UUID ticketId, UUID uploadedBy) {
         MaintenanceTicket t = ticketRepo.findById(ticketId).orElseThrow();
         TicketAttachment a = new TicketAttachment();
         a.setTicket(t);
+        a.setUploadedBy(uploadedBy);
         a.setFileUrl("/api/v1/assets/serve/ticket-attachments/none-" + UUID.randomUUID() + ".png");
         a.setFileType("image/png");
         a.setFileSize(1L);
@@ -205,7 +206,7 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
         assertThat(status(userA, HttpMethod.POST, b + "/replies", Map.of("message", "hello"))).isEqualTo(404);
         assertThat(status(userA, HttpMethod.PUT, b + "/rate", Map.of("rating", 1))).isEqualTo(404);
 
-        UUID attachment = attachmentOn(reportedByB);
+        UUID attachment = attachmentOn(reportedByB, userB.getId());
         assertThat(status(userA, HttpMethod.GET, "/attachments/" + attachment + "/download", null)).isEqualTo(404);
         assertThat(status(userA, HttpMethod.DELETE, "/attachments/" + attachment, null)).isEqualTo(404);
         assertThat(attachmentRepo.findById(attachment)).isPresent();
@@ -260,8 +261,13 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
             assertThat(status(userA, HttpMethod.POST, t + "/replies", Map.of("message", "still leaking")))
                     .isEqualTo(200);
 
-            UUID attachment = attachmentOn(id);
+            UUID attachment = attachmentOn(id, userA.getId());
             assertThat(status(userA, HttpMethod.DELETE, "/attachments/" + attachment, null)).isEqualTo(200);
+            // r3 M8: staff's evidence on the renter's own ticket is not theirs to delete.
+            UUID staffPhoto = attachmentOn(id, staff.getId());
+            assertThat(status(userA, HttpMethod.DELETE, "/attachments/" + staffPhoto, null)).isEqualTo(403);
+            assertThat(attachmentRepo.existsById(staffPhoto)).isTrue();
+            assertThat(status(staff, HttpMethod.DELETE, "/attachments/" + staffPhoto, null)).isEqualTo(200);
 
             resolve(id);
             // The renter sees the OTP they hold and staff close the ticket with it.
