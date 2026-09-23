@@ -130,7 +130,56 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
                 Map.of("message", "hi")).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
+    // ----------------------------------------------------------------- D-F2
+
+    @Test
+    void aTicketIsAssignedOnlyToActiveStaffOfThisTenant() {
+        UUID foreignTenant = org("TRS-FOREIGN");
+        TenantContextHolder.setTenantId(foreignTenant);
+        User foreignAdmin = user(foreignTenant, UserRole.TENANT_ADMIN, "Foreign Secret Name");
+        TenantContextHolder.setTenantId(tenantId);
+        User renter = user(tenantId, UserRole.RENTER);
+        User inactivePm = user(tenantId, UserRole.PROPERTY_MANAGER);
+        inactivePm.setStatus(UserStatus.INACTIVE);
+        userRepo.save(inactivePm);
+        assign(inactivePm);
+        User pmElsewhere = user(tenantId, UserRole.PROPERTY_MANAGER);
+        User pmHere = user(tenantId, UserRole.PROPERTY_MANAGER, "Manager Here");
+        assign(pmHere);
+        TenantContextHolder.clear();
+
+        ResponseEntity<String> foreign = assignTo(foreignAdmin.getId());
+        assertThat(foreign.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(foreign.getBody()).doesNotContain("Foreign Secret Name");
+        assertThat(history(otherTicket)).doesNotContain("Foreign Secret Name");
+
+        assertThat(assignTo(renter.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(assignTo(inactivePm.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(assignTo(pmElsewhere.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ResponseEntity<String> ok = assignTo(pmHere.getId());
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(body(ok).get("assigneeName").asText()).isEqualTo("Manager Here");
+        assertThat(assignTo(admin.getId()).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
     // -------------------------------------------------------------- plumbing
+
+    private ResponseEntity<String> assignTo(UUID userId) {
+        return call(admin, HttpMethod.PUT, "/api/v1/tickets/" + otherTicket + "/assign",
+                Map.of("assignTo", userId.toString()));
+    }
+
+    private String history(String ticketId) {
+        return call(admin, HttpMethod.GET, "/api/v1/tickets/" + ticketId + "/history", null).getBody();
+    }
+
+    private void assign(User pm) {
+        UserPropertyAssignment a = new UserPropertyAssignment();
+        a.setUserId(pm.getId());
+        a.setPropertyId(property.getId());
+        assignmentRepo.save(a);
+    }
 
     private UUID org(String prefix) {
         LandlordOrg org = new LandlordOrg();

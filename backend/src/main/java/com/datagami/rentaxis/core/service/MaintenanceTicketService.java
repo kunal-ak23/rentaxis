@@ -12,6 +12,8 @@ import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.TicketCategory;
 import com.datagami.rentaxis.domain.entity.enums.TicketPriority;
 import com.datagami.rentaxis.domain.entity.enums.TicketStatus;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -114,6 +116,35 @@ public class MaintenanceTicketService {
             if (leaseRenter != null && callerRenterId.equals(leaseRenter.getId())) return;
         }
         throw new NotFoundException("Ticket not found");
+    }
+
+    /** Staff roles a ticket can be assigned to. There is no technician role. */
+    private static final Set<UserRole> ASSIGNABLE_ROLES = Set.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
+
+    /**
+     * The assignee must be an ACTIVE tenant admin or property manager of this
+     * tenant, and a property manager must run the ticket's building (otherwise
+     * they could not even open what they were given). Anyone else is 404 when not
+     * a user of this tenant at all, 400 when a user who cannot take the ticket.
+     */
+    private User requireAssignableStaff(MaintenanceTicket ticket, UUID assignTo) {
+        if (assignTo == null) {
+            throw new BusinessRuleViolationException("assignTo is required");
+        }
+        UUID tenantId = ticket.getTenantId();
+        User assignee = userRepository.findByTenantIdAndIdIn(tenantId, List.of(assignTo)).stream()
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        if (!ASSIGNABLE_ROLES.contains(assignee.getRole()) || assignee.getStatus() != UserStatus.ACTIVE) {
+            throw new BusinessRuleViolationException("Tickets can be assigned only to active admins and property managers");
+        }
+        if (assignee.getRole() == UserRole.PROPERTY_MANAGER) {
+            UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
+            if (propertyId == null || !propertyAssignmentRepository.existsByUserIdAndPropertyId(assignee.getId(), propertyId)) {
+                throw new BusinessRuleViolationException("That property manager is not assigned to this ticket's property");
+            }
+        }
+        return assignee;
     }
 
     /** Reading a ticket, or changing it. Some roles may do the first and not the second. */
@@ -411,6 +442,7 @@ public class MaintenanceTicketService {
     @Transactional
     public MaintenanceTicketDTO assignTicket(UUID ticketId, UUID assignTo, UUID performedBy) {
         MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
+        User assignee = requireAssignableStaff(ticket, assignTo);
 
         UUID previousAssignee = ticket.getAssignedTo();
         String previousStatus = ticket.getStatus() != null ? ticket.getStatus().name() : null;
@@ -420,7 +452,9 @@ public class MaintenanceTicketService {
         }
 
         // Resolve names for descriptive history
-        String assigneeName = userRepository.findDisplayNameById(assignTo).orElse("Unknown");
+        // The validated, tenant-filtered row, not the unscoped native name lookup,
+        // which answered for any user id in the database (audit D-F2).
+        String assigneeName = assignee.getName() != null ? assignee.getName() : "Unknown";
         String action = previousAssignee == null ? "ASSIGNED" : "REASSIGNED";
         String notes = previousAssignee == null
                 ? "Ticket assigned to " + assigneeName
