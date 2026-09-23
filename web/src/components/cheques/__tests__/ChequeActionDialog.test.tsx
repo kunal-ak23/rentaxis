@@ -97,6 +97,15 @@ describe("ChequeActionDialog — replace", () => {
     });
 });
 
+describe("ChequeActionDialog — title (#43)", () => {
+    it("does not fall back to #seqNo for a numberless CASH row", () => {
+        renderDialog("receive", { mode: "CASH", chequeNumber: null, seqNo: 6 });
+        const title = screen.getByRole("heading", { level: 3 }).textContent ?? "";
+        expect(title).not.toContain("#");
+        expect(title).toContain("—");
+    });
+});
+
 describe("ChequeActionDialog — release online", () => {
     it("releases an abandoned gateway session back onto the register", async () => {
         api.releaseOnline.mockResolvedValueOnce(cheque({ status: "REGISTERED" }));
