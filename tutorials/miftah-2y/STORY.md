@@ -391,6 +391,8 @@ buildings, staff and bank accounts.
 - **Clean file:** "Import Successful". **Al Waha Towers** now lists 6 units, 50% occupied.
 - **The accounting behind it is wrong (#83):** the three ACTIVE leases were never posted. Their cheques are DRAFT, and they cover rent only, not deposit or fee. The property has no ledger accounts, and a monthly rent was annualised to 98,000.04. The dashboard still counts all of it as active revenue.
 
+**M26 (cont.) · 24 Sep 2026 — Gulf Brew replaces its bounced cheque.** *Return & Replace* lists the three bounced cheques (Fatima's 300206 signature mismatch and 300204 account closed; Gulf Brew's 700102). Replacing 700102 with Emirates NBD **700105** dated 01/10/2026 for 31,500 ("residual 0.00 stays in rent receivable"): 700102 → REPLACED ↔ 700105 REGISTERED, linked both ways. No bounce fine was proposed, by policy: fines start at the 2nd bounce on a lease (`DEFAULT_BOUNCES_BEFORE_PENALTY = 2`); Fatima's second did get one. Small UI gaps: #84 (a "Deposit date" label on Replace) and #85 (the register ignores `?status=`).
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
