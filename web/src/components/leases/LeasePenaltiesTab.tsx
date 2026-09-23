@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Plus } from "lucide-react";
-import { NumberInput } from "@/components/ui/NumberInput";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { ApiError, penaltyApi, type PenaltyReason } from "@/lib/api/leasing";
 import PenaltyQueue from "@/components/penalties/PenaltyQueue";
+import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
 
 /**
  * The fines raised against one contract.
@@ -21,10 +20,6 @@ import PenaltyQueue from "@/components/penalties/PenaltyQueue";
  * Waive without the shared queue's date/note dialogs.
  */
 
-const field = "w-full bg-input border border-border rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
-
-const REASONS: PenaltyReason[] = ["CHEQUE_RETURN", "LATE_PAYMENT", "OTHER"];
-
 type Props = { leaseId: string; userRole: UserRole | undefined };
 
 export default function LeasePenaltiesTab({ leaseId, userRole }: Props) {
@@ -33,33 +28,9 @@ export default function LeasePenaltiesTab({ leaseId, userRole }: Props) {
 
     const canPropose = hasPermission(userRole, "canProposePenalties");
 
-    const [error, setError] = useState<string | null>(null);
-    const [busyId, setBusyId] = useState<string | null>(null);
     const [reloadKey, setReloadKey] = useState(0);
 
     const [proposeOpen, setProposeOpen] = useState(false);
-    const [reason, setReason] = useState<PenaltyReason>("LATE_PAYMENT");
-    const [amount, setAmount] = useState(0);
-    const [description, setDescription] = useState("");
-
-    const propose = async () => {
-        setBusyId("new");
-        setError(null);
-        try {
-            await penaltyApi.propose({ leaseId, reason, amount, description: description || null });
-            setProposeOpen(false);
-            setAmount(0);
-            setDescription("");
-            // PenaltyQueue owns its own fetch; bump its key so the freshly
-            // proposed row shows up on the PROPOSED tab without a page reload.
-            setReloadKey(k => k + 1);
-        } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
-        } finally {
-            setBusyId(null);
-        }
-    };
-
     return (
         <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm" data-testid="lease-penalties-tab">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
@@ -68,45 +39,25 @@ export default function LeasePenaltiesTab({ leaseId, userRole }: Props) {
                     <button
                         type="button"
                         data-testid="penalty-propose-open"
-                        onClick={() => setProposeOpen(o => !o)}
+                        onClick={() => setProposeOpen(true)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
                     >
-                        <Plus size={12} /> {t("propose")}
+                        <Plus size={12} /> {tl("raisePenalty")}
                     </button>
                 )}
             </div>
 
-            {error && <p className="px-4 py-2 text-[11px] text-error bg-error/10" data-testid="penalty-propose-error">{error}</p>}
-
-            {proposeOpen && canPropose && (
-                <div className="px-4 py-3 border-b border-border bg-input/20 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                    <div>
-                        <label className="block text-[10px] font-semibold text-muted uppercase mb-1" htmlFor="penalty-reason">{t("failureReason")}</label>
-                        <select id="penalty-reason" className={field} value={reason} onChange={e => setReason(e.target.value as PenaltyReason)}>
-                            {REASONS.map(r => (
-                                <option key={r} value={r}>{t(`reason.${r}`)}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-semibold text-muted uppercase mb-1" htmlFor="penalty-amount">{tl("amount")}</label>
-                        <NumberInput id="penalty-amount" min={0} step={0.01} className={`${field} text-end tabular-nums`} value={amount} onChange={setAmount} />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-semibold text-muted uppercase mb-1" htmlFor="penalty-description">{tl("narration")}</label>
-                        <input id="penalty-description" className={field} value={description} onChange={e => setDescription(e.target.value)} />
-                    </div>
-                    <button
-                        type="button"
-                        data-testid="penalty-propose-confirm"
-                        disabled={amount <= 0 || busyId === "new"}
-                        onClick={propose}
-                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer disabled:opacity-50"
-                    >
-                        {t("propose")}
-                    </button>
-                </div>
-            )}
+            <RaisePenaltyDialog
+                open={proposeOpen && canPropose}
+                leaseId={leaseId}
+                onClose={() => setProposeOpen(false)}
+                onRaised={() => {
+                    setProposeOpen(false);
+                    // PenaltyQueue owns its own fetch; bump its key so the freshly
+                    // proposed row shows up on the PROPOSED tab without a page reload.
+                    setReloadKey(k => k + 1);
+                }}
+            />
 
             <div className="p-4">
                 <PenaltyQueue key={reloadKey} userRole={userRole} leaseId={leaseId} />

@@ -1720,6 +1720,11 @@
     "removeFilter": "إزالة هذا المرشّح"
   },
   "Leasing": {
+    "raisePenalty": "فرض غرامة",
+    "penaltyCategory": "الفئة",
+    "penaltyIncidentDate": "تاريخ الواقعة",
+    "raisePenaltyHint": "تُقترح الغرامة ولا تُحتسب مباشرة. يعتمدها قسم المالية قبل ترحيل أي قيد إلى الدفتر.",
+    "penaltyRaisedBanner": "تم اقتراح الغرامة. تظهر في تبويب الغرامات ليعتمدها قسم المالية.",
     "contractDate": "تاريخ العقد",
     "contractNumber": "رقم العقد",
     "trackingChain": "سلسلة التجديد",

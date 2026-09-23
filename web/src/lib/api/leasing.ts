@@ -755,6 +755,8 @@ export type PenaltyAssessment = {
   reason: PenaltyReason;
   amount: number;
   description: string | null;
+  /** When the charged-for thing happened (#12); null on rows proposed before it was recorded. */
+  incidentDate?: string | null;
   status: PenaltyAssessmentStatus;
   proposedBy: string | null;
   proposedAt: string | null;
@@ -773,6 +775,8 @@ export type ProposePenaltyInput = {
   reason: PenaltyReason;
   amount: number;
   description?: string | null;
+  /** yyyy-MM-dd, Asia/Dubai; defaults to today server-side and may not be in the future. */
+  incidentDate?: string | null;
 };
 
 /** RenterChequeDTO — a row of the renter's own "my payments" screen. */

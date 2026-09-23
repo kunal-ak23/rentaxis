@@ -1720,6 +1720,11 @@
     "removeFilter": "Remove this filter"
   },
   "Leasing": {
+    "raisePenalty": "Raise penalty",
+    "penaltyCategory": "Category",
+    "penaltyIncidentDate": "Date of incident",
+    "raisePenaltyHint": "The penalty is proposed, not charged. Finance approves it before anything is posted to the ledger.",
+    "penaltyRaisedBanner": "Penalty proposed. It appears in the Penalties tab for finance to approve.",
     "contractDate": "Contract Date",
     "contractNumber": "Contract No.",
     "trackingChain": "Renewal Chain",

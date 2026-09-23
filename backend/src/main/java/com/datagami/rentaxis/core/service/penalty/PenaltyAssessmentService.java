@@ -162,7 +162,11 @@ public class PenaltyAssessmentService {
                 throw new BusinessRuleViolationException("That cheque does not belong to this lease");
             }
         }
-        return dto(save(lease, cheque, r.reason(), r.amount(), r.description(), byUser));
+        LocalDate incident = r.incidentDate() != null ? r.incidentDate() : LocalDate.now();
+        if (incident.isAfter(LocalDate.now())) {
+            throw new BusinessRuleViolationException("A penalty cannot be raised for a date in the future");
+        }
+        return dto(save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser));
     }
 
     /**
@@ -179,11 +183,12 @@ public class PenaltyAssessmentService {
     @Transactional
     public PenaltyAssessment proposeBySystem(Lease lease, Cheque cheque, PenaltyReason reason,
                                              BigDecimal amount, String description) {
-        return save(lease, cheque, reason, amount, description, null);
+        return save(lease, cheque, reason, amount, description, LocalDate.now(), null);
     }
 
     private PenaltyAssessment save(Lease lease, Cheque cheque, PenaltyReason reason,
-                                   BigDecimal amount, String description, UUID byUser) {
+                                   BigDecimal amount, String description, LocalDate incidentDate,
+                                   UUID byUser) {
         if (reason == null) throw new BusinessRuleViolationException("A penalty needs a reason");
         if (amount == null || amount.signum() <= 0) {
             throw new BusinessRuleViolationException("A penalty amount must be greater than zero");
@@ -205,6 +210,7 @@ public class PenaltyAssessmentService {
         a.setReason(reason);
         a.setAmount(amount);
         a.setDescription(description);
+        a.setIncidentDate(incidentDate);
         a.setStatus(PenaltyAssessmentStatus.PROPOSED);
         a.setProposedBy(byUser);
         a.setProposedAt(Instant.now());
@@ -520,6 +526,7 @@ public class PenaltyAssessmentService {
                 a.getReason(),
                 a.getAmount(),
                 a.getDescription(),
+                a.getIncidentDate(),
                 a.getStatus(),
                 a.getProposedBy(),
                 a.getProposedAt(),

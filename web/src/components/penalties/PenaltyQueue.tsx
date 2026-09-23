@@ -184,6 +184,11 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                                     {p.description}
                                                 </span>
                                             )}
+                                            {p.incidentDate && (
+                                                <span className="block text-[10px] text-muted mt-0.5" data-testid={`penalty-incident-${i}`}>
+                                                    {tl("penaltyIncidentDate")}: {fmtIsoDate(p.incidentDate, locale)}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(p.amount)}</td>
                                         <td className={`${td} text-muted`}>

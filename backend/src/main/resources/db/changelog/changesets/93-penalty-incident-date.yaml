@@ -1,0 +1,16 @@
+databaseChangeLog:
+  # #12: a penalty raised by a person records the day the thing it charges for
+  # happened (the damage, the late payment, the noise complaint), which is not
+  # the day it was typed and not the day finance approves it. Nullable: rows
+  # proposed before this column existed have no such date, and nothing is
+  # invented for them.
+  - changeSet:
+      id: 93-penalty-incident-date
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: penalty_assessments
+            columns:
+              - column:
+                  name: incident_date
+                  type: date

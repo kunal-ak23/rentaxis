@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    FileText, Loader2, Mail, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    FileText, Gavel, Loader2, Mail, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
@@ -30,6 +30,7 @@ import AddChargeDialog from "@/components/leases/AddChargeDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
+import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
@@ -124,6 +125,13 @@ type Tab = typeof TABS[number];
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
 
 /**
+ * `PenaltyAssessmentService.CHARGEABLE` — the statuses a penalty may be raised
+ * and approved against (#12). A terminated or closed contract is settled, not
+ * fined.
+ */
+const PENALTY_CHARGEABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"];
+
+/**
  * What the recognition schedule has to add back to.
  *
  * Σ of the RENT-behaviour lines' **net** amounts, which is exactly what
@@ -170,6 +178,10 @@ export default function LeaseDetailPage() {
     const canGiveNotice = hasPermission(userRole, "canGiveNotice");
     const canViewSettlement = hasPermission(userRole, "canViewSettlement");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
+    // #12: the header's Raise penalty is finance's (the roles that decide
+    // penalties). A property manager still proposes from the Penalties tab,
+    // which PenaltyAssessmentController allows by design.
+    const canRaisePenalty = hasPermission(userRole, "canApprovePenalties");
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -196,6 +208,8 @@ export default function LeaseDetailPage() {
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
+    const [penaltyOpen, setPenaltyOpen] = useState(false);
+    const [penaltyKey, setPenaltyKey] = useState(0);
     const [noticeBusy, setNoticeBusy] = useState(false);
     const [chequeAction, setChequeAction] = useState<{ action: ChequeAction; cheque: Cheque } | null>(null);
     const [chequeBusy, setChequeBusy] = useState(false);
@@ -585,6 +599,15 @@ export default function LeaseDetailPage() {
                           the termination leaves behind — which is why Settle appears
                           only once the contract has ended (`SettlementService.SETTLEABLE`).
                         */}
+                        {PENALTY_CHARGEABLE.includes(lease.status) && canRaisePenalty && (
+                            <button
+                                onClick={() => setPenaltyOpen(true)}
+                                data-testid="lease-raise-penalty"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <Gavel size={14} /> {t("raisePenalty")}
+                            </button>
+                        )}
                         {lease.status === "ACTIVE" && canGiveNotice && (
                             <button
                                 onClick={() => setNoticeOpen(true)}
@@ -776,7 +799,7 @@ export default function LeaseDetailPage() {
                     </div>
                 )}
 
-                {tab === "penalties" && <LeasePenaltiesTab leaseId={leaseId} userRole={userRole} />}
+                {tab === "penalties" && <LeasePenaltiesTab key={penaltyKey} leaseId={leaseId} userRole={userRole} />}
 
                 {tab === "contract" && (
                     <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -1027,6 +1050,18 @@ export default function LeaseDetailPage() {
                     }}
                 />
             )}
+
+            <RaisePenaltyDialog
+                open={penaltyOpen}
+                leaseId={leaseId}
+                onClose={() => setPenaltyOpen(false)}
+                onRaised={() => {
+                    setPenaltyOpen(false);
+                    setBanner(t("penaltyRaisedBanner"));
+                    setPenaltyKey(k => k + 1);
+                    setTab("penalties");
+                }}
+            />
 
             <ConfirmDialog
                 isOpen={noticeOpen}
