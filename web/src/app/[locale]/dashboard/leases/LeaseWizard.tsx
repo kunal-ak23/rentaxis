@@ -111,6 +111,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const [unitId, setUnitId] = useState("");
     const [renterId, setRenterId] = useState("");
     const [terms, setTerms] = useState<Terms>(initialTerms);
+    // Once the operator edits the contract date directly, stop following the
+    // agreement date — see #45. Before that, they're the same field.
+    const [contractDateTouched, setContractDateTouched] = useState(false);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
@@ -129,6 +132,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setUnitId("");
         setRenterId("");
         setTerms({ ...initialTerms, contractDate: todayIso() });
+        setContractDateTouched(false);
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
@@ -402,7 +406,20 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 />
                             </Field>
                             <Field label={t("agreementDate")}>
-                                <input type="date" className={field} value={terms.agreementDate} onChange={e => patch({ agreementDate: e.target.value })} />
+                                <input
+                                    type="date"
+                                    data-testid="wizard-agreement-date"
+                                    className={field}
+                                    value={terms.agreementDate}
+                                    onChange={e => {
+                                        const value = e.target.value;
+                                        patch(
+                                            contractDateTouched
+                                                ? { agreementDate: value }
+                                                : { agreementDate: value, contractDate: value },
+                                        );
+                                    }}
+                                />
                             </Field>
                         </div>
                     )}
@@ -410,7 +427,16 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {step.key === "terms" && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <Field label={t("contractDate")}>
-                                <input type="date" data-testid="wizard-contract-date" className={field} value={terms.contractDate} onChange={e => patch({ contractDate: e.target.value })} />
+                                <input
+                                    type="date"
+                                    data-testid="wizard-contract-date"
+                                    className={field}
+                                    value={terms.contractDate}
+                                    onChange={e => {
+                                        setContractDateTouched(true);
+                                        patch({ contractDate: e.target.value });
+                                    }}
+                                />
                             </Field>
                             <Field label={`${t("startDate")} *`}>
                                 <input type="date" data-testid="wizard-start-date" className={field} value={terms.startDate} onChange={e => patch({ startDate: e.target.value })} />
