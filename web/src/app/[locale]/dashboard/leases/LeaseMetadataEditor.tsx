@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } f
 import { cn } from "@/lib/utils";
 import { NumberInput } from "@/components/ui/NumberInput";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
-import { linesAreValid, splitLineErrors, toInputs, toRows, type LineRow } from "@/components/leases/leaseMath";
+import { linesAreValid, splitLineErrors, toInputs, toRows, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, leaseApi,
     type ChargeType, type DraftLeaseInput, type DraftPaymentMethod,
@@ -101,6 +101,18 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
     const patch = (next: Partial<Header>) => {
         setHeader(prev => ({ ...prev, ...next }));
         setSaved(false);
+    };
+
+    // #54: the header's "Rent carries VAT" flag drives the RENT lines' VAT box,
+    // as in the wizard — otherwise ticking it here saves a header that says
+    // rent is taxed over RENT lines that each still say it is not, and the
+    // server honours the lines. A RENT line whose box the operator ticked or
+    // unticked by hand in this session keeps that choice (`vatTouched`); lines
+    // read back from the server have no such memory and follow the header.
+    // Picking a RENT charge in the grid takes the flag via `rentVat`.
+    const setRentVat = (rentVatApplicable: boolean) => {
+        patch({ rentVatApplicable });
+        setRows(prev => withRentVat(prev, chargeTypes, rentVatApplicable));
     };
 
     const { rest: bannerErrors } = splitLineErrors(errors);
@@ -216,7 +228,7 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
                             <input className={field} value={header.paymentReferenceNumber} onChange={e => patch({ paymentReferenceNumber: e.target.value })} />
                         </Field>
                         <label className="flex items-end gap-2 text-xs text-foreground pb-2.5">
-                            <input type="checkbox" checked={header.rentVatApplicable} onChange={e => patch({ rentVatApplicable: e.target.checked })} />
+                            <input type="checkbox" data-testid="edit-rent-vat" checked={header.rentVatApplicable} onChange={e => setRentVat(e.target.checked)} />
                             {t("rentVat")}
                         </label>
                     </div>
@@ -228,6 +240,7 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
                         editable
                         onChange={setRows}
                         errors={errors}
+                        rentVat={header.rentVatApplicable}
                     />
 
                     {/*

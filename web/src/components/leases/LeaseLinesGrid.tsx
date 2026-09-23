@@ -52,6 +52,14 @@ type Props = {
      * split the list with `splitLineErrors` and pass the whole thing here.
      */
     errors?: string[];
+    /**
+     * The lease header's "Rent carries VAT" flag (#54). When given, picking a
+     * RENT-behaviour charge type sets the row's VAT box from it instead of the
+     * charge type's catalogue default, which describes the charge, not this
+     * contract. Every grid that edits a lease's lines passes it; a caller with
+     * no lease (none today) leaves it out and gets the catalogue default.
+     */
+    rentVat?: boolean;
 };
 
 export default function LeaseLinesGrid({
@@ -61,6 +69,7 @@ export default function LeaseLinesGrid({
     editable,
     onChange,
     errors,
+    rentVat,
 }: Props) {
     const t = useTranslations("Leasing");
     const totals = totalsOf(lines, chargeTypes);
@@ -73,7 +82,8 @@ export default function LeaseLinesGrid({
 
     /**
      * Choosing a charge type carries its defaults onto the row: VAT from the
-     * catalogue's `vatApplicableDefault`, and — on a row that has not been
+     * catalogue's `vatApplicableDefault` (for a RENT type, from the lease's
+     * `rentVat` flag when the caller passes one), and — on a row that has not been
      * pointed at an account yet — nothing, because the server fills the
      * account in from the property's role mapping when the draft is saved and
      * hands it back on the line. Overwriting an account the user chose by hand
@@ -81,10 +91,12 @@ export default function LeaseLinesGrid({
      */
     const pickType = (row: LineRow, chargeTypeId: string) => {
         const type = chargeTypes.find(c => c.id === chargeTypeId);
-        patch(row.key, {
-            chargeTypeId,
-            vatApplicable: type ? type.vatApplicableDefault : row.vatApplicable,
-        });
+        const vatApplicable = !type
+            ? row.vatApplicable
+            : type.behaviour === "RENT" && rentVat !== undefined
+              ? rentVat
+              : type.vatApplicableDefault;
+        patch(row.key, { chargeTypeId, vatApplicable, vatTouched: false });
     };
 
     const addRow = () => {
@@ -221,7 +233,7 @@ export default function LeaseLinesGrid({
                                                 data-testid={`lease-line-vat-${i}`}
                                                 disabled={!editable || behaviour === "DEPOSIT"}
                                                 checked={row.vatApplicable && behaviour !== "DEPOSIT"}
-                                                onChange={e => patch(row.key, { vatApplicable: e.target.checked })}
+                                                onChange={e => patch(row.key, { vatApplicable: e.target.checked, vatTouched: true })}
                                             />
                                             <span className="tabular-nums text-muted">
                                                 {fmtAmount(vatOf(row, chargeTypes))}

@@ -305,6 +305,28 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
     }
 
     /**
+     * A rent line's narration names its term ("Annual rent 01 Oct 2024 - 30 Sep
+     * 2025"), and the TCO, the contract PDF and the renter's ledger all print it.
+     * The period is re-dated, so the words must not survive to contradict it; a
+     * fee's narration says what the fee is and carries over (gap #49).
+     */
+    @Test
+    void renewDropsTheRentLinesNarrationButKeepsAFeesNarration() {
+        UUID firstId = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(
+                new LeaseLineInput(null, "RENT", new java.math.BigDecimal("51000"), java.math.BigDecimal.ZERO,
+                        "Annual rent for last year's term", null, null, null, null),
+                new LeaseLineInput(null, "ADMIN_FEE", new java.math.BigDecimal("2000"), java.math.BigDecimal.ZERO,
+                        "Contract admin fee", null, null, null, null)), 4, null).lease().getId();
+
+        LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).narration()).isNull();
+        assertThat(copied.get(1).narration()).isEqualTo("Contract admin fee");
+    }
+
+    /**
      * Posting the successor retires the predecessor. The unit is never vacated in
      * between: the renter has not moved out, and a moment of VACANT is a moment the
      * unit is lettable to somebody else (spec §6.6).
@@ -900,6 +922,43 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         // Net pair plus the VAT pair.
         assertThat(linesOf(r.tcoJournalId())).hasSize(4);
         assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(leaf(AccountRole.OUTPUT_VAT).getId());
+    }
+
+    /**
+     * #54 review M-2: on a lease whose header says rent carries VAT, an extension's
+     * RENT line sent with no VAT flag of its own follows the header — both in the
+     * figure the cheques must cover ({@code AdditionalCharges.valueOf}) and on the
+     * written line the TCO posts from. Cheques for the net alone are refused.
+     */
+    @Test
+    void anExtensionsFlaglessRentLineFollowsTheLeasesRentVatFlag() {
+        UUID leaseId = postedWithFee();
+        // A commercial lease. Ticked after posting so the fixture's own grid stays
+        // VAT-free: the subject here is the extension alone.
+        rentCarriesVat(leaseId);
+        assertThat(line("RENT", "12000").vatApplicable()).as("the line sends no flag of its own").isNull();
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, extension("12000", "12000")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque rows total 12,000.00 but the extension charges 12,600.00");
+        assertThat(leaseLines(leaseId)).hasSize(2);
+
+        PostLeaseResponse r = renewal.extend(leaseId, extension("12000", "12600"));
+
+        assertThat(leaseLines(leaseId).get(2).vatApplicable()).isTrue();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        assertThat(linesOf(r.tcoJournalId()))
+                .filteredOn(l -> outputVat.equals(l.getAccountId()))
+                .singleElement()
+                .satisfies(l -> assertThat(l.getCredit()).isEqualByComparingTo("600"));
+    }
+
+    private void rentCarriesVat(UUID leaseId) {
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(leaseId).orElseThrow();
+            lease.setRentVatApplicable(true);
+            leaseRepo.save(lease);
+        });
     }
 
     /** A locked period refuses the extension whole — no lines, no rows, no journals. */

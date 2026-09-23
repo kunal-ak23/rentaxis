@@ -300,6 +300,41 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
                 .isEqualTo(addendumId);
     }
 
+    /**
+     * #54 review M-2: on a lease whose header says rent carries VAT, an addendum's
+     * RENT line sent with no VAT flag of its own follows the header — in the figure
+     * the cheques must cover and on the written line the TCO posts Output VAT from.
+     */
+    @Test
+    void anAddendumsFlaglessRentLineFollowsTheLeasesRentVatFlag() {
+        UUID leaseId = postedWithFee();
+        // A commercial lease, ticked after posting so the fixture's own grid stays
+        // VAT-free: the subject here is the addendum alone.
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(leaseId).orElseThrow();
+            lease.setRentVatApplicable(true);
+            leaseRepo.save(lease);
+        });
+        LeaseLineInput storage = line("RENT", "4000");
+        assertThat(storage.vatApplicable()).as("the line sends no flag of its own").isNull();
+
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Storage room", List.of(storage), List.of(chequeRow("4000", LocalDate.of(2027, 3, 1))))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque rows total 4,000.00 but the addendum charges 4,200.00");
+        assertThat(leaseLines(leaseId)).hasSize(2);
+
+        AddendumResponse r = variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Storage room", List.of(storage), List.of(chequeRow("4200", LocalDate.of(2027, 3, 1)))));
+
+        assertThat(leaseLines(leaseId).getLast().vatApplicable()).isTrue();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        assertThat(linesOf(r.posting().tcoJournalId()))
+                .filteredOn(l -> outputVat.equals(l.getAccountId()))
+                .singleElement()
+                .satisfies(l -> assertThat(l.getCredit()).isEqualByComparingTo("200"));
+    }
+
     @Test
     void aChequeMismatchChangesNothing() {
         UUID leaseId = postedWithFee();

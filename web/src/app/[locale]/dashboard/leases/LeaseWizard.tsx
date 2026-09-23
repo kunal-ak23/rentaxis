@@ -16,7 +16,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
-import { blankLine, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type DraftLeaseInput, type DraftPaymentMethod,
@@ -111,6 +111,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const [unitId, setUnitId] = useState("");
     const [renterId, setRenterId] = useState("");
     const [terms, setTerms] = useState<Terms>(initialTerms);
+    // Once the operator edits the contract date directly, stop following the
+    // agreement date — see #45. Before that, they're the same field.
+    const [contractDateTouched, setContractDateTouched] = useState(false);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
@@ -129,6 +132,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setUnitId("");
         setRenterId("");
         setTerms({ ...initialTerms, contractDate: todayIso() });
+        setContractDateTouched(false);
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
@@ -306,6 +310,18 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setTerms(prev => ({ ...prev, ...next }));
         setError(null);
     };
+    // #54: the header's "Rent carries VAT" flag drives every RENT line's VAT
+    // box — when the flag changes (here, or via the unit's property type), and
+    // when a line is pointed at a RENT charge. A line whose own box the
+    // operator ticked or unticked afterwards is `vatTouched` and keeps that
+    // choice through later header changes (M-3), until its charge type is
+    // picked again.
+    const setRentVat = (rentVatApplicable: boolean) => {
+        patch({ rentVatApplicable });
+        setRows(prev => withRentVat(prev, chargeTypes, rentVatApplicable));
+    };
+    const onLinesChange = (next: LineRow[]) =>
+        setRows(prev => followRentVat(prev, next, chargeTypes, terms.rentVatApplicable));
 
     const goNext = () => {
         const e = stepError(stepIdx);
@@ -326,7 +342,12 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     };
 
     return (
-        <div data-testid="lease-wizard" className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:p-6">
+        <div
+            data-testid="lease-wizard"
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:p-6"
+        >
             <div className="bg-surface w-full max-w-6xl rounded-none sm:rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <div>
@@ -376,7 +397,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     onChange={id => {
                                         setUnitId(id);
                                         const u = units.find(x => x.id === id);
-                                        patch({ rentVatApplicable: u?.property?.type === "COMMERCIAL" });
+                                        setRentVat(u?.property?.type === "COMMERCIAL");
                                     }}
                                     placeholder={t("unit")}
                                     searchPlaceholder={t("unit")}
@@ -397,7 +418,20 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 />
                             </Field>
                             <Field label={t("agreementDate")}>
-                                <input type="date" className={field} value={terms.agreementDate} onChange={e => patch({ agreementDate: e.target.value })} />
+                                <input
+                                    type="date"
+                                    data-testid="wizard-agreement-date"
+                                    className={field}
+                                    value={terms.agreementDate}
+                                    onChange={e => {
+                                        const value = e.target.value;
+                                        patch(
+                                            contractDateTouched
+                                                ? { agreementDate: value }
+                                                : { agreementDate: value, contractDate: value || todayIso() },
+                                        );
+                                    }}
+                                />
                             </Field>
                         </div>
                     )}
@@ -405,7 +439,16 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {step.key === "terms" && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <Field label={t("contractDate")}>
-                                <input type="date" data-testid="wizard-contract-date" className={field} value={terms.contractDate} onChange={e => patch({ contractDate: e.target.value })} />
+                                <input
+                                    type="date"
+                                    data-testid="wizard-contract-date"
+                                    className={field}
+                                    value={terms.contractDate}
+                                    onChange={e => {
+                                        setContractDateTouched(true);
+                                        patch({ contractDate: e.target.value });
+                                    }}
+                                />
                             </Field>
                             <Field label={`${t("startDate")} *`}>
                                 <input type="date" data-testid="wizard-start-date" className={field} value={terms.startDate} onChange={e => patch({ startDate: e.target.value })} />
@@ -449,7 +492,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 <input className={field} value={terms.paymentReferenceNumber} onChange={e => patch({ paymentReferenceNumber: e.target.value })} />
                             </Field>
                             <label className="flex items-end gap-2 text-xs text-foreground pb-3">
-                                <input type="checkbox" checked={terms.rentVatApplicable} onChange={e => patch({ rentVatApplicable: e.target.checked })} />
+                                <input type="checkbox" data-testid="wizard-rent-vat" checked={terms.rentVatApplicable} onChange={e => setRentVat(e.target.checked)} />
                                 {t("rentVat")}
                             </label>
                         </div>
@@ -462,8 +505,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 chargeTypes={chargeTypes}
                                 propertyId={selectedUnit?.property?.id ?? null}
                                 editable
-                                onChange={setRows}
+                                onChange={onLinesChange}
                                 errors={serverErrors}
+                                rentVat={terms.rentVatApplicable}
                             />
                             {bannerErrors.length > 0 && (
                                 <ul className="text-[11px] text-error space-y-1" data-testid="wizard-line-errors">
@@ -488,6 +532,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 contractValueInclVat={totals.inclVat}
                                 defaultInstallments={terms.paymentTerms}
                                 defaultFirstDueDate={terms.firstDueDate || terms.startDate}
+                                defaultDistribution={terms.installmentDistribution}
                                 busy={busy}
                                 error={chequeError}
                                 notice={chequeNotice}

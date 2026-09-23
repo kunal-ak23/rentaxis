@@ -100,6 +100,55 @@ describe("ChequeGrid editability", () => {
             expect.objectContaining({ installments: 4, firstDueDate: "2026-01-01", distribution: "LAST_LARGER" }),
         );
     });
+
+    it("initializes the generate form's distribution from defaultDistribution, not a hardcoded LAST_LARGER (#46)", () => {
+        const onGenerate = vi.fn();
+        renderGrid({
+            cheques: [],
+            editable: true,
+            onGenerate,
+            contractValueInclVat: 30000,
+            defaultDistribution: "UNIFORM",
+        });
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        expect(screen.getByLabelText("Distribution")).toHaveValue("UNIFORM");
+
+        fireEvent.change(screen.getByLabelText("Installments"), { target: { value: "4" } });
+        fireEvent.change(screen.getByLabelText("First Due Date"), { target: { value: "2026-01-01" } });
+        fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
+        expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ distribution: "UNIFORM" }));
+    });
+
+    it("follows a changed defaultDistribution while mounted, until the operator picks one (m4)", () => {
+        const onGenerate = vi.fn();
+        const grid = (d: "UNIFORM" | "FIRST_LARGER" | "LAST_LARGER") => (
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequeGrid cheques={[]} editable onGenerate={onGenerate} contractValueInclVat={30000} defaultDistribution={d} />
+            </NextIntlClientProvider>
+        );
+        const { rerender } = render(grid("UNIFORM"));
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        expect(screen.getByLabelText("Distribution")).toHaveValue("UNIFORM");
+
+        // The lease's distribution changed and the page reloaded it.
+        rerender(grid("FIRST_LARGER"));
+        expect(screen.getByLabelText("Distribution")).toHaveValue("FIRST_LARGER");
+
+        // Once the operator picks one, a later prop change no longer overrides it.
+        fireEvent.change(screen.getByLabelText("Distribution"), { target: { value: "LAST_LARGER" } });
+        rerender(grid("UNIFORM"));
+        expect(screen.getByLabelText("Distribution")).toHaveValue("LAST_LARGER");
+        fireEvent.change(screen.getByLabelText("Installments"), { target: { value: "4" } });
+        fireEvent.change(screen.getByLabelText("First Due Date"), { target: { value: "2026-01-01" } });
+        fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
+        expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ distribution: "LAST_LARGER" }));
+    });
+
+    it("still defaults to LAST_LARGER when no defaultDistribution is given", () => {
+        renderGrid({ cheques: [], editable: true, contractValueInclVat: 30000 });
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        expect(screen.getByLabelText("Distribution")).toHaveValue("LAST_LARGER");
+    });
 });
 
 describe("ChequeGrid and the server's row rules", () => {

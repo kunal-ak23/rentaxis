@@ -8,12 +8,14 @@ import { Link, usePathname } from '@/i18n/routing';
 import { getContextualHelp } from '@/lib/help';
 import { useTour } from '@/components/tour/TourProvider';
 import { getTourById } from '@/components/tour/tours';
+import { useAnyDialogOpen } from '@/lib/useAnyDialogOpen';
 
 export default function HelpFAB() {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const { startTour } = useTour();
+  const dialogOpen = useAnyDialogOpen();
 
   const ctx = getContextualHelp(pathname);
   const hasTour = !!(ctx.tour && getTourById(ctx.tour));
@@ -32,8 +34,17 @@ export default function HelpFAB() {
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [open]);
 
+  // #44: the FAB lives one tier below modal overlays (z-40 vs z-50), so any
+  // fixed z-50 overlay — with or without role="dialog" — paints over it and
+  // its footer buttons stay clickable. On top of that, get out of the way
+  // entirely while a proper dialog is open. This must come after every hook
+  // above so hook order stays stable across renders.
+  if (dialogOpen) {
+    return null;
+  }
+
   return (
-    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 right-6 z-50">
+    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 right-6 z-40">
       <AnimatePresence>
         {open && (
           <motion.div

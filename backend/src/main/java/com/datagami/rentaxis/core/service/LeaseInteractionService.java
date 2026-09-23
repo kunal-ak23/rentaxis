@@ -70,7 +70,10 @@ public class LeaseInteractionService {
     }
 
     private InteractionDTO toDTO(LeaseInteraction i) {
-        String createdByName = userRepo.findById(i.getCreatedBy()).map(u -> u.getName()).orElse(null);
+        // findDisplayNameById, not the tenant-filtered findById: a SUPER_ADMIN
+        // acting inside a pivoted tenant has tenant_id = NULL, so the filtered
+        // lookup can't see them and the name comes back blank.
+        String createdByName = userRepo.findDisplayNameById(i.getCreatedBy()).orElse(null);
         return new InteractionDTO(
                 i.getId(), i.getLease().getId(),
                 i.getOpportunity() != null ? i.getOpportunity().getId() : null,

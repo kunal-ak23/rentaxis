@@ -62,11 +62,15 @@ export type GenerateForm = {
     mode: ChequeMode;
 };
 
-export function blankGenerateForm(installments: number, firstDueDate: string): GenerateForm {
+export function blankGenerateForm(
+    installments: number,
+    firstDueDate: string,
+    distribution: InstallmentDistribution = "LAST_LARGER",
+): GenerateForm {
     return {
         installments: installments || 1,
         firstDueDate: firstDueDate || "",
-        distribution: "LAST_LARGER",
+        distribution,
         payeeBank: "",
         debitAccountId: null,
         foldDepositsAndFeesIntoFirst: true,
@@ -87,6 +91,8 @@ type Props = {
     contractValueInclVat: number;
     defaultInstallments?: number;
     defaultFirstDueDate?: string | null;
+    /** Installment distribution chosen in the lease's Terms step — see #46. */
+    defaultDistribution?: InstallmentDistribution | null;
     busy?: boolean;
     error?: string | null;
     /** Row actions — only rendered when a handler is supplied and the user may act. */
@@ -125,6 +131,7 @@ export default function ChequeGrid({
     contractValueInclVat,
     defaultInstallments = 4,
     defaultFirstDueDate,
+    defaultDistribution,
     busy,
     error,
     onRowAction,
@@ -140,8 +147,16 @@ export default function ChequeGrid({
 
     const [genOpen, setGenOpen] = useState(false);
     const [gen, setGen] = useState<GenerateForm>(() =>
-        blankGenerateForm(defaultInstallments, defaultFirstDueDate ?? ""),
+        blankGenerateForm(defaultInstallments, defaultFirstDueDate ?? "", defaultDistribution ?? "LAST_LARGER"),
     );
+    // The distribution follows the lease's own (`defaultDistribution`) until
+    // the operator picks one here — the lease page keeps this grid mounted
+    // across reloads, so a distribution changed on the lease must reach the
+    // Generate form rather than stay frozen at the first render's value.
+    const [distributionTouched, setDistributionTouched] = useState(false);
+    const distribution: InstallmentDistribution = distributionTouched
+        ? gen.distribution
+        : defaultDistribution ?? "LAST_LARGER";
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
 
@@ -246,8 +261,11 @@ export default function ChequeGrid({
                         <select
                             aria-label={t("distribution")}
                             className={field}
-                            value={gen.distribution}
-                            onChange={e => setGen(g => ({ ...g, distribution: e.target.value as InstallmentDistribution }))}
+                            value={distribution}
+                            onChange={e => {
+                                setDistributionTouched(true);
+                                setGen(g => ({ ...g, distribution: e.target.value as InstallmentDistribution }));
+                            }}
                         >
                             <option value="UNIFORM">{t("distributionUniform")}</option>
                             <option value="FIRST_LARGER">{t("distributionFirstLarger")}</option>
@@ -303,7 +321,7 @@ export default function ChequeGrid({
                                 onGenerate?.({
                                     installments: gen.installments || null,
                                     firstDueDate: gen.firstDueDate || null,
-                                    distribution: gen.distribution,
+                                    distribution,
                                     payeeBank: gen.payeeBank || null,
                                     debitAccountId: gen.debitAccountId ?? defaultBankAccountId ?? null,
                                     foldDepositsAndFeesIntoFirst: gen.foldDepositsAndFeesIntoFirst,

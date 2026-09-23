@@ -11,6 +11,7 @@ import { todayIso } from "@/components/leases/leaseMath";
 import { round2 } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque, type ChequeMode, type ChequeRowInput } from "@/lib/api/leasing";
 import { TYPEABLE_MODES, chequeRowsAreValid } from "./chequeRowRules";
+import { chequeTitle } from "./chequeLabel";
 
 /**
  * A bounced cheque is replaced by one or more new instruments (spec §7.4,
@@ -126,7 +127,7 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
         }
     };
 
-    const title = `${t("replace")} — ${cheque.chequeNumber || `#${cheque.seqNo}`} · ${fmtAmount(cheque.amount)}`;
+    const title = chequeTitle(t("replace"), cheque, fmtAmount(cheque.amount));
 
     return (
         <LeaseDialog

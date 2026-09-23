@@ -31,11 +31,11 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 
 | ID | Beat | UI proof | Status |
 |---|---|---|---|
-| S01 | Provision the org, enable LISTINGS/MEETINGS/RENEWALS/GATEPASS, create the tenant admin | org appears in the superadmin list with features on | planned |
-| S02 | Seed chart of accounts, charge types, property-account template | accounts tree renders | planned |
-| S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | planned |
-| S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | planned |
-| S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | planned |
+| S01 | Provision the org, enable LISTINGS/MEETINGS/RENEWALS/GATEPASS, create the tenant admin | org appears in the superadmin list with features on | proven |
+| S02 | Seed chart of accounts, charge types, property-account template | accounts tree renders | proven |
+| S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | proven |
+| S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | proven |
+| S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | blocked (renters only; no staff users — agents may not create login accounts) |
 | S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | planned |
 | S07 | Bank account + two vendors | lists render | planned |
 
@@ -43,38 +43,38 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 
 | ID | Month | Beat | Status |
 |---|---|---|---|
-| M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | planned |
-| M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | planned |
-| M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | planned |
+| M01 | Oct 24 | Ahmed's lease: lines, cheque grid, contract PDF, renter signature, **post** → TCO + PDRs | proven |
+| M02 | Oct 24 | Rajesh monthly lease (12 cheques) and Fatima quarterly lease, both posted | proven |
+| M03 | Nov 24 | Deposit and clear the first cheques; run recognition for Oct–Nov | proven |
 | M04 | Dec 24 | Rajesh complaint #1 — AC: raise, assign, progress, OTP close, rate | planned |
-| M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | planned |
-| M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | planned |
-| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | planned |
-| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | planned |
-| M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | planned |
-| M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | planned |
-| M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | planned |
-| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | planned |
-| M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | planned |
-| M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | planned |
+| M05 | Jan 25 | **Fatima cheque bounces (BOUNCE)** → penalty proposed → approved → replacement cheques | proven |
+| M06 | Jan 25 | Close 2024: lock through 2024-12-31, then prove a back-dated journal is refused | proven |
+| M07 | Feb 25 | **Ahmed buys parking mid-year** — assign bay, amend lease lines pro-rata, extra cheque | proven (on the year-2 lease, after PR #338) |
+| M08 | Mar 25 | Sara: listing → viewing meeting → draft lease → contract → renter accepts → post (mid-year term) | contract proven earlier (Sara's A-201 lease); listing proven in M21; viewing blocked by #61; renter accept needs her sign-in |
+| M09 | Apr 25 | Q2 deposits; vendor repair invoice (PISR) + payment voucher (BPV) for Rajesh's leak | proven |
+| M10 | May 25 | **Fatima #2 — SIGNATURE_MISMATCH** → higher fine, bounce threshold crossed | proven |
+| M11 | Jun 25 | Late-payment penalty past grace; one penalty waived as goodwill | proven |
+| M12 | Jul 25 | Amenity booking, visitor gate pass, renter-portal self-service | in progress (bookings approved, ticket in progress; gate pass not on web — see M12 note) |
+| M13 | Aug 25 | Trial balance, P&L, balance sheet, NOI, aging — assert debits = credits | proven |
+| M14 | Sep 25 | **Renewal season** — opportunity, renter intent, +8% renewal lease posted with no gap | proven |
 
 ### Y2 — Oct 2025 → Sep 2026
 
 | ID | Month | Beat | Status |
 |---|---|---|---|
-| M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | planned |
-| M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | planned |
-| M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | planned |
-| M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | planned |
-| M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
-| M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | planned |
-| M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | planned |
-| M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | planned |
-| M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | planned |
-| M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | planned |
-| M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | planned |
-| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | planned |
-| M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | planned |
+| M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | proven |
+| M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | proven |
+| M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | proven |
+| M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | proven (discount, not a true rent-free period — #50) |
+| M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | lock proven; year-end close missing (#53) |
+| M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | proven (on Omar; Sara's lease had already expired) |
+| M21 | Mar 26 | Relist A-201; promotion ad campaign; marketplace enquiry flow | proven (relist + ad live); enquiry blocked (needs a marketplace sign-in); #58 |
+| M22 | Apr 26 | **Omar transfers A-102 → A-201 mid-lease** (suspected gap: no transfer concept) | blocked; workaround proven (#52: no transfer concept) |
+| M23 | May 26 | VAT-applicable unit: 5% output VAT on rent, VAT figures in the reports | proven with gaps (#54 header flag inert, #55 no VAT return, #56 VAT timing) |
+| M24 | Jun 26 | Bulk cheque upload / cheque-image extraction for the year-2 book | proven with gaps (#62 wrong-date matching, #63 payer/payee, #64 no retry) |
+| M25 | Jul 26 | Reverse a mis-posted journal; prove journals are immutable and the pair is visible | proven |
+| M26 | Aug 26 | Recognition run to 2026-08-31; aging and collection KPIs | proven (recognition to 31/08/2026; banking run + aging; #57) |
+| M27 | Sep 26 | **Today** — dashboards, every renter's portal, notification inbox, final reports | dashboard + inbox proven (#59, #60); renter portals need the renters' own sign-ins |
 
 ### Cross-cutting
 
@@ -174,6 +174,158 @@ closed here rather than left pending:
   P0 class that was hotfixed separately).
 
 Green: `LeaseAccessPolicyTest`, `ApiSecurityFilterTest`, `RenterRenewalControllerTest`.
+
+**M07 · Feb 2026 — Ahmed's second car (rerun after PR #338).** Ahmed asked for bay B1-01
+from the renter portal; it was approved from *Bookings* — which, correctly, touches nothing
+financial. The charge went on through the new **Add charge** on his active year-2 lease:
+Parking Fee 3,750 (15 Feb → 30 Sep 2026), paid by PDC 200205, Ejari left blank. A first try
+with cheque 200201 was refused — *"already used on this lease"* — which is right. Posted as
+**ADD-26/1 / TCO-26/1** dated 10/02/2026: Rent Receivable Dr 3,750, Additional Parking Cr
+3,750. Contract value 91,800 → **95,550**, cheques 4 → 5, end date unchanged, the contract's
+own TCO untouched. The addenda panel showed *Ejari pending* until `EJ-2026-100177` was
+recorded against it. #15 and #17 are proven on production.
+
+**M12 · Sep 2026 — self-service, staff side.** Ahmed's pool booking (3 Oct) and bay request
+were approved with notes; his HVAC ticket was assigned, answered and moved to In Progress.
+The activity history attributed both staff actions to *"System"* (#42). Visitor gate passes
+have no web surface — the renter's gate-pass flow lives in the mobile app — so that half of
+M12 is left to the mobile run. The renter's meeting request dead-ended with no explanation
+because the org has no staff host (#41, fixed in PR #338).
+
+**M03 · Jan 2025 → Jul 2026 — the collection history, banked properly.** Twenty-two cheques
+had been left REGISTERED since the first pass — which is why every renter portal read
+"625 days overdue" (#40). They were banked month by month from *Collection*: one batch per
+cheque date, deposited the day after it. The first batch deliberately mixed a 01/02/2025
+cheque into a 01/01/2025 batch and was refused whole — *"400305 is dated 2025-02-01 and
+cannot be banked on 2025-01-01 … nothing was deposited"* — the #9 fix, live. Each was then
+cleared four days after its date; the Clear dialog now says **Clearing Date** (#11) but
+defaults to today, so a clerk working a backlog has to set every date by hand or every CRT
+lands in September 2026. Afterwards the register read Deposited 0.00, Due 28,984.25 across
+four rows — Fatima's two bounced cheques and two collection rows, the real arrears — and the
+trial balance closed at **1,898,802.38 = 1,898,802.38**.
+
+**M06 · Jan 2025 — 2024 closed.** With nothing pending recognition up to today, the books
+were locked through 31/12/2024. A balanced manual JV dated 15/12/2024 (Bank Charges Dr 100 /
+Rounding Off Cr 100) was refused: *"Cannot post on 2024-12-15: books are locked through
+2024-12-31"*.
+
+**M11 · Apr–May 2026 — late rent and a goodwill waiver.** From the Penalties tab of
+Ahmed's lease, finance proposed a **Late Payment 460** (April instalment, 23 days past
+grace at 20/day) and an **Other 250** (lost access card). The 460 was approved as of
+28/04/2026 — `PEN-26/1` plus a CASH collection row on his register — and received on
+02/05/2026; the 250 was waived with a goodwill note and posted nothing. Late-payment
+penalties are proposed by hand here: the automatic proposal on a late clearing is off by
+default (`FineSettingsInitializer.DEFAULT_AUTO_PROPOSE_LATE_PAYMENT = false`). The receive
+dialog still titles the cash row *"#6"* although the register shows "—" (#43).
+
+**M17 · Nov–Dec 2025 — A-102 turned round.** Gulf Cool's make-ready invoice for A-102 (AC
+deep service and gas, 1,200 + 5% VAT) posted as **PISR-25/2** on 10/11/2025 against Repairs
+& Maintenance, tagged to the unit — the unit picker now lists A-101 … A-302 in order (#6).
+Omar Khalid was added as a renter without a portal login, and his lease drafted through the
+five-step wizard: agreement 20/11/2025, term 01/12/2025–30/11/2026, rent 64,000, deposit
+6,400, admin fee 1,050 (**71,450**), Ejari `EJ-2025-100188`, four Mashreq PDCs 600101–600104
+(23,450 then 3 × 16,000). Posted as **TCO-25/3**. The wizard fought back in small ways: the
+contract date defaulted to today rather than the agreement date (#45), the cheque generator
+ignored step 2's *Uniform* distribution (#46), and the Help button sat over every step's
+Next (#44, reopened for modals). `/dashboard/leases/new` is not the wizard — it shows a raw
+*"Invalid value for parameter 'id'"* (#47) — and the leases toolbar overflows at 974px (#48).
+
+**M18 · Dec 2025 — Rajesh renews, frozen and compensated.** His lease had expired on
+30/09/2025 with him still in the flat; the paperwork caught up on 05/12/2025. *Renew* on the
+expired lease proposed a continuous term (01/10/2025–30/09/2026), copied the lines and
+carried the 8,000 deposit forward by JV. The copied rent line still read *"Annual rent 01
+Oct 2024 - 30 Sep 2025"* (#49). The rent-free month could only be written as a 4,000
+discount on the 48,000 rent — no screen sets a line's own period (#50) — so the contract is
+**44,000**, twelve ADCB PDCs 400401–400412, posted with a 1-TCO/12-PDR review and the old
+lease retired as RENEWED.
+
+**M26 (part) · Aug 2026 — recognition caught up.** With Omar's and Rajesh's contracts on the
+books, 20 months were pending. The per-day arithmetic is exact — A-102 64,000 ÷ 365 × 31 =
+5,435.62, A-103 44,000 ÷ 365 × 31 = 3,736.99, February pro-rated to 28 days — and *Run
+recognition* posted all 20 (88,427.44) to 31/08/2026, the last month that has ended.
+
+**M20 + M22 · Mar–Apr 2026 — Omar moves up to A-201.** Sara's lease had simply run out in
+February, so early exit was played on Omar, who wanted the three-bedroom. His December and
+March cheques were banked and cleared first. *Terminate* on 31/03/2026: earned 21,216.44
+(121 days × 64,000 ÷ 365), 42,783.56 of unearned rent reversed — including the April–August
+recognition already posted — and the June and September PDCs handed back; the help text now
+says returned cheques stay owed (#26). Settlement: early-termination fee 10,000 (to Rent
+Penalty) and cleaning 500 (to Maintenance Charges) against a 10,783.56 credit and the 6,400
+deposit — refund **6,683.56**, finalized as **STL-26/1** "by System Admin", contract CLOSED.
+The finalized page still offered *Terminate contract* (#51). Then a fresh A-201 contract
+(105,000 rent, a new 10,500 deposit, 1,050 fee; 116,550; PDCs 600201–600204) posted from
+01/04/2026. That is the whole of "transfer": there is none (#52), so the renter paid an exit
+fee to stay.
+
+**M23 · May 2026 — a shop on the ground floor.** A retail unit, G-01 (700 sq ft,
+120,000), was added to Miftah Residences and let to Gulf Brew Cafe LLC (no portal
+account) from 01/05/2026 to 30/04/2027, with four Emirates NBD cheques 700101–700104.
+Ticking "Rent carries VAT" in step 2 changed nothing: step 3 still showed VAT 0.00 until
+the rent line's own VAT box was ticked (#54). With it ticked: 120,000 + 6,000 VAT =
+126,000, four cheques of 31,500, posted as **TCO-26/3**: Dr Rent Receivable 120,000 / Cr
+Advance Rent 120,000 and Dr Rent Receivable 6,000 / Cr **Output VAT on Sales** 6,000. The
+trial balance shows Output VAT 6,000 Cr beside Input VAT 200 Dr from the HVAC invoice.
+That is the only VAT reporting: there is no return view (#55). All of the year's VAT
+lands on the contract date rather than per payment period, which an accountant needs to
+rule on (#56).
+
+**M26 (rest) · Sep 2026 — the banking run and the aging.** Sixteen past-dated PDCs had
+never been banked, so the register showed 200,034.25 overdue across 20 items, most of it
+cheques sitting in the drawer. *Collection → Select all → Deposit Batch* banked all 16
+(171,050) in one go. Clearing took 16 separate dialogs (#57). Fifteen cleared (139,550
+"cleared this month"). Gulf Brew's August cheque 700102 (31,500, VAT included) bounced
+for insufficient funds. The tiles now reconcile line by line: Bounced 54,500 (3: Fatima's
+7,500 and 15,500, Gulf Brew's 31,500); Overdue 60,484.25 (5) = those three + Fatima's
+750 cash fee + her 5,234.25 settlement balance; aging 31–60 days: 31,500, 90+: 28,984.25;
+Registered 121,484.25 = the two cash rows + four future PDCs (Omar 600203/600204, Gulf
+Brew 700103/700104). "Due" equals "Overdue" because every lease has 0 grace days.
+
+**M21 · relist and promote.** A-201 is let to Omar, so the unit relisted was the one he
+left: A-102. The listing "Bright 1BR in Al Barsha 1, minutes from Mall of the Emirates"
+(EN + AR, 1 bed / 1 bath, 850 sq ft, unfurnished, 62,000 a year in 4 cheques, 6,200
+deposit) was saved as a draft and published. The public page at
+`/l/<org-slug>/<listing-slug>` shows the title, an AED 60k–70k band and the description,
+and gates everything else behind a sign-in. It went live with no photos and no warning
+(#58). An enquiry needs a marketplace account, which this simulation does not create.
+The promotion: the new café downstairs, Gulf Brew Cafe (Dining, one allowed link
+domain), runs "Residents get 20% off all coffee", eyebrow "New on the ground floor", EN
++ AR. It shows coupon MIFTAH20 on tap, runs 23/09–31/10/2026 in the home carousel and
+offers, is shown to Miftah Residences only, and is **Live**. Views and taps are 0 until a
+renter opens the app.
+
+**M27 (part) · 23 Sep 2026 — today, from the office.** The dashboard reads "2 expiring
+leases · AED 60,484 overdue". The two are Ahmed's and Rajesh's 2025–26 contracts, both
+ending 30/09. The 60,484 is the same five items the register lists (Fatima's two bounced
+cheques, her 750 cash fee and 5,234 settlement balance, and Gulf Brew's 31,500 bounce).
+Occupancy is 44.4%, 4 of 9 units, with G-01 counted. Pending this month is 0, because
+Rajesh's September cheque cleared. The collection tile reads "AED 139,550 of AED 3,667
+expected": the catch-up banking run's clearances measured against one cheque dated this
+month (#59). The activity feed lists every clearance and the bounce, with raw amounts
+(#60). A bounce notifies the renter only; the super admin's inbox has the ticket
+assignments and org provisioning, and nothing for the bounce.
+
+**M24 · scanning Gulf Brew's cheques.** Two cheque images, Emirates NBD 700103 (01/11/2026)
+and 700104 (01/02/2027), 31,500 each and signed "For GULF BREW CAFE LLC", were uploaded
+through the G-01 lease's *Bulk upload cheques*. Extraction ran on Azure OpenAI. 700103
+failed with a 500 that did not recur in eight later calls, and the row could not be
+retried (#64). 700104 came back with the right number, bank, date and amount, but with
+the payee as the payer (#63), and it was auto-matched to **row #3**, because matching
+compares against the posting date and every row carries the contract date 20/04/2026
+(#62). Fixed by hand (row #4, payer Gulf Brew) and approved: row 4 now holds the scan.
+
+**M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
+Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
+and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
+REVERSED, "Reversed by JV-26/2", and JV-26/2 reads "Reversal of JV-26/1"; both stay in the
+ledger. Neither page offers edit or delete, and the API has none: journals have only list,
+get, create and reverse. A second reverse is refused ("already reversed").
+
+**M19 · Jan 2026 — 2025 closed, as far as the product goes.** With recognition posted to
+August 2026 and nothing left to back-date into 2025, the books were locked through
+31/12/2025. The carry-forward check found the gap instead: the trial balance on 31/12/2025
+and on 01/01/2026 is the same report — Rental Income 331,979.81 Cr on both — because
+nothing closes income into equity at a year-end and there is no Retained Earnings account
+to close it into (#53).
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days

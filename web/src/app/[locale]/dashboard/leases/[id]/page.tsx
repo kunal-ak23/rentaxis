@@ -69,6 +69,24 @@ type Ticket = { id: string; title: string; status: string; priority: string; cat
 const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
 
 /**
+ * `[id]` catches anything, including the guessable `/leases/new` — which
+ * isn't a route this app has (there is no dedicated new-lease page; drafting
+ * happens through the wizard modal on the list). Rather than let "new" reach
+ * `GET /leases/new` and surface the backend's raw "Invalid value for
+ * parameter 'id'" (#47), recognize it up front and go straight to the
+ * not-found panel this page already renders for a real 404/403.
+ *
+ * This intentionally does not validate the general id shape (e.g. requiring
+ * a UUID) — ids elsewhere in this app's fixtures/tests are plain strings,
+ * and the backend, not this page, is the source of truth for what a real
+ * lease id looks like. Any other bad id reaches the API, and `loadLease`
+ * maps its 400/404 to the same not-found panel.
+ */
+function looksLikeMissingRouteSegment(id: string): boolean {
+    return id.trim().toLowerCase() === "new";
+}
+
+/**
  * `LeaseRenewalService.RENEWABLE`
  * (backend/src/main/java/com/datagami/rentaxis/core/service/lease/LeaseRenewalService.java:74-75),
  * checked at :136. Wider than Amend and Extend, which really are ACTIVE-only:
@@ -207,6 +225,12 @@ export default function LeaseDetailPage() {
         } catch (e) {
             if (e instanceof ApiError && e.status === 403) {
                 setForbidden(true);
+            } else if (e instanceof ApiError && (e.status === 400 || e.status === 404)) {
+                // #47: a malformed id (`/leases/abc`, a truncated UUID from a
+                // pasted link) is a 400 from the backend and an unknown one a
+                // 404 — to the reader both mean "no such lease", not the raw
+                // "Invalid value for parameter 'id'".
+                setError(t("notFound"));
             } else {
                 setError(e instanceof ApiError ? e.message : t("notFound"));
             }
@@ -221,6 +245,10 @@ export default function LeaseDetailPage() {
 
     useEffect(() => {
         if (!canView && userRole) {
+            setLoading(false);
+            return;
+        }
+        if (looksLikeMissingRouteSegment(leaseId)) {
             setLoading(false);
             return;
         }
@@ -688,6 +716,7 @@ export default function LeaseDetailPage() {
                                         contractValueInclVat={totals.inclVat}
                                         defaultInstallments={lease.paymentTerms ?? 4}
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
+                                        defaultDistribution={lease.installmentDistribution}
                                         busy={chequeBusy}
                                         error={chequeError}
                                         onRowAction={canCheques ? openChequeAction : undefined}

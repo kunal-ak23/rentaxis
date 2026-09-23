@@ -98,15 +98,22 @@ export function useBulkChequeExtract() {
     return results;
   }, []);
 
-  const retry = useCallback(async (id: string) => {
+  /**
+   * Re-run extraction for one item. Resolves with the new response (or null on
+   * failure) so a caller holding its own derived rows can merge the result,
+   * the same way `start` hands back its results.
+   */
+  const retry = useCallback(async (id: string): Promise<ChequeExtractionResponse | null> => {
     const target = items.find(it => it.id === id);
-    if (!target) return;
+    if (!target) return null;
     setItem(id, { status: "extracting", error: null });
     try {
       const response = await extractOne(target.file);
       setItem(id, { status: "extracted", response });
+      return response;
     } catch (e) {
       setItem(id, { status: "failed", error: e instanceof Error ? e.message : "Failed" });
+      return null;
     }
   }, [items]);
 

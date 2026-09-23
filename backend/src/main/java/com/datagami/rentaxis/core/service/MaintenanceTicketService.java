@@ -729,8 +729,12 @@ public class MaintenanceTicketService {
         h.setAssignedFrom(assignedFrom);
         h.setAssignedTo(assignedTo);
         h.setPerformedBy(performedBy);
-        // Resolve performer name
-        userRepository.findById(performedBy).ifPresent(u -> h.setPerformedByName(u.getName()));
+        // findDisplayNameById, not the tenant-filtered findById: a SUPER_ADMIN
+        // acting inside a pivoted tenant has tenant_id = NULL, so the filtered
+        // lookup can't see them and the name is lost permanently — it's stored
+        // on this history row at write time, so a blank here shows "System" in
+        // the UI forever.
+        userRepository.findDisplayNameById(performedBy).ifPresent(h::setPerformedByName);
         h.setNotes(notes);
         h.setCreatedAt(java.time.Instant.now());
         historyRepository.save(h);

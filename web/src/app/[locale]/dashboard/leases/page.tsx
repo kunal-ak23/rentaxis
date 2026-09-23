@@ -685,7 +685,7 @@ export default function LeasesPage() {
                         {t("manageLeases")}
                     </p>
                 </div>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-3">
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
@@ -696,7 +696,7 @@ export default function LeasesPage() {
                             className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                     <select
                         aria-label={t("status")}
                         data-testid="lease-status-filter"

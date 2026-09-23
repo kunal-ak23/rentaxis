@@ -140,6 +140,38 @@ class LeaseLinesIT extends AbstractPostgresIT {
     }
 
     /**
+     * #54: the header's "Rent carries VAT" flag was stored and ignored. A RENT
+     * line sent without its own flag took the charge type's catalogue default
+     * (off), so a commercial lease charged no VAT on rent until the operator also
+     * ticked the line. A RENT line now follows the header; an explicit per-line
+     * flag still wins; other lines, the deposit included, keep the catalogue
+     * default. (That a deposit is never taxed whatever its flag says is
+     * {@code LeaseVatTest}'s to prove; nothing here would observe it.)
+     */
+    @Test
+    void aRentLineWithNoFlagOfItsOwnFollowsTheHeadersRentVatFlag() {
+        CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(
+                line("RENT", "50000"),
+                new LeaseLineInput(null, "RENT", new BigDecimal("1000"), BigDecimal.ZERO,
+                        null, false, null, null, null),
+                line("ADMIN_FEE", "2000"),
+                line("SECURITY_DEPOSIT", "3000")));
+        dto.setRentVatApplicable(true);
+
+        LeaseDTO lease = leaseService.createDraftLease(dto);
+
+        assertThat(lease.getRentVatApplicable()).isTrue();
+        assertThat(lease.getLines()).extracting(LeaseLineDTO::vatApplicable)
+                .containsExactly(true, false, false, false);
+
+        // Unticked on the header, the same RENT line is not taxed.
+        CreateLeaseDTO off = fixtures.draftDto(START.plusYears(2), END.plusYears(2), List.of(line("RENT", "50000")));
+        off.setRentVatApplicable(false);
+        assertThat(leaseService.createDraftLease(off).getLines())
+                .extracting(LeaseLineDTO::vatApplicable).containsExactly(false);
+    }
+
+    /**
      * A lease drafted without an explicit grace takes the property's collection
      * policy, not zero.
      *

@@ -16,6 +16,7 @@ import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
 import UnappliedPaymentsTile from "@/components/cheques/UnappliedPaymentsTile";
 import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
+import { chequeLabel } from "@/components/cheques/chequeLabel";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount, type Page } from "@/lib/api/ledger";
 import {
@@ -371,16 +372,14 @@ export default function ChequeRegisterPage() {
                                     return (
                                         <tr key={c.id} data-testid={`cheque-row-${c.id}`} className="hover:bg-input/60 transition-colors">
                                             {/*
-                                              * A numberless PDC row is a cheque still awaiting its number,
-                                              * so `#seqNo` is a fair placeholder. A CASH/TRANSFER/ONLINE row —
-                                              * e.g. the collection row an approved penalty or a settlement
-                                              * balance creates — has no cheque number by nature, and showing
-                                              * `#7` in a column headed "Cheque No" reads as cheque number 7,
-                                              * an instrument no cheque book contains. Show a dash there instead;
-                                              * the Mode and narration columns already say what the row is.
+                                              * See `chequeLabel` (shared with ChequeActionDialog's title, #43):
+                                              * a numberless PDC row is a cheque still awaiting its number, so
+                                              * `#seqNo` is a fair placeholder; a CASH/TRANSFER/ONLINE row has no
+                                              * cheque number by nature, so show a dash — the Mode and narration
+                                              * columns already say what the row is.
                                               */}
                                             <td className={`${td} font-semibold`}>
-                                                {c.chequeNumber || (c.mode === "PDC" ? `#${c.seqNo}` : "—")}
+                                                {chequeLabel(c)}
                                             </td>
                                             <td className={`${td} tabular-nums`}>{fmtIsoDate(c.chequeDate ?? c.postingDate, locale)}</td>
                                             <td className={td}>{c.renterName || "—"}</td>

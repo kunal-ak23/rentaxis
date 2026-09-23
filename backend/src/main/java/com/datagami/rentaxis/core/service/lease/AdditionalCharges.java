@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.domain.entity.ChargeType;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import org.springframework.stereotype.Component;
@@ -102,7 +103,7 @@ class AdditionalCharges {
      * Computed through {@link LeaseVat} on transient lines, the same object the
      * post's own guard measures, so the two cannot round differently.
      */
-    BigDecimal valueOf(List<LeaseLineInput> dated) {
+    BigDecimal valueOf(List<LeaseLineInput> dated, Lease lease) {
         BigDecimal total = BigDecimal.ZERO;
         for (int i = 0; i < dated.size(); i++) {
             LeaseLineInput in = dated.get(i);
@@ -113,7 +114,7 @@ class AdditionalCharges {
             LeaseLine probe = new LeaseLine();
             probe.setChargeType(type);
             probe.setNetAmount(gross.subtract(discount));
-            probe.setVatApplicable(in.vatApplicable() != null ? in.vatApplicable() : type.isVatApplicableDefault());
+            probe.setVatApplicable(LeaseService.vatApplicableFor(in, type, lease.isRentVatApplicable()));
             total = total.add(LeaseVat.grossOf(probe));
         }
         return total;
