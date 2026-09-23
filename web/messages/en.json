@@ -2501,9 +2501,9 @@
     "pending": "Invite pending",
     "expired": "Invite expired",
     "sentTitle": "Invite sent",
-    "sentBody": "We emailed {email} a link to set their own password. The link is valid for 7 days; use Resend invite if it expires.",
+    "sentBody": "An invite with a link to set their own password is on its way to {email}. Invites are sent even when email notifications are turned off for your organisation. The link is valid for 7 days; if it expires or never arrives, use Resend invite on the renter's page.",
     "noPortalBody": "The renter was saved without a portal account because no email was given.",
-    "passwordNotNeeded": "No password is set here. The user gets an email invite to choose their own.",
+    "passwordNotNeeded": "No password is set here. The user gets an email invite to choose their own, even when email notifications are turned off.",
     "passwordRequired": "Super admins are not invited by email, so a password is required.",
     "done": "Done"
   },
