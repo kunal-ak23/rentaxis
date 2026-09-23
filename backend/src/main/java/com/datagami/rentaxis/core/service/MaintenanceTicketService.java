@@ -130,6 +130,27 @@ public class MaintenanceTicketService {
             requireRenterOwns(ticket);
             return;
         }
+        if (callerHasRole("TENANT_USER")) {
+            // What they reported, as their list already was (#73): the detail,
+            // replies, history and attachments used to be open by id.
+            if (!java.util.Objects.equals(callerUserId(), ticket.getReportedBy())) {
+                throw new NotFoundException("Ticket not found");
+            }
+            return;
+        }
+        if (callerHasRole("ACCOUNTANT")) {
+            // Tenant-wide read, as before; an accountant has no ticket to work.
+            if (access == Access.WRITE) {
+                throw new AccessDeniedException("Accountants have read-only access to tickets");
+            }
+            return;
+        }
+        if (!callerHasRole("TENANT_ADMIN") && !callerHasRole("SUPER_ADMIN")
+                && !callerHasRole("PROPERTY_MANAGER")) {
+            // SECURITY_GUARD, and anything unrecognised: guards have no ticket
+            // screen, so there is nothing here for them (audit D-F1). Fail closed.
+            throw new NotFoundException("Ticket not found");
+        }
         UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
         propertyScope.requireCanAccessProperty(propertyId, "Ticket not found");
     }
@@ -367,11 +388,16 @@ public class MaintenanceTicketService {
                         ? ticketRepository.findByPropertyIdInAndUnitId(propertyIds, unitId)
                         : ticketRepository.findByPropertyIdIn(propertyIds);
             }
-        } else {
-            // TENANT_ADMIN and SUPER_ADMIN see all tickets for the tenant
+        } else if ("TENANT_ADMIN".equals(role) || "SUPER_ADMIN".equals(role) || "ACCOUNTANT".equals(role)) {
+            // Tenant-wide roles (the accountant read-only) see all tickets for the tenant
             tickets = unitId != null
                     ? ticketRepository.findByUnitId(unitId)
                     : ticketRepository.findAll();
+        } else {
+            // SECURITY_GUARD and any role not named above: an allow-list, not a
+            // fall-through. The guard used to land in the admin branch and list
+            // every ticket in the tenant (audit D-F1).
+            tickets = List.of();
         }
         return tickets;
     }

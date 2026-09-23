@@ -40,6 +40,16 @@ class TicketReferenceIT extends AbstractPostgresIT {
     @AfterEach
     void tearDown() {
         TenantContextHolder.clear();
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void actAsStaff() {
+        // The ticket service resolves the caller's reach (round 5): act as a tenant admin.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        java.util.UUID.randomUUID().toString(), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
     }
 
     private UUID propertyInNewTenant() {

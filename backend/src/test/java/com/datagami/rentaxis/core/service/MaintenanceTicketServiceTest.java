@@ -71,6 +71,16 @@ class MaintenanceTicketServiceTest {
                                 mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
+        // The ticket service resolves the caller's reach (round 5): act as a tenant admin.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        java.util.UUID.randomUUID().toString(), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     private MaintenanceTicket ticket(UUID reportedBy, String closureOtp) {
