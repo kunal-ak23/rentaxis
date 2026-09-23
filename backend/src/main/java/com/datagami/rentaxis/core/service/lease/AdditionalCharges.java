@@ -91,7 +91,8 @@ class AdditionalCharges {
                         + act.definite + " (" + windowStart + " to " + windowEnd + "), not " + from + " to " + to + ".");
             }
             out.add(new LeaseLineInput(in.chargeTypeId(), in.chargeTypeCode(), in.grossAmount(),
-                    in.discountAmount(), in.narration(), in.vatApplicable(), in.creditAccountId(), from, to));
+                    in.discountAmount(), in.narration(), in.vatApplicable(), in.creditAccountId(), from, to,
+                    in.addendumId()));
         }
         return out;
     }

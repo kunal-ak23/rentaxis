@@ -82,6 +82,7 @@ class LeaseServiceUnitOccupancyTest {
                 mock(LeaseAttachmentRepository.class),
                 leaseInteractionRepository,
                 leaseLineRepository,
+                mock(com.datagami.rentaxis.domain.repository.LeaseAddendumRepository.class),
                 mock(ChargeTypeRepository.class),
                 mock(AccountRepository.class),
                 chequeRepository,

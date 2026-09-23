@@ -174,6 +174,8 @@ export type LeaseLine = {
   vatApplicable: boolean;
   periodStart: string | null;
   periodEnd: string | null;
+  /** The addendum that charged this line; null for the contract's own lines and an extension's. */
+  addendumId?: string | null;
 };
 
 /** LeaseLineInput — one line as the caller submits it (create, update, renew, extend, amend). */
@@ -187,6 +189,8 @@ export type LeaseLineInput = {
   creditAccountId?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
+  /** Honoured on an amend only; must name an addendum of the same lease. */
+  addendumId?: string | null;
 };
 
 /** CreateLeaseDTO — create/update body for a draft lease. */

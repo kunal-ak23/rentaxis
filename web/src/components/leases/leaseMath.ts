@@ -46,6 +46,12 @@ export type LineRow = {
      */
     periodStart?: string | null;
     periodEnd?: string | null;
+    /**
+     * The addendum that charged a persisted line. Carried, like the period, so an
+     * amend re-sends it: without it the re-inserted line loses its tie and a later
+     * renewal copies the addendum's part-term charge onto a new year.
+     */
+    addendumId?: string | null;
 };
 
 export function blankLine(key: number): LineRow {
@@ -75,6 +81,7 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         creditAccountName: line.creditAccountName,
         periodStart: line.periodStart ?? null,
         periodEnd: line.periodEnd ?? null,
+        addendumId: line.addendumId ?? null,
     };
 }
 
@@ -96,6 +103,7 @@ export function toInput(row: LineRow): LeaseLineInput {
         creditAccountId: row.creditAccountId,
         periodStart: row.periodStart ?? null,
         periodEnd: row.periodEnd ?? null,
+        addendumId: row.addendumId ?? null,
     };
 }
 
@@ -104,13 +112,15 @@ export function toInput(row: LineRow): LeaseLineInput {
  * belong to — a draft whose dates can be edited alongside its lines, or a
  * renewal's new lease. A period read from the old term would pin the rent to
  * dates that no longer apply; sent without one, the server re-defaults it to
- * the term being saved, which is what those screens always relied on.
+ * the term being saved, which is what those screens always relied on. The
+ * addendum tie goes with the periods: only an amend may send one (the server
+ * refuses it anywhere else), and a renewal or draft must not carry it over.
  */
 export function toInputs(rows: LineRow[], opts: { keepPeriods?: boolean } = {}): LeaseLineInput[] {
     const keepPeriods = opts.keepPeriods ?? true;
     return rows.map(r => {
         const input = toInput(r);
-        return keepPeriods ? input : { ...input, periodStart: null, periodEnd: null };
+        return keepPeriods ? input : { ...input, periodStart: null, periodEnd: null, addendumId: null };
     });
 }
 

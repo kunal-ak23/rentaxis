@@ -137,3 +137,44 @@ describe("line periods", () => {
         expect(input.periodEnd ?? null).toBeNull();
     });
 });
+
+/**
+ * Re-review round 3: an amend re-inserts every line, and a line an addendum
+ * charged must keep naming that addendum — otherwise a renewal copies the
+ * addendum's part-term fee onto a whole new year.
+ */
+describe("line addendum tie", () => {
+    const tied: LeaseLine = {
+        id: "line-4",
+        seqNo: 4,
+        chargeTypeId: "ct-parking",
+        chargeTypeCode: "PARKING_FEE",
+        chargeTypeName: "Parking fee",
+        behaviour: "FEE",
+        creditAccountId: "acc-2",
+        creditAccountCode: "4300",
+        creditAccountName: "Parking income",
+        grossAmount: 1500,
+        discountAmount: 0,
+        netAmount: 1500,
+        narration: "Parking bay P-12",
+        vatApplicable: false,
+        periodStart: null,
+        periodEnd: null,
+        addendumId: "add-1",
+    };
+
+    it("round-trips a line's addendum through toRow and toInputs on the amend path", () => {
+        const [input] = toInputs([toRow(tied, 0)]);
+        expect(input.addendumId).toBe("add-1");
+    });
+
+    it("sends no addendum for a newly added blank line", () => {
+        expect(toInput(blankLine(7)).addendumId ?? null).toBeNull();
+    });
+
+    it("drops the addendum when the term is being (re)set, as a renewal or draft does", () => {
+        const [input] = toInputs([toRow(tied, 0)], { keepPeriods: false });
+        expect(input.addendumId ?? null).toBeNull();
+    });
+});
