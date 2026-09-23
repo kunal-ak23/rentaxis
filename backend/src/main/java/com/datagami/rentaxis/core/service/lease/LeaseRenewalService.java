@@ -212,6 +212,26 @@ public class LeaseRenewalService {
      * grid, while the {@code JV} moved the first one across — the renter would have
      * paid twice for one deposit, and the liability on the books would be double
      * what the landlord holds.</p>
+     *
+     * <p><b>Only the contract's own lines are copied.</b> Two kinds of line on a
+     * lease were not part of the contract as signed and are skipped:</p>
+     * <ul>
+     *   <li>an addendum's line ({@code addendumId} set) — a charge added mid-term
+     *       and priced for the part of the term it covered, e.g. 4,000 of rent for
+     *       February to September;</li>
+     *   <li>an extension's rent line — a RENT line whose own period starts after
+     *       the lease's start date. An extension always dates its rent from the day
+     *       after the pre-extension end, while a contract's own rent line always
+     *       starts on the lease's start date ({@code LeaseService} defaults it
+     *       there, and no screen or import sets it anywhere else).</li>
+     * </ul>
+     * <p>Copied, either would be re-priced as a full year at its fragment amount
+     * (a RENT line is re-dated to the whole new term) and charged next to the
+     * contract's own rent. A charge the renter does carry on into the new term —
+     * the parking bay they took by addendum — is added on the draft by the
+     * operator, at the full-year price, which is a price only they know. If
+     * nothing is left once these are skipped, the renewal is refused as having
+     * nothing to copy.</p>
      */
     private List<LeaseLineInput> copiedLines(Lease predecessor, RenewLeaseRequest r) {
         List<LeaseLine> source = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
@@ -223,6 +243,9 @@ public class LeaseRenewalService {
                 continue;
             }
             boolean rent = behaviour == ChargeBehaviour.RENT;
+            if (line.getAddendumId() != null || (rent && isExtensionLine(line, predecessor))) {
+                continue;
+            }
             copied.add(new LeaseLineInput(
                     type != null ? type.getId() : null,
                     null,
@@ -239,6 +262,12 @@ public class LeaseRenewalService {
                     "There is nothing to copy from the lease being renewed; send the renewal's lines explicitly.");
         }
         return copied;
+    }
+
+    /** A RENT line dated from after the lease's start — only an extension writes one. */
+    private static boolean isExtensionLine(LeaseLine line, Lease lease) {
+        return line.getPeriodStart() != null && lease.getStartDate() != null
+                && line.getPeriodStart().isAfter(lease.getStartDate());
     }
 
     // ------------------------------------------------------------------

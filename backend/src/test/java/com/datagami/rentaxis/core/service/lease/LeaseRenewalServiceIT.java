@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
+import com.datagami.rentaxis.api.dto.lease.AddChargeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
@@ -88,6 +89,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;
     @Autowired LeasePostingService posting;
+    @Autowired LeaseVariationService variations;
     @Autowired ChequeGenerationService cheques;
     @Autowired LeaseService leaseService;
     @Autowired LedgerQueryService ledger;
@@ -1107,5 +1109,55 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("cheque number 100041 is already used on this lease");
         assertThat(leaseLines(leaseId)).hasSize(2);
+    }
+
+    // ------------------------------------------------------------------
+    // renew: only the contract's own lines are copied
+    // ------------------------------------------------------------------
+
+    /**
+     * A mid-term addendum's line is a charge for part of the old term, priced for
+     * that part. Copied into a renewal it would be charged again over a whole year
+     * at its fragment price; the renewal carries only the contract's own lines.
+     */
+    @Test
+    void renewAfterAnAddendumCopiesOnlyTheOriginalLines() {
+        UUID leaseId = postedWithFee();
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2027, 2, 15), LocalDate.of(2027, 2, 10),
+                null, "Storage room", List.of(line("RENT", "4000"), line("PARKING_FEE", "1500")),
+                List.of(chequeRow("5500", LocalDate.of(2027, 3, 1)))));
+        assertThat(leaseLines(leaseId)).hasSize(4);
+
+        LeaseDTO successor = renewal.renew(leaseId, renewRequest(false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
+        assertThat(copied.get(0).periodStart()).isEqualTo(RENEWAL_START);
+        assertThat(copied.get(0).periodEnd()).isEqualTo(RENEWAL_END);
+        assertThat(copied.get(1).netAmount()).isEqualByComparingTo("2000");
+    }
+
+    /**
+     * An extension's rent covers only the extension window. Re-dated to a whole
+     * new term it would charge the extension's price a second time as if it were
+     * a year's rent, next to the contract's own rent line.
+     */
+    @Test
+    void renewAfterAnExtensionCopiesOnlyTheOriginalLines() {
+        UUID leaseId = postedWithFee();
+        renewal.extend(leaseId, extension("12000", "12000"));
+        assertThat(leaseLines(leaseId)).hasSize(3);
+
+        LocalDate start = NEW_END.plusDays(1);
+        LocalDate end = start.plusYears(1).minusDays(1);
+        LeaseDTO successor = renewal.renew(leaseId,
+                new RenewLeaseRequest(LocalDate.of(2027, 12, 15), start, end, null, false));
+
+        List<LeaseLineDTO> copied = leaseLines(successor.getId());
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
+        assertThat(copied.get(0).periodStart()).isEqualTo(start);
+        assertThat(copied.get(0).periodEnd()).isEqualTo(end);
     }
 }
