@@ -36,8 +36,8 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 | S03 | Open books 2024-01-01, lock through 2023-12-31 | fiscal settings show the window | proven |
 | S04 | Property, building, floors, 8 units, parking bays, amenities, contacts | portfolio tabs populated | proven |
 | S05 | Staff (property manager, accountant) + 4 renters with portal logins | users list, renter portal accounts | blocked (renters only; no staff users — agents may not create login accounts) |
-| S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | planned |
-| S07 | Bank account + two vendors | lists render | planned |
+| S06 | Fine settings: bounce / signature mismatch / account closed, grace days, per-day late rate | settings persist and re-read | proven (persist across reload); #65 |
+| S07 | Bank account + two vendors | lists render | vendor proven (Gulf Cool HVAC, M-era); bank account blocked by #67 (500 when linked to a ledger account); #66 |
 
 ### Y1 — Oct 2024 → Sep 2025
 
