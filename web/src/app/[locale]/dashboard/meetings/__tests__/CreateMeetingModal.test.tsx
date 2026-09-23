@@ -163,6 +163,45 @@ describe("CreateMeetingModal (staff, property with no assigned manager — #61)"
     });
 });
 
+describe("CreateMeetingModal (staff, managers lookup fails — review m-2)", () => {
+    it("shows a retry-able error instead of falling back to the default host", async () => {
+        let managersCalls = 0;
+        const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            const json = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+            if (url.startsWith("/api/proxy/v1/properties/p1/managers")) {
+                managersCalls += 1;
+                // First read fails; the retry succeeds with the real manager.
+                return managersCalls === 1
+                    ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })
+                    : json([{ id: "mgr-1", name: "Alice Manager", email: "alice@x.com" }]);
+            }
+            if (url.startsWith("/api/proxy/v1/meetings/default-host")) return json({ userId: "admin-1" });
+            if (url.startsWith("/api/proxy/v1/properties")) return json(propertyRows([]));
+            return json([]);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        render(
+            <CreateMeetingModal isOpen onClose={() => {}} onSuccess={() => {}} session={staffSession} />,
+        );
+        await goToPropertyVisitStep2();
+        const [propertySelect] = screen.getAllByRole("combobox");
+        fireEvent.change(propertySelect, { target: { value: "p1" } });
+        fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+
+        await screen.findByText("slotsLoadError");
+        expect(screen.queryByText("defaultHostFallback")).toBeNull();
+        expect(screen.queryByText("Preferred Date *")).toBeNull();
+        expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+        expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/meetings/default-host"))).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "retry" }));
+        await screen.findByText("Alice Manager (alice@x.com)");
+        expect(screen.queryByText("slotsLoadError")).toBeNull();
+        expect(screen.queryByText("defaultHostFallback")).toBeNull();
+    });
+});
+
 const renterSession = { user: { role: "RENTER" } };
 
 const leaseRows = [

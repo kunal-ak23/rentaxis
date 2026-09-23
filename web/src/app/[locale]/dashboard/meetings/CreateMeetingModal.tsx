@@ -111,7 +111,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
     const [pmUsers, setPmUsers] = useState<PMUser[]>([]);
     const [selectedPmId, setSelectedPmId] = useState("");
-    const [pmLoadState, setPmLoadState] = useState<"idle" | "loading" | "loaded">("idle");
+    const [pmLoadState, setPmLoadState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
     const [defaultHostId, setDefaultHostId] = useState<string>("");
     const [defaultHostStatus, setDefaultHostStatus] = useState<"idle" | "loading" | "ok" | "not_found" | "error">("idle");
 
@@ -223,9 +223,15 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     fullName: u.name ?? u.fullName ?? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
                     email: u.email ?? "",
                 })));
+                setPmLoadState("loaded");
+            } else {
+                // A failed read is not "no managers assigned": falling back
+                // would book the org's default host instead of the property's
+                // actual manager, and say there is none.
+                setPmLoadState("error");
             }
-        } catch { /* ignore */ } finally {
-            setPmLoadState("loaded");
+        } catch {
+            setPmLoadState("error");
         }
     }, []);
 
@@ -269,7 +275,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     // SUPER_ADMIN (NULL tenant_id) is never offered as a host.
     const staffUsesDefaultHost = !isRenter && pmLoadState === "loaded" && pmUsers.length === 0;
     const usesDefaultHost = isRenter || staffUsesDefaultHost;
-    const hostBlocked = usesDefaultHost && (defaultHostStatus === "not_found" || defaultHostStatus === "error");
+    const pmLoadFailed = !isRenter && pmLoadState === "error";
+    const hostBlocked = pmLoadFailed
+        || (usesDefaultHost && (defaultHostStatus === "not_found" || defaultHostStatus === "error"));
 
     // Derive hostUserId for slot fetching.
     // LeaseDTO carries no manager id, so office-visit hosts always come from
@@ -292,13 +300,14 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         return true;
     }, [isRenter, meetingType, properties, selectedPropertyId]);
 
+    const pmPropertyId = meetingType === "PROPERTY_VISIT"
+        ? selectedPropertyId
+        : leases.find(l => l.id === selectedLeaseId)?.propertyId ?? "";
+
     useEffect(() => {
         if (step !== 3 || !needsPmPicker()) return;
-        const propertyId = meetingType === "PROPERTY_VISIT"
-            ? selectedPropertyId
-            : leases.find(l => l.id === selectedLeaseId)?.propertyId ?? "";
-        if (propertyId) fetchPmUsers(propertyId);
-    }, [step, meetingType, selectedPropertyId, selectedLeaseId, leases, needsPmPicker, fetchPmUsers]);
+        if (pmPropertyId) fetchPmUsers(pmPropertyId);
+    }, [step, pmPropertyId, needsPmPicker, fetchPmUsers]);
 
     // For renters (no PM picker), and for staff whose property has no assigned
     // managers: fetch the default host when entering step 3.
@@ -598,7 +607,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     {step === 3 && (
                         <div className="space-y-4">
                             {/* PM Picker — shown when we can't derive host */}
-                            {showPmPicker && !staffUsesDefaultHost && (
+                            {showPmPicker && !staffUsesDefaultHost && !pmLoadFailed && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property Manager *</label>
                                     <select
@@ -611,6 +620,19 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                             <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>
                                         ))}
                                     </select>
+                                </div>
+                            )}
+
+                            {showPmPicker && pmLoadFailed && (
+                                <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 space-y-2">
+                                    <p className="text-xs text-start text-error">{t("slotsLoadError")}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchPmUsers(pmPropertyId)}
+                                        className="text-[10px] font-semibold text-error underline underline-offset-2 cursor-pointer"
+                                    >
+                                        {t("retry")}
+                                    </button>
                                 </div>
                             )}
 
