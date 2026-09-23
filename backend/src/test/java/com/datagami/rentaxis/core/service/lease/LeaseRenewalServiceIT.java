@@ -924,6 +924,43 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(leaf(AccountRole.OUTPUT_VAT).getId());
     }
 
+    /**
+     * #54 review M-2: on a lease whose header says rent carries VAT, an extension's
+     * RENT line sent with no VAT flag of its own follows the header — both in the
+     * figure the cheques must cover ({@code AdditionalCharges.valueOf}) and on the
+     * written line the TCO posts from. Cheques for the net alone are refused.
+     */
+    @Test
+    void anExtensionsFlaglessRentLineFollowsTheLeasesRentVatFlag() {
+        UUID leaseId = postedWithFee();
+        // A commercial lease. Ticked after posting so the fixture's own grid stays
+        // VAT-free: the subject here is the extension alone.
+        rentCarriesVat(leaseId);
+        assertThat(line("RENT", "12000").vatApplicable()).as("the line sends no flag of its own").isNull();
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, extension("12000", "12000")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque rows total 12,000.00 but the extension charges 12,600.00");
+        assertThat(leaseLines(leaseId)).hasSize(2);
+
+        PostLeaseResponse r = renewal.extend(leaseId, extension("12000", "12600"));
+
+        assertThat(leaseLines(leaseId).get(2).vatApplicable()).isTrue();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        assertThat(linesOf(r.tcoJournalId()))
+                .filteredOn(l -> outputVat.equals(l.getAccountId()))
+                .singleElement()
+                .satisfies(l -> assertThat(l.getCredit()).isEqualByComparingTo("600"));
+    }
+
+    private void rentCarriesVat(UUID leaseId) {
+        tx.executeWithoutResult(s -> {
+            Lease lease = leaseRepo.findById(leaseId).orElseThrow();
+            lease.setRentVatApplicable(true);
+            leaseRepo.save(lease);
+        });
+    }
+
     /** A locked period refuses the extension whole — no lines, no rows, no journals. */
     @Test
     void extendIntoALockedPeriodChangesNothing() {
