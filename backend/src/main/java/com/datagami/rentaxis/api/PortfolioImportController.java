@@ -39,8 +39,8 @@ public class PortfolioImportController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<?> importPortfolio(
-            @RequestParam("file") MultipartFile file,
-            @RequestHeader("X-User-Id") UUID userId) {
+            @RequestParam("file") MultipartFile file) {
+        UUID userId = CallerIdentity.callerId();
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".xlsx")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Only .xlsx files are supported"));
@@ -152,8 +152,8 @@ public class PortfolioImportController {
         // client-supplied X-User-Id header (review M7) — the same source
         // ImportBatchController.post uses. Attribution only, so this was cosmetic
         // rather than a hole, but the header is the subject of an open P0 and a new
-        // endpoint should not add a reader of it. The v1 upload above is unchanged;
-        // it is not this plan's to move.
+        // endpoint should not add a reader of it. The v1 upload above reads the
+        // principal too (PR #342).
         UUID userId = currentUserId(SecurityContextHolder.getContext().getAuthentication());
         ResponseEntity<?> noTenant = tenantMissing();
         if (noTenant != null) return noTenant;

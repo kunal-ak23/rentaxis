@@ -4,11 +4,7 @@ import com.datagami.rentaxis.api.dto.*;
 import com.datagami.rentaxis.core.service.MaintenanceTicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -17,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
+import static com.datagami.rentaxis.api.CallerIdentity.callerRole;
+
 @RestController
 @RequestMapping("/api/v1/tickets")
 @RequiredArgsConstructor
@@ -24,38 +23,8 @@ public class MaintenanceTicketController {
 
     private final MaintenanceTicketService ticketService;
 
-    /*
-     * Identity comes from the verified principal that ApiSecurityFilter set, not
-     * from the X-User-* headers. On the bearer path the filter ignores those
-     * headers, so reading them here let a caller with a valid token claim to be
-     * someone else (report as another user, list with another role). On the
-     * legacy path the principal is built from the same headers, so nothing
-     * changes for callers still on it. Every route here requires an
-     * authenticated caller, so a principal is always present.
-     */
-    static UUID callerId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null) {
-            throw new AccessDeniedException("Not authenticated");
-        }
-        try {
-            return UUID.fromString(auth.getName());
-        } catch (IllegalArgumentException e) {
-            throw new AccessDeniedException("Unrecognised caller");
-        }
-    }
-
-    /** The caller's role from its granted authority ("ROLE_RENTER" -> "RENTER"). */
-    static String callerRole() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) throw new AccessDeniedException("Not authenticated");
-        return auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(a -> a.startsWith("ROLE_"))
-                .map(a -> a.substring("ROLE_".length()))
-                .findFirst()
-                .orElseThrow(() -> new AccessDeniedException("No role"));
-    }
+    // Caller identity comes from the verified principal (CallerIdentity), never
+    // from the X-User-* headers. Every route here requires an authenticated caller.
 
     @PostMapping
     @PreAuthorize("hasAnyRole('RENTER', 'PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")

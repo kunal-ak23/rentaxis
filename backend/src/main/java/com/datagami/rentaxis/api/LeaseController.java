@@ -36,7 +36,6 @@ import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
 import com.datagami.rentaxis.domain.entity.enums.InteractionDirection;
 import com.datagami.rentaxis.domain.entity.enums.InteractionType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -57,6 +56,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
 
 @RestController
 @RequestMapping("/api/v1/leases")
@@ -116,9 +117,8 @@ public class LeaseController {
 
     @GetMapping("/my-leases")
     @PreAuthorize("hasRole('RENTER')")
-    public ResponseEntity<List<LeaseDTO>> getMyLeases(HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID userId = UUID.fromString(userIdStr);
+    public ResponseEntity<List<LeaseDTO>> getMyLeases() {
+        UUID userId = callerId();
         return ResponseEntity.ok(leaseService.getLeasesForRenterUser(userId));
     }
 
@@ -257,10 +257,8 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<LeaseDTO> giveNotice(
             @PathVariable UUID id,
-            @RequestBody(required = false) GiveNoticeRequest request,
-            HttpServletRequest httpRequest) {
-        String userIdStr = httpRequest.getHeader("X-User-Id");
-        UUID byUser = userIdStr != null ? UUID.fromString(userIdStr) : null;
+            @RequestBody(required = false) GiveNoticeRequest request) {
+        UUID byUser = callerId();
         return ResponseEntity.ok(leaseService.giveNotice(id,
                 request == null ? new GiveNoticeRequest(null) : request, byUser));
     }
@@ -295,10 +293,8 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<LeaseDTO> terminateLease(
             @PathVariable UUID id,
-            @Valid @RequestBody TerminateLeaseRequest request,
-            HttpServletRequest httpRequest) {
-        String userIdStr = httpRequest.getHeader("X-User-Id");
-        UUID byUser = userIdStr != null ? UUID.fromString(userIdStr) : null;
+            @Valid @RequestBody TerminateLeaseRequest request) {
+        UUID byUser = callerId();
         return ResponseEntity.ok(leaseTerminationService.terminate(id, request, byUser));
     }
 
@@ -341,10 +337,8 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
             @PathVariable UUID id,
-            @Valid @RequestBody SaveSettlementDTO dto,
-            HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
+            @Valid @RequestBody SaveSettlementDTO dto) {
+        UUID userId = callerId();
         settlementService.saveDraft(id, dto, userId);
         return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
     }
@@ -368,10 +362,8 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<SettlementResponseDTO> finalizeSettlement(
             @PathVariable UUID id,
-            @RequestBody(required = false) FinalizeSettlementRequest body,
-            HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
+            @RequestBody(required = false) FinalizeSettlementRequest body) {
+        UUID settledBy = callerId();
         return ResponseEntity.ok(settlementService.finalizeSettlement(id, body, settledBy));
     }
 
@@ -492,20 +484,20 @@ public class LeaseController {
     }
 
     // --- Renter Portal Endpoints ---
+    // The renter is the verified principal (CallerIdentity), never X-User-Id:
+    // on the bearer path that header is the caller's to choose (PR #342).
 
     @PutMapping("/{id}/accept")
     @PreAuthorize("hasRole('RENTER')")
-    public ResponseEntity<LeaseDTO> acceptLease(@PathVariable UUID id, HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID userId = UUID.fromString(userIdStr);
+    public ResponseEntity<LeaseDTO> acceptLease(@PathVariable UUID id) {
+        UUID userId = callerId();
         return ResponseEntity.ok(leaseService.acceptLease(id, userId));
     }
 
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasRole('RENTER')")
-    public ResponseEntity<LeaseDTO> rejectLease(@PathVariable UUID id, HttpServletRequest request) {
-        String userIdStr = request.getHeader("X-User-Id");
-        UUID userId = UUID.fromString(userIdStr);
+    public ResponseEntity<LeaseDTO> rejectLease(@PathVariable UUID id) {
+        UUID userId = callerId();
         return ResponseEntity.ok(leaseService.rejectLease(id, userId));
     }
 
