@@ -2,9 +2,12 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.LeaseReminder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.RenewalOpportunity;
 import com.datagami.rentaxis.domain.entity.Renter;
+import com.datagami.rentaxis.domain.entity.enums.ReminderChannel;
+import com.datagami.rentaxis.domain.entity.enums.ReminderStatus;
 import com.datagami.rentaxis.domain.entity.enums.RenewalIntent;
 import com.datagami.rentaxis.domain.entity.enums.RenewalStage;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -132,6 +135,38 @@ class RenterRenewalControllerTest extends AbstractPostgresIT {
         assertThat(view.get("stage")).isEqualTo("OPEN");
         Number daysRemaining = (Number) view.get("daysRemaining");
         assertThat(daysRemaining.longValue()).isBetween(84L, 86L);
+    }
+
+    /**
+     * A reminder sent at 21:00 UTC went out at 01:00 in Dubai the next day, and
+     * that is the date the renter should see — not the UTC one.
+     */
+    @Test
+    void summary_dates_a_reminder_in_the_app_zone_not_utc() {
+        TenantContextHolder.setTenantId(tenantId);
+        LeaseReminder r = new LeaseReminder();
+        r.setTenantId(tenantId);
+        r.setOpportunity(oppA);
+        r.setSlot((short) 1);
+        r.setChannel(ReminderChannel.EMAIL);
+        r.setStatus(ReminderStatus.SENT);
+        r.setSentAt(Instant.parse("2026-09-23T21:00:00Z"));
+        reminderRepo.save(r);
+        TenantContextHolder.clear();
+
+        Map<String, Object> body = renterClient(renterAUserId, tenantId)
+                .get()
+                .uri("/api/v1/me/renewals")
+                .retrieve()
+                .body(Map.class);
+
+        assertThat(body).isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> leases = (List<Map<String, Object>>) body.get("leases");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> reminders = (List<Map<String, Object>>) leases.get(0).get("reminders");
+        assertThat(reminders).singleElement()
+                .satisfies(rem -> assertThat(rem.get("sentAt")).isEqualTo("2026-09-24"));
     }
 
     @Test
