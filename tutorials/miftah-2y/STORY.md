@@ -175,7 +175,11 @@ closed here rather than left pending:
 
 Green: `LeaseAccessPolicyTest`, `ApiSecurityFilterTest`, `RenterRenewalControllerTest`.
 
-**Still unreached (needs a renter login):** the portal's *display* surfaces — amounts
-due, payment schedule and receipts, the renter's own penalty view, renewal-intent
-capture, facilities booking. These are lower-risk read/display flows; the isolation
-that protects them is verified above.
+**Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
+(year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
+overdue; *My Payments* puts the same cheque at 625 (#37) and totals 155,550 due across
+seven matured post-dated cheques the landlord never banked (#40). Neither contract can be
+downloaded (#38). Facilities lists all ten B1 bays as available — his mid-year bay never
+happened (#15). The penalties page works but nothing links to it (#39), and in Arabic
+half the home stays English (#36). Tickets and meetings are empty; renewal-intent capture
+was not reached (no open opportunity on the active lease). See also #35.
