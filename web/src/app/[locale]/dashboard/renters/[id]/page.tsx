@@ -105,6 +105,17 @@ export default function RenterDetailPage() {
     const [reloadKey, setReloadKey] = useState(0);
     const retry = () => setReloadKey(k => k + 1);
 
+    // After a resend: re-read the renter alone, so the invite badge reflects the
+    // new link without reloading (and re-spinning) the whole page.
+    const refreshRenter = async () => {
+        try {
+            const r = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}`);
+            if (r.ok) setRenter(await r.json());
+        } catch {
+            // The resend itself succeeded; a stale badge is not worth an error.
+        }
+    };
+
     useEffect(() => {
         if (userRole && !canView) {
             setLoading(false);
@@ -253,7 +264,7 @@ export default function RenterDetailPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap" data-testid="renter-actions">
                     {canManageRenters && renter.invitePending && renter.userId && (
-                        <ResendInviteButton userId={renter.userId} />
+                        <ResendInviteButton userId={renter.userId} onSent={refreshRenter} />
                     )}
                     {canSeeLedger && (
                         <Link

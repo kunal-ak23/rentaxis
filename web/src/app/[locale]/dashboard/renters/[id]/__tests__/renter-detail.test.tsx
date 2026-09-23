@@ -63,6 +63,7 @@ beforeEach(() => {
         const u = String(url);
         if (u.endsWith("/v1/renters/r1")) return res(renterStatus, renter);
         if (u.endsWith("/v1/renters/r1/leases")) return res(leasesStatus, leaseRows);
+        if (u.includes("/resend-invite")) return jsonRes({});
         if (u.includes("/leases/L1/cheques")) return jsonRes(cheques);
         if (u.includes("/leases/L2/cheques")) return res(chequesStatus, []);
         // The server filters by renter (GET /tickets?renterId=); "t-other" is
@@ -109,6 +110,18 @@ describe("RenterDetailPage", () => {
             expect(cell.hasAttribute("dir")).toBe(false);
         }
         expect(document.querySelectorAll("td[dir]")).toHaveLength(0);
+    });
+
+    it("confirms before resending and then re-reads the renter", async () => {
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+        render(<RenterDetailPage />);
+        const renterReads = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+            .filter(c => String(c[0]).endsWith("/v1/renters/r1")).length;
+        fireEvent.click(await screen.findByText("resend"));
+
+        expect(confirm).toHaveBeenCalledWith("resendConfirm");
+        await waitFor(() => expect(renterReads()).toBe(2));
+        expect(await screen.findByText("resent")).toBeTruthy();
     });
 
     it("hides Resend invite and the ledger from a property manager", async () => {

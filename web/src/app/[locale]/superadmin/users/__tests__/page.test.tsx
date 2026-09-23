@@ -170,12 +170,30 @@ describe("SuperAdminUsersPage", () => {
         expect(screen.getByPlaceholderText("Secure password")).toBeTruthy();
     });
 
-    it("resends a pending invite for that user", async () => {
+    it("resends a pending invite for that user after a confirm, then reloads the list", async () => {
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+        render(<SuperAdminUsersPage />);
+        const button = await screen.findByText("resend");
+        const listCalls = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+            .filter(c => String(c[0]).endsWith("/admin/users") && !(c[1] as RequestInit | undefined)?.method).length;
+        const before = listCalls();
+
+        fireEvent.click(button);
+
+        expect(confirm).toHaveBeenCalledWith("resendConfirm");
+        await waitFor(() => expect(resendUrls).toEqual([`/api/proxy/admin/users/${PM_ID}/resend-invite`]));
+        expect(await screen.findByText("resent")).toBeTruthy();
+        await waitFor(() => expect(listCalls()).toBeGreaterThan(before));
+    });
+
+    it("sends nothing when the resend confirm is declined", async () => {
+        vi.spyOn(window, "confirm").mockReturnValue(false);
         render(<SuperAdminUsersPage />);
 
         fireEvent.click(await screen.findByText("resend"));
 
-        await waitFor(() => expect(resendUrls).toEqual([`/api/proxy/admin/users/${PM_ID}/resend-invite`]));
-        expect(await screen.findByText("resent")).toBeTruthy();
+        await new Promise(r => setTimeout(r, 20));
+        expect(resendUrls).toEqual([]);
+        expect(screen.queryByText("resent")).toBeNull();
     });
 });

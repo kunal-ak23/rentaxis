@@ -100,6 +100,7 @@ describe("RentersPage create form", () => {
         ];
         render(<RentersPage />);
 
+        vi.spyOn(window, "confirm").mockReturnValue(true);
         const buttons = await screen.findAllByText("resend");
         expect(buttons).toHaveLength(1);
         fireEvent.click(buttons[0]);

@@ -8,7 +8,8 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 /**
  * "Resend invite" for a user whose set-password invite is unused or expired
  * (#7). The backend re-issues the token, which kills the previous link, and
- * emails USER_INVITED again. Nothing about a password is ever shown here: the
+ * emails USER_INVITED again; hence the confirm first. `onSent` lets the caller
+ * reload the row, so its invite expiry reflects the new link. Nothing about a password is ever shown here: the
  * emailed link is the only way an invited user gets one.
  *
  * The endpoint is TENANT_ADMIN/SUPER_ADMIN only; callers render this button
@@ -24,6 +25,9 @@ export function ResendInviteButton({ userId, onSent }: { userId: string; onSent?
     const [error, setError] = useState<string | null>(null);
 
     const send = async () => {
+        // A resend replaces the token, so the link in the previous email stops
+        // working — possibly the one the user is opening right now.
+        if (!window.confirm(t("resendConfirm"))) return;
         setState("sending");
         setError(null);
         try {

@@ -2498,6 +2498,7 @@
     "resend": "Resend invite",
     "resent": "Invite sent",
     "resendFailed": "Could not resend the invite. Please try again.",
+    "resendConfirm": "Send a new invite? The link in the previous invite will stop working.",
     "pending": "Invite pending",
     "expired": "Invite expired",
     "sentTitle": "Invite sent",

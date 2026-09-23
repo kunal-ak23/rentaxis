@@ -321,7 +321,7 @@ export default function RentersPage() {
                                                 <td className="px-5 py-3.5 text-end">
                                                     <div className="flex items-center justify-end gap-3">
                                                         {canManageRenters && r.invitePending && r.userId && (
-                                                            <ResendInviteButton userId={r.userId} />
+                                                            <ResendInviteButton userId={r.userId} onSent={fetchRenters} />
                                                         )}
                                                         <Link href={`/dashboard/renters/${r.id}`} className="text-xs font-semibold text-primary hover:underline">
                                                             {t("view")}

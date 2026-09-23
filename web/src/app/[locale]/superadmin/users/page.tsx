@@ -350,7 +350,7 @@ export default function SuperAdminUsersPage() {
                                                 </td>
                                                 <td className="py-4 px-2 text-right">
                                                     <div className="flex justify-end gap-2">
-                                                        {u.invitePending && <ResendInviteButton userId={u.id} />}
+                                                        {u.invitePending && <ResendInviteButton userId={u.id} onSent={fetchUsers} />}
                                                         <button
                                                             onClick={() => handleEdit(u)}
                                                             className="text-xs px-3 py-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
