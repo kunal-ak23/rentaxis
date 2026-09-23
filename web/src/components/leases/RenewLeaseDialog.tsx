@@ -175,6 +175,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                         editable
                         onChange={setRows}
                         errors={errors}
+                        rentVat={!!lease.rentVatApplicable}
                     />
                 )}
 

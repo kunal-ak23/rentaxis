@@ -118,7 +118,8 @@ export default function AddChargeDialog({ open, lease, chargeTypes, onClose, onA
                 <section>
                     <h4 className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-2">{t("addendumLines")}</h4>
                     <LeaseLinesGrid lines={rows} chargeTypes={chargeTypes} propertyId={lease.propertyId}
-                                    editable onChange={setRows} errors={errors} />
+                                    editable onChange={setRows} errors={errors}
+                                    rentVat={!!lease.rentVatApplicable} />
                 </section>
 
                 <section>

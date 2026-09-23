@@ -52,6 +52,13 @@ export type LineRow = {
      * renewal copies the addendum's part-term charge onto a new year.
      */
     addendumId?: string | null;
+    /**
+     * The operator ticked or unticked this row's VAT box by hand (#54 review
+     * M-3). A touched RENT row keeps its choice when the header's "Rent carries
+     * VAT" flag changes; an untouched one follows the header. Picking a new
+     * charge type clears it. Client-only: never sent, never read back.
+     */
+    vatTouched?: boolean;
 };
 
 export function blankLine(key: number): LineRow {
@@ -146,12 +153,15 @@ export function withCarriedDeposit(
  * #54: the lease header's "Rent carries VAT" flag is what a RENT line's VAT box
  * starts from — the catalogue default describes the charge type, not this
  * contract. `withRentVat` re-applies the flag to every RENT row (the header
- * flag changed); deposits never carry VAT whatever their flag says, so only
- * RENT rows are touched.
+ * flag changed) except one whose VAT box the operator set by hand
+ * (`vatTouched`); deposits never carry VAT whatever their flag says, so only
+ * RENT rows are affected.
  */
 export function withRentVat(rows: LineRow[], chargeTypes: ChargeType[], rentVat: boolean): LineRow[] {
     const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
-    return rows.map(r => (isRent(r.chargeTypeId) && r.vatApplicable !== rentVat ? { ...r, vatApplicable: rentVat } : r));
+    return rows.map(r =>
+        isRent(r.chargeTypeId) && !r.vatTouched && r.vatApplicable !== rentVat ? { ...r, vatApplicable: rentVat } : r,
+    );
 }
 
 /**
@@ -172,7 +182,7 @@ export function followRentVat(
         const typeChanged = !was || was.chargeTypeId !== r.chargeTypeId;
         if (!typeChanged || !r.chargeTypeId) return r;
         const type = chargeTypes.find(c => c.id === r.chargeTypeId);
-        return type?.behaviour === "RENT" ? { ...r, vatApplicable: rentVat } : r;
+        return type?.behaviour === "RENT" ? { ...r, vatApplicable: rentVat, vatTouched: false } : r;
     });
 }
 

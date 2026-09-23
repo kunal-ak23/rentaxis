@@ -9,7 +9,8 @@ import type { LineRow } from "@/components/leases/leaseMath";
  * line's VAT box started from the charge type's catalogue default, so a
  * commercial lease with the flag ticked charged 0 VAT until the operator also
  * ticked the line. The flag now drives the RENT lines' VAT box; an explicit
- * per-line toggle afterwards still wins for that line.
+ * per-line toggle afterwards still wins for that line, including through later
+ * header changes (review M-3).
  */
 
 vi.mock("@/i18n/routing", () => ({
@@ -43,8 +44,9 @@ vi.mock("@/lib/api/leasing", async orig => {
 
 /**
  * The grid stubbed down to what the wizard hands it: its rows (rendered as
- * JSON) and an onChange that behaves like the real grid's `pickType` — the
- * row takes the catalogue default — or its VAT checkbox.
+ * JSON) and an onChange that behaves like the real grid's `pickType` with no
+ * `rentVat` prop — the row takes the catalogue default — or its VAT checkbox,
+ * which marks the row `vatTouched` as the real one does.
  */
 vi.mock("@/components/leases/LeaseLinesGrid", () => ({
     default: ({ lines, onChange }: { lines: LineRow[]; onChange: (r: LineRow[]) => void }) => (
@@ -52,7 +54,7 @@ vi.mock("@/components/leases/LeaseLinesGrid", () => ({
             <pre data-testid="rows">{JSON.stringify(lines.map(l => ({ c: l.chargeTypeId, v: l.vatApplicable })))}</pre>
             <button onClick={() => onChange(lines.map(l => ({ ...l, chargeTypeId: "ct-rent", vatApplicable: false })))}>pick-rent</button>
             <button onClick={() => onChange(lines.map(l => ({ ...l, chargeTypeId: "ct-fee", vatApplicable: true })))}>pick-fee</button>
-            <button onClick={() => onChange(lines.map(l => ({ ...l, vatApplicable: !l.vatApplicable })))}>toggle-vat</button>
+            <button onClick={() => onChange(lines.map(l => ({ ...l, vatApplicable: !l.vatApplicable, vatTouched: true })))}>toggle-vat</button>
         </div>
     ),
 }));
@@ -119,6 +121,26 @@ describe("lease wizard: header rent-VAT flag drives RENT lines (#54)", () => {
         fireEvent.click(screen.getByTestId("wizard-rent-vat"));
         fireEvent.click(screen.getByTestId("wizard-next"));
         await waitFor(() => expect(screen.getByTestId("rows")).toBeInTheDocument());
+        expect(rows()).toEqual([{ c: "ct-rent", v: true }]);
+    });
+
+    it("re-ticking the header does not clobber a line the operator set by hand (M-3)", async () => {
+        await toLinesStep(true);
+        fireEvent.click(screen.getByText("pick-rent"));
+        fireEvent.click(screen.getByText("toggle-vat"));
+        expect(rows()).toEqual([{ c: "ct-rent", v: false }]);
+
+        fireEvent.click(screen.getByText("Back"));
+        await waitFor(() => expect(screen.getByTestId("wizard-rent-vat")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("wizard-rent-vat")); // off
+        fireEvent.click(screen.getByTestId("wizard-rent-vat")); // on again
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(screen.getByTestId("rows")).toBeInTheDocument());
+        expect(rows()).toEqual([{ c: "ct-rent", v: false }]);
+
+        // Picking the charge again hands the row back to the header.
+        fireEvent.click(screen.getByText("pick-fee"));
+        fireEvent.click(screen.getByText("pick-rent"));
         expect(rows()).toEqual([{ c: "ct-rent", v: true }]);
     });
 });

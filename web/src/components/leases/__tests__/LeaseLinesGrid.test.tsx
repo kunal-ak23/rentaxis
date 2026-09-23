@@ -35,7 +35,7 @@ function row(over: Partial<LineRow> & { key: number }): LineRow {
 }
 
 /** Controlled wrapper — the grid is a pure render of whatever it is handed. */
-function Harness({ initial, errors }: { initial: LineRow[]; errors?: string[] }) {
+function Harness({ initial, errors, rentVat }: { initial: LineRow[]; errors?: string[]; rentVat?: boolean }) {
     const [lines, setLines] = useState(initial);
     return (
         <NextIntlClientProvider locale="en" messages={en}>
@@ -45,6 +45,7 @@ function Harness({ initial, errors }: { initial: LineRow[]; errors?: string[] })
                 editable
                 onChange={setLines}
                 errors={errors}
+                rentVat={rentVat}
             />
         </NextIntlClientProvider>
     );
@@ -146,6 +147,50 @@ describe("LeaseLinesGrid", () => {
         expect(screen.getByTestId("lease-line-errors-1")).toHaveTextContent("credit account 400100 is inactive.");
         // The unaddressed one is the caller's banner, not the grid's.
         expect(screen.queryByText(/books are locked/)).not.toBeInTheDocument();
+    });
+
+    describe("rentVat: the lease header's rent-VAT flag (#54)", () => {
+        const vatBox = (i: number) => screen.getByTestId(`lease-line-vat-${i}`) as HTMLInputElement;
+        const pick = (i: number, id: string) =>
+            fireEvent.change(screen.getByTestId(`lease-line-type-${i}`), { target: { value: id } });
+
+        it("a RENT charge takes the header flag over its catalogue default", () => {
+            // Catalogue says RENT is taxed; this lease's header says it is not.
+            render(<Harness initial={[row({ key: 0, grossAmount: 10000 })]} rentVat={false} />);
+            pick(0, "ct-rent");
+            expect(vatBox(0).checked).toBe(false);
+            expect(screen.getByTestId("lease-lines-total-vat")).toHaveTextContent("0.00");
+
+            cleanup();
+            render(<Harness initial={[row({ key: 0, grossAmount: 10000, vatApplicable: false })]} rentVat />);
+            pick(0, "ct-rent");
+            expect(vatBox(0).checked).toBe(true);
+            expect(screen.getByTestId("lease-lines-contract-value")).toHaveTextContent("10,500.00");
+        });
+
+        it("a non-RENT charge keeps its catalogue default whatever the header says", () => {
+            render(<Harness initial={[row({ key: 0, grossAmount: 100 })]} rentVat={false} />);
+            pick(0, "ct-fee");
+            expect(vatBox(0).checked).toBe(true);
+        });
+
+        it("without the prop a RENT charge falls back to the catalogue default", () => {
+            render(<Harness initial={[row({ key: 0, grossAmount: 100 })]} />);
+            pick(0, "ct-rent");
+            expect(vatBox(0).checked).toBe(true);
+        });
+
+        it("never rewrites a row's persisted flag it was handed (a copied renewal row)", () => {
+            render(
+                <Harness
+                    initial={[row({ key: 0, id: "line-1", chargeTypeId: "ct-rent", grossAmount: 100, vatApplicable: true })]}
+                    rentVat={false}
+                />,
+            );
+            expect(vatBox(0).checked).toBe(true);
+            fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "200" } });
+            expect(vatBox(0).checked).toBe(true);
+        });
     });
 
     it("adds and removes rows only while editable", () => {

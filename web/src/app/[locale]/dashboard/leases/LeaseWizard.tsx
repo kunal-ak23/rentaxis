@@ -311,8 +311,11 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setError(null);
     };
     // #54: the header's "Rent carries VAT" flag drives every RENT line's VAT
-    // box — when the flag changes, and when a line is pointed at a RENT charge.
-    // Ticking a line's own box afterwards still wins for that line.
+    // box — when the flag changes (here, or via the unit's property type), and
+    // when a line is pointed at a RENT charge. A line whose own box the
+    // operator ticked or unticked afterwards is `vatTouched` and keeps that
+    // choice through later header changes (M-3), until its charge type is
+    // picked again.
     const setRentVat = (rentVatApplicable: boolean) => {
         patch({ rentVatApplicable });
         setRows(prev => withRentVat(prev, chargeTypes, rentVatApplicable));
@@ -504,6 +507,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 editable
                                 onChange={onLinesChange}
                                 errors={serverErrors}
+                                rentVat={terms.rentVatApplicable}
                             />
                             {bannerErrors.length > 0 && (
                                 <ul className="text-[11px] text-error space-y-1" data-testid="wizard-line-errors">

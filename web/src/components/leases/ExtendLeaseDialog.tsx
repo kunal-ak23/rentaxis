@@ -130,6 +130,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                         editable
                         onChange={setRows}
                         errors={errors}
+                        rentVat={!!lease.rentVatApplicable}
                     />
                 </section>
 

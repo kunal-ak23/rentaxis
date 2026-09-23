@@ -114,6 +114,7 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
                     editable={!blocker}
                     onChange={setRows}
                     errors={errors}
+                    rentVat={!!lease.rentVatApplicable}
                 />
 
                 <div
