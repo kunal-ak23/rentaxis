@@ -17,6 +17,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
+import static com.datagami.rentaxis.api.CallerIdentity.callerId;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -349,8 +352,9 @@ public class AuthController {
      * Used by the TenantSwitcher component for multi-tenant TENANT_ADMINs.
      */
     @GetMapping("/me/tenants")
-    public ResponseEntity<List<TenantInfo>> getMyTenants(@RequestHeader("X-User-Id") String userIdStr) {
-        UUID userId = UUID.fromString(userIdStr);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<TenantInfo>> getMyTenants() {
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
 
         if (userOpt.isEmpty()) {
@@ -383,6 +387,12 @@ public class AuthController {
     }
 
     // --- Self-Service Profile ---
+    //
+    // Everything under /api/auth/me acts as the signed-in user, so identity is the
+    // verified principal (CallerIdentity), never the X-User-Id header. These are
+    // the only /api/auth routes ApiSecurityFilter runs on and SecurityConfig
+    // requires authentication for; the rest (login, register, set-password,
+    // firebase, apple) run before there is a principal and take no caller header.
 
     public record ProfileResponse(String id, String email, String name, String role, String phoneNumber,
                                    String tenantId, String orgName) {
@@ -395,8 +405,9 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<ProfileResponse> getMyProfile(@RequestHeader("X-User-Id") String userIdStr) {
-        UUID userId = UUID.fromString(userIdStr);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ProfileResponse> getMyProfile() {
+        UUID userId = callerId();
         return userService.findById(userId)
                 .map(user -> {
                     String tid = user.getTenantId() != null ? user.getTenantId().toString() : null;
@@ -417,10 +428,10 @@ public class AuthController {
     }
 
     @PutMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProfileResponse> updateMyProfile(
-            @RequestHeader("X-User-Id") String userIdStr,
             @RequestBody UpdateProfileRequest request) {
-        UUID userId = UUID.fromString(userIdStr);
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
         if (userOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -453,10 +464,10 @@ public class AuthController {
     }
 
     @PutMapping("/me/password")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> changePassword(
-            @RequestHeader("X-User-Id") String userIdStr,
             @RequestBody ChangePasswordRequest request) {
-        UUID userId = UUID.fromString(userIdStr);
+        UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
         if (userOpt.isEmpty()) {
             return ResponseEntity.notFound().build();

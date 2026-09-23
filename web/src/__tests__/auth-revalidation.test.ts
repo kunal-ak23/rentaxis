@@ -70,6 +70,17 @@ describe("session revalidation", () => {
             await expect(fetchCurrentUser("user-1")).resolves.toEqual({ status: "unavailable" });
         });
 
+        it("sends the identity headers the backend builds its principal from", async () => {
+            // /api/auth/me takes the caller from the backend's principal, and the
+            // legacy filter path only builds one from user + role + home tenant.
+            fetchMock.mockResolvedValue(ok({ role: "PROPERTY_MANAGER", tenantId: "tenant-1" }));
+            await fetchCurrentUser("user-1", "PROPERTY_MANAGER", "tenant-1");
+            const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+            expect(headers["X-User-Id"]).toBe("user-1");
+            expect(headers["X-User-Role"]).toBe("PROPERTY_MANAGER");
+            expect(headers["X-User-Tenant-Id"]).toBe("tenant-1");
+        });
+
         it("returns the current role and tenant on success", async () => {
             fetchMock.mockResolvedValue(ok({ role: "TENANT_USER", tenantId: "tenant-9" }));
             await expect(fetchCurrentUser("user-1")).resolves.toEqual({
@@ -85,6 +96,11 @@ describe("session revalidation", () => {
             fetchMock.mockResolvedValue(ok({ role: "TENANT_USER", tenantId: "tenant-1" }));
 
             const out = (await jwt({ token: staleToken() } as never)) as JWT;
+
+            // The revalidation call carries the session's role and home tenant.
+            const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+            expect(headers["X-User-Role"]).toBe("PROPERTY_MANAGER");
+            expect(headers["X-User-Tenant-Id"]).toBe("tenant-1");
 
             // Before the fix this stayed PROPERTY_MANAGER for the token's life.
             expect(out.role).toBe("TENANT_USER");

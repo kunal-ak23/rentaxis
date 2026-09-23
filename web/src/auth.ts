@@ -29,14 +29,25 @@ type CurrentUser =
  * else — a network failure, a 5xx — is reported as unavailable so the caller
  * can fail open: a backend blip must not sign every user out.
  */
-export async function fetchCurrentUser(userId: string | undefined): Promise<CurrentUser> {
+export async function fetchCurrentUser(
+    userId: string | undefined,
+    role?: string,
+    homeTenantId?: string,
+): Promise<CurrentUser> {
     if (!userId) return { status: "unavailable" };
 
     const base = process.env.BACKEND_URL || "http://localhost:8080";
     try {
+        // /api/auth/me reads the caller from the backend's verified principal
+        // (PR #342), which ApiSecurityFilter builds on the legacy path from the
+        // full header set, the same one proxy.ts sends: user, role, and the home
+        // tenant a non-SUPER_ADMIN is authorized against. The role sent is the
+        // session's last-known one; the response carries the current one.
         const res = await fetch(`${base}/api/auth/me`, {
             headers: {
                 "X-User-Id": userId,
+                ...(role ? { "X-User-Role": role } : {}),
+                ...(homeTenantId ? { "X-User-Tenant-Id": homeTenantId } : {}),
                 ...(process.env.INTERNAL_PROXY_SECRET
                     ? { "X-Internal-Auth": process.env.INTERNAL_PROXY_SECRET }
                     : {}),
@@ -149,7 +160,11 @@ export const authOptions: NextAuthOptions = {
                 return token;
             }
 
-            const current = await fetchCurrentUser(token.id as string | undefined);
+            const current = await fetchCurrentUser(
+                token.id as string | undefined,
+                token.role as string | undefined,
+                token.tenantId as string | undefined,
+            );
 
             if (current.status === "revoked") {
                 // The user no longer exists. Mark the token; proxy.ts refuses

@@ -68,15 +68,22 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // Skip auth routes to prevent interception overhead
-        if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
+        // Skip the pre-authentication routes (login, register, set-password, ...).
+        // The self-service profile routes under /api/auth/me act AS the signed-in
+        // user, so they are not skipped: they need the principal this filter sets
+        // (PR #342). Skipping them left every one anonymous, so the controller
+        // could only take identity from a raw X-User-Id header — which, with no
+        // filter in front, anyone could send, token or not, and which the phase-2
+        // legacy-header deny would never have reached.
+        if (!isSelfServiceProfilePath(path)
+                && (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
                 || path.startsWith("/actuator/") || path.startsWith("/api/webhooks/")
                 // Only the public asset folder skips authentication (issue #300):
                 // every other storage key under /serve now requires a caller, and
                 // skipping the filter for it would leave that caller anonymous.
                 || path.startsWith("/api/v1/assets/serve/" + AssetController.PUBLIC_PREFIX + "/")
                 || path.startsWith("/public/")
-                || path.startsWith("/api/v1/public/")) {
+                || path.startsWith("/api/v1/public/"))) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -181,7 +188,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
                 // Setup Tenant Context for Database Isolation (Hibernate Filters)
-                if (requestedTenantId != null) {
+                if (requestedTenantId != null && !isSelfServiceProfilePath(path)) {
                     TenantContextHolder.setTenantId(requestedTenantId);
                 }
             }
@@ -198,6 +205,23 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             TenantContextHolder.clear();
         }
     }
+
+    /**
+     * {@code /api/auth/me} and everything under it; SecurityConfig requires
+     * authentication there.
+     *
+     * <p>These routes get a principal but no tenant context. They are about the
+     * user, not a tenant: they read the caller's own user row by id, their
+     * memberships and org names. With the active tenant set, a multi-tenant admin
+     * working in a secondary organisation could not load their own profile (the
+     * tenant filter hides a user row whose home tenant is another one). Leaving it
+     * unset is what these routes had when the filter skipped them.
+     */
+    public static boolean isSelfServiceProfilePath(String path) {
+        return path.equals(SELF_SERVICE_PROFILE_PATH) || path.startsWith(SELF_SERVICE_PROFILE_PATH + "/");
+    }
+
+    public static final String SELF_SERVICE_PROFILE_PATH = "/api/auth/me";
 
     /**
      * Bearer path: identity from verified claims only. The X-User-* headers are
@@ -261,7 +285,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         // Setup Tenant Context for Database Isolation (Hibernate Filters)
-        if (requestedTenantId != null) {
+        if (requestedTenantId != null && !isSelfServiceProfilePath(request.getRequestURI())) {
             TenantContextHolder.setTenantId(requestedTenantId);
         }
 
