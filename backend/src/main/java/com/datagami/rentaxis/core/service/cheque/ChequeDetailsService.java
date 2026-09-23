@@ -235,7 +235,8 @@ public class ChequeDetailsService {
             if (c == null || path == null || path.equals(c.getImageBlobPath())) {
                 continue;
             }
-            var issued = imageUploads.findByTenantIdAndBlobPath(tenantId, path).orElse(null);
+            // Locked: "not yet claimed" must still hold when this call claims it.
+            var issued = imageUploads.findByTenantIdAndBlobPathForUpdate(tenantId, path).orElse(null);
             if (issued == null || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
                 bad.add(new BulkAttachErrorRow(it.targetId(), "image_not_issued"));
             } else {
@@ -285,11 +286,15 @@ public class ChequeDetailsService {
                 // The URL the server recorded, not one from the request.
                 c.setImageUrl(issued.getImageUrl());
                 c.setImageBlobPath(issued.getBlobPath());
+                // One scan per cheque (changeset 105): the scan it is replacing
+                // is released first.
+                imageUploads.releaseOtherClaimsOf(c.getId(), issued.getId());
                 issued.setChequeId(c.getId());
-                imageUploads.save(issued);
+                imageUploads.saveAndFlush(issued);
             } else if (path == null) {
                 c.setImageUrl(null);
                 c.setImageBlobPath(null);
+                imageUploads.releaseClaimsOf(c.getId());
             }
             // else: the row's own, unchanged image stays as it is.
             c.setImageUploadedAt(it.getImageUploadedAt() != null ? it.getImageUploadedAt().toInstant() : now);

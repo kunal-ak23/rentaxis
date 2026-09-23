@@ -360,4 +360,88 @@ class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
                 .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e))
                         .contains("duplicate_image_in_request"));
     }
+
+    /**
+     * Two attaches of one scan at once. Both used to read "unclaimed" before
+     * either wrote, so both cheques carried the image and the retention purge
+     * later deleted it from under the survivor. The scan row is now locked
+     * before the check: here another transaction is mid-claim, the attach waits
+     * for it, re-reads a claimed scan and is refused.
+     */
+    @Test
+    void aScanBeingClaimedConcurrentlyIsRefusedOnceTheClaimCommits() throws Exception {
+        String path = issuedImage(tenantId);
+        UUID holder = register.get(0).getId();
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<?> claimant = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    tx.executeWithoutResult(s -> {
+                        var u = imageUploads.findByTenantIdAndBlobPathForUpdate(tenantId, path).orElseThrow();
+                        u.setChequeId(holder);
+                        imageUploads.saveAndFlush(u);
+                        locked.countDown();
+                        try {
+                            Thread.sleep(1500);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+            assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            BulkAttachChequeItem it = item(register.get(1).getId(), "C-2");
+            it.setImageBlobPath(path);
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> details.bulkAttach(leaseId, List.of(it)))
+                    .isInstanceOf(BulkAttachValidationException.class)
+                    .satisfies(e -> assertThat(reasons((BulkAttachValidationException) e)).contains("image_not_issued"));
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
+                    .as("the attach waited for the claim").isGreaterThan(java.time.Duration.ofMillis(500));
+            claimant.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(reread().get(1).getImageBlobPath()).isNull();
+    }
+
+    /** Replacing a cheque's scan releases the old one: one cheque, one claim (changeset 105). */
+    @Test
+    void replacingAScanReleasesTheOldClaim() {
+        BulkAttachChequeItem first = item(register.get(0).getId(), "C-1");
+        details.bulkAttach(leaseId, List.of(first));
+        BulkAttachChequeItem second = item(register.get(0).getId(), "C-1");
+        details.bulkAttach(leaseId, List.of(second));
+
+        assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, first.getImageBlobPath()).orElseThrow()
+                .getChequeId()).isNull();
+        assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, second.getImageBlobPath()).orElseThrow()
+                .getChequeId()).isEqualTo(register.get(0).getId());
+
+        // The released scan can now go on another cheque.
+        BulkAttachChequeItem reuse = item(register.get(1).getId(), "C-2");
+        reuse.setImageBlobPath(first.getImageBlobPath());
+        details.bulkAttach(leaseId, List.of(reuse));
+        assertThat(reread().get(1).getImageBlobPath()).isEqualTo(first.getImageBlobPath());
+    }
+
+    /** The index itself: a second claim by the same cheque is refused by the database. */
+    @Test
+    void theDatabaseRefusesTwoClaimsByOneCheque() {
+        UUID cheque = register.get(0).getId();
+        var a = imageUploads.findByTenantIdAndBlobPath(tenantId, issuedImage(tenantId)).orElseThrow();
+        var b = imageUploads.findByTenantIdAndBlobPath(tenantId, issuedImage(tenantId)).orElseThrow();
+        a.setChequeId(cheque);
+        imageUploads.saveAndFlush(a);
+        b.setChequeId(cheque);
+        assertThatThrownBy(() -> imageUploads.saveAndFlush(b))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
 }

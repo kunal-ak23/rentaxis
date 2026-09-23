@@ -215,3 +215,5 @@ databaseChangeLog:
       file: db/changelog/changesets/103-user-token-version.yaml
   - include:
       file: db/changelog/changesets/104-cheque-image-uploads.yaml
+  - include:
+      file: db/changelog/changesets/105-cheque-image-upload-claim-unique.yaml
