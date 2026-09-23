@@ -100,7 +100,7 @@ export default function TrialBalancePage() {
     const exportCsv = () => {
         const body: (string | number)[][] = [];
         for (const g of groups) {
-            for (const r of g.items) body.push([r.code, r.name, typeLabel(g.type), fmtAmount(r.debit), fmtAmount(r.credit)]);
+            for (const r of g.items) body.push([r.code, accountName(r, locale), typeLabel(g.type), fmtAmount(r.debit), fmtAmount(r.credit)]);
             body.push(["", `${t("subTotal")} — ${typeLabel(g.type)}`, "", fmtAmount(g.debit), fmtAmount(g.credit)]);
         }
         body.push(["", t("grandTotal"), "", fmtAmount(totalDebit), fmtAmount(totalCredit)]);
