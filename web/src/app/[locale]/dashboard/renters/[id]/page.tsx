@@ -268,6 +268,9 @@ export default function RenterDetailPage() {
             </div>
 
             {/* ── Summary ────────────────────────────────────────── */}
+            {/* Numbers and references are isolated LTR in a <bdi> while their cells
+                and tiles keep the page direction, so in Arabic they still line up
+                with their headers (web review I4). */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="renter-summary">
                 {[
                     { label: t("activeContracts"), value: leasesFailed ? "—" : String(activeLeases) },
@@ -278,7 +281,7 @@ export default function RenterDetailPage() {
                 ].map(k => (
                     <div key={k.label} className="bg-surface border border-border rounded-xl p-4">
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{k.label}</p>
-                        <p className="text-base font-semibold text-foreground tabular-nums" dir="ltr">{k.value}</p>
+                        <p className="text-base font-semibold text-foreground tabular-nums"><bdi dir="ltr">{k.value}</bdi></p>
                     </div>
                 ))}
             </div>
@@ -318,7 +321,7 @@ export default function RenterDetailPage() {
                                                 {tLeasing(`leaseStatus.${l.status}`)}
                                             </span>
                                         </td>
-                                        <td className={cn(td, "text-end tabular-nums")} dir="ltr">{l.rentAmount != null ? formatCurrency(l.rentAmount) : "—"}</td>
+                                        <td className={cn(td, "text-end tabular-nums")}><bdi dir="ltr">{l.rentAmount != null ? formatCurrency(l.rentAmount) : "—"}</bdi></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -353,10 +356,10 @@ export default function RenterDetailPage() {
                                 {cheques.map(c => (
                                     <tr key={c.id} className="border-b border-border">
                                         <td className={td}>{unitOf.get(c.leaseId) ?? "—"}</td>
-                                        <td className={td} dir="ltr">{c.chequeNumber ?? "—"}</td>
+                                        <td className={td}><bdi dir="ltr">{c.chequeNumber ?? "—"}</bdi></td>
                                         <td className={td}>{fmtIsoDate(c.chequeDate, locale)}</td>
                                         <td className={td}>{tCheques.has(`status.${c.status}`) ? tCheques(`status.${c.status}`) : c.status}</td>
-                                        <td className={cn(td, "text-end tabular-nums")} dir="ltr">{formatCurrency(c.amount)}</td>
+                                        <td className={cn(td, "text-end tabular-nums")}><bdi dir="ltr">{formatCurrency(c.amount)}</bdi></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -385,8 +388,8 @@ export default function RenterDetailPage() {
                                 {tickets.map(tk => (
                                     <tr key={tk.id} className="border-b border-border hover:bg-input/30 transition-colors">
                                         <td className={td}>
-                                            <Link href={`/dashboard/tickets/${tk.id}`} className="text-primary font-semibold hover:underline" dir="ltr">
-                                                {tk.reference || tk.id.slice(0, 8)}
+                                            <Link href={`/dashboard/tickets/${tk.id}`} className="text-primary font-semibold hover:underline">
+                                                <bdi dir="ltr">{tk.reference || tk.id.slice(0, 8)}</bdi>
                                             </Link>
                                         </td>
                                         <td className={td}>{tk.title}</td>

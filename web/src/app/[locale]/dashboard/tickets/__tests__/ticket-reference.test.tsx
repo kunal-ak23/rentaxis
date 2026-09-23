@@ -55,7 +55,13 @@ describe("Tickets list — reference", () => {
     it("shows the reference, falling back to the id prefix for a row without one", async () => {
         render(<TicketsPage />);
 
-        expect(await screen.findByText("TKT-26/14")).toBeTruthy();
+        const ref = await screen.findByText("TKT-26/14");
+        expect(ref).toBeTruthy();
+        // Web review I4: the reference is isolated LTR; its cell keeps the page
+        // direction so it lines up with the header in Arabic.
+        expect(ref.tagName).toBe("BDI");
+        expect(ref.getAttribute("dir")).toBe("ltr");
+        expect(ref.closest("td")?.hasAttribute("dir")).toBe(false);
         expect(screen.getByText("cccccccc")).toBeTruthy();
     });
 

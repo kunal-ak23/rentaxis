@@ -96,6 +96,21 @@ describe("RenterDetailPage", () => {
         expect(screen.getByText("resend")).toBeTruthy();
     });
 
+    // Web review I4: a dir="ltr" cell flips its own alignment away from its
+    // header in Arabic; only the number itself is isolated.
+    it("isolates numbers in an LTR bdi without changing the cell's direction", async () => {
+        render(<RenterDetailPage />);
+
+        const chequeNo = await screen.findByText("000102");
+        expect(chequeNo.tagName).toBe("BDI");
+        expect(chequeNo.getAttribute("dir")).toBe("ltr");
+        expect(chequeNo.closest("td")?.hasAttribute("dir")).toBe(false);
+        for (const cell of screen.getByTestId("renter-summary").querySelectorAll("p")) {
+            expect(cell.hasAttribute("dir")).toBe(false);
+        }
+        expect(document.querySelectorAll("td[dir]")).toHaveLength(0);
+    });
+
     it("hides Resend invite and the ledger from a property manager", async () => {
         role = "PROPERTY_MANAGER";
         render(<RenterDetailPage />);

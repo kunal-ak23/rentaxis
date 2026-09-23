@@ -374,8 +374,10 @@ export default function TicketsPage() {
                         <tbody>
                             {paginated.map((ticket) => (
                                 <tr key={ticket.id} className="border-b border-border hover:bg-input/30 transition-colors">
-                                    <td className="px-4 py-2.5 text-xs text-foreground font-mono font-semibold whitespace-nowrap" dir="ltr" data-testid="ticket-reference">
-                                        {ticket.reference ?? ticket.id.substring(0, 8)}
+                                    <td className="px-4 py-2.5 text-xs text-foreground font-mono font-semibold whitespace-nowrap" data-testid="ticket-reference">
+                                        {/* The cell keeps the page direction so it lines up with its
+                                            header in Arabic; only the reference is isolated LTR. */}
+                                        <bdi dir="ltr">{ticket.reference ?? ticket.id.substring(0, 8)}</bdi>
                                     </td>
                                     <td className="px-4 py-2.5 max-w-[200px]">
                                         <div className="text-xs font-medium text-foreground truncate">{ticket.title}</div>
