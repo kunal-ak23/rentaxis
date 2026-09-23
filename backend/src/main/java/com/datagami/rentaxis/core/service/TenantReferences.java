@@ -4,8 +4,11 @@ import com.datagami.rentaxis.api.dto.IdRef;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Building;
 import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.BuildingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import org.springframework.stereotype.Component;
@@ -26,10 +29,13 @@ public class TenantReferences {
 
     private final PropertyRepository propertyRepository;
     private final BuildingRepository buildingRepository;
+    private final AccountRepository accountRepository;
 
-    public TenantReferences(PropertyRepository propertyRepository, BuildingRepository buildingRepository) {
+    public TenantReferences(PropertyRepository propertyRepository, BuildingRepository buildingRepository,
+                            AccountRepository accountRepository) {
         this.propertyRepository = propertyRepository;
         this.buildingRepository = buildingRepository;
+        this.accountRepository = accountRepository;
     }
 
     /** The property named by {@code ref}, or null when the body names none. */
@@ -60,6 +66,33 @@ public class TenantReferences {
             throw new BusinessRuleViolationException("That building is not part of the selected property");
         }
         return b;
+    }
+
+    /**
+     * A staff member's salary account: one of this tenant's active, non-group
+     * EXPENSE leaves, or null when the body names none.
+     *
+     * <p>Re-sending the account the row already has is not a new choice and is
+     * kept as it is (after the tenant check), so a row linked before this rule
+     * existed can still have its name or phone edited without being re-linked.</p>
+     */
+    public Account salaryAccountOrNull(IdRef ref, Account current) {
+        if (ref == null) return null;
+        UUID id = requireId(ref, "salaryAccount");
+        if (current != null && id.equals(current.getId()) && inCurrentTenant(current.getTenantId())) {
+            return current;
+        }
+        Account a = accountRepository.findByIdScopedToTenant(id)
+                .filter(acc -> inCurrentTenant(acc.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Ledger account not found"));
+        if (a.isGroup() || a.getAccountType() != AccountType.EXPENSE) {
+            throw new BusinessRuleViolationException(
+                    "A salary account must be an expense ledger account, not " + a.getCode() + " " + a.getName());
+        }
+        if (!a.isActive()) {
+            throw new BusinessRuleViolationException("Ledger account " + a.getCode() + " is inactive");
+        }
+        return a;
     }
 
     static UUID requireId(IdRef ref, String field) {
