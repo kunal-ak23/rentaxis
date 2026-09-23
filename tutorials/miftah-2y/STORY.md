@@ -64,7 +64,7 @@ Status: `planned` → `blocked` (proof failed, gap logged) → `proven`.
 |---|---|---|---|
 | M15 | Oct 25 | **Fatima #3 — ACCOUNT_CLOSED** → notice → termination preview → terminate | proven |
 | M16 | Nov 25 | Fatima settlement: deductions (arrears, damages, cleaning), finalize, deposit shortfall | proven |
-| M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | planned |
+| M17 | Nov 25 | A-102 turnover: make-ready expense, relist, Omar's lease from Dec 25 | proven |
 | M18 | Dec 25 | Rajesh renews at a freeze **plus a rent-free month** as compensation — per-day recognition | planned |
 | M19 | Jan 26 | Close 2025 and lock; opening-balance / carry-forward check | planned |
 | M20 | Feb 26 | Sara gives early notice → early-termination charge → settlement | planned |
@@ -217,6 +217,18 @@ grace at 20/day) and an **Other 250** (lost access card). The 460 was approved a
 penalties are proposed by hand here: the automatic proposal on a late clearing is off by
 default (`FineSettingsInitializer.DEFAULT_AUTO_PROPOSE_LATE_PAYMENT = false`). The receive
 dialog still titles the cash row *"#6"* although the register shows "—" (#43).
+
+**M17 · Nov–Dec 2025 — A-102 turned round.** Gulf Cool's make-ready invoice for A-102 (AC
+deep service and gas, 1,200 + 5% VAT) posted as **PISR-25/2** on 10/11/2025 against Repairs
+& Maintenance, tagged to the unit — the unit picker now lists A-101 … A-302 in order (#6).
+Omar Khalid was added as a renter without a portal login, and his lease drafted through the
+five-step wizard: agreement 20/11/2025, term 01/12/2025–30/11/2026, rent 64,000, deposit
+6,400, admin fee 1,050 (**71,450**), Ejari `EJ-2025-100188`, four Mashreq PDCs 600101–600104
+(23,450 then 3 × 16,000). Posted as **TCO-25/3**. The wizard fought back in small ways: the
+contract date defaulted to today rather than the agreement date (#45), the cheque generator
+ignored step 2's *Uniform* distribution (#46), and the Help button sat over every step's
+Next (#44, reopened for modals). `/dashboard/leases/new` is not the wizard — it shows a raw
+*"Invalid value for parameter 'id'"* (#47) — and the leases toolbar overflows at 974px (#48).
 
 **Renter portal walk · 23 Sep 2026 — Ahmed's view.** His home shows both A-101 contracts
 (year 1 RENEWED with its Ejari, year 2 ACTIVE with none — #24) and a next payment 630 days
