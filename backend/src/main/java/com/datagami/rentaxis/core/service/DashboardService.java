@@ -191,6 +191,12 @@ public class DashboardService {
                 item.setType("PAYMENT_" + c.getStatus().name());
                 item.setDescription(buildChequeDescription(c));
                 item.setTimestamp(c.getStatusChangedAt().toString());
+                item.setChequeStatus(c.getStatus().name());
+                item.setChequeNumber(blankToNull(c.getChequeNumber()));
+                item.setSeqNo(c.getSeqNo());
+                item.setUnitNumber(c.getUnit() != null ? c.getUnit().getUnitNumber() : null);
+                item.setPropertyName(c.getProperty() != null ? c.getProperty().getNameEn() : null);
+                item.setAmount(nz(c.getAmount()));
                 activityItems.add(item);
             }
         }
@@ -255,15 +261,27 @@ public class DashboardService {
         return series;
     }
 
-    private String buildChequeDescription(Cheque c) {
+    /**
+     * The English fallback line. It names the cheque by the number an accountant
+     * would search for, falling back to its position on the schedule only when
+     * the paper has no number, and groups the amount like every other screen
+     * ("31,500.00", not "31500.00").
+     */
+    static String buildChequeDescription(Cheque c) {
         String unitNumber = c.getUnit() != null ? c.getUnit().getUnitNumber() : "N/A";
         String propertyName = c.getProperty() != null ? c.getProperty().getNameEn() : "N/A";
-        return String.format("Payment #%d %s - Unit %s, %s (AED %s)",
-                c.getSeqNo(),
+        String number = blankToNull(c.getChequeNumber());
+        String ref = number != null ? "Cheque " + number : "Payment #" + c.getSeqNo();
+        return String.format(Locale.ENGLISH, "%s %s - Unit %s, %s (AED %,.2f)",
+                ref,
                 c.getStatus().name().toLowerCase(),
                 unitNumber,
                 propertyName,
-                nz(c.getAmount()).toPlainString());
+                nz(c.getAmount()));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     private static BigDecimal nz(BigDecimal value) {
