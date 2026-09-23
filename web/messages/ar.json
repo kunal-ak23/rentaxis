@@ -2470,6 +2470,7 @@
     "otpLockedStaffHint": "الإغلاق برمز التحقق مقفل لهذه التذكرة بعد عدد كبير من الرموز الخاطئة. يمكن لمسؤول المستأجر إغلاقها."
   },
   "RenterHome": {
+    "pastContracts": "العقود السابقة ({count})",
     "renterFallback": "المستأجر",
     "nextPayment": "الدفعة التالية",
     "daysOverdue": "{count, plural, zero {متأخرة # يوم} one {متأخرة يومًا واحدًا} two {متأخرة يومين} few {متأخرة # أيام} many {متأخرة # يومًا} other {متأخرة # يوم}}",
