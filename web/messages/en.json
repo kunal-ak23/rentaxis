@@ -2347,5 +2347,8 @@
     "postCredit": "Posts credit",
     "postBlockedByUpload": "An import is still running. Wait for it to finish before posting a batch.",
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
+  },
+  "Tickets": {
+    "reportedOn": "Reported On"
   }
 }

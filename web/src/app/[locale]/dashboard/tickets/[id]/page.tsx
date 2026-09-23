@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import {
     ArrowLeft, Loader2, Send, Upload, Download, Star, Clock, User,
     Wrench, Building2, Home, Tag, AlertTriangle, CheckCircle, X, FileText, Trash2,
@@ -89,6 +91,8 @@ const STATUS_COLORS: Record<string, string> = {
 export default function TicketDetailPage() {
     const params = useParams();
     const ticketId = params.id as string;
+    const t = useTranslations("Tickets");
+    const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
@@ -528,7 +532,7 @@ export default function TicketDetailPage() {
                             <DetailRow icon={<Home size={12} />} label="Unit" value={ticket.unitNumber || "—"} />
                             <DetailRow icon={<User size={12} />} label="Reporter" value={ticket.reporterName || "—"} />
                             <DetailRow icon={<Wrench size={12} />} label="Assigned To" value={ticket.assigneeName || "Unassigned"} />
-                            <DetailRow icon={<Clock size={12} />} label="Reported On" value={ticket.reportedDate ? new Date(ticket.reportedDate + "T00:00:00").toLocaleDateString() : "—"} />
+                            <DetailRow icon={<Clock size={12} />} label={t("reportedOn")} value={fmtIsoDate(ticket.reportedDate, locale)} />
                             <DetailRow icon={<Clock size={12} />} label="Created" value={new Date(ticket.createdAt).toLocaleDateString()} />
                             {ticket.estimatedResolutionHours && <DetailRow icon={<Clock size={12} />} label="ETA" value={`${ticket.estimatedResolutionHours} hours`} />}
                         </div>
