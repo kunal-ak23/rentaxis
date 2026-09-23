@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
+import IntlMessageFormat from "intl-messageformat";
 import en from "../../../../../../../messages/en.json";
+import ar from "../../../../../../../messages/ar.json";
 import ChequeRegisterPage from "../page";
 import ClearBatchDialog from "@/components/cheques/ClearBatchDialog";
 import { ApiError, type Cheque } from "@/lib/api/leasing";
@@ -172,5 +174,31 @@ describe("ClearBatchDialog", () => {
         expect(await screen.findByTestId("clear-batch-error")).toHaveTextContent("700102 is CLEARED");
         expect(onDone).not.toHaveBeenCalled();
         expect(clearBatch).toHaveBeenCalledWith(expect.objectContaining({ chequeIds: ["c1", "c2"], narration: null }));
+    });
+});
+
+describe("batch summaries pluralise (M-6)", () => {
+    it("says one cheque, not one cheques", () => {
+        render(withIntl(
+            <ClearBatchDialog open chequeIds={["c1"]} total={31500} onClose={() => {}} onDone={() => {}} />,
+        ));
+        expect(document.body.textContent).toContain("1 deposited cheque selected");
+        expect(document.body.textContent).not.toContain("1 deposited cheques");
+    });
+
+    it("formats every Arabic plural category", () => {
+        const fmt = (msg: string, n: number) =>
+            String(new IntlMessageFormat(msg, "ar").format({ n, total: "1.00" }));
+        for (const msg of [ar.Cheques.clearBatchSummary, ar.Cheques.depositBatchSummary]) {
+            expect(fmt(msg, 1)).toContain("واحد");
+            expect(fmt(msg, 2)).toContain("شيكين");
+            expect(fmt(msg, 3)).toContain("3 شيكات");
+            expect(fmt(msg, 11)).toContain("11 شيكًا");
+            expect(fmt(msg, 100)).toContain("100 شيك");
+        }
+        const enFmt = (msg: string, n: number) =>
+            String(new IntlMessageFormat(msg, "en").format({ n, total: "1.00" }));
+        expect(enFmt(en.Cheques.depositBatchSummary, 1)).toBe("1 cheque selected · 1.00");
+        expect(enFmt(en.Cheques.depositBatchSummary, 2)).toBe("2 cheques selected · 1.00");
     });
 });
