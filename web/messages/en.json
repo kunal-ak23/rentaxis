@@ -2508,6 +2508,7 @@
     "noPortalOptedOutBody": "The renter was saved without a portal account, as you chose.",
     "noInviteBody": "The renter was saved, but no portal invite was sent.",
     "passwordNotNeeded": "No password is set here. The user gets an email invite to choose their own, even when email notifications are turned off.",
+    "guardSignsInByPhone": "Security guards sign in with their mobile number and an SMS code. No email invite or password is used, so enter their mobile number.",
     "passwordRequired": "Super admins are not invited by email, so a password is required.",
     "done": "Done"
   },

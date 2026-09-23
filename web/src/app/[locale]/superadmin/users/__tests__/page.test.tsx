@@ -161,6 +161,18 @@ describe("SuperAdminUsersPage", () => {
         expect(postBodies[0]).not.toHaveProperty("password");
     });
 
+    // Web review M4: a guard gets no email invite (they sign in by phone OTP).
+    it("tells a security guard's creator about phone sign-in, not an email invite", async () => {
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("New User"));
+        fireEvent.change(screen.getByDisplayValue("Tenant"), { target: { value: "SECURITY_GUARD" } });
+
+        expect(screen.getByTestId("user-password-hint").textContent).toBe("guardSignsInByPhone");
+        expect(screen.queryByText("passwordNotNeeded")).toBeNull();
+        expect((screen.getByPlaceholderText("e.g. +971 50 123 4567") as HTMLInputElement).required).toBe(true);
+    });
+
     it("still requires a password for a SUPER_ADMIN", async () => {
         render(<SuperAdminUsersPage />);
 

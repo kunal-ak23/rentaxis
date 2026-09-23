@@ -432,6 +432,7 @@ export default function SuperAdminUsersPage() {
                                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Phone Number</label>
                                     <input
                                         type="tel"
+                                        required={role === "SECURITY_GUARD"}
                                         value={phoneNumber}
                                         onChange={(e) => setPhoneNumber(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
@@ -439,8 +440,11 @@ export default function SuperAdminUsersPage() {
                                     />
                                 </div>
                                 {!editingUserId && !PASSWORD_ON_CREATE_ROLES.has(role) ? (
-                                    <p className="text-[11px] text-muted font-medium bg-input border border-border rounded-lg p-3">
-                                        {tInv("passwordNotNeeded")}
+                                    <p className="text-[11px] text-muted font-medium bg-input border border-border rounded-lg p-3" data-testid="user-password-hint">
+                                        {/* A guard gets no invite (issuesInviteToken is false for the
+                                            role): they sign in by phone OTP, so promising an email
+                                            would be wrong (web review M4). */}
+                                        {role === "SECURITY_GUARD" ? tInv("guardSignsInByPhone") : tInv("passwordNotNeeded")}
                                     </p>
                                 ) : (
                                 <div>
