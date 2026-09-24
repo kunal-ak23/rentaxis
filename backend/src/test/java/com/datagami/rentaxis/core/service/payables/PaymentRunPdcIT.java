@@ -496,6 +496,20 @@ class PaymentRunPdcIT extends AbstractPostgresIT {
         // …and it stays out of the opening-items check against the vendor's OB line.
         assertThat(tx.execute(st -> openingItemService.summary(alNoor.getId())).vendors())
                 .allSatisfy(c -> assertThat(c.difference()).isEqualByComparingTo("0.00"));
+        // PR #352 re-review R2: the item is linked to its cheque, and follows it only.
+        ApOpeningItemDTO generated = tx.execute(st -> openingItemService.summary(alNoor.getId())).items().stream()
+                        .filter(i -> i.invoiceNumber().equals("Cancelled cheque 000902")).findFirst().orElseThrow();
+        assertThat(generated.issuedChequeId()).isEqualTo(b.id());
+        assertThatThrownBy(() -> openingItemService.update(generated.id(), new ApOpeningItemInputDTO(alNoor.getId(),
+                "Renamed", SEP_28, SEP_28, new BigDecimal("3000.00"), null)))
+                .hasMessageContaining("cannot be edited or deleted by hand");
+        assertThatThrownBy(() -> openingItemService.delete(generated.id()))
+                .hasMessageContaining("cannot be edited or deleted by hand");
+        // A typed item that happens to carry the same name is a real opening item: it counts.
+        openingItemService.create(new ApOpeningItemInputDTO(alNoor.getId(), "Cancelled cheque 000902", AUG_1, AUG_1,
+                new BigDecimal("10.00"), null));
+        assertThat(tx.execute(st -> openingItemService.summary(alNoor.getId())).vendors())
+                .singleElement().satisfies(c -> assertThat(c.difference()).isEqualByComparingTo("-10.00"));
         // A cut-over cheque that was presented and unpresented has journals: it cannot be deleted.
         cheques.unpresent(a.id(), SEP_28, "returned");
         assertThatThrownBy(() -> cheques.deleteOpening(a.id())).hasMessageContaining("has journals");
@@ -896,6 +910,64 @@ class PaymentRunPdcIT extends AbstractPostgresIT {
         }
         assertThat(bpvsOfRun(a.id())).hasSize(1);
         assertThat(bpvsOfRun(b.id())).isEmpty();
+    }
+
+    /**
+     * PR #352 re-review R1: amending a cheque payment takes the leaf's cheque-number
+     * lock before {@code posting.reverse} takes the BPV sequence. While a rival holds
+     * the cheque lock, the amend waits <em>without</em> holding the sequence, so an
+     * unrelated transfer payment still posts. (The old order held the sequence while
+     * waiting, which is the deadlock with a cheque run.)
+     */
+    @Test
+    void anAmendWaitsForTheChequeLockBeforeItTakesTheSequence() throws Exception {
+        Voucher v = pdc(gulf, AUG_20, "300.00", "000810", AUG_20);
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            Future<?> holder = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    tx.executeWithoutResult(st -> {
+                        vouchers.lockChequeNumbers(bank.getId());
+                        held.countDown();
+                        try { release.await(20, TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+                return null;
+            });
+            assertThat(held.await(20, TimeUnit.SECONDS)).isTrue();
+            Future<Voucher> amend = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    return vouchers.amend(v.getId(), SEP_1, "wrong amount",
+                            payment(gulf, AUG_20, "350.00", VoucherPaymentMethod.CHEQUE, "000810", AUG_20));
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            Thread.sleep(500);
+            assertThat(amend.isDone()).as("the amend waits on the leaf's cheque numbers").isFalse();
+            Future<Voucher> other = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    return transfer(alNoor, SEP_1, "40.00");
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            assertThat(other.get(10, TimeUnit.SECONDS).getStatus())
+                    .as("the waiting amend does not hold the BPV sequence").isEqualTo(VoucherStatus.POSTED);
+            release.countDown();
+            holder.get(30, TimeUnit.SECONDS);
+            assertThat(amend.get(30, TimeUnit.SECONDS).getStatus()).isEqualTo(VoucherStatus.POSTED);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test

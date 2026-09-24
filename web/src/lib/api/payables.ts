@@ -110,6 +110,8 @@ export type ApOpeningItem = {
     propertyId: string | null;
     allocated: number;
     open: number;
+    /** Set when a cancelled cut-over cheque generated this item; it cannot be edited or deleted by hand. */
+    issuedChequeId?: string | null;
 };
 
 export type ApOpeningItemInput = {

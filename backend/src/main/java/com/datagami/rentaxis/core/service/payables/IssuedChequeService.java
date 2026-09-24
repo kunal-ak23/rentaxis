@@ -262,6 +262,7 @@ public class IssuedChequeService {
         item.setInvoiceDate(date);
         item.setDueDate(date);
         item.setAmount(c.getAmount());
+        item.setIssuedChequeId(c.getId());
         item.setCreatedBy(currentUserId());
         openingItems.save(item);
         return dtos(List.of(cheques.saveAndFlush(c))).get(0);

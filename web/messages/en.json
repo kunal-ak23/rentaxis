@@ -3261,6 +3261,7 @@
     "paid": "Paid",
     "open": "Open",
     "deleteItem": "Delete item",
+    "generatedItem": "From a cancelled cut-over cheque; follows the cheque",
     "deleteBlocked": "Payments are allocated to this item",
     "saveFailed": "Could not save. Try again.",
     "trn": "TRN",
@@ -3296,6 +3297,9 @@
   "PaymentRuns": {
     "missingSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} not in the open list any more (paid elsewhere, or outside the filters).",
     "dropMissing": "Drop them",
+    "goneSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} no longer open (paid or reversed elsewhere).",
+    "hiddenSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} still open but hidden by the current filters.",
+    "widenFilters": "Clear the filters",
     "bankFileExcel": "Copy for Excel",
     "referenceCut": "The bank takes references of up to 35 characters. These were shortened in the file:",
     "runChanged": "The run changed since the preview. Review the new preview before posting.",

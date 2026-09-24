@@ -117,7 +117,7 @@ public class PaymentRunService {
     @Transactional(readOnly = true)
     public PaymentRunDTO get(UUID id) {
         requireTenant();
-        return dto(find(id));
+        return dto(find(id), true);
     }
 
     /**
@@ -702,6 +702,15 @@ public class PaymentRunService {
     }
 
     private PaymentRunDTO dto(PaymentRun run) {
+        return dto(run, false);
+    }
+
+    /**
+     * {@code withWarnings}: the bank-file reference warnings, which load the run's
+     * payments. Only the run page shows them, so only {@link #get} asks (PR #352
+     * re-review R3); the list stays at a fixed number of queries per run.
+     */
+    private PaymentRunDTO dto(PaymentRun run, boolean withWarnings) {
         List<PaymentRunItem> its = items.findByRunId(run.getId());
         Account pay = accounts.findById(run.getPaymentAccountId()).orElse(null);
         Map<UUID, String> vendorNames = vendors.findAllById(its.stream().map(PaymentRunItem::getVendorId).collect(Collectors.toSet()))
@@ -733,7 +742,7 @@ public class PaymentRunService {
                 run.getChequeDate(), run.getFirstChequeNumber(), run.getNarration(), run.getStatus().name(),
                 run.getCreatedAt(), run.getPostedAt(), sum(its.stream().map(PaymentRunItem::getAmount)),
                 (int) its.stream().map(PaymentRunItem::getVendorId).distinct().count(), out,
-                run.getStatus() == PaymentRun.Status.POSTED
+                withWarnings && run.getStatus() == PaymentRun.Status.POSTED
                         ? paidBy(run).stream().map(v -> reference(run, v)).filter(r -> r.length() > DEFAULT_REFERENCE_LIMIT)
                             .map(r -> r + " → " + r.substring(0, DEFAULT_REFERENCE_LIMIT)).toList()
                         : List.of());

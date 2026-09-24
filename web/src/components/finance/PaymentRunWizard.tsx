@@ -173,6 +173,38 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
         [selected, openOf]);
     /** Selected items the open list no longer has (paid elsewhere, or outside the filters): shown, never sent silently. */
     const missing = useMemo(() => (candidates ? selectedRows.filter(r => !r.item) : []), [candidates, selectedRows]);
+    // PR #352 re-review R3: a missing row is either no longer open at all, or only
+    // outside the current filters. The unfiltered list tells them apart, so "Drop
+    // them" never throws away a selection a filter merely hides.
+    const missingKey = missing.map(r => r.key).sort().join(",");
+    const [openAnywhere, setOpenAnywhere] = useState<Set<string> | null>(null);
+    useEffect(() => {
+        if (!missingKey) {
+            setOpenAnywhere(null);
+            return;
+        }
+        let alive = true;
+        paymentRunsApi.candidates({ includePartPaid: true, excludeRunId: runId ?? undefined })
+            .then(all => alive && setOpenAnywhere(new Set(all.items.map(c => itemKey(c.item)))))
+            .catch(() => alive && setOpenAnywhere(new Set()));
+        return () => {
+            alive = false;
+        };
+    }, [missingKey, runId]);
+    const hidden = openAnywhere ? missing.filter(r => openAnywhere.has(r.key)) : [];
+    const gone = openAnywhere ? missing.filter(r => !openAnywhere.has(r.key)) : [];
+    const widenFilters = () => {
+        setDueBefore("");
+        setPropertyId("");
+        setVendorId("");
+        setIncludePartPaid(true);
+        setLoading(true);
+        setLoadError(null);
+        paymentRunsApi.candidates({ includePartPaid: true, excludeRunId: runId ?? undefined })
+            .then(setCandidates)
+            .catch(err => setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed")))
+            .finally(() => setLoading(false));
+    };
     const selectedTotal = useMemo(
         () => Math.round(selectedRows.reduce((s, r) => s + (Number.isFinite(r.amount) ? r.amount * 100 : 0), 0)) / 100,
         [selectedRows]);
@@ -373,12 +405,28 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
                     </div>
 
                     {missing.length > 0 && (
-                        <div role="alert" data-testid="run-missing" className="mb-5 text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 flex flex-wrap items-center gap-3">
-                            <span>{t("missingSelected", { count: missing.length })}</span>
-                            <button type="button" className={button} data-testid="run-drop-missing"
-                                    onClick={() => setSelected(s => Object.fromEntries(Object.entries(s).filter(([k]) => openOf[k])))}>
-                                {t("dropMissing")}
-                            </button>
+                        <div role="alert" data-testid="run-missing" className="mb-5 text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 space-y-2">
+                            {!openAnywhere && <div>{t("missingSelected", { count: missing.length })}</div>}
+                            {gone.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-3" data-testid="run-missing-gone">
+                                    <span>{t("goneSelected", { count: gone.length })}</span>
+                                    <button type="button" className={button} data-testid="run-drop-missing"
+                                            onClick={() => {
+                                                const drop = new Set(gone.map(r => r.key));
+                                                setSelected(s => Object.fromEntries(Object.entries(s).filter(([k]) => !drop.has(k))));
+                                            }}>
+                                        {t("dropMissing")}
+                                    </button>
+                                </div>
+                            )}
+                            {hidden.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-3" data-testid="run-missing-hidden">
+                                    <span>{t("hiddenSelected", { count: hidden.length })}</span>
+                                    <button type="button" className={button} data-testid="run-widen-filters" onClick={widenFilters}>
+                                        {t("widenFilters")}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
