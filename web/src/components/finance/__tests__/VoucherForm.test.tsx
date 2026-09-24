@@ -166,7 +166,7 @@ const UNITS = [
     { id: "unit-b1", unitNumber: "B-201", property: { id: "prop-2", nameEn: "Marina Heights" } },
 ];
 
-function renderForm(type: "PISR" | "BPV" = "PISR", props: { voucherId?: string } = {}) {
+function renderForm(type: "PISR" | "BPV" | "PCN" = "PISR", props: { voucherId?: string } = {}) {
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
             <VoucherForm type={type} {...props} />
@@ -1262,6 +1262,56 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
         expect(allocs).toEqual([{ invoiceId: "inv-90", amount: 600 }, { invoiceId: "inv-81", amount: 1450 }]);
         const created = api.create.mock.calls.at(-1)![0];
         expect(created).toMatchObject({ paymentMethod: "TRANSFER", paymentReference: "TRF-7781", chequeNumber: null });
+    });
+
+    it("looks like a PISR (vendor, credit-note number, VAT lines) with no supplier/due date or payment fields (F14-40)", async () => {
+        renderForm("PCN");
+        await screen.findByTestId("line-amount-0");
+        expect(screen.getByLabelText("Credit note no")).toBeInTheDocument();
+        expect(screen.queryByTestId("supplier-invoice-date")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("due-date")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("payment-method")).not.toBeInTheDocument();
+        expect(screen.getByTestId("account-picker")).toBeInTheDocument(); // the line account, PISR-shaped
+        // The vendor is required, same as a PISR — not the BPV "No vendor" default.
+        expect(screen.getByText("Select a vendor")).toBeInTheDocument();
+    });
+
+    it("allocates a PCN against the vendor's open invoices and posts it with them, allocating against its own gross total", async () => {
+        api.create.mockResolvedValue(detail({ id: "pcn-new", docType: "PCN", lines: [] }));
+        api.post.mockResolvedValue(detail({ id: "pcn-new", docType: "PCN", status: "POSTED", voucherNumber: "PCN-26/3" }));
+        renderForm("PCN");
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fireEvent.change(screen.getByLabelText("Credit note no"), { target: { value: "CN-100" } });
+        pickLineAccount(0, "acct-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2050" } });
+
+        await screen.findByTestId("allocate-row-INV-7781");
+        fireEvent.click(screen.getByTestId("auto-allocate"));
+        expect(screen.getByTestId("allocate-amount-INV-7781")).toHaveValue("1450.00");
+        expect(screen.getByTestId("allocate-amount-INV-7790")).toHaveValue("600.00");
+
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        await waitFor(() => expect(api.post).toHaveBeenCalled());
+        const [id, allocs] = api.post.mock.calls.at(-1)!;
+        expect(id).toBe("pcn-new");
+        expect(allocs).toEqual([{ invoiceId: "inv-90", amount: 600 }, { invoiceId: "inv-81", amount: 1450 }]);
+    });
+
+    it("refuses to post a PCN whose allocations exceed its own total", async () => {
+        renderForm("PCN");
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fireEvent.change(screen.getByLabelText("Credit note no"), { target: { value: "CN-100" } });
+        pickLineAccount(0, "acct-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "500" } });
+
+        fireEvent.change(await screen.findByTestId("allocate-amount-INV-7781"), { target: { value: "600" } });
+        await waitFor(() => expect(screen.getByTestId("voucher-blocker"))
+            .toHaveTextContent(en.Vouchers.allocationsExceedPayment));
+        expect(screen.getByTestId("post-voucher")).toBeDisabled();
     });
 
     it("counts days overdue in the allocation grid to the voucher's own date, not today (F14-46)", async () => {

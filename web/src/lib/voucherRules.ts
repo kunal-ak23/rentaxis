@@ -30,14 +30,20 @@ import type { EditableVoucherType, VoucherStatus } from "@/lib/api/vouchers";
  */
 const PISR_LINE_TYPES: AccountType[] = ["EXPENSE", "ASSET"];
 
+/**
+ * F14-40: a supplier credit note (PCN) is a PISR with the sign flipped — same
+ * expense/asset-only line rule, same VAT, no payment account.
+ */
+const EXPENSE_LIKE: EditableVoucherType[] = ["PISR", "PCN"];
+
 /** The `accountTypes` a line picker may offer, or undefined for "any type". */
 export function lineAccountTypes(type: EditableVoucherType): AccountType[] | undefined {
-    return type === "PISR" ? PISR_LINE_TYPES : undefined;
+    return EXPENSE_LIKE.includes(type) ? PISR_LINE_TYPES : undefined;
 }
 
 export function isLineAccountAllowed(type: EditableVoucherType, a: Account | null | undefined): boolean {
     if (!a || a.group || !a.active) return false;
-    return type === "PISR" ? PISR_LINE_TYPES.includes(a.accountType) : true;
+    return EXPENSE_LIKE.includes(type) ? PISR_LINE_TYPES.includes(a.accountType) : true;
 }
 
 // ---- the payment account ----
@@ -78,7 +84,7 @@ export const ALLOWED_VAT_RATES = [0, 5] as const;
  * legal value is zero is not a field.
  */
 export function vatAllowedOn(type: EditableVoucherType): boolean {
-    return type === "PISR";
+    return EXPENSE_LIKE.includes(type);
 }
 
 // ---- the whole draft, in the order the server checks it ----
@@ -180,7 +186,7 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
     if (d.lines.length === 0) return { key: "noLines" };
     // validate:371-379 — and the vendor must have a payable account, which the
     // server checks; the form only offers vendors, so that half is server-side.
-    if (d.type === "PISR" && !d.vendorId) return { key: "vendorRequired" };
+    if (EXPENSE_LIKE.includes(d.type) && !d.vendorId) return { key: "vendorRequired" };
     // validate:380-383.
     if (d.type === "BPV") {
         if (!d.paymentAccountId) return { key: "paymentAccountRequired" };
@@ -246,8 +252,9 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
     }
 
     // Finance-ops spec §2, after the lines as on the server
-    // (VoucherService.requireSupplierInvoiceRules).
-    if (d.type === "PISR") {
+    // (VoucherService.requireSupplierInvoiceRules) — a PCN's "invoice number"
+    // is the vendor's own credit-note number and follows the same rule.
+    if (EXPENSE_LIKE.includes(d.type)) {
         if (d.invoiceNumber !== undefined && !d.invoiceNumber.replace(/[\s-]/g, "")) {
             return { key: "invoiceNumberRequired" };
         }
@@ -261,8 +268,9 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
         if (pay && d.paymentMethod !== "CASH" && pay.accountSubType !== "BANK") return { key: "methodNeedsBankAccount" };
         if (d.paymentMethod === "CHEQUE" && !d.chequeNumber?.trim()) return { key: "chequeNumberRequired" };
     }
-    // VoucherAllocationService rule 2, in fils.
-    if (d.type === "BPV" && d.allocationTotal !== undefined && d.payableTotal !== undefined
+    // VoucherAllocationService rule 2, in fils. A PCN allocates against its own
+    // gross total, the same way a BPV allocates against what it pays.
+    if ((d.type === "BPV" || d.type === "PCN") && d.allocationTotal !== undefined && d.payableTotal !== undefined
         && Math.round(d.allocationTotal * 100) > Math.round(d.payableTotal * 100)) {
         return { key: "allocationsExceedPayment" };
     }

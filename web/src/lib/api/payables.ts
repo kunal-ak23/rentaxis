@@ -47,6 +47,12 @@ export type Advance = {
     paid: number;
     allocated: number;
     unallocated: number;
+    /**
+     * F14-40: an unallocated PCN (supplier credit note) shows here too, next
+     * to a BPV's unallocated advances — both are "money the vendor is owed
+     * less than". Absent (or "BPV") on a row from before this field existed.
+     */
+    docType?: "BPV" | "PCN";
 };
 
 /** `AllocationDTO`. `live` is false once released. */

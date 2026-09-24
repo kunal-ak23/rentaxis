@@ -23,10 +23,10 @@ const BASE = "/api/proxy/v1";
 // ---- enums (domain/entity/enums/VoucherType.java, VoucherStatus.java) ----
 
 /** RCP exists in the Java enum but is refused by every voucher endpoint — see `voucherRules.ts`. */
-export type VoucherType = "PISR" | "BPV" | "RCP";
+export type VoucherType = "PISR" | "BPV" | "RCP" | "PCN";
 
-/** The two types this screen can actually create. */
-export type EditableVoucherType = "PISR" | "BPV";
+/** The three types this screen can actually create. F14-40: PCN — a supplier credit note. */
+export type EditableVoucherType = "PISR" | "BPV" | "PCN";
 
 export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED" | "VOID";
 

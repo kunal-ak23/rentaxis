@@ -185,6 +185,12 @@ export default function VoucherForm({
 
     const withVat = vatAllowedOn(type);
     const properties = useNameLookup("properties");
+    // F14-40: PCN (a supplier credit note) is line-shaped like a PISR — vendor,
+    // invoice/credit-note number, VAT, expense/asset lines, no payment account
+    // or supplier/due dates — but settles against the vendor's open invoices
+    // through the same Allocate panel a BPV uses.
+    const isExpenseLike = type === "PISR" || type === "PCN";
+    const hasAllocationPanel = type === "BPV" || type === "PCN";
 
     const [docDate, setDocDate] = useState(todayIso);
     const [vendorId, setVendorId] = useState("");
@@ -404,7 +410,7 @@ export default function VoucherForm({
     const vendor = useMemo(() => vendors.find(v => v.id === vendorId) ?? null, [vendors, vendorId]);
     /** Unknown until the vendor list has loaded; only a known "no TRN" disables VAT. */
     const vendorHasTrn = vendor ? !!vendor.trn?.trim() : undefined;
-    const vatBlocked = type === "PISR" && vendorHasTrn === false;
+    const vatBlocked = isExpenseLike && vendorHasTrn === false;
 
     const numericLines = useMemo(
         () => lines.map(l => ({ amount: num(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
@@ -412,7 +418,7 @@ export default function VoucherForm({
     );
 
     /** BPV: what this voucher pays the vendor — Σ of its lines on the vendor's payable leaf. */
-    const payableTotal = useMemo(
+    const bpvPayableTotal = useMemo(
         () => lines.reduce((s, l, i) => (l.accountId && l.accountId === vendorPayableAccountId
             ? s + numericLines[i].amount : s), 0),
         [lines, numericLines, vendorPayableAccountId],
@@ -474,6 +480,14 @@ export default function VoucherForm({
         }),
         [numericLines],
     );
+
+    /**
+     * What this document has to allocate: a BPV's own payment (its lines on the
+     * vendor's payable leaf); a PCN's own gross value (there is no payable
+     * line to sum — a PCN's lines are expense/asset-only, like a PISR's, and
+     * the payable side is implicit).
+     */
+    const payableTotal = type === "BPV" ? bpvPayableTotal : type === "PCN" ? totals.gross : 0;
 
     // Amend mode re-opens the fields of a POSTED document; everything downstream
     // (the gates, the VAT preview, Add line) keys off this one flag, exactly as
@@ -564,9 +578,9 @@ export default function VoucherForm({
             setAllocationsVersion(n => n + 1);
         });
 
-    // BPV Allocate panel: the vendor's invoices with something left on them.
+    // Allocate panel (BPV and PCN): the vendor's invoices with something left on them.
     useEffect(() => {
-        if (type !== "BPV" || !editable || !vendorId) {
+        if (!hasAllocationPanel || !editable || !vendorId) {
             setOpenItems([]);
             return;
         }
@@ -590,7 +604,7 @@ export default function VoucherForm({
         return () => {
             alive = false;
         };
-    }, [type, editable, vendorId, amending, ownAllocations]);
+    }, [hasAllocationPanel, editable, vendorId, amending, ownAllocations]);
 
     const refusal: DraftRefusalResult | null = useMemo(
         () =>
@@ -609,14 +623,14 @@ export default function VoucherForm({
                 payableAccountIds: vendors.length ? payableAccountIds : undefined,
                 vendorPayableAccountId,
                 accounts: Object.keys(accounts).length ? accounts : undefined,
-                invoiceNumber: type === "PISR" ? invoiceNumber : undefined,
-                vendorHasTrn: type === "PISR" ? vendorHasTrn : undefined,
+                invoiceNumber: isExpenseLike ? invoiceNumber : undefined,
+                vendorHasTrn: isExpenseLike ? vendorHasTrn : undefined,
                 paymentMethod: type === "BPV" ? paymentMethod : undefined,
                 chequeNumber,
-                allocationTotal: type === "BPV" ? allocationTotal : undefined,
-                payableTotal: type === "BPV" ? payableTotal : undefined,
+                allocationTotal: hasAllocationPanel ? allocationTotal : undefined,
+                payableTotal: hasAllocationPanel ? payableTotal : undefined,
             }),
-        [type, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
+        [type, isExpenseLike, hasAllocationPanel, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
          vendorPayableAccountId, vendors.length, accounts, propertyId, invoiceNumber, vendorHasTrn,
          paymentMethod, chequeNumber, allocationTotal, payableTotal],
     );
@@ -630,7 +644,7 @@ export default function VoucherForm({
             // A BPV may name a vendor too — it is how the server knows whose
             // payable a settlement line belongs to — so this is not PISR-only.
             vendorId: vendorId || null,
-            invoiceNumber: type === "PISR" ? invoiceNumber || null : null,
+            invoiceNumber: isExpenseLike ? invoiceNumber || null : null,
             narration: narration || null,
             propertyId: propertyId || null,
             paymentAccountId: type === "BPV" ? paymentAccountId : null,
@@ -672,7 +686,7 @@ export default function VoucherForm({
             docType: type,
             docDate: posted.docDate,
             vendorId: posted.vendorId ?? null,
-            invoiceNumber: type === "PISR" ? posted.invoiceNumber ?? null : null,
+            invoiceNumber: isExpenseLike ? posted.invoiceNumber ?? null : null,
             narration: posted.narration ?? null,
             propertyId: posted.propertyId ?? null,
             paymentAccountId: type === "BPV" ? posted.paymentAccountId : null,
@@ -693,7 +707,7 @@ export default function VoucherForm({
                 ...(!l.propertyId ? { shared: true } : {}),
             })),
         };
-        return JSON.stringify(current) !== JSON.stringify(original) || (type === "BPV" && allocationsChanged);
+        return JSON.stringify(current) !== JSON.stringify(original) || (hasAllocationPanel && allocationsChanged);
     }, [posted, body, type, withVat, allocationsChanged]);
 
     /**
@@ -742,7 +756,7 @@ export default function VoucherForm({
         run(async () => {
             const saved = await persist();
             try {
-                const posted = await voucherApi.post(saved.id, type === "BPV" ? allocationInputs : undefined, {
+                const posted = await voucherApi.post(saved.id, hasAllocationPanel ? allocationInputs : undefined, {
                     notOnStatement: statementCover.notOnStatement || undefined,
                     allowNegativeCash: allowNegativeCash || undefined,
                 });
@@ -781,7 +795,7 @@ export default function VoucherForm({
     const startAmend = () => {
         // A payment's amendment settles what it settled unless told otherwise
         // (review P3-3): the panel starts from its live allocations.
-        if (type === "BPV") {
+        if (hasAllocationPanel) {
             const pre: Record<string, string> = {};
             for (const a of ownAllocations) {
                 const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
@@ -816,7 +830,7 @@ export default function VoucherForm({
                     replacement: body(),
                     // The panel is the whole answer for a payment: what it lists is settled,
                     // an empty panel leaves the replacement as an advance.
-                    ...(type === "BPV" ? { allocations: allocationInputs } : {}),
+                    ...(hasAllocationPanel ? { allocations: allocationInputs } : {}),
                     notOnStatement: statementCover.notOnStatement || undefined,
                     allowNegativeCash: allowNegativeCash || undefined,
                 });
@@ -931,7 +945,7 @@ export default function VoucherForm({
                             )}
                         </span>
                     )}
-                    {status === "POSTED" && type === "BPV" && settlement && settlement.open > 0 && (
+                    {status === "POSTED" && hasAllocationPanel && settlement && settlement.open > 0 && (
                         <span data-testid="settlement-advance" className="text-[10px] text-muted">
                             {t("unallocatedAdvance")}: <bdi dir="ltr">{fmtAmount(settlement.open)}</bdi>
                         </span>
@@ -982,7 +996,7 @@ export default function VoucherForm({
                             value={vendorId}
                             onChange={e => setVendorId(e.target.value)}
                         >
-                            <option value="">{type === "PISR" ? t("selectVendor") : t("noVendor")}</option>
+                            <option value="">{isExpenseLike ? t("selectVendor") : t("noVendor")}</option>
                             {vendors
                                 .filter(v => v.active || v.id === vendorId)
                                 .map(v => (
@@ -993,10 +1007,10 @@ export default function VoucherForm({
                         </select>
                     </div>
 
-                    {type === "PISR" ? (
+                    {isExpenseLike ? (
                         <div>
                             <label className={fieldLabel} htmlFor="voucher-invoice-number">
-                                {t("invoiceNumber")}
+                                {type === "PCN" ? t("creditNoteNumber") : t("invoiceNumber")}
                             </label>
                             <input
                                 id="voucher-invoice-number"
@@ -1396,8 +1410,8 @@ export default function VoucherForm({
                 </p>
             )}
 
-            {/* Allocate (BPV, spec §2): which of the vendor's invoices this payment settles. */}
-            {type === "BPV" && editable && vendorId && (
+            {/* Allocate (BPV and PCN, spec §2/F14-40): which of the vendor's invoices this document settles. */}
+            {hasAllocationPanel && editable && vendorId && (
                 <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="allocate-panel">
                     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-border">
                         <h3 className="text-xs font-bold text-foreground">{t("allocateTitle")}</h3>
@@ -1477,13 +1491,13 @@ export default function VoucherForm({
             {status === "POSTED" && !amending && ownAllocations.length > 0 && (
                 <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="settlements-panel">
                     <h3 className="px-5 py-3 text-xs font-bold text-foreground border-b border-border">
-                        {type === "BPV" ? t("settlesTitle") : t("settledByTitle")}
+                        {hasAllocationPanel ? t("settlesTitle") : t("settledByTitle")}
                     </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-input/60">
                                 <tr>
-                                    <th className={th}>{type === "BPV" ? t("invoiceNumber") : t("voucherNumber")}</th>
+                                    <th className={th}>{hasAllocationPanel ? t("invoiceNumber") : t("voucherNumber")}</th>
                                     <th className={th}>{t("allocatedOn")}</th>
                                     <th className={`${th} text-end`}>{t("amount")}</th>
                                     <th className={th} />
@@ -1495,7 +1509,7 @@ export default function VoucherForm({
                                     return (
                                         <tr key={a.id} data-testid={`settlement-${a.id}`}>
                                             <td className={`${td} font-mono`}>
-                                                {type === "BPV" ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
+                                                {hasAllocationPanel ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
                                             </td>
                                             <td className={td}><bdi dir="ltr">{a.allocatedOn}</bdi></td>
                                             <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(a.amount)}</bdi></td>
@@ -1637,7 +1651,7 @@ export default function VoucherForm({
 
                 {amendedFromId && (
                     <Link
-                        href={`/dashboard/finance/vouchers/${type === "BPV" ? "payment" : "purchase-invoice"}?id=${amendedFromId}`}
+                        href={`/dashboard/finance/vouchers/${type === "BPV" ? "payment" : type === "PCN" ? "credit-note" : "purchase-invoice"}?id=${amendedFromId}`}
                         data-testid="amended-from"
                         className="text-xs font-semibold text-primary hover:underline cursor-pointer me-auto"
                     >
@@ -1811,7 +1825,7 @@ export default function VoucherForm({
                     || (!!cashNegativeNotice && !allowNegativeCash)}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
-                {type === "BPV" && reopened.length > 0 && (
+                {hasAllocationPanel && reopened.length > 0 && (
                     <p role="alert" data-testid="amend-releases" className="text-xs font-semibold text-warning">
                         {t("amendReleases", { invoices: reopened.join(", ") })}
                     </p>

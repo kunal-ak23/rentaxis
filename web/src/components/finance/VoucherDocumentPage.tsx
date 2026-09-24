@@ -31,8 +31,8 @@ export default function VoucherDocumentPage({
     descKey,
 }: {
     type: EditableVoucherType;
-    titleKey: "purchaseInvoice" | "paymentVoucher";
-    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc";
+    titleKey: "purchaseInvoice" | "paymentVoucher" | "supplierCreditNote";
+    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc" | "supplierCreditNoteDesc";
 }) {
     return (
         <Suspense
@@ -53,8 +53,8 @@ function VoucherDocument({
     descKey,
 }: {
     type: EditableVoucherType;
-    titleKey: "purchaseInvoice" | "paymentVoucher";
-    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc";
+    titleKey: "purchaseInvoice" | "paymentVoucher" | "supplierCreditNote";
+    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc" | "supplierCreditNoteDesc";
 }) {
     const t = useTranslations("Vouchers");
     const tLedger = useTranslations("Ledger");

@@ -47,7 +47,14 @@ const STATUS_CLASS: Record<VoucherStatus, string> = {
 function pathFor(v: Voucher): string {
     return v.docType === "BPV"
         ? `/dashboard/finance/vouchers/payment?id=${v.id}`
+        : v.docType === "PCN"
+        ? `/dashboard/finance/vouchers/credit-note?id=${v.id}`
         : `/dashboard/finance/vouchers/purchase-invoice?id=${v.id}`;
+}
+
+/** F14-40: the type column's label, for the list row and the filter. */
+function typeLabel(t: (key: string) => string, docType: VoucherType): string {
+    return docType === "BPV" ? t("paymentVoucher") : docType === "PCN" ? t("supplierCreditNote") : t("purchaseInvoice");
 }
 
 export default function VoucherListPage() {
@@ -163,6 +170,14 @@ export default function VoucherListPage() {
                         <Plus size={14} />
                         {t("newPaymentVoucher")}
                     </Link>
+                    <Link
+                        href="/dashboard/finance/vouchers/credit-note"
+                        data-testid="new-credit-note"
+                        className="border border-border px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer text-foreground"
+                    >
+                        <Plus size={14} />
+                        {t("newSupplierCreditNote")}
+                    </Link>
                 </div>
             </div>
 
@@ -180,6 +195,7 @@ export default function VoucherListPage() {
                     <option value="">{t("allTypes")}</option>
                     <option value="PISR">{t("purchaseInvoice")}</option>
                     <option value="BPV">{t("paymentVoucher")}</option>
+                    <option value="PCN">{t("supplierCreditNote")}</option>
                 </select>
                 <select
                     data-testid="filter-status"
@@ -293,7 +309,7 @@ export default function VoucherListPage() {
                                             {v.voucherNumber ?? "—"}
                                         </td>
                                         <td className={td}>
-                                            {v.docType === "BPV" ? t("paymentVoucher") : t("purchaseInvoice")}
+                                            {typeLabel(t, v.docType)}
                                         </td>
                                         <td className={td}>{v.vendorName ?? v.paymentAccountName ?? "—"}</td>
                                         <td className={`${td} text-muted`}>{v.narration ?? "—"}</td>

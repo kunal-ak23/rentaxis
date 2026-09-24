@@ -223,7 +223,12 @@ export default function VendorAccountPage() {
                                     {advances.map(a => (
                                         <tr key={a.paymentId} data-testid={`advance-${a.voucherNumber}`}>
                                             <td className={`${td} font-mono`}>
-                                                <Link href={`/dashboard/finance/vouchers/payment?id=${a.paymentId}`} className="text-primary hover:underline">{a.voucherNumber}</Link>
+                                                <Link
+                                                    href={`/dashboard/finance/vouchers/${a.docType === "PCN" ? "credit-note" : "payment"}?id=${a.paymentId}`}
+                                                    className="text-primary hover:underline"
+                                                >
+                                                    {a.voucherNumber}
+                                                </Link>
                                             </td>
                                             <td className={td}><bdi dir="ltr">{formatDate(a.docDate)}</bdi></td>
                                             <td className={td}>{a.reference ?? "—"}</td>
