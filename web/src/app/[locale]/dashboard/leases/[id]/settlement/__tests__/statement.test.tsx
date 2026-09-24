@@ -41,22 +41,6 @@ vi.mock("@/components/finance/AccountPicker", () => ({
         </button>
     ),
 }));
-vi.mock("@/components/finance/SettlementAccountPicker", () => ({
-    // `placeholder` is what AccountPicker turns into the search box's
-    // aria-label, so it is the refund bank's only accessible name — the mock
-    // surfaces it rather than swallowing it.
-    default: ({ value, onChange, placeholder }: { value: string | null; onChange: (id: string) => void; placeholder?: string }) => (
-        <button
-            type="button"
-            data-testid="refund-bank-picker"
-            data-value={value ?? ""}
-            data-placeholder={placeholder ?? ""}
-            onClick={() => onChange("bank-1")}
-        >
-            pick bank
-        </button>
-    ),
-}));
 
 const api = vi.hoisted(() => ({
     lease: vi.fn(),
@@ -166,18 +150,14 @@ describe("Settlement statement", () => {
         expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("10,164.38");
     });
 
-    it("keeps Finalize disabled until a refund bank is chosen when the settlement refunds", async () => {
+    it("needs no refund bank to finalize a settlement that refunds (F14-36)", async () => {
         renderPage();
-        // Wait for the settlement date to be filled in first: it is the OTHER
-        // thing Finalize waits on, and asserting "disabled" before it lands
-        // would pass whether or not the refund-bank rule exists at all.
+        // Finalize waits on the settlement date landing, not on any refund
+        // bank — F14-36 removed that field and requirement entirely.
         await waitFor(() => expect(screen.getByTestId("settlement-date")).not.toHaveValue(""));
-
-        expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
-        expect(screen.getByText("A settlement that refunds needs a bank or cash account to pay from.")).toBeInTheDocument();
-
-        fireEvent.click(screen.getByTestId("refund-bank-picker"));
         await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
+        expect(screen.queryByTestId("refund-bank-picker")).not.toBeInTheDocument();
+        expect(screen.queryByText("A settlement that refunds needs a bank or cash account to pay from.")).not.toBeInTheDocument();
     });
 
     it("waits for the session before it loads, so a second load cannot discard an edit", async () => {
@@ -205,23 +185,9 @@ describe("Settlement statement", () => {
         expect(api.statement, "and exactly once afterwards").toHaveBeenCalledTimes(1);
     });
 
-    it("gives the refund bank an accessible name", async () => {
-        renderPage();
-        // AccountPicker's search box takes its aria-label from `placeholder`
-        // (web/src/components/finance/AccountPicker.tsx:90), so a picker
-        // rendered without one is a combobox a screen reader announces as
-        // nothing at all. Every other control on this grid was given a name in
-        // task 8b; this one is the same rule.
-        expect(await screen.findByTestId("refund-bank-picker")).toHaveAttribute(
-            "data-placeholder",
-            "Refund paid from",
-        );
-    });
-
     it("will not finalize figures that are not the ones on screen", async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId("settlement-date")).not.toHaveValue(""));
-        fireEvent.click(screen.getByTestId("refund-bank-picker"));
         await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
 
         // Finalise posts the STORED lines. An unsaved edit means the net refund
@@ -232,12 +198,11 @@ describe("Settlement statement", () => {
         expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
     });
 
-    it("needs no refund bank when the renter owes money instead", async () => {
+    it("finalizes fine when the renter owes money instead", async () => {
         api.statement.mockResolvedValue(statement({ depositsHeld: 0, receivableBalance: 5000, netRefund: -5000 }));
         renderPage();
 
         expect(await screen.findByTestId("settlement-balance-due")).toHaveTextContent("5,000.00");
-        expect(screen.queryByTestId("refund-bank-picker")).toBeNull();
         // `waitFor`, not a bare assertion: the settlement date is filled in by
         // an effect that runs after the statement's own render, and Finalize
         // waits on it.
@@ -256,8 +221,7 @@ describe("Settlement statement", () => {
         );
         renderPage();
 
-        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
-        const ack = screen.getByTestId("settlement-acknowledge");
+        const ack = await screen.findByTestId("settlement-acknowledge");
         expect(ack).not.toBeChecked();
         expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
         expect(screen.getByTestId("settlement-outstanding-c5")).toHaveTextContent("12,750.00");
@@ -269,10 +233,11 @@ describe("Settlement statement", () => {
         fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
         await waitFor(() =>
             expect(api.finalize).toHaveBeenCalledWith("lease-1", expect.objectContaining({
-                refundBankAccountId: "bank-1",
                 acknowledgeOutstanding: true,
             })),
         );
+        // F14-36: finalize never sends a refund bank at all.
+        expect(api.finalize.mock.calls.at(-1)![1]).not.toHaveProperty("refundBankAccountId");
     });
 
     it("never asks for an acknowledgement the server would ignore", async () => {
@@ -302,16 +267,12 @@ describe("Settlement statement", () => {
     it("tells a screen reader why Finalize is disabled", async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId("settlement-date")).not.toHaveValue(""));
-
-        const finalize = screen.getByTestId("settlement-finalize");
-        expect(finalize).toBeDisabled();
-        expect(finalize).toHaveAccessibleDescription(
-            "A settlement that refunds needs a bank or cash account to pay from.",
-        );
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
 
         fireEvent.click(screen.getByTestId("settlement-add-deduction"));
+        expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
         expect(screen.getByTestId("settlement-finalize")).toHaveAccessibleDescription(
-            /needs a bank or cash account[\s\S]*save the draft/i,
+            /save the draft/i,
         );
     });
 
@@ -377,7 +338,7 @@ describe("Settlement statement", () => {
             .mockResolvedValueOnce({ ...LEASE, status: "TERMINATED" });
         renderPage();
 
-        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
         fireEvent.click(screen.getByTestId("settlement-finalize"));
         fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
 
@@ -391,7 +352,7 @@ describe("Settlement statement", () => {
         api.lease.mockResolvedValueOnce(LEASE).mockResolvedValueOnce({ ...LEASE, status: "CLOSED" });
         renderPage();
 
-        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
         fireEvent.click(screen.getByTestId("settlement-finalize"));
         fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
 
@@ -544,7 +505,7 @@ describe("An acknowledgement the screen could not know about", () => {
         );
         renderPage();
 
-        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
         // Nothing to acknowledge as far as the screen knows.
         expect(screen.queryByTestId("settlement-acknowledge")).toBeNull();
 
@@ -576,7 +537,7 @@ describe("An acknowledgement the screen could not know about", () => {
         api.finalize.mockRejectedValue(new ApiError(400, "Books are locked through 2026-07-31."));
         renderPage();
 
-        fireEvent.click(await screen.findByTestId("refund-bank-picker"));
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
         fireEvent.click(screen.getByTestId("settlement-finalize"));
         fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
 
@@ -605,5 +566,45 @@ describe("VAT on recharges (F14-37)", () => {
         renderPage();
         await screen.findByTestId("settlement-total-deductions");
         expect(screen.queryByTestId("settlement-total-deduction-vat")).not.toBeInTheDocument();
+    });
+});
+
+describe("Paying a deposit refund out (F14-36)", () => {
+    it("shows refund owed/paid/outstanding once finalized, and a Pay refund link when something is still owed", async () => {
+        api.get.mockResolvedValue(stored({
+            status: "FINALIZED", journalId: "j9", journalNumber: "STL/2026/0004", settlementDate: "2026-07-05",
+            refundAmount: 10164.38, refundPaid: 4000, refundOutstanding: 6164.38,
+        }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-refund-owed")).toHaveTextContent("10,164.38");
+        expect(screen.getByTestId("settlement-refund-paid")).toHaveTextContent("4,000.00");
+        expect(screen.getByTestId("settlement-refund-outstanding")).toHaveTextContent("6,164.38");
+        const link = screen.getByTestId("settlement-pay-refund");
+        expect(link).toHaveAttribute("href", expect.stringContaining("/dashboard/finance/vouchers/payment"));
+        expect(link).toHaveAttribute("href", expect.stringContaining("settlementId=s1"));
+        expect(link).toHaveAttribute("href", expect.stringContaining("amount=6164.38"));
+    });
+
+    it("hides Pay refund once the outstanding amount reaches zero", async () => {
+        api.get.mockResolvedValue(stored({
+            status: "FINALIZED", journalId: "j9", journalNumber: "STL/2026/0004", settlementDate: "2026-07-05",
+            refundAmount: 10164.38, refundPaid: 10164.38, refundOutstanding: 0,
+        }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-refund-outstanding")).toHaveTextContent("0.00");
+        expect(screen.queryByTestId("settlement-pay-refund")).not.toBeInTheDocument();
+    });
+
+    it("shows no refund-status block at all when nothing was ever owed", async () => {
+        api.get.mockResolvedValue(stored({
+            status: "FINALIZED", journalId: "j9", journalNumber: "STL/2026/0004", settlementDate: "2026-07-05",
+            refundAmount: 0,
+        }));
+        renderPage();
+
+        await screen.findByTestId("settlement-journal");
+        expect(screen.queryByTestId("settlement-refund-status")).not.toBeInTheDocument();
     });
 });

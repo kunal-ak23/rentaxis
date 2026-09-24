@@ -74,6 +74,7 @@ const api = vi.hoisted(() => ({
     attachUpload: vi.fn(),
     attachRemove: vi.fn(),
     fiscal: vi.fn(),
+    defaults: vi.fn(),
 }));
 
 vi.mock("@/lib/api/vouchers", async orig => {
@@ -101,7 +102,14 @@ vi.mock("@/lib/api/vouchers", async orig => {
 
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
-    return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal } } };
+    return {
+        ...m,
+        ledgerApi: {
+            ...m.ledgerApi,
+            fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal },
+            defaults: { ...m.ledgerApi.defaults, get: api.defaults },
+        },
+    };
 });
 
 import VoucherForm from "../VoucherForm";
@@ -166,7 +174,10 @@ const UNITS = [
     { id: "unit-b1", unitNumber: "B-201", property: { id: "prop-2", nameEn: "Marina Heights" } },
 ];
 
-function renderForm(type: "PISR" | "BPV" | "PCN" = "PISR", props: { voucherId?: string } = {}) {
+function renderForm(type: "PISR" | "BPV" | "PCN" = "PISR", props: {
+    voucherId?: string;
+    refundPrefill?: { settlementId: string; renterName: string; unitLabel: string; amount: number } | null;
+} = {}) {
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
             <VoucherForm type={type} {...props} />
@@ -205,6 +216,7 @@ beforeEach(() => {
     picked.id = "acct-1";
     chart.rows = [];
     api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
+    api.defaults.mockResolvedValue([]);
     api.create.mockResolvedValue(detail({ id: "v-new", lines: [], netTotal: 0, vatTotal: 0, grossTotal: 0 }));
     api.update.mockResolvedValue(detail());
     api.post.mockResolvedValue(detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
@@ -1495,5 +1507,69 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
         expect(chip).toHaveAttribute("data-status", "PART_PAID");
         expect(chip).toHaveTextContent("Part-paid");
         expect(chip).toHaveTextContent("1,500.00");
+    });
+});
+
+describe("VoucherForm — deposit refund (F14-36)", () => {
+    const REFUND = {
+        settlementId: "stl-1", renterName: "Prabhjot Singh", unitLabel: "A-101", amount: 6164.38,
+    };
+
+    beforeEach(() => {
+        api.defaults.mockResolvedValue([
+            { role: "RENTER_REFUND_PAYABLE", accountId: "acc-refund", accountCode: "210500", accountName: "Refunds payable – renters", inherited: false },
+        ]);
+        // A cash leaf so the refund payment-account picker has something to select.
+        chart.rows = [
+            { id: "acc-cash", accountType: "ASSET", accountSubType: "CASH", group: false, active: true },
+        ] as (typeof chart.rows)[number][];
+    });
+
+    it("prefills the narration and the one locked line, and shows 'Refund to <renter>' instead of a vendor picker", async () => {
+        renderForm("BPV", { refundPrefill: REFUND });
+        await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("6164.38"));
+
+        expect(screen.getByTestId("narration")).toHaveValue("Deposit refund – Prabhjot Singh – A-101");
+        expect(screen.getByTestId("refund-to")).toHaveTextContent("Refund to Prabhjot Singh");
+        expect(screen.queryByTestId("vendor")).not.toBeInTheDocument();
+        // The line's account is locked to the resolved refund-payable leaf.
+        expect(screen.getByTestId("account-picker")).toBeInTheDocument();
+        expect(screen.getByText("Refunds payable – renters")).toBeInTheDocument();
+        // No second line, and no way to add one.
+        expect(screen.queryByTestId("add-line")).not.toBeInTheDocument();
+
+        expect(screen.getByTestId("refund-payment-account")).toBeInTheDocument();
+    });
+
+    it("sends settlementId on create/post", async () => {
+        renderForm("BPV", { refundPrefill: REFUND });
+        await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("6164.38"));
+        fireEvent.click(screen.getByTestId("account-picker")); // stub selects acc-9; irrelevant to this assertion
+        await waitFor(() => expect(screen.getByTestId("refund-payment-account").querySelector('option[value="acc-cash"]')).toBeInTheDocument());
+        fireEvent.change(screen.getByTestId("refund-payment-account"), { target: { value: "acc-cash" } });
+        fireEvent.change(screen.getByTestId("payment-method"), { target: { value: "CASH" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        expect(api.create.mock.calls.at(-1)![0]).toMatchObject({ settlementId: "stl-1", vendorId: null });
+    });
+
+    it("shows the translated refusal when the amount exceeds what the settlement owes", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.post.mockRejectedValueOnce(new ApiError(400, "exceeds", JSON.stringify({
+            code: "voucher.refundExceedsOwed", args: { owed: "6,164.38", amount: "7,000.00" }, message: "exceeds",
+        })));
+        renderForm("BPV", { refundPrefill: REFUND });
+        await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("6164.38"));
+        await waitFor(() => expect(screen.getByTestId("refund-payment-account").querySelector('option[value="acc-cash"]')).toBeInTheDocument());
+        fireEvent.change(screen.getByTestId("refund-payment-account"), { target: { value: "acc-cash" } });
+        fireEvent.change(screen.getByTestId("payment-method"), { target: { value: "CASH" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        expect(await screen.findByTestId("voucher-error")).toHaveTextContent(
+            "This settlement owes 6,164.38; 7,000.00 is more than that.",
+        );
     });
 });

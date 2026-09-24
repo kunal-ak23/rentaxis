@@ -2330,6 +2330,7 @@
       },
       "voucher": {
         "cashNegative": "يحتفظ {account} برصيد {balance} بتاريخ {date}؛ دفع {amount} سيجعل الرصيد {after}.",
+        "refundExceedsOwed": "هذه التسوية مستحق عليها {owed}؛ {amount} أكبر من ذلك.",
         "reverseBeforeDocument": "لا يمكن أن يكون تاريخ العكس قبل {voucher} ({docDate})",
         "reasonRequired": "السبب مطلوب.",
         "voidSettledInvoice": "{voucher} مُسدّد بواسطة دفعة؛ حرّر ذلك التخصيص أو عدّل الدفعة قبل إلغاء هذا السند"
@@ -2515,6 +2516,10 @@
     "refundDue": "المبلغ المعاد للمستأجر",
     "balanceDue": "رصيد مستحق على المستأجر",
     "settled": "لا مبلغ مستحقًا لأي طرف.",
+    "refundOwed": "المبلغ المعاد المستحق",
+    "refundPaid": "المبلغ المعاد المدفوع",
+    "refundOutstanding": "المبلغ المعاد المتبقي",
+    "payRefund": "دفع المبلغ المعاد",
     "refundBank": "يُدفع المبلغ من",
     "refundBankRequired": "التسوية التي تُعيد مبلغًا تحتاج حساب بنك أو نقدية للدفع منه.",
     "settlementDate": "تاريخ التسوية",
@@ -2577,6 +2582,7 @@
     "vendor": "المورّد",
     "selectVendor": "اختر مورّدًا",
     "noVendor": "بدون مورّد",
+    "refundTo": "إعادة إلى {renter}",
     "invoiceNumber": "رقم الفاتورة",
     "creditNoteNumber": "رقم الإشعار الدائن",
     "paymentAccount": "الدفع من",

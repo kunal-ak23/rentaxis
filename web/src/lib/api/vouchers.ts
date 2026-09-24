@@ -107,6 +107,8 @@ export type Voucher = {
     /** BPV only. */
     paymentMethod?: PaymentMethod | null;
     paymentReference?: string | null;
+    /** F14-36: set on a BPV that pays out a deposit refund; names the settlement. */
+    settlementId?: string | null;
 };
 
 /**
@@ -126,6 +128,8 @@ export type VoucherDetail = Voucher & {
     lines: VoucherLine[];
     attachments: VoucherAttachment[];
     settlement?: Settlement | null;
+    /** F14-36: on a refund BPV, the settlement it pays out (read back on GET). */
+    refundSettlementId?: string | null;
 };
 
 // ---- requests ----
@@ -159,6 +163,8 @@ export type VoucherInput = {
     dueDate?: string | null;
     paymentMethod?: PaymentMethod | null;
     paymentReference?: string | null;
+    /** F14-36: set on a BPV that pays out a deposit refund; names the settlement. */
+    settlementId?: string | null;
 };
 
 /** One invoice a payment settles: `AllocationInputDTO`. */

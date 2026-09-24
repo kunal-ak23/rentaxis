@@ -6,6 +6,7 @@ import { CheckCircle, FileText, Loader2, Paperclip, Plus, Trash2, Upload } from 
 import { Link } from "@/i18n/routing";
 import AccountPicker, { loadAccounts } from "@/components/finance/AccountPicker";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
+import RefundPaymentAccountPicker from "@/components/finance/RefundPaymentAccountPicker";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -165,12 +166,20 @@ const STATUS_CLASS: Record<VoucherStatus, string> = {
 export default function VoucherForm({
     type,
     voucherId,
+    refundPrefill,
     onPosted,
     onDeleted,
 }: {
     type: EditableVoucherType;
     /** An existing voucher to open: a draft to finish, or a posted one to read and amend. */
     voucherId?: string;
+    /**
+     * F14-36: "Pay refund" opened this BPV fresh for one settlement's deposit
+     * refund. Only meaningful with no `voucherId` — a loaded voucher's own
+     * `refundSettlementId` (on `posted`) is what drives refund mode once it
+     * exists on the server.
+     */
+    refundPrefill?: { settlementId: string; renterName: string; unitLabel: string; amount: number } | null;
     onPosted?: (v: VoucherDetail) => void;
     /**
      * Its own callback rather than `onPosted(null as VoucherDetail)`: a deleted
@@ -191,6 +200,8 @@ export default function VoucherForm({
     // through the same Allocate panel a BPV uses.
     const isExpenseLike = type === "PISR" || type === "PCN";
     const hasAllocationPanel = type === "BPV" || type === "PCN";
+    const [refundPayableAccountId, setRefundPayableAccountId] = useState<string | null>(null);
+    const [refundPayableAccountName, setRefundPayableAccountName] = useState<string | null>(null);
 
     const [docDate, setDocDate] = useState(todayIso);
     const [vendorId, setVendorId] = useState("");
@@ -263,6 +274,9 @@ export default function VoucherForm({
     const [amending, setAmending] = useState(false);
     /** The posted document as loaded, so Cancel amendment can put it back verbatim. */
     const [posted, setPosted] = useState<VoucherDetail | null>(null);
+    // F14-36: a BPV paying out a deposit refund — no vendor, one locked line
+    // on "Refunds payable – renters", a restricted payment-account picker.
+    const isRefund = !!refundPrefill || !!posted?.refundSettlementId;
     /** The chart by id — the second layer behind the pickers' own filters. */
     const [accounts, setAccounts] = useState<Record<string, Account>>({});
 
@@ -311,6 +325,31 @@ export default function VoucherForm({
             alive = false;
         };
     }, []);
+
+    // F14-36: resolve "Refunds payable – renters" (RENTER_REFUND_PAYABLE) from
+    // the tenant's default-account mappings — the same lookup the rest of the
+    // finance UI uses — and, for a brand-new refund draft, prefill the one
+    // locked line, the amount and the narration once.
+    useEffect(() => {
+        let alive = true;
+        ledgerApi.defaults
+            .get()
+            .then(rows => {
+                if (!alive) return;
+                const row = rows.find(r => r.role === "RENTER_REFUND_PAYABLE");
+                setRefundPayableAccountId(row?.accountId ?? null);
+                setRefundPayableAccountName(row?.accountName ?? null);
+                if (refundPrefill && row?.accountId && !savedId) {
+                    setLines([{ ...newLine(), accountId: row.accountId, amount: String(refundPrefill.amount) }]);
+                    setNarration(`Deposit refund – ${refundPrefill.renterName} – ${refundPrefill.unitLabel}`);
+                }
+            })
+            .catch(() => {});
+        return () => {
+            alive = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refundPrefill?.settlementId]);
 
     const applyDetail = useCallback((v: VoucherDetail) => {
         setDocDate(v.docDate);
@@ -668,10 +707,11 @@ export default function VoucherForm({
                 unitId: l.unitId || null,
                 ...(l.shared && !l.propertyId ? { shared: true } : {}),
             })),
+            settlementId: isRefund ? (refundPrefill?.settlementId ?? posted?.refundSettlementId ?? null) : undefined,
         }),
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
          chequeNumber, chequeDate, lines, numericLines, withVat, supplierInvoiceDate, dueDate,
-         paymentMethod, paymentReference],
+         paymentMethod, paymentReference, isRefund, refundPrefill?.settlementId, posted?.refundSettlementId],
     );
 
     /**
@@ -771,6 +811,12 @@ export default function VoucherForm({
                     setCashNegativeNotice(serverText(tCommon, e));
                     return;
                 }
+                // F14-36: a refund BPV posting more than the settlement still owes.
+                if (c.code === "voucher.refundExceedsOwed") {
+                    setFormError(serverText(tCommon, e));
+                    setConfirm(null);
+                    return;
+                }
                 throw e;
             }
         });
@@ -847,6 +893,11 @@ export default function VoucherForm({
                 const c = codedOf(e);
                 if (c.code === "voucher.cashNegative") {
                     setCashNegativeNotice(serverText(tCommon, e));
+                    return;
+                }
+                if (c.code === "voucher.refundExceedsOwed") {
+                    setFormError(serverText(tCommon, e));
+                    setConfirm(null);
                     return;
                 }
                 throw e;
@@ -988,23 +1039,31 @@ export default function VoucherForm({
                         <label className={fieldLabel} htmlFor="voucher-vendor">
                             {t("vendor")}
                         </label>
-                        <select
-                            id="voucher-vendor"
-                            data-testid="vendor"
-                            className={field}
-                            disabled={!editable}
-                            value={vendorId}
-                            onChange={e => setVendorId(e.target.value)}
-                        >
-                            <option value="">{isExpenseLike ? t("selectVendor") : t("noVendor")}</option>
-                            {vendors
-                                .filter(v => v.active || v.id === vendorId)
-                                .map(v => (
-                                    <option key={v.id} value={v.id}>
-                                        {v.nameEn}
-                                    </option>
-                                ))}
-                        </select>
+                        {isRefund ? (
+                            // F14-36: a refund BPV has no vendor — it names the settlement
+                            // instead, and the field is not offered as a choice.
+                            <p id="voucher-vendor" data-testid="refund-to" className={`${field} bg-input/50 flex items-center`}>
+                                {t("refundTo", { renter: refundPrefill?.renterName ?? "" })}
+                            </p>
+                        ) : (
+                            <select
+                                id="voucher-vendor"
+                                data-testid="vendor"
+                                className={field}
+                                disabled={!editable}
+                                value={vendorId}
+                                onChange={e => setVendorId(e.target.value)}
+                            >
+                                <option value="">{isExpenseLike ? t("selectVendor") : t("noVendor")}</option>
+                                {vendors
+                                    .filter(v => v.active || v.id === vendorId)
+                                    .map(v => (
+                                        <option key={v.id} value={v.id}>
+                                            {v.nameEn}
+                                        </option>
+                                    ))}
+                            </select>
+                        )}
                     </div>
 
                     {isExpenseLike ? (
@@ -1032,20 +1091,31 @@ export default function VoucherForm({
                         <>
                             <div>
                                 <span className={fieldLabel}>{t("paymentAccount")}</span>
-                                {/*
-                                 * SettlementAccountPicker, not a bare AccountPicker:
-                                 * it is the one definition of "an account cleared
-                                 * funds may leave from" (ChequeService.
-                                 * isSettlementAccount), which VoucherService
-                                 * re-asserts for this very field.
-                                 */}
-                                <SettlementAccountPicker
-                                    value={paymentAccountId}
-                                    onChange={setPaymentAccountId}
-                                    propertyId={propertyId || null}
-                                    placeholder={t("selectPaymentAccount")}
-                                    disabled={!editable}
-                                />
+                                {isRefund ? (
+                                    // F14-36: a refund pays from cash, or a bank leaf some
+                                    // bank account actually owns (F14-55) — never any BANK
+                                    // leaf the plain BANK/CASH subtype filter would allow.
+                                    <RefundPaymentAccountPicker
+                                        value={paymentAccountId}
+                                        onChange={setPaymentAccountId}
+                                        disabled={!editable}
+                                    />
+                                ) : (
+                                    /*
+                                     * SettlementAccountPicker, not a bare AccountPicker:
+                                     * it is the one definition of "an account cleared
+                                     * funds may leave from" (ChequeService.
+                                     * isSettlementAccount), which VoucherService
+                                     * re-asserts for this very field.
+                                     */
+                                    <SettlementAccountPicker
+                                        value={paymentAccountId}
+                                        onChange={setPaymentAccountId}
+                                        propertyId={propertyId || null}
+                                        placeholder={t("selectPaymentAccount")}
+                                        disabled={!editable}
+                                    />
+                                )}
                             </div>
                             <div>
                                 <label className={fieldLabel} htmlFor="voucher-payment-method">
@@ -1240,8 +1310,13 @@ export default function VoucherForm({
                                                 accountTypes={lineAccountTypes(type)}
                                                 propertyId={propertyId || null}
                                                 placeholder={tLedger("account")}
-                                                disabled={!editable}
+                                                // F14-36: a refund's one line is locked to
+                                                // "Refunds payable – renters" — not a choice.
+                                                disabled={!editable || isRefund}
                                             />
+                                            {isRefund && refundPayableAccountName && (
+                                                <span className="block text-[10px] text-muted mt-1">{refundPayableAccountName}</span>
+                                            )}
                                         </td>
                                         <td className={td}>
                                             <input
@@ -1389,7 +1464,7 @@ export default function VoucherForm({
                         </tfoot>
                     </table>
                 </div>
-                {editable && (
+                {editable && !isRefund && (
                     <div className="px-4 py-3 border-t border-border">
                         <button
                             type="button"

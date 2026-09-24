@@ -2330,6 +2330,7 @@
       },
       "voucher": {
         "cashNegative": "{account} holds {balance} on {date}; paying {amount} would leave it at {after}.",
+        "refundExceedsOwed": "This settlement owes {owed}; {amount} is more than that.",
         "reverseBeforeDocument": "A reversal cannot be dated before {voucher} ({docDate})",
         "reasonRequired": "A reason is required.",
         "voidSettledInvoice": "{voucher} is settled by a payment; release that allocation or amend the payment before voiding it"
@@ -2515,6 +2516,10 @@
     "refundDue": "Refund to renter",
     "balanceDue": "Balance due from renter",
     "settled": "Nothing to pay either way.",
+    "refundOwed": "Refund owed",
+    "refundPaid": "Refund paid",
+    "refundOutstanding": "Refund outstanding",
+    "payRefund": "Pay refund",
     "refundBank": "Refund paid from",
     "refundBankRequired": "A settlement that refunds needs a bank or cash account to pay from.",
     "settlementDate": "Settlement date",
@@ -2577,6 +2582,7 @@
     "vendor": "Vendor",
     "selectVendor": "Select a vendor",
     "noVendor": "No vendor",
+    "refundTo": "Refund to {renter}",
     "invoiceNumber": "Invoice no",
     "creditNoteNumber": "Credit note no",
     "paymentAccount": "Pay from",

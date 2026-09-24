@@ -775,7 +775,12 @@ export type SettlementResponse = {
   penaltiesOutstanding: number | null;
   /** max(-netRefund, 0). */
   balanceDue: number | null;
+  /** F14-36: ignored on finalize now and always null — kept for old rows. */
   refundBankAccountId: string | null;
+  /** F14-36: Σ of the BPVs posted against this settlement's refund. */
+  refundPaid?: number;
+  /** F14-36: refundAmount − refundPaid — what "Pay refund" still owes the renter. */
+  refundOutstanding?: number;
   /** The STL, or null on a draft. */
   journalId: string | null;
   journalNumber: string | null;
@@ -806,13 +811,15 @@ export type SaveSettlementInput = {
 /**
  * FinalizeSettlementRequest.
  *
- * `refundBankAccountId` is required exactly when `netRefund > 0`
- * (`SettlementService.finalizeSettlement`:452-454) and `acknowledgeOutstanding`
- * exactly when the settlement refunds *and* the register still holds something.
+ * F14-36: finalize no longer takes a refund bank account — a refund owed
+ * credits "Refunds payable – renters" (RENTER_REFUND_PAYABLE) on the STL and
+ * is paid out afterwards by an ordinary BPV naming the settlement (see
+ * `voucherApi.post`/`VoucherInput.settlementId`). `acknowledgeOutstanding`
+ * is required exactly when the settlement refunds *and* the register still
+ * holds something.
  */
 export type FinalizeSettlementInput = {
   settlementDate: string;
-  refundBankAccountId?: string | null;
   acknowledgeOutstanding?: boolean;
 };
 
