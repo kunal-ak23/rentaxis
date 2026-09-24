@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.core.service.report.statement;
 
+import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository;
@@ -28,10 +30,12 @@ public class StatementLedger {
 
     private final JournalLineRepository lines;
     private final AccountResolver resolver;
+    private final AccountRepository accounts;
 
-    public StatementLedger(JournalLineRepository lines, AccountResolver resolver) {
+    public StatementLedger(JournalLineRepository lines, AccountResolver resolver, AccountRepository accounts) {
         this.lines = lines;
         this.resolver = resolver;
+        this.accounts = accounts;
     }
 
     /** The leaves these roles resolve to for the property; a role with no mapping is left out. */
@@ -42,6 +46,18 @@ public class StatementLedger {
             if (a != null) out.add(a.getId());
         }
         return new ArrayList<>(out);
+    }
+
+    /**
+     * Every bank and cash leaf of the tenant ({@code ChequeService.isSettlementAccount}),
+     * cached per statement: a cheque is banked, and a refund paid, from whichever one
+     * the clerk picked, not only the property's BANK role leaf.
+     */
+    public List<UUID> settlementAccounts(StatementContext ctx) {
+        return ctx.cached("settlementAccounts", () -> accounts.findAll().stream()
+                .filter(a -> ctx.tenantId().equals(a.getTenantId()))
+                .filter(ChequeService::isSettlementAccount)
+                .map(Account::getId).toList());
     }
 
     public List<MovementRow> movement(UUID tenantId, UUID propertyId, List<UUID> accountIds, LocalDate from, LocalDate to) {

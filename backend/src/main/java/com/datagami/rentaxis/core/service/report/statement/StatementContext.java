@@ -18,6 +18,7 @@ public final class StatementContext {
     private final LocalDate from;
     private final LocalDate to;
     private final Map<String, Section> built = new LinkedHashMap<>();
+    private final Map<String, Object> cache = new java.util.HashMap<>();
 
     public StatementContext(UUID tenantId, Property property, LocalDate from, LocalDate to) {
         this.tenantId = tenantId;
@@ -31,6 +32,17 @@ public final class StatementContext {
     public UUID propertyId() { return property.getId(); }
     public LocalDate from() { return from; }
     public LocalDate to() { return to; }
+
+    /** A value computed once per statement and shared by the sections that need it. */
+    @SuppressWarnings("unchecked")
+    public <T> T cached(String key, java.util.function.Supplier<T> compute) {
+        Object v = cache.get(key);
+        if (v == null) {
+            v = compute.get();
+            cache.put(key, v);
+        }
+        return (T) v;
+    }
 
     void add(Section s) { built.put(s.key(), s); }
 

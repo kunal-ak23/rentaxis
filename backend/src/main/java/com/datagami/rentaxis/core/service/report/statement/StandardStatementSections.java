@@ -132,8 +132,12 @@ public final class StandardStatementSections {
     // ---------------------------------------------------------------- 3
 
     /**
-     * 3. Collected: credits to PDC receivable from clearing entries (CRT), less the
-     * bank credits of cleared cheques that bounced later (CBR), by instrument mode.
+     * 3. Collected: the net credit to PDC receivable from clearing entries (CRT),
+     * less the net bank credit of cleared cheques that bounced later (CBR), by
+     * instrument mode. Net, not gross: a reversed CRT is a CRT debit (a cut-over
+     * batch reversed and re-posted leaves both), and counting only credits would
+     * collect the same cheque twice. The bounce is read on whichever bank or cash
+     * leaf the cheque was banked into, not just the property's BANK role leaf.
      */
     @Component
     public static class Collected implements StatementSection {
@@ -146,25 +150,27 @@ public final class StandardStatementSections {
         @Override
         public Section build(StatementContext ctx) {
             List<UUID> pdc = ledger.accountsFor(ctx.propertyId(), AccountRole.PDC_RECEIVABLE);
-            List<UUID> bank = ledger.accountsFor(ctx.propertyId(), AccountRole.BANK);
+            List<UUID> settlement = ledger.settlementAccounts(ctx);
             List<UUID> both = new ArrayList<>(pdc);
-            bank.stream().filter(b -> !both.contains(b)).forEach(both::add);
+            settlement.stream().filter(b -> !both.contains(b)).forEach(both::add);
             List<MovementRow> rows = ledger.movement(ctx.tenantId(), ctx.propertyId(), both, ctx.from(), ctx.to());
 
             Map<String, BigDecimal> byMode = new LinkedHashMap<>();
             BigDecimal cleared = BigDecimal.ZERO, bouncedAfter = BigDecimal.ZERO;
             for (MovementRow r : rows) {
                 String mode = r.getChequeMode() == null ? "OTHER" : r.getChequeMode();
+                BigDecimal net = r.getCredit().subtract(r.getDebit());
                 if (pdc.contains(r.getAccountId()) && "CRT".equals(r.getDocType())) {
-                    cleared = cleared.add(r.getCredit());
-                    byMode.merge(mode, r.getCredit(), BigDecimal::add);
+                    cleared = cleared.add(net);
+                    byMode.merge(mode, net, BigDecimal::add);
                 }
-                if (bank.contains(r.getAccountId()) && "CBR".equals(r.getDocType())) {
-                    bouncedAfter = bouncedAfter.add(r.getCredit());
-                    byMode.merge(mode, r.getCredit().negate(), BigDecimal::add);
+                if (settlement.contains(r.getAccountId()) && "CBR".equals(r.getDocType())) {
+                    bouncedAfter = bouncedAfter.add(net);
+                    byMode.merge(mode, net.negate(), BigDecimal::add);
                 }
             }
             List<List<Object>> modeRows = byMode.entrySet().stream()
+                    .filter(e -> e.getValue().signum() != 0)
                     .map(e -> List.<Object>of(e.getKey(), money(e.getValue()))).toList();
             return new Section("collected", 3, "LEDGER", List.of(
                     Figure.of("cleared", money(cleared)),
@@ -199,7 +205,7 @@ public final class StandardStatementSections {
             LocalDate at = ctx.to();
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal overdue = BigDecimal.ZERO;
-            for (Cheque c : cheques.findByProperty_IdAndChequeDateLessThanEqualOrderByChequeDateAsc(ctx.propertyId(), at)) {
+            for (Cheque c : cheques.findOwedCandidatesAt(ctx.propertyId(), at)) {
                 if (!ctx.tenantId().equals(c.getTenantId())) continue;
                 int grace = c.getLease() == null ? 0 : c.getLease().getGracePeriodDays();
                 if (!wasDueAt(c, at) || !c.getChequeDate().plusDays(grace).isBefore(at)) continue;
@@ -229,11 +235,12 @@ public final class StandardStatementSections {
          * still outstanding then; one that bounced after it was merely banked.
          */
         static boolean wasDueAt(Cheque c, LocalDate at) {
-            if (c.getChequeDate() == null || c.getChequeDate().isAfter(at)) {
-                return c.getStatus() == ChequeStatus.BOUNCED && c.getBouncedAt() != null && !c.getBouncedAt().isAfter(at);
-            }
+            // Only rows dated on or before `at` reach here (overdue needs the date to
+            // have passed, so a later-dated bounced cheque is due but never overdue).
             return switch (c.getStatus()) {
-                case REGISTERED, DEPOSITED, ONLINE_PENDING, BOUNCED -> true;
+                case REGISTERED, DEPOSITED, ONLINE_PENDING -> true;
+                // Bounced after `at`: on `at` it was still merely banked, so still owed.
+                case BOUNCED -> true;
                 case CLEARED -> c.getClearedAt() != null && c.getClearedAt().isAfter(at);
                 default -> false;
             };
@@ -242,7 +249,13 @@ public final class StandardStatementSections {
 
     // ---------------------------------------------------------------- 5
 
-    /** 5. Deposits held: opening, received, refunded or forfeited (STL), carried (JV), closing. */
+    /**
+     * 5. Deposits held: opening, received, released on settlement (STL) — split
+     * into what was applied to deductions or arrears and what was refunded in
+     * cash — carried to another lease (JV), and closing. "Refunded" is the
+     * settlement's own bank / cash leg, so it is money that actually left; the
+     * rest of the release never did (spec review P1-2).
+     */
     @Component
     public static class DepositsHeld implements StatementSection {
         private final StatementLedger ledger;
@@ -257,14 +270,17 @@ public final class StandardStatementSections {
             BigDecimal opening = creditNet(ledger.movement(ctx.tenantId(), ctx.propertyId(), accounts,
                     StatementLedger.BEGINNING, ctx.from().minusDays(1)), r -> true);
             List<MovementRow> period = ledger.movement(ctx.tenantId(), ctx.propertyId(), accounts, ctx.from(), ctx.to());
-            BigDecimal refunded = creditNet(period, r -> "STL".equals(r.getDocType())).negate();
+            BigDecimal released = creditNet(period, r -> "STL".equals(r.getDocType())).negate();
             BigDecimal carried = creditNet(period, r -> "JV".equals(r.getDocType()));
             BigDecimal received = creditNet(period, r -> !"STL".equals(r.getDocType()) && !"JV".equals(r.getDocType()));
+            BigDecimal refunded = creditNet(ledger.movement(ctx.tenantId(), ctx.propertyId(), ledger.settlementAccounts(ctx),
+                    ctx.from(), ctx.to()), r -> "STL".equals(r.getDocType()));
             BigDecimal closing = creditNet(ledger.movement(ctx.tenantId(), ctx.propertyId(), accounts,
                     StatementLedger.BEGINNING, ctx.to()), r -> true);
             return new Section("deposits", 5, "LEDGER", List.of(
                     Figure.of("opening", money(opening)),
                     Figure.of("received", money(received)),
+                    Figure.of("applied", money(released.subtract(refunded))),
                     Figure.of("refunded", money(refunded)),
                     Figure.of("carried", money(carried)),
                     Figure.of("closing", money(closing))),
@@ -289,7 +305,12 @@ public final class StandardStatementSections {
 
         record Entry(ExpenseEntryRow row, Voucher voucher) { }
 
+        /** Once per statement: sections 6 and 7 both read it. */
         List<Entry> of(StatementContext ctx) {
+            return ctx.cached("expenseEntries", () -> load(ctx));
+        }
+
+        private List<Entry> load(StatementContext ctx) {
             List<UUID> inputVat = ledger.accountsFor(ctx.propertyId(), AccountRole.INPUT_VAT);
             List<ExpenseEntryRow> rows = lines.expenseEntriesForProperty(ctx.tenantId(), ctx.propertyId(), ctx.from(), ctx.to(),
                     inputVat.isEmpty() ? List.of(UUID.randomUUID()) : inputVat);
@@ -379,8 +400,10 @@ public final class StandardStatementSections {
         public Section build(StatementContext ctx) {
             List<UUID> output = ledger.accountsFor(ctx.propertyId(), AccountRole.OUTPUT_VAT);
             List<UUID> input = ledger.accountsFor(ctx.propertyId(), AccountRole.INPUT_VAT);
+            // Net over every document, mirrors included: an amended CONTRACT-timing
+            // lease reverses its TCO as a TCR and re-posts, and only the net was declared.
             BigDecimal out = creditNet(ledger.movement(ctx.tenantId(), ctx.propertyId(), output, ctx.from(), ctx.to()),
-                    r -> "VTP".equals(r.getDocType()) || "TCO".equals(r.getDocType()));
+                    r -> true);
             BigDecimal in = creditNet(ledger.movement(ctx.tenantId(), ctx.propertyId(), input, ctx.from(), ctx.to()), r -> true).negate();
             String emirate = ctx.property().getEmirate() == null ? "" : ctx.property().getEmirate().name();
             return new Section("vat", 8, "LEDGER", List.of(

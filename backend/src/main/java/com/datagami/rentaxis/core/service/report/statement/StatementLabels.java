@@ -60,7 +60,8 @@ public final class StatementLabels {
         put("figure.ledgerReceivable", "Rent receivable (ledger)", "إيجارات مستحقة (دفتر الأستاذ)");
         put("figure.opening", "Opening balance", "الرصيد الافتتاحي");
         put("figure.received", "Received", "المستلم");
-        put("figure.refunded", "Refunded or forfeited", "المسترد أو المصادر");
+        put("figure.applied", "Applied to deductions and arrears", "المخصوم مقابل الاستقطاعات والمتأخرات");
+        put("figure.refunded", "Refunded in cash", "المسترد نقداً");
         put("figure.carried", "Carried to another lease", "المرحّل إلى عقد آخر");
         put("figure.closing", "Closing balance", "الرصيد الختامي");
         put("figure.net", "Net", "الصافي");
@@ -123,6 +124,7 @@ public final class StatementLabels {
         put("pnl.delta", "Δ", "Δ");
         put("pnl.deltaPct", "Δ%", "Δ%");
         put("pnl.allocated", "Shared costs allocated (report only, not posted)", "تكاليف مشتركة موزعة (للتقرير فقط، غير مرحّلة)");
+        put("pnl.allocatedOthers", "Allocated to properties not on this report", "موزع على عقارات خارج هذا التقرير");
         put("pnl.noiAfter", "NOI after allocation", "صافي الدخل بعد التوزيع");
         put("pnl.check", "Check: ledger movement less report total", "التحقق: حركة الدفتر ناقص إجمالي التقرير");
         put("pnl.UNASSIGNED", "Unassigned", "غير مخصص");

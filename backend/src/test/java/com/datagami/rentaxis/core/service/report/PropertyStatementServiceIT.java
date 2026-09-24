@@ -79,6 +79,7 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
     PropertyPnlFixture fx;
     Lease lease;
     Cheque c1;
+    UUID crtId;
 
     @BeforeEach
     void setUp() {
@@ -120,9 +121,9 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         fx.role(JournalDocType.STL, LocalDate.of(2026, 9, 25), d1, AccountRole.SECURITY_DEPOSIT, AccountRole.BANK, "2000.00");
         fx.role(JournalDocType.JV, LocalDate.of(2026, 9, 26), d1, AccountRole.SECURITY_DEPOSIT, AccountRole.ADVANCE_RENT, "1000.00");
         // Collected: cheque 1 clears for 30,000; an earlier cleared cheque bounces back for 4,000.
-        posting.post(new PostingRequest(JournalDocType.CRT, LocalDate.of(2026, 9, 20), "cleared",
+        crtId = posting.post(new PostingRequest(JournalDocType.CRT, LocalDate.of(2026, 9, 20), "cleared",
                 new Dimensions(fx.p1.getId(), null, null, null, c1.getId()), JournalSourceType.CHEQUE, c1.getId(), null,
-                List.of(dr(AccountRole.BANK, new BigDecimal("30000.00")), cr(AccountRole.PDC_RECEIVABLE, new BigDecimal("30000.00")))));
+                List.of(dr(AccountRole.BANK, new BigDecimal("30000.00")), cr(AccountRole.PDC_RECEIVABLE, new BigDecimal("30000.00"))))).getId();
         fx.role(JournalDocType.CBR, LocalDate.of(2026, 9, 28), d1, AccountRole.RENT_RECEIVABLE, AccountRole.BANK, "4000.00");
         // Output VAT at a tax point.
         fx.role(JournalDocType.VTP, LocalDate.of(2026, 9, 1), d1, AccountRole.OUTPUT_VAT_DEFERRED, AccountRole.OUTPUT_VAT, "1428.57");
@@ -208,12 +209,79 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         assertThat(fig(s, "deposits", "opening")).isEqualByComparingTo("10000.00");
         assertThat(fig(s, "deposits", "received")).isEqualByComparingTo("5000.00");
         assertThat(fig(s, "deposits", "refunded")).isEqualByComparingTo("2000.00");
+        assertThat(fig(s, "deposits", "applied")).isEqualByComparingTo("0.00");
         assertThat(fig(s, "deposits", "carried")).isEqualByComparingTo("-1000.00");
         assertThat(fig(s, "deposits", "closing")).isEqualByComparingTo(
-                fig(s, "deposits", "opening").add(fig(s, "deposits", "received"))
+                fig(s, "deposits", "opening").add(fig(s, "deposits", "received")).subtract(fig(s, "deposits", "applied"))
                         .subtract(fig(s, "deposits", "refunded")).add(fig(s, "deposits", "carried")));
 
         assertThat(fig(s, "netCash", "netCash")).isEqualByComparingTo("24000.00");
+    }
+
+    @Test
+    void aReversedAndRepostedClearingCountsOnce() {
+        // A cut-over batch reversed and re-posted: the CRT, its mirror (a CRT debit), and the CRT again.
+        posting.reverse(crtId, LocalDate.of(2026, 9, 21), "batch reversed");
+        posting.post(new PostingRequest(JournalDocType.CRT, LocalDate.of(2026, 9, 22), "re-posted",
+                new Dimensions(fx.p1.getId(), null, null, null, c1.getId()), JournalSourceType.CHEQUE, c1.getId(), null,
+                List.of(dr(AccountRole.BANK, new BigDecimal("30000.00")), cr(AccountRole.PDC_RECEIVABLE, new BigDecimal("30000.00")))));
+        // And the bounce reversed and re-posted too.
+        UUID cbr = posting.post(new PostingRequest(JournalDocType.CBR, LocalDate.of(2026, 9, 29), "bounced",
+                Dimensions.ofProperty(fx.p1.getId()), JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("700.00")), cr(AccountRole.BANK, new BigDecimal("700.00"))))).getId();
+        posting.reverse(cbr, LocalDate.of(2026, 9, 29), "wrong cheque");
+
+        PropertyStatementDTO s = statements.statement(fx.p1.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "collected", "cleared")).isEqualByComparingTo("30000.00");
+        assertThat(fig(s, "collected", "bouncedAfterClearing")).isEqualByComparingTo("4000.00");
+        assertThat(fig(s, "collected", "collected")).isEqualByComparingTo("26000.00");
+        assertThat(fig(s, "netCash", "netCash")).isEqualByComparingTo("24000.00");
+    }
+
+    @Test
+    void aBounceFromASecondBankAccountIsStillSubtracted() {
+        com.datagami.rentaxis.domain.entity.Account second =
+                accounts.createLeaf("Mashreq Current", accounts.getAccountByCode("A-02-02"), null);
+        posting.post(new PostingRequest(JournalDocType.CBR, LocalDate.of(2026, 9, 29), "bounced from Mashreq",
+                Dimensions.ofProperty(fx.p1.getId()), JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("1500.00")), cr(second.getId(), new BigDecimal("1500.00")))));
+        PropertyStatementDTO s = statements.statement(fx.p1.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "collected", "bouncedAfterClearing")).isEqualByComparingTo("5500.00");
+        assertThat(fig(s, "collected", "collected")).isEqualByComparingTo("24500.00");
+    }
+
+    @Test
+    void netCashCountsOnlyTheDepositRefundThatLeftTheBank() {
+        // Palm: a 10,000 deposit; on settlement 5,000 goes to arrears and 5,000 is refunded.
+        Dimensions d2 = Dimensions.ofProperty(fx.p2.getId());
+        fx.role(JournalDocType.TCO, LocalDate.of(2026, 8, 1), d2, AccountRole.RENT_RECEIVABLE, AccountRole.SECURITY_DEPOSIT, "10000.00");
+        posting.post(new PostingRequest(JournalDocType.STL, LocalDate.of(2026, 9, 25), "settlement", d2,
+                JournalSourceType.SETTLEMENT, UUID.randomUUID(), null, List.of(
+                dr(AccountRole.SECURITY_DEPOSIT, new BigDecimal("10000.00")),
+                cr(AccountRole.RENT_RECEIVABLE, new BigDecimal("5000.00")),
+                cr(AccountRole.BANK, new BigDecimal("5000.00")))));
+        PropertyStatementDTO s = statements.statement(fx.p2.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "deposits", "opening")).isEqualByComparingTo("10000.00");
+        assertThat(fig(s, "deposits", "applied")).isEqualByComparingTo("5000.00");
+        assertThat(fig(s, "deposits", "refunded")).isEqualByComparingTo("5000.00");
+        assertThat(fig(s, "deposits", "closing")).isEqualByComparingTo("0.00");
+        assertThat(fig(s, "netCash", "depositsRefunded")).isEqualByComparingTo("5000.00");
+        assertThat(fig(s, "netCash", "netCash")).isEqualByComparingTo("-5000.00");
+    }
+
+    @Test
+    void outputVatNetsAnAmendedContractLeasesReversal() {
+        // A CONTRACT-timing lease: VAT on the TCO itself. Amending it reverses the TCO (a TCR) and posts it again.
+        Dimensions d1 = Dimensions.ofProperty(fx.p1.getId());
+        UUID tco = posting.post(new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 3), "contract", d1,
+                JournalSourceType.LEASE, lease.getId(), null, List.of(
+                dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("5000.00")), cr(AccountRole.OUTPUT_VAT, new BigDecimal("5000.00"))))).getId();
+        posting.reverse(tco, LocalDate.of(2026, 9, 18), "amended");
+        posting.post(new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 18), "contract, amended", d1,
+                JournalSourceType.LEASE, lease.getId(), null, List.of(
+                dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("5000.00")), cr(AccountRole.OUTPUT_VAT, new BigDecimal("5000.00")))));
+        PropertyStatementDTO s = statements.statement(fx.p1.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "vat", "outputVat")).isEqualByComparingTo("6428.57");
     }
 
     @Test
