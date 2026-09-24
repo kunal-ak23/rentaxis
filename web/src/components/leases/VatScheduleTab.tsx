@@ -122,6 +122,8 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated }: Pro
                                     <td className={td}>
                                         {p.kind === "TERMINATION_ADJUSTMENT"
                                             ? t("terminationAdjustment")
+                                            : p.kind === "CONTRACT"
+                                            ? t("contractTaxPoint")
                                             : t("instalmentLabel", {
                                                   seq: p.chequeSeqNo ?? "—",
                                                   number: p.chequeNumber ?? "—",

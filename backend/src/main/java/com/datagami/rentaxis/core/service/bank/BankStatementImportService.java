@@ -96,25 +96,25 @@ public class BankStatementImportService {
     }
 
     static BankStatementProfile apply(BankStatementProfile p, BankRecDTOs.Profile in) {
-        if (in == null) throw new BusinessRuleViolationException("A column mapping is required");
+        if (in == null) throw BankRecRefusal.refuse("mappingRequired", "A column mapping is required");
         if (in.fileKind() != null) p.setFileKind(enumOf(BankStatementProfile.FileKind.class, in.fileKind(), "file kind"));
         p.setSheetName(in.sheetName() == null || in.sheetName().isBlank() ? null : in.sheetName().trim());
         if (in.headerRow() != null) p.setHeaderRow(in.headerRow());
         if (in.firstDataRow() != null) p.setFirstDataRow(in.firstDataRow());
         if (p.getHeaderRow() < 1 || p.getFirstDataRow() <= p.getHeaderRow()) {
-            throw new BusinessRuleViolationException("The first data row must come after the header row");
+            throw BankRecRefusal.refuse("firstDataRowAfterHeader", "The first data row must come after the header row");
         }
         if (in.csvDelimiter() != null && !in.csvDelimiter().isEmpty()) {
-            if (in.csvDelimiter().length() > 2) throw new BusinessRuleViolationException("The delimiter is one character");
+            if (in.csvDelimiter().length() > 2) throw BankRecRefusal.refuse("delimiterOneChar", "The delimiter is one character");
             p.setCsvDelimiter(in.csvDelimiter());
         }
         // PR #353 review: the date format is the accountant's statement, never a guess.
         if (in.dateFormats() == null || in.dateFormats().isEmpty() || in.dateFormats().stream().allMatch(f -> f == null || f.isBlank())) {
-            throw new BusinessRuleViolationException("Choose the statement's date format");
+            throw BankRecRefusal.refuse("chooseDateFormat", "Choose the statement's date format");
         }
         if (in.decimalSeparator() != null && !in.decimalSeparator().isBlank()) {
             if (!in.decimalSeparator().equals(".") && !in.decimalSeparator().equals(",")) {
-                throw new BusinessRuleViolationException("The decimal separator is . or ,");
+                throw BankRecRefusal.refuse("decimalSeparatorInvalid", "The decimal separator is . or ,");
             }
             p.setDecimalSeparator(in.decimalSeparator());
         }
@@ -123,7 +123,7 @@ public class BankStatementImportService {
                 try {
                     StatementValues.formatter(f);
                 } catch (IllegalArgumentException e) {
-                    throw new BusinessRuleViolationException("\"" + f + "\" is not a date format");
+                    throw BankRecRefusal.refuse("notADateFormat", "\"" + f + "\" is not a date format", "format", f);
                 }
             }
             p.setDateFormats(in.dateFormats().toArray(String[]::new));
@@ -131,24 +131,24 @@ public class BankStatementImportService {
         Map<String, String> cols = new LinkedHashMap<>();
         if (in.columns() != null) {
             in.columns().forEach((k, v) -> {
-                if (!StatementMapper.FIELDS.contains(k)) throw new BusinessRuleViolationException("Unknown column field " + k);
+                if (!StatementMapper.FIELDS.contains(k)) throw BankRecRefusal.refuse("unknownColumnField", "Unknown column field " + k, "field", k);
                 if (v != null && !v.isBlank()) cols.put(k, v.trim());
             });
         }
         p.setColumns(cols);
         if (in.amountMode() != null) p.setAmountMode(enumOf(BankStatementProfile.AmountMode.class, in.amountMode(), "amount mode"));
         if (in.chequeNoPattern() != null && !in.chequeNoPattern().isBlank()) {
-            if (in.chequeNoPattern().length() > 100) throw new BusinessRuleViolationException("The cheque number pattern is at most 100 characters");
+            if (in.chequeNoPattern().length() > 100) throw BankRecRefusal.refuse("chequePatternTooLong", "The cheque number pattern is at most 100 characters");
             try {
                 Pattern.compile(in.chequeNoPattern());
             } catch (PatternSyntaxException e) {
-                throw new BusinessRuleViolationException("The cheque number pattern is not a valid expression");
+                throw BankRecRefusal.refuse("chequePatternInvalid", "The cheque number pattern is not a valid expression");
             }
             p.setChequeNoPattern(in.chequeNoPattern());
         }
         if (in.matchWindowDays() != null) {
             if (in.matchWindowDays() < 0 || in.matchWindowDays() > 31) {
-                throw new BusinessRuleViolationException("The match window is 0 to 31 days");
+                throw BankRecRefusal.refuse("matchWindowRange", "The match window is 0 to 31 days");
             }
             p.setMatchWindowDays(in.matchWindowDays());
         }
@@ -174,14 +174,14 @@ public class BankStatementImportService {
         UUID t = BankAccountLedgerService.requireTenant();
         BankAccount bank = ledgers.requireBankAccount(bankAccountId);
         if (bank.getCurrency() != null && !"AED".equalsIgnoreCase(bank.getCurrency())) {
-            throw new BusinessRuleViolationException("Multi-currency statements are out of scope; this account is in "
-                    + bank.getCurrency());
+            throw BankRecRefusal.refuse("multiCurrency", "Multi-currency statements are out of scope; this account is in "
+                    + bank.getCurrency(), "currency", bank.getCurrency());
         }
-        if (bytes == null || bytes.length == 0) throw new BusinessRuleViolationException("The file is empty");
-        if (bytes.length > MAX_FILE_BYTES) throw new BusinessRuleViolationException("A statement file is at most 5 MB");
+        if (bytes == null || bytes.length == 0) throw BankRecRefusal.refuse("fileEmpty", "The file is empty");
+        if (bytes.length > MAX_FILE_BYTES) throw BankRecRefusal.refuse("fileTooLarge", "A statement file is at most 5 MB");
         String name = fileName == null || fileName.isBlank() ? "statement" : fileName.trim();
         if (name.toLowerCase(Locale.ROOT).endsWith(".xls")) {
-            throw new BusinessRuleViolationException("Save the statement as .xlsx or .csv; the old .xls format is not read");
+            throw BankRecRefusal.refuse("oldXls", "Save the statement as .xlsx or .csv; the old .xls format is not read");
         }
         // P2-2: the very same file again is refused outright, whatever the mapping says now.
         String sha = StatementValues.sha256(bytes);
@@ -196,54 +196,67 @@ public class BankStatementImportService {
             return new BankRecDTOs.ImportResult("ALREADY_IMPORTED", "This file was already imported on " + on
                     + " (" + prior.get("file_name") + "); nothing was imported", List.of(), List.of(), null, null, List.of(),
                     List.of(), List.of(), 0, 0, ((Number) prior.get("lines_read")).intValue(), null, null, null, null,
-                    null, List.of(), null);
+                    null, List.of(), null, null, "bankrec.alreadyImported",
+                    BankRecRefusal.args("on", on, "file", prior.get("file_name")));
         }
         BankStatementProfile.FileKind kind = WorkbookGuard.looksLikeXlsx(bytes)
                 ? BankStatementProfile.FileKind.XLSX : BankStatementProfile.FileKind.CSV;
         if (kind == BankStatementProfile.FileKind.CSV && looksBinary(bytes)) {
-            throw new BusinessRuleViolationException("This file is neither a CSV nor an .xlsx workbook");
+            throw BankRecRefusal.refuse("notCsvOrXlsx", "This file is neither a CSV nor an .xlsx workbook");
         }
         BankStatementProfile saved = profiles.findByBankAccountId(bankAccountId).orElse(null);
         BankStatementProfile profile = profileOverride != null
                 ? apply(copyOf(saved, kind), profileOverride) : saved;
         StatementParser parser = kind == BankStatementProfile.FileKind.XLSX ? xlsx : csv;
 
+        // F14-04: the delimiter the file itself uses, so the wizard can default to it.
+        String detected = kind == BankStatementProfile.FileKind.CSV ? CsvStatementParser.detectedDelimiter(bytes) : null;
         if (profile == null) {
             StatementGrid g = parser.read(bytes, null, null);
-            return profileRequired("No column mapping for this bank account yet", g, kind, List.of());
+            return profileRequired("No column mapping for this bank account yet", "bankrec.noMapping", Map.of(), g, kind,
+                    List.of(), detected);
         }
         if (profile.getFileKind() != kind) {
             StatementGrid g = parser.read(bytes, null, null);
             return profileRequired("The saved mapping is for " + profile.getFileKind() + " files; this one is " + kind,
-                    g, kind, List.of());
+                    "bankrec.mappingForOtherKind", BankRecRefusal.args("saved", profile.getFileKind(), "kind", kind),
+                    g, kind, List.of(), detected);
         }
         StatementGrid grid;
         try {
-            grid = parser.read(bytes, profile.getSheetName(), kind == BankStatementProfile.FileKind.CSV
+            // An unsaved mapping that names no delimiter reads the file as detected (F14-04).
+            boolean detect = profileOverride != null
+                    && (profileOverride.csvDelimiter() == null || profileOverride.csvDelimiter().isEmpty());
+            grid = parser.read(bytes, profile.getSheetName(), kind == BankStatementProfile.FileKind.CSV && !detect
                     ? profile.getCsvDelimiter() : null);
         } catch (BusinessRuleViolationException e) {
             if (kind == BankStatementProfile.FileKind.XLSX && profile.getSheetName() != null) {
-                return profileRequired(e.getMessage(), parser.read(bytes, null, null), kind, List.of());
+                return profileRequired(e.getMessage(), e.getCode(), e.getArgs(), parser.read(bytes, null, null), kind,
+                        List.of(), detected);
             }
             throw e;
         }
         StatementMapper.Result r = StatementMapper.map(grid, profile);
         if (!r.missingColumns().isEmpty()) {
-            return profileRequired("The file's header row no longer matches the saved mapping", grid, kind,
-                    r.missingColumns());
+            // F14-04: the saved mapping's delimiter may be what no longer fits (a ';' file
+            // read with ','); the wizard is shown the file split the way it looks.
+            StatementGrid shown = kind == BankStatementProfile.FileKind.CSV && profileOverride == null
+                    ? parser.read(bytes, null, null) : grid;
+            return profileRequired("The file's header row no longer matches the saved mapping", "bankrec.headerChanged",
+                    Map.of(), shown, kind, r.missingColumns(), detected);
         }
         if (r.rows().size() > StatementParser.MAX_ROWS) throw CsvStatementParser.tooMany();
         if (!r.errors().isEmpty()) {
-            return result("INVALID", null, grid, kind, r, r.errors(), r.warnings(), 0, 0, List.of(), null);
+            return result("INVALID", null, grid, kind, r, r.errors(), r.warnings(), 0, 0, List.of(), null, detected);
         }
         if (r.rows().isEmpty()) {
             return result("INVALID", null, grid, kind, r, List.of("No transaction lines were found"), r.warnings(),
-                    0, 0, List.of(), null);
+                    0, 0, List.of(), null, detected);
         }
 
         List<String> period = periodErrors(r.rows());
         if (!period.isEmpty()) {
-            return result("INVALID", null, grid, kind, r, period, r.warnings(), 0, 0, List.of(), null);
+            return result("INVALID", null, grid, kind, r, period, r.warnings(), 0, 0, List.of(), null, detected);
         }
         r = withKnownChequeNumbers(t, bankAccountId, r);
 
@@ -290,11 +303,11 @@ public class BankStatementImportService {
             }
             if (!inside.isEmpty()) {
                 return result("INVALID", null, grid, kind, r, inside.size() > 20 ? inside.subList(0, 20) : inside, warnings,
-                        0, 0, List.of(), null);
+                        0, 0, List.of(), null, detected);
             }
         }
         if (dryRun) {
-            return result("PREVIEW", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, null);
+            return result("PREVIEW", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, null, detected);
         }
 
         BankStatementImport imp = new BankStatementImport();
@@ -334,7 +347,7 @@ public class BankStatementImportService {
                     batch.toArray(SqlParameterSource[]::new));
         }
         imports.save(imp);
-        return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId());
+        return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
 
     /**
@@ -448,21 +461,23 @@ public class BankStatementImportService {
         return d.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     }
 
-    private BankRecDTOs.ImportResult profileRequired(String reason, StatementGrid g, BankStatementProfile.FileKind kind,
-                                                     List<String> missing) {
+    private BankRecDTOs.ImportResult profileRequired(String reason, String reasonCode, Map<String, Object> reasonArgs,
+                                                     StatementGrid g, BankStatementProfile.FileKind kind,
+                                                     List<String> missing, String delimiter) {
         return new BankRecDTOs.ImportResult("PROFILE_REQUIRED", reason, gridPreview(g), g.sheetNames(), g.sheetName(),
-                kind.name(), missing, List.of(), List.of(), 0, 0, 0, null, null, null, null, null, List.of(), null);
+                kind.name(), missing, List.of(), List.of(), 0, 0, 0, null, null, null, null, null, List.of(), null,
+                delimiter, reasonCode, reasonCode == null ? null : reasonArgs);
     }
 
     private static BankRecDTOs.ImportResult result(String status, String reason, StatementGrid g,
                                                    BankStatementProfile.FileKind kind, StatementMapper.Result r,
                                                    List<String> errors, List<String> warnings, int fresh, int dup,
-                                                   List<BankRecDTOs.PreviewRow> rows, UUID importId) {
+                                                   List<BankRecDTOs.PreviewRow> rows, UUID importId, String delimiter) {
         LocalDate first = r.rows().stream().map(StatementMapper.Row::txnDate).min(Comparator.naturalOrder()).orElse(null);
         LocalDate last = r.rows().stream().map(StatementMapper.Row::txnDate).max(Comparator.naturalOrder()).orElse(null);
         return new BankRecDTOs.ImportResult(status, reason, "IMPORTED".equals(status) ? List.of() : gridPreview(g),
                 g.sheetNames(), g.sheetName(), kind.name(), List.of(), errors, warnings, r.rows().size(), fresh, dup,
-                first, last, r.openingBalance(), r.closingBalance(), r.order().name(), rows, importId);
+                first, last, r.openingBalance(), r.closingBalance(), r.order().name(), rows, importId, delimiter, null, null);
     }
 
     static List<List<String>> gridPreview(StatementGrid g) {
@@ -541,8 +556,8 @@ public class BankStatementImportService {
                 join bank_matches m on m.id = ml.match_id and m.status = 'CONFIRMED'
                 where l.tenant_id = :t and l.import_id = :i""", p, Integer.class);
         if (confirmed != null && confirmed > 0) {
-            throw new BusinessRuleViolationException(confirmed + " line(s) of this import are in confirmed matches; "
-                    + "undo those matches first");
+            throw BankRecRefusal.refuse("importLinesConfirmed", confirmed + " line(s) of this import are in confirmed matches; "
+                    + "undo those matches first", "count", confirmed);
         }
         Integer history = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l
@@ -550,7 +565,7 @@ public class BankStatementImportService {
                 join bank_matches m on m.id = ml.match_id and m.status = 'UNDONE'
                 where l.tenant_id = :t and l.import_id = :i""", p, Integer.class);
         if (history != null && history > 0) {
-            throw new BusinessRuleViolationException("Lines of this import have match history (undone matches), "
+            throw BankRecRefusal.refuse("importHasHistory", "Lines of this import have match history (undone matches), "
                     + "which is kept as the audit trail; the import cannot be deleted");
         }
         List<UUID> matches = jdbc.queryForList("""
@@ -598,7 +613,7 @@ public class BankStatementImportService {
         try {
             return Enum.valueOf(type, v.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new BusinessRuleViolationException("Unknown " + what + " " + v);
+            throw BankRecRefusal.refuse("unknownValue", "Unknown " + what + " " + v, "what", what, "value", v);
         }
     }
 

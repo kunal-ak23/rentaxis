@@ -249,17 +249,194 @@ public class LeaseService {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
 
-        boolean heldByAnother = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .anyMatch(other -> !other.getId().equals(lease.getId()));
-        if (heldByAnother) {
-            throw new BusinessRuleViolationException(
-                    "This unit already has an active lease. Terminate it before activating another.");
-        }
+        // F14-14: judged by dates, not by "is anything live here". The next renter's
+        // lease starting the day after the current one ends is a back-to-back
+        // letting, not a double-let; any overlap is still refused.
+        postingConflict(lease).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
 
         unit.setStatus(UnitStatus.OCCUPIED);
-        unit.setCurrentTenantName(lease.getRenter().getNameEn());
-        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
+        // The unit's holder and rent are those of the lease covering today (P2-5): a
+        // lease that starts later — a renewal, a back-to-back letting — takes over on
+        // its start date, through syncUnitHolders in the daily lease job. On a unit
+        // nobody holds today the new lease names it at once, as before.
+        List<Lease> candidates = new java.util.ArrayList<>(holdingLeases(unit.getId()));
+        candidates.removeIf(other -> other.getId().equals(lease.getId()));
+        candidates.add(lease);
+        Lease holder = holderOn(candidates, LocalDate.now()).orElse(lease);
+        applyHolder(unit, holder);
         unitRepository.save(unit);
+    }
+
+    /** The lease that holds the unit on {@code day}: of those covering it, the latest to start. */
+    private static java.util.Optional<Lease> holderOn(List<Lease> leases, LocalDate day) {
+        return leases.stream().filter(l -> covers(l, day))
+                .max(java.util.Comparator.comparing(Lease::getStartDate,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
+    }
+
+    /** Whether the unit's holder fields changed. */
+    private static boolean applyHolder(Unit unit, Lease holder) {
+        String name = holder.getRenter() != null ? holder.getRenter().getNameEn() : null;
+        BigDecimal rent = holder.getRentAmount() != null ? holder.getRentAmount() : BigDecimal.ZERO;
+        boolean changed = !java.util.Objects.equals(name, unit.getCurrentTenantName())
+                || unit.getActualRent() == null || unit.getActualRent().compareTo(rent) != 0
+                || (unit.getStatus() != UnitStatus.OCCUPIED && unit.getStatus() != UnitStatus.MAINTENANCE);
+        unit.setCurrentTenantName(name);
+        unit.setActualRent(rent);
+        if (unit.getStatus() != UnitStatus.MAINTENANCE) unit.setStatus(UnitStatus.OCCUPIED);
+        return changed;
+    }
+
+    /**
+     * The one rule for a leased unit's stored fields on {@code day} (R2 N-1), used
+     * by the nightly sync, by a post and by a release:
+     * <ul>
+     *   <li>a lease covers the day (ACTIVE / NOTICE_GIVEN / RENEWED, or TERMINATED
+     *       through its termination date): the latest-starting one is the holder —
+     *       OCCUPIED, its renter and rent;</li>
+     *   <li>none covers it but a posted lease starts later: the unit is reserved.
+     *       There is no RESERVED unit status, so it keeps the lease flow's OCCUPIED
+     *       marker with the incoming renter (the unit lists show RESERVED by date);</li>
+     *   <li>neither: released — VACANT, no holder, no rent.</li>
+     * </ul>
+     * MAINTENANCE is never overwritten; the holder fields are still kept current.
+     *
+     * @return whether a stored field changed
+     */
+    private static boolean settleUnit(Unit unit, List<Lease> leases, LocalDate day) {
+        java.util.Optional<Lease> holder = holderOn(leases, day);
+        if (holder.isPresent()) {
+            return applyHolder(unit, holder.get());
+        }
+        java.util.Optional<Lease> upcoming = leases.stream()
+                .filter(l -> LIVE.contains(l.getStatus()) && l.getStartDate() != null && l.getStartDate().isAfter(day))
+                .min(java.util.Comparator.comparing(Lease::getStartDate));
+        if (upcoming.isPresent()) {
+            return applyHolder(unit, upcoming.get());
+        }
+        boolean changed = unit.getCurrentTenantName() != null
+                || (unit.getActualRent() != null && unit.getActualRent().signum() != 0)
+                || unit.getStatus() == UnitStatus.OCCUPIED;
+        unit.setCurrentTenantName(null);
+        unit.setActualRent(BigDecimal.ZERO);
+        if (unit.getStatus() != UnitStatus.MAINTENANCE) unit.setStatus(UnitStatus.VACANT);
+        return changed;
+    }
+
+    /**
+     * P2-5 / R2 N-1: the single source of truth for leased units' stored status,
+     * holder and rent. Every unit a posted lease covers or reserves, and every unit
+     * still stored as held (OCCUPIED or naming a renter), is settled by
+     * {@link #settleUnit} for {@code day}: a renewal or back-to-back lease takes
+     * over on its start date, and a unit whose lease ended — a termination dated
+     * ahead, reached — is released the day after. Run nightly by
+     * {@link LeaseExpirationJob}; idempotent; only changed units are saved.
+     *
+     * @return how many units changed
+     */
+    @Transactional
+    public int syncUnitHolders(LocalDate day) {
+        java.util.Map<UUID, Unit> units = new java.util.LinkedHashMap<>();
+        java.util.Map<UUID, List<Lease>> byUnit = new java.util.HashMap<>();
+        List<Lease> relevant = new java.util.ArrayList<>(leaseRepository.coveringOn(day));
+        relevant.addAll(leaseRepository.upcomingAfter(day));
+        for (Lease l : relevant) {
+            units.putIfAbsent(l.getUnit().getId(), l.getUnit());
+            byUnit.computeIfAbsent(l.getUnit().getId(), k -> new java.util.ArrayList<>()).add(l);
+        }
+        for (Unit u : unitRepository.findStoredAsHeld()) {
+            units.putIfAbsent(u.getId(), u);
+        }
+        int changed = 0;
+        for (Unit unit : units.values()) {
+            if (settleUnit(unit, byUnit.getOrDefault(unit.getId(), List.of()), day)) {
+                unitRepository.save(unit);
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    /** Posted statuses that hold a unit for their term (F14-14); RENEWED keeps its term until its end. */
+    private List<Lease> holdingLeases(UUID unitId) {
+        List<Lease> out = new java.util.ArrayList<>(leaseRepository.findByUnitIdAndStatusIn(unitId, LIVE));
+        out.addAll(leaseRepository.findByUnitIdAndStatusIn(unitId, EnumSet.of(LeaseStatus.RENEWED)));
+        // P2-4: a lease terminated with a date still to come holds the unit through
+        // that date (the renter is serving notice). One with no termination date on
+        // record (legacy) is treated as ended.
+        leaseRepository.findByUnitIdAndStatusIn(unitId, EnumSet.of(LeaseStatus.TERMINATED)).stream()
+                .filter(l -> l.getTerminatedOn() != null)
+                .forEach(out::add);
+        return out;
+    }
+
+    /** The last day a lease holds its unit: the termination date when it was cut short. */
+    private static LocalDate holdsUntil(Lease l) {
+        return l.getTerminatedOn() != null ? l.getTerminatedOn() : l.getEndDate();
+    }
+
+    private static boolean covers(Lease l, LocalDate day) {
+        return (l.getStartDate() == null || !l.getStartDate().isAfter(day))
+                && (holdsUntil(l) == null || !holdsUntil(l).isBefore(day));
+    }
+
+    /** Inclusive ranges; an open end overlaps everything on that side. */
+    static boolean overlaps(LocalDate aStart, LocalDate aEnd, LocalDate bStart, LocalDate bEnd) {
+        boolean aStartsAfterB = aStart != null && bEnd != null && aStart.isAfter(bEnd);
+        boolean bStartsAfterA = bStart != null && aEnd != null && bStart.isAfter(aEnd);
+        return !aStartsAfterB && !bStartsAfterA;
+    }
+
+    /**
+     * The posted lease on this unit whose term overlaps {@code [start, end]}, other
+     * than {@code selfId} and {@code predecessorId} (a renewal's own predecessor).
+     */
+    private java.util.Optional<Lease> overlappingLease(UUID unitId, LocalDate start, LocalDate end,
+                                                       UUID selfId, UUID predecessorId) {
+        return holdingLeases(unitId).stream()
+                .filter(other -> !other.getId().equals(selfId) && !other.getId().equals(predecessorId))
+                .filter(other -> overlaps(start, end, other.getStartDate(), holdsUntil(other)))
+                .findFirst();
+    }
+
+    private static String describe(Lease other) {
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String who = other.getRenter() != null ? other.getRenter().getNameEn() : "another renter";
+        return who + ", " + (other.getStartDate() == null ? "?" : other.getStartDate().format(dmy)) + " – "
+                + (holdsUntil(other) == null ? "?" : holdsUntil(other).format(dmy));
+    }
+
+    /**
+     * Why posting this lease would double-let its unit, if it would (F14-13/F14-14).
+     * The post refuses with it; the dry run reports it, so the two cannot disagree.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<String> postingConflict(Lease lease) {
+        if (lease.getRenewedFromLeaseId() != null) {
+            Lease predecessor = leaseRepository.findById(lease.getRenewedFromLeaseId()).orElse(null);
+            java.util.Optional<String> early = renewalStartsTooEarly(predecessor, lease.getStartDate());
+            if (early.isPresent()) return early;
+        }
+        if (lease.getUnit() == null) return java.util.Optional.empty();
+        return overlapRefusal(lease, lease.getStartDate(), lease.getEndDate());
+    }
+
+    private java.util.Optional<String> overlapRefusal(Lease lease, LocalDate start, LocalDate end) {
+        return overlappingLease(lease.getUnit().getId(), start, end, lease.getId(), lease.getRenewedFromLeaseId())
+                .map(other -> "This unit already has an active lease for these dates (" + describe(other)
+                        + "). Terminate it before activating another, or start this lease after it ends.");
+    }
+
+    /**
+     * P2-1: an extension moves the end date forward, so it must not run into the
+     * next lease on the unit (a back-to-back letting). Same refusal as draft and
+     * post.
+     */
+    @Transactional(readOnly = true)
+    public void requireExtensionFree(Lease lease, LocalDate newEnd) {
+        if (lease.getUnit() == null) return;
+        overlapRefusal(lease, lease.getStartDate(), newEnd)
+                .ifPresent(m -> { throw new BusinessRuleViolationException(m); });
     }
 
     /**
@@ -287,42 +464,55 @@ public class LeaseService {
     private void releaseUnitIfNoOtherActiveLease(Lease lease) {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());
-
-        List<Lease> stillLive = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .filter(other -> !other.getId().equals(lease.getId()))
-                .toList();
-        if (!stillLive.isEmpty()) {
-            // Leave the unit as it is: another lease is live on it. Its own
-            // termination will vacate the unit.
-            return;
+        // R2 N-1: the same rule as the nightly sync. The lease being ended is judged
+        // as it now stands (a termination dated ahead still holds the unit through
+        // that date); the others as the database has them.
+        List<Lease> candidates = new java.util.ArrayList<>(holdingLeases(unit.getId()));
+        candidates.removeIf(other -> other.getId().equals(lease.getId()));
+        if (lease.getStatus() == LeaseStatus.TERMINATED && lease.getTerminatedOn() != null) {
+            candidates.add(lease);
         }
-
-        unit.setStatus(UnitStatus.VACANT);
-        unit.setCurrentTenantName(null);
-        unit.setActualRent(BigDecimal.ZERO);
-        unitRepository.save(unit);
+        if (settleUnit(unit, candidates, LocalDate.now())) {
+            unitRepository.save(unit);
+        }
     }
 
     /**
-     * Whether the only thing standing between this unit and a new lease is the very
-     * lease being renewed.
-     *
-     * <p>Asked of the <em>leases</em>, not of {@code unit.status}. A unit is left
-     * OCCUPIED by a lease that has since expired, and a renewal of an EXPIRED
-     * contract is exactly the case this exists for; conversely a unit that looks
-     * occupied because a third lease holds it must still be refused. "No ACTIVE
-     * lease on this unit other than the predecessor" is the question that answers
-     * both, and it is the same question {@link #claimUnitForLease} asks when the
-     * successor eventually posts.</p>
+     * F14-35: a renewal starts no earlier than the day after the lease it renews
+     * ends (its termination date when it was cut short). The overlap check leaves
+     * the predecessor out on purpose — the sitting renter stays in the unit — so
+     * without this an early renewal ran both leases over the same days and
+     * recognised the rent twice. Back-to-back (predecessor end + 1) is allowed.
+     * One message for draft, dry run and post.
      */
-    private boolean heldOnlyBy(Unit unit, Lease predecessor) {
-        if (predecessor == null || predecessor.getUnit() == null
-                || !predecessor.getUnit().getId().equals(unit.getId())) {
-            return false;
-        }
-        return leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .allMatch(other -> other.getId().equals(predecessor.getId()));
+    static java.util.Optional<String> renewalStartsTooEarly(Lease predecessor, LocalDate renewalStart) {
+        if (predecessor == null || renewalStart == null) return java.util.Optional.empty();
+        LocalDate until = holdsUntil(predecessor);
+        if (until == null || renewalStart.isAfter(until)) return java.util.Optional.empty();
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return java.util.Optional.of("A renewal must start after the lease it renews ends on " + until.format(dmy)
+                + "; this one starts on " + renewalStart.format(dmy) + ". Start it on " + until.plusDays(1).format(dmy)
+                + " or later, or terminate the current lease first.");
     }
+
+    /**
+     * A draft may be cut on a unit unless it is under maintenance or a posted lease
+     * holds it for dates that overlap the draft's (F14-14): the next renter's
+     * contract from the day after the current one ends is allowed. A renewal's own
+     * predecessor never counts against it.
+     */
+    private void requireUnitFreeFor(Unit unit, LocalDate start, LocalDate end, UUID selfId, UUID predecessorId,
+                                    String refusal) {
+        if (unit.getStatus() == UnitStatus.MAINTENANCE) {
+            throw new BusinessRuleViolationException(refusal + " It is under maintenance.");
+        }
+        java.util.Optional<Lease> other = overlappingLease(unit.getId(), start, end, selfId, predecessorId);
+        if (other.isPresent()) {
+            throw new BusinessRuleViolationException(refusal + " It is let for overlapping dates ("
+                    + describe(other.get()) + ").");
+        }
+    }
+
 
     /**
      * The lease row, locked FOR UPDATE and tenant-checked — what a status
@@ -428,9 +618,10 @@ public class LeaseService {
         // keep letting it to the person living in it. Any other occupancy is still
         // refused, so a renewal cannot be used to slip a second lease onto a unit
         // a third contract holds.
-        if (unit.getStatus() != UnitStatus.VACANT && !heldOnlyBy(unit, predecessor)) {
-            throw new BusinessRuleViolationException("Cannot create lease. Unit is not vacant.");
-        }
+        renewalStartsTooEarly(predecessor, dto.getStartDate())
+                .ifPresent(m -> { throw new BusinessRuleViolationException(m); });
+        requireUnitFreeFor(unit, dto.getStartDate(), dto.getEndDate(), null,
+                predecessor != null ? predecessor.getId() : null, "Cannot create lease. Unit is not vacant.");
 
         Renter renter = renterRepository.findById(dto.getRenterId())
                 .orElseThrow(() -> new NotFoundException("Renter not found"));
@@ -492,9 +683,9 @@ public class LeaseService {
         if (!lease.getUnit().getId().equals(dto.getUnitId())) {
             Unit newUnit = unitRepository.findById(dto.getUnitId())
                     .orElseThrow(() -> new NotFoundException("Unit not found"));
-            if (newUnit.getStatus() != UnitStatus.VACANT) {
-                throw new BusinessRuleViolationException("Cannot assign lease. Unit is not vacant.");
-            }
+            requireUnitFreeFor(newUnit, dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate(),
+                    dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate(), lease.getId(),
+                    lease.getRenewedFromLeaseId(), "Cannot assign lease. Unit is not vacant.");
             lease.setUnit(newUnit);
         }
 
@@ -1609,7 +1800,9 @@ public class LeaseService {
                 l.isVatApplicable(),
                 l.getPeriodStart(),
                 l.getPeriodEnd(),
-                l.getAddendumId());
+                l.getAddendumId(),
+                type != null ? type.getNameAr() : null,
+                credit != null ? credit.getNameAr() : null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

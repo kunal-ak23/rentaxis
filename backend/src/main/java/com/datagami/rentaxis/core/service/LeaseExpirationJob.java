@@ -175,6 +175,16 @@ public class LeaseExpirationJob {
             }
             log.info("lease expiry tenant_id={} candidates={} expired={} skipped={} failed={}",
                     tenantId, candidates.size(), expired, skipped, failed);
+            // P2-5: a renewal or back-to-back lease takes over its unit's holder and
+            // rent on its start date. After the expiries, so a lease that ended
+            // yesterday has already let go.
+            try {
+                int synced = leaseService.syncUnitHolders(today);
+                if (synced > 0) log.info("lease expiry tenant_id={} unit holders updated={}", tenantId, synced);
+            } catch (Exception e) {
+                if (wasInterrupted(e)) throw e;
+                log.error("Unit holder sync failed for tenant {}: {}", tenantId, e.getMessage(), e);
+            }
         } catch (Exception e) {
             if (wasInterrupted(e)) {
                 // Catching the exception cleared the flag; the loop above reads it to

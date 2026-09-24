@@ -50,10 +50,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessRuleViolationException.class)
     public ResponseEntity<Map<String, Object>> handleBusinessRule(BusinessRuleViolationException ex) {
+        if (ex.getCode() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "error", true,
+                    "message", ex.getMessage(),
+                    "status", 400
+            ));
+        }
+        // F14-09: a translatable refusal also carries its key and values.
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                 "error", true,
                 "message", ex.getMessage(),
-                "status", 400
+                "status", 400,
+                "code", ex.getCode(),
+                "args", ex.getArgs()
         ));
     }
 

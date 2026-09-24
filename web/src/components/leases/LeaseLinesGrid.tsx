@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
@@ -72,6 +72,7 @@ export default function LeaseLinesGrid({
     rentVat,
 }: Props) {
     const t = useTranslations("Leasing");
+    const locale = useLocale();
     const totals = totalsOf(lines, chargeTypes);
     const { bySeq } = splitLineErrors(errors ?? []);
 
@@ -107,9 +108,9 @@ export default function LeaseLinesGrid({
     const removeRow = (key: number) => emit(lines.filter(l => l.key !== key));
 
     return (
-        <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm" data-testid="lease-lines-grid">
+        <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm min-w-0" data-testid="lease-lines-grid">
             <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px]">
+                <table className="w-full min-w-full md:min-w-[860px]">
                     <thead>
                         <tr className="bg-input/50">
                             <th className={th}>{t("sno")}</th>
@@ -154,7 +155,11 @@ export default function LeaseLinesGrid({
                                                 ))}
                                             </select>
                                         ) : (
-                                            <span className="text-foreground">{type?.nameEn ?? "—"}</span>
+                                            <span className="text-foreground">
+                                                {locale === "ar"
+                                                    ? row.chargeTypeNameAr || row.chargeTypeName || type?.nameAr || type?.nameEn || "—"
+                                                    : row.chargeTypeName || type?.nameEn || "—"}
+                                            </span>
                                         )}
                                     </td>
                                     <td className={td}>
@@ -172,7 +177,9 @@ export default function LeaseLinesGrid({
                                                 {row.creditAccountCode ? (
                                                     <>
                                                         <span className="font-mono text-muted me-2">{row.creditAccountCode}</span>
-                                                        {row.creditAccountName}
+                                                        {locale === "ar"
+                                                            ? row.creditAccountNameAr || row.creditAccountName
+                                                            : row.creditAccountName}
                                                     </>
                                                 ) : (
                                                     "—"

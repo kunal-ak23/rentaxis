@@ -72,10 +72,13 @@ public class ChequeQueryService {
 
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
+    private final BouncedDebt bouncedDebt;
 
-    public ChequeQueryService(ChequeRepository chequeRepository, LeaseAccessPolicy leaseAccessPolicy) {
+    public ChequeQueryService(ChequeRepository chequeRepository, LeaseAccessPolicy leaseAccessPolicy,
+                              BouncedDebt bouncedDebt) {
         this.chequeRepository = chequeRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
+        this.bouncedDebt = bouncedDebt;
     }
 
     // ------------------------------------------------------------------
@@ -180,12 +183,17 @@ public class ChequeQueryService {
         BigDecimal dueAmount = ZERO;
         long overdueCount = 0;
         BigDecimal overdueAmount = ZERO;
-        for (Cheque c : dueRows(propertyId, on, scope)) {
+        List<Cheque> due = dueRows(propertyId, on, scope);
+        // F14-08: a bounced row counts only for the debt the ledger still carries.
+        Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
+        for (Cheque c : due) {
+            BigDecimal amt = open.get(c.getId());
+            if (amt.signum() <= 0) continue;
             dueCount++;
-            dueAmount = dueAmount.add(amount(c.getAmount()));
+            dueAmount = dueAmount.add(amt);
             if (ChequeDueRules.overdue(c, graceOf(c.getLease()), on)) {
                 overdueCount++;
-                overdueAmount = overdueAmount.add(amount(c.getAmount()));
+                overdueAmount = overdueAmount.add(amt);
             }
         }
 
@@ -228,14 +236,18 @@ public class ChequeQueryService {
         BigDecimal total = ZERO;
         long totalCount = 0;
         if (!scope.blocked()) {
-            for (Cheque c : dueRows(propertyId, on, scope)) {
+            List<Cheque> due = dueRows(propertyId, on, scope);
+            Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
+            for (Cheque c : due) {
+                BigDecimal amt = open.get(c.getId());
+                if (amt.signum() <= 0) continue; // F14-08: closed on the ledger
                 int days = ChequeDueRules.overdue(c, graceOf(c.getLease()), on)
                         ? ChequeDueRules.daysOverdue(c, graceOf(c.getLease()), on)
                         : 0;
                 BucketDef bucket = defs.stream().filter(d -> d.holds(days)).findFirst().orElse(defs.getLast());
-                rowsByBucket.get(bucket.label()).add(row(c, days));
-                amountByBucket.merge(bucket.label(), amount(c.getAmount()), BigDecimal::add);
-                total = total.add(amount(c.getAmount()));
+                rowsByBucket.get(bucket.label()).add(row(c, days, amt));
+                amountByBucket.merge(bucket.label(), amt, BigDecimal::add);
+                total = total.add(amt);
                 totalCount++;
             }
         }
@@ -388,7 +400,7 @@ public class ChequeQueryService {
         }
     }
 
-    private AgingReportDTO.Row row(Cheque c, int daysOverdue) {
+    private AgingReportDTO.Row row(Cheque c, int daysOverdue, BigDecimal openAmount) {
         Unit unit = c.getUnit();
         Property property = c.getProperty();
         Renter renter = c.getRenter();
@@ -400,7 +412,7 @@ public class ChequeQueryService {
                 unit != null ? unit.getUnitNumber() : null,
                 c.getChequeNumber(),
                 c.getChequeDate(),
-                amount(c.getAmount()),
+                openAmount,
                 daysOverdue);
     }
 

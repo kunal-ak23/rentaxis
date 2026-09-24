@@ -88,6 +88,11 @@ export type ImportResult = {
     order: "FILE" | "REVERSED" | "DATE" | null;
     rows: PreviewRow[];
     importId: string | null;
+    /** F14-04: the CSV's delimiter as the server detected it; null for .xlsx. */
+    csvDelimiter?: string | null;
+    /** F14-09: `reason` as a translatable key and its values. */
+    reasonCode?: string | null;
+    reasonArgs?: Record<string, string> | null;
 };
 
 export type ImportRow = {
@@ -288,6 +293,18 @@ export type Candidate = {
     preselected: boolean;
 };
 
+/** A document that would fit the line but is refused, and why (F14-06). */
+export type Refused = {
+    id: string;
+    kind: "present" | "receive";
+    label: string;
+    amount: number;
+    date: string | null;
+    code: string | null;
+    args: Record<string, string> | null;
+    reason: string;
+};
+
 export type LineCandidates = {
     statementLineId: string;
     clear: Candidate[];
@@ -297,6 +314,7 @@ export type LineCandidates = {
     suspenseBalance: number;
     bankTrnSet: boolean;
     leaves: Leaf[];
+    refused?: Refused[];
 };
 
 export type ActionResult = { matchId: string | null; journalEntryIds: string[]; entryNumbers: string[] };

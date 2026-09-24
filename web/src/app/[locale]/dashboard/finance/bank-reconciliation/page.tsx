@@ -8,6 +8,7 @@ import { Link } from "@/i18n/routing";
 import { loadAccounts } from "@/components/finance/AccountPicker";
 import { StatementImportDialog } from "@/components/finance/bankrec/StatementImportDialog";
 import { Modal } from "@/components/finance/bankrec/Modal";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { button, field, primary, small, td, th } from "@/components/finance/bankrec/styles";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -39,9 +40,9 @@ export default function BankReconciliationPage() {
         try {
             setRows(await bankRecApi.accounts());
         } catch (err) {
-            setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
+            setLoadError(err instanceof ApiError ? serverText(t, err) : tCommon("loadFailed"));
         }
-    }, [tCommon]);
+    }, [t, tCommon]);
 
     useEffect(() => {
         if (allowed) load();
@@ -157,7 +158,7 @@ function LeavesDialog({ row, onClose, onSaved }: { row: BankAccountRow; onClose:
             await bankRecApi.setBankTrn(row.id, clean || null);
             onSaved();
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
         } finally {
             setBusy(false);
         }
@@ -196,7 +197,7 @@ function HistoryDialog({ row, onClose, onChanged }: { row: BankAccountRow; onClo
     const [items, setItems] = useState<ImportRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const load = useCallback(() => {
-        bankRecApi.imports(row.id).then(setItems).catch(err => setError(err instanceof ApiError ? err.message : String(err)));
+        bankRecApi.imports(row.id).then(setItems).catch(err => setError(serverText(t, err)));
     }, [row.id]);
     useEffect(load, [load]);
     const remove = async (id: string) => {
@@ -206,7 +207,7 @@ function HistoryDialog({ row, onClose, onChanged }: { row: BankAccountRow; onClo
             load();
             onChanged();
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
         }
     };
     return (

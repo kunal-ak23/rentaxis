@@ -35,7 +35,7 @@ public class BankAccountLedgerService {
 
     public static UUID requireTenant() {
         UUID t = TenantContextHolder.getTenantId();
-        if (t == null) throw new BusinessRuleViolationException("Select an organisation first");
+        if (t == null) throw BankRecRefusal.refuse("selectOrganisation", "Select an organisation first");
         return t;
     }
 
@@ -75,7 +75,7 @@ public class BankAccountLedgerService {
     public Set<UUID> requireLeafSet(UUID bankAccountId) {
         Set<UUID> set = leafSet(bankAccountId);
         if (set.isEmpty()) {
-            throw new BusinessRuleViolationException("Assign a ledger account to this bank account before reconciling");
+            throw BankRecRefusal.refuse("assignLedgerFirst", "Assign a ledger account to this bank account before reconciling");
         }
         return set;
     }
@@ -109,16 +109,16 @@ public class BankAccountLedgerService {
             Map<String, Object> r = rows.get(0);
             String label = r.get("code") + " " + r.get("name");
             if (Boolean.TRUE.equals(r.get("is_group")) || !"BANK".equals(r.get("account_sub_type"))) {
-                throw new BusinessRuleViolationException(label + " is not a bank ledger leaf; cash is counted, not reconciled");
+                throw BankRecRefusal.refuse("notBankLeaf", label + " is not a bank ledger leaf; cash is counted, not reconciled", "account", label);
             }
-            if (!Boolean.TRUE.equals(r.get("is_active"))) throw new BusinessRuleViolationException(label + " is inactive");
+            if (!Boolean.TRUE.equals(r.get("is_active"))) throw BankRecRefusal.refuse("leafInactive", label + " is inactive", "account", label);
             List<String> owner = jdbc.queryForList("""
                     select b.bank_name || ' ' || b.account_number from bank_account_ledgers l
                     join bank_accounts b on b.id = l.bank_account_id
                     where l.tenant_id = :t and l.account_id = :a and l.bank_account_id <> :b""",
                     new MapSqlParameterSource("t", t).addValue("a", a).addValue("b", bankAccountId), String.class);
             if (!owner.isEmpty()) {
-                throw new BusinessRuleViolationException(label + " already belongs to bank account " + owner.get(0));
+                throw BankRecRefusal.refuse("leafOwnedElsewhere", label + " already belongs to bank account " + owner.get(0), "account", label, "bank", owner.get(0));
             }
         }
         Set<UUID> current = leafSet(bankAccountId);
@@ -155,7 +155,7 @@ public class BankAccountLedgerService {
                     where i.tenant_id = :t and m.bank_account_id = :b and not i.released and jl.account_id = :a""",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", gone), Integer.class);
             if (live != null && live > 0) {
-                throw new BusinessRuleViolationException("Lines on this ledger account are matched; undo those matches first");
+                throw BankRecRefusal.refuse("leafLinesMatched", "Lines on this ledger account are matched; undo those matches first");
             }
             jdbc.update("delete from bank_account_ledgers where tenant_id = :t and bank_account_id = :b and account_id = :a",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", gone));
@@ -173,7 +173,7 @@ public class BankAccountLedgerService {
         BankAccount b = requireBankAccount(bankAccountId);
         String v = trn == null || trn.isBlank() ? null : trn.replaceAll("\\s", "");
         if (v != null && !v.matches("\\d{15}")) {
-            throw new BusinessRuleViolationException("A UAE TRN is 15 digits");
+            throw BankRecRefusal.refuse("trnDigits", "A UAE TRN is 15 digits");
         }
         b.setBankTrn(v);
         return bankAccounts.save(b);

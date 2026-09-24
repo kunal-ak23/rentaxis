@@ -237,3 +237,7 @@ databaseChangeLog:
       file: db/changelog/changesets/114-bank-statements.yaml
   - include:
       file: db/changelog/changesets/115-bank-reconciliations.yaml
+  - include:
+      file: db/changelog/changesets/116-lease-no-overlap-per-unit.yaml
+  - include:
+      file: db/changelog/changesets/117-vat-contract-tax-point.yaml

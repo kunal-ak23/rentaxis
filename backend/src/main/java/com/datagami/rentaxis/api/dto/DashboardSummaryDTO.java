@@ -10,6 +10,8 @@ public class DashboardSummaryDTO {
     private int totalProperties;
     private int totalUnits;
     private int occupiedUnits;
+    /** F14-01: units with a posted lease that starts after today and none covering today. */
+    private int reservedUnits;
     private int vacantUnits;
     private double occupancyRate;
 

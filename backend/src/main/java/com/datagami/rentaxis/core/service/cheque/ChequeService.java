@@ -25,6 +25,7 @@ import com.datagami.rentaxis.core.service.penalty.PenaltyRuleEngine;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.core.service.bank.OwnedBankLeaf;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
@@ -235,6 +236,7 @@ public class ChequeService {
     private final LeaseClosureService closure;
     private final ApplicationEventPublisher events;
     private final EntityManager entityManager;
+    private final OwnedBankLeaf ownedBankLeaf;
     private final Clock clock;
 
     /**
@@ -268,8 +270,10 @@ public class ChequeService {
                          EntityManager entityManager,
                          Clock clock,
                          VatTaxPointService vatTaxPoints,
-                         com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+                         com.datagami.rentaxis.core.service.ledger.BankLockService bankLock,
+                         OwnedBankLeaf ownedBankLeaf) {
         this.bankLock = bankLock;
+        this.ownedBankLeaf = ownedBankLeaf;
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseEventRepository = leaseEventRepository;
@@ -1178,7 +1182,7 @@ public class ChequeService {
         if (settlementAccountId != null) {
             cheque.setDebitAccount(requireSettlementAccount(account(settlementAccountId)));
         }
-        applyClearing(lease, cheque, on, null, null);
+        applyClearing(lease, cheque, on, null, null, null, false, settlementAccountId != null);
         chequeRepository.save(cheque);
         penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
@@ -1194,7 +1198,7 @@ public class ChequeService {
         if (debitAccountId != null) {
             // Which of our banks the paper physically went to. Recorded now so the
             // CRT that follows debits it rather than re-resolving the role.
-            cheque.setDebitAccount(settlementAccount(debitAccountId, cheque.getProperty()));
+            cheque.setDebitAccount(requireOwnedIfBank(settlementAccount(debitAccountId, cheque.getProperty())));
         }
         cheque.setDepositedAt(date);
         moveTo(cheque, ChequeStatus.DEPOSITED, notes);
@@ -1227,6 +1231,21 @@ public class ChequeService {
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay, boolean receiptSource) {
+        applyClearing(lease, cheque, date, debitAccountId, notes, replay, receiptSource, false);
+    }
+
+    /**
+     * {@code accountChosen}: the row's account was set for this very clearing (the
+     * gateway's settlement account on an online capture), so it is used as it is —
+     * never re-resolved to cash in hand or another bank leaf.
+     */
+    private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
+                               Replay replay, boolean receiptSource, boolean accountChosen) {
+        // Live actions only (R1 P2-6): a cut-over replay records what PACT did, and
+        // PACT's history is authoritative even when cash came in before it was booked.
+        if (replay == null) {
+            requireNotBeforeBooked(cheque, bookedOn(cheque), date);
+        }
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         // Checked on the way in whichever door it came through: an override the
@@ -1236,8 +1255,11 @@ public class ChequeService {
         Account debit = debitAccountId != null
                 ? (receiptSource && isSuspenseLeaf(account(debitAccountId))
                         ? account(debitAccountId)
-                        : settlementAccount(debitAccountId, cheque.getProperty()))
+                        : requireOwnedIfBank(settlementAccount(debitAccountId, cheque.getProperty())))
                 : requireSettlementAccount(cheque.getDebitAccount());
+        if (debitAccountId == null && replay == null && !accountChosen) {
+            debit = reconcilableLeaf(debit, cheque);
+        }
         // No resolveOrNull fallback and no try/catch: when the row names no account
         // the role goes into the request and PostingService resolves it, so an
         // unmapped BANK is one refusal from one place.
@@ -1277,6 +1299,95 @@ public class ChequeService {
         // (spec 2026-09-24 §1). On or after the due date nothing changes.
         vatTaxPoints.onCleared(cheque, date);
     }
+
+    /**
+     * F14-16: a receipt nobody chose an account for lands in a bank leaf that some
+     * bank account owns. The row's own account — defaulted when the grid was
+     * generated — is kept when it is a cash leaf or an owned bank leaf; a bank leaf
+     * no bank account owns (the one property creation used to generate) is swapped
+     * for the property's owned leaf ({@link OwnedBankLeaf}), so the money can be
+     * reconciled. With no bank account in the tenant nothing changes. A CASH row with
+     * no account still settles to the CASH role.
+     */
+    private Account reconcilableLeaf(Account stamped, Cheque cheque) {
+        UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        if (cheque.getMode() == ChequeMode.CASH) {
+            // R1 P2-2: cash is counted into the till unless somebody chose otherwise.
+            // A CASH row carrying a bank leaf got it as the grid's default, not as a
+            // decision; its money goes to cash in hand when the chart has one.
+            if (stamped != null && stamped.getAccountSubType() == AccountSubType.CASH) return stamped;
+            java.util.Optional<UUID> cash = ownedBankLeaf.cashInHand(property);
+            if (cash.isPresent()) return account(cash.get());
+            if (stamped == null) return null;
+        }
+        if (stamped != null && stamped.getAccountSubType() != AccountSubType.BANK) return stamped;
+        if (stamped != null && ownedBankLeaf.isOwned(stamped.getId())) return stamped;
+        UUID propertyId = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        return ownedBankLeaf.forProperty(propertyId).map(this::account).orElse(stamped);
+    }
+
+    /**
+     * R1 P2-2/P2-3: where a receipt or clearing of this row lands when the caller
+     * names no account — the same resolution {@link #applyClearing} uses — and the
+     * accounts the caller may choose instead. The dialog shows the first and offers
+     * the second, so what it displays is what posts.
+     */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO settlementTarget(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId).orElseThrow(() -> new NotFoundException("Cheque not found"));
+        if (cheque.getLease() == null) throw new NotFoundException("Lease not found");
+        leaseAccessPolicy.requireManageable(cheque.getLease());
+        Account stamped = cheque.getDebitAccount() != null && isSettlementAccount(cheque.getDebitAccount())
+                ? cheque.getDebitAccount() : null;
+        Account target = reconcilableLeaf(stamped, cheque);
+        UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        List<com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option> options = new ArrayList<>();
+        for (OwnedBankLeaf.Option o : ownedBankLeaf.optionsFor(property)) {
+            options.add(new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option(
+                    o.id(), o.code(), o.name(), o.nameAr(), o.kind(), o.bankAccount()));
+        }
+        if (target != null && options.stream().noneMatch(o -> o.id().equals(target.getId()))) {
+            options.add(option(target));
+        }
+        return new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO(
+                target == null ? null : option(target), options);
+    }
+
+    private static com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option option(Account a) {
+        return new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option(a.getId(), a.getCode(), a.getName(),
+                a.getNameAr(), a.getAccountSubType() == AccountSubType.CASH ? "CASH" : "BANK", null);
+    }
+
+    /**
+     * F14-02: money cannot settle a row before the row is on the books. The CRT
+     * credits PDC receivable, which the row's PDR debited; dated earlier, the leaf
+     * runs negative for the days in between and every as-of report in that window
+     * is wrong. The row's own date is its PDR's entry date (the posting date when
+     * no PDR was written).
+     */
+    static void requireNotBeforeBooked(Cheque cheque, LocalDate booked, LocalDate date) {
+        if (booked != null && date != null && date.isBefore(booked)) {
+            throw new BusinessRuleViolationException(label(cheque) + " was put on the books on "
+                    + booked.format(DMY) + "; it cannot be received or cleared on " + date.format(DMY)
+                    + ", before that date. Receive it on or after " + booked.format(DMY) + ".",
+                    "cheque.receiveBeforeBooked",
+                    Map.of("row", label(cheque), "booked", booked.format(DMY), "date", date.format(DMY)));
+        }
+    }
+
+    /** The date the row entered the ledger: its PDR's entry date, else its posting date. */
+    LocalDate bookedOn(Cheque cheque) {
+        if (cheque.getPdrJournalId() != null) {
+            JournalEntry pdr = entityManager.find(JournalEntry.class, cheque.getPdrJournalId());
+            if (pdr != null && pdr.getEntryDate() != null) {
+                return pdr.getEntryDate();
+            }
+        }
+        return cheque.getPostingDate();
+    }
+
+    private static final java.time.format.DateTimeFormatter DMY =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private void reversePdr(Cheque cheque, LocalDate date, String reason) {
         if (cheque.getPdrJournalId() == null) {
@@ -1733,6 +1844,23 @@ public class ChequeService {
      * both buildings' bank reconciliations would break. Same "does not exist"
      * wording as a foreign tenant's account.
      */
+    /**
+     * R2 N-4: a bank leaf the caller names for money arriving must be one a bank
+     * account owns, or the receipt can never be reconciled. Cash leaves are not
+     * reconciled and pass; a tenant with no bank account yet has nothing to own
+     * leaves, so it passes too.
+     */
+    private Account requireOwnedIfBank(Account a) {
+        if (a != null && a.getAccountSubType() == AccountSubType.BANK && !ownedBankLeaf.isOwned(a.getId())
+                && ownedBankLeaf.anyOwned()) {
+            throw new BusinessRuleViolationException("Ledger account " + a.getCode() + " " + a.getName()
+                    + " is not attached to a bank account, so money put there could never be reconciled."
+                    + " Attach it to its bank account (Bank reconciliation → ledger accounts) or choose another.",
+                    "cheque.bankLeafNotOwned", Map.of("account", a.getCode() + " " + a.getName()));
+        }
+        return a;
+    }
+
     private Account settlementAccount(UUID id, com.datagami.rentaxis.domain.entity.Property property) {
         Account a = requireSettlementAccount(account(id));
         UUID accountProperty = a.getPropertyId();

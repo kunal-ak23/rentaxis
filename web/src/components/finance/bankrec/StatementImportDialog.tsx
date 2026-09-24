@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, FileUp } from "lucide-react";
-import { ApiError } from "@/lib/api/facilities";
 import {
     bankRecApi,
     dmy,
@@ -15,6 +14,7 @@ import {
 } from "@/lib/api/bankRec";
 import { Modal } from "./Modal";
 import { Money } from "./Money";
+import { serverText } from "./serverText";
 import { button, field, label, primary, td, th } from "./styles";
 
 /** "A", "B", … for column index 0, 1, … (as StatementMapper.letter). */
@@ -47,6 +47,41 @@ const REQUIRED: Record<AmountMode, StatementField[]> = {
     SIGNED: ["txnDate", "description", "amount"],
     DRCR_FLAG: ["txnDate", "description", "amount"],
 };
+
+/** The column fields an amount mode shows (and the server reads). */
+export function fieldsFor(mode: AmountMode): StatementField[] {
+    return STATEMENT_FIELDS.filter(f => (mode === "SPLIT" ? f !== "amount" && f !== "amountSign" : f !== "debit" && f !== "credit"))
+        .filter(f => mode === "DRCR_FLAG" || f !== "amountSign");
+}
+
+/** F14-04: the delimiters a CSV may use; a tab is the tab character. */
+export const DELIMITERS: { value: string; key: string }[] = [
+    { value: ",", key: "delim_comma" },
+    { value: ";", key: "delim_semicolon" },
+    { value: "\t", key: "delim_tab" },
+    { value: "|", key: "delim_pipe" },
+];
+
+/** Whether a column spec names a column of this header: its text (as the server matches it) or a letter within it. */
+function inHeader(spec: string, header: string[]): boolean {
+    const s = spec.trim();
+    if (header.some(h => (h ?? "").trim().toLowerCase() === s.toLowerCase())) return true;
+    return header.some((_, i) => columnLetter(i) === s.toUpperCase() && /^[A-Za-z]{1,2}$/.test(s));
+}
+
+/**
+ * F14-03: only the columns the amount mode uses and the header has. A mapping kept
+ * from another layout (debit/credit under a signed amount, a "Value Date" the new
+ * file lacks) would otherwise be saved and refused as missing, for ever.
+ */
+export function relevantColumns(columns: Profile["columns"], mode: AmountMode, header: string[]): Profile["columns"] {
+    const out: Profile["columns"] = {};
+    for (const f of fieldsFor(mode)) {
+        const v = columns[f];
+        if (v && inHeader(v, header)) out[f] = v;
+    }
+    return out;
+}
 
 /** A first guess from the header text, so the wizard opens mostly filled in. */
 export function guessColumns(header: string[]): Partial<Record<StatementField, string>> {
@@ -93,7 +128,7 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
             const r = await bankRecApi.importFile(bankAccountId, f, { profile, dryRun });
             return r;
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
             return null;
         } finally {
             setBusy(false);
@@ -110,14 +145,22 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
             setGrid(r.grid);
             const saved = await bankRecApi.profile(bankAccountId).catch(() => null);
             const headerRow = saved?.headerRow ?? Math.max(1, r.grid.findIndex(row => row.filter(c => c).length >= 3) + 1);
+            const hdr = r.grid[headerRow - 1] ?? [];
+            const amountMode = saved?.amountMode ?? "SPLIT";
+            // F14-03: a saved mapping seeds only what this file's header still has; the
+            // header's own guesses fill the gaps.
+            const columns = saved?.columns
+                ? relevantColumns({ ...guessColumns(hdr), ...relevantColumns(saved.columns, amountMode, hdr) }, amountMode, hdr)
+                : guessColumns(hdr);
             setMapping({
                 fileKind: r.fileKind,
                 sheetName: r.sheetName,
                 headerRow,
                 firstDataRow: saved?.firstDataRow ?? headerRow + 1,
-                csvDelimiter: saved?.csvDelimiter ?? null,
-                columns: saved?.columns ?? guessColumns(r.grid[headerRow - 1] ?? []),
-                amountMode: saved?.amountMode ?? "SPLIT",
+                // F14-04: the delimiter this file uses, as the server read it.
+                csvDelimiter: r.fileKind === "CSV" ? (r.csvDelimiter ?? saved?.csvDelimiter ?? ",") : null,
+                columns,
+                amountMode,
                 dateFormats: saved?.dateFormats ?? null,
                 decimalSeparator: saved?.decimalSeparator ?? ".",
                 chequeNoPattern: saved?.chequeNoPattern ?? null,
@@ -134,20 +177,28 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
         }
     };
 
+    const header = mapping ? (grid[mapping.headerRow - 1] ?? []) : [];
+    // What is previewed and saved: the mode's columns that the header has (F14-03).
+    const effective = (m: Profile): Profile => ({ ...m, columns: relevantColumns(m.columns, m.amountMode, grid[m.headerRow - 1] ?? []) });
+
     // The wizard's live preview: a dry run with the unsaved mapping.
     useEffect(() => {
         if (!file || !mapping) return;
         const seq = ++previewSeq.current;
         const h = setTimeout(async () => {
             const r = await bankRecApi.importFile(bankAccountId, file, { profile: mapping, dryRun: true }).catch(() => null);
-            if (r && seq === previewSeq.current) setResult(r);
+            if (r && seq === previewSeq.current) {
+                setResult(r);
+                // A changed delimiter or sheet re-splits the file (F14-04).
+                if (r.grid?.length) setGrid(r.grid);
+            }
         }, 250);
         return () => clearTimeout(h);
     }, [file, mapping, bankAccountId]);
 
-    const header = mapping ? (grid[mapping.headerRow - 1] ?? []) : [];
     const options = header.map((h, i) => ({ value: h?.trim() ? h.trim() : columnLetter(i), text: `${columnLetter(i)} · ${h ?? ""}` }));
-    const missing = mapping ? REQUIRED[mapping.amountMode].filter(f => !mapping.columns[f]) : [];
+    const effectiveColumns = mapping ? effective(mapping).columns : {};
+    const missing = mapping ? REQUIRED[mapping.amountMode].filter(f => !effectiveColumns[f]) : [];
     // The date format is the accountant's statement, never a guess (PR #353 review).
     const noDateFormat = !!mapping && !(mapping.dateFormats && mapping.dateFormats.length > 0);
 
@@ -155,9 +206,9 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
         if (!file || !mapping) return;
         setBusy(true);
         try {
-            await bankRecApi.saveProfile(bankAccountId, mapping);
+            await bankRecApi.saveProfile(bankAccountId, effective(mapping));
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
             setBusy(false);
             return;
         }
@@ -184,9 +235,7 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
     const setCol = (f: StatementField, v: string) =>
         setMapping(m => (m ? { ...m, columns: { ...m.columns, [f]: v || undefined } } : m));
 
-    const fieldsFor = (mode: AmountMode): StatementField[] =>
-        STATEMENT_FIELDS.filter(f => (mode === "SPLIT" ? f !== "amount" && f !== "amountSign" : f !== "debit" && f !== "credit"))
-            .filter(f => mode === "DRCR_FLAG" || f !== "amountSign");
+    const reasonText = result?.reason ? serverText(t, { code: result.reasonCode, args: result.reasonArgs, message: result.reason }) : null;
 
     return (
         <Modal title={`${t("import")} — ${bankName}`} onClose={onClose} wide testId="statement-import">
@@ -204,7 +253,7 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                         <div>
                             <h3 className="text-sm font-bold">{t("mappingTitle")}</h3>
                             <p className="text-xs text-muted">{t("mappingHint")}</p>
-                            {result?.reason && <p className="text-xs text-warning mt-1">{result.reason}</p>}
+                            {reasonText && <p className="text-xs text-warning mt-1" data-testid="mapping-reason">{reasonText}</p>}
                         </div>
                         <div className="flex flex-wrap gap-3">
                             {mapping.fileKind === "XLSX" && result?.sheetNames && result.sheetNames.length > 1 && (
@@ -212,6 +261,14 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                                     <select className={field} value={mapping.sheetName ?? ""}
                                             onChange={e => setMapping({ ...mapping, sheetName: e.target.value })}>
                                         {result.sheetNames.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </label>
+                            )}
+                            {mapping.fileKind === "CSV" && (
+                                <label className="text-xs"><span className={`${label} block mb-1`}>{t("delimiter")}</span>
+                                    <select className={field} data-testid="map-delimiter" value={mapping.csvDelimiter === "\\t" ? "\t" : (mapping.csvDelimiter || ",")}
+                                            onChange={e => setMapping({ ...mapping, csvDelimiter: e.target.value })}>
+                                        {DELIMITERS.map(d => <option key={d.key} value={d.value}>{t(d.key)}</option>)}
                                     </select>
                                 </label>
                             )}
@@ -242,7 +299,14 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                             </label>
                             <label className="text-xs"><span className={`${label} block mb-1`}>{t("amountMode")}</span>
                                 <select className={field} data-testid="map-amount-mode" value={mapping.amountMode}
-                                        onChange={e => setMapping({ ...mapping, amountMode: e.target.value as AmountMode })}>
+                                        onChange={e => {
+                                            // F14-03: the fields the new mode hides are cleared, not kept for the save.
+                                            const amountMode = e.target.value as AmountMode;
+                                            const keep = fieldsFor(amountMode);
+                                            const columns: Profile["columns"] = {};
+                                            for (const f of keep) if (mapping.columns[f]) columns[f] = mapping.columns[f];
+                                            setMapping({ ...mapping, amountMode, columns });
+                                        }}>
                                     {(["SPLIT", "SIGNED", "DRCR_FLAG"] as AmountMode[]).map(m => <option key={m} value={m}>{t(`mode_${m}`)}</option>)}
                                 </select>
                             </label>
@@ -279,7 +343,7 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
 
                 {result?.status === "ALREADY_IMPORTED" && (
                     <div role="alert" data-testid="already-imported" className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                        {result.reason}
+                        {reasonText}
                     </div>
                 )}
                 {result && result.status !== "PROFILE_REQUIRED" && result.status !== "ALREADY_IMPORTED" && !done && (

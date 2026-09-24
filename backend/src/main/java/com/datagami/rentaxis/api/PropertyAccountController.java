@@ -33,21 +33,25 @@ public class PropertyAccountController {
 
     @GetMapping("/api/v1/properties/{id}/accounts")
     public ResponseEntity<List<RoleMappingDTO>> mappings(@PathVariable UUID id) {
+        service.requireOwnProperty(id);
         return ResponseEntity.ok(service.getMappings(id));
     }
 
     @PostMapping("/api/v1/properties/{id}/accounts/generate")
     public ResponseEntity<List<RoleMappingDTO>> generate(@PathVariable UUID id) {
+        service.requireOwnProperty(id);
         return ResponseEntity.ok(service.generateMissing(id));
     }
 
     @PutMapping("/api/v1/properties/{id}/accounts/{role}")
     public ResponseEntity<RoleMappingDTO> set(@PathVariable UUID id, @PathVariable AccountRole role, @RequestBody AccountIdBody body) {
+        service.requireOwnProperty(id);
         return ResponseEntity.ok(service.setMapping(id, role, body.accountId()));
     }
 
     @DeleteMapping("/api/v1/properties/{id}/accounts/{role}")
     public ResponseEntity<Void> clear(@PathVariable UUID id, @PathVariable AccountRole role) {
+        service.requireOwnProperty(id);
         service.clearMapping(id, role);
         return ResponseEntity.noContent().build();
     }

@@ -115,6 +115,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
 
     @Autowired ChequeService cheques;
+    @Autowired ChequeQueryService chequeQueries;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeaseTerminationService termination;
     @Autowired SettlementService settlement;
@@ -630,6 +631,34 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(closedEvents(leaseId)).isEqualTo(1);
         assertNothingLeftOnTheLease(leaseId);
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * F14-08: once a finalized settlement has absorbed a bounced cheque, the
+     * register's overdue / aging no longer carry it — the ledger does not.
+     */
+    @Test
+    void aBounceTheSettlementAbsorbedIsNoLongerOverdue() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        LocalDate later = BANKED_ON.plusDays(120);
+
+        // Open for what the receivable still carries: 12,750 bounced on top of a
+        // −5,239.73 balance leaves 7,510.27 owed on this row.
+        assertThat(agingRows(later)).as("owed before the settlement")
+                .anyMatch(r -> r.chequeId().equals(kept) && r.amount().compareTo(new java.math.BigDecimal("7510.27")) == 0);
+
+        finalizeSettlement(leaseId, null);
+
+        assertThat(agingRows(later)).as("absorbed by STL: the ledger no longer carries it")
+                .noneMatch(r -> r.chequeId().equals(kept));
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.BOUNCED);
+    }
+
+    private List<com.datagami.rentaxis.api.dto.cheque.AgingReportDTO.Row> agingRows(LocalDate on) {
+        return chequeQueries.aging(null, on).buckets().stream().flatMap(b -> b.rows().stream()).toList();
     }
 
     /**

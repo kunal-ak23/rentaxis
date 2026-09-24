@@ -67,12 +67,12 @@ public class BankLineActionService {
 
     private List<L> lockLines(UUID t, List<UUID> ids, boolean requireUnmatched) {
         List<UUID> distinct = List.copyOf(new LinkedHashSet<>(ids == null ? List.of() : ids));
-        if (distinct.isEmpty()) throw new BusinessRuleViolationException("Select a statement line");
+        if (distinct.isEmpty()) throw BankRecRefusal.refuse("selectLine", "Select a statement line");
         // The bank account first, then the lines: the order every match write takes (P2-5).
         List<UUID> owners = jdbc.queryForList("select distinct bank_account_id from bank_statement_lines where tenant_id = :t and id in (:ids)",
                 new MapSqlParameterSource("t", t).addValue("ids", distinct), UUID.class);
         if (owners.isEmpty()) throw new NotFoundException("Statement line not found");
-        if (owners.size() > 1) throw new BusinessRuleViolationException("Every statement line must belong to the same bank account");
+        if (owners.size() > 1) throw BankRecRefusal.refuse("linesDifferentAccounts", "Every statement line must belong to the same bank account");
         matches.lockAccount(t, owners.get(0));
         List<L> ls = jdbc.query("""
                 select id, bank_account_id, txn_date, value_date, description, reference, cheque_no, amount
@@ -84,13 +84,13 @@ public class BankLineActionService {
                         rs.getBigDecimal("amount")));
         if (ls.size() != distinct.size()) throw new NotFoundException("Statement line not found");
         if (ls.stream().map(L::bankAccountId).distinct().count() > 1) {
-            throw new BusinessRuleViolationException("Every statement line must belong to the same bank account");
+            throw BankRecRefusal.refuse("linesDifferentAccounts", "Every statement line must belong to the same bank account");
         }
         if (requireUnmatched) {
             Integer live = jdbc.queryForObject("""
                     select count(*) from bank_match_statement_lines where tenant_id = :t and statement_line_id in (:ids) and not released""",
                     new MapSqlParameterSource("t", t).addValue("ids", distinct), Integer.class);
-            if (live != null && live > 0) throw new BusinessRuleViolationException("The statement line is already matched");
+            if (live != null && live > 0) throw BankRecRefusal.refuse("lineAlreadyMatched", "The statement line is already matched");
         }
         return ls;
     }
@@ -110,7 +110,7 @@ public class BankLineActionService {
                         + (debit ? "debit > 0" : "credit > 0"),
                 new MapSqlParameterSource("t", t).addValue("e", entryId).addValue("l", leaves), UUID.class);
         if (ids.isEmpty()) {
-            throw new BusinessRuleViolationException("The entry was posted to a ledger account outside this bank account's set; "
+            throw BankRecRefusal.refuse("postedOutsideSet", "The entry was posted to a ledger account outside this bank account's set; "
                     + "nothing was booked");
         }
         return ids;
@@ -126,7 +126,7 @@ public class BankLineActionService {
 
     private void requireNotFuture(LocalDate d) {
         if (d.isAfter(LocalDate.now(clock))) {
-            throw new BusinessRuleViolationException("The line is dated in the future; nothing can be booked from it yet");
+            throw BankRecRefusal.refuse("lineInFuture", "The line is dated in the future; nothing can be booked from it yet");
         }
     }
 
@@ -140,10 +140,10 @@ public class BankLineActionService {
         UUID bankAccountId = ls.get(0).bankAccountId();
         Set<UUID> leaves = ledgers.requireLeafSet(bankAccountId);
         if (ls.stream().anyMatch(l -> l.amount().signum() <= 0)) {
-            throw new BusinessRuleViolationException("Cheques are cleared from credit lines");
+            throw BankRecRefusal.refuse("clearFromCredit", "Cheques are cleared from credit lines");
         }
         List<UUID> ids = List.copyOf(new LinkedHashSet<>(in.chequeIds() == null ? List.of() : in.chequeIds()));
-        if (ids.isEmpty()) throw new BusinessRuleViolationException("Select the cheques the bank credited");
+        if (ids.isEmpty()) throw BankRecRefusal.refuse("selectCheques", "Select the cheques the bank credited");
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select id, cheque_number, status, amount, debit_account_id, property_id from cheques where tenant_id = :t and id in (:ids)""",
                 new MapSqlParameterSource("t", t).addValue("ids", ids));
@@ -151,18 +151,18 @@ public class BankLineActionService {
         BigDecimal total = BigDecimal.ZERO;
         for (Map<String, Object> r : rows) {
             String label = "Cheque " + Objects.toString(r.get("cheque_number"), "(no number)");
-            if (!"DEPOSITED".equals(r.get("status"))) throw new BusinessRuleViolationException(label + " is " + r.get("status") + ", not DEPOSITED");
+            if (!"DEPOSITED".equals(r.get("status"))) throw BankRecRefusal.refuse("chequeNotDeposited", label + " is " + r.get("status") + ", not DEPOSITED", "cheque", Objects.toString(r.get("cheque_number"), "—"), "status", r.get("status"));
             // No account named at deposit: the CRT will debit the property's BANK leaf.
             UUID banked = r.get("debit_account_id") != null ? (UUID) r.get("debit_account_id")
                     : propertyBank((UUID) r.get("property_id"));
             if (banked == null || !leaves.contains(banked)) {
-                throw new BusinessRuleViolationException(label + " was not deposited into this bank account");
+                throw BankRecRefusal.refuse("chequeNotDepositedHere", label + " was not deposited into this bank account", "cheque", Objects.toString(r.get("cheque_number"), "—"));
             }
             total = total.add((BigDecimal) r.get("amount"));
         }
         if (total.compareTo(sum(ls)) != 0) {
-            throw new BusinessRuleViolationException("The cheques total " + StatementValues.money(total)
-                    + "; the statement shows " + StatementValues.money(sum(ls)));
+            throw BankRecRefusal.refuse("chequesTotalMismatch", "The cheques total " + StatementValues.money(total)
+                    + "; the statement shows " + StatementValues.money(sum(ls)), "total", StatementValues.money(total), "line", StatementValues.money(sum(ls)));
         }
         LocalDate date = dateOf(ls);
         requireNotFuture(date);
@@ -195,16 +195,16 @@ public class BankLineActionService {
         L line = lockLines(t, List.of(in.statementLineId()), !fromSuspense).get(0);
         UUID bankAccountId = line.bankAccountId();
         Set<UUID> leaves = ledgers.requireLeafSet(bankAccountId);
-        if (line.amount().signum() <= 0) throw new BusinessRuleViolationException("A receipt is booked from a credit line");
+        if (line.amount().signum() <= 0) throw BankRecRefusal.refuse("receiveFromCredit", "A receipt is booked from a credit line");
         Map<String, Object> c = cheque(t, in.chequeId());
         if (!"REGISTERED".equals(c.get("status"))) {
-            throw new BusinessRuleViolationException("The row is " + c.get("status") + "; only a REGISTERED row can be received");
+            throw BankRecRefusal.refuse("rowNotRegistered", "The row is " + c.get("status") + "; only a REGISTERED row can be received", "status", c.get("status"));
         }
         BigDecimal amount = (BigDecimal) c.get("amount");
         if (fromSuspense) {
             Map<String, Object> suspense = suspenseOf(t, line.id());
             if (suspense == null) {
-                throw new BusinessRuleViolationException("This line was not booked as an unidentified receipt");
+                throw BankRecRefusal.refuse("notSuspenseLine", "This line was not booked as an unidentified receipt");
             }
             UUID suspenseLeaf = (UUID) suspense.get("account_id");
             // PR #353 review P2-4: per line. The line row is locked above, so two draws
@@ -217,8 +217,8 @@ public class BankLineActionService {
                     select coalesce(sum(credit - debit), 0) from journal_lines where tenant_id = :t and account_id = :a""",
                     new MapSqlParameterSource("t", t).addValue("a", suspenseLeaf), BigDecimal.class);
             if (amount.compareTo(left) > 0 || amount.compareTo(balance) > 0) {
-                throw new BusinessRuleViolationException("The row is " + StatementValues.money(amount)
-                        + "; only " + StatementValues.money(left.min(balance)) + " of this receipt is still unidentified");
+                throw BankRecRefusal.refuse("suspenseShort", "The row is " + StatementValues.money(amount)
+                        + "; only " + StatementValues.money(left.min(balance)) + " of this receipt is still unidentified", "amount", StatementValues.money(amount), "left", StatementValues.money(left.min(balance)));
             }
             cheques.receive(in.chequeId(), new ChequeActionRequest(line.date(), "Received from unidentified receipts", null,
                     suspenseLeaf));
@@ -235,8 +235,8 @@ public class BankLineActionService {
         }
         requireNotFuture(line.date());
         if (amount.compareTo(line.amount()) != 0) {
-            throw new BusinessRuleViolationException("The row is " + StatementValues.money(amount) + "; the line is "
-                    + StatementValues.money(line.amount()));
+            throw BankRecRefusal.refuse("rowAmountMismatch", "The row is " + StatementValues.money(amount) + "; the line is "
+                    + StatementValues.money(line.amount()), "amount", StatementValues.money(amount), "line", StatementValues.money(line.amount()));
         }
         UUID leaf = leafFor(leaves, (UUID) c.get("property_id"), in.bankLeafId());
         cheques.receive(in.chequeId(), new ChequeActionRequest(line.date(), "Received per bank statement", null, leaf));
@@ -271,28 +271,28 @@ public class BankLineActionService {
         UUID t = BankAccountLedgerService.requireTenant();
         L line = lockLines(t, List.of(in.statementLineId()), true).get(0);
         Set<UUID> leaves = ledgers.requireLeafSet(line.bankAccountId());
-        if (line.amount().signum() >= 0) throw new BusinessRuleViolationException("A returned cheque is booked from a debit line");
+        if (line.amount().signum() >= 0) throw BankRecRefusal.refuse("bounceFromDebit", "A returned cheque is booked from a debit line");
         requireNotFuture(line.date());
         Map<String, Object> c = cheque(t, in.chequeId());
         if (!"CLEARED".equals(c.get("status"))) {
-            throw new BusinessRuleViolationException("The cheque is " + c.get("status") + "; only a CLEARED cheque bounces from a statement");
+            throw BankRecRefusal.refuse("chequeNotCleared", "The cheque is " + c.get("status") + "; only a CLEARED cheque bounces from a statement", "status", c.get("status"));
         }
         if (((BigDecimal) c.get("amount")).compareTo(line.amount().negate()) != 0) {
-            throw new BusinessRuleViolationException("The cheque is " + StatementValues.money((BigDecimal) c.get("amount"))
-                    + "; the line is " + StatementValues.money(line.amount().negate()));
+            throw BankRecRefusal.refuse("chequeAmountMismatch", "The cheque is " + StatementValues.money((BigDecimal) c.get("amount"))
+                    + "; the line is " + StatementValues.money(line.amount().negate()), "amount", StatementValues.money((BigDecimal) c.get("amount")), "line", StatementValues.money(line.amount().negate()));
         }
         if (c.get("debit_account_id") == null || !leaves.contains((UUID) c.get("debit_account_id"))) {
-            throw new BusinessRuleViolationException("The cheque was not cleared into this bank account");
+            throw BankRecRefusal.refuse("chequeNotClearedHere", "The cheque was not cleared into this bank account");
         }
         // The register's bounce refuses a return without its reason (PR #353 review P2-6).
         if (in.reason() == null || in.reason().isBlank()) {
-            throw new BusinessRuleViolationException("Say why the bank returned the cheque (failureReason is required)");
+            throw BankRecRefusal.refuse("bounceReasonRequired", "Say why the bank returned the cheque (failureReason is required)");
         }
         ChequeFailureReason reason;
         try {
             reason = ChequeFailureReason.valueOf(in.reason().trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new BusinessRuleViolationException("Unknown return reason " + in.reason());
+            throw BankRecRefusal.refuse("unknownReturnReason", "Unknown return reason " + in.reason(), "reason", in.reason());
         }
         cheques.bounce(in.chequeId(), new ChequeActionRequest(line.date(), "Returned per bank statement", reason, null));
         em.flush();
@@ -310,24 +310,24 @@ public class BankLineActionService {
         UUID t = BankAccountLedgerService.requireTenant();
         L line = lockLines(t, List.of(in.statementLineId()), true).get(0);
         Set<UUID> leaves = ledgers.requireLeafSet(line.bankAccountId());
-        if (line.amount().signum() >= 0) throw new BusinessRuleViolationException("A presented cheque is booked from a debit line");
+        if (line.amount().signum() >= 0) throw BankRecRefusal.refuse("presentFromDebit", "A presented cheque is booked from a debit line");
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select id, cheque_number, status, amount, bank_account_id from issued_cheques where tenant_id = :t and id = :id""",
                 new MapSqlParameterSource("t", t).addValue("id", in.issuedChequeId()));
         if (rows.isEmpty()) throw new NotFoundException("Issued cheque not found");
         Map<String, Object> c = rows.get(0);
         if (!"ISSUED".equals(c.get("status"))) {
-            throw new BusinessRuleViolationException("Cheque " + c.get("cheque_number") + " is " + c.get("status"));
+            throw BankRecRefusal.refuse("issuedChequeStatus", "Cheque " + c.get("cheque_number") + " is " + c.get("status"), "cheque", c.get("cheque_number"), "status", c.get("status"));
         }
         if (((BigDecimal) c.get("amount")).compareTo(line.amount().negate()) != 0) {
-            throw new BusinessRuleViolationException("Cheque " + c.get("cheque_number") + " is "
-                    + StatementValues.money((BigDecimal) c.get("amount")) + "; the line is " + StatementValues.money(line.amount().negate()));
+            throw BankRecRefusal.refuse("issuedChequeAmountMismatch", "Cheque " + c.get("cheque_number") + " is "
+                    + StatementValues.money((BigDecimal) c.get("amount")) + "; the line is " + StatementValues.money(line.amount().negate()), "cheque", c.get("cheque_number"), "amount", StatementValues.money((BigDecimal) c.get("amount")), "line", StatementValues.money(line.amount().negate()));
         }
         if (!leaves.contains((UUID) c.get("bank_account_id"))) {
-            throw new BusinessRuleViolationException("Cheque " + c.get("cheque_number") + " is drawn on another bank account");
+            throw BankRecRefusal.refuse("issuedChequeOtherBank", "Cheque " + c.get("cheque_number") + " is drawn on another bank account", "cheque", c.get("cheque_number"));
         }
         if (line.chequeNo() != null && !BankMatchService.sameChequeNo(line.chequeNo(), (String) c.get("cheque_number"))) {
-            throw new BusinessRuleViolationException("The line names cheque " + line.chequeNo() + ", not " + c.get("cheque_number"));
+            throw BankRecRefusal.refuse("lineNamesOtherCheque", "The line names cheque " + line.chequeNo() + ", not " + c.get("cheque_number"), "lineCheque", line.chequeNo(), "cheque", c.get("cheque_number"));
         }
         issuedCheques.present(in.issuedChequeId(), line.date());
         em.flush();
@@ -347,7 +347,7 @@ public class BankLineActionService {
         try {
             kind = BankStatementPostingService.Kind.valueOf(in.kind().trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new BusinessRuleViolationException("Unknown posting kind " + in.kind());
+            throw BankRecRefusal.refuse("unknownPostingKind", "Unknown posting kind " + in.kind(), "kind", in.kind());
         }
         List<L> ls = lockLines(t, in.statementLineIds(), true);
         UUID bankAccountId = ls.get(0).bankAccountId();
@@ -401,6 +401,7 @@ public class BankLineActionService {
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("l", leaves)
                 .addValue("amt", l.amount().abs()).addValue("d", l.date());
         List<BankRecDTOs.Candidate> clear = List.of(), receive = List.of(), bounce = List.of(), present = List.of();
+        List<BankRecDTOs.Refused> refused = new ArrayList<>();
         if (l.amount().signum() > 0) {
             clear = jdbc.query("""
                     select c.id, c.cheque_number, c.amount, c.deposited_at, c.property_id, c.status, r.name_en
@@ -420,8 +421,18 @@ public class BankLineActionService {
                            coalesce(r.name_en, c.payer_name) as name_en
                     from cheques c left join renters r on r.id = c.renter_id
                     where c.tenant_id = :t and c.status = 'REGISTERED' and c.mode in ('TRANSFER', 'CASH') and c.amount = :amt
+                      and coalesce((select je.entry_date from journal_entries je where je.id = c.pdr_journal_id), c.posting_date) <= :d
                     order by c.cheque_date limit 100""", p,
                     (rs, i) -> cand(rs, rs.getString("mode"), rs.getObject("d", LocalDate.class), l));
+            // F14-02: a row put on the books after the line's date cannot be received on it.
+            refused.addAll(jdbc.query("""
+                    select c.id, c.cheque_number, c.amount, coalesce((select je.entry_date from journal_entries je where je.id = c.pdr_journal_id), c.posting_date) as booked,
+                           coalesce(r.name_en, c.payer_name) as name_en
+                    from cheques c left join renters r on r.id = c.renter_id
+                    where c.tenant_id = :t and c.status = 'REGISTERED' and c.mode in ('TRANSFER', 'CASH') and c.amount = :amt
+                      and coalesce((select je.entry_date from journal_entries je where je.id = c.pdr_journal_id), c.posting_date) > :d
+                    order by c.cheque_date limit 20""", p,
+                    (rs, i) -> refusedReceipt(rs, l)));
             String text = (l.description() + " " + Objects.toString(l.reference(), "")).toUpperCase(Locale.ROOT);
             receive = receive.stream().sorted(Comparator.comparing((BankRecDTOs.Candidate c) ->
                     c.label() != null && Arrays.stream(c.label().toUpperCase(Locale.ROOT).split("\\s+"))
@@ -440,13 +451,53 @@ public class BankLineActionService {
                     where ic.tenant_id = :t and ic.status = 'ISSUED' and ic.bank_account_id in (:l) and ic.amount = :amt
                       and ic.cheque_date <= :d order by ic.cheque_date limit 100""", p,
                     (rs, i) -> cand(rs, "ISSUED_CHEQUE", rs.getObject("d", LocalDate.class), l));
+            // F14-06: the issued cheque that fits but is dated after the line; say so
+            // instead of "nothing in the books fits".
+            refused.addAll(jdbc.query("""
+                    select ic.id, ic.cheque_number, ic.amount, ic.cheque_date as d, v.name_en
+                    from issued_cheques ic left join vendors v on v.id = ic.vendor_id
+                    where ic.tenant_id = :t and ic.status = 'ISSUED' and ic.bank_account_id in (:l) and ic.amount = :amt
+                      and ic.cheque_date > :d order by ic.cheque_date limit 20""", p,
+                    (rs, i) -> refusedPresent(rs, l)));
         }
         BigDecimal suspense = jdbc.queryForObject("""
                 select coalesce(sum(jl.credit - jl.debit), 0) from journal_lines jl
                 join tenant_default_account_mappings d on d.account_id = jl.account_id and d.tenant_id = jl.tenant_id
                 where jl.tenant_id = :t and d.role = 'BANK_SUSPENSE'""", p, BigDecimal.class);
         return new BankRecDTOs.LineCandidates(l.id(), clear, receive, bounce, present, suspense,
-                bank.getBankTrn() != null && !bank.getBankTrn().isBlank(), leafRows);
+                bank.getBankTrn() != null && !bank.getBankTrn().isBlank(), leafRows, refused);
+    }
+
+    private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    private static BankRecDTOs.Refused refusedReceipt(java.sql.ResultSet rs, L l) throws java.sql.SQLException {
+        String no = rs.getString("cheque_number");
+        String name = rs.getString("name_en");
+        String label = ((no == null ? "" : no + " ") + (name == null ? "" : name)).trim();
+        LocalDate booked = rs.getObject("booked", LocalDate.class);
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("row", label);
+        args.put("booked", booked.format(DMY));
+        args.put("date", l.date().format(DMY));
+        return new BankRecDTOs.Refused(rs.getObject("id", UUID.class), "receive", label, rs.getBigDecimal("amount"),
+                booked, "bankrec.receiveBeforeBooked", args,
+                label + " was put on the books on " + booked.format(DMY) + "; it cannot be received on "
+                        + l.date().format(DMY) + ", before that date.");
+    }
+
+    private static BankRecDTOs.Refused refusedPresent(java.sql.ResultSet rs, L l) throws java.sql.SQLException {
+        String no = rs.getString("cheque_number");
+        String name = rs.getString("name_en");
+        String label = ((no == null ? "" : no + " ") + (name == null ? "" : name)).trim();
+        LocalDate dated = rs.getObject("d", LocalDate.class);
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("cheque", label);
+        args.put("chequeDate", dated.format(DMY));
+        args.put("date", l.date().format(DMY));
+        return new BankRecDTOs.Refused(rs.getObject("id", UUID.class), "present", label, rs.getBigDecimal("amount"),
+                dated, "bankrec.presentBeforeChequeDate", args,
+                "Issued cheque " + label + " is dated " + dated.format(DMY) + "; a cheque cannot be presented before its date ("
+                        + "this line is " + l.date().format(DMY) + ").");
     }
 
     private static BankRecDTOs.Candidate cand(java.sql.ResultSet rs, String kind, LocalDate date, L l) throws java.sql.SQLException {
@@ -490,11 +541,11 @@ public class BankLineActionService {
     /** The leaf the user picked (must be in the set), else the set's only leaf. */
     private static UUID pickLeaf(Set<UUID> leaves, UUID picked) {
         if (picked != null) {
-            if (!leaves.contains(picked)) throw new BusinessRuleViolationException("That ledger account is not in this bank account's set");
+            if (!leaves.contains(picked)) throw BankRecRefusal.refuse("leafNotInSet", "That ledger account is not in this bank account's set");
             return picked;
         }
         if (leaves.size() == 1) return leaves.iterator().next();
-        throw new BusinessRuleViolationException("This bank account has several ledger accounts; choose the one to post to");
+        throw BankRecRefusal.refuse("chooseLeaf", "This bank account has several ledger accounts; choose the one to post to");
     }
 
     /** The property's BANK leaf when it is in the set; else the pick; else the only leaf. */

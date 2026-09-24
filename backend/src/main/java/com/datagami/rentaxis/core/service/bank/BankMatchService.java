@@ -474,7 +474,7 @@ public class BankMatchService {
         List<UUID> ls = in == null || in.statementLineIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.statementLineIds()));
         List<UUID> js = in == null || in.journalLineIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.journalLineIds()));
         List<UUID> os = in == null || in.openingItemIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.openingItemIds()));
-        if (ls.isEmpty() && js.isEmpty() && os.isEmpty()) throw new BusinessRuleViolationException("Select statement lines and book items to match");
+        if (ls.isEmpty() && js.isEmpty() && os.isEmpty()) throw BankRecRefusal.refuse("selectToMatch", "Select statement lines and book items to match");
         UUID bankAccountId = bankAccountOf(t, ls, js, os);
         Method method = ls.isEmpty() || (js.isEmpty() && os.isEmpty()) ? Method.CONTRA : Method.MANUAL;
         UUID id = record(t, bankAccountId, method, "CONFIRMED", null, ls, js, os);
@@ -506,14 +506,14 @@ public class BankMatchService {
             if (rows.size() != ls.size()) throw new NotFoundException("Statement line not found");
             for (Map<String, Object> r : rows) {
                 if (!bankAccountId.equals(r.get("bank_account_id"))) {
-                    throw new BusinessRuleViolationException("Every statement line must belong to the same bank account");
+                    throw BankRecRefusal.refuse("linesDifferentAccounts", "Every statement line must belong to the same bank account");
                 }
                 sTotal = sTotal.add((BigDecimal) r.get("amount"));
             }
             Integer live = jdbc.queryForObject("""
                     select count(*) from bank_match_statement_lines where tenant_id = :t and statement_line_id in (:ids) and not released""",
                     new MapSqlParameterSource("t", t).addValue("ids", ls), Integer.class);
-            if (live != null && live > 0) throw new BusinessRuleViolationException("A selected statement line is already matched");
+            if (live != null && live > 0) throw BankRecRefusal.refuse("selectedLineMatched", "A selected statement line is already matched");
         }
         BigDecimal bTotal = BigDecimal.ZERO;
         if (!js.isEmpty()) {
@@ -525,17 +525,17 @@ public class BankMatchService {
             if (rows.size() != js.size()) throw new NotFoundException("Journal line not found");
             for (Map<String, Object> r : rows) {
                 if (!leaves.contains((UUID) r.get("account_id"))) {
-                    throw new BusinessRuleViolationException("A selected book item is not on this bank account's ledger accounts");
+                    throw BankRecRefusal.refuse("itemNotOnAccount", "A selected book item is not on this bank account's ledger accounts");
                 }
                 if ("OB".equals(r.get("doc_type"))) {
-                    throw new BusinessRuleViolationException("An opening balance is not matched; it is the reconciliation's starting point");
+                    throw BankRecRefusal.refuse("openingNotMatched", "An opening balance is not matched; it is the reconciliation's starting point");
                 }
                 bTotal = bTotal.add((BigDecimal) r.get("amount"));
             }
             Integer live = jdbc.queryForObject("""
                     select count(*) from bank_match_book_items where tenant_id = :t and journal_line_id in (:ids) and not released""",
                     new MapSqlParameterSource("t", t).addValue("ids", js), Integer.class);
-            if (live != null && live > 0) throw new BusinessRuleViolationException("A selected book item is already matched");
+            if (live != null && live > 0) throw BankRecRefusal.refuse("selectedItemMatched", "A selected book item is already matched");
         }
         if (!os.isEmpty()) {
             List<Map<String, Object>> rows = jdbc.queryForList("""
@@ -593,14 +593,14 @@ public class BankMatchService {
             List<UUID> side = ls.isEmpty() ? js : ls;
             BigDecimal total = ls.isEmpty() ? bTotal : sTotal;
             if (side.size() < 2 || total.signum() != 0) {
-                throw new BusinessRuleViolationException("A one-sided (contra) match needs two or more items summing to 0.00; these sum to "
-                        + StatementValues.money(total));
+                throw BankRecRefusal.refuse("contraNotZero", "A one-sided (contra) match needs two or more items summing to 0.00; these sum to "
+                        + StatementValues.money(total), "total", StatementValues.money(total));
             }
             return;
         }
         if (sTotal.compareTo(bTotal) != 0) {
-            throw new BusinessRuleViolationException("The selection does not balance: statement " + StatementValues.money(sTotal)
-                    + ", book " + StatementValues.money(bTotal) + ", difference " + StatementValues.money(sTotal.subtract(bTotal)));
+            throw BankRecRefusal.refuse("notBalanced", "The selection does not balance: statement " + StatementValues.money(sTotal)
+                    + ", book " + StatementValues.money(bTotal) + ", difference " + StatementValues.money(sTotal.subtract(bTotal)), "statement", StatementValues.money(sTotal), "book", StatementValues.money(bTotal), "difference", StatementValues.money(sTotal.subtract(bTotal)));
         }
     }
 
@@ -650,7 +650,7 @@ public class BankMatchService {
             List<UUID> b = jdbc.queryForList("select distinct bank_account_id from bank_statement_lines where tenant_id = :t and id in (:ids)",
                     new MapSqlParameterSource("t", t).addValue("ids", ls), UUID.class);
             if (b.isEmpty()) throw new NotFoundException("Statement line not found");
-            if (b.size() > 1) throw new BusinessRuleViolationException("Every statement line must belong to the same bank account");
+            if (b.size() > 1) throw BankRecRefusal.refuse("linesDifferentAccounts", "Every statement line must belong to the same bank account");
             return b.get(0);
         }
         List<UUID> b = jdbc.queryForList("""
@@ -658,7 +658,7 @@ public class BankMatchService {
                 join bank_account_ledgers bl on bl.account_id = jl.account_id and bl.tenant_id = jl.tenant_id
                 where jl.tenant_id = :t and jl.id in (:ids)""", new MapSqlParameterSource("t", t).addValue("ids", js), UUID.class);
         if (b.isEmpty()) throw new NotFoundException("Journal line not found");
-        if (b.size() > 1) throw new BusinessRuleViolationException("The book items belong to different bank accounts");
+        if (b.size() > 1) throw BankRecRefusal.refuse("itemsDifferentAccounts", "The book items belong to different bank accounts");
         return b.get(0);
     }
 
@@ -693,7 +693,7 @@ public class BankMatchService {
         lockAccountOfMatch(t, matchId);
         Map<String, Object> m = lockMatch(t, matchId);
         if (!"SUGGESTED".equals(m.get("status"))) {
-            throw new BusinessRuleViolationException("Only a suggested match can be confirmed; this one is " + m.get("status"));
+            throw BankRecRefusal.refuse("onlySuggestedConfirm", "Only a suggested match can be confirmed; this one is " + m.get("status"), "status", m.get("status"));
         }
         confirmLocked(t, matchId);
         return matches(t, List.of(matchId)).get(0);
@@ -756,7 +756,7 @@ public class BankMatchService {
         UUID t = BankAccountLedgerService.requireTenant();
         lockAccountOfMatch(t, matchId);
         Map<String, Object> m = lockMatch(t, matchId);
-        if ("UNDONE".equals(m.get("status"))) throw new BusinessRuleViolationException("This match was already undone");
+        if ("UNDONE".equals(m.get("status"))) throw BankRecRefusal.refuse("alreadyUndone", "This match was already undone");
         requireUndoOutsideLock(t, (UUID) m.get("bank_account_id"), matchId);
         String why = reason == null || reason.isBlank() ? "Match undone" : reason.trim();
         // PR #353 review P2-4: an unidentified receipt that has paid register rows
@@ -768,12 +768,12 @@ public class BankMatchService {
                 where d.tenant_id = :t and ml.match_id = :m""",
                 new MapSqlParameterSource("t", t).addValue("m", matchId), Integer.class);
         if (draws != null && draws > 0) {
-            throw new BusinessRuleViolationException("Register rows have been received from this unidentified receipt; "
+            throw BankRecRefusal.refuse("suspenseDrawn", "Register rows have been received from this unidentified receipt; "
                     + "it can no longer be undone or reversed");
         }
         if (reverseCreated) {
             if (!"CREATED".equals(m.get("method"))) {
-                throw new BusinessRuleViolationException("Only a match created from a statement line has an entry to reverse");
+                throw BankRecRefusal.refuse("nothingToReverse", "Only a match created from a statement line has an entry to reverse");
             }
             LocalDate on = reverseOn;
             List<Map<String, Object>> entries = jdbc.queryForList("""
@@ -794,8 +794,8 @@ public class BankMatchService {
                 } else if ("BPC".equals(doc) && "ISSUED_CHEQUE".equals(e.get("source_type"))) {
                     issuedCheques.unpresent((UUID) e.get("source_id"), on, why);
                 } else {
-                    throw new BusinessRuleViolationException("A " + doc + " is corrected from the cheque register; undo the match "
-                            + "without reversing, then correct the cheque there");
+                    throw BankRecRefusal.refuse("reverseFromRegister", "A " + doc + " is corrected from the cheque register; undo the match "
+                            + "without reversing, then correct the cheque there", "doc", doc);
                 }
             }
         }

@@ -195,6 +195,13 @@ public class ChequeController {
         return chequeService.clear(id, request);
     }
 
+    /** Where receiving or clearing this row posts, and what else it may post to (R1 P2-2/P2-3). */
+    @GetMapping("/{id}/settlement-target")
+    @PreAuthorize(STAFF)
+    public com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO settlementTarget(@PathVariable UUID id) {
+        return chequeService.settlementTarget(id);
+    }
+
     @PutMapping("/{id}/receive")
     @PreAuthorize(STAFF)
     public ChequeDTO receive(@PathVariable UUID id,

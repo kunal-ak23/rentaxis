@@ -141,6 +141,7 @@ public class LeasePostingService {
 
     /** The instalment VAT schedule, for the amendment rules (spec 2026-09-24 §1). */
     private final VatTaxPointService vatTaxPoints;
+    private final com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash;
 
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
@@ -159,7 +160,9 @@ public class LeasePostingService {
                                ImportBatchLeaseRepository importBatchLeases,
                                ImportBatchRepository importBatches,
                                LandlordOrgRepository landlordOrgs,
-                               VatTaxPointService vatTaxPoints) {
+                               VatTaxPointService vatTaxPoints,
+                               com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash) {
+        this.numberClash = numberClash;
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -321,6 +324,11 @@ public class LeasePostingService {
         JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
                 importBatchId);
         registerCheques(lease, cheques, importBatchId, numberExempt);
+        // F14-11: the TCO put CONTRACT-timing VAT on the books, so it is the tax point
+        // and its tax invoice is issued now. Never for a cut-over contract.
+        if (importBatchId == null && checks != Preconditions.FOR_IMPORT_POST) {
+            vatTaxPoints.recordContractVat(lease, lease.getContractDate(), tco.getId(), true);
+        }
 
         // The renter's deposit follows them into the new contract (spec §6.6). It
         // has to happen inside this transaction and before the predecessor is
@@ -377,6 +385,11 @@ public class LeasePostingService {
         // own contents: no amount of fixing the grid makes this door the right one.
         draftImportBatchProblem(leaseId).ifPresent(errors::add);
         errors.addAll(plan.errors(propertyIdOf(lease)));
+        // F14-13: the unit-occupancy refusal markActiveOnPosting gives at the end of
+        // the post, asked the same way, so "Ready to post" cannot precede it.
+        if (lease.getStatus() == LeaseStatus.DRAFT || lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
+            leaseService.postingConflict(lease).ifPresent(errors::add);
+        }
         // What "carry the deposit forward" is actually worth today. Shown because
         // it is not the figure on last year's contract — a partly refunded deposit
         // carries only what is left — and an accountant approving the renewal
@@ -536,6 +549,9 @@ public class LeasePostingService {
             reversedJournalIds.add(contract.getId());
         }
         JournalEntry tco = postTco(lease, plan.pairs());
+        // F14-11: a CONTRACT lease that already carries its contract tax invoice gets
+        // a TI (or TCN) for the VAT the amendment moved.
+        vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
 
         lease.setPostingJournalId(tco.getId());
         leaseRepository.save(lease);
@@ -720,6 +736,18 @@ public class LeasePostingService {
                     + money(gross) + ".");
         }
         otherErrors.addAll(instalmentVatErrors(lease, lines, cheques, checks.periodLockApplies()));
+        // F14-19: the same paper (drawer bank, number, renter) registered on another
+        // lease. Not for a cut-over post: that replays what the old system held.
+        if (checks != Preconditions.FOR_IMPORT_POST) {
+            otherErrors.addAll(numberClash.clashes(lease, cheques));
+        }
+        // F14-11: a CONTRACT lease's post issues its tax invoice, which needs the
+        // supplier's TRN. A cut-over contract issues none (PACT invoiced it).
+        if (checks != Preconditions.FOR_IMPORT_POST && lease.getVatTiming() == VatTiming.CONTRACT
+                && InstalmentVat.contractVat(lines).signum() > 0 && supplierTrn(lease) == null) {
+            otherErrors.add("This contract charges VAT on the contract date, so posting it issues a tax invoice,"
+                    + " and the organisation has no TRN. Add the TRN to the organisation's details first.");
+        }
 
         if (checks.periodLockApplies()) {
             otherErrors.addAll(periodLockErrors(lease, cheques));

@@ -54,7 +54,11 @@ public class LeaseChequeRegistrar {
     private final PostingService postingService;
     private final ChequeRepository chequeRepository;
 
-    public LeaseChequeRegistrar(PostingService postingService, ChequeRepository chequeRepository) {
+    private final com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash;
+
+    public LeaseChequeRegistrar(PostingService postingService, ChequeRepository chequeRepository,
+                                com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash) {
+        this.numberClash = numberClash;
         this.postingService = postingService;
         this.chequeRepository = chequeRepository;
     }
@@ -96,6 +100,11 @@ public class LeaseChequeRegistrar {
         String missing = missingNumber(cheque);
         if (missing != null) {
             throw new BusinessRuleViolationException(missing);
+        }
+        // F14-19: every user-facing door that registers paper (post, a row added to a
+        // posted lease, a replacement) refuses a cheque already registered elsewhere.
+        if (importBatchId == null) {
+            numberClash.requireUnique(lease, cheque);
         }
         return post(lease, cheque, importBatchId);
     }

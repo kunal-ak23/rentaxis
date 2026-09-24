@@ -66,7 +66,11 @@ public final class StatementMapper {
         List<Object> header = headerIdx < grid.rows().size() ? grid.rows().get(headerIdx) : List.of();
         Map<String, Integer> col = new HashMap<>();
         Map<String, String> columns = p.getColumns() == null ? Map.of() : p.getColumns();
+        Set<String> unused = unusedBy(p.getAmountMode());
         for (String field : FIELDS) {
+            // F14-03: a mapping kept from another amount mode (debit/credit under a
+            // signed amount) is not this mode's business; it is neither checked nor read.
+            if (unused.contains(field)) continue;
             String spec = columns.get(field);
             if (spec == null || spec.isBlank()) continue;
             int c = resolve(spec, header);
@@ -259,6 +263,15 @@ public final class StatementMapper {
             while (m.find()) if (!out.contains(m.group())) out.add(m.group());
         }
         return out;
+    }
+
+    /** The amount fields a mode never reads: SPLIT reads debit and credit, SIGNED amount, DRCR_FLAG amount and its flag column. */
+    static Set<String> unusedBy(AmountMode mode) {
+        return switch (mode == null ? AmountMode.SPLIT : mode) {
+            case SPLIT -> Set.of("amount", "amountSign");
+            case SIGNED -> Set.of("debit", "credit", "amountSign");
+            case DRCR_FLAG -> Set.of("debit", "credit");
+        };
     }
 
     /** The fields each amount mode needs besides the date and description. */

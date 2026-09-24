@@ -112,6 +112,8 @@ import static org.assertj.core.api.Assertions.tuple;
 class LeaseTerminationServiceIT extends AbstractPostgresIT {
 
     @Autowired LeaseTerminationService termination;
+    @Autowired com.datagami.rentaxis.core.service.vat.TaxInvoiceService taxInvoices;
+    @Autowired com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPointService;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired ChequeService chequeService;
@@ -609,6 +611,10 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThat(result.getTerminatedOn()).isEqualTo(T);
         assertThat(result.getTerminationJournalId()).isEqualTo(tcrId);
         assertThat(result.getTerminationNotes()).isEqualTo("Renter relocating");
+        // R2 N-1: T is still ahead, so the renter holds the unit until then; the
+        // nightly sync the day after T releases it.
+        assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        leaseService.syncUnitHolders(T.plusDays(1));
         assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(unit(fixtures.unit().getId()).getCurrentTenantName()).isNull();
         assertTrialBalanceBalances();
@@ -631,6 +637,40 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
      * actually owes. Without the VAT pair the receivable carried 1,536.99 of tax on
      * rent nobody supplied, and the settlement collected it.</p>
      */
+    /**
+     * F14-11: a CONTRACT-timing lease declares its VAT on the contract date, so the
+     * post issues the tax invoice (TI series) for it; the backfill action is
+     * idempotent.
+     */
+    @Test
+    void aContractTimingLeaseIssuesItsTaxInvoiceAtPosting() {
+        UUID leaseId = commercialGalah(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
+
+        List<com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO> issued = taxInvoices.forLease(leaseId);
+        assertThat(issued).hasSize(1);
+        assertThat(issued.get(0).invoiceNumber()).startsWith("TI-");
+        assertThat(issued.get(0).kind()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind.TAX_INVOICE);
+        assertThat(issued.get(0).issueDate()).isEqualTo(CONTRACT_DATE);
+        assertThat(issued.get(0).vatAmount()).as("the Output VAT the TCO credited").isEqualByComparingTo("2550.00");
+        assertThat(balanceOf(leaf(AccountRole.OUTPUT_VAT).getId(), leaseId)).isEqualByComparingTo("-2550.00");
+
+        assertThat(vatTaxPointService.issueContractInvoice(leaseId)).as("a second issue adds nothing").hasSize(1);
+
+        // Terminated early, the VAT on the unearned rent handed back is a credit note.
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+        List<com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO> after = taxInvoices.forLease(leaseId);
+        assertThat(after).hasSize(2);
+        assertThat(after.get(1).kind()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind.CREDIT_NOTE);
+        assertThat(after.get(1).vatAmount()).isEqualByComparingTo("1536.99");
+
+        // R1 P3-4b: the backfill refuses a terminated lease rather than issue an
+        // invoice without the credit note that goes with it.
+        assertThatThrownBy(() -> vatTaxPointService.issueContractInvoice(leaseId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("This lease was terminated");
+        assertThat(taxInvoices.forLease(leaseId)).hasSize(2);
+    }
+
     @Test
     void aLegacyContractLeaseTerminatesOnTheOldPath() {
         // Posted before VAT per instalment (spec 2026-09-24 §1): changeset 108 marks
@@ -665,8 +705,10 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("26775.00");
         assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("-20260.27");
         assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("0.00");
-        assertThat(jdbc.queryForObject("select count(*) from vat_tax_points where lease_id = ?", Long.class, leaseId))
-                .as("a legacy lease has no VAT schedule").isZero();
+        // No instalment schedule: only the contract's own tax point (F14-11: posting
+        // a CONTRACT lease issues its tax invoice) and the termination's credit note.
+        assertThat(jdbc.queryForList("select kind from vat_tax_points where lease_id = ? order by created_at",
+                String.class, leaseId)).containsExactly("CONTRACT", "TERMINATION_ADJUSTMENT");
         assertTrialBalanceBalances();
     }
 

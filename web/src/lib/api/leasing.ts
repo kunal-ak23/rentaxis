@@ -163,10 +163,14 @@ export type LeaseLine = {
   chargeTypeId: string;
   chargeTypeCode: string;
   chargeTypeName: string;
+  /** The charge type's Arabic name, when the catalogue has one; null on older data. */
+  chargeTypeNameAr?: string | null;
   behaviour: ChargeBehaviour;
   creditAccountId: string | null;
   creditAccountCode: string | null;
   creditAccountName: string | null;
+  /** The credit account's Arabic name, when the chart has one; null on older data. */
+  creditAccountNameAr?: string | null;
   grossAmount: number;
   discountAmount: number;
   netAmount: number;
@@ -419,7 +423,18 @@ export type Cheque = {
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----
 
-export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT";
+/** `GET /cheques/{id}/settlement-target` (R1 P2-2/P2-3): cash leaves and leaves a bank account owns. */
+export type SettlementOption = {
+  id: string;
+  code: string | null;
+  name: string;
+  nameAr: string | null;
+  kind: "CASH" | "BANK";
+  bankAccount: string | null;
+};
+export type SettlementTarget = { target: SettlementOption | null; options: SettlementOption[] };
+
+export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT";
 export type VatTaxPointStatus = "PLANNED" | "POSTED" | "CANCELLED";
 export type TaxInvoiceKind = "TAX_INVOICE" | "CREDIT_NOTE";
 
@@ -1155,6 +1170,8 @@ export const chequeApi = {
   /** All or nothing: one row that is not DEPOSITED 400s the call, naming it. */
   clearBatch: (body: ClearBatchInput) => send<Cheque[]>("POST", "/cheques/clear-batch", body),
   receive: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/receive`, body),
+  /** Where receiving/clearing this row posts when no account is named, and what else it may post to. */
+  settlementTarget: (id: string) => get<SettlementTarget>(`/cheques/${id}/settlement-target`),
   /** `body.failureReason` is required — the backend 400s a bounce without one. */
   bounce: (id: string, body: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/bounce`, body),
   replace: (id: string, body: ReplaceChequeInput) => send<Cheque[]>("POST", `/cheques/${id}/replace`, body),

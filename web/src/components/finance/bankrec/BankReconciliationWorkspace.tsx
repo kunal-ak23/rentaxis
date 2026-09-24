@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, CheckCheck, Download, Link2, Lock, MoreHorizontal, Sparkles, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCheck, Download, Link2, Lock, MoreHorizontal, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -21,6 +21,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { LineActionDialog, actionsFor } from "./LineActionDialog";
 import { ReconciliationPanel } from "./ReconciliationPanel";
 import { Money } from "./Money";
+import { serverText } from "./serverText";
 import { button, field, label, primary, small, td, th } from "./styles";
 
 type State = "UNMATCHED" | "SUGGESTED" | "ALL";
@@ -68,9 +69,9 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
             setSelItems(new Set());
             setSelOpen(new Set());
         } catch (err) {
-            setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
+            setLoadError(err instanceof ApiError ? serverText(t, err) : tCommon("loadFailed"));
         }
-    }, [bankAccountId, from, to, state, tCommon]);
+    }, [bankAccountId, from, to, state, t, tCommon]);
 
     useEffect(() => {
         if (allowed) load();
@@ -106,7 +107,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
             if (msg) setNotice(msg);
             await load();
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
         } finally {
             setBusy(false);
         }
@@ -199,28 +200,38 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="panes">
                 <section className="bg-surface border border-border rounded-xl overflow-x-auto" data-testid="pane-statement">
                     <h2 className="px-3 pt-3 text-sm font-bold">{t("statement")}</h2>
+                    {/* F14-05: compact cells, long text cut (full text on hover), the value date only when it
+                        differs, so Amount and the actions fit a half-width pane; the actions column also sticks
+                        to the inline end (the left edge in Arabic) when the pane does scroll. */}
                     <table className="w-full">
                         <thead><tr>
-                            <th className={th} /><th className={th}>{t("date")}</th><th className={th}>{t("valueDate")}</th>
-                            <th className={th}>{t("description")}</th><th className={th}>{t("reference")}</th>
-                            <th className={th}>{t("chequeNo")}</th><th className={`${th} text-end`}>{t("amount")}</th><th className={th} />
+                            <th className={thS} /><th className={thS}>{t("date")}</th>
+                            <th className={thS}>{t("description")}</th><th className={thS}>{t("reference")}</th>
+                            <th className={thS}>{t("chequeNo")}</th><th className={`${thS} text-end`}>{t("amount")}</th>
+                            <th className={`${thS} ${stickyEnd}`}><span className="sr-only">{t("actions")}</span></th>
                         </tr></thead>
                         <tbody className="divide-y divide-border">
                             {lines.map(l => (
                                 <tr key={l.id} className={rowTone(l.matchStatus)} data-testid={`sl-${l.description}`}>
-                                    <td className={td}>
+                                    <td className={tdS}>
                                         {l.matchId ? <Badge matchId={l.matchId} /> : (
                                             <input type="checkbox" aria-label={l.description} checked={selLines.has(l.id)} data-testid={`sel-sl-${l.description}`}
                                                    onChange={() => toggle(selLines, l.id, setSelLines)} />
                                         )}
                                     </td>
-                                    <td className={td}><bdi dir="ltr">{dmy(l.txnDate)}</bdi></td>
-                                    <td className={td}><bdi dir="ltr">{dmy(l.valueDate)}</bdi></td>
-                                    <td className={td}>{l.description}</td>
-                                    <td className={td}>{l.reference ?? ""}</td>
-                                    <td className={td}>{l.chequeNo ?? ""}</td>
-                                    <td className={`${td} text-end`}><Money v={l.amount} /></td>
-                                    <td className={`${td} text-end whitespace-nowrap`}>
+                                    <td className={`${tdS} whitespace-nowrap`}>
+                                        <bdi dir="ltr">{dmy(l.txnDate)}</bdi>
+                                        {l.valueDate && l.valueDate !== l.txnDate && (
+                                            <span className="block text-[10px] text-muted" title={t("valueDate")} data-testid={`vd-${l.id}`}>
+                                                {t("valueDate")} <bdi dir="ltr">{dmy(l.valueDate)}</bdi>
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className={tdS}><span className="block max-w-40 truncate" title={l.description}>{l.description}</span></td>
+                                    <td className={tdS}><span className="block max-w-24 truncate" title={l.reference ?? undefined}>{l.reference ?? ""}</span></td>
+                                    <td className={`${tdS} whitespace-nowrap`}>{l.chequeNo ?? ""}</td>
+                                    <td className={`${tdS} text-end whitespace-nowrap`}><Money v={l.amount} /></td>
+                                    <td className={`${tdS} text-end whitespace-nowrap ${stickyEnd}`} data-testid={`sl-actions-${l.id}`}>
                                         {l.matchStatus === "CONFIRMED" && (
                                             <UndoButton m={matchById.get(l.matchId!)} busy={busy}
                                                 onUndo={(reverse, on) => act(async () => {
@@ -303,6 +314,13 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
     );
 }
 
+/** The statement pane's tighter cells (F14-05). */
+const thS = th.replace("px-3", "px-2");
+const tdS = td.replace("px-3", "px-2");
+
+/** The actions cell: pinned to the inline end (right in English, left in Arabic) with the pane's own background. */
+const stickyEnd = "sticky end-0 bg-surface z-[1] shadow-[inset_1px_0_0_var(--color-border)] rtl:shadow-[inset_-1px_0_0_var(--color-border)]";
+
 function BookAmount({ i }: { i: BookItem }) {
     return <Money v={i.amount} />;
 }
@@ -341,7 +359,7 @@ function UndoButton({ m, busy, onUndo }: { m: Match | undefined; busy: boolean; 
             </button>
             {m.reverseOnDefault && !asking && (
                 <button type="button" className={small} disabled={busy} onClick={() => { setOn(m.reverseOnDefault ?? ""); setAsking(true); }}
-                        data-testid={`undo-reverse-${m.id}`}>{t("undoReverse")}</button>
+                        title={t("undoReverse")} aria-label={t("undoReverse")} data-testid={`undo-reverse-${m.id}`}><RotateCcw size={12} /></button>
             )}
             {asking && (
                 <span className="inline-flex items-center gap-1 text-[11px]" data-testid={`reverse-confirm-${m.id}`}>

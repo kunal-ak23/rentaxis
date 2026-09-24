@@ -5,6 +5,7 @@ import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import type { VatTaxPoint } from "@/lib/api/leasing";
 import type { Cheque } from "@/lib/api/leasing";
+import { ApiError } from "@/lib/api/leasing";
 import type { ChequeAction } from "../ChequeActionDialog";
 
 /**
@@ -15,23 +16,36 @@ import type { ChequeAction } from "../ChequeActionDialog";
  * date went out and came back a 400.
  */
 
-vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-testid="account-picker" /> }));
+// A real select so the receive-account tests can read the default it was
+// given and change it; the other describes here only check it renders.
+vi.mock("@/components/finance/AccountPicker", () => ({
+    default: ({ value, onChange }: { value: string | null; onChange: (id: string) => void }) => (
+        <input data-testid="account-picker" value={value ?? ""} onChange={e => onChange(e.target.value)} />
+    ),
+}));
 
 const api = vi.hoisted(() => ({
-    replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
-    fiscal: vi.fn(),
+    replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), receive: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
+    fiscal: vi.fn(), defaultsGet: vi.fn(), settlementTarget: vi.fn(),
 }));
 
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
-    return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal } } };
+    return {
+        ...m,
+        ledgerApi: {
+            ...m.ledgerApi,
+            fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal },
+            defaults: { ...m.ledgerApi.defaults, get: api.defaultsGet },
+        },
+    };
 });
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
         ...m,
-        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel },
+        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel, receive: api.receive, settlementTarget: api.settlementTarget },
         vatApi: { ...m.vatApi, schedule: api.schedule },
         leaseApi: { ...m.leaseApi, cheques: api.leaseCheques },
     };
@@ -74,7 +88,9 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+    api.settlementTarget.mockResolvedValue({ target: null, options: [] });
     api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
+    api.defaultsGet.mockResolvedValue([]);
 });
 
 describe("ChequeActionDialog — replace", () => {
@@ -136,6 +152,71 @@ describe("ChequeActionDialog — release online", () => {
         fireEvent.click(screen.getByTestId("cheque-releaseOnline-confirm"));
 
         await waitFor(() => expect(api.releaseOnline).toHaveBeenCalledWith("c1", expect.objectContaining({ notes: null })));
+    });
+});
+
+/**
+ * F14-17 + R1 P2-2/P2-3: "Received into" is the server's settlement target (what a
+ * post with no override lands in) and the options any staff role may pick; the
+ * account shown is the account sent, and a failed lookup is shown, not swallowed.
+ */
+describe("ChequeActionDialog — receive account (F14-17)", () => {
+    const CASH = { id: "acc-cash", code: "A-02-05-001", name: "Cash in hand", nameAr: null, kind: "CASH" as const, bankAccount: null };
+    const BANK = { id: "acc-bank", code: "A-02-02-001", name: "Emirates Islamic", nameAr: null, kind: "BANK" as const, bankAccount: "Emirates Islamic 0012" };
+
+    it("shows the server's target for a CASH row and sends it", async () => {
+        api.settlementTarget.mockResolvedValue({ target: CASH, options: [CASH, BANK] });
+        api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-cash"));
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
+        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-cash" }));
+    });
+
+    it("sends the account the operator picks instead", async () => {
+        api.settlementTarget.mockResolvedValue({ target: CASH, options: [CASH, BANK] });
+        api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-cash"));
+        fireEvent.change(screen.getByTestId("cheque-receive-account"), { target: { value: "acc-bank" } });
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
+        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-bank" }));
+    });
+
+    it("shows a transfer row's resolved bank leaf, not the row's stamped one", async () => {
+        api.settlementTarget.mockResolvedValue({ target: BANK, options: [CASH, BANK] });
+        api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "TRANSFER", debitAccountId: "acc-orphan" });
+
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-bank"));
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
+        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-bank" }));
+    });
+
+    it("shows a failed lookup instead of swallowing it", async () => {
+        api.settlementTarget.mockRejectedValue(new ApiError(403, "Access denied"));
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+
+        expect((await screen.findByTestId("cheque-settlement-error")).textContent).toContain("Access denied");
+        // R2 N-3: nothing can be confirmed, so the row's stamped leaf is never sent.
+        expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        expect(api.receive).not.toHaveBeenCalled();
+    });
+
+    it("keeps Receive disabled until the target has loaded", async () => {
+        let resolve: (v: unknown) => void = () => {};
+        api.settlementTarget.mockReturnValue(new Promise(r => { resolve = r; }));
+        api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+        expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(true);
+        resolve({ target: CASH, options: [CASH] });
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(false));
     });
 });
 

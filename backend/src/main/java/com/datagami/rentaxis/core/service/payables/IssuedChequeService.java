@@ -178,7 +178,10 @@ public class IssuedChequeService {
         }
         if (date == null) throw new BusinessRuleViolationException("Give the date the bank paid the cheque");
         if (date.isBefore(c.getChequeDate())) {
-            throw new BusinessRuleViolationException("A cheque cannot be presented before " + c.getChequeDate().format(DMY));
+            // F14-09: coded, so the bank-rec dialog can say it in Arabic.
+            throw new BusinessRuleViolationException("A cheque cannot be presented before " + c.getChequeDate().format(DMY),
+                    "issuedCheque.presentBeforeChequeDate", java.util.Map.of("cheque", String.valueOf(c.getChequeNumber()),
+                            "chequeDate", c.getChequeDate().format(DMY), "date", date.format(DMY)));
         }
         if (date.isAfter(today())) {
             throw new BusinessRuleViolationException("A cheque cannot be presented in the future (" + date.format(DMY) + ")");

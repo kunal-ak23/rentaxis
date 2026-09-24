@@ -50,6 +50,7 @@ public class DashboardService {
     private final LeaseRepository leaseRepository;
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
+    private final com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
 
     /**
      * The whole dashboard, for whoever is asking.
@@ -79,23 +80,33 @@ public class DashboardService {
                 : (int) propertyRepository.countInScope(scope.unrestricted(), scope.propertyIds()));
 
         long totalUnits = 0;
+        long maintenanceCount = 0;
         long occupiedCount = 0;
-        long vacantCount = 0;
+        long reservedCount = 0;
         if (!scope.blocked()) {
             for (Object[] row : unitRepository.countByStatusInScope(
                     scope.unrestricted(), scope.propertyIds())) {
                 UnitStatus status = (UnitStatus) row[0];
                 long count = ((Number) row[1]).longValue();
                 totalUnits += count;
-                if (status == UnitStatus.OCCUPIED) {
-                    occupiedCount = count;
-                } else if (status == UnitStatus.VACANT) {
-                    vacantCount = count;
+                if (status == UnitStatus.MAINTENANCE) {
+                    maintenanceCount = count;
                 }
             }
+            // F14-01: occupied means a posted lease whose term covers today, not
+            // unit.status — posting flips the unit to OCCUPIED the day the contract
+            // is signed, which for a lease starting next month is a reservation.
+            java.util.Set<java.util.UUID> occupied = new java.util.HashSet<>(leaseRepository.unitIdsOccupiedOnInScope(
+                    today, scope.unrestricted(), scope.propertyIds()));
+            occupiedCount = occupied.size();
+            reservedCount = leaseRepository.unitIdsReservedAfterInScope(
+                    today, scope.unrestricted(), scope.propertyIds()).stream()
+                    .filter(id -> !occupied.contains(id)).count();
         }
+        long vacantCount = Math.max(0, totalUnits - occupiedCount - reservedCount - maintenanceCount);
         summary.setTotalUnits((int) totalUnits);
         summary.setOccupiedUnits((int) occupiedCount);
+        summary.setReservedUnits((int) reservedCount);
         summary.setVacantUnits((int) vacantCount);
         // Of the units the caller can see. A manager's occupancy is their own
         // buildings' occupancy; averaging in the rest of the estate would tell them
@@ -163,11 +174,14 @@ public class DashboardService {
         // show a renter as late days before their own contract says they are.
         BigDecimal overdueAmount = BigDecimal.ZERO;
         if (!scope.blocked()) {
-            for (Cheque c : chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
-                    org.springframework.data.domain.Pageable.unpaged()).getContent()) {
+            List<Cheque> due = chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.Pageable.unpaged()).getContent();
+            // F14-08: a bounced row counts only for the debt the ledger still carries.
+            Map<java.util.UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
+            for (Cheque c : due) {
                 Lease lease = c.getLease();
                 if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
-                    overdueAmount = overdueAmount.add(nz(c.getAmount()));
+                    overdueAmount = overdueAmount.add(open.get(c.getId()));
                 }
             }
         }

@@ -320,6 +320,8 @@ public class LeaseRenewalService {
             throw new BusinessRuleViolationException(
                     "The new end date must be after the current one (" + previousEnd + ")");
         }
+        // P2-1: the longer term must not run into the next lease on the unit.
+        leaseService.requireExtensionFree(lease, r.newEndDate());
         LocalDate entryDate = r.contractDate() != null ? r.contractDate() : LocalDate.now();
         LocalDate windowStart = previousEnd.plusDays(1);
 

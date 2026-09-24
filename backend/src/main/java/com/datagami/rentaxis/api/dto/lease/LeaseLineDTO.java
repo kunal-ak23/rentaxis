@@ -33,5 +33,8 @@ public record LeaseLineDTO(UUID id,
                            boolean vatApplicable,
                            LocalDate periodStart,
                            LocalDate periodEnd,
-                           UUID addendumId) {
+                           UUID addendumId,
+                           /* F14-15: the Arabic names, for the /ar lease view; null when the chart has none. */
+                           String chargeTypeNameAr,
+                           String creditAccountNameAr) {
 }

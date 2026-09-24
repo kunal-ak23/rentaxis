@@ -18,6 +18,7 @@ type DashboardSummary = {
   totalProperties: number;
   totalUnits: number;
   occupiedUnits: number;
+  reservedUnits: number;
   vacantUnits: number;
   occupancyRate: number;
   activeLeases: number;
@@ -169,14 +170,25 @@ function CollectionChart({ data }: { data: MonthlyPoint[] }) {
   );
 }
 
-function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: number; rate: number }) {
+function OccupancyDonut({
+  occupied,
+  reserved,
+  vacant,
+  rate,
+}: {
+  occupied: number;
+  reserved: number;
+  vacant: number;
+  rate: number;
+}) {
   const t = useTranslations("Dashboard");
-  const total = occupied + vacant;
+  const total = occupied + reserved + vacant;
   const size = 128;
   const stroke = 16;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const occFrac = total > 0 ? occupied / total : 0;
+  const resFrac = total > 0 ? reserved / total : 0;
   const cx = size / 2;
   const cy = size / 2;
   return (
@@ -184,17 +196,33 @@ function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: 
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ink-500)" strokeOpacity="0.16" strokeWidth={stroke} />
         {total > 0 && (
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke="var(--teal-600)"
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${occFrac * c} ${c}`}
-            transform={`rotate(-90 ${cx} ${cy})`}
-          />
+          <>
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill="none"
+              stroke="var(--teal-600)"
+              strokeWidth={stroke}
+              strokeLinecap="butt"
+              strokeDasharray={`${occFrac * c} ${c}`}
+              transform={`rotate(-90 ${cx} ${cy})`}
+            />
+            {reserved > 0 && (
+              <circle
+                cx={cx}
+                cy={cy}
+                r={r}
+                fill="none"
+                stroke="var(--gold-500)"
+                strokeWidth={stroke}
+                strokeLinecap="butt"
+                strokeDasharray={`${resFrac * c} ${c}`}
+                strokeDashoffset={-occFrac * c}
+                transform={`rotate(-90 ${cx} ${cy})`}
+              />
+            )}
+          </>
         )}
         <text x={cx} y={cy - 1} textAnchor="middle" className="fill-foreground" style={{ fontSize: 22, fontWeight: 600 }}>
           {rate.toFixed(0)}%
@@ -207,12 +235,17 @@ function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: 
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--teal-600)" }} />
           <span className="text-[var(--ink-500)]">{t("occupied")}</span>
-          <span className="font-semibold ml-auto">{occupied}</span>
+          <span className="font-semibold ms-auto">{occupied}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--gold-500)" }} />
+          <span className="text-[var(--ink-500)]">{t("reservedLabel")}</span>
+          <span className="font-semibold ms-auto">{reserved}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--ink-500)", opacity: 0.45 }} />
           <span className="text-[var(--ink-500)]">{t("vacantLabel")}</span>
-          <span className="font-semibold ml-auto">{vacant}</span>
+          <span className="font-semibold ms-auto">{vacant}</span>
         </div>
       </div>
     </div>
@@ -287,6 +320,8 @@ export default function DashboardPage() {
   // multiple of the month. The sparkline is the monthly series, which is by
   // due month too.
   const tile = collectionTile(summary);
+  // Older summaries (and test fixtures) may not carry the field yet.
+  const reservedUnits = summary.reservedUnits ?? 0;
   const money = (v: number) => isolate(formatCurrencyCompact(v));
   const collectedSub =
     tile.percent == null
@@ -346,6 +381,7 @@ export default function DashboardPage() {
           value={summary.occupancyRate.toFixed(1)}
           unit="%"
           sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
+          note={reservedUnits > 0 ? t("reservedSubline", { count: reservedUnits }) : undefined}
         />
         <Link
           href="/dashboard/finance/cheques"
@@ -366,12 +402,18 @@ export default function DashboardPage() {
           <div className="text-[13px] text-[var(--ink-500)]">{t("portfolioSnapshot")}</div>
           <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("currentTotals")}</div>
           <div className="mb-4 pb-4 border-b border-border">
-            <OccupancyDonut occupied={summary.occupiedUnits} vacant={summary.vacantUnits} rate={summary.occupancyRate} />
+            <OccupancyDonut
+              occupied={summary.occupiedUnits}
+              reserved={reservedUnits}
+              vacant={summary.vacantUnits}
+              rate={summary.occupancyRate}
+            />
           </div>
           <div className="space-y-2.5 text-[13px]">
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("properties")}</span><span className="font-semibold">{summary.totalProperties}</span></div>
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("activeLeasesLabel")}</span><span className="font-semibold">{summary.activeLeases}</span></div>
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("draftLeases")}</span><span className="font-semibold">{summary.draftLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("reservedUnits")}</span><span className="font-semibold">{reservedUnits}</span></div>
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("vacantUnits")}</span><span className="font-semibold">{summary.vacantUnits}</span></div>
           </div>
         </div>

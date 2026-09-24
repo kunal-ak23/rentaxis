@@ -6,10 +6,12 @@ import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, Ar
 import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
-import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { formatCurrency, formatCurrencyCompact, formatDate } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
+
+type UnitOccupancy = "OCCUPIED" | "RESERVED" | "VACANT" | "MAINTENANCE";
 
 type Unit = {
     id: string;
@@ -17,10 +19,34 @@ type Unit = {
     type: string;
     sizeSqft: number;
     status: string;
+    /** Derived by date (occupied = a posted lease covers today); falls back to `status` on an older API response. */
+    occupancy?: UnitOccupancy;
+    nextLeaseStart?: string | null;
+    nextTenantName?: string | null;
     expectedRent: number;
     actualRent: number;
     currentTenantName?: string;
 };
+
+/** The badge/back-panel text for a unit's occupancy, translated. */
+function occupancyLabel(u: Unit, t: (key: string, values?: Record<string, string>) => string): string {
+    const occ = u.occupancy ?? u.status;
+    switch (occ) {
+        case "RESERVED":
+            if (!u.nextLeaseStart) return t("reservedStatus");
+            return u.nextTenantName
+                ? t("reservedFromBadge", { date: formatDate(u.nextLeaseStart), tenant: u.nextTenantName })
+                : t("reservedFromBadgeNoTenant", { date: formatDate(u.nextLeaseStart) });
+        case "OCCUPIED":
+            return t("occupied");
+        case "MAINTENANCE":
+            return t("maintenanceStatus");
+        case "VACANT":
+            return t("vacant");
+        default:
+            return occ;
+    }
+}
 
 export default function UnitsPage({ params }: { params: Promise<{ id: string }> }) {
     const { id: propertyId } = use(params);
@@ -186,23 +212,29 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                             </div>
                         </div>
                     ))
-                ) : units.map(u => (
+                ) : units.map(u => {
+                    const occ = u.occupancy ?? u.status;
+                    return (
                     <CardFlip
                         key={u.id}
                         className="h-[280px] transition-all duration-200"
                         front={
                             <div className="h-full flex flex-col justify-between">
-                                <div className="flex justify-between items-start">
-                                    <div className="w-10 h-10 bg-background rounded-xl flex items-center justify-center text-muted border border-border">
+                                <div className="flex justify-between items-start gap-2">
+                                    <div className="w-10 h-10 bg-background rounded-xl flex items-center justify-center text-muted border border-border shrink-0">
                                         <Building size={20} />
                                     </div>
-                                    <span className={cn(
-                                        "px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest border",
-                                        u.status === 'VACANT' ? 'bg-success/10 text-success border-success/20' :
-                                            u.status === 'OCCUPIED' ? 'bg-primary/5 text-primary border-primary/10' :
-                                                'bg-warning/10 text-warning border-warning/20'
+                                    <span
+                                        data-testid={`unit-status-badge-${u.id}`}
+                                        className={cn(
+                                        "px-2.5 py-1 rounded-lg text-[9px] font-bold border text-end",
+                                        occ === 'RESERVED' ? 'normal-case tracking-normal' : 'uppercase tracking-widest',
+                                        occ === 'VACANT' ? 'bg-success/10 text-success border-success/20' :
+                                            occ === 'OCCUPIED' ? 'bg-primary/5 text-primary border-primary/10' :
+                                                occ === 'RESERVED' ? 'bg-[var(--gold-500)]/10 text-[var(--gold-700)] border-[var(--gold-500)]/20' :
+                                                    'bg-warning/10 text-warning border-warning/20'
                                     )}>
-                                        {u.status}
+                                        {occupancyLabel(u, t)}
                                     </span>
                                 </div>
                                 <div>
@@ -231,9 +263,22 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                                     <div className="bg-surface/50 rounded-xl p-3 border border-border">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Users size={12} className="text-primary/40" />
-                                            <span className="text-[9px] font-bold text-muted uppercase">{u.status === 'OCCUPIED' ? 'Current Tenant' : 'Lease Status'}</span>
+                                            <span className="text-[9px] font-bold text-muted uppercase">{occ === 'OCCUPIED' ? t('currentTenant') : t('status')}</span>
                                         </div>
-                                        <p className="text-xs font-bold text-foreground">{u.currentTenantName || (u.status === 'VACANT' ? 'Ready to Lease' : 'Under Maintenance')}</p>
+                                        <p className="text-xs font-bold text-foreground">
+                                            {occ === 'OCCUPIED'
+                                                ? (u.currentTenantName || '—')
+                                                : occ === 'RESERVED'
+                                                    ? t('reservedStatus')
+                                                    : occ === 'MAINTENANCE'
+                                                        ? t('underMaintenance')
+                                                        : t('readyToLease')}
+                                        </p>
+                                        {occ === 'OCCUPIED' && u.nextLeaseStart && (
+                                            <p className="text-[10px] text-muted mt-1" data-testid={`unit-next-lease-${u.id}`}>
+                                                {t('nextTenantFrom', { tenant: u.nextTenantName || '—', date: formatDate(u.nextLeaseStart) })}
+                                            </p>
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="bg-surface/50 rounded-xl p-3 border border-border relative overflow-hidden">
@@ -260,7 +305,8 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                             </div>
                         }
                     />
-                ))}
+                    );
+                })}
             </div>
 
             {!loading && units.length === 0 && (

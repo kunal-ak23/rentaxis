@@ -54,7 +54,11 @@ public final class BankRecDTOs {
                                String sheetName, String fileKind, List<String> missingColumns, List<String> errors,
                                List<String> warnings, int linesRead, int linesNew, int linesDuplicate,
                                LocalDate firstDate, LocalDate lastDate, BigDecimal openingBalance,
-                               BigDecimal closingBalance, String order, List<PreviewRow> rows, UUID importId) { }
+                               BigDecimal closingBalance, String order, List<PreviewRow> rows, UUID importId,
+                               /* F14-04: a CSV's delimiter as detected from the file (null for .xlsx). */
+                               String csvDelimiter,
+                               /* F14-09: {@code reason} as a translatable key and its values (null when no reason). */
+                               String reasonCode, Map<String, Object> reasonArgs) { }
 
     public record ImportRow(UUID id, String fileName, int linesRead, int linesNew, int linesDuplicate,
                             LocalDate firstDate, LocalDate lastDate, BigDecimal openingBalance,
@@ -188,7 +192,16 @@ public final class BankRecDTOs {
     /** The documents a statement line's actions would use, and the charge split it would post. */
     public record LineCandidates(UUID statementLineId, List<Candidate> clear, List<Candidate> receive,
                                  List<Candidate> bounce, List<Candidate> present, BigDecimal suspenseBalance,
-                                 boolean bankTrnSet, List<Leaf> leaves) { }
+                                 boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused) { }
+
+    /**
+     * A document that fits the line by amount but that the action would refuse, and
+     * why (F14-06: an issued cheque presented before its date; F14-02: a receipt row
+     * put on the books after the line's date). {@code kind} is the action
+     * ("present", "receive"); {@code code}/{@code args} translate {@code reason}.
+     */
+    public record Refused(UUID id, String kind, String label, BigDecimal amount, LocalDate date, String code,
+                          java.util.Map<String, Object> args, String reason) { }
 
     /** The register's Bank column, per cheque: CONFIRMED (with the statement date), NOT_ON_STATEMENT, or CASH. */
     public record ChequeEvidence(UUID chequeId, String state, LocalDate statementDate) { }

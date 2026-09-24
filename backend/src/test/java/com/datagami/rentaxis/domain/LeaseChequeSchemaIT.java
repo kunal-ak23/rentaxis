@@ -86,37 +86,34 @@ class LeaseChequeSchemaIT extends AbstractPostgresIT {
     }
 
     /**
-     * One <em>live</em> tenancy per unit — ACTIVE or NOTICE_GIVEN (review I3).
-     *
-     * <p>Changeset 80 wrote this index over {@code status = 'ACTIVE'} alone, which
-     * was the whole truth while nothing could set NOTICE_GIVEN. Now that
-     * {@code POST /leases/{id}/notice} can, the narrower predicate would let a
-     * second tenancy be posted onto a unit the day a notice was recorded — the
-     * double-let the index exists to prevent. Changeset 86 widens it.</p>
+     * No two <em>live</em> tenancies on a unit for overlapping dates (F14-14,
+     * changeset 116). Changesets 80/86 allowed one ACTIVE/NOTICE_GIVEN lease per unit
+     * whatever the dates, which refused a back-to-back letting; the exclusion
+     * constraint judges by the terms instead.
      */
     @Test
-    void oneLiveLeasePerUnit() {
-        String def = jdbc.queryForObject(
-                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+    void noOverlappingLiveLeasesPerUnit() {
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public'"
                         + " AND indexname = 'ux_leases_one_active_per_unit'",
+                Integer.class)).isZero();
+        String def = jdbc.queryForObject(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ex_leases_no_overlap_per_unit'",
                 String.class);
         assertThat(def)
-                .contains("UNIQUE")
+                .contains("EXCLUDE")
                 .contains("unit_id")
                 .contains("'ACTIVE'")
                 .contains("'NOTICE_GIVEN'");
     }
 
     /**
-     * …and the database enforces it, not only the service.
-     *
-     * <p>A second tenancy on a unit whose renter has given notice is refused at the
-     * row, whatever path tried to write it — which is what makes
-     * {@code LeaseService.LIVE} a rule rather than a convention. The pair this
-     * refuses is exactly the pair changeset 80's narrower predicate allowed.</p>
+     * …and the database enforces it, not only the service: an overlapping second
+     * tenancy is refused at the row whatever path wrote it, a back-to-back one (the
+     * day after the first ends) is not.
      */
     @Test
-    void theDatabaseRefusesASecondLiveLeaseOnAUnitOnNotice() {
+    void theDatabaseRefusesAnOverlappingLiveLeaseButAllowsBackToBack() {
         UUID tenant = tenant();
         UUID property = property(tenant, "LIVE-" + UUID.randomUUID().toString().substring(0, 4));
         UUID unit = unit(tenant, property);
@@ -125,13 +122,20 @@ class LeaseChequeSchemaIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> insertLease(tenant, unit, renter, "ACTIVE"))
                 .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertLease(tenant, unit, renter, "ACTIVE",
+                java.time.LocalDate.of(2026, 12, 31), java.time.LocalDate.of(2027, 12, 30)))
+                .as("sharing the last day is an overlap")
+                .isInstanceOf(DataIntegrityViolationException.class);
 
-        // An ended tenancy never claimed the slot, so the next one may have it.
-        jdbc.update("UPDATE leases SET status = 'TERMINATED' WHERE unit_id = ?", unit);
+        insertLease(tenant, unit, renter, "ACTIVE",
+                java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 12, 31));
+
+        // An ended tenancy never claimed the slot.
+        jdbc.update("UPDATE leases SET status = 'TERMINATED' WHERE unit_id = ? AND status = 'NOTICE_GIVEN'", unit);
         insertLease(tenant, unit, renter, "ACTIVE");
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM leases WHERE unit_id = ? AND status IN ('ACTIVE','NOTICE_GIVEN')",
-                Integer.class, unit)).isEqualTo(1);
+                Integer.class, unit)).isEqualTo(2);
     }
 
     private UUID unit(UUID tenant, UUID property) {
@@ -148,11 +152,16 @@ class LeaseChequeSchemaIT extends AbstractPostgresIT {
     }
 
     private UUID insertLease(UUID tenant, UUID unit, UUID renter, String status) {
+        return insertLease(tenant, unit, renter, status, java.time.LocalDate.of(2026, 1, 1),
+                java.time.LocalDate.of(2026, 12, 31));
+    }
+
+    private UUID insertLease(UUID tenant, UUID unit, UUID renter, String status,
+                             java.time.LocalDate start, java.time.LocalDate end) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO leases (id, tenant_id, unit_id, renter_id, start_date, end_date,"
                         + " status, rent_amount, deposit_amount) VALUES (?,?,?,?,?,?,?,?,?)",
-                id, tenant, unit, renter, java.time.LocalDate.of(2026, 1, 1),
-                java.time.LocalDate.of(2026, 12, 31), status,
+                id, tenant, unit, renter, start, end, status,
                 new java.math.BigDecimal("1200.00"), new java.math.BigDecimal("0.00"));
         return id;
     }

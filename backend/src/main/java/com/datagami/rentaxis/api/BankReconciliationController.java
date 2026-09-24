@@ -148,14 +148,14 @@ public class BankReconciliationController {
             throws IOException {
         requireTenantSelected();
         if (file.getSize() > BankStatementImportService.MAX_FILE_BYTES) {
-            throw new BusinessRuleViolationException("A statement file is at most 5 MB");
+            throw BankRecRefusal.refuse("fileTooLarge", "A statement file is at most 5 MB");
         }
         BankRecDTOs.Profile override = null;
         if (profile != null && !profile.isBlank()) {
             try {
                 override = json.readValue(profile, BankRecDTOs.Profile.class);
             } catch (IOException e) {
-                throw new BusinessRuleViolationException("The column mapping could not be read");
+                throw BankRecRefusal.refuse("mappingUnreadable", "The column mapping could not be read");
             }
         }
         return ResponseEntity.ok(imports.importFile(id, file.getOriginalFilename(), file.getBytes(), override, dryRun));
@@ -421,7 +421,7 @@ public class BankReconciliationController {
 
     private static UUID requireTenantSelected() {
         UUID t = TenantContextHolder.getTenantId();
-        if (t == null) throw new BusinessRuleViolationException("Select an organisation first");
+        if (t == null) throw BankRecRefusal.refuse("selectOrganisation", "Select an organisation first");
         return t;
     }
 }
