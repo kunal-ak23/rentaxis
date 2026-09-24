@@ -60,6 +60,11 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
     const [selItems, setSelItems] = useState<Set<string>>(new Set());
     const [selOpen, setSelOpen] = useState<Set<string>>(new Set());
     const [acting, setActing] = useState<StatementLine[] | null>(null);
+    // Bumped after every workspace mutation (confirm/reject a suggestion, a
+    // manual match, undo, a line action) so the ReconciliationPanel below —
+    // which loads its own figures independently — re-fetches instead of going
+    // stale until the page is reloaded (F14-47).
+    const [recRefresh, setRecRefresh] = useState(0);
 
     const load = useCallback(async () => {
         setLoadError(null);
@@ -106,6 +111,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
             const msg = await fn();
             if (msg) setNotice(msg);
             await load();
+            setRecRefresh(v => v + 1);
         } catch (err) {
             setError(serverText(t, err));
         } finally {
@@ -176,7 +182,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                     <input className={`${field} w-full`} value={query} onChange={e => setQuery(e.target.value)} data-testid="ws-search" /></label>
             </form>
 
-            <ReconciliationPanel bankAccountId={bankAccountId} onChanged={load} />
+            <ReconciliationPanel bankAccountId={bankAccountId} onChanged={load} refreshKey={recRefresh} />
             {ws?.reconciledThrough && (
                 <div className="text-xs text-muted bg-input rounded-lg px-3 py-2 flex items-center gap-1" data-testid="ws-locked">
                     <Lock size={12} />{t("lockedThrough", { date: dmy(ws.reconciledThrough) })}
@@ -308,7 +314,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
 
             {acting && (
                 <LineActionDialog lines={acting} onClose={() => setActing(null)}
-                                  onDone={r => { setActing(null); setNotice(t("posted", { numbers: r.entryNumbers.join(", ") })); load(); }} />
+                                  onDone={r => { setActing(null); setNotice(t("posted", { numbers: r.entryNumbers.join(", ") })); load(); setRecRefresh(v => v + 1); }} />
             )}
         </div>
     );
