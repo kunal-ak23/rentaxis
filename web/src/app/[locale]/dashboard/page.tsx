@@ -8,7 +8,8 @@ import { formatCurrencyCompact } from "@/lib/format";
 import { activityText, isolate, type ActivityItem } from "@/components/dashboard/activityText";
 import { collectionTile, type CollectionSummary } from "@/components/dashboard/collectionTile";
 import { cn } from "@/lib/utils";
-import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, Calendar, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
 import OverduePaymentsWidget from "@/components/dashboard/OverduePaymentsWidget";
 import ChequesToDepositWidget from "@/components/dashboard/ChequesToDepositWidget";
@@ -223,6 +224,7 @@ export default function DashboardPage() {
   const tCheques = useTranslations("Cheques");
   const locale = useLocale();
   const { data: session } = useSession();
+  const canManageLeases = hasPermission(session?.user?.role as UserRole | undefined, "canManageLeases");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,16 +314,16 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
+          {/* The month is a label, not a picker: the tiles are always this month. */}
+          <span className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
             <Calendar size={13} />
             {now.toLocaleDateString(locale, { month: "short", year: "numeric" })}
-          </button>
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
-            <Download size={13} /> {t("export")}
-          </button>
-          <Link href="/dashboard/leases/new" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
+          </span>
+          {canManageLeases && (
+          <Link href="/dashboard/leases?new=1" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
             <Plus size={13} /> {t("newLease")}
           </Link>
+          )}
         </div>
       </div>
 
