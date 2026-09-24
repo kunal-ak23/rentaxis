@@ -738,15 +738,27 @@ public class SettlementService {
         response.setTotalAdditions(settlement.getTotalAdditions());
         response.setRefundAmount(settlement.getRefundAmount());
         if (settlement.getId() != null && jdbc != null) {
+            var p = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("s", settlement.getId())
+                    .addValue("t", settlement.getTenantId());
             BigDecimal paid = jdbc.queryForObject("""
                     select coalesce(sum(l.amount), 0) from vouchers v join voucher_lines l on l.voucher_id = v.id
-                    where v.settlement_id = :s and v.status = 'POSTED'""",
-                    new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("s", settlement.getId()),
-                    BigDecimal.class);
+                    where v.tenant_id = :t and v.settlement_id = :s and v.status = 'POSTED'""", p, BigDecimal.class);
             response.setRefundPaid(money(paid));
-            BigDecimal owed = settlement.getRefundAmount() == null ? BigDecimal.ZERO : settlement.getRefundAmount();
+            // R1 P1: owed is what the finalize booked to the refund payable. A settlement
+            // finalized before F14-36 paid its refund from the bank and owes nothing.
+            BigDecimal booked = BigDecimal.ZERO;
+            Lease settled = settlement.getLeaseId() == null ? null
+                    : leaseRepository.findById(settlement.getLeaseId()).orElse(null);
+            Account payable = settled == null ? null
+                    : accountResolver.resolveOrNull(AccountRole.RENTER_REFUND_PAYABLE, propertyIdOf(settled));
+            if (settlement.getJournalId() != null && payable != null) {
+                booked = jdbc.queryForObject("""
+                        select coalesce(sum(l.credit), 0) from journal_lines l
+                        where l.tenant_id = :t and l.journal_entry_id = :e and l.account_id = :a""",
+                        p.addValue("e", settlement.getJournalId()).addValue("a", payable.getId()), BigDecimal.class);
+            }
             response.setRefundOutstanding(settlement.getStatus() == SettlementStatus.FINALIZED
-                    ? money(owed.subtract(paid)) : BigDecimal.ZERO);
+                    ? money(booked.subtract(paid).max(BigDecimal.ZERO)) : BigDecimal.ZERO);
         }
         response.setNotes(settlement.getNotes());
         response.setStatus(settlement.getStatus().name());

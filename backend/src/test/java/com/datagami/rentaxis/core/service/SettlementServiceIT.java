@@ -1097,6 +1097,52 @@ class SettlementServiceIT extends AbstractPostgresIT {
     }
 
     /** A refund needs somewhere to come from, and a balance due needs nothing. */
+    /**
+     * R1 P1: a settlement finalized before F14-36 paid the refund from the bank; its
+     * STL carries no refund-payable credit. It owes nothing, and a refund voucher
+     * against it is refused.
+     */
+    @Test
+    void aSettlementFinalizedUnderTheOldFlowOwesNoRefund() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        UUID bank = leaf(AccountRole.BANK).getId();
+        // Reshape into the legacy settlement: its journal paid the refund straight from the bank.
+        String narration = "legacy STL";
+        UUID legacyStl = tx.execute(st -> postingService.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(
+                JournalDocType.JV, SETTLED_ON, narration, null,
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null, List.of(
+                        com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(leaf(AccountRole.SECURITY_DEPOSIT).getId(), new BigDecimal("8239.73")),
+                        com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(bank, new BigDecimal("8239.73"))))).getId());
+        jdbcTemplate.update("update lease_settlements set journal_id = ?, refund_bank_account_id = ? where id = ?",
+                legacyStl, bank, done.getId());
+
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("0.00");
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        assertThatThrownBy(() -> vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, bank, null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        payable, "Refund", new BigDecimal("8239.73"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-LEGACY", done.getId())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("was paid when it was finalized");
+    }
+
+    /** R1 P2-4: the refund payable is only paid through a voucher naming the settlement. */
+    @Test
+    void aPlainPaymentOnTheRefundPayableIsRefused() {
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        assertThatThrownBy(() -> vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, leaf(AccountRole.BANK).getId(), null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        payable, "Refund", new BigDecimal("100.00"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-X")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("use Pay refund");
+    }
+
     @Test
     void aRefundIsOwedToTheRenterAndPaidByAPaymentVoucherNamingTheSettlement() {
         UUID leaseId = terminatedGalah();

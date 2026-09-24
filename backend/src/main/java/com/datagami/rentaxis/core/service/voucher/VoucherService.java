@@ -831,6 +831,20 @@ public class VoucherService {
                 && original.getPaymentAccount().getId().equals(fresh.getPaymentAccount().getId())
                 && java.util.Objects.equals(original.getDocDate(), fresh.getDocDate());
         Voucher posted = post(fresh.getId(), List.of(), null, sameMovement ? opts.exemptFromStatement() : opts);
+        if (sameMovement) {
+            // R1 P3-7: the replacement is the same bank movement, so a confirmed
+            // "not on the statement" stays with it.
+            entityManager.flush();
+            entityManager.createNativeQuery("""
+                    insert into bank_off_statement_items (id, tenant_id, bank_account_id, journal_entry_id, entry_date,
+                                                          statement_from, statement_to, confirmed_by, confirmed_at)
+                    select gen_random_uuid(), o.tenant_id, o.bank_account_id, :fresh, o.entry_date,
+                           o.statement_from, o.statement_to, o.confirmed_by, o.confirmed_at
+                    from bank_off_statement_items o where o.journal_entry_id = :orig
+                    on conflict (bank_account_id, journal_entry_id) do nothing""")
+                    .setParameter("fresh", posted.getJournalId()).setParameter("orig", original.getJournalId())
+                    .executeUpdate();
+        }
         if (original.getDocType() == VoucherType.PISR) {
             allocationService.carryToReplacement(original.getId(), posted.getId(), reversalDate);
         } else if (isVendorDebit(posted.getDocType())) {
@@ -1126,6 +1140,7 @@ public class VoucherService {
         }
         if (in.docType() == VoucherType.PISR) requireSupplierInvoiceRules(in, selfId);
         if (in.settlementId() != null) requireRefundPayment(in);
+        requireRefundPayableNamesASettlement(in);
     }
 
     /**
@@ -1142,7 +1157,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException("A settlement refund is paid to the renter, not to a vendor");
         }
         com.datagami.rentaxis.domain.entity.LeaseSettlement s = refundSettlement(in.settlementId());
-        UUID payable = refundPayableLeaf();
+        UUID payable = refundPayableLeaf(s);
         if (in.lines().size() != 1 || !in.lines().get(0).accountId().equals(payable)) {
             throw new BusinessRuleViolationException("A settlement refund payment has one line, on the renters'"
                     + " refund payable account");
@@ -1154,8 +1169,34 @@ public class VoucherService {
                     + " is not the ledger account of any bank account; pay the refund from a bank account's"
                     + " account or from cash", "cheque.bankLeafNotOwned", Map.of("account", pay.getCode() + " " + pay.getName()));
         }
-        if (s.getRefundAmount() == null || s.getRefundAmount().signum() <= 0) {
-            throw new BusinessRuleViolationException("This settlement owes the renter no refund");
+        // R1 P1: owed only by what the finalize booked to the payable. A settlement
+        // finalized before refunds went through vouchers paid the bank directly and
+        // owes nothing here.
+        if (refundBooked(s).signum() <= 0) {
+            throw new BusinessRuleViolationException("This settlement's refund was paid when it was finalized"
+                    + " (before refunds were paid by voucher), so there is nothing left to pay",
+                    "voucher.refundAlreadyPaid", Map.of());
+        }
+    }
+
+    /**
+     * R1 P2-4: the renters' refund payable is debited only by a payment that names
+     * the settlement it pays; anything else would pay a refund the settlement's
+     * tracking never sees.
+     */
+    private void requireRefundPayableNamesASettlement(VoucherInput in) {
+        if (in.settlementId() != null || accountResolver == null) return;
+        java.util.Set<UUID> payables = new java.util.HashSet<>(entityManager.createQuery(
+                "select m.account.id from TenantDefaultAccountMapping m where m.role = :r", UUID.class)
+                .setParameter("r", com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE)
+                .getResultList());
+        payables.addAll(entityManager.createQuery(
+                "select m.account.id from PropertyAccountMapping m where m.role = :r", UUID.class)
+                .setParameter("r", com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE)
+                .getResultList());
+        if (in.lines().stream().anyMatch(l -> payables.contains(l.accountId()))) {
+            throw new BusinessRuleViolationException("A deposit refund is paid from its settlement: open the lease's"
+                    + " settlement and use Pay refund", "voucher.refundOutsideSettlement", Map.of());
         }
     }
 
@@ -1177,12 +1218,30 @@ public class VoucherService {
         return s;
     }
 
-    private UUID refundPayableLeaf() {
+    /** The payable leaf the settlement's STL credited: RENTER_REFUND_PAYABLE resolved for its property (R1 P3-2). */
+    private UUID refundPayableLeaf(com.datagami.rentaxis.domain.entity.LeaseSettlement s) {
         if (accountResolver == null) throw new IllegalStateException("No account resolver");
-        return accountResolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE, null).getId();
+        com.datagami.rentaxis.domain.entity.Lease lease =
+                entityManager.find(com.datagami.rentaxis.domain.entity.Lease.class, s.getLeaseId());
+        UUID property = lease == null || lease.getUnit() == null || lease.getUnit().getProperty() == null
+                ? null : lease.getUnit().getProperty().getId();
+        return accountResolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE,
+                property).getId();
     }
 
-    /** F14-36: what a settlement's refund still owes: its amount less every POSTED payment naming it. */
+    /**
+     * R1 P1: what the finalize booked to the renter: the STL's credit on the refund
+     * payable leaf. Zero for a settlement finalized under the old flow, which paid
+     * the refund straight from the bank.
+     */
+    public BigDecimal refundBooked(com.datagami.rentaxis.domain.entity.LeaseSettlement s) {
+        if (s.getJournalId() == null) return BigDecimal.ZERO;
+        return (BigDecimal) entityManager.createQuery(
+                "select coalesce(sum(l.credit), 0) from JournalLine l where l.entry.id = :e and l.account.id = :a")
+                .setParameter("e", s.getJournalId()).setParameter("a", refundPayableLeaf(s)).getSingleResult();
+    }
+
+    /** F14-36: what a settlement's refund still owes: what finalize booked less every POSTED payment naming it. */
     public BigDecimal refundOutstanding(UUID settlementId, UUID excludeVoucherId) {
         com.datagami.rentaxis.domain.entity.LeaseSettlement s = refundSettlement(settlementId);
         BigDecimal paid = (BigDecimal) entityManager.createQuery(
@@ -1191,7 +1250,7 @@ public class VoucherService {
                 .setParameter("s", settlementId).setParameter("posted", VoucherStatus.POSTED)
                 .setParameter("self", excludeVoucherId == null ? UUID.randomUUID() : excludeVoucherId)
                 .getSingleResult();
-        return (s.getRefundAmount() == null ? BigDecimal.ZERO : s.getRefundAmount()).subtract(paid);
+        return refundBooked(s).subtract(paid);
     }
 
     /**
