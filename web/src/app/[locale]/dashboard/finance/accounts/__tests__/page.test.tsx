@@ -118,6 +118,13 @@ function stubFetch() {
                 text: async () => JSON.stringify({ error: true, message, status }),
             } as unknown as Response;
         }
+        if (url.includes("/finance/reports/report-lines")) {
+            const lines = [
+                { key: "RENTAL_INCOME", labelEn: "Rental income", labelAr: null, accountType: "INCOME" },
+                { key: "EXP_CLEANING", labelEn: "Cleaning", labelAr: null, accountType: "EXPENSE" },
+            ];
+            return { ok: true, json: async () => lines, text: async () => JSON.stringify(lines) } as unknown as Response;
+        }
         if (url.includes("/v1/finance/accounts")) {
             return {
                 ok: true,
@@ -230,6 +237,31 @@ describe("AccountsPage", () => {
             alias: null,
             group: false,
         });
+    });
+
+    /** Re-review N2: a report line belongs to one account type, so changing the type drops it. */
+    it("offers report lines for the chosen type and clears the choice when the type changes", async () => {
+        render(<AccountsPage />);
+        await screen.findByText("Landscaping");
+        fireEvent.click(screen.getByRole("button", { name: "addAccount" }));
+
+        fireEvent.change(screen.getByDisplayValue("ASSET"), { target: { value: "EXPENSE" } });
+        const picker = await screen.findByTestId("account-report-line") as HTMLSelectElement;
+        await waitFor(() => expect(within(picker).queryByText("Cleaning")).not.toBeNull());
+        expect(within(picker).queryByText("Rental income")).toBeNull();
+        fireEvent.change(picker, { target: { value: "EXP_CLEANING" } });
+        expect((screen.getByTestId("account-report-line") as HTMLSelectElement).value).toBe("EXP_CLEANING");
+
+        fireEvent.change(screen.getByDisplayValue("EXPENSE"), { target: { value: "INCOME" } });
+        const after = screen.getByTestId("account-report-line") as HTMLSelectElement;
+        expect(after.value).toBe("");
+        expect(within(after).queryByText("Rental income")).not.toBeNull();
+
+        // The state, not just the rendered select: the create body carries no stale line.
+        fireEvent.submit(document.querySelector("form") as HTMLFormElement);
+        await waitFor(() => expect(calls.some((c) => c.init?.method === "POST")).toBe(true));
+        const body = JSON.parse(String(calls.find((c) => c.init?.method === "POST")?.init?.body));
+        expect(body).toMatchObject({ accountType: "INCOME", reportLine: null });
     });
 
     it("shows a page-level alert when a delete is rejected", async () => {

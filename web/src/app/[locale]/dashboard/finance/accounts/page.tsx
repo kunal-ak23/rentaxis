@@ -399,7 +399,8 @@ export default function AccountsPage() {
                     disabled={isEdit}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.accountType}
-                    onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
+                    // A report line belongs to one account type, so a type change drops it.
+                    onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "", reportLine: "" })}
                 >
                     {TYPE_ORDER.map(type => <option key={type} value={type}>{typeLabel(type)}</option>)}
                 </select>
