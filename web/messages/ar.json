@@ -2326,6 +2326,11 @@
       "openingBalances": {
         "locked": "الدفاتر مقفلة حتى {locked}. الأرصدة الافتتاحية مؤرخة بـ {date} ولا يمكن تغييرها أثناء إقفال تلك الفترة.",
         "reasonRequired": "السبب مطلوب."
+      },
+      "vendor": {
+        "duplicateTrn": "{vendor} يستخدم بالفعل هذا الرقم الضريبي.",
+        "duplicateName": "{vendor} يستخدم بالفعل هذا الاسم.",
+        "hasPostings": "لدى {vendor} قيود مرحّلة. اجعله غير نشط بدلاً من ذلك."
       }
     },
     "paginationShowing": "عرض {start}-{end} من {total}",

@@ -10,6 +10,7 @@ import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Account = {
@@ -179,7 +180,7 @@ export default function VendorsPage() {
             fetchVendors();
         } catch (err) {
             console.error(err);
-            setFormError(err instanceof ApiError ? err.message : t("saveFailed"));
+            setFormError(err instanceof ApiError ? serverText(tCommon, err) : t("saveFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -206,7 +207,7 @@ export default function VendorsPage() {
                     fetchVendors();
                 } catch (err) {
                     console.error(err);
-                    showErrorBanner(err instanceof ApiError ? err.message : t("deleteFailed"));
+                    showErrorBanner(err instanceof ApiError ? serverText(tCommon, err) : t("deleteFailed"));
                 }
             },
         });

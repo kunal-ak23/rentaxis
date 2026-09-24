@@ -2326,6 +2326,11 @@
       "openingBalances": {
         "locked": "The books are locked through {locked}. The opening balances are dated {date} and cannot change while that period is locked.",
         "reasonRequired": "A reason is required."
+      },
+      "vendor": {
+        "duplicateTrn": "{vendor} already uses this TRN.",
+        "duplicateName": "{vendor} already uses this name.",
+        "hasPostings": "{vendor} has postings. Mark it inactive instead."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
