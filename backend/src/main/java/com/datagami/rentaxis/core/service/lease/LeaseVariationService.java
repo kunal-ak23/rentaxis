@@ -272,11 +272,16 @@ public class LeaseVariationService {
         String before = addendum.getEjariNumber();
         addendum.setEjariNumber(ejari);
         addendum = addendumRepository.save(addendum);
-        // F14-33: the latest addendum's registration is the lease's current Ejari,
-        // so the header shows it (and a corrected number replaces it there too).
-        List<LeaseAddendum> all = addendumRepository.findByLease_IdOrderByCreatedAtAsc(leaseId);
-        if (!all.isEmpty() && all.get(all.size() - 1).getId().equals(addendum.getId())) {
-            lease.setEjariNumber(ejari);
+        // F14-33: the latest registered addendum's Ejari is the lease's current one,
+        // so the header shows it — set or corrected, on whichever addendum is the
+        // latest to carry a number (an earlier addendum registered late still
+        // counts while no later one is registered). Changeset 127 backfilled it.
+        String latest = null;
+        for (LeaseAddendum a : addendumRepository.findByLease_IdOrderByCreatedAtAsc(leaseId)) {
+            if (a.getEjariNumber() != null && !a.getEjariNumber().isBlank()) latest = a.getEjariNumber();
+        }
+        if (latest != null && !latest.equals(lease.getEjariNumber())) {
+            lease.setEjariNumber(latest);
             leaseRepository.save(lease);
         }
         if (before != null && !before.equals(ejari)) {

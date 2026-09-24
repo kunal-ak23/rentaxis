@@ -468,12 +468,40 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(recorded.ejariNumber()).isEqualTo("EJ-2027-00042");
         assertThat(recorded.ejariPending()).isFalse();
         assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::ejariPending).containsExactly(false, true);
+        // F14-33: with the later addendum not yet registered, the first one's Ejari is the latest.
+        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00042");
 
         // F14-33: the latest addendum's Ejari is the lease's; a corrected number replaces it.
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00050");
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00051");
-        String headerEjari = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getEjariNumber());
-        assertThat(headerEjari).isEqualTo("EJ-2027-00051");
+        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        // Correcting an earlier addendum's number leaves the latest one on the header.
+        variations.recordEjari(leaseId, first.addendum().id(), "EJ-2027-00043");
+        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
+
+        // Changeset 127 backfills a header an older build left behind, and is idempotent.
+        jdbc.update("update leases set ejari_number = null where id = ?", leaseId);
+        String backfill = changeset127Sql();
+        assertThat(jdbc.update(backfill)).isGreaterThanOrEqualTo(1);
+        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        assertThat(jdbc.update(backfill)).isZero();
+    }
+
+    private String headerEjari(UUID leaseId) {
+        return tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getEjariNumber());
+    }
+
+    /** The UPDATE of changeset 127, as Liquibase runs it. */
+    private static String changeset127Sql() {
+        try (var in = LeaseVariationServiceIT.class.getResourceAsStream(
+                "/db/changelog/changesets/127-lease-ejari-from-latest-addendum.yaml")) {
+            String yaml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            String body = yaml.substring(yaml.indexOf("sql: |") + "sql: |".length(), yaml.indexOf("      rollback:"));
+            return body.lines().map(String::strip).filter(l -> !l.isEmpty())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     // ------------------------------------------------------------------

@@ -1,0 +1,25 @@
+# F14-33: the lease header shows the Ejari of its latest registered addendum.
+# LeaseVariationService keeps it so from now on; this backfills leases whose
+# addenda were registered before that (e.g. T-104 ADD-26/4 EJ-2026-0445871).
+# Idempotent: only rows whose header differs from their latest registered
+# addendum's number are touched, and a lease with no registered addendum is not.
+databaseChangeLog:
+  - changeSet:
+      id: 127-lease-ejari-from-latest-addendum
+      author: claude
+      changes:
+        - sql:
+            comment: Lease header Ejari = latest registered addendum's Ejari
+            splitStatements: false
+            sql: |
+              UPDATE leases l
+                 SET ejari_number = x.ejari_number
+                FROM (SELECT DISTINCT ON (a.lease_id) a.lease_id, a.tenant_id, a.ejari_number
+                        FROM lease_addenda a
+                       WHERE a.ejari_number IS NOT NULL AND btrim(a.ejari_number) <> ''
+                       ORDER BY a.lease_id, a.created_at DESC, a.id DESC) x
+               WHERE x.lease_id = l.id AND x.tenant_id = l.tenant_id
+                 AND l.ejari_number IS DISTINCT FROM x.ejari_number;
+      rollback:
+        - sql:
+            sql: SELECT 1
