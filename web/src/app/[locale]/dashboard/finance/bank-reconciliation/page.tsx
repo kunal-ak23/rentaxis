@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { AlertTriangle, FileUp, Landmark, Layers, ListChecks, Trash2 } from "lucide-react";
+import { AlertTriangle, FileUp, Landmark, Layers, ListChecks, Lock, RotateCcw, Trash2 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { loadAccounts } from "@/components/finance/AccountPicker";
 import { StatementImportDialog } from "@/components/finance/bankrec/StatementImportDialog";
@@ -25,12 +25,14 @@ export default function BankReconciliationPage() {
     const tCommon = useTranslations("Common");
     const { data: session } = useSession();
     const allowed = hasPermission(session?.user?.role as UserRole | undefined, "canReconcileBank");
+    const canReopen = hasPermission(session?.user?.role as UserRole | undefined, "canReopenBankRec");
 
     const [rows, setRows] = useState<BankAccountRow[] | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [importing, setImporting] = useState<BankAccountRow | null>(null);
     const [editing, setEditing] = useState<BankAccountRow | null>(null);
     const [history, setHistory] = useState<BankAccountRow | null>(null);
+    const [reopening, setReopening] = useState<BankAccountRow | null>(null);
 
     const load = useCallback(async () => {
         setLoadError(null);
@@ -66,11 +68,12 @@ export default function BankReconciliationPage() {
                         <th className={th}>{t("lastImport")}</th>
                         <th className={th}>{t("lastLine")}</th>
                         <th className={`${th} text-end`}>{t("unmatched")}</th>
+                        <th className={th}>{t("reconciledThrough")}</th>
                         <th className={th} />
                     </tr></thead>
                     <tbody className="divide-y divide-border">
                         {rows && rows.length === 0 && (
-                            <tr><td colSpan={6} className="text-center text-xs text-muted py-10">{t("noAccounts")}</td></tr>
+                            <tr><td colSpan={7} className="text-center text-xs text-muted py-10">{t("noAccounts")}</td></tr>
                         )}
                         {rows?.map(r => (
                             <tr key={r.id} data-testid={`bankrec-row-${r.accountNumber}`}>
@@ -91,6 +94,15 @@ export default function BankReconciliationPage() {
                                 <td className={td}>{r.lastImportFile ?? "—"}</td>
                                 <td className={td}><bdi dir="ltr">{dmy(r.lastLineDate) || "—"}</bdi></td>
                                 <td className={`${td} text-end font-bold`}>{r.unmatchedLines}</td>
+                                <td className={td} data-testid={`reconciled-${r.accountNumber}`}>
+                                    {r.reconciledThrough ? (
+                                        <span className="inline-flex items-center gap-1"><Lock size={11} /><bdi dir="ltr">{dmy(r.reconciledThrough)}</bdi></span>
+                                    ) : "—"}
+                                    {canReopen && r.latestFinalizedReconciliationId && (
+                                        <button type="button" className={`${small} ms-1`} data-testid={`reopen-${r.accountNumber}`}
+                                                onClick={() => setReopening(r)}><RotateCcw size={11} />{t("reopen")}</button>
+                                    )}
+                                </td>
                                 <td className={`${td} text-end`}>
                                     <div className="flex flex-wrap justify-end gap-1">
                                         <button type="button" className={small} data-testid={`import-${r.accountNumber}`} onClick={() => setImporting(r)}>
@@ -114,6 +126,7 @@ export default function BankReconciliationPage() {
             )}
             {editing && <LeavesDialog row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
             {history && <HistoryDialog row={history} onClose={() => setHistory(null)} onChanged={load} />}
+            {reopening && <ReopenDialog row={reopening} onClose={() => setReopening(null)} onDone={() => { setReopening(null); load(); }} />}
         </div>
     );
 }
@@ -222,6 +235,38 @@ function HistoryDialog({ row, onClose, onChanged }: { row: BankAccountRow; onClo
                         ))}
                     </tbody>
                 </table>
+            </div>
+        </Modal>
+    );
+}
+
+/** Reopen the bank account's latest finalized reconciliation (spec §4: admins only, with a reason). */
+function ReopenDialog({ row, onClose, onDone }: { row: BankAccountRow; onClose: () => void; onDone: () => void }) {
+    const t = useTranslations("BankRec");
+    const [reason, setReason] = useState("");
+    const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const go = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            await bankRecApi.reopenReconciliation(row.latestFinalizedReconciliationId!, reason.trim());
+            onDone();
+        } catch (err) {
+            setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <Modal title={`${t("reopen")} — ${row.bankName}`} onClose={onClose} testId="reopen-dialog">
+            <p className="text-xs text-muted mb-3">{t("reopenHint", { date: dmy(row.reconciledThrough) })}</p>
+            <textarea className={`${field} w-full mb-3`} rows={3} value={reason} placeholder={t("reopenReason")}
+                      onChange={e => setReason(e.target.value)} data-testid="reopen-reason" />
+            {error && <div role="alert" className="text-xs text-error mb-3">{error}</div>}
+            <div className="flex gap-2">
+                <button type="button" className={primary} disabled={busy || !reason.trim()} onClick={go} data-testid="reopen-go">{t("reopen")}</button>
+                <button type="button" className={button} onClick={onClose}>{t("cancel")}</button>
             </div>
         </Modal>
     );

@@ -150,6 +150,8 @@ public class OpeningBalanceService {
     private final LedgerQueryService ledger;
     private final AccountResolver resolver;
     private final TenantFiscalSettingsService fiscal;
+    /** Finance-ops spec §4: an opening balance touching a reconciled bank leaf is locked with it. */
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
     private final EntityManager entityManager;
 
     /**
@@ -451,6 +453,7 @@ public class OpeningBalanceService {
         OpeningBalancePosting marker = lockMarker(asOf);
         JournalEntry live = liveJournal(marker);
         if (live != null) {
+            bankLock.assertOpenForEntry(live.getId(), live.getEntryDate());
             // PostingService.reverse, not JournalService.reverse: the HTTP-facing one
             // only reverses MANUAL journals and would refuse this by design. The date
             // is the ORIGINAL's, not asOf() — see reverse().
@@ -484,6 +487,7 @@ public class OpeningBalanceService {
         if (live == null) {
             throw new BusinessRuleViolationException("There is no posted opening-balance journal to reverse");
         }
+        bankLock.assertOpenForEntry(live.getId(), live.getEntryDate());
         JournalEntry mirror = posting.reverse(live.getId(), live.getEntryDate(),
                 reason == null || reason.isBlank() ? "Opening balances reversed" : reason);
         marker.setJournalId(null);

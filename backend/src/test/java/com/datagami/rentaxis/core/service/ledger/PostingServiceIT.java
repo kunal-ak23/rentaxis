@@ -391,4 +391,64 @@ class PostingServiceIT extends AbstractPostgresIT {
             assertThat(reversed.get(i).getContraAccountId()).isEqualTo(original.get(i).getContraAccountId());
         }
     }
+
+    @Autowired com.datagami.rentaxis.core.service.BankAccountService bankAccounts;
+    @Autowired com.datagami.rentaxis.core.service.bank.BankAccountLedgerService bankLedgers;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+
+    /** A small movement on the bank leaf, inside a transaction that waits at most 2 s for any row lock. */
+    private void postOnTheBankLeafWithinTwoSeconds() {
+        tx.executeWithoutResult(st -> {
+            jdbc.execute("set local lock_timeout = '2s'");
+            posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 15), "Cash banked", null,
+                    JournalSourceType.MANUAL, null, null,
+                    List.of(dr(bankLeaf.getId(), new BigDecimal("10.00")), cr(advanceRentLeaf.getId(), new BigDecimal("10.00")))));
+        });
+    }
+
+    /**
+     * Finance-ops spec §4, the bank lock's fast path: while the tenant has never
+     * started a reconciliation, a posting on a bank account's leaf reads no leaf
+     * set and takes no row lock, so it goes straight past a bank account row held
+     * FOR UPDATE. Once a reconciliation exists, the same posting waits for it.
+     */
+    @Test
+    void theBankLockTakesNoRowLockUntilTheTenantStartsReconciling() throws Exception {
+        BankAccount b = new BankAccount();
+        b.setBankName("Emirates Islamic");
+        b.setAccountNumber("0260000000123");
+        b.setCoaAccount(bankLeaf);
+        BankAccount bank = bankAccounts.createBankAccount(b);
+        bankLedgers.setLeaves(bank.getId(), List.of(bankLeaf.getId()));
+        fiscal.get();
+
+        java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> holder = pool.submit(() -> tx.executeWithoutResult(st -> {
+                jdbc.queryForList("select id from bank_accounts where id = ? for update", bank.getId());
+                held.countDown();
+                try { release.await(30, TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+            }));
+            assertThat(held.await(20, TimeUnit.SECONDS)).isTrue();
+
+            // No reconciliation: no set read, no FOR SHARE — the held row is never waited for.
+            postOnTheBankLeafWithinTwoSeconds();
+
+            // The tenant starts reconciling: the same posting now waits for the bank account's row.
+            jdbc.update("update tenant_fiscal_settings set bank_rec_started = true where tenant_id = ?", tenantId);
+            assertThatThrownBy(this::postOnTheBankLeafWithinTwoSeconds)
+                    .isInstanceOf(org.springframework.jdbc.UncategorizedSQLException.class)
+                    .satisfies(e -> assertThat(((org.springframework.jdbc.UncategorizedSQLException) e).getSQLException().getSQLState())
+                            .as("lock_timeout: the posting waited for the bank account's row").isEqualTo("55P03"));
+
+            release.countDown();
+            holder.get(30, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        postOnTheBankLeafWithinTwoSeconds();
+    }
 }

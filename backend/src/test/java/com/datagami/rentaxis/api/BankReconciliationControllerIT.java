@@ -185,4 +185,71 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
                 Map.of("accountIds", List.of())).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(json(call(HttpMethod.GET, BASE + "/bank-accounts", otherAccountant, null))).isEmpty();
     }
+
+    /** Finance-ops spec §4 over HTTP: SUPER_ADMIN reconciles, finalizes and downloads; only an admin reopens. */
+    @Test
+    void aSuperAdminReconcilesFinalizesAndDownloadsAndOnlyAnAdminReopens() throws Exception {
+        call(HttpMethod.PUT, BASE + "/bank-accounts/" + ei.getId() + "/profile", superAdmin, PROFILE);
+        assertThat(json(upload(superAdmin, CSV, null, false)).get("linesNew").asInt()).isEqualTo(2);
+
+        ResponseEntity<String> created = call(HttpMethod.POST, BASE + "/bank-accounts/" + ei.getId() + "/reconciliations", superAdmin,
+                Map.of("periodFrom", "2026-09-01", "periodTo", "2026-09-02"));
+        assertThat(created.getStatusCode()).as(created.getBody()).isEqualTo(HttpStatus.OK);
+        JsonNode draft = json(created);
+        String id = draft.get("id").asText();
+        assertThat(draft.get("status").asText()).isEqualTo("DRAFT");
+        assertThat(draft.get("unrecordedItems")).hasSize(2);
+        assertThat(draft.get("canFinalize").asBoolean()).isFalse();
+
+        // The statement CSV neutralises the bank's formula.
+        ResponseEntity<byte[]> csv = spec(HttpMethod.GET, BASE + "/reconciliations/" + id + ".csv", accountant)
+                .retrieve().onStatus(x -> true, (req, res) -> { }).toEntity(byte[].class);
+        assertThat(csv.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String text = new String(csv.getBody(), StandardCharsets.UTF_8);
+        assertThat(text).contains("\"'=HYPERLINK(\"\"http://x\"\")\"").doesNotContain(",=HYPERLINK");
+        assertThat(text).contains("Unrecorded statement item");
+
+        JsonNode ws = json(call(HttpMethod.GET, BASE + "/bank-accounts/" + ei.getId() + "/workspace", superAdmin, null));
+        for (JsonNode l : ws.get("statementLines")) {
+            String kind = l.get("amount").decimalValue().signum() > 0 ? "INTEREST" : "CHARGE";
+            assertThat(call(HttpMethod.POST, BASE + "/lines/actions/post", superAdmin,
+                    Map.of("statementLineIds", List.of(l.get("id").asText()), "kind", kind)).getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+        JsonNode ready = json(call(HttpMethod.GET, BASE + "/reconciliations/" + id, accountant, null));
+        assertThat(ready.get("difference").decimalValue()).isEqualByComparingTo("0.00");
+        assertThat(ready.get("canFinalize").asBoolean()).as(ready.get("checks").toString()).isTrue();
+        assertThat(call(HttpMethod.GET, BASE + "/reconciliations/" + id, manager, null).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        ResponseEntity<String> finalized = call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/finalize", superAdmin, null);
+        assertThat(finalized.getStatusCode()).as(finalized.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(json(finalized).get("status").asText()).isEqualTo("FINALIZED");
+        assertThat(json(call(HttpMethod.GET, BASE + "/bank-accounts", superAdmin, null)).get(0).get("reconciledThrough").asText())
+                .isEqualTo("2026-09-02");
+
+        ResponseEntity<byte[]> pdf = spec(HttpMethod.GET, BASE + "/reconciliations/" + id + ".pdf?lang=ar", accountant)
+                .retrieve().onStatus(x -> true, (req, res) -> { }).toEntity(byte[].class);
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pdf.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+        assertThat(new String(pdf.getBody(), 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+
+        // Reopen: an accountant or a property manager cannot; a tenant admin can, with a reason.
+        Map<String, String> why = Map.of("reason", "Charge booked to the wrong leaf");
+        assertThat(call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/reopen", accountant, why).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/reopen", manager, why).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        User admin = user(UserRole.TENANT_ADMIN, tenantId);
+        assertThat(call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/reopen", admin, Map.of("reason", " "))
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponseEntity<String> reopened = call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/reopen", admin, why);
+        assertThat(reopened.getStatusCode()).as(reopened.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(json(reopened).get("status").asText()).isEqualTo("REOPENED");
+        assertThat(json(reopened).get("reopenedByName").asText()).isEqualTo("TENANT_ADMIN");
+
+        UUID other = tenant("BankRec-C-");
+        User otherAdmin = user(UserRole.TENANT_ADMIN, other);
+        assertThat(call(HttpMethod.GET, BASE + "/reconciliations/" + id, otherAdmin, null).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(call(HttpMethod.POST, BASE + "/reconciliations/" + id + "/finalize", otherAdmin, null).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }

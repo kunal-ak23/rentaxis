@@ -239,6 +239,9 @@ export const PERMISSIONS = {
     // class-level @PreAuthorize. A property manager keeps the cheque actions on the
     // register and has none of this.
     canReconcileBank: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Finance-ops spec §4: reopening a finalized bank reconciliation (it lifts the
+    // bank lock) is an admin's call; BankReconciliationController.reopenReconciliation.
+    canReopenBankRec: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

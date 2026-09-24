@@ -113,6 +113,14 @@ public class ImportBatchService {
      */
     private final ObjectProvider<LeaseReverter> leaseReverter;
 
+    /** Finance-ops spec §4. Setter-injected: a unit test builds this service by hand without it. */
+    private com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setBankLock(com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+        this.bankLock = bankLock;
+    }
+
     /**
      * The one sentence every cut-over step says when the books have already been
      * opened (review C2, ruling R17; spec §10.3 "Amendment 2026-09-22").
@@ -476,6 +484,11 @@ public class ImportBatchService {
                         .sorted(Comparator.comparing(JournalEntry::getCreatedAt))
                         .toList());
         Collections.reverse(toReverse);
+        // Finance-ops spec §4: every mirror is dated on its original; one inside a
+        // reconciled bank period refuses the whole batch before anything is reversed.
+        if (bankLock != null) {
+            for (JournalEntry e : toReverse) bankLock.assertOpenForEntry(e.getId(), e.getEntryDate());
+        }
         for (JournalEntry e : toReverse) {
             // The entry's OWN date, never a supplied one — see the method Javadoc.
             posting.reverse(e.getId(), e.getEntryDate(),

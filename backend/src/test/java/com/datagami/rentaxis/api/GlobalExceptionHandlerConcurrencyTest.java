@@ -31,4 +31,15 @@ class GlobalExceptionHandlerConcurrencyTest {
             assertThat((String) response.getBody().get("message")).contains("Please try again");
         }
     }
+
+    @Test
+    void aNativeLockTimeoutOrDeadlockIsA409AndAnyOtherUncategorisedSqlErrorA500() {
+        for (String state : List.of("55P03", "40P01", "40001")) {
+            var e = new org.springframework.jdbc.UncategorizedSQLException("select ... for share", "select 1",
+                    new java.sql.SQLException("lock", state));
+            assertThat(handler.handleUncategorizedSql(e).getStatusCode().value()).as(state).isEqualTo(409);
+        }
+        var other = new org.springframework.jdbc.UncategorizedSQLException("x", "select 1", new java.sql.SQLException("boom", "XX000"));
+        assertThat(handler.handleUncategorizedSql(other).getStatusCode().value()).isEqualTo(500);
+    }
 }

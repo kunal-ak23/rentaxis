@@ -57,6 +57,8 @@ public class VoucherService {
     private final EntityManager entityManager;
     private final VoucherAllocationService allocationService;
     private final IssuedChequeRepository issuedCheques;
+    /** Finance-ops spec §4: the per-bank lock, checked before a post, an amend or a reversal does any work. */
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
 
     /** UAE standard rate is 5%; zero-rated and exempt supplies are 0. Nothing else is legal today. */
     private static final Set<BigDecimal> ALLOWED_VAT_RATES =
@@ -262,6 +264,12 @@ public class VoucherService {
         // Before the journal: this row, then the invoices, then the sequence (lockForWrite).
         if (allocating) allocationService.lockTargets(allocations);
         boolean postDated = isPostDatedCheque(v);
+        // Finance-ops spec §4: refused early when it touches a reconciled bank leaf
+        // inside the reconciled period. A post-dated cheque credits PDC_PAYABLE, not the bank.
+        List<UUID> touched = new ArrayList<>();
+        for (VoucherLine l : v.getLines()) touched.add(l.getAccount().getId());
+        if (v.getDocType() == VoucherType.BPV && !postDated && v.getPaymentAccount() != null) touched.add(v.getPaymentAccount().getId());
+        bankLock.assertOpen(touched, v.getDocDate());
         // PR #352 review P3-5: every cheque — post-dated or not — is one number on
         // its bank leaf. The per-leaf advisory lock serialises two posts (or two
         // runs) reaching for the same numbers, so the check below cannot be raced.
@@ -506,6 +514,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException("A reversal cannot be dated before the payment (" + original.getDocDate() + ")");
         }
         fiscal.assertOpen(date);
+        bankLock.assertOpenForEntry(original.getJournalId(), date);
         allocationService.lockCounterparts(original.getId(), null);
         requireNotBeforeARelease(original, date);
         cancelIssuedChequeOf(original, date, reason);
@@ -561,6 +570,7 @@ public class VoucherService {
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
+        bankLock.assertOpenForEntry(original.getJournalId(), reversalDate);
         // A grandfathered duplicate (changeset 110) shares its number with a POSTED
         // invoice the guard protects, so it can only be corrected to a new number —
         // while that invoice still stands (PR #351 re-review N3). Once it has been
