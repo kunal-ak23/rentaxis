@@ -236,6 +236,9 @@ public class TaxInvoiceService {
                     ? "VAT on rent earned to termination not declared by an instalment"
                     : "VAT credited back on rent not supplied after termination") + span;
         }
+        if (point.getKind() == VatTaxPointKind.SETTLEMENT) {
+            return "Recharges deducted at move-out (damage, cleaning, keys)";
+        }
         if (point.getKind() == VatTaxPointKind.CONTRACT) {
             return (point.getVatAmount().signum() >= 0 ? "Tenancy contract" : "Tenancy contract amended") + span;
         }

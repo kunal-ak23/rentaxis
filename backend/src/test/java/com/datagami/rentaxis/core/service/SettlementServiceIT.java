@@ -489,6 +489,41 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * "arrears" off the register's dates — which is what the old preview did —
      * would show zero there and refund the deposit alone.</p>
      */
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /**
+     * F14-37: on a VAT lease a damage recharge carries 5 % output VAT, declared by the
+     * STL with a tax invoice; utility arrears pass through to the property's
+     * Utilities expense leaf instead of income.
+     */
+    @Test
+    void aVatLeasesRechargeCarriesVatAndATaxInvoiceAndUtilityArrearsPassThrough() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000"),
+                        line("SECURITY_DEPOSIT", "3000")), 4, null).lease().getId();
+        leaseService.markExpired(leaseId, END.plusDays(1));
+        saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "2000"),
+                deduction(DeductionCategory.UTILITY_ARREARS, "650"));
+
+        SettlementStatementDTO statement = settlement.statement(leaseId);
+        assertThat(statement.totalDeductionVat()).isEqualByComparingTo("100.00");
+        assertThat(statement.deductions()).filteredOn(d -> d.category() == DeductionCategory.UTILITY_ARREARS)
+                .singleElement().satisfies(d -> assertThat(d.vatAmount()).isEqualByComparingTo("0"));
+
+        settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(END.plusDays(3), leaf(AccountRole.BANK).getId(), true), null);
+        JournalEntry stl = stlOf(leaseId);
+        assertThat(creditOn(stl, leaf(AccountRole.OUTPUT_VAT).getId())).isEqualByComparingTo("100.00");
+        UUID utilities = jdbcTemplate.queryForObject("""
+                select id from accounts where report_line = 'EXP_UTILITIES' and property_id = ? limit 1""",
+                UUID.class, fixtures.property().getId());
+        assertThat(creditOn(stl, utilities)).isEqualByComparingTo("650.00");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from tax_invoices where lease_id = ? and kind = 'TAX_INVOICE' and vat_amount = 100.00
+                  and taxable_amount = 2000.00""", Integer.class, leaseId)).isEqualTo(1);
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void statementShowsCreditOwedToTenant() {
         UUID leaseId = terminatedGalah();

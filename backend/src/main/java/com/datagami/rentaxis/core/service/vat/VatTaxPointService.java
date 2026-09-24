@@ -525,6 +525,29 @@ public class VatTaxPointService {
         taxInvoices.issueFor(p, lease, null);
     }
 
+    /**
+     * F14-37: the VAT on a settlement's taxable recharges, declared by the STL itself
+     * (Cr OUTPUT_VAT on {@code date}), as a POSTED tax point of kind SETTLEMENT that
+     * issues its tax invoice in the same transaction.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordSettlementVat(Lease lease, LocalDate date, UUID stlJournalId, BigDecimal taxable, BigDecimal vat) {
+        if (vat == null || vat.signum() == 0) return;
+        VatTaxPoint p = new VatTaxPoint();
+        p.setTenantId(lease.getTenantId());
+        p.setLeaseId(lease.getId());
+        stampWhere(p, lease);
+        p.setKind(VatTaxPointKind.SETTLEMENT);
+        p.setTaxPointDate(date);
+        p.setVatAmount(vat);
+        p.setTaxableAmount(taxable);
+        p.setStatus(VatTaxPointStatus.POSTED);
+        p.setJournalId(stlJournalId);
+        p.setPostedAt(Instant.now());
+        p = points.saveAndFlush(p);
+        taxInvoices.issueFor(p, lease, null);
+    }
+
     /** Whether this lease's contract VAT carries a tax invoice of ours (a POSTED CONTRACT point). */
     @Transactional(readOnly = true)
     public boolean contractDocumented(UUID leaseId) {

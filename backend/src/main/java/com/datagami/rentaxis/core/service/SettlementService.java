@@ -165,6 +165,23 @@ public class SettlementService {
      * <p>Either way a deduction line for one of them charges it a second time. The
      * refusals say which of the two homes the money is actually in.</p>
      */
+    /**
+     * F14-37: recharges that are supplies of the landlord's — repairing damage,
+     * cleaning, replacing keys. On a lease that charges VAT they carry 5 % output
+     * VAT and a tax invoice. Utility arrears are not among them: recovered at cost
+     * they pass through to the utility account, and the early-termination fee and
+     * "other" keep their own treatment.
+     */
+    static final java.util.Set<DeductionCategory> VATABLE_RECHARGES = java.util.EnumSet.of(
+            DeductionCategory.PROPERTY_DAMAGE, DeductionCategory.CLEANING, DeductionCategory.KEY_REPLACEMENT);
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
+
     private static final Map<DeductionCategory, AccountRole> DEDUCTION_ROLES =
             new EnumMap<>(Map.of(
                     DeductionCategory.PROPERTY_DAMAGE, AccountRole.MAINTENANCE_CHARGES,
@@ -331,6 +348,8 @@ public class SettlementService {
         List<AdditionLineDTO> additions = new ArrayList<>();
         BigDecimal totalDeductions = BigDecimal.ZERO;
         BigDecimal totalAdditions = BigDecimal.ZERO;
+        BigDecimal totalDeductionVat = BigDecimal.ZERO;
+        boolean vatLease = chargesVat(lease);
         for (LeaseSettlementDeduction line : lines) {
             BigDecimal amount = money(line.getAmount());
             Account account = accountOfLine(line, propertyId);
@@ -342,18 +361,25 @@ public class SettlementService {
                         account == null ? null : account.getName()));
             } else {
                 totalDeductions = totalDeductions.add(amount);
+                BigDecimal vat = vatLease && VATABLE_RECHARGES.contains(line.getCategory())
+                        ? amount.multiply(com.datagami.rentaxis.core.service.lease.LeaseVat.RATE)
+                                .setScale(2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                totalDeductionVat = totalDeductionVat.add(vat);
                 deductions.add(new DeductionLineDTO(line.getId(), line.getCategory(),
                         line.getDescription(), amount,
                         account == null ? null : account.getId(),
                         account == null ? null : account.getName(),
                         line.isAutoCalculated(),
-                        deductionAttachmentService.getAttachments(line.getId())));
+                        deductionAttachmentService.getAttachments(line.getId()),
+                        money(vat)));
             }
         }
 
         BigDecimal netRefund = money(depositsHeld)
                 .subtract(money(receivableBalance))
                 .subtract(totalDeductions)
+                .subtract(totalDeductionVat)
                 .add(totalAdditions);
 
         return new SettlementStatementDTO(
@@ -363,7 +389,7 @@ public class SettlementService {
                 money(instrumentsOutstanding), outstandingInstruments,
                 List.copyOf(deductions), List.copyOf(additions),
                 money(totalDeductions), money(totalAdditions), money(netRefund),
-                unrecognised);
+                unrecognised, money(totalDeductionVat));
     }
 
     // ------------------------------------------------------------------
@@ -547,6 +573,13 @@ public class SettlementService {
         boolean acknowledged = requireOutstandingAcknowledged(statement, request);
 
         UUID journalId = postSettlement(lease, statement, settlementDate, refundBank);
+        // F14-37: the recharges' VAT is a tax point of its own with a tax invoice (TI).
+        if (journalId != null && vatTaxPoints != null && statement.totalDeductionVat().signum() > 0) {
+            BigDecimal taxable = statement.deductions().stream().filter(d -> d.vatAmount().signum() > 0)
+                    .map(DeductionLineDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            vatTaxPoints.recordSettlementVat(lease, settlementDate, journalId, money(taxable),
+                    statement.totalDeductionVat());
+        }
         UUID collectionChequeId = netRefund.signum() < 0
                 ? collectBalanceDue(lease, netRefund.negate(), settlementDate)
                 : null;
@@ -614,6 +647,11 @@ public class SettlementService {
                 lines.add(new PostingRequest.Line(new PostingRequest.ById(deduction.accountId()),
                         PostingRequest.Side.CR, deduction.amount(), null, narration(deduction)));
             }
+        }
+        // F14-37: the output VAT on the taxable recharges, declared by this STL.
+        if (statement.totalDeductionVat() != null && statement.totalDeductionVat().signum() > 0) {
+            lines.add(PostingRequest.cr(AccountRole.OUTPUT_VAT, statement.totalDeductionVat())
+                    .withNarration("Output VAT on recharges deducted at settlement"));
         }
 
         // Where the settlement leaves the receivable, as a signed debit-positive
@@ -878,7 +916,13 @@ public class SettlementService {
         }
         requireAllowed(item.getCategory());
         requireUsableAccount(item.getAccountId(), type);
-        if (item.getAccountId() == null) {
+        if (item.getAccountId() == null && item.getCategory() == DeductionCategory.UTILITY_ARREARS) {
+            if (utilitiesLeaf(propertyId) == null) {
+                throw new BusinessRuleViolationException("Utility arrears are passed through to the property's"
+                        + " Utilities expense account, and this property has none. Generate its missing accounts"
+                        + " (Property → Ledger accounts) or choose the account on the line.");
+            }
+        } else if (item.getAccountId() == null) {
             accountResolver.resolve(DEDUCTION_ROLES.get(item.getCategory()), propertyId);
         }
     }
@@ -900,7 +944,14 @@ public class SettlementService {
 
     private void requireUsableLineAccount(LeaseSettlementDeduction line, UUID propertyId) {
         requireUsableAccount(line.getAccountId(), line.getType());
-        if (line.getAccountId() == null) {
+        if (line.getAccountId() == null && line.getType() != LineItemType.ADDITION
+                && line.getCategory() == DeductionCategory.UTILITY_ARREARS) {
+            if (utilitiesLeaf(propertyId) == null) {
+                throw new BusinessRuleViolationException("Utility arrears are passed through to the property's"
+                        + " Utilities expense account, and this property has none. Generate its missing accounts"
+                        + " (Property → Ledger accounts) or choose the account on the line.");
+            }
+        } else if (line.getAccountId() == null) {
             accountResolver.resolve(roleOf(line), propertyId);
         }
     }
@@ -1017,10 +1068,38 @@ public class SettlementService {
                 cheque.getPenaltyAssessmentId() != null);
     }
 
+    /** F14-37: whether the lease charges VAT — any line with VAT on it. */
+    private boolean chargesVat(Lease lease) {
+        if (leaseLines == null || lease == null) return false;
+        return leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
+                .anyMatch(l -> com.datagami.rentaxis.core.service.lease.LeaseVat.vatOf(l).signum() > 0);
+    }
+
+    /**
+     * F14-37: utility arrears recovered at cost are a pass-through, not income: they
+     * credit the property's Utilities expense leaf (report line EXP_UTILITIES, which
+     * "Generate missing accounts" creates), else a tenant-wide one.
+     */
+    private Account utilitiesLeaf(UUID propertyId) {
+        if (jdbc == null) return null;
+        List<UUID> ids = jdbc.queryForList("""
+                select a.id from accounts a
+                where a.tenant_id = :t and a.is_active and not a.is_group and a.report_line = 'EXP_UTILITIES'
+                  and (a.property_id = :p or a.property_id is null)
+                order by (a.property_id is null), a.code limit 1""",
+                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t",
+                        com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId()).addValue("p", propertyId),
+                UUID.class);
+        return ids.isEmpty() ? null : accountRepository.findById(ids.get(0)).orElse(null);
+    }
+
     /** The leaf a line posts to: its own override, else the leaf its category resolves to. */
     private Account accountOfLine(LeaseSettlementDeduction line, UUID propertyId) {
         if (line.getAccountId() != null) {
             return accountRepository.findById(line.getAccountId()).orElse(null);
+        }
+        if (line.getType() != LineItemType.ADDITION && line.getCategory() == DeductionCategory.UTILITY_ARREARS) {
+            return utilitiesLeaf(propertyId);
         }
         AccountRole role = roleOf(line);
         // resolveOrNull, never resolve-inside-a-try: an unmapped role thrown out of
