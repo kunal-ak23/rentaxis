@@ -857,6 +857,9 @@ public class ChequeService {
     @Transactional
     public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
+        // Both rows are claimed in id order, so two cancels that move VAT onto each
+        // other's row cannot cross (re-review N3).
+        if (moveVatToChequeId != null && moveVatToChequeId.compareTo(chequeId) < 0) lock(moveVatToChequeId);
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);

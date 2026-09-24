@@ -189,6 +189,14 @@ public class TaxInvoiceService {
         return new LocalDate[]{from, to};
     }
 
+    /** The organisation's TRN as it stands, trimmed; null when none is set. */
+    @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
+    public String currentTrn(UUID tenantId) {
+        if (tenantId == null) return null;
+        String trn = orgs.findById(tenantId).map(LandlordOrg::getTrn).orElse(null);
+        return trn == null || trn.isBlank() ? null : trn.trim();
+    }
+
     /**
      * What a credit note adjusts (Executive Regulation Art. 60; review P3-6): the
      * tax invoices already issued on this lease's instalments whose period runs past

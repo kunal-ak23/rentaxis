@@ -679,5 +679,6 @@ export function toChequeRows(cheques: Cheque[]): ChequeRowInput[] {
         mode: c.mode,
         // Null asks the server for the pro-rata default (spec 2026-09-24 §1).
         vatAmount: c.vatAmount ?? null,
+        rowKind: c.rowKind ?? null,
     }));
 }

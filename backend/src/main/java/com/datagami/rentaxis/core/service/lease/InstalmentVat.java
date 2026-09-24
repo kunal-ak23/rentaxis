@@ -2,6 +2,8 @@ package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChequeRowKind;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -127,36 +129,142 @@ public final class InstalmentVat {
     }
 
     /**
-     * How much of each row (in the order given) is VAT-bearing money.
+     * How much of each row (in the order given) is VAT-bearing money. The contract
+     * charges one rate, so a row's share of the VAT is its share of that money.
      *
-     * <p>A row has no kind column, so this reasons from the lines: the money the
-     * lines collect <em>without</em> VAT — deposits, and any charge that carries none
-     * — has to sit somewhere on the grid. First, a row whose amount is exactly one
-     * such line's gross is that line (the generator and the portfolio import write a
-     * deposit as a row of its own, dated the contract date). What is left of that
-     * money is taken off the earliest rows first, because it is due at signing: a
-     * first cheque with the deposit folded in weighs only its rent. Whatever remains
-     * of each row is its weight.</p>
+     * <p><b>By what the row is</b> (PR #348 re-review N1, N2), when every row says
+     * — the generator, the imports, an addendum or extension and the grid all set
+     * {@link ChequeRowKind}. A DEPOSIT row weighs nothing. A RENT row weighs its
+     * amount times the VAT-bearing fraction of the rent lines, a FEE row likewise
+     * with the fee lines — so VAT on a fee lands on the rows that carry fees, not
+     * on exempt rent. A MIXED row (cheque 1 with the extras folded in) carries the
+     * deposit and fee money no row of its own collects, and weighs its rent and fee
+     * parts by the same fractions.</p>
+     *
+     * <p><b>Otherwise, by the old heuristic</b> — rows written before the kind
+     * existed, or typed on the grid without one. A row is taken for a deposit line
+     * when its narration says deposit and its amount is the line's; by amount alone
+     * only when exactly one row has that amount and it is not a rent row. What is
+     * left of the deposit money comes off the earliest rows (it is due at signing).
+     * Other non-VAT money (exempt rent, a fee without VAT) weighs every row alike,
+     * which is what leaving it out of the weights does.</p>
      */
     static List<BigDecimal> vatBearingWeights(List<Cheque> ordered, List<LeaseLine> lines) {
-        List<BigDecimal> nonVat = new ArrayList<>();
+        boolean allKnown = !ordered.isEmpty() && ordered.stream().allMatch(c -> c.getRowKind() != null);
+        if (allKnown) {
+            List<BigDecimal> byKind = weightsByKind(ordered, lines);
+            if (byKind.stream().anyMatch(w -> w.signum() > 0)) return byKind;
+        }
+        return weightsByHeuristic(ordered, lines);
+    }
+
+    private static ChargeBehaviour behaviourOf(LeaseLine l) {
+        ChargeBehaviour b = l.getChargeType() == null ? null : l.getChargeType().getBehaviour();
+        return b == null ? ChargeBehaviour.FEE : b;
+    }
+
+    /** The one kind every line is, for rows an addendum or extension adds without saying; else null. */
+    public static ChequeRowKind kindOf(List<LeaseLine> lines) {
+        if (lines == null || lines.isEmpty()) return null;
+        java.util.Set<ChargeBehaviour> kinds = java.util.EnumSet.noneOf(ChargeBehaviour.class);
+        for (LeaseLine l : lines) kinds.add(behaviourOf(l));
+        if (kinds.size() != 1) return null;
+        return switch (kinds.iterator().next()) {
+            case RENT -> ChequeRowKind.RENT;
+            case FEE -> ChequeRowKind.FEE;
+            case DEPOSIT -> ChequeRowKind.DEPOSIT;
+        };
+    }
+
+    private static List<BigDecimal> weightsByKind(List<Cheque> ordered, List<LeaseLine> lines) {
+        java.util.Map<ChargeBehaviour, BigDecimal> gross = new java.util.EnumMap<>(ChargeBehaviour.class);
+        java.util.Map<ChargeBehaviour, BigDecimal> taxedGross = new java.util.EnumMap<>(ChargeBehaviour.class);
         for (LeaseLine l : lines) {
-            if (LeaseVat.vatOf(l).signum() == 0) {
+            ChargeBehaviour b = behaviourOf(l);
+            BigDecimal g = LeaseVat.grossOf(l);
+            gross.merge(b, g, BigDecimal::add);
+            if (LeaseVat.vatOf(l).signum() > 0) taxedGross.merge(b, g, BigDecimal::add);
+        }
+        BigDecimal rentFraction = fraction(taxedGross.get(ChargeBehaviour.RENT), gross.get(ChargeBehaviour.RENT));
+        BigDecimal feeFraction = fraction(taxedGross.get(ChargeBehaviour.FEE), gross.get(ChargeBehaviour.FEE));
+
+        // Deposit and fee money no row of its own collects rides on the MIXED rows.
+        BigDecimal ownFee = BigDecimal.ZERO, ownDeposit = BigDecimal.ZERO, mixedTotal = BigDecimal.ZERO;
+        for (Cheque c : ordered) {
+            switch (c.getRowKind()) {
+                case FEE -> ownFee = ownFee.add(nz(c.getAmount()));
+                case DEPOSIT -> ownDeposit = ownDeposit.add(nz(c.getAmount()));
+                case MIXED -> mixedTotal = mixedTotal.add(nz(c.getAmount()));
+                default -> { }
+            }
+        }
+        BigDecimal foldedFee = nz(gross.get(ChargeBehaviour.FEE)).subtract(ownFee).max(BigDecimal.ZERO);
+        BigDecimal foldedDeposit = nz(gross.get(ChargeBehaviour.DEPOSIT)).subtract(ownDeposit).max(BigDecimal.ZERO);
+
+        List<BigDecimal> weights = new ArrayList<>();
+        for (Cheque c : ordered) {
+            BigDecimal amount = nz(c.getAmount()).max(BigDecimal.ZERO);
+            BigDecimal w = switch (c.getRowKind()) {
+                case DEPOSIT -> BigDecimal.ZERO;
+                case RENT -> amount.multiply(rentFraction);
+                case FEE -> amount.multiply(feeFraction);
+                case MIXED -> {
+                    BigDecimal share = mixedTotal.signum() == 0 ? BigDecimal.ZERO
+                            : amount.divide(mixedTotal, 12, java.math.RoundingMode.HALF_UP);
+                    BigDecimal fee = foldedFee.multiply(share).min(amount);
+                    BigDecimal deposit = foldedDeposit.multiply(share).min(amount.subtract(fee));
+                    BigDecimal rent = amount.subtract(fee).subtract(deposit).max(BigDecimal.ZERO);
+                    yield rent.multiply(rentFraction).add(fee.multiply(feeFraction));
+                }
+            };
+            weights.add(w);
+        }
+        return weights;
+    }
+
+    private static BigDecimal fraction(BigDecimal part, BigDecimal whole) {
+        if (whole == null || whole.signum() == 0 || part == null) return BigDecimal.ZERO;
+        return part.divide(whole, 12, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static boolean saysDeposit(Cheque c) {
+        String n = c.getNarration() == null ? "" : c.getNarration().trim().toLowerCase(java.util.Locale.ROOT);
+        return n.contains("deposit") || n.equals("sd") || n.equals("parking sd");
+    }
+
+    private static boolean saysRent(Cheque c) {
+        String n = c.getNarration() == null ? "" : c.getNarration().trim().toLowerCase(java.util.Locale.ROOT);
+        return n.startsWith("rent");
+    }
+
+    private static List<BigDecimal> weightsByHeuristic(List<Cheque> ordered, List<LeaseLine> lines) {
+        List<BigDecimal> deposits = new ArrayList<>();
+        for (LeaseLine l : lines) {
+            if (behaviourOf(l) == ChargeBehaviour.DEPOSIT) {
                 BigDecimal gross = LeaseVat.grossOf(l);
-                if (gross.signum() > 0) nonVat.add(gross);
+                if (gross.signum() > 0) deposits.add(gross);
             }
         }
         List<BigDecimal> weights = new ArrayList<>();
         for (Cheque c : ordered) weights.add(nz(c.getAmount()).max(BigDecimal.ZERO));
-        BigDecimal left = BigDecimal.ZERO;
         boolean[] matched = new boolean[ordered.size()];
-        for (BigDecimal g : nonVat) {
+        BigDecimal left = BigDecimal.ZERO;
+        for (BigDecimal g : deposits) {
             int hit = -1;
-            for (int i = 0; i < ordered.size(); i++) {
-                if (!matched[i] && weights.get(i).compareTo(g) == 0) {
-                    hit = i;
-                    break;
+            // A row that says it is a deposit, of exactly this amount.
+            for (int i = 0; i < ordered.size() && hit < 0; i++) {
+                if (!matched[i] && saysDeposit(ordered.get(i)) && weights.get(i).compareTo(g) == 0) hit = i;
+            }
+            // Else the amount alone — only when it points at exactly one row that is not rent.
+            if (hit < 0) {
+                int only = -1, count = 0;
+                for (int i = 0; i < ordered.size(); i++) {
+                    if (!matched[i] && weights.get(i).compareTo(g) == 0) {
+                        count++;
+                        only = i;
+                    }
                 }
+                if (count == 1 && !saysRent(ordered.get(only))) hit = only;
             }
             if (hit >= 0) {
                 matched[hit] = true;

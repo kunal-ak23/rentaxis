@@ -23,6 +23,7 @@ import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.enums.ChequeRowKind;
 import com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind;
 import com.datagami.rentaxis.domain.entity.enums.VatTaxPointStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -546,6 +547,141 @@ class VatReviewFixesIT extends AbstractPostgresIT {
 
         String pdfText = pdfText(taxInvoices.pdf(credit.id()).bytes());
         assertThat(pdfText).contains("Adjusts tax invoice").contains(november);
+    }
+
+    // ------------------------------------------------------------------
+    // Re-review N1, N2, N4, N5: rows say what they collect
+    // ------------------------------------------------------------------
+
+    private static ChequeRowInput kindRow(String amount, LocalDate date, ChequeRowKind kind) {
+        return new ChequeRowInput(null, null, null, LeaseTestFixtures.nextChequeNumber(), date, "Emirates NBD", null,
+                null, new BigDecimal(amount), null, null, null, kind);
+    }
+
+    /**
+     * N1, the re-review's case: 40,000 + VAT as four PDCs of 10,500, and a 10,500
+     * deposit listed after PDC 1 on the same date. By amount the first PDC used to
+     * be taken for the deposit, and the deposit got 500 of VAT and a tax invoice.
+     * The rows say what they are, so the deposit gets none.
+     */
+    @Test
+    void aDepositRowEqualToARentRowAndSortedAfterItStillCarriesNoVat() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "40000"), line("SECURITY_DEPOSIT", "10500")));
+        List<ChequeDTO> saved = chequeGeneration.saveRows(leaseId, List.of(
+                kindRow("10500", START, ChequeRowKind.RENT),
+                kindRow("10500", START, ChequeRowKind.DEPOSIT),
+                kindRow("10500", AUG, ChequeRowKind.RENT),
+                kindRow("10500", NOV, ChequeRowKind.RENT),
+                kindRow("10500", FEB, ChequeRowKind.RENT)));
+
+        assertThat(saved).extracting(ChequeDTO::rowKind).containsExactly(ChequeRowKind.RENT, ChequeRowKind.DEPOSIT,
+                ChequeRowKind.RENT, ChequeRowKind.RENT, ChequeRowKind.RENT);
+        assertThat(saved).extracting(ChequeDTO::vatAmount).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("500.00"), BigDecimal.ZERO, new BigDecimal("500.00"),
+                        new BigDecimal("500.00"), new BigDecimal("500.00"));
+        UUID deposit = saved.get(1).id();
+        posting.post(leaseId);
+        vatTaxPoints.runTo(FEB, false);
+        assertThat(schedule(leaseId)).hasSize(4).noneMatch(p -> deposit.equals(p.chequeId()));
+        assertThat(count("select count(*) from tax_invoices where cheque_id = ?", deposit)).isZero();
+    }
+
+    /**
+     * N1, folded: the generator's cheque 1 carries rent and the deposit (MIXED); the
+     * other three are rent. Handed back to the default (as "Re-spread VAT" does),
+     * the VAT goes 500 on each — cheque 1 weighs only its rent.
+     */
+    @Test
+    void aFoldedDepositIsTakenOffTheMixedChequeOnly() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "40000"), line("SECURITY_DEPOSIT", "10500")));
+        List<ChequeDTO> grid = chequeGeneration.generate(leaseId, new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
+                4, START, null, null, null, true, null));
+        assertThat(grid).extracting(ChequeDTO::rowKind).containsExactly(ChequeRowKind.MIXED, ChequeRowKind.RENT,
+                ChequeRowKind.RENT, ChequeRowKind.RENT);
+        assertThat(grid.get(0).amount()).isEqualByComparingTo("21000");
+
+        List<ChequeDTO> respread = chequeGeneration.saveRows(leaseId, grid.stream().map(c -> new ChequeRowInput(c.id(),
+                null, c.postingDate(), c.chequeNumber(), c.chequeDate(), c.payeeBank(), null, null, c.amount(),
+                c.narration(), c.mode(), null)).toList());
+
+        assertThat(respread).extracting(ChequeDTO::rowKind).as("an existing row keeps its kind")
+                .containsExactly(ChequeRowKind.MIXED, ChequeRowKind.RENT, ChequeRowKind.RENT, ChequeRowKind.RENT);
+        assertThat(respread).allSatisfy(c -> assertThat(c.vatAmount()).isEqualByComparingTo("500.00"));
+    }
+
+    /**
+     * N2: exempt residential rent with a VAT-bearing parking fee. Rows that say
+     * what they are put the fee's 100 of VAT on the fee row alone; rows typed with
+     * no kind (each cheque carrying a quarter of the parking) share it evenly — the
+     * exempt rent is no longer taken off the earliest rows first.
+     */
+    @Test
+    void aFeesVatGoesOnTheRowsThatCarryTheFee() {
+        UUID kinded = fixtures.draftLease(CONTRACT, START, END,
+                List.of(line("RENT", "120000"), vatLine("PARKING_FEE", "2000")));
+        List<ChequeDTO> byKind = chequeGeneration.saveRows(kinded, List.of(
+                kindRow("30000", MAY, ChequeRowKind.RENT), kindRow("2100", MAY, ChequeRowKind.FEE),
+                kindRow("30000", AUG, ChequeRowKind.RENT), kindRow("30000", NOV, ChequeRowKind.RENT),
+                kindRow("30000", FEB, ChequeRowKind.RENT)));
+        assertThat(byKind).extracting(ChequeDTO::vatAmount).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(BigDecimal.ZERO, new BigDecimal("100.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO);
+
+        UUID typed = fixtures.draftLease(fixtures.createUnit(fixtures.property(), "202"), fixtures.renter(), CONTRACT,
+                START, END, List.of(line("RENT", "120000"), vatLine("PARKING_FEE", "2000")));
+        List<ChequeDTO> byHeuristic = chequeGeneration.saveRows(typed, List.of(
+                LeaseTestFixtures.chequeRow("30525", MAY), LeaseTestFixtures.chequeRow("30525", AUG),
+                LeaseTestFixtures.chequeRow("30525", NOV), LeaseTestFixtures.chequeRow("30525", FEB)));
+        assertThat(byHeuristic).allSatisfy(c -> assertThat(c.vatAmount()).isEqualByComparingTo("25.00"));
+    }
+
+    /** N5: VAT cannot be moved onto a deposit row, even a REGISTERED one. */
+    @Test
+    void vatCannotBeMovedOntoADepositRow() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "40000"), line("SECURITY_DEPOSIT", "10500")));
+        List<ChequeDTO> rows = chequeGeneration.saveRows(leaseId, List.of(
+                kindRow("10500", START, ChequeRowKind.RENT),
+                kindRow("10500", START, ChequeRowKind.DEPOSIT),
+                kindRow("10500", AUG, ChequeRowKind.RENT),
+                kindRow("10500", NOV, ChequeRowKind.RENT),
+                kindRow("10500", FEB, ChequeRowKind.RENT)));
+        posting.post(leaseId);
+
+        assertThatThrownBy(() -> chequeService.cancel(rows.get(4).id(), null, rows.get(1).id()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is a deposit, which carries no VAT");
+        chequeService.cancel(rows.get(4).id(), null, rows.get(3).id());
+        assertThat(register(leaseId).get(3).vatAmount()).isEqualByComparingTo("1000.00");
+    }
+
+    /**
+     * N4: a lease that posted without VAT takes a VAT-bearing addendum. Its first
+     * tax point snapshots the TRN, so clearing the organisation's afterwards does not
+     * stop that point's invoice.
+     */
+    @Test
+    void anAddendumsFirstTaxPointSnapshotsTheTrn() {
+        UUID leaseId = fixtures.postedLease(CONTRACT, START, END, List.of(line("RENT", "120000")), 4, null)
+                .lease().getId();
+        assertThat(jdbc.queryForObject("select vat_trn from leases where id = ?", String.class, leaseId)).isNull();
+
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 6, 25),
+                null, "parking", List.of(vatLine("PARKING_FEE", "1000")),
+                List.of(LeaseTestFixtures.chequeRow("1050", LocalDate.of(2026, 7, 15)))));
+        assertThat(jdbc.queryForObject("select vat_trn from leases where id = ?", String.class, leaseId))
+                .isEqualTo(LeaseTestFixtures.FIXTURE_TRN);
+
+        tx.executeWithoutResult(s -> {
+            LandlordOrg org = orgRepo.findById(fixtures.tenantId()).orElseThrow();
+            org.setTrn(null);
+            orgRepo.save(org);
+        });
+        assertThat(vatTaxPoints.runTo(LocalDate.of(2026, 7, 31), false).errors()).isEmpty();
+        assertThat(jdbc.queryForList("select supplier_trn from tax_invoices where lease_id = ?", String.class, leaseId))
+                .containsExactly(LeaseTestFixtures.FIXTURE_TRN);
     }
 
     private static String pdfText(byte[] pdf) {

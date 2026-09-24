@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
@@ -19,7 +19,13 @@ vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-
 
 const api = vi.hoisted(() => ({
     replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
+    fiscal: vi.fn(),
 }));
+
+vi.mock("@/lib/api/ledger", async orig => {
+    const m = await orig<typeof import("@/lib/api/ledger")>();
+    return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal } } };
+});
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
@@ -65,6 +71,10 @@ function renderDialog(action: ChequeAction, over: Partial<Cheque> = {}, locale: 
 afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+});
+
+beforeEach(() => {
+    api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
 });
 
 describe("ChequeActionDialog — replace", () => {
@@ -217,6 +227,20 @@ describe("ChequeActionDialog — cancel with pending VAT", () => {
     it("does not look a schedule up for a row that is not REGISTERED", () => {
         renderDialog("cancel", { status: "DEPOSITED" });
         expect(api.schedule).not.toHaveBeenCalled();
+    });
+
+    it("never offers a deposit row, nor one dated inside the locked period", async () => {
+        api.schedule.mockResolvedValue(schedule);
+        api.leaseCheques.mockResolvedValue([
+            ...rows,
+            cheque({ id: "d1", seqNo: 7, status: "REGISTERED", chequeDate: "2026-08-01", rowKind: "DEPOSIT" }),
+        ]);
+        api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-03-31" });
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01" });
+
+        const picker = (await screen.findByTestId("cheque-move-vat-to")) as HTMLSelectElement;
+        // c2 (01/03) is inside the lock; d1 is a deposit.
+        expect(Array.from(picker.options).map(o => o.value)).toEqual(["c4", "c5"]);
     });
 
     it("reads in Arabic", async () => {

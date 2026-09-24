@@ -373,7 +373,8 @@ public class PortfolioImportPersistService {
                 bookingDepositsCreated++;
                 bookingDeposit = new ChequeRowInput(null, null, lease.getContractDate(), bdNum,
                         parseDate(bdDateStr), bdBank, null, null,
-                        parseDecimalOrZero(bdAmt), "Booking Deposit", ChequeMode.PDC);
+                        parseDecimalOrZero(bdAmt), "Booking Deposit", ChequeMode.PDC, null,
+                        com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.DEPOSIT);
             }
 
             // ---- the cheque grid ----
@@ -425,7 +426,7 @@ public class PortfolioImportPersistService {
                         // VAT by the pro-rata default.
                         generated.add(new ChequeRowInput(null, null, r.postingDate(), null, r.chequeDate(),
                                 null, null, null, r.amount(), r.narration(),
-                                atSigning ? signingMode : leaseMode, r.vat()));
+                                atSigning ? signingMode : leaseMode, r.vat(), r.kind()));
                     }
                 }
             } else {
@@ -587,12 +588,12 @@ public class PortfolioImportPersistService {
             left = left.subtract(take);
             BigDecimal rest = r.amount().subtract(take);
             // The row keeps its VAT, up to what is left of it; VAT a large booking
-            // cheque displaces is picked up by the booking row, which leaves its own
-            // VAT to the default (review P2-3).
+            // cheque displaces goes back to the default and is spread over the rows
+            // that still take it (review P2-3).
             BigDecimal vat = r.vatAmount() == null ? null : r.vatAmount().min(rest);
             generated.set(k, new ChequeRowInput(r.id(), r.seqNo(), r.postingDate(), r.chequeNumber(),
                     r.chequeDate(), r.payeeBank(), r.payerName(), r.debitAccountId(), rest, r.narration(), r.mode(),
-                    vat));
+                    vat, r.rowKind()));
         }
         generated.removeIf(r -> r.amount().signum() == 0);
         if (left.signum() > 0) {
@@ -753,7 +754,7 @@ public class PortfolioImportPersistService {
                 null, null,
                 ch.amount(),
                 "Rent - " + ChequeGenerationService.ordinal(ch.installmentNo()) + " Installment",
-                mode);
+                mode, null, com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.RENT);
     }
 
     /** The sheet's PaymentMethod vocabulary as register modes. ONLINE is never typed in. */

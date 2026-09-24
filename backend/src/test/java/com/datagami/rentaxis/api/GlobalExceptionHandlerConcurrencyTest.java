@@ -1,0 +1,34 @@
+package com.datagami.rentaxis.api;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * PR #348 re-review N3: a lock conflict — a deadlock Postgres broke, a lock timeout,
+ * a VAT tax point's version check — is a "try again", answered 409, not a 500.
+ */
+class GlobalExceptionHandlerConcurrencyTest {
+
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    @Test
+    void lockConflictsAreA409SayingTryAgain() {
+        for (Exception e : List.<Exception>of(
+                new CannotAcquireLockException("deadlock detected (40P01)"),
+                new PessimisticLockingFailureException("lock timeout"),
+                new ObjectOptimisticLockingFailureException("VatTaxPoint", "id"),
+                new jakarta.persistence.PessimisticLockException("x"),
+                new jakarta.persistence.OptimisticLockException("x"))) {
+            var response = handler.handleConcurrency(e);
+            assertThat(response.getStatusCode().value()).as(e.getClass().getSimpleName()).isEqualTo(409);
+            assertThat(response.getBody()).containsEntry("status", 409);
+            assertThat((String) response.getBody().get("message")).contains("Please try again");
+        }
+    }
+}

@@ -116,6 +116,11 @@ public class Cheque extends BaseTenantEntity {
     @Column(name = "vat_taxable_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal vatTaxableAmount = BigDecimal.ZERO;
 
+    /** What the row collects; null on a row that never said (see {@code ChequeRowKind}). */
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "row_kind", length = 12)
+    private com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind;
+
     @Column(length = 255)
     private String narration;
 

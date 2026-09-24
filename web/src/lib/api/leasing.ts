@@ -305,7 +305,15 @@ export type ChequeRowInput = {
    * the contract's VAT the others have not claimed.
    */
   vatAmount?: number | null;
+  /** What the row collects; null/absent on a new row keeps it unsaid, on an existing one keeps its kind. */
+  rowKind?: ChequeRowKind | null;
 };
+
+/**
+ * What a cheque row collects (PR #348 re-review N1): the server spreads VAT by
+ * it, and never onto a DEPOSIT row.
+ */
+export type ChequeRowKind = "RENT" | "FEE" | "DEPOSIT" | "MIXED";
 
 /** ExtendLeaseRequest. */
 export type ExtendLeaseInput = {
@@ -405,6 +413,8 @@ export type Cheque = {
    */
   vatAmount?: number | null;
   vatTaxableAmount?: number | null;
+  /** What the row collects, or null when it never said (older rows, typed rows). */
+  rowKind?: ChequeRowKind | null;
 };
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----

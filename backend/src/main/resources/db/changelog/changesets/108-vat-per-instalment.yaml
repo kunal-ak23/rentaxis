@@ -215,3 +215,22 @@ databaseChangeLog:
               ALTER TABLE tax_invoices DROP COLUMN IF EXISTS reference_note;
               ALTER TABLE leases DROP COLUMN IF EXISTS vat_trn;
               ALTER TABLE vat_tax_points DROP COLUMN IF EXISTS version;
+
+  # PR #348 re-review N1: a cheque row says what it collects, so VAT is spread by
+  # what a row is rather than guessed from its amount (a rent cheque equal to the
+  # deposit used to be taken for the deposit). Nullable: rows written before this
+  # fall back to the amount-and-narration heuristic.
+  - changeSet:
+      id: 108-vat-per-instalment-row-kind
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: row_kind, type: varchar(12) }
+        - sql:
+            comment: RENT, FEE, DEPOSIT or MIXED
+            sql: ALTER TABLE cheques ADD CONSTRAINT ck_cheques_row_kind CHECK (row_kind IN ('RENT', 'FEE', 'DEPOSIT', 'MIXED'))
+      rollback:
+        - sql:
+            sql: ALTER TABLE cheques DROP CONSTRAINT IF EXISTS ck_cheques_row_kind; ALTER TABLE cheques DROP COLUMN IF EXISTS row_kind;

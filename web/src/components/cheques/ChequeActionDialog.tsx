@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
-import { fmtAmount } from "@/lib/api/ledger";
+import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import {
     ApiError,
@@ -105,10 +105,15 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
     useEffect(() => {
         if (action !== "cancel" || !cheque || cheque.status !== "REGISTERED") return;
         let live = true;
-        Promise.all([vatApi.schedule(cheque.leaseId), leaseApi.cheques(cheque.leaseId)])
-            .then(([schedule, rows]) => {
+        Promise.all([
+            vatApi.schedule(cheque.leaseId),
+            leaseApi.cheques(cheque.leaseId),
+            // The lock date only narrows the list; a failure to read it must not hide it.
+            ledgerApi.fiscal.get().then(f => f.booksLockedThrough ?? null).catch(() => null),
+        ])
+            .then(([schedule, rows, lockedThrough]) => {
                 if (!live) return;
-                const move = vatMoveFor(cheque, rows, schedule);
+                const move = vatMoveFor(cheque, rows, schedule, lockedThrough);
                 setVatMove(move);
                 setMoveVatTo(move?.defaultId ?? "");
             })

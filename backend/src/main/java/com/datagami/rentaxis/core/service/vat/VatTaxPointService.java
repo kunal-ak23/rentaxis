@@ -135,6 +135,12 @@ public class VatTaxPointService {
         return p;
     }
 
+    /** Claims every point in id order (see {@link #lock}) and returns them in the order given. */
+    private List<VatTaxPoint> lockAllInIdOrder(List<VatTaxPoint> ps) {
+        ps.stream().sorted(java.util.Comparator.comparing(VatTaxPoint::getId)).forEach(this::lock);
+        return ps;
+    }
+
     /**
      * {@code books_locked_through}, read {@code FOR SHARE}: a writer about to create
      * or move a tax point holds the settings row against {@code lockThrough}, which
@@ -143,6 +149,10 @@ public class VatTaxPointService {
      */
     private LocalDate lockedThroughShared(UUID tenantId) {
         if (tenantId == null) return null;
+        // A tenant's first lockThrough creates the row in its own transaction; with
+        // no row here there would be nothing to hold (re-review N6). The insert waits
+        // on an uncommitted one, which is the ordering wanted.
+        fiscalSettings.insertDefaultIfAbsent(tenantId);
         @SuppressWarnings("unchecked")
         List<Object> rows = entityManager.createNativeQuery(
                         "select books_locked_through from tenant_fiscal_settings where tenant_id = ?1 for share")
@@ -177,6 +187,7 @@ public class VatTaxPointService {
         // Shared lock on the settings row: lockThrough takes it exclusively, so a
         // lock cannot move over a point this is creating (review P3-3).
         LocalDate locked = lockedThroughShared(lease.getTenantId());
+        boolean created = false;
         for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
             if (c.getVatAmount() == null || c.getVatAmount().signum() <= 0) continue;
             if (!SCHEDULABLE.contains(c.getStatus())) continue;
@@ -187,6 +198,17 @@ public class VatTaxPointService {
                         + p.getTaxPointDate() + ") falls in a locked period: books are locked through " + locked + ".");
             }
             points.save(p);
+            created = true;
+        }
+        if (created && (lease.getVatTrn() == null || lease.getVatTrn().isBlank())) {
+            // The first tax point this lease gets, whichever door made it (a post, or
+            // an addendum on a lease that posted without VAT): its invoices fall back
+            // to this TRN if the organisation's is cleared later (re-review N4).
+            String trn = taxInvoices.currentTrn(lease.getTenantId());
+            if (trn != null) {
+                lease.setVatTrn(trn);
+                leases.save(lease);
+            }
         }
     }
 
@@ -274,11 +296,24 @@ public class VatTaxPointService {
                     + " that has not been declared yet. Choose another pending instalment of this lease to move"
                     + " it to, and cancel again.");
         }
-        Cheque target = cheques.findByIdForUpdate(moveToChequeId)
+        Cheque target;
+        try {
+            target = cheques.findByIdForUpdate(moveToChequeId).orElse(null);
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
+            throw new com.datagami.rentaxis.api.exception.RowLockedException(
+                    "The instalment to move the VAT to is being updated by another request. Please try again.");
+        }
+        target = java.util.Optional.ofNullable(target)
                 .filter(c -> c.getLease() != null && c.getLease().getId().equals(cancelled.getLease().getId()))
                 .filter(c -> !c.getId().equals(cancelled.getId()))
                 .orElseThrow(() -> new BusinessRuleViolationException(
                         "The instalment to move the VAT to must be another row of the same lease."));
+        if (target.getRowKind() == com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.DEPOSIT) {
+            // A deposit is not a supply; VAT moved onto it would be a tax invoice on a
+            // refundable deposit (re-review N5).
+            throw new BusinessRuleViolationException("Instalment " + label(target) + " is a deposit, which carries"
+                    + " no VAT; move the VAT onto a rent or fee instalment.");
+        }
         if (!PENDING.contains(target.getStatus())) {
             throw new BusinessRuleViolationException("Instalment " + label(target) + " is " + target.getStatus()
                     + "; VAT can only move onto an instalment that is still to be collected.");
@@ -335,8 +370,8 @@ public class VatTaxPointService {
     /** Every PLANNED point of the lease, CANCELLED — the amendment's re-post rebuilds the schedule. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void cancelPlanned(UUID leaseId) {
-        for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.PLANNED)) {
-            lock(p);
+        for (VatTaxPoint p : lockAllInIdOrder(
+                points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.PLANNED))) {
             if (p.getStatus() == VatTaxPointStatus.POSTED) {
                 // The job declared it between the amendment's check and now.
                 throw new BusinessRuleViolationException("VAT on " + p.getTaxPointDate()
@@ -414,8 +449,13 @@ public class VatTaxPointService {
         BigDecimal pending = BigDecimal.ZERO;
         BigDecimal pendingTaxable = BigDecimal.ZERO;
         LocalDate locked = lockedThroughShared(lease.getTenantId());
-        for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(), VatTaxPointStatus.PLANNED)) {
-            lock(p);
+        // Every PLANNED point is claimed before anything is posted, in id order —
+        // the order every multi-point writer uses — so a concurrent early receipt
+        // (one point, then the document counter) cannot close a cycle with this
+        // (re-review N3).
+        List<VatTaxPoint> planned = lockAllInIdOrder(
+                points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(), VatTaxPointStatus.PLANNED));
+        for (VatTaxPoint p : planned) {
             // Posted by the job since the list was read: declared already, so it is
             // neither due at T nor pending (review P2-1).
             if (p.getStatus() != VatTaxPointStatus.PLANNED) continue;

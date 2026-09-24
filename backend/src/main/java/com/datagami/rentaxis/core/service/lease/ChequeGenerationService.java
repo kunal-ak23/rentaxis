@@ -27,6 +27,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.VatTiming;
+import com.datagami.rentaxis.domain.entity.enums.ChequeRowKind;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
@@ -121,7 +122,11 @@ public class ChequeGenerationService {
      * (gross), and the VAT inside that amount with the net it is charged on (spec
      * 2026-09-24 §1). The two-argument form carries no VAT.
      */
-    public record Extra(String label, BigDecimal amount, BigDecimal vat, BigDecimal taxable) {
+    public record Extra(String label, BigDecimal amount, BigDecimal vat, BigDecimal taxable, ChequeRowKind kind) {
+        public Extra(String label, BigDecimal amount, BigDecimal vat, BigDecimal taxable) {
+            this(label, amount, vat, taxable, ChequeRowKind.FEE);
+        }
+
         public Extra(String label, BigDecimal amount) {
             this(label, amount, BigDecimal.ZERO, BigDecimal.ZERO);
         }
@@ -133,7 +138,12 @@ public class ChequeGenerationService {
      * form carries no VAT.
      */
     public record Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration,
-                      BigDecimal vat, BigDecimal taxable) {
+                      BigDecimal vat, BigDecimal taxable, ChequeRowKind kind) {
+        public Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration,
+                   BigDecimal vat, BigDecimal taxable) {
+            this(seqNo, postingDate, chequeDate, amount, narration, vat, taxable, null);
+        }
+
         public Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration) {
             this(seqNo, postingDate, chequeDate, amount, narration, BigDecimal.ZERO, BigDecimal.ZERO);
         }
@@ -227,6 +237,7 @@ public class ChequeGenerationService {
                 BigDecimal vat = rentTaxed ? vats.get(i) : BigDecimal.ZERO;
                 BigDecimal taxable = rentTaxed ? taxables.get(i) : BigDecimal.ZERO;
                 String narration = "Rent - " + ordinal(i + 1) + " Installment";
+                ChequeRowKind kind = i == 0 && fold && !nonRent.isEmpty() ? ChequeRowKind.MIXED : ChequeRowKind.RENT;
                 if (i == 0 && fold) {
                     for (Extra e : nonRent) {
                         amount = amount.add(e.amount());
@@ -236,7 +247,7 @@ public class ChequeGenerationService {
                     }
                 }
                 rows.add(new Row(seq++, postingDate, firstDueDate.plusMonths(monthOffset), amount, narration,
-                        vat, taxable));
+                        vat, taxable, kind));
             }
         }
 
@@ -244,7 +255,8 @@ public class ChequeGenerationService {
         // since there is no first instalment to fold them into.
         if (!fold || !hasRent) {
             for (Extra e : nonRent) {
-                rows.add(new Row(seq++, postingDate, postingDate, e.amount(), e.label(), nz(e.vat()), nz(e.taxable())));
+                rows.add(new Row(seq++, postingDate, postingDate, e.amount(), e.label(), nz(e.vat()), nz(e.taxable()),
+                        e.kind() == null ? ChequeRowKind.FEE : e.kind()));
             }
         }
         return rows;
@@ -386,6 +398,7 @@ public class ChequeGenerationService {
             c.setAmount(row.amount());
             c.setVatAmount(row.vat());
             c.setVatTaxableAmount(row.taxable());
+            c.setRowKind(row.kind());
             c.setNarration(row.narration());
             c.setMode(mode);
             c.setPayeeBank(r.payeeBank());
@@ -463,7 +476,9 @@ public class ChequeGenerationService {
                 rentVat = rentVat.add(LeaseVat.vatOf(line));
                 rentTaxable = rentTaxable.add(LeaseVat.taxableOf(line));
             } else if (gross.signum() > 0) {
-                extras.add(new Extra(foldLabel(type), gross, LeaseVat.vatOf(line), LeaseVat.taxableOf(line)));
+                extras.add(new Extra(foldLabel(type), gross, LeaseVat.vatOf(line), LeaseVat.taxableOf(line),
+                        type != null && type.getBehaviour() == ChargeBehaviour.DEPOSIT
+                                ? ChequeRowKind.DEPOSIT : ChequeRowKind.FEE));
             }
         }
 
@@ -606,6 +621,8 @@ public class ChequeGenerationService {
             c.setChequeDate(row.chequeDate());
             c.setAmount(row.amount());
             c.setNarration(row.narration());
+            // A row that says what it collects keeps saying it; one that does not keeps its kind.
+            if (row.rowKind() != null) c.setRowKind(row.rowKind());
             c.setMode(row.mode() == null ? ChequeMode.PDC : row.mode());
             c.setChequeNumber(blankToNull(row.chequeNumber()));
             c.setPayeeBank(row.payeeBank());
@@ -693,6 +710,8 @@ public class ChequeGenerationService {
             c.setChequeDate(row.chequeDate());
             c.setAmount(row.amount());
             c.setNarration(row.narration());
+            // Said by the caller, or read off the new lines when they are all one kind.
+            c.setRowKind(row.rowKind() != null ? row.rowKind() : InstalmentVat.kindOf(newLines));
             c.setMode(row.mode() == null ? ChequeMode.PDC : row.mode());
             c.setChequeNumber(blankToNull(row.chequeNumber()));
             c.setPayeeBank(row.payeeBank());

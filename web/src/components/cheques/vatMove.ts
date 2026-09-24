@@ -26,7 +26,12 @@ const byDate = (a: Cheque, b: Cheque) =>
  * Null when cancelling `cheque` needs no VAT move: it is not REGISTERED, or it has
  * no live PLANNED tax point carrying VAT (a CONTRACT-timed lease has no schedule).
  */
-export function vatMoveFor(cheque: Cheque, leaseCheques: Cheque[], schedule: VatTaxPoint[]): VatMove | null {
+export function vatMoveFor(
+    cheque: Cheque,
+    leaseCheques: Cheque[],
+    schedule: VatTaxPoint[],
+    booksLockedThrough: string | null = null,
+): VatMove | null {
     if (cheque.status !== "REGISTERED") return null;
     const own = schedule.find(p => p.chequeId === cheque.id && p.status !== "CANCELLED");
     if (!own || own.status !== "PLANNED" || !(own.vatAmount > 0)) return null;
@@ -37,6 +42,10 @@ export function vatMoveFor(cheque: Cheque, leaseCheques: Cheque[], schedule: Vat
     const candidates = leaseCheques
         .filter(c => c.id !== cheque.id && c.leaseId === cheque.leaseId)
         .filter(c => PENDING.has(c.status) && !declared.has(c.id))
+        // A deposit carries no VAT (the server refuses it), and a tax point inside
+        // the locked period would never post (re-review N5).
+        .filter(c => c.rowKind !== "DEPOSIT")
+        .filter(c => !booksLockedThrough || (c.chequeDate ?? "").slice(0, 10) > booksLockedThrough)
         .sort(byDate);
 
     const from = cheque.chequeDate ?? "";
