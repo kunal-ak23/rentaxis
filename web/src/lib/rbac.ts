@@ -235,6 +235,10 @@ export const PERMISSIONS = {
     // Payables aging: PayablesReportController also admits PROPERTY_MANAGER,
     // read-only, narrowed server-side to an assigned property it must name.
     canViewPayablesAging: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // Finance → Bank reconciliation (finance-ops spec §3): BankReconciliationController's
+    // class-level @PreAuthorize. A property manager keeps the cheque actions on the
+    // register and has none of this.
+    canReconcileBank: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

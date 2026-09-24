@@ -75,16 +75,10 @@ public class ApOpeningItemService {
 
         // A cancelled cut-over cheque's item (IssuedChequeService) did not come from
         // the vendor's OB line — its money was on PDC payable — so it stays out of
-        // this check while still listed and allocatable.
-        Set<String> fromCancelledCheques = new HashSet<>(jdbc.queryForList("""
-                select vendor_id::text || '|' || cheque_number from issued_cheques
-                where tenant_id = :t and opening and status = 'CANCELLED'""", new MapSqlParameterSource("t", t), String.class));
+        // this check while still listed and allocatable. Keyed on the link, not the
+        // name (PR #352 re-review R2).
         Map<UUID, BigDecimal> totals = rows.stream()
-                .filter(o -> {
-                    String prefix = IssuedChequeService.cancelledChequeItemNumber("");
-                    return !(o.getInvoiceNumber().startsWith(prefix) && fromCancelledCheques.contains(
-                            o.getVendorId() + "|" + o.getInvoiceNumber().substring(prefix.length())));
-                })
+                .filter(o -> o.getIssuedChequeId() == null)
                 .collect(Collectors.toMap(ApOpeningItem::getVendorId,
                 ApOpeningItem::getAmount, BigDecimal::add, LinkedHashMap::new));
         Set<UUID> ids = new LinkedHashSet<>(totals.keySet());
@@ -112,6 +106,7 @@ public class ApOpeningItemService {
     public ApOpeningItemDTO update(UUID id, ApOpeningItemInputDTO in) {
         lockRow(id);
         ApOpeningItem o = items.findById(id).orElseThrow(() -> new NotFoundException("Opening item not found"));
+        requireTyped(o);
         Vendor vendor = vendor(in.vendorId());
         requireEditableAgainstAllocations(o, in);
         boolean hasAllocations = allocations.existsByOpeningItemId(o.getId());
@@ -132,11 +127,20 @@ public class ApOpeningItemService {
     public void delete(UUID id) {
         lockRow(id);
         ApOpeningItem o = items.findById(id).orElseThrow(() -> new NotFoundException("Opening item not found"));
+        requireTyped(o);
         if (allocations.existsByOpeningItemId(o.getId())) {
             throw new BusinessRuleViolationException("Payments have been allocated to this item; release them first. "
                     + "An item with allocation history is kept.");
         }
         items.delete(o);
+    }
+
+    /** PR #352 re-review R2: the item a cancelled cut-over cheque generated follows that cheque only. */
+    private static void requireTyped(ApOpeningItem o) {
+        if (o.getIssuedChequeId() != null) {
+            throw new BusinessRuleViolationException(o.getInvoiceNumber()
+                    + " was generated when the cut-over cheque was cancelled; it cannot be edited or deleted by hand");
+        }
     }
 
     /**

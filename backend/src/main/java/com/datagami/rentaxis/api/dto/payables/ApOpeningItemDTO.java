@@ -9,10 +9,11 @@ import java.util.UUID;
 /** A cut-over open supplier invoice, with what has been allocated to it so far. */
 public record ApOpeningItemDTO(UUID id, UUID vendorId, String vendorName, String invoiceNumber, LocalDate invoiceDate,
                                LocalDate dueDate, BigDecimal amount, UUID propertyId, BigDecimal allocated,
-                               BigDecimal open) {
+                               BigDecimal open, UUID issuedChequeId) {
 
     public static ApOpeningItemDTO of(ApOpeningItem o, String vendorName, BigDecimal allocated) {
         return new ApOpeningItemDTO(o.getId(), o.getVendorId(), vendorName, o.getInvoiceNumber(), o.getInvoiceDate(),
-                o.getDueDate(), o.getAmount(), o.getPropertyId(), allocated, o.getAmount().subtract(allocated));
+                o.getDueDate(), o.getAmount(), o.getPropertyId(), allocated, o.getAmount().subtract(allocated),
+                o.getIssuedChequeId());
     }
 }

@@ -183,6 +183,7 @@ public class JournalService {
             case VAT_TAX_POINT -> "VAT tax point; its tax invoice has been issued, so correct it with a credit note"
                     + " (terminate or vary the lease)";
             case ISSUED_CHEQUE -> "supplier cheque; present, unpresent or cancel it from the issued-cheques register";
+            case BANK_STATEMENT -> "bank statement line; undo its match in Bank reconciliation and reverse it there";
             case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
         };
         return "This journal belongs to a " + belongsTo;

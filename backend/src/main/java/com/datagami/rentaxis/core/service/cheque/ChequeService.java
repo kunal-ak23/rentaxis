@@ -581,7 +581,7 @@ public class ChequeService {
                             + " is a " + cheque.getMode() + " row. Deposit it and clear it instead.");
         }
 
-        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay);
+        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, true);
         chequeRepository.save(cheque);
         if (replay != null) {
             return dto(cheque, lease);
@@ -1211,6 +1211,17 @@ public class ChequeService {
 
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay) {
+        applyClearing(lease, cheque, date, debitAccountId, notes, replay, false);
+    }
+
+    /**
+     * {@code receiptSource}: the caller is {@link #receive}, which may also take the
+     * money from the unidentified-receipts suspense leaf (finance-ops spec §3,
+     * "clearing the suspense": {@link #isReceiptSource}). Every other door keeps
+     * {@link #isSettlementAccount}.
+     */
+    private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
+                               Replay replay, boolean receiptSource) {
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         // Checked on the way in whichever door it came through: an override the
@@ -1218,7 +1229,9 @@ public class ChequeService {
         // when it was set, but a chart of accounts is edited, and a receivable leaf
         // debited here would look exactly like money in the bank on the balance sheet.
         Account debit = debitAccountId != null
-                ? settlementAccount(debitAccountId, cheque.getProperty())
+                ? (receiptSource && isSuspenseLeaf(account(debitAccountId))
+                        ? account(debitAccountId)
+                        : settlementAccount(debitAccountId, cheque.getProperty()))
                 : requireSettlementAccount(cheque.getDebitAccount());
         // No resolveOrNull fallback and no try/catch: when the row names no account
         // the role goes into the request and PostingService resolves it, so an
@@ -1755,6 +1768,28 @@ public class ChequeService {
      * Exposed rather than copied so there is exactly one definition of "an account
      * cleared funds may land in or leave from" in the codebase.
      */
+    /**
+     * Where a receipt ({@link #receive}) may take its money from: a settlement
+     * account, or the tenant's {@code BANK_SUSPENSE} leaf — an unidentified bank
+     * receipt now identified as this renter's payment (finance-ops spec §3). Used
+     * by {@code receive} only; {@link #isSettlementAccount}, and so every payment
+     * voucher, is unchanged.
+     */
+    public boolean isReceiptSource(Account a) {
+        return isSettlementAccount(a) || isSuspenseLeaf(a);
+    }
+
+    private boolean isSuspenseLeaf(Account a) {
+        if (a == null || a.isGroup() || !a.isActive()) return false;
+        UUID t = TenantContextHolder.getTenantId();
+        List<?> hit = entityManager.createQuery("""
+                select m.id from TenantDefaultAccountMapping m
+                where m.role = :role and m.account.id = :a and m.tenantId = :t""")
+                .setParameter("role", AccountRole.BANK_SUSPENSE).setParameter("a", a.getId()).setParameter("t", t)
+                .getResultList();
+        return !hit.isEmpty();
+    }
+
     public static boolean isSettlementAccount(Account a) {
         return a != null && !a.isGroup() && a.isActive()
                 && a.getAccountType() == AccountType.ASSET

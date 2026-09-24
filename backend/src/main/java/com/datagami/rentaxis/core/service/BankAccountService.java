@@ -31,6 +31,7 @@ public class BankAccountService {
     private final AccountResolver resolver;
     private final AccountRepository accountRepository;
     private final PropertyRepository propertyRepository;
+    private final org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
 
     @Transactional(readOnly = true)
     public List<BankAccount> getAllBankAccounts() {
@@ -156,11 +157,38 @@ public class BankAccountService {
                 log.warn("No Bank account group (A-02-02) for tenant; creating bank account without a ledger account");
             }
         }
-        return repository.save(bankAccount);
+        BankAccount saved = repository.save(bankAccount);
+        ownLeaf(saved);
+        return saved;
+    }
+
+    /**
+     * Finance-ops spec §3: a new bank account owns its ledger leaf, unless another
+     * bank account already does (a leaf belongs to at most one).
+     */
+    private void ownLeaf(BankAccount b) {
+        if (b.getCoaAccount() == null || b.getCoaAccount().getAccountSubType() != AccountSubType.BANK
+                || b.getCoaAccount().isGroup()) return;
+        repository.flush();
+        jdbc.update("""
+                insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
+                select :t, :b, :a where exists (select 1 from bank_accounts where id = :b and tenant_id = :t)
+                on conflict do nothing""",
+                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t", b.getTenantId())
+                        .addValue("b", b.getId()).addValue("a", b.getCoaAccount().getId()));
     }
 
     @Transactional
     public void deleteBankAccount(UUID id) {
+        BankAccount b = getBankAccountById(id);
+        var p = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t", b.getTenantId()).addValue("b", id);
+        Integer imports = jdbc.queryForObject(
+                "select count(*) from bank_statement_imports where tenant_id = :t and bank_account_id = :b", p, Integer.class);
+        if (imports != null && imports > 0) {
+            throw new BusinessRuleViolationException("Statements have been imported into this bank account; deactivate it instead");
+        }
+        jdbc.update("delete from bank_statement_profiles where tenant_id = :t and bank_account_id = :b", p);
+        jdbc.update("delete from bank_account_ledgers where tenant_id = :t and bank_account_id = :b", p);
         repository.deleteById(id);
     }
 }

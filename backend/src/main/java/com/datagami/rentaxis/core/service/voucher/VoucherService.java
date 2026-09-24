@@ -397,10 +397,34 @@ public class VoucherService {
     }
 
     /**
-     * Transaction-scoped advisory lock on a bank leaf's cheque numbers, taken
-     * after the voucher and invoice rows (the order {@link #lockForWrite}
-     * documents) and before the entry-number sequence. A run takes it inside each
-     * vendor's post, after it has locked every row it touches.
+     * The cheque leaves an amend touches: the original's (when it was a cheque
+     * payment) and the replacement's (when it is one), locked in UUID order.
+     */
+    private void lockChequeLeavesForAmend(Voucher original, VoucherInput replacement) {
+        java.util.TreeSet<UUID> leaves = new java.util.TreeSet<>();
+        if (original.getDocType() == VoucherType.BPV && original.getPaymentMethod() == VoucherPaymentMethod.CHEQUE
+                && original.getPaymentAccount() != null) {
+            leaves.add(original.getPaymentAccount().getId());
+        }
+        if (replacement != null && replacement.docType() == VoucherType.BPV && replacement.paymentAccountId() != null) {
+            VoucherPaymentMethod m = replacement.paymentMethod() != null ? replacement.paymentMethod()
+                    : (isBlank(replacement.chequeNumber()) ? null : VoucherPaymentMethod.CHEQUE);
+            if (m == VoucherPaymentMethod.CHEQUE) leaves.add(replacement.paymentAccountId());
+        }
+        for (UUID leaf : leaves) lockChequeNumbers(leaf);
+    }
+
+    /**
+     * Transaction-scoped advisory lock on a bank leaf's cheque numbers.
+     *
+     * <p><b>Order:</b> after the voucher and invoice rows (the order
+     * {@link #lockForWrite} documents) and before the entry-number sequence
+     * row. A run takes it inside each vendor's post, after it has locked every row
+     * it touches. {@code amend} takes it for the original's and the replacement's
+     * leaves right after the counterpart rows and before {@code posting.reverse},
+     * which is what takes the sequence (PR #352 re-review R1); the later call
+     * inside {@code post(fresh)} is re-entrant. The cut-over register takes it
+     * before it inserts, and takes no row or sequence lock after it.</p>
      */
     public void lockChequeNumbers(UUID bankAccountId) {
         UUID t = TenantContextHolder.getTenantId();
@@ -558,6 +582,12 @@ public class VoucherService {
         // (voucher rows, then opening items, then the sequence): the original's
         // counterparts and whatever the replacement will settle.
         allocationService.lockCounterparts(original.getId(), allocations);
+        // PR #352 re-review R1: the cheque-number lock comes before the sequence.
+        // posting.reverse takes the BPV sequence row, and post(fresh) would only
+        // then take the advisory lock, the reverse of a run's order (rows, advisory,
+        // sequence), so two accountants could deadlock. The leaves are locked here,
+        // in a stable order; the call inside post(fresh) is then re-entrant.
+        lockChequeLeavesForAmend(original, replacement);
         if (original.getDocType() == VoucherType.BPV) requireNotBeforeARelease(original, reversalDate);
         // Before the replacement is written, so it may re-use the cheque number.
         cancelIssuedChequeOf(original, reversalDate, reason);

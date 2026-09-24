@@ -37,6 +37,7 @@ import {
     type RegisterFilters,
 } from "@/components/cheques/registerFilters";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { bankRecApi, type ChequeEvidence } from "@/lib/api/bankRec";
 
 const field =
     "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -99,6 +100,20 @@ export default function ChequeRegisterPage() {
     const [clearBatchOpen, setClearBatchOpen] = useState(false);
     const selectedIds = useMemo(() => [...selected.keys()], [selected]);
     const selectedTotal = useMemo(() => [...selected.values()].reduce((sum, a) => sum + a, 0), [selected]);
+
+    // The Bank column (finance-ops spec §3): statement evidence for the cleared
+    // rows on this page. Evidence only — clearing by hand stays as it is.
+    const [evidence, setEvidence] = useState<Map<string, ChequeEvidence>>(new Map());
+    useEffect(() => {
+        const cleared = (page?.content ?? []).filter(c => c.status === "CLEARED").map(c => c.id);
+        let alive = true;
+        bankRecApi.chequeEvidence(cleared)
+            .then(list => alive && setEvidence(new Map((Array.isArray(list) ? list : []).map(e => [e.chequeId, e]))))
+            .catch(() => alive && setEvidence(new Map()));
+        return () => {
+            alive = false;
+        };
+    }, [page]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -444,6 +459,7 @@ export default function ChequeRegisterPage() {
                                     <th className={`${th} text-end`}>{tl("amount")}</th>
                                     <th className={th}>{tl("chequeMode")}</th>
                                     <th className={th}>{tLedger("status")}</th>
+                                    <th className={th}>{t("bank")}</th>
                                     <th className={th}>{t("summary.due")}</th>
                                     <th className={th}>{tl("actions")}</th>
                                 </tr>
@@ -483,6 +499,17 @@ export default function ChequeRegisterPage() {
                                             <td className={td}>{tl(`mode.${c.mode}`)}</td>
                                             <td className={td}>
                                                 <ChequeStatusBadge status={c.status} testId={`cheque-status-${c.id}`} />
+                                            </td>
+                                            <td className={td} data-testid={`cheque-bank-${c.id}`}>
+                                                {c.status !== "CLEARED" ? "—" : (() => {
+                                                    const e = evidence.get(c.id);
+                                                    if (!e) return <span className="text-muted">—</span>;
+                                                    return e.state === "CONFIRMED" ? (
+                                                        <span className="text-success">{t("bank_CONFIRMED", { date: fmtIsoDate(e.statementDate ?? "", locale) })}</span>
+                                                    ) : e.state === "NOT_ON_STATEMENT" ? (
+                                                        <span className="text-warning">{t("bank_NOT_ON_STATEMENT")}</span>
+                                                    ) : e.state === "CASH" ? <span title={t("bank_CASH")}>—</span> : t(`bank_${e.state}`);
+                                                })()}
                                             </td>
                                             <td className={td}>
                                                 {c.overdue ? (

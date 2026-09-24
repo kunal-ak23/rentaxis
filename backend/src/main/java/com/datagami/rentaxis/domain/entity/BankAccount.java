@@ -48,6 +48,15 @@ public class BankAccount extends BaseTenantEntity {
     @JoinColumn(name = "coa_account_id")
     private Account coaAccount;
 
+    /**
+     * The bank's TRN (finance-ops spec §3). A bank charge is booked with input VAT
+     * only when it is set. Written through the bank-reconciliation endpoint only.
+     */
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    @Column(name = "bank_trn", length = 20)
+    private String bankTrn;
+
     @Column(name = "is_default")
     private boolean isDefault = false;
 

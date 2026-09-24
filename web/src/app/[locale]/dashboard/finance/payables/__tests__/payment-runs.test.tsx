@@ -382,11 +382,37 @@ describe("editing and posting a draft from its page (review P3-3, P3-4)", () => 
             { match: "/properties", body: [] },
         ]);
         renderIn("en", <PaymentRunWizard run={RUN as never} />);
-        expect(await screen.findByTestId("run-missing")).toHaveTextContent("2 selected invoices are not in the open list");
+        expect(await screen.findByTestId("run-missing-gone")).toHaveTextContent("2 selected invoices are no longer open");
+        expect(screen.queryByTestId("run-missing-hidden")).not.toBeInTheDocument();
         expect(screen.getByTestId("run-save-preview")).toBeDisabled();
         fireEvent.click(screen.getByTestId("run-drop-missing"));
         expect(screen.queryByTestId("run-missing")).not.toBeInTheDocument();
         expect(screen.getByTestId("run-blocker")).toHaveTextContent(en.PaymentRuns.selectSomething);
+    });
+
+    it("tells a selection hidden by the filters from one no longer open, and drops only the latter (re-review R3)", async () => {
+        calls = [];
+        vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+            const u = String(url);
+            calls.push({ method: init?.method ?? "GET", url: u, body: undefined });
+            const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
+            if (u.includes("/candidates")) {
+                // Filtered by due date: nothing. Unfiltered: INV-7790 is still open; INV-7781 was paid elsewhere.
+                const filtered = new URL(u, "http://x").searchParams.has("dueBefore");
+                return json({ items: filtered ? [] : [{ item: item("i90", "INV-7790", 600, "2026-09-19"), draftRuns: [] }], advances: [] });
+            }
+            return json([]);
+        }));
+        renderIn("en", <PaymentRunWizard run={RUN as never} />);
+        expect(await screen.findByTestId("run-missing-gone")).toHaveTextContent("1 selected invoice is no longer open");
+        expect(screen.getByTestId("run-missing-hidden")).toHaveTextContent("1 selected invoice is still open but hidden");
+        fireEvent.click(screen.getByTestId("run-drop-missing"));
+        expect(screen.queryByTestId("run-missing-gone")).not.toBeInTheDocument();
+        // INV-7790 is still selected, and clearing the filters brings it back.
+        expect(screen.getByTestId("run-missing-hidden")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("run-widen-filters"));
+        expect(await screen.findByTestId("run-amount-INV-7790")).toHaveValue("600.00");
+        expect(screen.queryByTestId("run-missing")).not.toBeInTheDocument();
     });
 
     it("lists the bank references the file shortens, and offers a copy for Excel", async () => {

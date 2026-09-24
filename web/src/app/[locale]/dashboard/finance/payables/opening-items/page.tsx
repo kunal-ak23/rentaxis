@@ -223,11 +223,15 @@ export default function ApOpeningItemsPage() {
                                         <td className={`${td} text-end`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(i.allocated)}</bdi></td>
                                         <td className={`${td} text-end font-semibold`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(i.open)}</bdi></td>
                                         <td className={`${td} text-end`}>
+                                            {i.issuedChequeId ? (
+                                                <span className="text-xs text-muted" data-testid={`generated-${i.invoiceNumber}`}>{t("generatedItem")}</span>
+                                            ) : (
                                             <button type="button" disabled={busy || i.allocated > 0} onClick={() => remove(i.id)}
                                                     aria-label={t("deleteItem")} title={i.allocated > 0 ? t("deleteBlocked") : t("deleteItem")}
                                                     className="p-1.5 text-muted hover:text-error disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed">
                                                 <Trash2 size={13} />
                                             </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

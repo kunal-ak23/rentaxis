@@ -194,8 +194,14 @@ public final class WorkbookGuard {
                         + rows + " rows, more than the " + MAX_ROWS_PER_SHEET
                         + " this import accepts; split it into smaller workbooks");
             }
-            cells += (long) rows * Math.max(sheet.getRow(sheet.getFirstRowNum()) == null ? 0
-                    : sheet.getRow(sheet.getFirstRowNum()).getLastCellNum(), 1);
+            // Every row's own span, not rows × the first row's width (PR #353 review
+            // P1-1): a sheet whose first row is one cell and whose other rows each hold
+            // a cell at column XFD is 20,000 real cells but 330 million addressable
+            // ones, and a reader that walks each row to getLastCellNum allocates them all.
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                cells += Math.max(row.getLastCellNum(), 1);
+                if (cells > MAX_TOTAL_CELLS) break;
+            }
             if (cells > MAX_TOTAL_CELLS) {
                 throw new BusinessRuleViolationException("This workbook holds more than "
                         + MAX_TOTAL_CELLS + " cells; split it into smaller workbooks");
