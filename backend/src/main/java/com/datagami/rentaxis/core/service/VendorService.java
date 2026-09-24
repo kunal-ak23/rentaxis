@@ -71,6 +71,7 @@ public class VendorService {
     @Transactional
     public Vendor createVendor(Vendor vendor) {
         vendor.setTrn(normaliseTrn(vendor.getTrn()));
+        requireNoDuplicate(vendor, null);
         vendor.setPaymentTermsDays(requireTerms(vendor.getPaymentTermsDays()));
         if (vendor.getPayableAccount() == null) {
             try {
@@ -90,6 +91,7 @@ public class VendorService {
         existing.setNameAr(updates.getNameAr());
         existing.setTradeLicenseNumber(updates.getTradeLicenseNumber());
         existing.setTrn(normaliseTrn(updates.getTrn()));
+        requireNoDuplicate(existing, existing.getId());
         // Left out of the body: keep the stored terms rather than resetting them.
         if (updates.getPaymentTermsDays() != null) {
             existing.setPaymentTermsDays(requireTerms(updates.getPaymentTermsDays()));
@@ -130,8 +132,47 @@ public class VendorService {
         Vendor vendor = getVendorById(id);
         Account payable = vendor.getPayableAccount();
         if (payable != null && journalLineRepository.existsByAccount_Id(payable.getId())) {
-            throw new BusinessRuleViolationException("Cannot delete vendor with existing transactions");
+            throw new BusinessRuleViolationException("Cannot delete vendor " + vendor.getNameEn()
+                    + ": it has postings. Mark it inactive instead (archive).", "vendor.hasPostings",
+                    java.util.Map.of("vendor", String.valueOf(vendor.getNameEn())));
         }
-        repository.deleteById(id);
+        repository.delete(vendor);
+        repository.flush();
+        // F14-43: its payable leaf goes with it; nothing was ever posted to it. A
+        // leaf still referenced elsewhere (a mapping, a draft) is deactivated instead.
+        if (payable != null && !payable.isSystem()) {
+            try {
+                accountRepository.delete(payable);
+                accountRepository.flush();
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                payable.setActive(false);
+                accountRepository.save(payable);
+            }
+        }
+    }
+
+    /**
+     * F14-43: one vendor per TRN, and one per name. The name is compared
+     * normalised (case, spacing and punctuation ignored), so "R14 Sparkle
+     * Cleaning LLC" and "r14 sparkle cleaning, L.L.C." are the same vendor.
+     */
+    private void requireNoDuplicate(Vendor v, UUID self) {
+        String name = normaliseName(v.getNameEn());
+        for (Vendor other : repository.findAllByOrderByNameEnAsc()) {
+            if (other.getId() != null && other.getId().equals(self)) continue;
+            if (v.getTrn() != null && v.getTrn().equals(other.getTrn())) {
+                throw new BusinessRuleViolationException("Vendor " + other.getNameEn() + " already has TRN " + v.getTrn(),
+                        "vendor.duplicateTrn", java.util.Map.of("vendor", String.valueOf(other.getNameEn()), "trn", v.getTrn()));
+            }
+            if (!name.isEmpty() && name.equals(normaliseName(other.getNameEn()))) {
+                throw new BusinessRuleViolationException("A vendor named " + other.getNameEn() + " already exists",
+                        "vendor.duplicateName", java.util.Map.of("vendor", String.valueOf(other.getNameEn())));
+            }
+        }
+    }
+
+    static String normaliseName(String name) {
+        if (name == null) return "";
+        return name.toLowerCase(java.util.Locale.ROOT).replaceAll("[\\p{Punct}]", "").replaceAll("\\s+", " ").trim();
     }
 }
