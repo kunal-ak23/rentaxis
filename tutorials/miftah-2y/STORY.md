@@ -406,6 +406,12 @@ buildings, staff and bank accounts.
 - As Ahmed, all three of his contract downloads return a real PDF (47–48 KB, `%PDF-`), including the two renewals that returned 500 (#75). Rajesh's contract is 404 to him. The home shows his two ACTIVE contracts first, with "Past contracts (2)" collapsed (#76).
 - As the super admin, leases, tickets, trial balance, orgs, `/auth/me` and the new ticket-assignees endpoint all return 200. Gate approvals return 403 to a super admin, but that predates this PR (#88).
 
+**S08 (cont.) · Post-deploy check · PR #344 (bc494ae0).** Imported **Al Waha Residence B** (3 units, 3 renters, 3 ACTIVE rows):
+- **B-101** (future start, Cheques sheet, dd/mm agreement date) and **B-103** (future start, monthly 3,250) **posted**. Their cheques equal their contracts: 60,400.00 = 54,000 + 5,400 + 1,000; 42,900.00 = 39,000.00 + 3,900.
+- **B-102** (running since June) stayed a **draft** with the message "Running tenancy with past-dated cheques — import it through the cut-over import".
+- The property got its 20 ledger accounts.
+- The result warns that 14 generated cheques need numbers.
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
