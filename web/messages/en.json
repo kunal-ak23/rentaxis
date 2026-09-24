@@ -1039,6 +1039,8 @@
     "pageTitle": "Cheque-failure fines",
     "pageSubtitle": "Penalties applied when a cheque fails. Applied across all properties unless overridden in a property's rent-collection settings.",
     "sectionAmounts": "Fine amounts",
+    "lateFeeRuleHint": "Late fees are not set here — each property's own late-fee rule (penalty type and amount, under its rent-collection settings) decides those, together with the lease's grace period.",
+    "technicalReasonsUseBounceHint": "A stopped-payment or technical-return cheque is fined at the bounce amount above.",
     "sectionAccrual": "Accrual after grace",
     "bounceAmount": "Bounce fine (AED)",
     "signatureMismatchAmount": "Signature mismatch fine (AED)",
@@ -2118,7 +2120,7 @@
   },
   "VatSchedule": {
     "title": "VAT schedule",
-    "intro": "Each instalment's VAT is declared on its tax point — its due date, or the day it was received if earlier — and issues a numbered tax invoice.",
+    "intro": "Each instalment's VAT is declared on its tax point — its due date, or the day it was received if earlier — and issues a numbered tax invoice. A CONTRACT-timed lease declares its whole VAT on one tax point at the contract date instead.",
     "loadFailed": "Could not load the VAT schedule.",
     "taxPoint": "Tax point",
     "instalment": "Instalment",

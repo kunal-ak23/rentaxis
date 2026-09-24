@@ -53,5 +53,11 @@ describe("rent settings in Arabic", () => {
         expect(screen.getByText("تجاوز واحد مفعّل")).toBeInTheDocument();
         expect(screen.getByText(ar.OnlinePayments.onlineEnabledHint)).toBeInTheDocument();
         expect(leftoverLatinWords(visibleText(container))).toEqual([]);
+
+        // F14-29: the dead grace-days/per-day-rate override fields are gone;
+        // only the late-fee-rule hint explains where the fee actually comes from.
+        expect(screen.queryByText(ar.Fines.graceDays)).not.toBeInTheDocument();
+        expect(screen.queryByText(ar.Fines.perDayRate)).not.toBeInTheDocument();
+        expect(screen.getByTestId("fine-override-late-fee-hint")).toHaveTextContent(ar.Fines.lateFeeRuleHint);
     });
 });

@@ -11,7 +11,6 @@ import {
     ShieldCheck,
     Save,
     DollarSign,
-    Clock,
     Bell,
 } from "lucide-react";
 import { canConfigureFines } from "@/lib/rbac";
@@ -201,6 +200,15 @@ export default function FinesSettingsPage() {
                     <DollarSign size={14} className="text-primary/60" />
                     {t("sectionAmounts")}
                 </h2>
+                {/* F14-29: late fees come from each property's own late-fee rule
+                    (penaltyType/penaltyAmount) plus the lease grace, never from a
+                    grace-days/per-day-rate pair here — those fields are dead. Only
+                    the three amounts below (and their per-property overrides) are
+                    wired, which is why the grace/rate section that used to sit here
+                    is gone. */}
+                <p className="text-[11px] text-muted mb-6" data-testid="fines-late-fee-hint">
+                    {t("lateFeeRuleHint")}
+                </p>
 
                 <div className="space-y-6">
                     {/* Bounce Fine */}
@@ -254,50 +262,9 @@ export default function FinesSettingsPage() {
                         </div>
                     </div>
                 </div>
-            </div>
-
-            {/* Accrual Section */}
-            <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 mb-6">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6 flex items-center gap-2">
-                    <Clock size={14} className="text-primary/60" />
-                    {t("sectionAccrual")}
-                </h2>
-
-                <div className="space-y-6">
-                    {/* Grace Days */}
-                    <div>
-                        <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
-                            {t("graceDays")}
-                        </label>
-                        <NumberInput showZero
-                            min={0}
-                            max={90}
-                            step={1}
-                            value={config.graceDays}
-                            onChange={(v) => updateField("graceDays", Math.min(90, Math.max(0, v)))}
-                            className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
-                        />
-                        <p className="text-[10px] text-muted mt-1">{t("graceDaysHint")}</p>
-                    </div>
-
-                    {/* Per-day Rate */}
-                    <div>
-                        <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
-                            {t("perDayRate")}
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <NumberInput showZero
-                                min={0}
-                                step={0.5}
-                                value={config.perDayRate}
-                                onChange={(v) => updateField("perDayRate", v)}
-                                className="w-40 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
-                            />
-                            <span className="text-xs font-semibold text-muted">AED/day</span>
-                        </div>
-                        <p className="text-[10px] text-muted mt-1">{t("perDayRateHint")}</p>
-                    </div>
-                </div>
+                <p className="text-[10px] text-muted mt-4" data-testid="fines-technical-reasons-hint">
+                    {t("technicalReasonsUseBounceHint")}
+                </p>
             </div>
 
             {/* Penalty proposal Section — FineConfigDTO's own three fields (spec §7.3) */}

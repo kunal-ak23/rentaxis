@@ -470,8 +470,6 @@ export default function RentSettingsPage() {
                                             settings.fineBounceAmount,
                                             settings.fineSignatureMismatchAmount,
                                             settings.fineAccountClosedAmount,
-                                            settings.fineGraceDays,
-                                            settings.finePerDayRate,
                                         ].filter(v => v !== null && v !== undefined).length;
                                         return count > 0 ? (
                                             <span className="ms-1 text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
@@ -491,14 +489,18 @@ export default function RentSettingsPage() {
                                     <p className="text-[11px] text-muted font-medium">
                                         {tFines("overrideSectionHint")}
                                     </p>
+                                    {/* F14-29: no grace-days/per-day-rate override here — this
+                                        property's late fee comes from Penalty type/amount above,
+                                        combined with the lease's own grace period. */}
+                                    <p className="text-[11px] text-muted font-medium" data-testid="fine-override-late-fee-hint">
+                                        {tFines("lateFeeRuleHint")}
+                                    </p>
 
                                     {/* Fine Override Field helper */}
                                     {([
                                         { field: "fineBounceAmount" as const, label: tFines("bounceAmount"), orgVal: orgFines.bounceAmount, unit: t("unitAed") },
                                         { field: "fineSignatureMismatchAmount" as const, label: tFines("signatureMismatchAmount"), orgVal: orgFines.signatureMismatchAmount, unit: t("unitAed") },
                                         { field: "fineAccountClosedAmount" as const, label: tFines("accountClosedAmount"), orgVal: orgFines.accountClosedAmount, unit: t("unitAed") },
-                                        { field: "fineGraceDays" as const, label: tFines("graceDays"), orgVal: orgFines.graceDays, unit: t("unitDays") },
-                                        { field: "finePerDayRate" as const, label: tFines("perDayRate"), orgVal: orgFines.perDayRate, unit: t("unitAedPerDay") },
                                     ] as const).map(({ field, label, orgVal, unit }) => {
                                         const overridden = isOverridden(field);
                                         return (
