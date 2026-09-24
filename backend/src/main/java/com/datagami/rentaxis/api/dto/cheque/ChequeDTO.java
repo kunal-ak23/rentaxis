@@ -65,5 +65,8 @@ public record ChequeDTO(UUID id,
                         UUID penaltyAssessmentId,
                         boolean due,
                         boolean overdue,
-                        int daysOverdue) {
+                        int daysOverdue,
+                        /* The VAT inside {@code amount}, and the net it is charged on (spec 2026-09-24 §1). */
+                        BigDecimal vatAmount,
+                        BigDecimal vatTaxableAmount) {
 }

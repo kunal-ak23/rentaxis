@@ -173,6 +173,7 @@ public class PropertyAccountService {
         }
         defaultIfMissing(AccountRole.CASH, "A-02-05-001");
         defaultIfMissing(AccountRole.OUTPUT_VAT, "B-01-03-001");
+        defaultIfMissing(AccountRole.OUTPUT_VAT_DEFERRED, "B-01-03-002");
         defaultIfMissing(AccountRole.INPUT_VAT, "A-02-04-001");
         defaultIfMissing(AccountRole.ROUNDING_OFF, "D-02-001");
         defaultIfMissing(AccountRole.DISCOUNT_ALLOWED, "D-02-002");

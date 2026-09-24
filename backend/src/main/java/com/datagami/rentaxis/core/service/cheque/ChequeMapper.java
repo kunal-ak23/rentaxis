@@ -77,7 +77,9 @@ public final class ChequeMapper {
                 c.getPenaltyAssessmentId(),
                 ChequeDueRules.due(c, today),
                 overdue,
-                overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0);
+                overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0,
+                c.getVatAmount(),
+                c.getVatTaxableAmount());
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

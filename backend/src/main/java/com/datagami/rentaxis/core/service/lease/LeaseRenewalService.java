@@ -338,7 +338,7 @@ public class LeaseRenewalService {
 
         // ---- stage 2: rows exist, journals do not --------------------------
         List<LeaseLine> newLines = leaseService.appendLines(lease, inputs);
-        List<Cheque> newRows = chequeGeneration.appendRows(lease, rows, entryDate);
+        List<Cheque> newRows = chequeGeneration.appendRows(lease, rows, entryDate, newLines);
 
         LeasePostingService.LinePlan plan = postingService.planLines(lease, newLines);
         Set<AccountRole> missing = postingService.unmappedRoles(lease, newLines, newRows);

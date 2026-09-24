@@ -25,6 +25,9 @@ import java.util.UUID;
  * @param chequeNumber PDC only, and unique within the lease.
  * @param chequeDate the date on the instrument — for cash and transfers, the date it is expected.
  * @param mode instrument; defaults to PDC. ONLINE is refused.
+ * @param vatAmount the output VAT inside {@code amount} (spec 2026-09-24 §1), or
+ *        null for "work it out": on save, rows without one share the contract VAT
+ *        the other rows have not claimed, pro rata to their amounts.
  */
 public record ChequeRowInput(UUID id,
                              Integer seqNo,
@@ -36,5 +39,14 @@ public record ChequeRowInput(UUID id,
                              UUID debitAccountId,
                              BigDecimal amount,
                              String narration,
-                             ChequeMode mode) {
+                             ChequeMode mode,
+                             BigDecimal vatAmount) {
+
+    /** A row that leaves its VAT to the pro-rata default. */
+    public ChequeRowInput(UUID id, Integer seqNo, LocalDate postingDate, String chequeNumber, LocalDate chequeDate,
+                          String payeeBank, String payerName, UUID debitAccountId, BigDecimal amount,
+                          String narration, ChequeMode mode) {
+        this(id, seqNo, postingDate, chequeNumber, chequeDate, payeeBank, payerName, debitAccountId, amount,
+                narration, mode, null);
+    }
 }

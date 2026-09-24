@@ -99,4 +99,43 @@ class LeaseVatTest {
                 .filter(g -> LeaseVat.netOfGross(g, true, rent) == null).count();
         assertThat(gaps).as("some gross amounts have no net").isPositive();
     }
+    // ------------------------------------------------------------------
+    // allocate (spec 2026-09-24 §1)
+    // ------------------------------------------------------------------
+
+    private static java.util.List<BigDecimal> bds(String... v) {
+        return java.util.Arrays.stream(v).map(BigDecimal::new).toList();
+    }
+
+    @Test
+    void allocateSplitsProRataAndSumsExactly() {
+        java.util.List<BigDecimal> parts = LeaseVat.allocate(new BigDecimal("6000"), bds("31500", "31500", "31500", "31500"));
+        assertThat(parts).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("1500", "1500", "1500", "1500").toArray(BigDecimal[]::new));
+    }
+
+    /** 100 over three equal rows: 33.33 twice, and the last row absorbs the fils. */
+    @Test
+    void allocateGivesTheRemainderToTheLastRow() {
+        java.util.List<BigDecimal> parts = LeaseVat.allocate(new BigDecimal("100"), bds("1", "1", "1"));
+        assertThat(parts).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("33.33", "33.33", "33.34").toArray(BigDecimal[]::new));
+        assertThat(parts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("100");
+
+        java.util.List<BigDecimal> first = LeaseVat.allocateFirstAbsorbs(new BigDecimal("100"), bds("1", "1", "1"));
+        assertThat(first).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("33.34", "33.33", "33.33").toArray(BigDecimal[]::new));
+    }
+
+    /** Zero-weight rows get nothing; a zero total gives every row zero; no weights at all loses nothing. */
+    @Test
+    void allocateHandlesZeroRows() {
+        assertThat(LeaseVat.allocate(new BigDecimal("50"), bds("0", "10", "0"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "50", "0").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(BigDecimal.ZERO, bds("5", "5"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "0").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(new BigDecimal("7.50"), bds("0", "0"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "7.50").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(new BigDecimal("10"), java.util.List.of())).isEmpty();
+    }
 }
