@@ -2260,7 +2260,11 @@
       "numberTaken": "Row {row}: cheque number {number} is already used on this lease"
     },
     "releaseOnline": "Release",
-    "releaseOnlineHint": "The online payment session was never completed. Releasing puts the cheque back on the register as Registered, so it can be collected another way."
+    "releaseOnlineHint": "The online payment session was never completed. Releasing puts the cheque back on the register as Registered, so it can be collected another way.",
+    "moveVatTo": "Move its VAT to",
+    "moveVatToHint": "This instalment carries {vat} of VAT that has not been declared yet. It moves to the instalment you choose and is declared on that instalment's tax point.",
+    "moveVatToNone": "This instalment carries {vat} of VAT that has not been declared yet, and the lease has no other pending instalment to move it to, so it cannot be cancelled.",
+    "moveVatOption": "{label} · {date} · {amount}"
   },
   "Common": {
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -2353,6 +2357,7 @@
     "unearnedRent": "Unearned rent to reverse",
     "unearnedVat": "Unearned VAT to credit",
     "unearnedVatHint": "Credited back by the same TCR as a credit note. Already netted off the receivable below.",
+    "unearnedVatInstalmentHint": "Settled by the same TCR: the VAT on instalments not yet declared is cancelled, the part of it that covers rent earned by the termination date is declared at that date, and any VAT already declared on rent not supplied is credited back with a credit note. Already netted off the receivable below.",
     "vatSettlementTitle": "VAT not yet declared",
     "vatDueByT": "Tax points due by the termination date, declared first: {amount}",
     "vatReversedFromDeferred": "Undeclared VAT on unearned rent, reversed from Output VAT – not yet due: {amount}",

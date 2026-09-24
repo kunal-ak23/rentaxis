@@ -1553,6 +1553,7 @@ public class LeaseService {
         dto.setTotalDays(lease.getTotalDays());
         dto.setGracePeriodDays(lease.getGracePeriodDays());
         dto.setGracePeriodOverridden(lease.isGracePeriodOverridden());
+        dto.setVatTiming(lease.getVatTiming());
         dto.setFirstDueDate(lease.getFirstDueDate());
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());

@@ -244,6 +244,12 @@ export type LeaseDetail = {
   gracePeriodDays: number | null;
   /** False when the grace came from the property's default (gap #65); absent on an older server. */
   gracePeriodOverridden?: boolean | null;
+  /**
+   * When the lease's output VAT is declared (spec 2026-09-24 §1): per instalment,
+   * or all at the contract date (older leases and cut-over imports). Absent on an
+   * older server.
+   */
+  vatTiming?: "INSTALMENT" | "CONTRACT" | null;
   firstDueDate: string | null;
   renterAcceptedAt: string | null;
   renewedFromLeaseId: string | null;
@@ -1142,7 +1148,13 @@ export const chequeApi = {
   /** `body.failureReason` is required — the backend 400s a bounce without one. */
   bounce: (id: string, body: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/bounce`, body),
   replace: (id: string, body: ReplaceChequeInput) => send<Cheque[]>("POST", `/cheques/${id}/replace`, body),
-  cancel: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/cancel`, body),
+  /**
+   * `moveVatTo` names another pending instalment of the same lease to carry this
+   * row's undeclared VAT; the server refuses to cancel a row with PLANNED VAT
+   * without it (spec 2026-09-24 §1).
+   */
+  cancel: (id: string, body?: ChequeActionInput, moveVatTo?: string | null) =>
+    send<Cheque>("PUT", `/cheques/${id}/cancel${qs({ moveVatTo })}`, body),
   updateDetails: (id: string, body: ChequeRowInput) => send<Cheque>("PUT", `/cheques/${id}/details`, body),
   /**
    * Put an ONLINE_PENDING row back on the register (→ REGISTERED) when the

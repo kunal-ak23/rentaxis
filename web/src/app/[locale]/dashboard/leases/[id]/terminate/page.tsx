@@ -330,7 +330,8 @@ export default function TerminateLeasePage() {
                                     <Figure
                                         label={t("unearnedVat")}
                                         value={fmtAmount(unearnedVat)}
-                                        hint={t("unearnedVatHint")}
+                                        hint={t(lease?.vatTiming === "INSTALMENT"
+                                            ? "unearnedVatInstalmentHint" : "unearnedVatHint")}
                                         testId="terminate-unearned-vat"
                                     />
                                 )}

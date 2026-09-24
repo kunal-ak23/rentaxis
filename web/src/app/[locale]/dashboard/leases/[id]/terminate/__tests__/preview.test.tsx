@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../../messages/en.json";
+import ar from "../../../../../../../../messages/ar.json";
 import type { Cheque, LeaseDetail, TerminationPreview } from "@/lib/api/leasing";
 
 /**
@@ -267,6 +268,42 @@ describe("Unearned VAT", () => {
         renderPage();
         await screen.findByTestId("terminate-unearned");
         expect(screen.queryByTestId("terminate-unearned-vat")).toBeNull();
+    });
+
+    it("describes the instalment settlement on an INSTALMENT lease (EN)", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "INSTALMENT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        renderPage();
+        const card = (await screen.findByTestId("terminate-unearned-vat")).parentElement!;
+        expect(card).toHaveTextContent(en.Termination.unearnedVatInstalmentHint);
+        expect(card).not.toHaveTextContent(en.Termination.unearnedVatHint);
+    });
+
+    it("keeps the credit-note wording on a legacy CONTRACT lease, and when the server does not say", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "CONTRACT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        renderPage();
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(en.Termination.unearnedVatHint);
+        cleanup();
+
+        api.get.mockResolvedValue(LEASE);
+        renderPage();
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(en.Termination.unearnedVatHint);
+    });
+
+    it("has the instalment wording in Arabic too", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "INSTALMENT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <TerminateLeasePage />
+            </NextIntlClientProvider>,
+        );
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(ar.Termination.unearnedVatInstalmentHint);
+        expect(ar.Termination.unearnedVatInstalmentHint).not.toEqual(en.Termination.unearnedVatInstalmentHint);
     });
 
     it("is absent from an older server's answer and read as zero, not as NaN", async () => {
