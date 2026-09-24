@@ -55,7 +55,21 @@ export function lineVatOf(row: Pick<SettlementRow, "type" | "category" | "amount
     if (row.type !== "DEDUCTION" || !rate || !(rule?.vatableCategories ?? []).includes(row.category as DeductionCategory)) {
         return 0;
     }
-    return round2((row.amount || 0) * rate);
+    return vatFilsOf(row.amount || 0, rate) / 100;
+}
+
+/**
+ * F14-61 R1 (P2-1): VAT in whole fils, rounded HALF_UP exactly as
+ * `amount.multiply(RATE).setScale(2, HALF_UP)` does in Java. Floating-point
+ * `round2(amount * rate)` rounds 2.6 % of half-fil cases down (80.30 → 4.01,
+ * the server books 4.02), so the product is taken in integers: the amount in
+ * fils times the rate in basis points, then half-up division by 10,000.
+ */
+export function vatFilsOf(amount: number, rate: number): number {
+    const fils = Math.round(Math.abs(amount) * 100);
+    const bp = Math.round(rate * 10000);
+    const vat = Math.floor((fils * bp + 5000) / 10000);
+    return amount < 0 ? -vat : vat;
 }
 
 /** F14-61: the rows with each deduction's VAT re-priced by the rule (a draft's live view). */

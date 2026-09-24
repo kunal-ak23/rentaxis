@@ -573,6 +573,22 @@ describe("VAT on recharges (F14-37 / F14-61)", () => {
         expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("9,544.38");
     });
 
+    it("prices a half-fil line as the server books it: 80.30 carries 4.02 (R1 P2-1)", async () => {
+        api.statement.mockResolvedValue(statement({
+            vatRate: 0.05, vatableCategories: ["PROPERTY_DAMAGE", "CLEANING", "KEY_REPLACEMENT"],
+        }));
+        api.get.mockResolvedValue(stored({ totalDeductions: 80.3, deductions: [
+            { id: "d1", category: "PROPERTY_DAMAGE", description: "Wall", amount: 80.3, autoCalculated: false,
+              type: "DEDUCTION", additionCategory: null, accountId: "acc-1", accountName: "Damage recovery",
+              attachments: [], vatAmount: 0 },
+        ] as never }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("+ VAT 4.02 = 84.32");
+        // 10,000 held − (−164.38) receivable − 80.30 − 4.02 VAT
+        expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("10,080.06");
+    });
+
     it("a finalized settlement's figures add up: net, VAT, gross and the booked refund", async () => {
         api.get.mockResolvedValue(stored({
             status: "FINALIZED", journalId: "j9", journalNumber: "STL-26/8", settlementDate: "2026-07-05",
