@@ -171,6 +171,23 @@ public class RecognitionService {
         return toDtos(entries.findByLease_IdOrderByPeriodStartAsc(leaseId));
     }
 
+    /**
+     * F14-27: how far recognition is behind. {@code behind} counts PLANNED rows whose
+     * period ended before {@code today} and is not inside the period lock — rows the
+     * nightly pass should already have posted.
+     */
+    public record RecognitionBehind(int behind, BigDecimal behindAmount, LocalDate oldestPeriodEnd) { }
+
+    @Transactional(readOnly = true)
+    public RecognitionBehind behind(LocalDate today) {
+        LocalDate locked = booksLockedThrough();
+        List<RecognitionEntry> rows = plannedThrough(today.minusDays(1)).stream()
+                .filter(e -> locked == null || e.getPeriodEnd().isAfter(locked)).toList();
+        BigDecimal amount = rows.stream().map(RecognitionEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new RecognitionBehind(rows.size(), amount.setScale(2, RoundingMode.HALF_UP),
+                rows.isEmpty() ? null : rows.get(0).getPeriodEnd());
+    }
+
     /** Everything still waiting to be recognised as of {@code to}, oldest first. */
     @Transactional(readOnly = true)
     public List<RecognitionEntryDTO> pending(LocalDate to) {

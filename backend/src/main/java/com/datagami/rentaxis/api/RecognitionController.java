@@ -55,11 +55,31 @@ public class RecognitionController {
 
     /** From the bean, never {@code LocalDate.now()} — "today" has to be fixable in a test. */
     private final Clock clock;
+    private final com.datagami.rentaxis.core.service.recognition.RecognitionRunLog runLog;
 
-    public RecognitionController(RecognitionService recognition, LeaseService leaseService, Clock clock) {
+    public RecognitionController(RecognitionService recognition, LeaseService leaseService, Clock clock,
+                                 com.datagami.rentaxis.core.service.recognition.RecognitionRunLog runLog) {
         this.recognition = recognition;
         this.leaseService = leaseService;
         this.clock = clock;
+        this.runLog = runLog;
+    }
+
+    /** F14-27: whether the close is behind, and what the last nightly pass could not post. */
+    public record RecognitionStatusDTO(int behind, java.math.BigDecimal behindAmount, LocalDate oldestPeriodEnd,
+                                       LocalDate lastRunFor, java.time.Instant lastRunFinishedAt,
+                                       Integer lastRunPosted, Integer lastRunFailed, List<String> lastRunErrors) { }
+
+    @GetMapping("/finance/recognition/status")
+    @PreAuthorize(FINANCE_ROLES)
+    public ResponseEntity<RecognitionStatusDTO> status() {
+        requireTenantSelected();
+        var behind = recognition.behind(LocalDate.now(clock));
+        var last = runLog.last(com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId()).orElse(null);
+        return ResponseEntity.ok(new RecognitionStatusDTO(behind.behind(), behind.behindAmount(), behind.oldestPeriodEnd(),
+                last == null ? null : last.runFor(), last == null ? null : last.finishedAt(),
+                last == null ? null : last.posted(), last == null ? null : last.failed(),
+                last == null ? List.of() : last.errors()));
     }
 
     /**

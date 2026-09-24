@@ -245,3 +245,5 @@ databaseChangeLog:
       file: db/changelog/changesets/118-bank-off-statement-items.yaml
   - include:
       file: db/changelog/changesets/119-voucher-void.yaml
+  - include:
+      file: db/changelog/changesets/120-recognition-runs.yaml
