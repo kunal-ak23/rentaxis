@@ -142,10 +142,12 @@ function detail(over: Partial<VoucherDetail> = {}): VoucherDetail {
 const VENDORS = [
     {
         id: "ven-1", nameEn: "Emirates Facilities", nameAr: "الإمارات للمرافق", active: true,
+        trn: "100123456700003", paymentTermsDays: 30,
         payableAccount: { id: "pay-1", code: "210101", name: "Emirates Facilities" },
     },
     {
         id: "ven-2", nameEn: "Gulf Cooling", nameAr: "الخليج للتبريد", active: true,
+        trn: "100765432100003", paymentTermsDays: 45,
         payableAccount: { id: "pay-2", code: "210102", name: "Gulf Cooling" },
     },
 ];
@@ -183,6 +185,11 @@ function pickLineAccount(i: number, id = "acct-1") {
 function pickPaymentAccount(id = "bank-1") {
     picked.id = id;
     fireEvent.click(screen.getByLabelText(en.Vouchers.selectPaymentAccount));
+}
+
+/** Finance-ops spec §2: a purchase invoice needs the supplier's invoice number before it can post. */
+function fillInvoiceNumber(value = "INV-100") {
+    fireEvent.change(screen.getByTestId("invoice-number"), { target: { value } });
 }
 
 function fillLine(i: number, amount: string, rate?: string, accountId = "acct-1") {
@@ -324,6 +331,7 @@ describe("VoucherForm — Post gating", () => {
         renderForm();
         expect(await screen.findByTestId("post-voucher")).toBeDisabled();
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
         pickLineAccount(0);
         expect(screen.getByTestId("post-voucher")).toBeDisabled();
         fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2000" } });
@@ -351,6 +359,7 @@ describe("VoucherForm — Post gating", () => {
         renderForm();
         await screen.findByTestId("line-amount-0");
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
         fillLine(0, "2000", "5");
         fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-08-31" } });
 
@@ -593,6 +602,7 @@ describe("VoucherForm — posting", () => {
         renderForm();
         await screen.findByTestId("line-amount-0");
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
         fillLine(0, "1000", "5");
         await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
 
@@ -958,6 +968,7 @@ describe("VoucherForm — line property", () => {
         renderForm();
         await screen.findByTestId("line-amount-0");
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
         fillLine(0, "100", "0");
         await waitFor(() =>
             expect(screen.getByTestId("voucher-blocker")).toHaveTextContent("Line 1: choose a property"),
@@ -979,6 +990,7 @@ describe("VoucherForm — line property", () => {
         renderForm();
         await screen.findByTestId("line-amount-0");
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
         fillLine(0, "100", "0");
         await waitFor(() => expect(screen.getAllByRole("option", { name: "L'Olivier" }).length).toBeGreaterThan(0));
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-1" } });
@@ -988,5 +1000,165 @@ describe("VoucherForm — line property", () => {
         const body = api.create.mock.calls.at(-1)![0];
         expect(body.lines[0].propertyId).toBe("prop-1");
         expect(body.lines[0]).not.toHaveProperty("shared");
+    });
+});
+
+describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
+    const NO_TRN_VENDOR = {
+        id: "ven-3", nameEn: "Handyman Co", nameAr: null, active: true, trn: null, paymentTermsDays: 30,
+        payableAccount: { id: "pay-3", code: "210103", name: "Handyman Co" },
+    };
+    const OPEN_ITEMS = [
+        { kind: "PISR", id: "inv-90", vendorId: "ven-1", vendorName: "Emirates Facilities", docNumber: "PISR-26/21",
+          invoiceNumber: "INV-7790", docDate: "2026-08-20", invoiceDate: "2026-08-20", dueDate: "2026-09-19",
+          daysOverdue: 0, bucket: "CURRENT", gross: 2100, allocated: 0, open: 2100, status: "OPEN", propertyId: null },
+        { kind: "PISR", id: "inv-81", vendorId: "ven-1", vendorName: "Emirates Facilities", docNumber: "PISR-26/20",
+          invoiceNumber: "INV-7781", docDate: "2026-08-01", invoiceDate: "2026-08-01", dueDate: "2026-08-31",
+          daysOverdue: 0, bucket: "CURRENT", gross: 1450, allocated: 0, open: 1450, status: "OPEN", propertyId: null },
+    ];
+    let duplicate: string | null;
+    let allocations: unknown[];
+
+    beforeEach(() => {
+        duplicate = null;
+        allocations = [];
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string) => {
+                const u = String(url);
+                const body = u.includes("/duplicate-check")
+                    ? { duplicateOf: duplicate }
+                    : u.includes("/open-items")
+                      ? OPEN_ITEMS
+                      : u.includes("/allocations")
+                        ? allocations
+                        : u.includes("/vendors")
+                          ? [...VENDORS, NO_TRN_VENDOR]
+                          : u.includes("/units")
+                            ? UNITS
+                            : u.includes("/properties")
+                              ? PROPERTIES
+                              : [];
+                return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+            }),
+        );
+    });
+
+    it("needs the invoice number before a purchase invoice can post", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillLine(0, "1000", "5");
+        await waitFor(() =>
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.invoiceNumberRequired));
+        fillInvoiceNumber("INV-7781");
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+    });
+
+    it("defaults the due date from the supplier date and the vendor's terms, and sends both", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-08-20" } });
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-2" } });   // 45 days
+        fireEvent.change(screen.getByTestId("supplier-invoice-date"), { target: { value: "2026-08-15" } });
+        await waitFor(() => expect(screen.getByTestId("due-date")).toHaveValue("2026-09-29"));
+        expect(screen.getByTestId("vendor-terms")).toHaveTextContent("45");
+        fillInvoiceNumber("GC-1");
+        fillLine(0, "100", "0");
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        const body = api.create.mock.calls.at(-1)![0];
+        expect(body).toMatchObject({ supplierInvoiceDate: "2026-08-15", dueDate: "2026-09-29" });
+    });
+
+    it("says inline that the invoice is already posted, and will not post it", async () => {
+        duplicate = "PISR-26/20";
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber("inv 7781");
+        fillLine(0, "100", "0");
+        expect(await screen.findByTestId("duplicate-invoice", {}, { timeout: 3000 }))
+            .toHaveTextContent("inv 7781 from Emirates Facilities is already posted as PISR-26/20");
+        expect(screen.getByTestId("post-voucher")).toBeDisabled();
+    });
+
+    it("disables VAT with an explanation for a vendor with no TRN", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-3" } });
+        await waitFor(() => expect(screen.getByTestId("line-vat-rate-0")).toBeDisabled());
+        expect(screen.getByTestId("vat-blocked")).toHaveTextContent("Handyman Co has no TRN");
+        expect(screen.getByTestId("line-vat-rate-0")).toHaveValue("0");
+    });
+
+    it("allocates a payment oldest-first and posts the allocations with it", async () => {
+        api.create.mockResolvedValue(detail({ id: "bpv-new", docType: "BPV", lines: [] }));
+        api.post.mockResolvedValue(detail({ id: "bpv-new", docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/55" }));
+        renderForm("BPV");
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        pickPaymentAccount("bank-1");
+        fireEvent.change(screen.getByTestId("payment-reference"), { target: { value: "TRF-7781" } });
+        pickLineAccount(0, "pay-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2050" } });
+
+        await screen.findByTestId("allocate-row-INV-7781");
+        fireEvent.click(screen.getByTestId("auto-allocate"));
+        expect(screen.getByTestId("allocate-amount-INV-7781")).toHaveValue("1450.00");
+        expect(screen.getByTestId("allocate-amount-INV-7790")).toHaveValue("600.00");
+        expect(screen.getByTestId("allocate-summary")).toHaveTextContent("0.00");
+
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        await waitFor(() => expect(api.post).toHaveBeenCalled());
+        const [id, allocs] = api.post.mock.calls.at(-1)!;
+        expect(id).toBe("bpv-new");
+        expect(allocs).toEqual([{ invoiceId: "inv-90", amount: 600 }, { invoiceId: "inv-81", amount: 1450 }]);
+        const created = api.create.mock.calls.at(-1)![0];
+        expect(created).toMatchObject({ paymentMethod: "TRANSFER", paymentReference: "TRF-7781", chequeNumber: null });
+    });
+
+    it("refuses allocations beyond the payment", async () => {
+        renderForm("BPV");
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        pickPaymentAccount("bank-1");
+        pickLineAccount(0, "pay-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "500" } });
+        fireEvent.change(await screen.findByTestId("allocate-amount-INV-7781"), { target: { value: "600" } });
+        await waitFor(() =>
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.allocationsExceedPayment));
+    });
+
+    it("warns that amending a payment re-opens the invoices it settles", async () => {
+        allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450 },
+            { id: "a2", live: true, invoiceNumber: "INV-7790", invoiceVoucherId: "inv-90", amount: 600 }];
+        api.get.mockResolvedValue(detail({
+            docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/55", paymentAccountId: "bank-1",
+            paymentMethod: "TRANSFER", paymentReference: "TRF-7781",
+            lines: [{ lineNo: 1, accountId: "pay-1", accountCode: "210101", accountName: "Emirates Facilities",
+                description: null, amount: 2050, vatRate: 0, vatAmount: 0, propertyId: null, unitId: null }],
+            settlement: { amount: 2050, allocated: 2050, open: 0, status: null },
+        }));
+        renderForm("BPV", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("amend-voucher"));
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2000" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        expect(await screen.findByTestId("amend-releases"))
+            .toHaveTextContent("This payment settles INV-7781, INV-7790. They will show as unpaid.");
+    });
+
+    it("shows a posted invoice's settlement status", async () => {
+        api.get.mockResolvedValue(detail({
+            status: "POSTED", voucherNumber: "PISR-26/21", settlement: { amount: 2100, allocated: 600, open: 1500, status: "PART_PAID" },
+        }));
+        renderForm("PISR", { voucherId: "v1" });
+        const chip = await screen.findByTestId("settlement-status");
+        expect(chip).toHaveAttribute("data-status", "PART_PAID");
+        expect(chip).toHaveTextContent("Part-paid");
+        expect(chip).toHaveTextContent("1,500.00");
     });
 });

@@ -127,6 +127,19 @@ export type DraftShape = {
     accounts?: Record<string, Account>;
     /** The header's property, which a line with none of its own inherits. */
     headerPropertyId?: string | null;
+    /**
+     * PISR: the supplier's invoice number (finance-ops spec §2 — required).
+     * Omitted by callers that predate the rule, which skips it.
+     */
+    invoiceNumber?: string;
+    /** PISR: whether the chosen vendor has a TRN. Omitted (unknown) skips the input-VAT rule. */
+    vendorHasTrn?: boolean;
+    /** BPV: the method, and the payment account's sub-type when the chart has loaded. */
+    paymentMethod?: "TRANSFER" | "CHEQUE" | "CASH";
+    chequeNumber?: string;
+    /** BPV: Σ of the Allocate panel, and what the voucher pays the vendor (Σ lines on its payable leaf). */
+    allocationTotal?: number;
+    payableTotal?: number;
 };
 
 /**
@@ -147,7 +160,13 @@ export type DraftRefusal =
     | "bpvNoVat"
     | "payableNeedsVendor"
     | "otherVendorPayable"
-    | "linePropertyRequired";
+    | "linePropertyRequired"
+    | "invoiceNumberRequired"
+    | "vatNeedsTrn"
+    | "cashNeedsCashAccount"
+    | "methodNeedsBankAccount"
+    | "chequeNumberRequired"
+    | "allocationsExceedPayment";
 
 /**
  * A refusal, plus the 1-based line it is about where the rule is per-line. An
@@ -224,6 +243,28 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
             if (!d.vendorId) return { key: "payableNeedsVendor", line };
             if (l.accountId !== d.vendorPayableAccountId) return { key: "otherVendorPayable", line };
         }
+    }
+
+    // Finance-ops spec §2, after the lines as on the server
+    // (VoucherService.requireSupplierInvoiceRules).
+    if (d.type === "PISR") {
+        if (d.invoiceNumber !== undefined && !d.invoiceNumber.replace(/[\s-]/g, "")) {
+            return { key: "invoiceNumberRequired" };
+        }
+        // Input VAT is recoverable only on a tax invoice, which carries the TRN.
+        if (d.vendorHasTrn === false && d.lines.some(l => l.vatRate > 0)) return { key: "vatNeedsTrn" };
+    }
+    if (d.type === "BPV" && d.paymentMethod && d.paymentAccountId) {
+        const pay = d.accounts?.[d.paymentAccountId];
+        // VoucherService.requireMethodMatchesAccount.
+        if (pay && d.paymentMethod === "CASH" && pay.accountSubType !== "CASH") return { key: "cashNeedsCashAccount" };
+        if (pay && d.paymentMethod !== "CASH" && pay.accountSubType !== "BANK") return { key: "methodNeedsBankAccount" };
+        if (d.paymentMethod === "CHEQUE" && !d.chequeNumber?.trim()) return { key: "chequeNumberRequired" };
+    }
+    // VoucherAllocationService rule 2, in fils.
+    if (d.type === "BPV" && d.allocationTotal !== undefined && d.payableTotal !== undefined
+        && Math.round(d.allocationTotal * 100) > Math.round(d.payableTotal * 100)) {
+        return { key: "allocationsExceedPayment" };
     }
     return null;
 }

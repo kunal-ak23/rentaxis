@@ -158,8 +158,10 @@ describe("sidebar finance gating", () => {
      *  renter should be fined is part of running a building, even though
      *  deciding one is not. Finance → Reports is the other: PropertyReportController
      *  admits PROPERTY_MANAGER read-only, narrowed server-side to assigned
-     *  properties with no tenant-wide Unassigned / Total (finance-ops spec §1). */
-    it("offers a property manager the cheque register, the penalty queue and the property reports, but no other finance or staff link", () => {
+     *  properties with no tenant-wide Unassigned / Total (finance-ops spec §1).
+     *  Payables aging likewise (spec §2): PayablesReportController admits a
+     *  manager for the property-filtered view of an assigned property only. */
+    it("offers a property manager the cheque register, the penalty queue, the property reports and payables aging, but no other finance or staff link", () => {
         const { container } = renderAs("PROPERTY_MANAGER");
         const links = hrefs(container);
 
@@ -171,15 +173,19 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/penalties",
             "/dashboard/finance/reports/property-pl",
             "/dashboard/finance/reports/property-statement",
+            "/dashboard/finance/payables/aging",
         ]));
         expect(
             links.filter(h =>
                 h.startsWith("/dashboard/finance/") &&
                 !h.startsWith("/dashboard/finance/cheques") &&
                 !h.startsWith("/dashboard/finance/reports/property-") &&
+                h !== "/dashboard/finance/payables/aging" &&
                 h !== "/dashboard/finance/penalties",
             ),
         ).toEqual([]);
+        // The opening-items grid is PayablesController, which refuses a manager.
+        expect(links).not.toContain("/dashboard/finance/payables/opening-items");
         expect(links).not.toContain("/dashboard/staff");
     });
 

@@ -30,6 +30,9 @@ export type EditableVoucherType = "PISR" | "BPV";
 
 export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED";
 
+/** `VoucherPaymentMethod.java` (finance-ops spec §2): CASH pays from a cash leaf, the others from a bank leaf. */
+export type PaymentMethod = "TRANSFER" | "CHEQUE" | "CASH";
+
 // ---- responses ----
 
 /** `VoucherLineDTO`. `vatAmount` is server-computed; the form previews it with {@link vatOf}. */
@@ -97,12 +100,32 @@ export type Voucher = {
     vatTotal: number;
     grossTotal: number;
     postedAt: string | null;
+    /** PISR: the date on the supplier's invoice. */
+    supplierInvoiceDate?: string | null;
+    /** PISR: when it is due (supplier date + the vendor's terms unless edited). */
+    dueDate?: string | null;
+    /** BPV only. */
+    paymentMethod?: PaymentMethod | null;
+    paymentReference?: string | null;
+};
+
+/**
+ * `VoucherDetailDTO.Settlement`, derived from live allocations (spec §2). PISR:
+ * `amount` is the gross and `status` OPEN / PART_PAID / PAID. BPV: `amount` is
+ * what it paid the vendor and `open` the unallocated advance. Null on a draft.
+ */
+export type Settlement = {
+    amount: number;
+    allocated: number;
+    open: number;
+    status: "OPEN" | "PART_PAID" | "PAID" | null;
 };
 
 /** `VoucherDetailDTO` — deliberately flat, with the lines and attachments appended. */
 export type VoucherDetail = Voucher & {
     lines: VoucherLine[];
     attachments: VoucherAttachment[];
+    settlement?: Settlement | null;
 };
 
 // ---- requests ----
@@ -132,13 +155,22 @@ export type VoucherInput = {
     chequeNumber?: string | null;
     chequeDate?: string | null;
     lines: VoucherLineInput[];
+    supplierInvoiceDate?: string | null;
+    dueDate?: string | null;
+    paymentMethod?: PaymentMethod | null;
+    paymentReference?: string | null;
 };
+
+/** One invoice a payment settles: `AllocationInputDTO`. */
+export type VoucherAllocationInput = { invoiceId?: string | null; openingItemId?: string | null; amount: number };
 
 /** `AmendVoucherDTO`. `reversalDate` is `@NotNull`; `reason` is free text. */
 export type AmendVoucherInput = {
     reversalDate: string;
     reason: string;
     replacement: VoucherInput;
+    /** The invoices a replacement payment voucher settles. */
+    allocations?: VoucherAllocationInput[];
 };
 
 export type VoucherQuery = {
@@ -200,7 +232,10 @@ export const voucherApi = {
     update: (id: string, body: VoucherInput) => apiSend<VoucherDetail>("PUT", `/finance/vouchers/${id}`, body),
     /** `DELETE /finance/vouchers/{id}` → 204. DRAFT only. */
     remove: (id: string) => apiSend<void>("DELETE", `/finance/vouchers/${id}`),
-    post: (id: string) => apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`),
+    /** For a BPV, `allocations` names the invoices it settles; the rest is an advance. */
+    post: (id: string, allocations?: VoucherAllocationInput[]) =>
+        apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`,
+            allocations && allocations.length ? { allocations } : undefined),
     /** Reverses this voucher's journal and posts the replacement; returns the NEW, posted voucher. */
     amend: (id: string, body: AmendVoucherInput) =>
         apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/amend`, body),

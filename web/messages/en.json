@@ -608,7 +608,13 @@
     "actions": "Actions",
     "search": "Search...",
     "close": "Close",
-    "delete": "Delete"
+    "delete": "Delete",
+    "open": "Open",
+    "overdue": "Overdue",
+    "advance": "Advance",
+    "openItems": "Open items and statement",
+    "paymentTerms": "Payment terms (days)",
+    "trnHint": "15 digits (UAE). Needed to claim input VAT on this supplier's invoices."
   },
   "BankAccounts": {
     "title": "Bank Accounts",
@@ -2558,7 +2564,44 @@
     "notAllowed": "You do not have permission to work with vouchers.",
     "sharedHeadOffice": "Shared / head office",
     "sameAsHeader": "Same as header",
-    "linePropertyRequired": "Line {line}: choose a property, or Shared / head office for a cost that belongs to no single property."
+    "linePropertyRequired": "Line {line}: choose a property, or Shared / head office for a cost that belongs to no single property.",
+    "invoiceNumberRequired": "Enter the supplier's invoice number.",
+    "vatNeedsTrn": "Input VAT needs the supplier's TRN from their tax invoice. Add the TRN to the vendor or post the invoice without VAT.",
+    "vatNeedsTrnHint": "{vendor} has no TRN, so this invoice cannot claim input VAT. Add the TRN on the vendor to enable VAT.",
+    "cashNeedsCashAccount": "A cash payment is paid from a cash account.",
+    "methodNeedsBankAccount": "A transfer or cheque is paid from a bank account.",
+    "chequeNumberRequired": "Enter the cheque number.",
+    "allocationsExceedPayment": "The allocations add up to more than this voucher pays the vendor.",
+    "duplicateInvoice": "{invoice} from {vendor} is already posted as {number}.",
+    "settlement": {
+      "OPEN": "Open",
+      "PART_PAID": "Part-paid",
+      "PAID": "Paid"
+    },
+    "settlementOpen": "open",
+    "unallocatedAdvance": "Unallocated (advance)",
+    "paymentMethod": "Payment method",
+    "method": {
+      "TRANSFER": "Bank transfer",
+      "CHEQUE": "Cheque",
+      "CASH": "Cash"
+    },
+    "paymentReference": "Transfer reference",
+    "supplierInvoiceDate": "Supplier invoice date",
+    "dueDate": "Due date",
+    "vendorTerms": "Vendor terms: {days} days",
+    "allocateTitle": "Allocate to invoices",
+    "autoAllocate": "Auto-fill oldest first",
+    "leaveAsAdvance": "Leave as advance",
+    "noOpenItems": "This vendor has no open invoices. The payment will be held as an advance.",
+    "voucherNumber": "Voucher",
+    "openAmount": "Open",
+    "allocateAmount": "Allocate",
+    "openingItem": "Opening item",
+    "daysOverdue": "{days} days overdue",
+    "allocatedTotal": "Allocated",
+    "remainsAdvance": "Left as advance",
+    "amendReleases": "This payment settles {invoices}. They will show as unpaid."
   },
   "Cutover": {
     "importBatches": "Import Batches",
@@ -3105,7 +3148,10 @@
       "inputVat": "Input VAT",
       "expensesPaid": "Less: expenses paid",
       "depositsRefunded": "Less: deposits refunded",
-      "netCash": "Net property cash movement"
+      "netCash": "Net property cash movement",
+      "allocatedPaid": "Paid against this property's invoices",
+      "directPaid": "Paid directly to expenses",
+      "unallocatedPayments": "Supplier payments not yet allocated (not included)"
     },
     "column": {
       "type": "Type",
@@ -3128,14 +3174,17 @@
       "net": "Net",
       "vat": "VAT",
       "emirate": "Emirate",
-      "outputVat": "Output VAT"
+      "outputVat": "Output VAT",
+      "basis": "Basis"
     },
     "note": {
       "register": "Operational figures from the cheque register; not a ledger balance.",
       "differsByDesign": "The register and the ledger differ by design: the contract bills rent in advance.",
       "directPaymentsOnly": "Only payment vouchers that debit an expense directly are shown until supplier allocation lands.",
       "inputVatHeaderProperty": "Input VAT on a voucher with no header property is under Unassigned.",
-      "notCashAtBank": "Net property cash movement, not cash at bank: a bank account can serve several properties."
+      "notCashAtBank": "Net property cash movement, not cash at bank: a bank account can serve several properties.",
+      "paidBySubledger": "Supplier payments count when allocated to an invoice of this property, at the property's share of the invoice; a released allocation comes back off.",
+      "unallocatedNotAttributable": "Payments below are not allocated to an invoice yet, so they are not attributable to a property and are not included above."
     },
     "mode": {
       "PDC": "Cheque",
@@ -3147,6 +3196,91 @@
     "type": {
       "INCOME": "Income",
       "EXPENSE": "Expense"
+    },
+    "basis": {
+      "ALLOCATED": "Allocated",
+      "RELEASED": "Released",
+      "DIRECT": "Direct"
     }
+  },
+  "Payables": {
+    "aging": "Payables aging",
+    "agingDesc": "What is owed to suppliers, by days past due, as of any date — tied to each vendor's ledger.",
+    "openingItems": "AP opening items",
+    "openingItemsDesc": "Supplier invoices still open at cut-over, so payments can be allocated to them. Each vendor's total is checked against its opening balance.",
+    "accessDenied": "You do not have access to supplier payables.",
+    "asOf": "As of",
+    "property": "Property",
+    "allProperties": "All properties",
+    "chooseProperty": "Choose a property",
+    "apply": "Apply",
+    "csv": "CSV",
+    "vendor": "Vendor",
+    "vendors": "Vendors",
+    "bucket": {
+      "current": "Current",
+      "d1to30": "1–30",
+      "d31to60": "31–60",
+      "d61to90": "61–90",
+      "d90plus": "90+"
+    },
+    "advances": "Unallocated advances",
+    "openTotal": "Open total",
+    "ledgerBalance": "Ledger balance",
+    "delta": "Δ",
+    "deltaHint": "Something other than an invoice, a payment or an opening item moved this vendor's ledger (a journal voucher, or an opening balance without opening items). Open the ledger to see it.",
+    "total": "Total",
+    "showItems": "Show invoices",
+    "inactive": "inactive",
+    "due": "due",
+    "openingItem": "Opening item",
+    "nothingOwed": "Nothing is owed to any supplier on this date.",
+    "tieOutNote": "Tie-out: open total less unallocated advances equals the credit balance of each vendor's payable account. A non-zero Δ is a warning, not an error.",
+    "propertyNote": "Figures are this property's share of each invoice (by its lines' gross). Advances and the ledger tie-out are vendor-level and not shown.",
+    "chooseVendor": "Choose a vendor",
+    "invoiceNumber": "Invoice no.",
+    "invoiceDate": "Invoice date",
+    "dueDate": "Due date",
+    "dueDateOptional": "Due date (optional)",
+    "amount": "Amount",
+    "noProperty": "No property",
+    "addItem": "Add item",
+    "obCheck": "Check against opening balances",
+    "itemsTotal": "Open items",
+    "openingBalance": "Opening balance",
+    "difference": "Difference",
+    "noOpeningItems": "No opening items yet.",
+    "paid": "Paid",
+    "open": "Open",
+    "deleteItem": "Delete item",
+    "deleteBlocked": "Payments are allocated to this item",
+    "saveFailed": "Could not save. Try again.",
+    "trn": "TRN",
+    "noTrn": "none — input VAT cannot be claimed",
+    "terms": "Terms: {days} days",
+    "ledger": "Ledger",
+    "openItemsTab": "Open items",
+    "advancesTab": "Payments and advances",
+    "statementTab": "Statement of account",
+    "noInvoices": "No supplier invoices yet.",
+    "voucher": "Voucher",
+    "daysOverdue": "Days overdue",
+    "status": {
+      "OPEN": "Open",
+      "PART_PAID": "Part-paid",
+      "PAID": "Paid"
+    },
+    "noAdvances": "No unallocated payments.",
+    "date": "Date",
+    "reference": "Reference",
+    "unallocated": "Unallocated",
+    "applyTo": "Apply to invoice",
+    "applyAdvance": "Apply to an invoice",
+    "cancel": "Cancel",
+    "statementDesc": "The vendor's ledger for the period, then the invoices still open and payments not yet allocated on the last day.",
+    "from": "From",
+    "to": "To",
+    "pdfEn": "PDF (English)",
+    "pdfAr": "PDF (Arabic)"
   }
 }
