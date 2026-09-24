@@ -431,7 +431,10 @@ public final class StandardStatementSections {
                 union all
                 select o.amount, case when o.property_id = :p then o.amount else 0 end
                 where a.opening_item_id is not null) g
-            where a.tenant_id = :t and g.property_gross > 0
+            -- R1 P2-1: cash paid only. A supplier credit note (PCN) allocated to an invoice
+            -- reduces what is owed, not what was paid; its credit is already netted in the
+            -- expense lines it reverses.
+            where a.tenant_id = :t and g.property_gross > 0 and pv.doc_type <> 'PCN'
               and ((a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to))
                    or (a.allocated_on < :from and a.released_on between :from and :to))
             order by coalesce(case when a.allocated_on >= :from then a.allocated_on end, a.released_on), pv.voucher_number
@@ -447,10 +450,9 @@ public final class StandardStatementSections {
             join vendors d on d.id = v.vendor_id
             join journal_entries e on e.id = v.journal_id
             left join journal_entries r on r.id = e.reversed_by_id
-            cross join lateral (select coalesce(sum(case when v.doc_type = 'PCN' then l.amount + l.vat_amount
-                                                         when l.account_id = d.payable_account_id then l.amount else 0 end), 0) as paid
-                                from voucher_lines l where l.voucher_id = v.id) p
-            where v.tenant_id = :t and v.doc_type in ('BPV', 'PCN') and v.status in ('POSTED', 'REVERSED', 'VOID')
+            cross join lateral (select coalesce(sum(l.amount), 0) as paid from voucher_lines l
+                                where l.voucher_id = v.id and l.account_id = d.payable_account_id) p
+            where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED', 'VOID')
               and v.doc_date between :from and :to and (r.id is null or r.entry_date > :to)
               and (v.property_id is null or v.property_id = :p) and p.paid > 0
               and (not :scoped or v.property_id = :p

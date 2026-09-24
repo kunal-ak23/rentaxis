@@ -117,6 +117,9 @@ public class PenaltyAssessmentService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final NotificationService notificationService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.JournalEntryRepository journalEntries;
+
     public PenaltyAssessmentService(PenaltyAssessmentRepository repository,
                                     LeaseRepository leaseRepository,
                                     ChequeRepository chequeRepository,
@@ -420,6 +423,15 @@ public class PenaltyAssessmentService {
             throw new BusinessRuleViolationException("A reversal needs a reason");
         }
         LocalDate on = date != null ? date : LocalDate.now();
+        // R1 P2-3 (the F14-41 rule): not before the penalty was charged.
+        com.datagami.rentaxis.domain.entity.JournalEntry pen = journalEntries == null ? null
+                : journalEntries.findById(a.getJournalId()).orElse(null);
+        if (pen != null && pen.getEntryDate() != null && on.isBefore(pen.getEntryDate())) {
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            throw new BusinessRuleViolationException("A reversal cannot be dated before the penalty was charged ("
+                    + pen.getEntryDate().format(dmy) + ")", "penalty.reverseBeforeCharge",
+                    java.util.Map.of("charged", pen.getEntryDate().format(dmy), "date", on.format(dmy)));
+        }
         String reason = note.trim();
         postingService.reverse(a.getJournalId(), on, reason);
 

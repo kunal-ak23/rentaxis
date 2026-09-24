@@ -620,6 +620,18 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat(reduced.resolutionNote()).isEqualTo("Reduced from 650.00 to 300.00: goodwill");
     }
 
+    /** R1 P2-3: a penalty reversal is not dated before the penalty was charged. */
+    @Test
+    void aReversalBeforeThePenaltyWasChargedIsRefused() {
+        PostLeaseResponse r = posted();
+        PenaltyAssessmentDTO approved = service.approve(
+                proposal(r.lease().getId(), null, PenaltyReason.OTHER, "400").id(), APPROVE_DATE);
+        assertThatThrownBy(() -> service.reverse(approved.id(), APPROVE_DATE.minusDays(1), "charged in error"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot be dated before the penalty was charged");
+        assertThat(reread(approved.id()).getStatus()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+    }
+
     /** F14-28: reversing a charged penalty says why. */
     @Test
     void aReversalWithoutAReasonIsRefused() {

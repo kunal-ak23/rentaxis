@@ -237,6 +237,21 @@ class SupplierApIT extends AbstractPostgresIT {
         assertThat(row(payables.aging(SEP_10, gulf.getId(), null), gulf).figures().delta()).isEqualByComparingTo("0.00");
     }
 
+    /**
+     * R1 P2-1: the owner statement's "expenses paid" counts cash only. Invoice 1,050,
+     * credit note 210 and payment 840 against it: 840 paid. The credit is netted in
+     * the expense (the PCN credits the expense line), never shown as paid.
+     */
+    @Test
+    void aCreditNoteIsNotCountedAsExpensesPaid() {
+        Voucher inv = pisr(gulf, "GC-1050", SEP_5, line(rmP1, "1000.00", "5", p1));
+        vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PCN, SEP_10, gulf.getId(),
+                "CN-210B", "Credit note", null, null, null, null, null,
+                List.of(line(rmP1, "200.00", "5", p1)))).getId(), List.of(to(inv, "210.00")));
+        bpv(gulf, SEP_10, "840.00", "TRF-840", to(inv, "840.00"));
+        assertThat(paid(p1, SEP_1, SEP_30, "allocatedPaid")).isEqualByComparingTo("840.00");
+    }
+
     @Test
     void theWorkedExampleEndToEnd() {
         Example x = workedExample();
