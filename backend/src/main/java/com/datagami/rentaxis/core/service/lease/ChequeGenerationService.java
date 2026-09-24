@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -99,12 +100,16 @@ public class ChequeGenerationService {
     private final AccountResolver accountResolver;
     private final LeaseAccessPolicy leaseAccessPolicy;
 
+    private final com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+
     public ChequeGenerationService(LeaseRepository leaseRepository,
                                    LeaseLineRepository leaseLineRepository,
                                    ChequeRepository chequeRepository,
                                    AccountRepository accountRepository,
                                    AccountResolver accountResolver,
-                                   LeaseAccessPolicy leaseAccessPolicy) {
+                                   LeaseAccessPolicy leaseAccessPolicy,
+                                   com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf) {
+        this.ownedBankLeaf = ownedBankLeaf;
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -790,6 +795,13 @@ public class ChequeGenerationService {
         if (requested != null) return account(requested);
         Unit unit = lease.getUnit();
         UUID propertyId = unit != null && unit.getProperty() != null ? unit.getProperty().getId() : null;
+        // F14-16: a leaf some bank account owns, so the receipt can be reconciled;
+        // the property's BANK mapping as before when the tenant has no bank account.
+        Optional<UUID> owned = ownedBankLeaf.forProperty(propertyId);
+        if (owned.isPresent()) {
+            return accountRepository.findById(owned.get()).orElseGet(
+                    () -> accountResolver.resolveOrNull(AccountRole.BANK, propertyId));
+        }
         return accountResolver.resolveOrNull(AccountRole.BANK, propertyId);
     }
 

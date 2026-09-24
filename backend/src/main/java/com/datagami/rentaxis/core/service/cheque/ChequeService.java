@@ -25,6 +25,7 @@ import com.datagami.rentaxis.core.service.penalty.PenaltyRuleEngine;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.core.service.bank.OwnedBankLeaf;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
@@ -235,6 +236,7 @@ public class ChequeService {
     private final LeaseClosureService closure;
     private final ApplicationEventPublisher events;
     private final EntityManager entityManager;
+    private final OwnedBankLeaf ownedBankLeaf;
     private final Clock clock;
 
     /**
@@ -265,7 +267,9 @@ public class ChequeService {
                          ApplicationEventPublisher events,
                          EntityManager entityManager,
                          Clock clock,
-                         VatTaxPointService vatTaxPoints) {
+                         VatTaxPointService vatTaxPoints,
+                         OwnedBankLeaf ownedBankLeaf) {
+        this.ownedBankLeaf = ownedBankLeaf;
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseEventRepository = leaseEventRepository;
@@ -1234,6 +1238,9 @@ public class ChequeService {
                         ? account(debitAccountId)
                         : settlementAccount(debitAccountId, cheque.getProperty()))
                 : requireSettlementAccount(cheque.getDebitAccount());
+        if (debitAccountId == null && replay == null) {
+            debit = reconcilableLeaf(debit, cheque);
+        }
         // No resolveOrNull fallback and no try/catch: when the row names no account
         // the role goes into the request and PostingService resolves it, so an
         // unmapped BANK is one refusal from one place.
@@ -1269,6 +1276,23 @@ public class ChequeService {
         // instalment's VTP posts now, dated the receipt, in this same transaction
         // (spec 2026-09-24 §1). On or after the due date nothing changes.
         vatTaxPoints.onCleared(cheque, date);
+    }
+
+    /**
+     * F14-16: a receipt nobody chose an account for lands in a bank leaf that some
+     * bank account owns. The row's own account — defaulted when the grid was
+     * generated — is kept when it is a cash leaf or an owned bank leaf; a bank leaf
+     * no bank account owns (the one property creation used to generate) is swapped
+     * for the property's owned leaf ({@link OwnedBankLeaf}), so the money can be
+     * reconciled. With no bank account in the tenant nothing changes. A CASH row with
+     * no account still settles to the CASH role.
+     */
+    private Account reconcilableLeaf(Account stamped, Cheque cheque) {
+        if (stamped == null && cheque.getMode() == ChequeMode.CASH) return null;
+        if (stamped != null && stamped.getAccountSubType() != AccountSubType.BANK) return stamped;
+        if (stamped != null && ownedBankLeaf.isOwned(stamped.getId())) return stamped;
+        UUID propertyId = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        return ownedBankLeaf.forProperty(propertyId).map(this::account).orElse(stamped);
     }
 
     /**

@@ -973,10 +973,11 @@ class ChequeServiceIT extends AbstractPostgresIT {
         assertThat(replacedBy).isEqualTo(online.id());
 
         service.registerOnlinePending(online.id());
-        ChequeDTO captured = service.clearOnline(online.id(), CLEAR_DATE, settlement.getId());
+        // Captured the day the replacement row went on the books: never before it (F14-02).
+        ChequeDTO captured = service.clearOnline(online.id(), REPLACE_DATE, settlement.getId());
 
         assertThat(captured.status()).isEqualTo(ChequeStatus.CLEARED);
-        assertPair(captured.crtJournalId(), JournalDocType.CRT, CLEAR_DATE, online.id(), leaseId,
+        assertPair(captured.crtJournalId(), JournalDocType.CRT, REPLACE_DATE, online.id(), leaseId,
                 settlement, leaf(AccountRole.PDC_RECEIVABLE), "12750");
         // This leg is square: the bounce raised 12,750 of rent receivable, the
         // replacement's PDR took it off again, and the capture turned the paper into
@@ -996,12 +997,12 @@ class ChequeServiceIT extends AbstractPostgresIT {
         UUID onlineId = service.replaceForOnlinePayment(bouncedId, REPLACE_DATE).id();
         service.registerOnlinePending(onlineId);
 
-        ChequeDTO first = service.clearOnline(onlineId, CLEAR_DATE, null);
-        ChequeDTO again = service.clearOnline(onlineId, CLEAR_DATE.plusDays(1), null);
+        ChequeDTO first = service.clearOnline(onlineId, REPLACE_DATE, null);
+        ChequeDTO again = service.clearOnline(onlineId, REPLACE_DATE.plusDays(1), null);
 
         assertThat(again.status()).isEqualTo(ChequeStatus.CLEARED);
         assertThat(again.crtJournalId()).isEqualTo(first.crtJournalId());
-        assertThat(again.clearedAt()).isEqualTo(CLEAR_DATE);
+        assertThat(again.clearedAt()).isEqualTo(REPLACE_DATE);
         assertThat(entryCount(JournalDocType.CRT, onlineId)).isEqualTo(1L);
     }
 
