@@ -37,7 +37,8 @@ class TenantFiscalSettingsServiceTest {
     com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints =
             mock(com.datagami.rentaxis.domain.repository.VatTaxPointRepository.class);
     TenantFiscalSettingsService service =
-            new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches, vatTaxPoints);
+            new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches, vatTaxPoints,
+                    mock(jakarta.persistence.EntityManager.class));
     UUID tenant = UUID.randomUUID();
 
     @BeforeEach void ctx() { TenantContextHolder.setTenantId(tenant); when(repo.save(any())).thenAnswer(i -> i.getArgument(0)); }

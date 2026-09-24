@@ -109,6 +109,11 @@ public class TaxInvoiceService {
         LandlordOrg org = orgs.findById(lease.getTenantId()).orElse(null);
         String trn = org == null ? null : org.getTrn();
         if (trn == null || trn.isBlank()) {
+            // Cleared after the lease posted: the TRN it posted under still identifies
+            // the supplier, and a receipt or a termination must not fail on it.
+            trn = lease.getVatTrn();
+        }
+        if (trn == null || trn.isBlank()) {
             throw new BusinessRuleViolationException("A tax invoice needs the organisation's TRN, and none is set."
                     + " Add the TRN to the organisation's details, then post the VAT tax points again.");
         }
@@ -129,9 +134,9 @@ public class TaxInvoiceService {
         inv.setPropertyId(property == null ? null : property.getId());
         inv.setChequeId(point.getChequeId());
         inv.setIssueDate(point.getTaxPointDate());
-        inv.setSupplierName(org.getName());
+        inv.setSupplierName(org == null ? "" : org.getName());
         inv.setSupplierTrn(trn.trim());
-        inv.setSupplierAddress(org.getAddress());
+        inv.setSupplierAddress(org == null ? null : org.getAddress());
         inv.setCustomerName(renter == null ? null : renter.getNameEn());
         inv.setCustomerNameAr(renter == null ? null : renter.getNameAr());
         // The renter record carries no TRN today; the column is there for when it does.
@@ -143,6 +148,7 @@ public class TaxInvoiceService {
         inv.setPeriodStart(period[0]);
         inv.setPeriodEnd(period[1]);
         inv.setDescription(describe(point, cheque, period));
+        if (credit) inv.setReferenceNote(referencesFor(point, lease));
 
         BigDecimal taxable = point.getTaxableAmount().abs();
         BigDecimal vat = point.getVatAmount().abs();
@@ -181,6 +187,28 @@ public class TaxInvoiceService {
         if (end != null && to != null && to.isAfter(end)) to = end;
         if (to != null && to.isBefore(from)) to = from;
         return new LocalDate[]{from, to};
+    }
+
+    /**
+     * What a credit note adjusts (Executive Regulation Art. 60; review P3-6): the
+     * tax invoices already issued on this lease's instalments whose period runs past
+     * the termination date — the rent the credit note says was not supplied. Every
+     * instalment invoice of the lease when none does (a credit note must still name
+     * what it corrects).
+     */
+    private String referencesFor(VatTaxPoint point, Lease lease) {
+        LocalDate t = point.getTaxPointDate();
+        List<TaxInvoice> issued = invoices.findByLeaseIdOrderByIssueDateAscCreatedAtAsc(lease.getId()).stream()
+                .filter(i -> i.getKind() == TaxInvoiceKind.TAX_INVOICE && i.getChequeId() != null)
+                .toList();
+        List<TaxInvoice> covering = issued.stream()
+                .filter(i -> i.getPeriodEnd() == null || i.getPeriodEnd().isAfter(t))
+                .toList();
+        List<TaxInvoice> named = covering.isEmpty() ? issued : covering;
+        if (named.isEmpty()) return null;
+        return named.stream()
+                .map(i -> i.getInvoiceNumber() + " (" + DAY.format(i.getIssueDate()) + ")")
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private static String describe(VatTaxPoint point, Cheque cheque, LocalDate[] period) {

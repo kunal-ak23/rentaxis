@@ -70,9 +70,20 @@ public class VatTaxPointPoster {
         this.entityManager = entityManager;
     }
 
-    /** Post in a transaction of its own — the nightly run's entry point. */
+    /**
+     * Post in a transaction of its own — the nightly run's entry point. The run read
+     * its candidates without a lock, so what they said is checked again under the
+     * point's lock (review P2-1): a point that is no longer PLANNED (a receipt posted
+     * it, a cancel moved its VAT) or whose date has moved past {@code notAfter} is
+     * left alone.
+     *
+     * @return the VTP's id, or null when the point was no longer due
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public UUID post(UUID pointId) {
+    public UUID post(UUID pointId, java.time.LocalDate notAfter) {
+        VatTaxPoint point = lock(pointId);
+        if (point.getStatus() != VatTaxPointStatus.PLANNED) return null;
+        if (notAfter != null && point.getTaxPointDate().isAfter(notAfter)) return null;
         return postJoining(pointId);
     }
 

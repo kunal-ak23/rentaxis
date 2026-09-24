@@ -119,6 +119,14 @@ public class Lease extends BaseTenantEntity {
     private com.datagami.rentaxis.domain.entity.enums.VatTiming vatTiming =
             com.datagami.rentaxis.domain.entity.enums.VatTiming.INSTALMENT;
 
+    /**
+     * The organisation's TRN when this lease posted with VAT on the INSTALMENT
+     * model — what its tax invoices fall back to if the TRN is later cleared, so a
+     * receipt or a termination never fails on a setting changed after the fact.
+     */
+    @Column(name = "vat_trn", length = 50)
+    private String vatTrn;
+
     // ---- contract header (spec §6.3) ----------------------------------------
 
     /**

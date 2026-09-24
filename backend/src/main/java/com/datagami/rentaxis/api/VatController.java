@@ -46,6 +46,13 @@ public class VatController {
 
     static final String FUTURE_DATE = "Cannot post VAT tax points dated in the future";
     private static final String STAFF_READ = "hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')";
+    /**
+     * RENTER, not TENANT_USER (PR #348 review P3-7). {@code LeaseAccessPolicy}
+     * scopes a TENANT_USER like a renter, but a tax invoice is a renter document and
+     * every renter-facing document endpoint in the API ({@code /mine} here, gate
+     * passes, penalties, renewals) is RENTER-only; a TENANT_USER gets 403 on all of
+     * them, which {@code TaxInvoiceIT} pins.
+     */
     private static final String DOCUMENT_READ =
             "hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER', 'RENTER')";
 

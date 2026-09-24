@@ -91,11 +91,17 @@ public class VatTaxPointService {
     private final TaxInvoiceService taxInvoices;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final TransactionTemplate readTx;
+    private final jakarta.persistence.EntityManager entityManager;
+    private final com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
 
     public VatTaxPointService(VatTaxPointRepository points, ChequeRepository cheques, LeaseRepository leases,
                               JournalEntryRepository journals, TenantFiscalSettingsRepository fiscalSettings,
                               VatTaxPointPoster poster, TaxInvoiceService taxInvoices,
-                              LeaseAccessPolicy leaseAccessPolicy, PlatformTransactionManager transactionManager) {
+                              LeaseAccessPolicy leaseAccessPolicy, PlatformTransactionManager transactionManager,
+                              jakarta.persistence.EntityManager entityManager,
+                              com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
+        this.entityManager = entityManager;
+        this.leaseLines = leaseLines;
         this.points = points;
         this.cheques = cheques;
         this.leases = leases;
@@ -117,6 +123,36 @@ public class VatTaxPointService {
         return cleared.isBefore(due) ? cleared : due;
     }
 
+    /**
+     * The point claimed {@code FOR UPDATE} and re-read (review P2-1). Every writer
+     * goes through this before it looks at the status, so a point the job has just
+     * posted is seen as POSTED, never overwritten from a stale PLANNED read; the
+     * {@code @Version} column is the backstop.
+     */
+    private VatTaxPoint lock(VatTaxPoint p) {
+        entityManager.flush();
+        entityManager.refresh(p, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return p;
+    }
+
+    /**
+     * {@code books_locked_through}, read {@code FOR SHARE}: a writer about to create
+     * or move a tax point holds the settings row against {@code lockThrough}, which
+     * takes it {@code FOR UPDATE} — so the lock and the point cannot pass each other
+     * (review P3-3). Null when the tenant has no settings row or no lock.
+     */
+    private LocalDate lockedThroughShared(UUID tenantId) {
+        if (tenantId == null) return null;
+        @SuppressWarnings("unchecked")
+        List<Object> rows = entityManager.createNativeQuery(
+                        "select books_locked_through from tenant_fiscal_settings where tenant_id = ?1 for share")
+                .setParameter(1, tenantId)
+                .getResultList();
+        if (rows.isEmpty() || rows.get(0) == null) return null;
+        Object v = rows.get(0);
+        return v instanceof java.sql.Date d ? d.toLocalDate() : (LocalDate) v;
+    }
+
     // ------------------------------------------------------------------
     // building
     // ------------------------------------------------------------------
@@ -131,11 +167,26 @@ public class VatTaxPointService {
     public void buildForLease(UUID leaseId) {
         Lease lease = lease(leaseId);
         if (lease.getVatTiming() != VatTiming.INSTALMENT) return;
+        // A lease whose lines charge no VAT has nothing to declare, whatever its rows
+        // say (review P2-4): the post refuses such a grid, and this is the backstop.
+        BigDecimal charged = BigDecimal.ZERO;
+        for (var line : leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            charged = charged.add(com.datagami.rentaxis.core.service.lease.LeaseVat.vatOf(line));
+        }
+        if (charged.signum() == 0) return;
+        // Shared lock on the settings row: lockThrough takes it exclusively, so a
+        // lock cannot move over a point this is creating (review P3-3).
+        LocalDate locked = lockedThroughShared(lease.getTenantId());
         for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
             if (c.getVatAmount() == null || c.getVatAmount().signum() <= 0) continue;
             if (!SCHEDULABLE.contains(c.getStatus())) continue;
             if (points.findLiveByChequeId(c.getId()).isPresent()) continue;
-            points.save(plannedFor(lease, c));
+            VatTaxPoint p = plannedFor(lease, c);
+            if (locked != null && !p.getTaxPointDate().isAfter(locked)) {
+                throw new BusinessRuleViolationException("Instalment " + label(c) + "'s VAT tax point ("
+                        + p.getTaxPointDate() + ") falls in a locked period: books are locked through " + locked + ".");
+            }
+            points.save(p);
         }
     }
 
@@ -176,7 +227,7 @@ public class VatTaxPointService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void onCleared(Cheque cheque, LocalDate clearedOn) {
         if (clearedOn == null) return;
-        VatTaxPoint point = points.findLiveByChequeId(cheque.getId()).orElse(null);
+        VatTaxPoint point = points.findLiveByChequeId(cheque.getId()).map(this::lock).orElse(null);
         if (point == null || point.getStatus() != VatTaxPointStatus.PLANNED) return;
         if (!clearedOn.isBefore(point.getTaxPointDate())) return;
         point.setTaxPointDate(clearedOn);
@@ -192,31 +243,16 @@ public class VatTaxPointService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void onChequeDateChanged(Cheque cheque) {
-        VatTaxPoint point = points.findLiveByChequeId(cheque.getId()).orElse(null);
+        VatTaxPoint point = points.findLiveByChequeId(cheque.getId()).map(this::lock).orElse(null);
         if (point == null || point.getStatus() != VatTaxPointStatus.PLANNED) return;
         LocalDate date = taxPointDate(cheque);
-        LocalDate locked = booksLockedThrough(cheque.getTenantId());
+        LocalDate locked = lockedThroughShared(cheque.getTenantId());
         if (locked != null && date != null && !date.isAfter(locked)) {
             throw new BusinessRuleViolationException("Instalment " + label(cheque) + "'s VAT tax point would move to "
                     + date + ", inside the locked period (books are locked through " + locked + ").");
         }
         point.setTaxPointDate(date);
         points.save(point);
-    }
-
-    /**
-     * Refuse a change to a row's amount or VAT once its VAT has been declared
-     * ("VAT on this instalment is already declared"). No door changes a registered
-     * row's amount today; this is the rule a future one must ask.
-     */
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void requireUndeclared(Cheque cheque) {
-        points.findLiveByChequeId(cheque.getId())
-                .filter(p -> p.getStatus() == VatTaxPointStatus.POSTED)
-                .ifPresent(p -> {
-                    throw new BusinessRuleViolationException("VAT on instalment " + label(cheque)
-                            + " is already declared; its amount and VAT cannot change.");
-                });
     }
 
     /**
@@ -228,7 +264,7 @@ public class VatTaxPointService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void beforeCancel(Cheque cancelled, UUID moveToChequeId) {
-        VatTaxPoint point = points.findLiveByChequeId(cancelled.getId()).orElse(null);
+        VatTaxPoint point = points.findLiveByChequeId(cancelled.getId()).map(this::lock).orElse(null);
         if (point == null || point.getStatus() != VatTaxPointStatus.PLANNED || point.getVatAmount().signum() <= 0) {
             return;
         }
@@ -247,7 +283,16 @@ public class VatTaxPointService {
             throw new BusinessRuleViolationException("Instalment " + label(target) + " is " + target.getStatus()
                     + "; VAT can only move onto an instalment that is still to be collected.");
         }
-        VatTaxPoint targetPoint = points.findLiveByChequeId(target.getId()).orElse(null);
+        // The VAT would be declared on the target's tax point: one inside the locked
+        // period would never post (review P2-2).
+        LocalDate targetDate = taxPointDate(target);
+        LocalDate locked = lockedThroughShared(cancelled.getTenantId());
+        if (locked != null && targetDate != null && !targetDate.isAfter(locked)) {
+            throw new BusinessRuleViolationException("Instalment " + label(target) + "'s VAT tax point (" + targetDate
+                    + ") falls in a locked period: books are locked through " + locked
+                    + ". Move the VAT onto an instalment dated after it.");
+        }
+        VatTaxPoint targetPoint = points.findLiveByChequeId(target.getId()).map(this::lock).orElse(null);
         if (targetPoint != null && targetPoint.getStatus() != VatTaxPointStatus.PLANNED) {
             throw new BusinessRuleViolationException("VAT on instalment " + label(target)
                     + " is already declared; move the VAT onto an instalment whose tax point is still to come.");
@@ -291,6 +336,13 @@ public class VatTaxPointService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void cancelPlanned(UUID leaseId) {
         for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.PLANNED)) {
+            lock(p);
+            if (p.getStatus() == VatTaxPointStatus.POSTED) {
+                // The job declared it between the amendment's check and now.
+                throw new BusinessRuleViolationException("VAT on " + p.getTaxPointDate()
+                        + " was declared while this amendment was being made; use an addendum.");
+            }
+            if (p.getStatus() != VatTaxPointStatus.PLANNED) continue;
             p.setStatus(VatTaxPointStatus.CANCELLED);
             points.save(p);
         }
@@ -361,8 +413,21 @@ public class VatTaxPointService {
         BigDecimal dueByT = BigDecimal.ZERO;
         BigDecimal pending = BigDecimal.ZERO;
         BigDecimal pendingTaxable = BigDecimal.ZERO;
+        LocalDate locked = lockedThroughShared(lease.getTenantId());
         for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(), VatTaxPointStatus.PLANNED)) {
+            lock(p);
+            // Posted by the job since the list was read: declared already, so it is
+            // neither due at T nor pending (review P2-1).
+            if (p.getStatus() != VatTaxPointStatus.PLANNED) continue;
             if (!p.getTaxPointDate().isAfter(t)) {
+                if (locked != null && !p.getTaxPointDate().isAfter(locked)) {
+                    // Unreachable when every door checks the lock (review P2-2); said
+                    // plainly rather than as the ledger's generic refusal if not.
+                    throw new BusinessRuleViolationException("VAT of " + s2(p.getVatAmount()) + " on "
+                            + p.getTaxPointDate() + " has not been declared and falls in the locked period (books are"
+                            + " locked through " + locked + "). It has to be declared before this lease can be"
+                            + " terminated; reopen that period, run the tax points, and terminate again.");
+                }
                 poster.postJoining(p.getId());
                 dueByT = dueByT.add(p.getVatAmount());
             } else {
@@ -436,7 +501,9 @@ public class VatTaxPointService {
                 continue;
             }
             try {
-                poster.post(row.id());
+                // Re-checked under the point's lock: a clerk may have moved its date
+                // or cancelled it since the list was read, or a receipt posted it.
+                if (poster.post(row.id(), to) == null) continue;
                 done.add(row);
                 total = total.add(row.vatAmount());
             } catch (RuntimeException e) {

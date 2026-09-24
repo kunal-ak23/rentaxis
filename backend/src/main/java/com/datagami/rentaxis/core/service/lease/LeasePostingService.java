@@ -335,6 +335,10 @@ public class LeasePostingService {
 
         lease.setPostingJournalId(tco.getId());
         lease.setPostedAt(Instant.now());
+        if (lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
+            // What the tax invoices fall back to if the TRN is cleared later.
+            lease.setVatTrn(supplierTrn(lease));
+        }
         lease.setPostedBy(currentUserId());
 
         leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), announce);
@@ -506,9 +510,10 @@ public class LeasePostingService {
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         if (lease.getVatTiming() == VatTiming.INSTALMENT) {
             // The new lines may charge different VAT; the register rows are the same
-            // paper, so their VAT is re-spread pro rata before the Σ check below.
-            InstalmentVat.fill(cheques, java.util.Set.of(), InstalmentVat.contractVat(lines),
-                    InstalmentVat.contractTaxable(lines));
+            // paper, so their VAT is re-spread before the Σ check below — kept as it
+            // is when the total did not move, and otherwise in proportion to the VAT
+            // each row already carries, so a deposit row stays at zero (review P2-3).
+            InstalmentVat.respread(cheques, lines);
             chequeRepository.saveAll(cheques);
         }
 
@@ -896,38 +901,90 @@ public class LeasePostingService {
      *   <li>no row's tax point may fall inside the period lock: the nightly job skips
      *       a locked date, so the VAT would never be declared.</li>
      * </ul>
-     * A legacy CONTRACT lease and a lease with no VAT are exempt from all three.
+     * A legacy CONTRACT lease is exempt from all three; a lease that charges no VAT
+     * must carry none on its rows (review P2-4).
      */
     private List<String> instalmentVatErrors(Lease lease, List<LeaseLine> lines, List<Cheque> cheques,
                                              boolean periodLockApplies) {
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) return List.of();
         BigDecimal contractVat = InstalmentVat.contractVat(lines);
-        if (lease.getVatTiming() != VatTiming.INSTALMENT || contractVat.signum() == 0) return List.of();
-        List<String> errors = new ArrayList<>();
         BigDecimal rowVat = InstalmentVat.rowVat(cheques);
+        if (contractVat.signum() == 0) {
+            // A grid that still carries VAT from before the lines stopped charging it
+            // would declare VAT the contract never charged (review P2-4).
+            return rowVat.signum() == 0 ? List.of() : List.of("The cheque grid carries VAT of " + money(rowVat)
+                    + " but the contract charges none; set every instalment's VAT to zero, or re-spread the VAT.");
+        }
+        List<String> errors = new ArrayList<>();
         if (rowVat.signum() != 0 && rowVat.compareTo(contractVat) != 0) {
             errors.add("The cheque grid carries VAT of " + money(rowVat) + " but the contract charges "
                     + money(contractVat) + "; the instalments' VAT must add up to the contract's.");
         }
-        UUID tenantId = lease.getTenantId();
-        String trn = tenantId == null ? null : landlordOrgs.findById(tenantId).map(o -> o.getTrn()).orElse(null);
-        if (trn == null || trn.isBlank()) {
+        if (supplierTrn(lease) == null) {
             errors.add("This contract charges VAT, so each instalment issues a tax invoice, and the"
                     + " organisation has no TRN. Add the TRN to the organisation's details first.");
         }
         if (periodLockApplies) {
-            LocalDate locked = tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
-                    .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
-            if (locked != null) {
-                for (Cheque c : cheques) {
-                    boolean carriesVat = rowVat.signum() == 0 || (c.getVatAmount() != null && c.getVatAmount().signum() > 0);
-                    if (carriesVat && c.getChequeDate() != null && !c.getChequeDate().isAfter(locked)) {
-                        errors.add("Cheque " + label(c) + "'s VAT tax point (" + c.getChequeDate()
-                                + ") falls in a locked period: books are locked through " + locked + ".");
-                    }
-                }
+            for (Cheque c : cheques) {
+                boolean carriesVat = rowVat.signum() == 0 || (c.getVatAmount() != null && c.getVatAmount().signum() > 0);
+                if (carriesVat) errors.addAll(taxPointLockErrors(List.of(c)));
             }
         }
         return errors;
+    }
+
+    /**
+     * What stops an addendum's or extension's new rows from being declared (review
+     * P2-2, P3-2, P3-4) — the same three rules the first post applies, on the new
+     * lines and rows only: their VAT adds up to the new lines', the organisation (or
+     * the lease's snapshot) has a TRN, and no new row's tax point falls in the
+     * locked period, where the job would skip it for ever and a termination could
+     * not post it. A CONTRACT lease is exempt, as at first post.
+     */
+    List<String> newRowsVatErrors(Lease lease, List<LeaseLine> newLines, List<Cheque> newRows) {
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) return List.of();
+        BigDecimal charged = InstalmentVat.contractVat(newLines);
+        BigDecimal rowVat = InstalmentVat.rowVat(newRows);
+        List<String> errors = new ArrayList<>();
+        if (rowVat.compareTo(charged) != 0) {
+            errors.add("The new rows carry VAT of " + money(rowVat) + " but the new lines charge "
+                    + money(charged) + "; the rows' VAT must add up to the lines'.");
+        }
+        if (charged.signum() > 0 && supplierTrn(lease) == null) {
+            errors.add("These lines charge VAT, so each instalment issues a tax invoice, and the"
+                    + " organisation has no TRN. Add the TRN to the organisation's details first.");
+        }
+        errors.addAll(taxPointLockErrors(newRows.stream()
+                .filter(c -> c.getVatAmount() != null && c.getVatAmount().signum() > 0).toList()));
+        return errors;
+    }
+
+    /** "Cheque X's VAT tax point (D) falls in a locked period" for each row dated on or before the lock. */
+    private List<String> taxPointLockErrors(List<Cheque> rows) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        LocalDate locked = tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
+                .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
+        if (locked == null) return List.of();
+        List<String> errors = new ArrayList<>();
+        for (Cheque c : rows) {
+            LocalDate taxPoint = VatTaxPointService.taxPointDate(c);
+            if (taxPoint != null && !taxPoint.isAfter(locked)) {
+                errors.add("Cheque " + label(c) + "'s VAT tax point (" + taxPoint
+                        + ") falls in a locked period: books are locked through " + locked + ".");
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * The TRN this lease's tax invoices will carry: the organisation's, or failing
+     * that the one snapshotted on the lease when it first posted. Null when neither.
+     */
+    private String supplierTrn(Lease lease) {
+        UUID tenantId = lease.getTenantId();
+        String trn = tenantId == null ? null : landlordOrgs.findById(tenantId).map(o -> o.getTrn()).orElse(null);
+        if (trn != null && !trn.isBlank()) return trn.trim();
+        return lease.getVatTrn() == null || lease.getVatTrn().isBlank() ? null : lease.getVatTrn();
     }
 
     /**
@@ -941,7 +998,7 @@ public class LeasePostingService {
         BigDecimal contractVat = InstalmentVat.contractVat(lines);
         if (contractVat.signum() == 0 || InstalmentVat.rowVat(cheques).signum() != 0) return;
         if (cheques.stream().anyMatch(c -> c.getStatus() != ChequeStatus.DRAFT)) return;
-        InstalmentVat.fill(cheques, java.util.Set.of(), contractVat, InstalmentVat.contractTaxable(lines));
+        InstalmentVat.fill(cheques, java.util.Set.of(), lines);
         chequeRepository.saveAll(cheques);
     }
 

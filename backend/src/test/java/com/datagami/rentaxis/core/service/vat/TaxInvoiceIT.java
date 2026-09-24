@@ -119,7 +119,7 @@ class TaxInvoiceIT extends AbstractPostgresIT {
                 LeaseTestFixtures.authenticateAsTenantAdmin();
                 try {
                     go.await();
-                    return poster.post(id);
+                    return poster.post(id, null);
                 } finally {
                     TenantContextHolder.clear();
                     LeaseTestFixtures.clearAuth();
@@ -232,16 +232,39 @@ class TaxInvoiceIT extends AbstractPostgresIT {
                 .isEqualTo(403);
     }
 
+    /**
+     * PR #348 review P3-7: {@code LeaseAccessPolicy} scopes a TENANT_USER like a
+     * renter, but tax invoices — like every renter document in the API — are
+     * RENTER-only. A TENANT_USER is refused at the role gate on all three doors, even
+     * for an invoice addressed to the renter record behind them.
+     */
+    @Test
+    void aTenantUserIsRefusedEveryTaxInvoiceDoor() {
+        UUID a = vatLease(fixtures.unit(), fixtures.renter());
+        vatTaxPoints.runTo(START, false);
+        UUID invoice = taxInvoices.forLease(a).get(0).id();
+        TenantContextHolder.clear();
+
+        for (String path : List.of("/api/v1/tax-invoices/mine", "/api/v1/tax-invoices/" + invoice + "/pdf",
+                "/api/v1/leases/" + a + "/tax-invoices")) {
+            assertThat(getAs(fixtures.renter(), "TENANT_USER", path).getStatusCode().value()).as(path).isEqualTo(403);
+        }
+    }
+
     private void asRenter(Renter renter) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 renter.getUserId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
     }
 
     private ResponseEntity<byte[]> getAsRenter(Renter renter, String path) {
+        return getAs(renter, "RENTER", path);
+    }
+
+    private ResponseEntity<byte[]> getAs(Renter renter, String role, String path) {
         return RestClient.builder().baseUrl("http://localhost:" + port).build()
                 .get().uri(path)
                 .header("X-User-Id", renter.getUserId().toString())
-                .header("X-User-Role", "RENTER")
+                .header("X-User-Role", role)
                 .header("X-Tenant-Id", fixtures.tenantId().toString())
                 .header("X-User-Tenant-Id", fixtures.tenantId().toString())
                 .retrieve().onStatus(s -> true, (rq, rs) -> { })

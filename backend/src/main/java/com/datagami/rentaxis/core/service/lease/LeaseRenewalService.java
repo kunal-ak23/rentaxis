@@ -347,6 +347,9 @@ public class LeaseRenewalService {
         // in a closed month would be refused by PostingService halfway through
         // registering the set, after the TCO had gone in.
         problems.addAll(postingService.periodLockErrors(entryDate, newRows));
+        // VAT per instalment on the new rows (review P2-2): Σ, TRN, and no tax point
+        // inside the locked period, where it would never post.
+        problems.addAll(postingService.newRowsVatErrors(lease, newLines, newRows));
         // #80 on every door that registers paper, not only the first post: a
         // post-dated cheque needs its number. LeaseChequeRegistrar.register refuses
         // one anyway; listing it here puts it beside every other problem at once.

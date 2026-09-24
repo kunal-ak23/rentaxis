@@ -106,6 +106,13 @@ public class TaxInvoice extends BaseTenantEntity {
     @Column(columnDefinition = "text", updatable = false)
     private String description;
 
+    /**
+     * For a credit note: the tax invoices it adjusts, by number and date
+     * (Executive Regulation Art. 60). Null on a tax invoice.
+     */
+    @Column(name = "reference_note", columnDefinition = "text", updatable = false)
+    private String referenceNote;
+
     /** Positive on an invoice, positive on a credit note too — the kind says which way. */
     @Column(name = "taxable_amount", nullable = false, precision = 14, scale = 2, updatable = false)
     private BigDecimal taxableAmount;

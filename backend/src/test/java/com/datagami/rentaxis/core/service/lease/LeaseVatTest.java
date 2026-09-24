@@ -138,4 +138,39 @@ class LeaseVatTest {
                 .containsExactly(bds("0", "7.50").toArray(BigDecimal[]::new));
         assertThat(LeaseVat.allocate(new BigDecimal("10"), java.util.List.of())).isEmpty();
     }
+
+    /**
+     * PR #348 review P3-1: the review's two counter-examples, where rounding every
+     * share half-up and letting the last row absorb the difference left it at −0.01
+     * and −0.03. Largest remainder never goes negative and never moves a share more
+     * than a fils from its exact value, whichever row takes ties.
+     */
+    @Test
+    void allocateNeverGivesARowANegativeShare() {
+        java.util.List<BigDecimal> six = new java.util.ArrayList<>(java.util.Collections.nCopies(6, new BigDecimal("10500")));
+        six.add(new BigDecimal("5.00"));
+        java.util.List<BigDecimal> twelve = new java.util.ArrayList<>(java.util.Collections.nCopies(12, new BigDecimal("21015")));
+        twelve.add(new BigDecimal("5.00"));
+        for (var c : java.util.List.of(new Object[]{"500.03", six}, new Object[]{"1000.05", twelve})) {
+            BigDecimal total = new BigDecimal((String) c[0]);
+            @SuppressWarnings("unchecked") java.util.List<BigDecimal> w = (java.util.List<BigDecimal>) c[1];
+            BigDecimal sum = w.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            for (var parts : java.util.List.of(LeaseVat.allocate(total, w), LeaseVat.allocateFirstAbsorbs(total, w))) {
+                assertThat(parts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo(total);
+                for (int i = 0; i < w.size(); i++) {
+                    BigDecimal exact = total.multiply(w.get(i)).divide(sum, 10, java.math.RoundingMode.HALF_UP);
+                    assertThat(parts.get(i).signum()).as("row %s of %s", i, total).isNotNegative();
+                    assertThat(parts.get(i).subtract(exact).abs()).isLessThan(new BigDecimal("0.01"));
+                }
+            }
+            // The 5.00 row's exact share is about 0.04: never below it by a fils or more.
+            assertThat(LeaseVat.allocate(total, w).get(w.size() - 1)).isPositive();
+        }
+    }
+
+    @Test
+    void allocateSplitsACreditTheSameWayAsADebit() {
+        assertThat(LeaseVat.allocate(new BigDecimal("-100"), bds("1", "1", "1"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("-33.33"), new BigDecimal("-33.33"), new BigDecimal("-33.34"));
+    }
 }

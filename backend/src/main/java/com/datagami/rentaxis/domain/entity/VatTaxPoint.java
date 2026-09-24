@@ -91,4 +91,14 @@ public class VatTaxPoint extends BaseTenantEntity {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+
+    /**
+     * Optimistic lock (PR #348 review P2-1). Every writer also takes the row
+     * {@code FOR UPDATE} and re-reads the status; this is the backstop for one that
+     * forgets, so an UPDATE built from a stale PLANNED read fails instead of
+     * turning a POSTED point back into a PLANNED one.
+     */
+    @jakarta.persistence.Version
+    @Column(nullable = false)
+    private long version;
 }

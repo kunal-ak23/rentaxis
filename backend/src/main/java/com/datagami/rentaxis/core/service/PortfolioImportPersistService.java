@@ -420,9 +420,12 @@ public class PortfolioImportPersistService {
                     // signing (deposit, fees) take DepositPaymentMethod when given.
                     for (ChequeGenerationService.Row r : proposal.rows()) {
                         boolean atSigning = !chequeRows.isEmpty() || !r.narration().startsWith("Rent");
+                        // The generator's own VAT for the row (review P2-3): a deposit
+                        // row it wrote carries none, and must not be handed the rent's
+                        // VAT by the pro-rata default.
                         generated.add(new ChequeRowInput(null, null, r.postingDate(), null, r.chequeDate(),
                                 null, null, null, r.amount(), r.narration(),
-                                atSigning ? signingMode : leaseMode));
+                                atSigning ? signingMode : leaseMode, r.vat()));
                     }
                 }
             } else {
@@ -583,8 +586,13 @@ public class PortfolioImportPersistService {
             BigDecimal take = r.amount().min(left);
             left = left.subtract(take);
             BigDecimal rest = r.amount().subtract(take);
+            // The row keeps its VAT, up to what is left of it; VAT a large booking
+            // cheque displaces is picked up by the booking row, which leaves its own
+            // VAT to the default (review P2-3).
+            BigDecimal vat = r.vatAmount() == null ? null : r.vatAmount().min(rest);
             generated.set(k, new ChequeRowInput(r.id(), r.seqNo(), r.postingDate(), r.chequeNumber(),
-                    r.chequeDate(), r.payeeBank(), r.payerName(), r.debitAccountId(), rest, r.narration(), r.mode()));
+                    r.chequeDate(), r.payeeBank(), r.payerName(), r.debitAccountId(), rest, r.narration(), r.mode(),
+                    vat));
         }
         generated.removeIf(r -> r.amount().signum() == 0);
         if (left.signum() > 0) {

@@ -153,12 +153,16 @@ public final class LeaseVat {
      * Split {@code total} across rows in proportion to {@code weights}, to the
      * fils, so the parts sum to {@code total} exactly (spec 2026-09-24 §1).
      *
-     * <p>Every share is rounded half-up on its own and the <b>last</b> row with a
-     * positive weight absorbs the remainder — the same shape the recognition
-     * schedule uses for its last period. Rows with a zero (or null, or negative)
-     * weight get zero. With no positive weight at all the whole total lands on the
-     * last row, so money is never dropped: a caller that allocates VAT onto a grid
-     * of zero-amount rows gets a visible figure it can refuse, not a silent loss.</p>
+     * <p>Largest remainder (PR #348 review P3-1): every positive-weight row gets its
+     * exact share rounded <em>down</em> to the fils, and the fils left over go one
+     * each to the rows with the largest remainders, ties to the <b>last</b> such row.
+     * No share is ever negative or more than a fils above its exact value — rounding
+     * each share half-up and letting one row absorb the difference could leave that
+     * row at −0.01 (500.03 over six rows of 10,500 and one of 5.00). Rows with a zero
+     * (or null, or negative) weight get zero. With no positive weight at all the
+     * whole total lands on the last row, so money is never dropped: a caller that
+     * allocates VAT onto a grid of zero-amount rows gets a visible figure it can
+     * refuse, not a silent loss.</p>
      *
      * <p>This is how the VAT a contract charges is spread over its instalments;
      * {@link #RATE} is still applied only per line, above. Nothing here computes
@@ -171,44 +175,61 @@ public final class LeaseVat {
     }
 
     /**
-     * {@link #allocate} with the <b>first</b> positive-weight row absorbing the
-     * remainder — how the cheque generator rounds, where the residual belongs on the
-     * cheque handed over at signing ({@code ChequeRoundingCalculator}, FIRST_LARGER).
+     * {@link #allocate} with ties going to the <b>first</b> row — how the cheque
+     * generator rounds, where the residual belongs on the cheque handed over at
+     * signing ({@code ChequeRoundingCalculator}, FIRST_LARGER).
      */
     public static java.util.List<BigDecimal> allocateFirstAbsorbs(BigDecimal total, java.util.List<BigDecimal> weights) {
         return allocate(total, weights, true);
     }
 
     private static java.util.List<BigDecimal> allocate(BigDecimal total, java.util.List<BigDecimal> weights,
-                                                        boolean firstAbsorbs) {
+                                                        boolean firstTakesTies) {
         int n = weights == null ? 0 : weights.size();
         java.util.List<BigDecimal> out = new java.util.ArrayList<>(n);
         if (n == 0) return out;
         BigDecimal t = (total == null ? BigDecimal.ZERO : total).setScale(2, RoundingMode.HALF_UP);
+        for (int i = 0; i < n; i++) out.add(BigDecimal.ZERO.setScale(2));
+        if (t.signum() == 0) return out;
         BigDecimal sum = BigDecimal.ZERO;
-        int absorber = -1;
+        java.util.List<Integer> positive = new java.util.ArrayList<>();
         for (int i = 0; i < n; i++) {
             BigDecimal w = weights.get(i);
             if (w != null && w.signum() > 0) {
                 sum = sum.add(w);
-                if (absorber < 0 || !firstAbsorbs) absorber = i;
+                positive.add(i);
             }
         }
-        for (int i = 0; i < n; i++) out.add(BigDecimal.ZERO.setScale(2));
-        if (t.signum() == 0) return out;
-        if (sum.signum() == 0) {
+        if (positive.isEmpty()) {
             out.set(n - 1, t);
             return out;
         }
+        // Work on the magnitude so a negative total (a credit) splits the same way.
+        BigDecimal abs = t.abs();
+        BigDecimal[] remainder = new BigDecimal[n];
         BigDecimal allocated = BigDecimal.ZERO;
-        for (int i = 0; i < n; i++) {
-            BigDecimal w = weights.get(i);
-            if (i == absorber || w == null || w.signum() <= 0) continue;
-            BigDecimal share = t.multiply(w).divide(sum, 2, RoundingMode.HALF_UP);
-            out.set(i, share);
-            allocated = allocated.add(share);
+        for (int i : positive) {
+            BigDecimal exact = abs.multiply(weights.get(i)).divide(sum, 12, RoundingMode.HALF_UP);
+            BigDecimal floor = exact.setScale(2, RoundingMode.DOWN);
+            remainder[i] = exact.subtract(floor);
+            out.set(i, floor);
+            allocated = allocated.add(floor);
         }
-        out.set(absorber, t.subtract(allocated));
+        int fils = abs.subtract(allocated).movePointRight(2).intValueExact();
+        java.util.List<Integer> order = new java.util.ArrayList<>(positive);
+        order.sort((a, b) -> {
+            int byRemainder = remainder[b].compareTo(remainder[a]);
+            if (byRemainder != 0) return byRemainder;
+            return firstTakesTies ? Integer.compare(a, b) : Integer.compare(b, a);
+        });
+        BigDecimal cent = new BigDecimal("0.01");
+        for (int k = 0; k < fils; k++) {
+            int i = order.get(k % order.size());
+            out.set(i, out.get(i).add(cent));
+        }
+        if (t.signum() < 0) {
+            for (int i = 0; i < n; i++) out.set(i, out.get(i).negate());
+        }
         return out;
     }
 

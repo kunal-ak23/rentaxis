@@ -635,7 +635,7 @@ public class ChequeGenerationService {
         // contract's VAT pro rata (spec 2026-09-24 §1). Every row of a DRAFT grid is
         // in `out`, so the Σ this aims at is the whole contract's.
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
-        InstalmentVat.fill(out, fixedVat, InstalmentVat.contractVat(lines), InstalmentVat.contractTaxable(lines));
+        InstalmentVat.fill(out, fixedVat, lines);
         chequeRepository.saveAll(out);
         chequeRepository.flush();
         return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
@@ -709,14 +709,30 @@ public class ChequeGenerationService {
                 c.setDebitAccount(fallbackDebit);
             }
             if (row.vatAmount() != null && lease.getVatTiming() == VatTiming.INSTALMENT) {
+                // The grid's own rule (saveRows), on this door too (review P3-2).
+                if (row.vatAmount().signum() < 0 || (row.amount() != null && row.vatAmount().compareTo(row.amount()) > 0)) {
+                    throw new BusinessRuleViolationException("Row " + c.getSeqNo() + ": VAT " + row.vatAmount()
+                            + " must be between zero and the row amount.");
+                }
                 c.setVatAmount(row.vatAmount());
                 fixedVat.add(c);
             }
             out.add(c);
         }
+        if (lease.getVatTiming() == VatTiming.INSTALMENT && !fixedVat.isEmpty()) {
+            // Rows that name their VAT may not claim more than the new lines charge:
+            // the rest would get zero and the tax points would declare more than the
+            // TCO deferred (review P3-2).
+            BigDecimal claimed = InstalmentVat.rowVat(List.copyOf(fixedVat));
+            BigDecimal charged = newLines == null ? BigDecimal.ZERO : InstalmentVat.contractVat(newLines);
+            if (claimed.compareTo(charged) > 0) {
+                throw new BusinessRuleViolationException("The new rows name VAT of " + claimed.setScale(2, java.math.RoundingMode.HALF_UP)
+                        + " but the new lines charge " + charged.setScale(2, java.math.RoundingMode.HALF_UP)
+                        + "; the rows' VAT must add up to the lines'.");
+            }
+        }
         if (lease.getVatTiming() == VatTiming.INSTALMENT && newLines != null && !newLines.isEmpty()) {
-            InstalmentVat.fill(out, fixedVat, InstalmentVat.contractVat(newLines),
-                    InstalmentVat.contractTaxable(newLines));
+            InstalmentVat.fill(out, fixedVat, newLines);
         }
         chequeRepository.saveAll(out);
         chequeRepository.flush();

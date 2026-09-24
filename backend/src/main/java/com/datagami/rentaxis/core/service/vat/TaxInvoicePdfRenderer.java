@@ -78,7 +78,9 @@ public class TaxInvoicePdfRenderer {
                 .replace("{{TITLE_AR}}", credit ? "إشعار دائن ضريبي" : "فاتورة ضريبية")
                 .replace("{{INVOICE_NUMBER}}", esc(inv.getInvoiceNumber()))
                 .replace("{{ISSUE_DATE}}", DAY.format(inv.getIssueDate()))
-                .replace("{{REFERENCE_LINE}}", "")
+                .replace("{{REFERENCE_LINE}}", inv.getReferenceNote() == null || inv.getReferenceNote().isBlank() ? ""
+                        : "<div class=\"meta\">Adjusts tax invoice(s) / يعدّل الفاتورة الضريبية: "
+                                + esc(inv.getReferenceNote()) + "</div>")
                 .replace("{{CUSTOMER_NAME}}", esc(inv.getCustomerName()))
                 .replace("{{CUSTOMER_NAME_AR_ROW}}", inv.getCustomerNameAr() == null || inv.getCustomerNameAr().isBlank() ? ""
                         : "<tr><td class=\"label\">الاسم</td><td class=\"value ar\">" + esc(inv.getCustomerNameAr()) + "</td></tr>")

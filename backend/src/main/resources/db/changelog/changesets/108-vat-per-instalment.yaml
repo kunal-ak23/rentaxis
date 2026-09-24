@@ -177,3 +177,41 @@ databaseChangeLog:
               ALTER TABLE leases DROP COLUMN IF EXISTS vat_timing;
               ALTER TABLE cheques DROP COLUMN IF EXISTS vat_amount;
               ALTER TABLE cheques DROP COLUMN IF EXISTS vat_taxable_amount;
+
+  # PR #348 review. A second changeSet in the same (unmerged) file rather than an
+  # edit to the first, so a dev database that already ran 108 picks these up
+  # instead of failing its checksum.
+  #   - vat_tax_points.version: optimistic lock beside the pessimistic one every
+  #     writer takes, so an UPDATE built from a stale read (a POSTED point seen as
+  #     PLANNED) fails instead of undoing the post (P2-1);
+  #   - leases.vat_trn: the organisation's TRN as it stood when the lease posted,
+  #     so an instalment's tax invoice can still be issued if the TRN is later
+  #     cleared (a receipt or a termination must not fail on it);
+  #   - tax_invoices.reference_note: what a credit note adjusts — the original
+  #     tax invoices' numbers and dates (Executive Regulation Art. 60).
+  - changeSet:
+      id: 108-vat-per-instalment-review
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: vat_tax_points
+            columns:
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints: { nullable: false }
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: vat_trn, type: varchar(50) }
+        - addColumn:
+            tableName: tax_invoices
+            columns:
+              - column: { name: reference_note, type: text }
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE tax_invoices DROP COLUMN IF EXISTS reference_note;
+              ALTER TABLE leases DROP COLUMN IF EXISTS vat_trn;
+              ALTER TABLE vat_tax_points DROP COLUMN IF EXISTS version;

@@ -53,7 +53,9 @@ public class TenantFiscalSettingsService {
                                        OpeningBalancePostingRepository openingBalances,
                                        JournalEntryRepository journals,
                                        ImportBatchRepository importBatches,
-                                       VatTaxPointRepository vatTaxPoints) {
+                                       VatTaxPointRepository vatTaxPoints,
+                                       jakarta.persistence.EntityManager entityManager) {
+        this.entityManager = entityManager;
         this.repo = repo;
         this.openingBalances = openingBalances;
         this.journals = journals;
@@ -63,6 +65,8 @@ public class TenantFiscalSettingsService {
 
     /** Read directly, for the dependency reason above: the lock must not strand a PLANNED tax point. */
     private final VatTaxPointRepository vatTaxPoints;
+
+    private final jakarta.persistence.EntityManager entityManager;
 
     /** Settings for the current tenant; a default row is created on first access. */
     @Transactional
@@ -128,6 +132,11 @@ public class TenantFiscalSettingsService {
     @Transactional
     public TenantFiscalSettings lockThrough(LocalDate date) {
         TenantFiscalSettings s = get();
+        // FOR UPDATE, re-read: a writer creating or moving a VAT tax point holds this
+        // row FOR SHARE while it checks the lock (VatTaxPointService), so the check
+        // below sees every point such a writer has committed, and none can be created
+        // behind it at a date this lock covers (PR #348 review P3-3).
+        entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (s.getBooksLockedThrough() != null && date.isBefore(s.getBooksLockedThrough())) {
             throw new BusinessRuleViolationException("Period lock cannot move backwards (currently " + s.getBooksLockedThrough() + ")");
         }
