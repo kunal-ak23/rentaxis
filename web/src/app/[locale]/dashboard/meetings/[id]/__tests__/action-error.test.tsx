@@ -11,7 +11,8 @@ vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: "TENANT_ADMIN", id: "u1" } } }),
 }));
 vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
+    useTranslations: () => Object.assign((key: string) => key, { has: () => false }),
+    useLocale: () => "en",
 }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
