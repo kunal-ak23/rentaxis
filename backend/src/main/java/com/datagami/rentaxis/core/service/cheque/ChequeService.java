@@ -1222,6 +1222,7 @@ public class ChequeService {
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay, boolean receiptSource) {
+        requireNotBeforeBooked(cheque, bookedOn(cheque), date);
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         // Checked on the way in whichever door it came through: an override the
@@ -1269,6 +1270,37 @@ public class ChequeService {
         // (spec 2026-09-24 §1). On or after the due date nothing changes.
         vatTaxPoints.onCleared(cheque, date);
     }
+
+    /**
+     * F14-02: money cannot settle a row before the row is on the books. The CRT
+     * credits PDC receivable, which the row's PDR debited; dated earlier, the leaf
+     * runs negative for the days in between and every as-of report in that window
+     * is wrong. The row's own date is its PDR's entry date (the posting date when
+     * no PDR was written).
+     */
+    static void requireNotBeforeBooked(Cheque cheque, LocalDate booked, LocalDate date) {
+        if (booked != null && date != null && date.isBefore(booked)) {
+            throw new BusinessRuleViolationException(label(cheque) + " was put on the books on "
+                    + booked.format(DMY) + "; it cannot be received or cleared on " + date.format(DMY)
+                    + ", before that date. Receive it on or after " + booked.format(DMY) + ".",
+                    "cheque.receiveBeforeBooked",
+                    Map.of("row", label(cheque), "booked", booked.format(DMY), "date", date.format(DMY)));
+        }
+    }
+
+    /** The date the row entered the ledger: its PDR's entry date, else its posting date. */
+    LocalDate bookedOn(Cheque cheque) {
+        if (cheque.getPdrJournalId() != null) {
+            JournalEntry pdr = entityManager.find(JournalEntry.class, cheque.getPdrJournalId());
+            if (pdr != null && pdr.getEntryDate() != null) {
+                return pdr.getEntryDate();
+            }
+        }
+        return cheque.getPostingDate();
+    }
+
+    private static final java.time.format.DateTimeFormatter DMY =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private void reversePdr(Cheque cheque, LocalDate date, String reason) {
         if (cheque.getPdrJournalId() == null) {

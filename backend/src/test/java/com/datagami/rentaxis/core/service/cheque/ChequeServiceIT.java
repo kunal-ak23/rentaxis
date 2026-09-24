@@ -467,6 +467,25 @@ class ChequeServiceIT extends AbstractPostgresIT {
         assertThat(received.debitAccountId()).isEqualTo(cashLeaf.getId());
     }
 
+    /** F14-02: the CRT would credit PDC receivable before the PDR debited it. */
+    @Test
+    void receivingBeforeTheRowWasBookedIsRefused() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        ChequeDTO cash = service.addRowToPostedLease(leaseId,
+                row(null, REPLACE_DATE, REPLACE_DATE, "1500", ChequeMode.CASH));
+
+        assertThatThrownBy(() -> service.receive(cash.id(), ChequeActionRequest.on(REPLACE_DATE.minusDays(1))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("was put on the books on");
+
+        assertThat(reread(cash.id()).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(entryCount(JournalDocType.CRT, cash.id())).isZero();
+        // The same day is fine.
+        assertThat(service.receive(cash.id(), ChequeActionRequest.on(REPLACE_DATE)).status())
+                .isEqualTo(ChequeStatus.CLEARED);
+    }
+
     @Test
     void receivingATransferLandsInTheBank() {
         PostLeaseResponse r = posted();
