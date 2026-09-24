@@ -79,5 +79,7 @@ public record SettlementStatementDTO(
         BigDecimal totalDeductions,
         BigDecimal totalAdditions,
         BigDecimal netRefund,
-        int unrecognisedEntries) {
+        int unrecognisedEntries,
+        /* F14-37: the output VAT on the taxable recharges, already taken off netRefund. */
+        BigDecimal totalDeductionVat) {
 }

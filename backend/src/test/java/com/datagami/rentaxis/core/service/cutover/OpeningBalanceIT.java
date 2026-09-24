@@ -421,6 +421,40 @@ class OpeningBalanceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * F14-25: once the lock reaches past the opening-balance date, a post, re-post or
+     * reversal would restate locked balance sheets; and a reversal says why.
+     */
+    @Test
+    void aLockPastTheOpeningDateFreezesTheOpeningBalancesAndAReversalNeedsAReason() {
+        uploadCashAndVat("50000.00", "12000.00");
+        ob.post();
+        assertThatThrownBy(() -> ob.reverse(" "))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Give the reason for reversing");
+        assertThatThrownBy(() -> ob.repost(null))
+                .hasMessageContaining("Give the reason for replacing");
+
+        fiscal.lockThrough(AS_OF.plusDays(1));
+        assertThatThrownBy(() -> ob.reverse("wrong file"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("locked through 01/10/2026")
+                .hasMessageContaining("cannot be reversed");
+        assertThatThrownBy(() -> ob.repost("corrected"))
+                .hasMessageContaining("cannot be re-posted");
+        assertThat(liveOpeningJournals()).isEqualTo(1);
+    }
+
+    @Test
+    void aFirstPostIsRefusedOnceTheLockPassesTheOpeningDate() {
+        uploadCashAndVat("50000.00", "12000.00");
+        fiscal.lockThrough(AS_OF.plusDays(1));
+        assertThatThrownBy(ob::post)
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot be posted");
+        assertThat(liveOpeningJournals()).isZero();
+    }
+
     @Test
     void thereIsNothingToReverseBeforeAnythingIsPosted() {
         assertThatThrownBy(() -> ob.reverse("nope"))

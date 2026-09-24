@@ -30,7 +30,7 @@ function cheque(over: Partial<Cheque> & { id: string; seqNo: number; amount: num
         failureReason: null, replacesId: null, replacedById: null, imageUrl: null,
         depositedAt: null, clearedAt: null, bouncedAt: null, returnedAt: null,
         pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
-        due: false, overdue: false, daysOverdue: 0,
+        due: false, overdue: false, daysOverdue: 0, ledgerSettled: false,
         ...over,
     };
 }

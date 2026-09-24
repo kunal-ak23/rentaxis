@@ -81,7 +81,7 @@ class PenaltyRuleEngineTest {
 
         when(rentCollectionSettings.findByPropertyId(propertyId)).thenReturn(Optional.empty());
         when(assessments.existsByCheque_IdAndReasonAndStatusIn(any(), any(), anyCollection())).thenReturn(false);
-        when(assessmentService.proposeBySystem(any(), any(), any(), any(), any()))
+        when(assessmentService.proposeBySystem(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PenaltyAssessment());
     }
 
@@ -144,7 +144,7 @@ class PenaltyRuleEngineTest {
 
     private BigDecimal proposedAmount() {
         ArgumentCaptor<BigDecimal> amount = ArgumentCaptor.forClass(BigDecimal.class);
-        verify(assessmentService).proposeBySystem(eq(lease), any(), any(), amount.capture(), any());
+        verify(assessmentService).proposeBySystem(eq(lease), any(), any(), amount.capture(), any(), any(), any(), any());
         return amount.getValue();
     }
 
@@ -168,12 +168,15 @@ class PenaltyRuleEngineTest {
         fineConfig(cfg(2, true, false));
         bouncesOnThisLease(2);
         Cheque c = cheque("100041", "12750", LocalDate.of(2026, 11, 2), ChequeFailureReason.BOUNCE);
+        c.setBouncedAt(LocalDate.of(2026, 11, 9));
 
         engine.onBounce(c);
 
         ArgumentCaptor<String> description = ArgumentCaptor.forClass(String.class);
+        // F14-23: the incident is the bounce date; F14-31: the description as a code.
         verify(assessmentService).proposeBySystem(eq(lease), eq(c), eq(PenaltyReason.CHEQUE_RETURN),
-                eq(new BigDecimal("500")), description.capture());
+                eq(new BigDecimal("500")), description.capture(), eq(LocalDate.of(2026, 11, 9)),
+                eq("chequeReturned"), eq(java.util.Map.of("cheque", "100041", "failureReason", "BOUNCE", "bounces", "2")));
         assertThat(description.getValue())
                 .contains("100041")
                 .contains("BOUNCE")
@@ -254,7 +257,7 @@ class PenaltyRuleEngineTest {
         Cheque fourth = cheque("100042", "12750", LocalDate.of(2026, 12, 2), ChequeFailureReason.BOUNCE);
         engine.onBounce(fourth);
         verify(assessmentService).proposeBySystem(eq(lease), eq(fourth), eq(PenaltyReason.CHEQUE_RETURN),
-                eq(new BigDecimal("500")), any());
+                eq(new BigDecimal("500")), any(), any(), any(), any());
     }
 
     // ------------------------------------------------------------------
@@ -310,7 +313,7 @@ class PenaltyRuleEngineTest {
         engine.onLateClear(c, LocalDate.of(2026, 10, 17));
 
         verify(assessmentService).proposeBySystem(eq(lease), eq(c), eq(PenaltyReason.LATE_PAYMENT),
-                eq(new BigDecimal("500")), any());
+                eq(new BigDecimal("500")), any(), eq(LocalDate.of(2026, 10, 17)), eq("clearedLate"), any());
     }
 
     /**

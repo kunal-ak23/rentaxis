@@ -1,0 +1,18 @@
+# F14-37: VAT on the recharges a settlement deducts (damage, cleaning, keys) is a
+# tax point of its own, kind SETTLEMENT, posted on the STL with its tax invoice.
+databaseChangeLog:
+  - changeSet:
+      id: 123-vtp-kind-settlement
+      author: claude
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT'))
+      rollback:
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT'))

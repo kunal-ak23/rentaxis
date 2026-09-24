@@ -123,6 +123,36 @@ class VoucherAmendIT extends AbstractPostgresIT {
      * its mirror, and the corrected one — which is exactly what an auditor expects to
      * find when an invoice amount changes after posting.
      */
+    /** F14-41: the reversal is dated on or after the original, and it says why. */
+    @Test
+    void anAmendCannotReverseBeforeTheOriginalNorWithoutAReason() {
+        Voucher original = vouchers.post(vouchers.createDraft(invoice("4000.00")).getId());
+        assertThatThrownBy(() -> vouchers.amend(original.getId(), LocalDate.of(2026, 10, 11), "typo", invoice("3600.00")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot be dated before " + original.getVoucherNumber() + " (12/10/2026)");
+        assertThatThrownBy(() -> vouchers.amend(original.getId(), LocalDate.of(2026, 10, 12), " ", invoice("3600.00")))
+                .hasMessageContaining("Give the reason");
+        assertThat(vouchers.get(original.getId()).getStatus()).isEqualTo(VoucherStatus.POSTED);
+        assertThat(vendorBalance()).isEqualByComparingTo("-4200.00");
+    }
+
+    /** F14-42: a mistaken invoice is voided: reversed with a reason, marked VOID. */
+    @Test
+    void aPostedInvoiceIsVoidedWithAReasonOnOrAfterItsDate() {
+        Voucher original = vouchers.post(vouchers.createDraft(invoice("4000.00")).getId());
+        assertThatThrownBy(() -> vouchers.voidVoucher(original.getId(), LocalDate.of(2026, 10, 11), "entered twice"))
+                .hasMessageContaining("cannot be dated before");
+        assertThatThrownBy(() -> vouchers.voidVoucher(original.getId(), LocalDate.of(2026, 10, 12), ""))
+                .hasMessageContaining("Give the reason");
+        Voucher voided = vouchers.voidVoucher(original.getId(), LocalDate.of(2026, 10, 12), "entered twice");
+        assertThat(voided.getStatus()).isEqualTo(VoucherStatus.VOID);
+        assertThat(tx.execute(st -> entries.findById(original.getJournalId()).orElseThrow()).getStatus())
+                .isEqualTo(JournalStatus.REVERSED);
+        assertThat(vendorBalance()).isEqualByComparingTo("0.00");
+        assertThatThrownBy(() -> vouchers.voidVoucher(original.getId(), LocalDate.of(2026, 10, 12), "again"))
+                .hasMessageContaining("Only a POSTED voucher");
+    }
+
     @Test
     void amendingReversesTheOriginalAndPostsAReplacement() {
         Voucher original = vouchers.post(vouchers.createDraft(invoice("4000.00")).getId());

@@ -8,6 +8,7 @@ import {
     canAmendVoucher,
     canEditVoucher,
     canManageAttachments,
+    canVoidVoucher,
     draftRefusal,
     isDateLocked,
     isLineAccountAllowed,
@@ -323,6 +324,14 @@ describe("status", () => {
         expect(canAmendVoucher("POSTED")).toBe(true);
         expect(canAmendVoucher("DRAFT")).toBe(false);
         expect(canAmendVoucher("REVERSED")).toBe(false);
+    });
+
+    // POST /finance/vouchers/{id}/void (F14-42)
+    it("lets only a POSTED voucher be voided", () => {
+        expect(canVoidVoucher("POSTED")).toBe(true);
+        expect(canVoidVoucher("DRAFT")).toBe(false);
+        expect(canVoidVoucher("REVERSED")).toBe(false);
+        expect(canVoidVoucher("VOID")).toBe(false);
     });
 
     // VoucherAttachmentService.requireMutable :134-140

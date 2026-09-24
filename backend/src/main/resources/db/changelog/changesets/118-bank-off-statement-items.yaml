@@ -1,0 +1,24 @@
+# F14-20: a clearing, receipt, presentation or bank payment dated on or before the
+# last day of a statement already imported for its bank account is allowed only
+# when the user confirms it is not on that statement. The confirmation is kept
+# here (who, when, which statement range) and the draft reconciliation lists the
+# entry under "cleared without statement evidence".
+databaseChangeLog:
+  - changeSet:
+      id: 118-bank-off-statement-items
+      author: claude
+      changes:
+        - createTable:
+            tableName: bank_off_statement_items
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_off_stmt_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_off_stmt_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: journal_entry_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_off_stmt_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: entry_date, type: date, constraints: { nullable: false } }
+              - column: { name: statement_from, type: date, constraints: { nullable: false } }
+              - column: { name: statement_to, type: date, constraints: { nullable: false } }
+              - column: { name: confirmed_by, type: uuid }
+              - column: { name: confirmed_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint: { tableName: bank_off_statement_items, columnNames: "bank_account_id, journal_entry_id", constraintName: ux_bank_off_stmt_entry }
+        - createIndex: { tableName: bank_off_statement_items, indexName: idx_bank_off_stmt_account, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } } ] }

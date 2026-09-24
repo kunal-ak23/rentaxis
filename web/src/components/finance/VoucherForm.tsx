@@ -6,22 +6,27 @@ import { CheckCircle, FileText, Loader2, Paperclip, Plus, Trash2, Upload } from 
 import { Link } from "@/i18n/routing";
 import AccountPicker, { loadAccounts } from "@/components/finance/AccountPicker";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
+import RefundPaymentAccountPicker from "@/components/finance/RefundPaymentAccountPicker";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type Account } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import {
     grossTotalOf, netTotalOf, vatOf, vatTotalOf, voucherApi,
     type EditableVoucherType, type PaymentMethod, type Settlement, type VoucherAttachment, type VoucherDetail,
     type VoucherAllocationInput, type VoucherInput, type VoucherLineInput, type VoucherStatus,
 } from "@/lib/api/vouchers";
-import { autoAllocate, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
+import { autoAllocate, daysOverdueAsOf, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
 import {
     ALLOWED_VAT_RATES, ATTACHMENT_ACCEPT, attachmentRefusal, canAmendVoucher,
-    canEditVoucher, canManageAttachments, draftRefusal, isDateLocked, lineAccountTypes,
+    canEditVoucher, canManageAttachments, canVoidVoucher, draftRefusal, isDateLocked, lineAccountTypes,
     vatAllowedOn, type DraftRefusalResult,
 } from "@/lib/voucherRules";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * One form for both voucher documents (spec §10.1, §11): a Purchase/Service
@@ -153,17 +158,28 @@ const STATUS_CLASS: Record<VoucherStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
     REVERSED: "bg-warning/10 text-warning border-warning/30",
+    // F14-42: void reuses REVERSED's styling — both are a posted document
+    // undone after the fact, just without a replacement.
+    VOID: "bg-warning/10 text-warning border-warning/30",
 };
 
 export default function VoucherForm({
     type,
     voucherId,
+    refundPrefill,
     onPosted,
     onDeleted,
 }: {
     type: EditableVoucherType;
     /** An existing voucher to open: a draft to finish, or a posted one to read and amend. */
     voucherId?: string;
+    /**
+     * F14-36: "Pay refund" opened this BPV fresh for one settlement's deposit
+     * refund. Only meaningful with no `voucherId` — a loaded voucher's own
+     * `refundSettlementId` (on `posted`) is what drives refund mode once it
+     * exists on the server.
+     */
+    refundPrefill?: { settlementId: string; renterName: string; unitLabel: string; amount: number } | null;
     onPosted?: (v: VoucherDetail) => void;
     /**
      * Its own callback rather than `onPosted(null as VoucherDetail)`: a deleted
@@ -178,6 +194,14 @@ export default function VoucherForm({
 
     const withVat = vatAllowedOn(type);
     const properties = useNameLookup("properties");
+    // F14-40: PCN (a supplier credit note) is line-shaped like a PISR — vendor,
+    // invoice/credit-note number, VAT, expense/asset lines, no payment account
+    // or supplier/due dates — but settles against the vendor's open invoices
+    // through the same Allocate panel a BPV uses.
+    const isExpenseLike = type === "PISR" || type === "PCN";
+    const hasAllocationPanel = type === "BPV" || type === "PCN";
+    const [refundPayableAccountId, setRefundPayableAccountId] = useState<string | null>(null);
+    const [refundPayableAccountName, setRefundPayableAccountName] = useState<string | null>(null);
 
     const [docDate, setDocDate] = useState(todayIso);
     const [vendorId, setVendorId] = useState("");
@@ -233,13 +257,26 @@ export default function VoucherForm({
     const [loadError, setLoadError] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
-    const [confirm, setConfirm] = useState<"post" | "delete" | "amend" | null>(null);
+    const [confirm, setConfirm] = useState<"post" | "delete" | "amend" | "void" | null>(null);
     const [amendDate, setAmendDate] = useState(todayIso);
     const [amendReason, setAmendReason] = useState("");
+    // F14-20: bank.statementCovers, on post and amend.
+    const statementCover = useStatementCoverGuard(tCommon);
+    // F14-42: voucher.cashNegative — a BPV paid from a CASH leaf that would go
+    // negative. The server's own sentence is the notice; ticking "Post anyway"
+    // resends with allowNegativeCash.
+    const [cashNegativeNotice, setCashNegativeNotice] = useState<string | null>(null);
+    const [allowNegativeCash, setAllowNegativeCash] = useState(false);
+    // F14-42: void a POSTED voucher.
+    const [voidDate, setVoidDate] = useState(todayIso);
+    const [voidReason, setVoidReason] = useState("");
     /** True from the moment Amend is clicked until it is posted or cancelled. */
     const [amending, setAmending] = useState(false);
     /** The posted document as loaded, so Cancel amendment can put it back verbatim. */
     const [posted, setPosted] = useState<VoucherDetail | null>(null);
+    // F14-36: a BPV paying out a deposit refund — no vendor, one locked line
+    // on "Refunds payable – renters", a restricted payment-account picker.
+    const isRefund = !!refundPrefill || !!posted?.refundSettlementId;
     /** The chart by id — the second layer behind the pickers' own filters. */
     const [accounts, setAccounts] = useState<Record<string, Account>>({});
 
@@ -288,6 +325,31 @@ export default function VoucherForm({
             alive = false;
         };
     }, []);
+
+    // F14-36: resolve "Refunds payable – renters" (RENTER_REFUND_PAYABLE) from
+    // the tenant's default-account mappings — the same lookup the rest of the
+    // finance UI uses — and, for a brand-new refund draft, prefill the one
+    // locked line, the amount and the narration once.
+    useEffect(() => {
+        let alive = true;
+        ledgerApi.defaults
+            .get()
+            .then(rows => {
+                if (!alive) return;
+                const row = rows.find(r => r.role === "RENTER_REFUND_PAYABLE");
+                setRefundPayableAccountId(row?.accountId ?? null);
+                setRefundPayableAccountName(row?.accountName ?? null);
+                if (refundPrefill && row?.accountId && !savedId) {
+                    setLines([{ ...newLine(), accountId: row.accountId, amount: String(refundPrefill.amount) }]);
+                    setNarration(`Deposit refund – ${refundPrefill.renterName} – ${refundPrefill.unitLabel}`);
+                }
+            })
+            .catch(() => {});
+        return () => {
+            alive = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refundPrefill?.settlementId]);
 
     const applyDetail = useCallback((v: VoucherDetail) => {
         setDocDate(v.docDate);
@@ -387,7 +449,7 @@ export default function VoucherForm({
     const vendor = useMemo(() => vendors.find(v => v.id === vendorId) ?? null, [vendors, vendorId]);
     /** Unknown until the vendor list has loaded; only a known "no TRN" disables VAT. */
     const vendorHasTrn = vendor ? !!vendor.trn?.trim() : undefined;
-    const vatBlocked = type === "PISR" && vendorHasTrn === false;
+    const vatBlocked = isExpenseLike && vendorHasTrn === false;
 
     const numericLines = useMemo(
         () => lines.map(l => ({ amount: num(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
@@ -395,7 +457,7 @@ export default function VoucherForm({
     );
 
     /** BPV: what this voucher pays the vendor — Σ of its lines on the vendor's payable leaf. */
-    const payableTotal = useMemo(
+    const bpvPayableTotal = useMemo(
         () => lines.reduce((s, l, i) => (l.accountId && l.accountId === vendorPayableAccountId
             ? s + numericLines[i].amount : s), 0),
         [lines, numericLines, vendorPayableAccountId],
@@ -458,12 +520,24 @@ export default function VoucherForm({
         [numericLines],
     );
 
+    /**
+     * What this document has to allocate: a BPV's own payment (its lines on the
+     * vendor's payable leaf); a PCN's own gross value (there is no payable
+     * line to sum — a PCN's lines are expense/asset-only, like a PISR's, and
+     * the payable side is implicit).
+     */
+    const payableTotal = type === "BPV" ? bpvPayableTotal : type === "PCN" ? totals.gross : 0;
+
     // Amend mode re-opens the fields of a POSTED document; everything downstream
     // (the gates, the VAT preview, Add line) keys off this one flag, exactly as
     // it does for a draft.
     const editable = canEditVoucher(status) || amending;
     const locked = isDateLocked(docDate, booksLockedThrough);
     const amendDateLocked = isDateLocked(amendDate, booksLockedThrough);
+    // F14-41: the server now requires the amend reason (@NotBlank) and refuses
+    // a reversal dated before the voucher it reverses.
+    const amendReasonBlank = !amendReason.trim();
+    const amendDateBeforeDoc = !!posted && !!amendDate && amendDate < posted.docDate;
 
     // ---- supplier AP (finance-ops spec §2) ----
 
@@ -543,9 +617,9 @@ export default function VoucherForm({
             setAllocationsVersion(n => n + 1);
         });
 
-    // BPV Allocate panel: the vendor's invoices with something left on them.
+    // Allocate panel (BPV and PCN): the vendor's invoices with something left on them.
     useEffect(() => {
-        if (type !== "BPV" || !editable || !vendorId) {
+        if (!hasAllocationPanel || !editable || !vendorId) {
             setOpenItems([]);
             return;
         }
@@ -569,7 +643,7 @@ export default function VoucherForm({
         return () => {
             alive = false;
         };
-    }, [type, editable, vendorId, amending, ownAllocations]);
+    }, [hasAllocationPanel, editable, vendorId, amending, ownAllocations]);
 
     const refusal: DraftRefusalResult | null = useMemo(
         () =>
@@ -588,14 +662,14 @@ export default function VoucherForm({
                 payableAccountIds: vendors.length ? payableAccountIds : undefined,
                 vendorPayableAccountId,
                 accounts: Object.keys(accounts).length ? accounts : undefined,
-                invoiceNumber: type === "PISR" ? invoiceNumber : undefined,
-                vendorHasTrn: type === "PISR" ? vendorHasTrn : undefined,
+                invoiceNumber: isExpenseLike ? invoiceNumber : undefined,
+                vendorHasTrn: isExpenseLike ? vendorHasTrn : undefined,
                 paymentMethod: type === "BPV" ? paymentMethod : undefined,
                 chequeNumber,
-                allocationTotal: type === "BPV" ? allocationTotal : undefined,
-                payableTotal: type === "BPV" ? payableTotal : undefined,
+                allocationTotal: hasAllocationPanel ? allocationTotal : undefined,
+                payableTotal: hasAllocationPanel ? payableTotal : undefined,
             }),
-        [type, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
+        [type, isExpenseLike, hasAllocationPanel, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
          vendorPayableAccountId, vendors.length, accounts, propertyId, invoiceNumber, vendorHasTrn,
          paymentMethod, chequeNumber, allocationTotal, payableTotal],
     );
@@ -609,7 +683,7 @@ export default function VoucherForm({
             // A BPV may name a vendor too — it is how the server knows whose
             // payable a settlement line belongs to — so this is not PISR-only.
             vendorId: vendorId || null,
-            invoiceNumber: type === "PISR" ? invoiceNumber || null : null,
+            invoiceNumber: isExpenseLike ? invoiceNumber || null : null,
             narration: narration || null,
             propertyId: propertyId || null,
             paymentAccountId: type === "BPV" ? paymentAccountId : null,
@@ -633,10 +707,11 @@ export default function VoucherForm({
                 unitId: l.unitId || null,
                 ...(l.shared && !l.propertyId ? { shared: true } : {}),
             })),
+            settlementId: isRefund ? (refundPrefill?.settlementId ?? posted?.refundSettlementId ?? null) : undefined,
         }),
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
          chequeNumber, chequeDate, lines, numericLines, withVat, supplierInvoiceDate, dueDate,
-         paymentMethod, paymentReference],
+         paymentMethod, paymentReference, isRefund, refundPrefill?.settlementId, posted?.refundSettlementId],
     );
 
     /**
@@ -651,7 +726,7 @@ export default function VoucherForm({
             docType: type,
             docDate: posted.docDate,
             vendorId: posted.vendorId ?? null,
-            invoiceNumber: type === "PISR" ? posted.invoiceNumber ?? null : null,
+            invoiceNumber: isExpenseLike ? posted.invoiceNumber ?? null : null,
             narration: posted.narration ?? null,
             propertyId: posted.propertyId ?? null,
             paymentAccountId: type === "BPV" ? posted.paymentAccountId : null,
@@ -672,7 +747,7 @@ export default function VoucherForm({
                 ...(!l.propertyId ? { shared: true } : {}),
             })),
         };
-        return JSON.stringify(current) !== JSON.stringify(original) || (type === "BPV" && allocationsChanged);
+        return JSON.stringify(current) !== JSON.stringify(original) || (hasAllocationPanel && allocationsChanged);
     }, [posted, body, type, withVat, allocationsChanged]);
 
     /**
@@ -686,7 +761,7 @@ export default function VoucherForm({
         : duplicateOf && editable
           ? t("duplicateInvoice", { invoice: invoiceNumber.trim(), vendor: vendor?.nameEn ?? "", number: duplicateOf })
           : locked
-          ? t("periodLocked", { date: booksLockedThrough ?? "" })
+          ? t("periodLocked", { date: formatDate(booksLockedThrough) })
           : amending && !dirty
             ? t("amendNoChanges")
             : null;
@@ -720,13 +795,30 @@ export default function VoucherForm({
     const postVoucher = () =>
         run(async () => {
             const saved = await persist();
-            const posted = type === "BPV" && allocationInputs.length
-                ? await voucherApi.post(saved.id, allocationInputs)
-                : await voucherApi.post(saved.id);
-            applyDetail(posted);
-            setPostedNumber(posted.voucherNumber);
-            setConfirm(null);
-            onPosted?.(posted);
+            try {
+                const posted = await voucherApi.post(saved.id, hasAllocationPanel ? allocationInputs : undefined, {
+                    notOnStatement: statementCover.notOnStatement || undefined,
+                    allowNegativeCash: allowNegativeCash || undefined,
+                });
+                applyDetail(posted);
+                setPostedNumber(posted.voucherNumber);
+                setConfirm(null);
+                onPosted?.(posted);
+            } catch (e) {
+                if (statementCover.catchStatementCover(e)) return; // notice showing; stays on the confirm dialog
+                const c = codedOf(e);
+                if (c.code === "voucher.cashNegative") {
+                    setCashNegativeNotice(serverText(tCommon, e));
+                    return;
+                }
+                // F14-36: a refund BPV posting more than the settlement still owes.
+                if (c.code === "voucher.refundExceedsOwed") {
+                    setFormError(serverText(tCommon, e));
+                    setConfirm(null);
+                    return;
+                }
+                throw e;
+            }
         });
 
     const deleteDraft = () =>
@@ -736,11 +828,20 @@ export default function VoucherForm({
             onDeleted?.();
         });
 
+    /** F14-42: void a POSTED voucher — reversed with a reason, no replacement. */
+    const voidVoucher = () =>
+        run(async () => {
+            if (!savedId) return;
+            const voided = await voucherApi.void(savedId, { date: voidDate, reason: voidReason.trim() });
+            applyDetail(voided);
+            setConfirm(null);
+        });
+
     /** Enter amend mode. The fields re-open; nothing is sent until Post amendment. */
     const startAmend = () => {
         // A payment's amendment settles what it settled unless told otherwise
         // (review P3-3): the panel starts from its live allocations.
-        if (type === "BPV") {
+        if (hasAllocationPanel) {
             const pre: Record<string, string> = {};
             for (const a of ownAllocations) {
                 const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
@@ -765,25 +866,42 @@ export default function VoucherForm({
     const amend = () =>
         run(async () => {
             if (!savedId) return;
-            // One transaction on the server: the original's journal is reversed and
-            // the replacement is posted, so a reversal cannot survive a failed
-            // replacement. What comes back is the NEW voucher, already POSTED.
-            const fresh = await voucherApi.amend(savedId, {
-                reversalDate: amendDate,
-                reason: amendReason,
-                replacement: body(),
-                // The panel is the whole answer for a payment: what it lists is settled,
-                // an empty panel leaves the replacement as an advance.
-                ...(type === "BPV" ? { allocations: allocationInputs } : {}),
-            });
-            setAmending(false);
-            applyDetail(fresh);
-            setPostedNumber(fresh.voucherNumber);
-            setConfirm(null);
-            // Deliberately NOT onPosted: that navigates to the list, and an
-            // amendment's whole result is the replacement — its new number, and
-            // the link back to the original now marked REVERSED. The accountant
-            // stays on it.
+            try {
+                // One transaction on the server: the original's journal is reversed and
+                // the replacement is posted, so a reversal cannot survive a failed
+                // replacement. What comes back is the NEW voucher, already POSTED.
+                const fresh = await voucherApi.amend(savedId, {
+                    reversalDate: amendDate,
+                    reason: amendReason,
+                    replacement: body(),
+                    // The panel is the whole answer for a payment: what it lists is settled,
+                    // an empty panel leaves the replacement as an advance.
+                    ...(hasAllocationPanel ? { allocations: allocationInputs } : {}),
+                    notOnStatement: statementCover.notOnStatement || undefined,
+                    allowNegativeCash: allowNegativeCash || undefined,
+                });
+                setAmending(false);
+                applyDetail(fresh);
+                setPostedNumber(fresh.voucherNumber);
+                setConfirm(null);
+                // Deliberately NOT onPosted: that navigates to the list, and an
+                // amendment's whole result is the replacement — its new number, and
+                // the link back to the original now marked REVERSED. The accountant
+                // stays on it.
+            } catch (e) {
+                if (statementCover.catchStatementCover(e)) return;
+                const c = codedOf(e);
+                if (c.code === "voucher.cashNegative") {
+                    setCashNegativeNotice(serverText(tCommon, e));
+                    return;
+                }
+                if (c.code === "voucher.refundExceedsOwed") {
+                    setFormError(serverText(tCommon, e));
+                    setConfirm(null);
+                    return;
+                }
+                throw e;
+            }
         });
 
     const uploadAttachment = (file: File) => {
@@ -861,7 +979,10 @@ export default function VoucherForm({
                         data-status={status}
                         className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${STATUS_CLASS[status]}`}
                     >
-                        {status === "DRAFT" ? t("draft") : status === "POSTED" ? tLedger("posted") : tLedger("reversed")}
+                        {status === "DRAFT" ? t("draft")
+                            : status === "POSTED" ? tLedger("posted")
+                            : status === "VOID" ? tLedger("void")
+                            : tLedger("reversed")}
                     </span>
                     {status === "POSTED" && settlement?.status && (
                         <span
@@ -875,7 +996,7 @@ export default function VoucherForm({
                             )}
                         </span>
                     )}
-                    {status === "POSTED" && type === "BPV" && settlement && settlement.open > 0 && (
+                    {status === "POSTED" && hasAllocationPanel && settlement && settlement.open > 0 && (
                         <span data-testid="settlement-advance" className="text-[10px] text-muted">
                             {t("unallocatedAdvance")}: <bdi dir="ltr">{fmtAmount(settlement.open)}</bdi>
                         </span>
@@ -918,29 +1039,37 @@ export default function VoucherForm({
                         <label className={fieldLabel} htmlFor="voucher-vendor">
                             {t("vendor")}
                         </label>
-                        <select
-                            id="voucher-vendor"
-                            data-testid="vendor"
-                            className={field}
-                            disabled={!editable}
-                            value={vendorId}
-                            onChange={e => setVendorId(e.target.value)}
-                        >
-                            <option value="">{type === "PISR" ? t("selectVendor") : t("noVendor")}</option>
-                            {vendors
-                                .filter(v => v.active || v.id === vendorId)
-                                .map(v => (
-                                    <option key={v.id} value={v.id}>
-                                        {v.nameEn}
-                                    </option>
-                                ))}
-                        </select>
+                        {isRefund ? (
+                            // F14-36: a refund BPV has no vendor — it names the settlement
+                            // instead, and the field is not offered as a choice.
+                            <p id="voucher-vendor" data-testid="refund-to" className={`${field} bg-input/50 flex items-center`}>
+                                {t("refundTo", { renter: refundPrefill?.renterName ?? "" })}
+                            </p>
+                        ) : (
+                            <select
+                                id="voucher-vendor"
+                                data-testid="vendor"
+                                className={field}
+                                disabled={!editable}
+                                value={vendorId}
+                                onChange={e => setVendorId(e.target.value)}
+                            >
+                                <option value="">{isExpenseLike ? t("selectVendor") : t("noVendor")}</option>
+                                {vendors
+                                    .filter(v => v.active || v.id === vendorId)
+                                    .map(v => (
+                                        <option key={v.id} value={v.id}>
+                                            {v.nameEn}
+                                        </option>
+                                    ))}
+                            </select>
+                        )}
                     </div>
 
-                    {type === "PISR" ? (
+                    {isExpenseLike ? (
                         <div>
                             <label className={fieldLabel} htmlFor="voucher-invoice-number">
-                                {t("invoiceNumber")}
+                                {type === "PCN" ? t("creditNoteNumber") : t("invoiceNumber")}
                             </label>
                             <input
                                 id="voucher-invoice-number"
@@ -962,20 +1091,31 @@ export default function VoucherForm({
                         <>
                             <div>
                                 <span className={fieldLabel}>{t("paymentAccount")}</span>
-                                {/*
-                                 * SettlementAccountPicker, not a bare AccountPicker:
-                                 * it is the one definition of "an account cleared
-                                 * funds may leave from" (ChequeService.
-                                 * isSettlementAccount), which VoucherService
-                                 * re-asserts for this very field.
-                                 */}
-                                <SettlementAccountPicker
-                                    value={paymentAccountId}
-                                    onChange={setPaymentAccountId}
-                                    propertyId={propertyId || null}
-                                    placeholder={t("selectPaymentAccount")}
-                                    disabled={!editable}
-                                />
+                                {isRefund ? (
+                                    // F14-36: a refund pays from cash, or a bank leaf some
+                                    // bank account actually owns (F14-55) — never any BANK
+                                    // leaf the plain BANK/CASH subtype filter would allow.
+                                    <RefundPaymentAccountPicker
+                                        value={paymentAccountId}
+                                        onChange={setPaymentAccountId}
+                                        disabled={!editable}
+                                    />
+                                ) : (
+                                    /*
+                                     * SettlementAccountPicker, not a bare AccountPicker:
+                                     * it is the one definition of "an account cleared
+                                     * funds may leave from" (ChequeService.
+                                     * isSettlementAccount), which VoucherService
+                                     * re-asserts for this very field.
+                                     */
+                                    <SettlementAccountPicker
+                                        value={paymentAccountId}
+                                        onChange={setPaymentAccountId}
+                                        propertyId={propertyId || null}
+                                        placeholder={t("selectPaymentAccount")}
+                                        disabled={!editable}
+                                    />
+                                )}
                             </div>
                             <div>
                                 <label className={fieldLabel} htmlFor="voucher-payment-method">
@@ -1170,8 +1310,13 @@ export default function VoucherForm({
                                                 accountTypes={lineAccountTypes(type)}
                                                 propertyId={propertyId || null}
                                                 placeholder={tLedger("account")}
-                                                disabled={!editable}
+                                                // F14-36: a refund's one line is locked to
+                                                // "Refunds payable – renters" — not a choice.
+                                                disabled={!editable || isRefund}
                                             />
+                                            {isRefund && refundPayableAccountName && (
+                                                <span className="block text-[10px] text-muted mt-1">{refundPayableAccountName}</span>
+                                            )}
                                         </td>
                                         <td className={td}>
                                             <input
@@ -1319,7 +1464,7 @@ export default function VoucherForm({
                         </tfoot>
                     </table>
                 </div>
-                {editable && (
+                {editable && !isRefund && (
                     <div className="px-4 py-3 border-t border-border">
                         <button
                             type="button"
@@ -1340,8 +1485,8 @@ export default function VoucherForm({
                 </p>
             )}
 
-            {/* Allocate (BPV, spec §2): which of the vendor's invoices this payment settles. */}
-            {type === "BPV" && editable && vendorId && (
+            {/* Allocate (BPV and PCN, spec §2/F14-40): which of the vendor's invoices this document settles. */}
+            {hasAllocationPanel && editable && vendorId && (
                 <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="allocate-panel">
                     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-border">
                         <h3 className="text-xs font-bold text-foreground">{t("allocateTitle")}</h3>
@@ -1388,9 +1533,9 @@ export default function VoucherForm({
                                             <td className={td}>{i.invoiceNumber}</td>
                                             <td className={`${td} font-mono`}>{i.docNumber ?? t("openingItem")}</td>
                                             <td className={td}>
-                                                <bdi dir="ltr">{i.dueDate}</bdi>
-                                                {i.daysOverdue > 0 && (
-                                                    <span className="ms-2 text-[10px] text-error">{t("daysOverdue", { days: i.daysOverdue })}</span>
+                                                <bdi dir="ltr">{formatDate(i.dueDate)}</bdi>
+                                                {daysOverdueAsOf(i.dueDate, docDate) > 0 && (
+                                                    <span className="ms-2 text-[10px] text-error">{t("daysOverdue", { days: daysOverdueAsOf(i.dueDate, docDate) })}</span>
                                                 )}
                                             </td>
                                             <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(i.open)}</bdi></td>
@@ -1421,13 +1566,13 @@ export default function VoucherForm({
             {status === "POSTED" && !amending && ownAllocations.length > 0 && (
                 <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="settlements-panel">
                     <h3 className="px-5 py-3 text-xs font-bold text-foreground border-b border-border">
-                        {type === "BPV" ? t("settlesTitle") : t("settledByTitle")}
+                        {hasAllocationPanel ? t("settlesTitle") : t("settledByTitle")}
                     </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-input/60">
                                 <tr>
-                                    <th className={th}>{type === "BPV" ? t("invoiceNumber") : t("voucherNumber")}</th>
+                                    <th className={th}>{hasAllocationPanel ? t("invoiceNumber") : t("voucherNumber")}</th>
                                     <th className={th}>{t("allocatedOn")}</th>
                                     <th className={`${th} text-end`}>{t("amount")}</th>
                                     <th className={th} />
@@ -1439,7 +1584,7 @@ export default function VoucherForm({
                                     return (
                                         <tr key={a.id} data-testid={`settlement-${a.id}`}>
                                             <td className={`${td} font-mono`}>
-                                                {type === "BPV" ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
+                                                {hasAllocationPanel ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
                                             </td>
                                             <td className={td}><bdi dir="ltr">{a.allocatedOn}</bdi></td>
                                             <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(a.amount)}</bdi></td>
@@ -1472,7 +1617,7 @@ export default function VoucherForm({
                                                         type="button"
                                                         data-testid={`release-${a.id}`}
                                                         disabled={busy || lockedIn}
-                                                        title={lockedIn ? t("releaseLocked", { date: booksLockedThrough ?? "" }) : undefined}
+                                                        title={lockedIn ? t("releaseLocked", { date: formatDate(booksLockedThrough) }) : undefined}
                                                         onClick={() => setReleasing({ id: a.id, reason: "" })}
                                                         className="text-xs font-semibold text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                                     >
@@ -1581,7 +1726,7 @@ export default function VoucherForm({
 
                 {amendedFromId && (
                     <Link
-                        href={`/dashboard/finance/vouchers/${type === "BPV" ? "payment" : "purchase-invoice"}?id=${amendedFromId}`}
+                        href={`/dashboard/finance/vouchers/${type === "BPV" ? "payment" : type === "PCN" ? "credit-note" : "purchase-invoice"}?id=${amendedFromId}`}
                         data-testid="amended-from"
                         className="text-xs font-semibold text-primary hover:underline cursor-pointer me-auto"
                     >
@@ -1625,7 +1770,7 @@ export default function VoucherForm({
                         data-testid="post-voucher"
                         disabled={!canPost}
                         aria-describedby={blocker ? BLOCKER_ID : undefined}
-                        onClick={() => setConfirm("post")}
+                        onClick={() => { statementCover.reset(); setCashNegativeNotice(null); setAllowNegativeCash(false); setConfirm("post"); }}
                         className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {busy ? t("posting") : t("post")}
@@ -1648,7 +1793,7 @@ export default function VoucherForm({
                             data-testid="post-amendment"
                             disabled={!canPost}
                             aria-describedby={blocker ? BLOCKER_ID : undefined}
-                            onClick={() => setConfirm("amend")}
+                            onClick={() => { statementCover.reset(); setCashNegativeNotice(null); setAllowNegativeCash(false); setConfirm("amend"); }}
                             className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {busy ? t("posting") : t("postAmendment")}
@@ -1670,6 +1815,20 @@ export default function VoucherForm({
                         {t("amend")}
                     </button>
                 )}
+
+                {/* F14-42: void — a posted voucher that should never have posted at
+                    all, reversed with a reason and no replacement (unlike amend). */}
+                {canVoidVoucher(status) && !amending && (
+                    <button
+                        type="button"
+                        data-testid="void-voucher"
+                        disabled={busy}
+                        onClick={() => { setVoidDate(todayIso()); setVoidReason(""); setFormError(null); setConfirm("void"); }}
+                        className="px-5 py-2.5 rounded-lg text-xs font-bold border border-danger text-danger cursor-pointer disabled:opacity-50"
+                    >
+                        {t("void")}
+                    </button>
+                )}
             </div>
 
             <ConfirmDialog
@@ -1678,11 +1837,35 @@ export default function VoucherForm({
                 onConfirm={postVoucher}
                 isLoading={busy}
                 title={t("post")}
-                description={t("confirmPost", { date: docDate })}
+                description={t("confirmPost", { date: formatDate(docDate) })}
                 confirmText={t("post")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-post"
-            />
+                confirmDisabled={!!cashNegativeNotice && !allowNegativeCash}
+            >
+                {statementCover.notice && (
+                    <StatementCoverNotice
+                        notice={statementCover.notice}
+                        checked={statementCover.notOnStatement}
+                        onChange={statementCover.setNotOnStatement}
+                        testIdPrefix="voucher-post"
+                    />
+                )}
+                {cashNegativeNotice && (
+                    <div className="space-y-1.5" data-testid="voucher-cash-negative-notice">
+                        <p className="text-[11px] text-warning">{cashNegativeNotice}</p>
+                        <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                            <input
+                                type="checkbox"
+                                data-testid="voucher-allow-negative-cash"
+                                checked={allowNegativeCash}
+                                onChange={e => setAllowNegativeCash(e.target.checked)}
+                            />
+                            {tCommon("postAnyway")}
+                        </label>
+                    </div>
+                )}
+            </ConfirmDialog>
 
             <ConfirmDialog
                 isOpen={confirm === "delete"}
@@ -1709,11 +1892,15 @@ export default function VoucherForm({
                 confirmTestId="confirm-amend"
                 // VoucherService.amend calls fiscal.assertOpen(reversalDate) before
                 // it writes anything, so the refusal belongs beside the field that
-                // causes it rather than after the round trip.
-                confirmDisabled={amendDateLocked}
+                // causes it rather than after the round trip. F14-41: the reason is
+                // now @NotBlank on the server, and a reversal cannot predate the
+                // voucher it reverses — both checked here so the button disables
+                // instead of a 400 landing after the round trip.
+                confirmDisabled={amendDateLocked || amendReasonBlank || amendDateBeforeDoc
+                    || (!!cashNegativeNotice && !allowNegativeCash)}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
-                {type === "BPV" && reopened.length > 0 && (
+                {hasAllocationPanel && reopened.length > 0 && (
                     <p role="alert" data-testid="amend-releases" className="text-xs font-semibold text-warning">
                         {t("amendReleases", { invoices: reopened.join(", ") })}
                     </p>
@@ -1742,13 +1929,95 @@ export default function VoucherForm({
                         value={amendReason}
                         onChange={e => setAmendReason(e.target.value)}
                     />
+                    {amendReasonBlank && (
+                        <p className="text-[11px] text-muted mt-1" data-testid="amend-reason-hint">
+                            {t("amendReasonRequired")}
+                        </p>
+                    )}
                 </div>
                 {amendDateLocked && (
                     <p role="alert" data-testid="amend-blocker" className="text-xs font-semibold text-warning">
-                        {t("amendReversalLocked", { date: booksLockedThrough ?? "" })}
+                        {t("amendReversalLocked", { date: formatDate(booksLockedThrough) })}
                     </p>
                 )}
+                {!amendDateLocked && amendDateBeforeDoc && (
+                    <p role="alert" data-testid="amend-date-before-doc" className="text-xs font-semibold text-warning">
+                        {tCommon("errors.voucher.reverseBeforeDocument", { voucher: posted?.voucherNumber ?? "", docDate: formatDate(posted?.docDate) })}
+                    </p>
+                )}
+                {statementCover.notice && (
+                    <StatementCoverNotice
+                        notice={statementCover.notice}
+                        checked={statementCover.notOnStatement}
+                        onChange={statementCover.setNotOnStatement}
+                        testIdPrefix="voucher-amend"
+                    />
+                )}
+                {cashNegativeNotice && (
+                    <div className="space-y-1.5" data-testid="voucher-amend-cash-negative-notice">
+                        <p className="text-[11px] text-warning">{cashNegativeNotice}</p>
+                        <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                            <input
+                                type="checkbox"
+                                data-testid="voucher-amend-allow-negative-cash"
+                                checked={allowNegativeCash}
+                                onChange={e => setAllowNegativeCash(e.target.checked)}
+                            />
+                            {tCommon("postAnyway")}
+                        </label>
+                    </div>
+                )}
                 {vendorId && <p className="sr-only">{vendorName(vendorId)}</p>}
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                isOpen={confirm === "void"}
+                onClose={() => setConfirm(null)}
+                onConfirm={voidVoucher}
+                isLoading={busy}
+                isDestructive
+                title={t("void")}
+                description={t("confirmVoid", { number: voucherNumber ?? "" })}
+                confirmText={t("void")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-void"
+                confirmDisabled={!voidReason.trim() || (!!posted && voidDate < posted.docDate)}
+            >
+                <div>
+                    <label className={fieldLabel} htmlFor="voucher-void-date">
+                        {tLedger("reverseDate")}
+                    </label>
+                    <input
+                        id="voucher-void-date"
+                        data-testid="void-date"
+                        type="date"
+                        className={field}
+                        value={voidDate}
+                        onChange={e => setVoidDate(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className={fieldLabel} htmlFor="voucher-void-reason">
+                        {t("voidReason")}
+                    </label>
+                    <input
+                        id="voucher-void-reason"
+                        data-testid="void-reason"
+                        className={field}
+                        value={voidReason}
+                        onChange={e => setVoidReason(e.target.value)}
+                    />
+                    {!voidReason.trim() && (
+                        <p className="text-[11px] text-muted mt-1" data-testid="void-reason-hint">
+                            {t("voidReasonRequired")}
+                        </p>
+                    )}
+                </div>
+                {!!posted && voidDate < posted.docDate && (
+                    <p role="alert" data-testid="void-date-before-doc" className="text-xs font-semibold text-warning">
+                        {tCommon("errors.voucher.reverseBeforeDocument", { voucher: posted?.voucherNumber ?? "", docDate: formatDate(posted?.docDate) })}
+                    </p>
+                )}
             </ConfirmDialog>
         </div>
     );

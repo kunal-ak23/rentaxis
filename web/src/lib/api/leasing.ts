@@ -47,7 +47,7 @@ export type ChequeStatus =
   | "RETURNED"
   | "ONLINE_PENDING";
 
-export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED";
+export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED" | "STOPPED_PAYMENT" | "TECHNICAL_RETURN";
 
 export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER";
 
@@ -411,6 +411,13 @@ export type Cheque = {
   overdue: boolean;
   daysOverdue: number;
   /**
+   * F14-52: this row is settled in the ledger by something other than its own
+   * clearing (e.g. absorbed into a lease settlement) — the server already
+   * sends `overdue: false, daysOverdue: 0` for it, but the UI has its own
+   * "Replace" action and overdue badge to withhold too.
+   */
+  ledgerSettled: boolean;
+  /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
    * yet, whose VAT the server has still to work out, is typed honestly.
@@ -434,7 +441,7 @@ export type SettlementOption = {
 };
 export type SettlementTarget = { target: SettlementOption | null; options: SettlementOption[] };
 
-export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT";
+export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT" | "SETTLEMENT";
 export type VatTaxPointStatus = "PLANNED" | "POSTED" | "CANCELLED";
 export type TaxInvoiceKind = "TAX_INVOICE" | "CREDIT_NOTE";
 
@@ -503,6 +510,14 @@ export const vatApi = {
   /** `dryRun: true` writes nothing and answers with `posted: 0` / `wouldPost: n`. */
   run: (to: string | undefined, dryRun: boolean) =>
     send<VatTaxPointRunResult>("POST", `/finance/vat/tax-points/run${qs({ to, dryRun })}`),
+  /**
+   * F14-53: `POST /leases/{id}/tax-invoices/contract` — a CONTRACT-timed
+   * lease's whole VAT, declared on one tax point at the contract date. The
+   * server is the last word on whether this lease may (posted, not a
+   * cut-over/import, no tax invoice issued yet); a refusal's message is
+   * shown as-is.
+   */
+  issueContractTaxInvoice: (leaseId: string) => send<TaxInvoice>("POST", `/leases/${leaseId}/tax-invoices/contract`),
   /** Not a fetch — the endpoint streams a PDF; open or download this path directly. */
   pdfUrl: (invoiceId: string) => `${BASE}/tax-invoices/${invoiceId}/pdf`,
 };
@@ -554,6 +569,18 @@ export type RecognitionRunResult = {
   booksLockedThrough: string | null;
   failed: number;
   errors: string[];
+};
+
+/** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
+export type RecognitionStatusSummary = {
+  behind: number;
+  behindAmount: number;
+  oldestPeriodEnd: string | null;
+  lastRunFor: string | null;
+  lastRunFinishedAt: string | null;
+  lastRunPosted: number;
+  lastRunFailed: number;
+  lastRunErrors: string[];
 };
 
 // ---- termination (spec §9.1 — api/dto/lease) ----
@@ -643,6 +670,8 @@ export type DeductionLine = {
   accountName: string | null;
   autoCalculated: boolean;
   attachments: DeductionAttachment[];
+  /** F14-37: VAT this recharge line carries — already inside `amount`, and already subtracted out of the statement's `netRefund`. */
+  vatAmount?: number | null;
 };
 
 /** AdditionLineDTO — something the landlord owes the renter on top of the deposit. */
@@ -699,6 +728,8 @@ export type SettlementStatement = {
   additions: AdditionLine[];
   totalDeductions: number;
   totalAdditions: number;
+  /** F14-37: Σ of the deduction lines' `vatAmount` — already inside `totalDeductions` and `netRefund`, shown as its own row. */
+  totalDeductionVat?: number;
   /** >0 the landlord pays out, <0 the renter still owes. */
   netRefund: number;
   /** PLANNED recognition rows. Non-zero → run recognition before settling. */
@@ -717,6 +748,8 @@ export type SettlementLine = {
   accountId: string | null;
   accountName: string | null;
   attachments: DeductionAttachment[];
+  /** F14-37: mirrors DeductionLineDTO.vatAmount on the stored (saved/finalized) row. */
+  vatAmount?: number | null;
 };
 
 /** SettlementResponseDTO — the stored row: the draft as saved, or what finalise posted. */
@@ -742,7 +775,12 @@ export type SettlementResponse = {
   penaltiesOutstanding: number | null;
   /** max(-netRefund, 0). */
   balanceDue: number | null;
+  /** F14-36: ignored on finalize now and always null — kept for old rows. */
   refundBankAccountId: string | null;
+  /** F14-36: Σ of the BPVs posted against this settlement's refund. */
+  refundPaid?: number;
+  /** F14-36: refundAmount − refundPaid — what "Pay refund" still owes the renter. */
+  refundOutstanding?: number;
   /** The STL, or null on a draft. */
   journalId: string | null;
   journalNumber: string | null;
@@ -773,13 +811,15 @@ export type SaveSettlementInput = {
 /**
  * FinalizeSettlementRequest.
  *
- * `refundBankAccountId` is required exactly when `netRefund > 0`
- * (`SettlementService.finalizeSettlement`:452-454) and `acknowledgeOutstanding`
- * exactly when the settlement refunds *and* the register still holds something.
+ * F14-36: finalize no longer takes a refund bank account — a refund owed
+ * credits "Refunds payable – renters" (RENTER_REFUND_PAYABLE) on the STL and
+ * is paid out afterwards by an ordinary BPV naming the settlement (see
+ * `voucherApi.post`/`VoucherInput.settlementId`). `acknowledgeOutstanding`
+ * is required exactly when the settlement refunds *and* the register still
+ * holds something.
  */
 export type FinalizeSettlementInput = {
   settlementDate: string;
-  refundBankAccountId?: string | null;
   acknowledgeOutstanding?: boolean;
 };
 
@@ -808,6 +848,12 @@ export type ChequeActionInput = {
   notes?: string | null;
   failureReason?: ChequeFailureReason | null;
   debitAccountId?: string | null;
+  /**
+   * F14-20: a bank statement already covers this date on the row's account —
+   * `bank.statementCovers` refuses the action unless the user confirms the
+   * entry is genuinely not on that statement.
+   */
+  notOnStatement?: boolean;
 };
 
 /** DepositBatchRequest — the day's deposit run. */
@@ -824,6 +870,8 @@ export type ClearBatchInput = {
   chequeIds: string[];
   clearingDate?: string | null;
   narration?: string | null;
+  /** F14-20: see {@link ChequeActionInput.notOnStatement}. */
+  notOnStatement?: boolean;
 };
 
 /** ReplaceChequeRequest — what the renter handed over after a bounce. */
@@ -897,6 +945,16 @@ export type PenaltyAssessment = {
   reason: PenaltyReason;
   amount: number;
   description: string | null;
+  /**
+   * F14-31: when set, the description is server-generated and this names the
+   * translation key under `Cheques.penaltyDescription.<code>`, with
+   * `descriptionArgs` as its values — `failureReason` in those args is
+   * itself a `ChequeFailureReason` and reads through
+   * `Cheques.failureReasons`. `description` stays the free-text fallback for
+   * a row with no code.
+   */
+  descriptionCode?: "chequeReturned" | "clearedLate" | null;
+  descriptionArgs?: Record<string, string> | null;
   /** When the charged-for thing happened (#12); null on rows proposed before it was recorded. */
   incidentDate?: string | null;
   status: PenaltyAssessmentStatus;
@@ -908,6 +966,8 @@ export type PenaltyAssessment = {
   collectionChequeId: string | null;
   collectionStatus: ChequeStatus | null;
   resolutionNote: string | null;
+  /** F14-28: set once POST /penalties/{id}/reduce has lowered a PROPOSED row's amount. */
+  proposedAmount?: number | null;
 };
 
 /** ProposePenaltyRequest. */
@@ -1114,6 +1174,8 @@ export const recognitionApi = {
     send<RecognitionRunResult>("POST", `/finance/recognition/run${qs({ to, preview })}`),
   /** One lease's whole schedule, every status, oldest period first. Open to PROPERTY_MANAGER. */
   leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
+  /** F14-27: whether the close is behind, and how the last run went. */
+  status: () => get<RecognitionStatusSummary>("/finance/recognition/status"),
 };
 
 /** Who gave notice (#27): the renter leaving, or the landlord serving notice. */
@@ -1200,6 +1262,8 @@ export const penaltyApi = {
   propose: (body: ProposePenaltyInput) => send<PenaltyAssessment>("POST", "/penalties", body),
   approve: (id: string, date?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date }),
   waive: (id: string, note?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note }),
+  /** F14-28: PROPOSED only; 0 < amount < the current amount; note required. Status stays PROPOSED. */
+  reduce: (id: string, amount: number, note: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note }),
   reverse: (id: string, body: { date?: string; note?: string }) => send<PenaltyAssessment>("POST", `/penalties/${id}/reverse`, body),
   mine: () => get<PenaltyAssessment[]>("/penalties/mine"),
 };

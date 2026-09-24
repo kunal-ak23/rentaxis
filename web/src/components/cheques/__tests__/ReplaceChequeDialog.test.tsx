@@ -25,7 +25,7 @@ function bouncedCheque(amount = 10000): Cheque {
         failureReason: "BOUNCE", replacesId: null, replacedById: null, imageUrl: null,
         depositedAt: null, clearedAt: null, bouncedAt: "2026-06-05", returnedAt: null,
         pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
-        due: false, overdue: false, daysOverdue: 0,
+        due: false, overdue: false, daysOverdue: 0, ledgerSettled: false,
     };
 }
 

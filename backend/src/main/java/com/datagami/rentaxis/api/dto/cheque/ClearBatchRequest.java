@@ -16,6 +16,14 @@ import java.util.UUID;
  *        clock; may not be in the future or before any row's deposit date.
  * @param narration optional text kept on each row, exactly as a single clear's
  *        {@code notes}.
+ * @param notOnStatement F14-20: the user confirmed the clearing is not on an
+ *        imported bank statement whose range covers the date.
  */
-public record ClearBatchRequest(List<UUID> chequeIds, LocalDate clearingDate, String narration) {
+public record ClearBatchRequest(List<UUID> chequeIds, LocalDate clearingDate, String narration,
+                                Boolean notOnStatement) {
+
+    /** F14-20: without the "not on the statement" confirmation. */
+    public ClearBatchRequest(List<UUID> chequeIds, LocalDate clearingDate, String narration) {
+        this(chequeIds, clearingDate, narration, null);
+    }
 }

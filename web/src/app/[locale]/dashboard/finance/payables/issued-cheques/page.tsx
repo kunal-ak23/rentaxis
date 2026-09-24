@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, type Account } from "@/lib/api/ledger";
+import { formatDate, formatDatesInText } from "@/lib/format";
 import {
     issuedChequesApi,
     type IssuedCheque,
@@ -17,6 +18,8 @@ import {
     type IssuedChequeSummary,
 } from "@/lib/api/payables";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap text-start";
 const td = "px-3 py-2 text-xs";
@@ -70,6 +73,7 @@ export default function IssuedChequesPage() {
     const [reason, setReason] = useState("");
     const [actionError, setActionError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const cover = useStatementCoverGuard(tCommon);
 
     const [opening, setOpening] = useState({ vendorId: "", bankAccountId: "", chequeNumber: "", chequeDate: "", amount: "" });
     const [openingError, setOpeningError] = useState<string | null>(null);
@@ -116,6 +120,7 @@ export default function IssuedChequesPage() {
         setActionDate(kind === "present" && cheque.chequeDate > todayIso() ? cheque.chequeDate : todayIso());
         setReason("");
         setActionError(null);
+        cover.reset();
     };
 
     const needsReason = action?.kind === "cancel" || action?.kind === "unpresent";
@@ -128,14 +133,19 @@ export default function IssuedChequesPage() {
         setActionError(null);
         try {
             const id = action.cheque.id;
-            if (action.kind === "present") await issuedChequesApi.present(id, actionDate);
-            else if (action.kind === "cancel") await issuedChequesApi.cancel(id, actionDate, reason.trim());
+            if (action.kind === "present") {
+                await issuedChequesApi.present(id, { date: actionDate, notOnStatement: cover.notOnStatement || undefined });
+            } else if (action.kind === "cancel") await issuedChequesApi.cancel(id, actionDate, reason.trim());
             else if (action.kind === "unpresent") await issuedChequesApi.unpresent(id, actionDate, reason.trim());
             else await issuedChequesApi.removeOpening(id);
             setAction(null);
             await load();
         } catch (err) {
-            setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
+            if (action.kind === "present" && cover.catchStatementCover(err)) {
+                // The notice + checkbox is now showing; the user resubmits.
+            } else {
+                setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
+            }
         } finally {
             setBusy(false);
         }
@@ -275,7 +285,7 @@ export default function IssuedChequesPage() {
                                 <td className={`${td} font-bold`}><bdi dir="ltr">{c.chequeNumber}</bdi>
                                     {c.opening && <span className="ms-2 text-[10px] font-semibold text-muted">{t("opening")}</span>}</td>
                                 <td className={td}>
-                                    <bdi dir="ltr">{c.chequeDate}</bdi>
+                                    <bdi dir="ltr">{formatDate(c.chequeDate)}</bdi>
                                     {c.duePresent && <span className="ms-2 text-[10px] font-bold text-warning" data-testid={`cheque-due-${c.chequeNumber}`}>{t("pastDate")}</span>}
                                 </td>
                                 <td className={td}>{c.vendorName}</td>
@@ -290,8 +300,8 @@ export default function IssuedChequesPage() {
                                 </td>
                                 <td className={td}>
                                     <span className="font-semibold">{t(`statuses.${c.status}`)}</span>
-                                    {c.presentedOn && <div className="text-[10px] text-muted">{t("presentedOn")} <bdi dir="ltr">{c.presentedOn}</bdi> · <bdi dir="ltr">{c.bpcNumber}</bdi></div>}
-                                    {c.cancelledOn && <div className="text-[10px] text-muted">{t("cancelledOn")} <bdi dir="ltr">{c.cancelledOn}</bdi></div>}
+                                    {c.presentedOn && <div className="text-[10px] text-muted">{t("presentedOn")} <bdi dir="ltr">{formatDate(c.presentedOn)}</bdi> · <bdi dir="ltr">{c.bpcNumber}</bdi></div>}
+                                    {c.cancelledOn && <div className="text-[10px] text-muted">{t("cancelledOn")} <bdi dir="ltr">{formatDate(c.cancelledOn)}</bdi></div>}
                                 </td>
                                 <td className={`${td} whitespace-nowrap`}>
                                     <span className="flex gap-1">
@@ -396,8 +406,16 @@ export default function IssuedChequesPage() {
                             <input type="date" data-testid="cheque-action-date" className={`${field} w-full`} value={actionDate}
                                    onChange={e => setActionDate(e.target.value)} />
                         </label>
-                        {early && <p className="text-xs text-danger" data-testid="cheque-early">{t("tooEarly", { date: action.cheque.chequeDate })}</p>}
+                        {early && <p className="text-xs text-danger" data-testid="cheque-early">{t("tooEarly", { date: formatDate(action.cheque.chequeDate) })}</p>}
                         {future && <p className="text-xs text-danger">{t("inFuture")}</p>}
+                        {action.kind === "present" && cover.notice && (
+                            <StatementCoverNotice
+                                notice={cover.notice}
+                                checked={cover.notOnStatement}
+                                onChange={cover.setNotOnStatement}
+                                testIdPrefix="cheque-present"
+                            />
+                        )}
                         {needsReason && (
                             <label className={`${label} block`}>
                                 <span className="block mb-1">{t("reason")}</span>
@@ -405,10 +423,10 @@ export default function IssuedChequesPage() {
                                        onChange={e => setReason(e.target.value)} />
                             </label>
                         )}
-                        {actionError && <p role="alert" className="text-xs text-danger" data-testid="cheque-action-error">{actionError}</p>}
+                        {actionError && <p role="alert" className="text-xs text-danger" data-testid="cheque-action-error">{formatDatesInText(actionError)}</p>}
                     </div>
                 )}
-                {action?.kind === "delete" && actionError && <p role="alert" className="text-xs text-danger">{actionError}</p>}
+                {action?.kind === "delete" && actionError && <p role="alert" className="text-xs text-danger">{formatDatesInText(actionError)}</p>}
             </ConfirmDialog>
         </div>
     );

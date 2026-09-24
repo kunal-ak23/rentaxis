@@ -12,7 +12,7 @@ import { todayIso } from "@/components/leases/leaseMath";
  * approve/waive/reverse admit only SA/TA/ACCOUNTANT.
  */
 
-const api = vi.hoisted(() => ({ list: vi.fn(), approve: vi.fn(), waive: vi.fn(), reverse: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), approve: vi.fn(), waive: vi.fn(), reduce: vi.fn(), reverse: vi.fn() }));
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
@@ -162,11 +162,17 @@ describe("Penalties queue page — decisions", () => {
 
         screen.getByTestId("penalty-reverse-0").click();
         expect(await screen.findByTestId("penalty-decision-date")).toBeInTheDocument();
-        expect(await screen.findByTestId("penalty-decision-note")).toBeInTheDocument();
+        const note = await screen.findByTestId("penalty-decision-note");
+
+        // F14-28: the server now requires a note on Reverse — the confirm
+        // stays disabled until one is typed, same as Waive.
+        expect(screen.getByTestId("penalty-reverse-confirm")).toBeDisabled();
+        fireEvent.change(note, { target: { value: "Posted against the wrong cheque" } });
+        expect(screen.getByTestId("penalty-reverse-confirm")).not.toBeDisabled();
 
         screen.getByTestId("penalty-reverse-confirm").click();
         await waitFor(() =>
-            expect(api.reverse).toHaveBeenCalledWith("pen-1", { date: expect.any(String), note: undefined }),
+            expect(api.reverse).toHaveBeenCalledWith("pen-1", { date: expect.any(String), note: "Posted against the wrong cheque" }),
         );
     });
 
@@ -179,5 +185,84 @@ describe("Penalties queue page — decisions", () => {
         await waitFor(() =>
             expect(screen.getByTestId("penalty-error")).toHaveTextContent("This penalty has already been waived."),
         );
+    });
+});
+
+describe("Penalties queue page — reduce (F14-28)", () => {
+    it("offers Reduce beside Waive on a PROPOSED row, requires 0 < amount < current and a reason", async () => {
+        renderPage();
+        (await screen.findByTestId("penalty-reduce-0")).click();
+        const confirm = await screen.findByTestId("penalty-reduce-confirm");
+        const amount = screen.getByTestId("penalty-reduce-amount");
+        const note = screen.getByTestId("penalty-decision-note");
+        expect(confirm).toBeDisabled();
+
+        // Not less than the current amount (500): refused client-side too.
+        fireEvent.change(amount, { target: { value: "500" } });
+        fireEvent.change(note, { target: { value: "Renter partly disputed" } });
+        expect(confirm).toBeDisabled();
+        expect(screen.getByTestId("penalty-reduce-amount-error")).toBeInTheDocument();
+
+        fireEvent.change(amount, { target: { value: "300" } });
+        expect(confirm).not.toBeDisabled();
+
+        confirm.click();
+        await waitFor(() => expect(api.reduce).toHaveBeenCalledWith("pen-1", 300, "Renter partly disputed"));
+    });
+
+    it("never offers Reduce on an APPROVED row", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({ status: "APPROVED", journalId: "j9" })],
+            totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-reverse-0")).toBeInTheDocument();
+        expect(screen.queryByTestId("penalty-reduce-0")).not.toBeInTheDocument();
+    });
+
+    it("shows 'reduced from' once a row carries a proposedAmount", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({ amount: 300, proposedAmount: 500 })],
+            totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-reduced-from-0")).toHaveTextContent("reduced from 500.00");
+    });
+});
+
+describe("Penalties queue page — server-generated description (F14-31)", () => {
+    it("renders a chequeReturned code through the failure-reason labels, not raw text", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({
+                description: null,
+                descriptionCode: "chequeReturned",
+                descriptionArgs: { cheque: "000452", failureReason: "SIGNATURE_MISMATCH", bounces: "2" },
+            })],
+            totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-description-0")).toHaveTextContent(
+            "Cheque 000452 returned (Signature Mismatch) — bounce 2 on this contract",
+        );
+    });
+
+    it("renders a clearedLate code with its dates", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({
+                description: null,
+                descriptionCode: "clearedLate",
+                descriptionArgs: { cheque: "000452", days: "4", due: "01/09/2026", cleared: "05/09/2026" },
+            })],
+            totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-description-0")).toHaveTextContent(
+            "Cheque 000452 cleared 4 day(s) late (due 01/09/2026, cleared 05/09/2026)",
+        );
+    });
+
+    it("falls back to the free-text description when there is no code", async () => {
+        renderPage();
+        expect(await screen.findByTestId("penalty-description-0")).toHaveTextContent("Cheque returned unpaid");
     });
 });

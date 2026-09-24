@@ -1,11 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import type { TaxInvoice, VatTaxPoint } from "@/lib/api/leasing";
 
-const api = vi.hoisted(() => ({ schedule: vi.fn(), leaseInvoices: vi.fn() }));
+const api = vi.hoisted(() => ({ schedule: vi.fn(), leaseInvoices: vi.fn(), issueContractTaxInvoice: vi.fn() }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return { ...m, vatApi: { ...m.vatApi, ...api } };
@@ -78,5 +78,94 @@ describe("VatScheduleTab", () => {
         renderTab(ar, "ar");
         await waitFor(() => expect(screen.getByText("تسوية الإنهاء")).toBeInTheDocument());
         expect(screen.getByText("إشعار دائن ضريبي")).toBeInTheDocument();
+    });
+
+    it("offers 'Issue contract tax invoice' on a posted CONTRACT-timed lease with no invoice yet, for an allowed role (F14-53)", async () => {
+        api.schedule.mockResolvedValue([]);
+        api.leaseInvoices.mockResolvedValue([]);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <VatScheduleTab leaseId="l1" contractVat={6000} vatTiming="CONTRACT" leaseStatus="ACTIVE" userRole="ACCOUNTANT" />
+            </NextIntlClientProvider>,
+        );
+        expect(await screen.findByTestId("issue-contract-tax-invoice")).toBeInTheDocument();
+    });
+
+    it("withholds it for INSTALMENT timing, a drafting lease, an existing invoice, or a role that may not", async () => {
+        api.schedule.mockResolvedValue([]);
+        api.leaseInvoices.mockResolvedValue([]);
+        const base = { leaseId: "l1", contractVat: 6000, leaseStatus: "ACTIVE" as const, userRole: "ACCOUNTANT" as const };
+
+        const { unmount: u1 } = render(
+            <NextIntlClientProvider locale="en" messages={en}><VatScheduleTab {...base} vatTiming="INSTALMENT" /></NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(screen.getByTestId("vat-schedule")).toBeInTheDocument());
+        expect(screen.queryByTestId("issue-contract-tax-invoice")).not.toBeInTheDocument();
+        u1();
+
+        const { unmount: u2 } = render(
+            <NextIntlClientProvider locale="en" messages={en}><VatScheduleTab {...base} vatTiming="CONTRACT" leaseStatus="DRAFT" /></NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(screen.getByTestId("vat-schedule")).toBeInTheDocument());
+        expect(screen.queryByTestId("issue-contract-tax-invoice")).not.toBeInTheDocument();
+        u2();
+
+        const { unmount: u3 } = render(
+            <NextIntlClientProvider locale="en" messages={en}><VatScheduleTab {...base} vatTiming="CONTRACT" userRole="PROPERTY_MANAGER" /></NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(screen.getByTestId("vat-schedule")).toBeInTheDocument());
+        expect(screen.queryByTestId("issue-contract-tax-invoice")).not.toBeInTheDocument();
+        u3();
+
+        api.leaseInvoices.mockResolvedValue([invoice]);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}><VatScheduleTab {...base} vatTiming="CONTRACT" /></NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(screen.getByTestId("vat-schedule")).toBeInTheDocument());
+        expect(screen.queryByTestId("issue-contract-tax-invoice")).not.toBeInTheDocument();
+    });
+
+    it("issues the invoice and reloads the schedule; shows the server's own refusal text otherwise", async () => {
+        api.schedule.mockResolvedValue([]);
+        api.leaseInvoices.mockResolvedValue([]);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <VatScheduleTab leaseId="l1" contractVat={6000} vatTiming="CONTRACT" leaseStatus="ACTIVE" userRole="TENANT_ADMIN" />
+            </NextIntlClientProvider>,
+        );
+        const button = await screen.findByTestId("issue-contract-tax-invoice");
+
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.issueContractTaxInvoice.mockRejectedValueOnce(new ApiError(400, "This lease was imported at cut-over; issue its invoice from the cut-over screen."));
+        fireEvent.click(button);
+        expect(await screen.findByTestId("issue-contract-tax-invoice-error"))
+            .toHaveTextContent("imported at cut-over");
+
+        api.issueContractTaxInvoice.mockResolvedValueOnce(invoice);
+        api.leaseInvoices.mockResolvedValueOnce([invoice]);
+        fireEvent.click(button);
+        await waitFor(() => expect(api.leaseInvoices).toHaveBeenCalledTimes(2));
+    });
+
+    it("labels a SETTLEMENT tax point and counts it into the live total (F14-37)", async () => {
+        api.schedule.mockResolvedValue([
+            point({ id: "s1", kind: "SETTLEMENT", vatAmount: 250, status: "POSTED", chequeId: null }),
+        ]);
+        api.leaseInvoices.mockResolvedValue([]);
+        renderTab();
+        expect(await screen.findByText("Recharges at move-out")).toBeInTheDocument();
+        expect(screen.getByTestId("vat-schedule-total")).toHaveTextContent("250.00");
+    });
+
+    it("counts a CONTRACT-timed tax point into the live total (F14-54)", async () => {
+        api.schedule.mockResolvedValue([
+            point({ id: "c1", kind: "CONTRACT", vatAmount: 6000, status: "POSTED" }),
+        ]);
+        api.leaseInvoices.mockResolvedValue([]);
+        renderTab();
+        await waitFor(() => expect(screen.getByTestId("vat-schedule-total")).toHaveTextContent("6,000.00"));
+        // Matches the contract's VAT exactly — not a 6,000.00 difference, which is
+        // what it showed while CONTRACT points were excluded from the sum.
+        expect(screen.getByTestId("vat-schedule-check")).toHaveTextContent("Matches the contract's VAT of 6,000.00");
     });
 });

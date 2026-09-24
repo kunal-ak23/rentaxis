@@ -150,7 +150,8 @@ public class ChequeQueryService {
         // its money, and it answers "not found" rather than "forbidden" so a caller
         // cannot enumerate the register through the error code.
         leaseAccessPolicy.requireReadable(lease);
-        return ChequeMapper.toDto(cheque, LocalDate.now(), graceOf(lease));
+        return ChequeMapper.toDto(cheque, LocalDate.now(), graceOf(lease),
+                ledgerSettled(List.of(cheque)).contains(cheque.getId()));
     }
 
     // ------------------------------------------------------------------
@@ -460,13 +461,34 @@ public class ChequeQueryService {
 
     private Page<ChequeDTO> toPage(Page<Cheque> page) {
         LocalDate today = LocalDate.now();
+        java.util.Set<UUID> settled = ledgerSettled(page.getContent());
         return new PageImpl<>(
-                page.getContent().stream().map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()))).toList(),
+                page.getContent().stream()
+                        .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), settled.contains(c.getId()))).toList(),
                 page.getPageable(), page.getTotalElements());
     }
 
     private List<ChequeDTO> toDtos(Collection<Cheque> rows) {
         LocalDate today = LocalDate.now();
-        return rows.stream().map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()))).toList();
+        java.util.Set<UUID> settled = ledgerSettled(rows);
+        return rows.stream()
+                .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), settled.contains(c.getId()))).toList();
+    }
+
+    /**
+     * F14-52: the BOUNCED rows among {@code rows} whose debt the ledger no longer
+     * carries — the same derivation the summary, aging and dashboard use (F14-08):
+     * every bounced row of the lease shares its receivable balance, newest first.
+     */
+    public java.util.Set<UUID> ledgerSettled(Collection<Cheque> rows) {
+        java.util.Set<UUID> leaseIds = rows.stream()
+                .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
+                .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());
+        if (leaseIds.isEmpty()) return java.util.Set.of();
+        List<Cheque> bounced = chequeRepository.findRegisterRowsForLeases(leaseIds).stream()
+                .filter(c -> c.getStatus() == ChequeStatus.BOUNCED).toList();
+        java.util.Set<UUID> out = new java.util.HashSet<>();
+        bouncedDebt.openAmounts(bounced).forEach((id, open) -> { if (open.signum() <= 0) out.add(id); });
+        return out;
     }
 }

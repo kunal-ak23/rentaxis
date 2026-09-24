@@ -52,6 +52,8 @@ public class BankLockService {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final TenantFiscalSettingsRepository settings;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
 
     public BankLockService(NamedParameterJdbcTemplate jdbc, TenantFiscalSettingsRepository settings) {
         this.jdbc = jdbc;
@@ -110,6 +112,103 @@ public class BankLockService {
                 "select distinct account_id from journal_lines where tenant_id = :t and journal_entry_id = :e",
                 new MapSqlParameterSource("t", t).addValue("e", entryId), UUID.class);
         assertOpen(t, accounts, reversalDate);
+    }
+
+    /**
+     * F14-20: the imported statement a posting on {@code accountIds} dated
+     * {@code date} falls inside (or before). One bank account owning one of the
+     * leaves, whose imported statement lines run through {@code date} or later.
+     */
+    public record StatementCover(UUID bankAccountId, String bankLabel, LocalDate from, LocalDate to) { }
+
+    /** How a bank movement relates to the imported statement (F14-20). */
+    public enum StatementEvidence {
+        /** An ordinary action: refused when an imported statement covers its date. */
+        CHECK,
+        /** The user confirmed the movement is not on the imported statement. */
+        CONFIRMED_NOT_ON_STATEMENT,
+        /** Recorded from a statement line (bank reconciliation), a cut-over replay or a gateway capture. */
+        EXEMPT;
+
+        public static StatementEvidence of(Boolean notOnStatement) {
+            return Boolean.TRUE.equals(notOnStatement) ? CONFIRMED_NOT_ON_STATEMENT : CHECK;
+        }
+    }
+
+    /** The statement covering {@code date} on any of the leaves, the latest-ending first. */
+    @Transactional(readOnly = true)
+    public Optional<StatementCover> statementCovering(Collection<UUID> accountIds, LocalDate date) {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null || accountIds == null || accountIds.isEmpty() || date == null) return Optional.empty();
+        return jdbc.query("""
+                select b.id, b.bank_name, b.account_number, min(s.txn_date) as first_day, max(s.txn_date) as last_day
+                from bank_account_ledgers l
+                join bank_accounts b on b.id = l.bank_account_id and b.tenant_id = l.tenant_id
+                join bank_statement_lines s on s.bank_account_id = b.id and s.tenant_id = b.tenant_id
+                where l.tenant_id = :t and l.account_id in (:ids)
+                group by b.id, b.bank_name, b.account_number
+                having max(s.txn_date) >= :d
+                order by max(s.txn_date) desc, b.id
+                limit 1""",
+                new MapSqlParameterSource("t", t).addValue("ids", new TreeSet<>(accountIds)).addValue("d", date),
+                (rs, i) -> new StatementCover(rs.getObject("id", UUID.class),
+                        label(rs.getString("bank_name"), rs.getString("account_number")),
+                        rs.getObject("first_day", LocalDate.class), rs.getObject("last_day", LocalDate.class)))
+                .stream().findFirst();
+    }
+
+    /**
+     * F14-20: a bank movement dated on or before the last day of a statement
+     * already imported for its bank account is refused, unless the user confirmed
+     * it is not on that statement. Returns the statement when the confirmation was
+     * used, so the caller can {@link #recordOffStatement record} it against the
+     * journal it posts.
+     */
+    @Transactional(readOnly = true)
+    public Optional<StatementCover> requireOffStatement(Collection<UUID> accountIds, LocalDate date,
+                                                       StatementEvidence evidence) {
+        if (evidence == null || evidence == StatementEvidence.EXEMPT) return Optional.empty();
+        Optional<StatementCover> cover = statementCovering(accountIds, date);
+        if (cover.isEmpty()) return Optional.empty();
+        StatementCover c = cover.get();
+        if (evidence != StatementEvidence.CONFIRMED_NOT_ON_STATEMENT) {
+            throw new BusinessRuleViolationException("A statement for " + c.bankLabel() + " covering "
+                    + c.from().format(DMY) + " to " + c.to().format(DMY) + " is already imported. An entry dated "
+                    + date.format(DMY) + " falls inside it: record it from its statement line in Bank reconciliation,"
+                    + " or confirm that it is not on the statement.",
+                    "bank.statementCovers", java.util.Map.of("bank", c.bankLabel(), "from", c.from().format(DMY),
+                            "to", c.to().format(DMY), "date", date.format(DMY)));
+        }
+        return cover;
+    }
+
+    /** Keeps the user's "not on the statement" confirmation against the journal it let through. */
+    @Transactional
+    public void recordOffStatement(StatementCover c, UUID journalEntryId, LocalDate entryDate) {
+        UUID t = TenantContextHolder.getTenantId();
+        if (c == null || journalEntryId == null || t == null) return;
+        // The journal was written through JPA in this transaction; the row below references it.
+        if (entityManager != null) entityManager.flush();
+        jdbc.update("""
+                insert into bank_off_statement_items (id, tenant_id, bank_account_id, journal_entry_id, entry_date,
+                                                      statement_from, statement_to, confirmed_by)
+                values (:id, :t, :b, :e, :d, :f, :to, :u)
+                on conflict (bank_account_id, journal_entry_id) do nothing""",
+                new MapSqlParameterSource("id", UUID.randomUUID()).addValue("t", t).addValue("b", c.bankAccountId())
+                        .addValue("e", journalEntryId).addValue("d", entryDate).addValue("f", c.from())
+                        .addValue("to", c.to()).addValue("u", currentUserId()));
+    }
+
+    /** The narration suffix a confirmed off-statement entry carries. */
+    public static String offStatementNote(StatementCover c) {
+        return " [not on the " + c.bankLabel() + " statement " + c.from().format(DMY) + "–" + c.to().format(DMY)
+                + ", confirmed]";
+    }
+
+    private static UUID currentUserId() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof String s)) return null;
+        try { return UUID.fromString(s); } catch (IllegalArgumentException e) { return null; }
     }
 
     /** The bank account's lock date, or empty. */

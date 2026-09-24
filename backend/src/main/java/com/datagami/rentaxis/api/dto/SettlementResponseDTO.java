@@ -29,6 +29,9 @@ public class SettlementResponseDTO {
     private BigDecimal totalAdditions;
     /** What the landlord pays out — {@code max(netRefund, 0)}. */
     private BigDecimal refundAmount;
+    /** F14-36: paid so far by payment vouchers naming this settlement, and what is still owed. */
+    private BigDecimal refundPaid;
+    private BigDecimal refundOutstanding;
     private String notes;
     private String status;
     private UUID settledBy;

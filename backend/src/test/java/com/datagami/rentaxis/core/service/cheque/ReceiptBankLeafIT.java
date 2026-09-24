@@ -111,19 +111,111 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         ledgers.setLeaves(id, List.of(leaf));
     }
 
+    @Autowired com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+
+    private UUID bankAccount(boolean isDefault, UUID leaf) {
+        UUID id = tx.execute(s -> {
+            BankAccount b = new BankAccount();
+            b.setBankName(isDefault ? "Emirates Islamic" : "PROBE-A");
+            b.setAccountNumber("0012-" + UUID.randomUUID().toString().substring(0, 6));
+            b.setTenantId(fixtures.tenantId());
+            b.setDefault(isDefault);
+            return bankAccounts.save(b).getId();
+        });
+        ledgers.setLeaves(id, List.of(leaf));
+        return id;
+    }
+
+    /**
+     * F14-56: a property with no owned leaf of its own settles into the default
+     * bank account (its leaf may be scoped to another property), never into
+     * another bank account's tenant-wide leaf.
+     */
     @Test
-    void aNewPropertyIsMappedToTheOwnedLeafInsteadOfAnOrphan() {
+    void aPropertyWithoutItsOwnLeafFallsBackToTheDefaultBankAccount() {
+        Property other = fixtures.createProperty("OTHER");
+        UUID otherBank = tenantBankLeaf();
+        UUID mainBank = tenantBankLeaf();
+        bankAccount(false, otherBank);
+        bankAccount(true, mainBank);
+        assertThat(ownedBankLeaf.forProperty(other.getId())).as("the default bank account's tenant-wide leaf")
+                .contains(mainBank);
+    }
+
+    /**
+     * R1 P2-2: another property's leaf is never a target. With the only owned leaf
+     * scoped to another property, the lease's property has no bank: the target is
+     * empty, nothing is offered but cash, and a receipt is refused rather than posted
+     * into the other building's bank.
+     */
+    @Test
+    void anotherPropertysLeafIsNeverTheTargetAndAReceiptIsRefused() {
+        Property other = fixtures.createProperty("ELSEWHERE");
+        UUID elsewhere = bankLeafOf(other);
+        bankAccount(true, elsewhere);
+        UUID mine = fixtures.property().getId();
+        assertThat(ownedBankLeaf.forProperty(mine)).isEmpty();
+        assertThat(ownedBankLeaf.optionsFor(mine)).noneMatch(o -> o.id().equals(elsewhere));
+
+        PostLeaseResponse r = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(line("RENT", "36000")), 2, null);
+        ChequeDTO transfer = cheques.addRowToPostedLease(r.lease().getId(),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, START, null, START, null, null,
+                        null, new java.math.BigDecimal("1500"), "Transfer", ChequeMode.TRANSFER));
+        assertThat(cheques.settlementTarget(transfer.id()).target()).isNull();
+        assertThatThrownBy(() -> cheques.receive(transfer.id(), ChequeActionRequest.on(START)))
+                .hasMessageContaining("No bank account is set up for this property");
+        assertThatThrownBy(() -> cheques.receive(transfer.id(),
+                new ChequeActionRequest(START, null, null, elsewhere)))
+                .hasMessageContaining("does not belong to this property");
+    }
+
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /**
+     * R1 P2-2: a property whose BANK role was mapped to another property's owned
+     * leaf still has no valid target, and rows stamped with that leaf are not
+     * settled into it.
+     */
+    @Test
+    void aMappingOntoAnotherPropertysLeafIsNotATarget() {
+        Property other = fixtures.createProperty("MAPPED");
+        UUID elsewhere = bankLeafOf(other);
+        bankAccount(true, elsewhere);
+        UUID mine = fixtures.property().getId();
+        jdbc.update("update property_account_mappings set account_id = ? where property_id = ? and role = 'BANK'",
+                elsewhere, mine);
+        assertThat(ownedBankLeaf.forProperty(mine)).isEmpty();
+
+        PostLeaseResponse r = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(line("RENT", "36000")), 2, null);
+        ChequeDTO pdc = r.cheques().stream().filter(c -> c.mode() == ChequeMode.PDC).findFirst().orElseThrow();
+        assertThat(pdc.debitAccountId()).as("the grid stamped the mapped leaf").isEqualTo(elsewhere);
+        assertThat(cheques.settlementTarget(pdc.id()).target()).as("another property's leaf is never the target").isNull();
+    }
+
+    /** F14-44: with bank accounts but no leaf for the new property, no orphan bank leaf is generated. */
+    @Test
+    void generatingAccountsNeverCreatesABankLeafNoBankAccountOwns() {
+        bankAccount(false, tenantBankLeaf());
+        bankAccount(false, tenantBankLeaf());
+        Property third = fixtures.createProperty("NOBANK");
+        UUID leaf = bankLeafOf(third);
+        boolean isOwned = ownedBankLeaf.isOwned(leaf);
+        assertThat(isOwned).as("F14-44 + R2: generated and owned").isTrue();
+    }
+
+    @Test
+    void aNewPropertyGetsItsOwnLeafAttachedToTheBankAccount() {
         UUID owned = tenantBankLeaf();
         bankAccountOwning(owned);
-        long leavesBefore = accountRepo.count();
 
         Property third = fixtures.createProperty("NEW");
 
-        assertThat(bankLeafOf(third)).as("receipts for the new property land in the owned leaf").isEqualTo(owned);
-        assertThat(accountRepo.findAll()).as("no orphan bank leaf was generated")
-                .noneMatch(a -> a.getName() != null && a.getName().contains(third.getNameEn())
-                        && a.getName().startsWith("Emirates Islamic"));
-        assertThat(accountRepo.count()).isGreaterThan(leavesBefore); // the other template leaves still exist
+        // R2 ruling: its own leaf, not the shared one — and owned, so it reconciles.
+        UUID leaf = bankLeafOf(third);
+        assertThat(leaf).isNotEqualTo(owned);
+        assertThat(accountRepo.findById(leaf).orElseThrow().getPropertyId()).isEqualTo(third.getId());
+        boolean isOwned = ownedBankLeaf.isOwned(leaf);
+        assertThat(isOwned).isTrue();
     }
 
     @Test

@@ -412,6 +412,24 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThat(owner).isNotNull();
     }
 
+    @Autowired BankReconciliationService recs;
+
+    /** F14-47: a book item dated before the reconciliation starts is not proposed against a line. */
+    @Test
+    void autoMatchLeavesBookItemsBeforeTheReconciliationStartAlone() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        jv(LocalDate.of(2026, 9, 19), "900.00");
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                21/09/2026,21/09/2026,CASH DEPOSIT,,,900.00,900.00
+                """);
+        assertThat(matches.autoMatch(ei.getId(), SEP_1, SEP_30).byMethod()).isEqualTo(Map.of("AUTO_AMOUNT_DATE", 1));
+        recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(LocalDate.of(2026, 9, 20), SEP_30, null, null));
+        assertThat(matches.autoMatch(ei.getId(), SEP_1, SEP_30).byMethod()).isEmpty();
+        assertThat(ws().matches()).isEmpty();
+    }
+
     private JournalEntry jv(LocalDate d, String amount) {
         return posting.post(new PostingRequest(JournalDocType.JV, d, "Owner cash", null, JournalSourceType.MANUAL, null, null,
                 List.of(PostingRequest.dr(marinaBank.getId(), new BigDecimal(amount)),
@@ -721,7 +739,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
         // Credited on 24/09, but the register says it was deposited on 26/09.
         assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
                 List.of(stmt(ws(), "CHQ DEP 000701").id()), List.of(c.id()))))
-                .hasMessageContaining("was deposited on 2026-09-26, after the clearing date 2026-09-24");
+                .hasMessageContaining("was deposited on 26/09/2026, after the clearing date 24/09/2026");
         // A value date after today.
         assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
                 List.of(stmt(ws(), "CHQ DEP 000701 B").id()), List.of(c.id()))))

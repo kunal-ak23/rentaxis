@@ -93,7 +93,6 @@ describe("the reconciliation statement", () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
             { method: "POST", match: "/reconciliations/rec-9/finalize", body: { ...SEPT, status: "FINALIZED" } },
             { match: "/reconciliations/rec-9", body: SEPT }]);
-        vi.spyOn(window, "confirm").mockReturnValue(true);
         renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
         expect(await screen.findByTestId("rec-figure-statementClosing")).toHaveTextContent("328,017.50");
         expect(screen.getByTestId("rec-figure-depositsInTransit")).toHaveTextContent("15,000.00");
@@ -111,8 +110,25 @@ describe("the reconciliation statement", () => {
 
         expect(screen.getByTestId("rec-finalize")).toBeEnabled();
         fireEvent.click(screen.getByTestId("rec-finalize"));
+        // F14-47: the app's own confirm dialog, not window.confirm — the
+        // finalize call must wait for an explicit confirm click.
+        expect(screen.getByText(/Finalize and lock this bank account through/)).toHaveTextContent("30/09/2026");
+        expect(calls.some(c => c.method === "POST" && c.url.endsWith("/reconciliations/rec-9/finalize"))).toBe(false);
+        fireEvent.click(screen.getByTestId("rec-finalize-confirm"));
         await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.endsWith("/reconciliations/rec-9/finalize"))).toBe(true));
-        expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("30/09/2026"));
+    });
+
+    it("discards a draft only after the app's confirm dialog (R1 web P3)", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS }, { match: "/reconciliations/rec-9", body: BLOCKED }]);
+        const confirmSpy = vi.spyOn(window, "confirm");
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        fireEvent.click(await screen.findByTestId("rec-discard"));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(screen.getByText("Discard this draft reconciliation? Matches stay as they are.")).toBeInTheDocument();
+        expect(calls.some(c => c.method === "DELETE")).toBe(false);
+        fireEvent.click(screen.getByTestId("rec-discard-confirm"));
+        await waitFor(() => expect(calls.some(c => c.method === "DELETE" && c.url.includes("/reconciliations/rec-9"))).toBe(true));
+        confirmSpy.mockRestore();
     });
 
     it("blocks Finalize while a check fails and lists the failing ones in its tooltip", async () => {
@@ -191,6 +207,37 @@ describe("the reconciliation statement", () => {
         expect(screen.getByTestId("rec-panel")).toHaveTextContent(ar.BankRec.recTitle);
         expect(screen.getByTestId("rec-finalize")).toHaveTextContent(ar.BankRec.finalize);
         expect(screen.getByTestId("rec-check-CHAIN")).toHaveTextContent(ar.BankRec.check_CHAIN);
+    });
+});
+
+describe("the reconciliation panel refresh (F14-47)", () => {
+    it("re-fetches the panel's figures after the workspace confirms a match, not just on first load", async () => {
+        const ws = {
+            bankAccountId: "ba-1", leaves: [], needsLeaf: false, bookItems: [], matches: [], reconciledThrough: "2026-08-31",
+            statementLines: [{ id: "l9", seq: 1, txnDate: "2026-09-05", valueDate: "2026-09-05", description: "CHQ 000009 PRESENTED",
+                reference: null, chequeNo: "000009", amount: -1000, runningBalance: 4000, matchId: null, matchStatus: null }],
+            openingItems: [{ id: "oi-1", bankAccountId: "ba-1", itemDate: "2026-08-20", description: "PACT cheque 000009", reference: null,
+                chequeNo: "000009", amount: -1000, matchId: null, matchStatus: null }],
+        };
+        stubFetch([
+            { match: "/workspace", body: ws },
+            { method: "POST", match: "/matches", body: { id: "m9" } },
+            { match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+            { match: "/reconciliations/rec-9", body: BLOCKED },
+        ]);
+        renderIn("en", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await screen.findByTestId("oi-PACT cheque 000009");
+        // The panel loads once on mount — reset the call log so the count
+        // below only reflects the refetch the match below should trigger.
+        await screen.findByTestId("rec-figure-difference");
+        const before = calls.filter(c => c.url.includes("/reconciliations/rec-9")).length;
+
+        fireEvent.click(screen.getByTestId("sel-sl-CHQ 000009 PRESENTED"));
+        fireEvent.click(screen.getByTestId("sel-oi-PACT cheque 000009"));
+        fireEvent.click(screen.getByTestId("match"));
+        await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.endsWith("/matches"))).toBe(true));
+
+        await waitFor(() => expect(calls.filter(c => c.url.includes("/reconciliations/rec-9")).length).toBeGreaterThan(before));
     });
 });
 

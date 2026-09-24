@@ -241,3 +241,21 @@ databaseChangeLog:
       file: db/changelog/changesets/116-lease-no-overlap-per-unit.yaml
   - include:
       file: db/changelog/changesets/117-vat-contract-tax-point.yaml
+  - include:
+      file: db/changelog/changesets/118-bank-off-statement-items.yaml
+  - include:
+      file: db/changelog/changesets/119-voucher-void.yaml
+  - include:
+      file: db/changelog/changesets/120-recognition-runs.yaml
+  - include:
+      file: db/changelog/changesets/121-penalty-description-code.yaml
+  - include:
+      file: db/changelog/changesets/122-cheque-receipt-number.yaml
+  - include:
+      file: db/changelog/changesets/123-vtp-kind-settlement.yaml
+  - include:
+      file: db/changelog/changesets/124-renter-refund-payable.yaml
+  - include:
+      file: db/changelog/changesets/125-supplier-credit-note.yaml
+  - include:
+      file: db/changelog/changesets/126-attach-property-bank-leaves.yaml

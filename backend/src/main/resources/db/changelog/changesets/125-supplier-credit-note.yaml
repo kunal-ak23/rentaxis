@@ -1,0 +1,15 @@
+# F14-40: a supplier credit note (our debit note), voucher type PCN, journal PCN.
+databaseChangeLog:
+  - changeSet:
+      id: 125-supplier-credit-note
+      author: claude
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS ck_vouchers_doc_type;
+              ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_doc_type CHECK (doc_type IN ('PISR','BPV','RCP','PCN'))
+      rollback:
+        - sql:
+            sql: >-
+              ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS ck_vouchers_doc_type;
+              ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_doc_type CHECK (doc_type IN ('PISR','BPV','RCP'))

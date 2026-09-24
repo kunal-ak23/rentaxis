@@ -548,6 +548,9 @@ export default function BankAccountsPage() {
                                         {t("isDefault")}
                                     </span>
                                 </label>
+                                <p className="text-[11px] text-muted mt-1" data-testid="bank-default-hint">
+                                    {t("defaultHint")}
+                                </p>
                             </div>
                             {formError && (
                                 <div

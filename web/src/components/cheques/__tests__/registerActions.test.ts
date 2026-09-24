@@ -60,6 +60,17 @@ describe("registerActionsFor without a lease (the caller that cannot know)", () 
     });
 });
 
+describe("registerActionsFor on a ledger-settled BOUNCED row (F14-52)", () => {
+    it("withholds replace — nothing is left on this instrument to collect", () => {
+        expect(registerActionsFor("BOUNCED", "PDC", true, undefined, true)).toEqual([]);
+    });
+
+    it("still offers replace when the row is not ledger-settled", () => {
+        expect(registerActionsFor("BOUNCED", "PDC", true, undefined, false)).toEqual(["replace"]);
+        expect(registerActionsFor("BOUNCED", "PDC", true)).toEqual(["replace"]);
+    });
+});
+
 describe("registerActionsFor on a CLOSED contract", () => {
     /**
      * The twelve-cases defect: a closed contract whose settlement is finished

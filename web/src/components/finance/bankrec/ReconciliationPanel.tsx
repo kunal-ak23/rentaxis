@@ -15,6 +15,7 @@ import {
     type ReconciliationRow,
 } from "@/lib/api/bankRec";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "./Modal";
 import { Money } from "./Money";
 import { button, field, label, panel, primary, small, td, th } from "./styles";
@@ -33,7 +34,19 @@ export function addDays(iso: string, days: number): string {
  * reopen the latest finalized one. The first reconciliation also takes the
  * items outstanding at its start.
  */
-export function ReconciliationPanel({ bankAccountId, onChanged }: { bankAccountId: string; onChanged?: () => void }) {
+export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
+    bankAccountId: string;
+    onChanged?: () => void;
+    /**
+     * Bumped by the workspace after its own mutations (a confirmed match, a
+     * manual match, a line action such as booking a bank charge) so this
+     * panel's figures and finalize checklist don't go stale until the page
+     * is reloaded (F14-47) — those mutations happen outside this component
+     * and only touch the workspace's own state, so `load` below has to be
+     * re-run from here too.
+     */
+    refreshKey?: number;
+}) {
     const t = useTranslations("BankRec");
     const { data: session } = useSession();
     const canReopen = hasPermission(session?.user?.role as UserRole | undefined, "canReopenBankRec");
@@ -43,6 +56,8 @@ export function ReconciliationPanel({ bankAccountId, onChanged }: { bankAccountI
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [list, setList] = useState<{ title: string; items: RecItem[] } | null>(null);
+    const [confirmingFinalize, setConfirmingFinalize] = useState(false);
+    const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -55,7 +70,7 @@ export function ReconciliationPanel({ bankAccountId, onChanged }: { bankAccountI
         }
     }, [bankAccountId]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { load(); }, [load, refreshKey]);
 
     const run = async (fn: () => Promise<unknown>) => {
         setBusy(true);
@@ -116,16 +131,12 @@ export function ReconciliationPanel({ bankAccountId, onChanged }: { bankAccountI
                     <div className="flex flex-wrap gap-2 items-center">
                         <button type="button" className={primary} disabled={busy || !rec.canFinalize} data-testid="rec-finalize"
                                 title={failing.length ? failing.map(c => `• ${c.message}`).join("\n") : t("finalizeHint")}
-                                onClick={() => {
-                                    if (window.confirm(t("finalizeConfirm", { date: dmy(rec.periodTo) }))) {
-                                        run(() => bankRecApi.finalizeReconciliation(rec.id));
-                                    }
-                                }}><Lock size={13} />{t("finalize")}</button>
+                                onClick={() => setConfirmingFinalize(true)}><Lock size={13} />{t("finalize")}</button>
                         {failing.length > 0 && <span className="text-[11px] text-muted" data-testid="rec-blocked">{t("finalizeBlocked", { count: failing.length })}</span>}
                         <DraftEdit rec={rec} busy={busy}
                                    onSave={body => run(() => bankRecApi.updateReconciliation(rec.id, body))} />
                         <button type="button" className={small} disabled={busy} data-testid="rec-discard"
-                                onClick={() => { if (window.confirm(t("discardConfirm"))) run(() => bankRecApi.discardReconciliation(rec.id)); }}>
+                                onClick={() => setConfirmingDiscard(true)}>
                             <Trash2 size={12} />{t("discard")}
                         </button>
                         <Downloads id={rec.id} />
@@ -141,6 +152,34 @@ export function ReconciliationPanel({ bankAccountId, onChanged }: { bankAccountI
                 <Modal title={list.title} onClose={() => setList(null)} wide testId="rec-items">
                     <ItemsTable items={list.items} />
                 </Modal>
+            )}
+
+            {rec && (
+                <ConfirmDialog
+                    isOpen={confirmingFinalize}
+                    onClose={() => setConfirmingFinalize(false)}
+                    onConfirm={() => { setConfirmingFinalize(false); run(() => bankRecApi.finalizeReconciliation(rec.id)); }}
+                    isLoading={busy}
+                    title={t("finalize")}
+                    description={t("finalizeConfirm", { date: dmy(rec.periodTo) })}
+                    confirmText={t("finalize")}
+                    cancelText={t("cancel")}
+                    confirmTestId="rec-finalize-confirm"
+                />
+            )}
+            {rec && (
+                <ConfirmDialog
+                    isOpen={confirmingDiscard}
+                    onClose={() => setConfirmingDiscard(false)}
+                    onConfirm={() => { setConfirmingDiscard(false); run(() => bankRecApi.discardReconciliation(rec.id)); }}
+                    isLoading={busy}
+                    isDestructive
+                    title={t("discard")}
+                    description={t("discardConfirm")}
+                    confirmText={t("discard")}
+                    cancelText={t("cancel")}
+                    confirmTestId="rec-discard-confirm"
+                />
             )}
         </section>
     );

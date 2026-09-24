@@ -145,6 +145,16 @@ public class BankMatchService {
                 (rs, i) -> sline(rs));
     }
 
+    /** The day reconciliation starts for the account: the first finalized one's start, else the earliest draft's. */
+    private LocalDate recStart(UUID t, UUID bankAccountId) {
+        return jdbc.queryForList("""
+                select coalesce(b.rec_start_date, (select min(r.period_from) from bank_reconciliations r
+                                                   where r.tenant_id = b.tenant_id and r.bank_account_id = b.id))
+                from bank_accounts b where b.tenant_id = :t and b.id = :b""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), LocalDate.class)
+                .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+    }
+
     private List<BItem> items(UUID t, Set<UUID> leaves, LocalDate from, LocalDate to) {
         if (leaves.isEmpty()) return List.of();
         return jdbc.query(ITEM_SQL + " and (cast(:from as date) is null or je.entry_date >= :from)"
@@ -307,7 +317,17 @@ public class BankMatchService {
                 .filter(l -> l.matchId() == null && (locked == null || l.txn().isAfter(locked))).toList());
         LocalDate lo = from == null ? null : from.minusDays(window);
         LocalDate hi = to == null ? null : to.plusDays(window);
-        List<BItem> books = new ArrayList<>(items(t, leaves, lo, hi).stream().filter(i -> i.matchId() == null).toList());
+        // F14-47: a book item dated before the reconciliation starts is carried by the
+        // opening balance and its opening items; proposing it against a statement line
+        // would count it twice. Only an entry confirmed "not on the statement" (F14-20)
+        // is still outstanding from before the start and may be matched.
+        LocalDate recStart = recStart(t, bankAccountId);
+        Set<UUID> offStatement = recStart == null ? Set.of() : new HashSet<>(jdbc.queryForList(
+                "select journal_entry_id from bank_off_statement_items where tenant_id = :t and bank_account_id = :b",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class));
+        List<BItem> books = new ArrayList<>(items(t, leaves, lo, hi).stream().filter(i -> i.matchId() == null)
+                .filter(i -> recStart == null || !i.date().isBefore(recStart) || offStatement.contains(i.entryId()))
+                .toList());
         Map<String, Integer> count = new LinkedHashMap<>();
 
         // Rule 5 (book side), taken first: an original and its reversal mirror.
@@ -785,6 +805,14 @@ public class BankMatchService {
             if (on == null) {
                 on = reverseDate(entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
                         .min(Comparator.naturalOrder()).orElse(null));
+            } else {
+                // R1 P2-3 (the F14-41 rule): a reversal is not dated before the entry it reverses.
+                LocalDate latest = entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
+                        .max(Comparator.naturalOrder()).orElse(null);
+                if (latest != null && on.isBefore(latest)) {
+                    throw BankRecRefusal.refuse("reverseBeforeEntry", "The reversal cannot be dated before the entry it"
+                            + " reverses (" + latest.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + ")");
+                }
             }
             for (Map<String, Object> e : entries) bankLock.assertOpenForEntry((UUID) e.get("id"), on);
             for (Map<String, Object> e : entries) {

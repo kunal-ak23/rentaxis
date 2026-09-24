@@ -237,7 +237,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                 {action === "bounce" && (
                     <label className="block text-xs"><span className={`${label} block mb-1`}>{t("returnReason")}</span>
                         <select className={field} value={reason} onChange={e => setReason(e.target.value)}>
-                            {["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED"].map(r => <option key={r} value={r}>{t(`reason_${r}`)}</option>)}
+                            {["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"].map(r => <option key={r} value={r}>{t(`reason_${r}`)}</option>)}
                         </select>
                     </label>
                 )}

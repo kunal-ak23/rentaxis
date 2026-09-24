@@ -838,6 +838,9 @@ export default function LeaseDetailPage() {
                             leaseId={leaseId}
                             contractVat={totals.vat}
                             terminated={lease.terminatedOn != null}
+                            vatTiming={lease.vatTiming}
+                            leaseStatus={lease.status}
+                            userRole={userRole}
                         />
                     </div>
                 )}

@@ -399,7 +399,7 @@ class ChequeClearBatchIT extends AbstractPostgresIT {
         List<UUID> ids = depositedGrid();
         assertThatThrownBy(() -> service.clearBatch(new ClearBatchRequest(ids, DEPOSIT_DATE.minusDays(1), null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("100040 was deposited on " + DEPOSIT_DATE)
+                .hasMessageContaining("100040 was deposited on " + DEPOSIT_DATE.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")))
                 .hasMessageContaining("nothing was cleared");
         assertNothingCleared(ids);
     }

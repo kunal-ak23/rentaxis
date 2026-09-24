@@ -17,10 +17,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
-import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
-    netRefundOf, toSaveLines, totalOf, type SettlementRow,
+    netRefundOf, toSaveLines, totalOf, totalVatOf, type SettlementRow,
 } from "@/components/leases/settlementMath";
 import {
     ApiError, leaseApi, settlementApi,
@@ -215,6 +214,8 @@ export default function SettlementPage() {
     const canView = hasPermission(userRole, "canViewSettlement");
     const canSettle = hasPermission(userRole, "canSettleLeases");
     const canTerminate = hasPermission(userRole, "canPreviewTermination");
+    // F14-36: paying a deposit refund out is an ordinary voucher post.
+    const canPayRefund = hasPermission(userRole, "canManageVouchers");
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [statement, setStatement] = useState<SettlementStatement | null>(null);
@@ -224,7 +225,6 @@ export default function SettlementPage() {
     const [notes, setNotes] = useState("");
     const [dirty, setDirty] = useState(false);
     const [settlementDate, setSettlementDate] = useState<string | null>(null);
-    const [refundBankAccountId, setRefundBankAccountId] = useState<string | null>(null);
     const [acknowledged, setAcknowledged] = useState(false);
     /**
      * Set when a finalise is refused for the acknowledgement the screen did not
@@ -261,6 +261,7 @@ export default function SettlementPage() {
             accountName: d.accountName ?? null,
             autoCalculated: d.autoCalculated ?? false,
             attachments: d.attachments ?? [],
+            vatAmount: d.vatAmount ?? 0,
         }));
     }, []);
 
@@ -284,7 +285,6 @@ export default function SettlementPage() {
             setStoredRow(saved);
             setRows(rowsOf(saved));
             setNotes(saved?.notes ?? "");
-            setRefundBankAccountId(saved?.refundBankAccountId ?? null);
             setLockedThrough(fiscal?.booksLockedThrough ?? null);
             setDirty(false);
         } catch (e) {
@@ -341,6 +341,9 @@ export default function SettlementPage() {
                 totalDeductions: storedRow.totalDeductions ?? 0,
                 totalAdditions: storedRow.totalAdditions ?? 0,
                 netRefund: (storedRow.refundAmount ?? 0) - (storedRow.balanceDue ?? 0),
+                // F14-37: not on SettlementResponseDTO — recomputed from the
+                // stored lines' own vatAmount, same as the draft branch.
+                totalDeductionVat: totalVatOf(rows),
             };
         }
         if (!statement) return null;
@@ -353,6 +356,7 @@ export default function SettlementPage() {
             totalDeductions: totalOf(rows, "DEDUCTION"),
             totalAdditions: totalOf(rows, "ADDITION"),
             netRefund: netRefundOf(statement, rows),
+            totalDeductionVat: totalVatOf(rows),
         };
     }, [finalized, storedRow, statement, rows]);
 
@@ -368,7 +372,6 @@ export default function SettlementPage() {
         && settleable
         && !dirty
         && !!settlementDate
-        && (!refunds || !!refundBankAccountId)
         && (!needsAcknowledgement || acknowledged);
 
     /**
@@ -381,7 +384,6 @@ export default function SettlementPage() {
      * hunting for a sentence somewhere above it.
      */
     const finalizeReasons = [
-        refunds && !refundBankAccountId ? "settlement-refund-bank-required" : null,
         needsAcknowledgement && !acknowledged ? "settlement-acknowledge-required" : null,
         dirty ? "settlement-unsaved" : null,
     ].filter(Boolean) as string[];
@@ -403,6 +405,7 @@ export default function SettlementPage() {
                 accountId: null,
                 autoCalculated: false,
                 attachments: [],
+                vatAmount: 0,
             },
         ]);
         setDirty(true);
@@ -435,7 +438,6 @@ export default function SettlementPage() {
         try {
             const saved = await settlementApi.finalize(leaseId, {
                 settlementDate,
-                refundBankAccountId: refunds ? refundBankAccountId : null,
                 acknowledgeOutstanding: needsAcknowledgement ? acknowledged : false,
             });
             setStoredRow(saved);
@@ -781,6 +783,9 @@ export default function SettlementPage() {
             {shown && (
                 <div className="bg-surface border border-border rounded-xl px-5 py-4 space-y-3">
                     <Row label={t("totalDeductions")} value={`- ${fmtAmount(shown.totalDeductions)}`} tone="error" testId="settlement-total-deductions" />
+                    {shown.totalDeductionVat > 0 && (
+                        <Row label={t("totalDeductionVat")} value={`- ${fmtAmount(shown.totalDeductionVat)}`} tone="error" testId="settlement-total-deduction-vat" />
+                    )}
                     <Row label={t("totalAdditions")} value={`+ ${fmtAmount(shown.totalAdditions)}`} tone="success" testId="settlement-total-additions" />
                     <div className="border-t-2 border-border pt-3 flex justify-between items-center">
                         <span className="text-sm font-bold text-foreground">
@@ -794,6 +799,38 @@ export default function SettlementPage() {
                         </span>
                     </div>
                     {netRefund === 0 && <p className="text-[11px] text-muted">{t("settled")}</p>}
+                </div>
+            )}
+
+            {/* F14-36: once finalized, a refund owed is paid out by an ordinary
+                BPV naming this settlement — never a bank account picked here. */}
+            {finalized && storedRow && (storedRow.refundAmount ?? 0) > 0 && (
+                <div className="bg-surface border border-border rounded-xl px-5 py-4 space-y-3" data-testid="settlement-refund-status">
+                    <Row label={t("refundOwed")} value={fmtAmount(storedRow.refundAmount ?? 0)} testId="settlement-refund-owed" />
+                    <Row label={t("refundPaid")} value={fmtAmount(storedRow.refundPaid ?? 0)} testId="settlement-refund-paid" />
+                    <div className="border-t border-border pt-3 flex justify-between items-center">
+                        <span className="text-sm font-bold text-foreground">{t("refundOutstanding")}</span>
+                        <span
+                            data-testid="settlement-refund-outstanding"
+                            className={cn("text-sm font-bold tabular-nums", (storedRow.refundOutstanding ?? storedRow.refundAmount ?? 0) > 0 ? "text-warning" : "text-success")}
+                        >
+                            {fmtAmount(storedRow.refundOutstanding ?? storedRow.refundAmount ?? 0)}
+                        </span>
+                    </div>
+                    {canPayRefund && (storedRow.refundOutstanding ?? storedRow.refundAmount ?? 0) > 0 && (
+                        <Link
+                            data-testid="settlement-pay-refund"
+                            href={`/dashboard/finance/vouchers/payment?${new URLSearchParams({
+                                settlementId: storedRow.id,
+                                renter: lease?.renterName ?? "",
+                                unit: lease?.unitIdentifier ?? "",
+                                amount: String(storedRow.refundOutstanding ?? storedRow.refundAmount ?? 0),
+                            }).toString()}`}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer"
+                        >
+                            {t("payRefund")}
+                        </Link>
+                    )}
                 </div>
             )}
 
@@ -830,34 +867,6 @@ export default function SettlementPage() {
                                 </span>
                             )}
                         </label>
-
-                        {/* Only when it refunds: `refundBankAccountId` is ignored otherwise. */}
-                        {refunds && (
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                                    {t("refundBank")}
-                                </span>
-                                <SettlementAccountPicker
-                                    value={refundBankAccountId}
-                                    onChange={setRefundBankAccountId}
-                                    propertyId={lease?.propertyId ?? null}
-                                    // AccountPicker's search box takes its
-                                    // aria-label from `placeholder`. Without one
-                                    // this combobox has no accessible name at
-                                    // all — the heading above it is a <span>,
-                                    // not a <label>. The three line-grid
-                                    // controls were named in task 8b; this is
-                                    // the same rule, and the field a refund is
-                                    // paid from is not the one to leave silent.
-                                    placeholder={t("refundBank")}
-                                />
-                                {!refundBankAccountId && (
-                                    <span id="settlement-refund-bank-required" className="text-[10px] text-warning">
-                                        {t("refundBankRequired")}
-                                    </span>
-                                )}
-                            </div>
-                        )}
                     </div>
 
                     {needsAcknowledgement && (
@@ -942,13 +951,13 @@ export default function SettlementPage() {
     );
 }
 
-function Row({ label, value, tone, testId }: { label: string; value: string; tone: "error" | "success"; testId: string }) {
+function Row({ label, value, tone, testId }: { label: string; value: string; tone?: "error" | "success"; testId: string }) {
     return (
         <div className="flex justify-between items-center">
             <span className="text-xs text-muted">{label}</span>
             <span
                 data-testid={testId}
-                className={cn("text-xs font-semibold tabular-nums", tone === "error" ? "text-error" : "text-success")}
+                className={cn("text-xs font-semibold tabular-nums", tone === "error" ? "text-error" : tone === "success" ? "text-success" : "text-foreground")}
             >
                 {value}
             </span>
@@ -1051,6 +1060,14 @@ function LineTable({
                                         />
                                     ) : (
                                         <span className="tabular-nums">{fmtAmount(r.amount)}</span>
+                                    )}
+                                    {r.type === "DEDUCTION" && r.vatAmount > 0 && (
+                                        <span
+                                            className="block text-[10px] text-muted tabular-nums"
+                                            data-testid={`settlement-line-vat-${index}`}
+                                        >
+                                            {t("lineVat", { amount: fmtAmount(r.vatAmount) })}
+                                        </span>
                                     )}
                                 </td>
                                 <td className={td}>

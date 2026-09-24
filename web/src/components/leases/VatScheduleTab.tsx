@@ -3,17 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
-import { FileDown, Loader2 } from "lucide-react";
+import { FileDown, Loader2, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import {
     ApiError,
     vatApi,
+    type LeaseStatus,
     type TaxInvoice,
     type VatTaxPoint,
     type VatTaxPointStatus,
 } from "@/lib/api/leasing";
+import { hasRole, type UserRole } from "@/lib/rbac";
 import { fmtIsoDate } from "./leaseMath";
 
 /**
@@ -50,9 +52,17 @@ type Props = {
     /** Σ of the lines' VAT, for the footer's check. */
     contractVat?: number | null;
     terminated?: boolean;
+    /** F14-53: whether "Issue contract tax invoice" may show at all. */
+    vatTiming?: "INSTALMENT" | "CONTRACT" | null;
+    leaseStatus?: LeaseStatus;
+    userRole?: UserRole;
 };
 
-export default function VatScheduleTab({ leaseId, contractVat, terminated }: Props) {
+const ISSUE_CONTRACT_INVOICE_ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"];
+/** Not DRAFTING — the lease has been posted at least once. */
+const DRAFTING_STATUSES: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
+
+export default function VatScheduleTab({ leaseId, contractVat, terminated, vatTiming, leaseStatus, userRole }: Props) {
     const t = useTranslations("VatSchedule");
     const locale = useLocale();
 
@@ -60,6 +70,8 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated }: Pro
     const [invoices, setInvoices] = useState<TaxInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [issuing, setIssuing] = useState(false);
+    const [issueError, setIssueError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -79,7 +91,35 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated }: Pro
         load();
     }, [load]);
 
-    const instalments = useMemo(() => points.filter(p => p.kind === "INSTALMENT"), [points]);
+    // F14-53: CONTRACT timing, posted, no tax invoice issued yet, and a role
+    // that may issue one. A cut-over/import lease isn't exposed on the DTO
+    // here, so that half is left to the server's own refusal (shown as-is).
+    const canOfferIssueContractInvoice = vatTiming === "CONTRACT"
+        && !!leaseStatus && !DRAFTING_STATUSES.includes(leaseStatus)
+        && invoices.length === 0
+        && hasRole(userRole, ISSUE_CONTRACT_INVOICE_ROLES);
+
+    const issueContractInvoice = async () => {
+        setIssuing(true);
+        setIssueError(null);
+        try {
+            await vatApi.issueContractTaxInvoice(leaseId);
+            await load();
+        } catch (e) {
+            setIssueError(e instanceof ApiError ? e.message : t("issueContractInvoiceFailed"));
+        } finally {
+            setIssuing(false);
+        }
+    };
+
+    // F14-54: a CONTRACT-timed lease declares its whole VAT on one tax point
+    // instead of one per instalment, but it is still a live point the footer
+    // must add in — excluding it made a declared contract VAT show as a
+    // difference against the contract total instead of matching it.
+    const instalments = useMemo(
+        () => points.filter(p => p.kind === "INSTALMENT" || p.kind === "CONTRACT" || p.kind === "SETTLEMENT"),
+        [points],
+    );
     const live = useMemo(() => sum(instalments.filter(p => p.status !== "CANCELLED").map(p => p.vatAmount)), [instalments]);
     const declared = useMemo(() => sum(points.filter(p => p.status === "POSTED").map(p => p.vatAmount)), [points]);
     const difference = contractVat == null ? null : Math.round((live - contractVat) * 100) / 100;
@@ -98,10 +138,29 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated }: Pro
     return (
         <div className="space-y-6">
             <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm" data-testid="vat-schedule">
-                <div className="px-4 py-3 border-b border-border">
-                    <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">{t("title")}</h3>
-                    <p className="text-[11px] text-muted mt-1">{t("intro")}</p>
+                <div className="px-4 py-3 border-b border-border flex items-start justify-between gap-3">
+                    <div>
+                        <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">{t("title")}</h3>
+                        <p className="text-[11px] text-muted mt-1">{t("intro")}</p>
+                    </div>
+                    {canOfferIssueContractInvoice && (
+                        <button
+                            type="button"
+                            data-testid="issue-contract-tax-invoice"
+                            disabled={issuing}
+                            onClick={issueContractInvoice}
+                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
+                        >
+                            {issuing ? <Loader2 size={12} className="animate-spin" /> : <Receipt size={12} />}
+                            {t("issueContractInvoice")}
+                        </button>
+                    )}
                 </div>
+                {issueError && (
+                    <p className="px-4 py-2 text-[11px] text-error border-b border-border" role="alert" data-testid="issue-contract-tax-invoice-error">
+                        {issueError}
+                    </p>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[760px]">
                         <thead>
@@ -124,6 +183,8 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated }: Pro
                                             ? t("terminationAdjustment")
                                             : p.kind === "CONTRACT"
                                             ? t("contractTaxPoint")
+                                            : p.kind === "SETTLEMENT"
+                                            ? t("settlementTaxPoint")
                                             : t("instalmentLabel", {
                                                   seq: p.chequeSeqNo ?? "—",
                                                   number: p.chequeNumber ?? "—",

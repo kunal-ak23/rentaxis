@@ -115,6 +115,12 @@ export function registerActionsFor(
     mode: ChequeMode,
     canCancel: boolean,
     lease?: RowLeaseContext,
+    /**
+     * F14-52: a BOUNCED row the ledger has already settled some other way
+     * (e.g. absorbed into a lease settlement) offers no Replace — there is
+     * nothing left on this instrument for a replacement to collect.
+     */
+    ledgerSettled?: boolean,
 ): RegisterAction[] {
     // A lease status the caller DID supply and that `requireCollectable` refuses
     // closes the row completely: every verb below is a transition, and `details`
@@ -152,7 +158,7 @@ export function registerActionsFor(
         case "CLEARED":
             return mode === "PDC" ? ["bounce", "receipt"] : ["receipt"];
         case "BOUNCED":
-            return ["replace"];
+            return ledgerSettled ? [] : ["replace"];
         case "ONLINE_PENDING":
             // Not a state transition the renter can finish from here: the
             // gateway either calls back or it does not. Staff put the row back

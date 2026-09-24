@@ -54,8 +54,13 @@ describe("dashboard pages handle failed loads", () => {
         // The catalogues are nested deeper than one level in places, so a
         // Record<string, Record<string, string>> assertion does not hold; only
         // the Common namespace is needed here.
-        const en = (await import("../../../../../messages/en.json")).default.Common as Record<string, string>;
-        const ar = (await import("../../../../../messages/ar.json")).default.Common as Record<string, string>;
+        // `Common` now also carries a nested `errors.*` tree (F14-20/41/42), so
+        // the flat `Record<string, string>` cast no longer holds — the keys this
+        // test actually reads off it (via `tCommon("flat.key")` in dashboard
+        // pages) are still flat, this only widens the type to admit the nested
+        // one too.
+        const en = (await import("../../../../../messages/en.json")).default.Common as Record<string, unknown>;
+        const ar = (await import("../../../../../messages/ar.json")).default.Common as Record<string, unknown>;
 
         const used = new Set<string>();
         for (const file of tsxFiles(DASHBOARD)) {

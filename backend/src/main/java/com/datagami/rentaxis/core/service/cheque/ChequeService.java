@@ -1,5 +1,9 @@
 package com.datagami.rentaxis.core.service.cheque;
 
+import com.datagami.rentaxis.core.service.ledger.BankLockService;
+import com.datagami.rentaxis.core.service.ledger.BankLockService.StatementEvidence;
+import java.util.Optional;
+
 import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
@@ -246,6 +250,8 @@ public class ChequeService {
     private final VatTaxPointService vatTaxPoints;
     /** Finance-ops spec §4: the per-bank lock, checked before a clearing or a bounce does any work. */
     private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumbers;
 
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
@@ -463,6 +469,15 @@ public class ChequeService {
      */
     @Transactional
     public List<ChequeDTO> clearBatch(ClearBatchRequest request) {
+        return clearBatch(request, StatementEvidence.of(request == null ? null : request.notOnStatement()));
+    }
+
+    /**
+     * As above; {@code evidence} {@link StatementEvidence#EXEMPT EXEMPT} when the
+     * clearing is booked from the bank statement line itself (F14-20).
+     */
+    @Transactional
+    public List<ChequeDTO> clearBatch(ClearBatchRequest request, StatementEvidence evidence) {
         List<UUID> ids = batchIds(request == null ? null : request.chequeIds(), "clear");
         // One date covers every row, so it is checked against every row (review M2).
         // Not after today on the app clock (Asia/Dubai): a future clearing would
@@ -502,15 +517,19 @@ public class ChequeService {
             } else if (c.getDepositedAt() != null && date.isBefore(c.getDepositedAt())) {
                 // A clearance dated before the deposit writes a CRT the bank
                 // statement can never have shown.
-                problems.add(label(c) + " was deposited on " + c.getDepositedAt()
-                        + ", after the clearing date " + date);
+                problems.add(label(c) + " was deposited on " + c.getDepositedAt().format(DMY)
+                        + ", after the clearing date " + date.format(DMY));
+            } else if (c.getChequeDate() != null && date.isBefore(c.getChequeDate())) {
+                // F14-21: a cheque cannot be paid before the date written on it.
+                problems.add(label(c) + " is dated " + c.getChequeDate().format(DMY)
+                        + ", after the clearing date " + date.format(DMY));
             }
         }
         if (!problems.isEmpty()) {
             throw new BusinessRuleViolationException(
                     "These cheques cannot be cleared: " + String.join("; ", problems)
                             + ". Only DEPOSITED cheques can be cleared, on or after the day they were"
-                            + " deposited, and nothing was cleared.");
+                            + " deposited and the date written on them, and nothing was cleared.");
         }
 
         ChequeActionRequest each = new ChequeActionRequest(
@@ -519,7 +538,7 @@ public class ChequeService {
                 null, null);
         List<ChequeDTO> out = new ArrayList<>(ids.size());
         for (UUID id : ids) {
-            out.add(clear(id, each, null));
+            out.add(clear(id, each, null, evidence));
         }
         return out;
     }
@@ -544,12 +563,20 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO clear(UUID chequeId, ChequeActionRequest request, Replay replay) {
+        return clear(chequeId, request, replay,
+                StatementEvidence.of(request == null ? null : request.notOnStatement()));
+    }
+
+    @Transactional
+    public ChequeDTO clear(UUID chequeId, ChequeActionRequest request, Replay replay, StatementEvidence evidence) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "clear", ChequeStatus.DEPOSITED);
+        if (replay == null) requireNotClearedEarly(cheque, r.dateOrToday());
 
-        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay);
+        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, false, false,
+                replay == null ? evidence : StatementEvidence.EXEMPT);
         chequeRepository.save(cheque);
         if (replay != null) {
             return dto(cheque, lease);
@@ -579,6 +606,13 @@ public class ChequeService {
     /** The same receipt, optionally as a {@link Replay} — see {@link #clear(UUID, ChequeActionRequest, Replay)}. */
     @Transactional
     public ChequeDTO receive(UUID chequeId, ChequeActionRequest request, Replay replay) {
+        return receive(chequeId, request, replay,
+                StatementEvidence.of(request == null ? null : request.notOnStatement()));
+    }
+
+    /** As above; {@code evidence} EXEMPT when booked from a statement line (F14-20). */
+    @Transactional
+    public ChequeDTO receive(UUID chequeId, ChequeActionRequest request, Replay replay, StatementEvidence evidence) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
@@ -589,7 +623,8 @@ public class ChequeService {
                             + " is a " + cheque.getMode() + " row. Deposit it and clear it instead.");
         }
 
-        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, true);
+        applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, true, false,
+                replay == null ? evidence : StatementEvidence.EXEMPT);
         chequeRepository.save(cheque);
         if (replay != null) {
             return dto(cheque, lease);
@@ -1182,7 +1217,7 @@ public class ChequeService {
         if (settlementAccountId != null) {
             cheque.setDebitAccount(requireSettlementAccount(account(settlementAccountId)));
         }
-        applyClearing(lease, cheque, on, null, null, null, false, settlementAccountId != null);
+        applyClearing(lease, cheque, on, null, null, null, false, settlementAccountId != null, StatementEvidence.EXEMPT);
         chequeRepository.save(cheque);
         penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
@@ -1231,7 +1266,8 @@ public class ChequeService {
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay, boolean receiptSource) {
-        applyClearing(lease, cheque, date, debitAccountId, notes, replay, receiptSource, false);
+        applyClearing(lease, cheque, date, debitAccountId, notes, replay, receiptSource, false,
+                replay == null ? StatementEvidence.CHECK : StatementEvidence.EXEMPT);
     }
 
     /**
@@ -1240,7 +1276,8 @@ public class ChequeService {
      * never re-resolved to cash in hand or another bank leaf.
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
-                               Replay replay, boolean receiptSource, boolean accountChosen) {
+                               Replay replay, boolean receiptSource, boolean accountChosen,
+                               StatementEvidence evidence) {
         // Live actions only (R1 P2-6): a cut-over replay records what PACT did, and
         // PACT's history is authoritative even when cash came in before it was booked.
         if (replay == null) {
@@ -1269,11 +1306,16 @@ public class ChequeService {
         // Early, with the lock's own message: a clearing into a reconciled bank
         // leaf dated inside the reconciled period (PostingService refuses it too).
         if (debit != null) bankLock.assertOpen(List.of(debit.getId()), date);
+        // F14-20: inside an imported statement's range only with the user's word
+        // that it is not on the statement; the draft reconciliation lists it.
+        Optional<BankLockService.StatementCover> offStatement = debit == null ? Optional.empty()
+                : bankLock.requireOffStatement(List.of(debit.getId()), date, evidence);
+        String entryNarration = offStatement.map(c -> narration + BankLockService.offStatementNote(c)).orElse(narration);
 
         JournalEntry crt = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.CRT,
                 date,
-                narration,
+                entryNarration,
                 LeaseChequeRegistrar.dimensions(lease, cheque.getId()),
                 JournalSourceType.CHEQUE,
                 cheque.getId(),
@@ -1290,8 +1332,14 @@ public class ChequeService {
                     .map(l -> l.getAccount())
                     .findFirst().orElse(null);
         }
+        offStatement.ifPresent(c -> bankLock.recordOffStatement(c, crt.getId(), date));
         cheque.setDebitAccount(debit);
         cheque.setCrtJournalId(crt.getId());
+        // F14-24: a live receipt is numbered from the tenant's RR series when the
+        // money lands, so the receipts form an auditable sequence. Replays keep none.
+        if (replay == null && entryNumbers != null && cheque.getReceiptNumber() == null) {
+            cheque.setReceiptNumber(entryNumbers.nextDocumentNumber("RR", date));
+        }
         cheque.setClearedAt(date);
         moveTo(cheque, ChequeStatus.CLEARED, notes);
         // Received before it fell due, the receipt is the VAT tax point: the
@@ -1310,6 +1358,11 @@ public class ChequeService {
      * no account still settles to the CASH role.
      */
     private Account reconcilableLeaf(Account stamped, Cheque cheque) {
+        return reconcilableLeaf(stamped, cheque, true);
+    }
+
+    /** {@code refuse}: false for the read-only settlement target, which reports "none" instead. */
+    private Account reconcilableLeaf(Account stamped, Cheque cheque, boolean refuse) {
         UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
         if (cheque.getMode() == ChequeMode.CASH) {
             // R1 P2-2: cash is counted into the till unless somebody chose otherwise.
@@ -1321,9 +1374,21 @@ public class ChequeService {
             if (stamped == null) return null;
         }
         if (stamped != null && stamped.getAccountSubType() != AccountSubType.BANK) return stamped;
-        if (stamped != null && ownedBankLeaf.isOwned(stamped.getId())) return stamped;
         UUID propertyId = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
-        return ownedBankLeaf.forProperty(propertyId).map(this::account).orElse(stamped);
+        // R1 P2-2: a stamped leaf is kept only when a bank account owns it and it is
+        // tenant-wide or this property's — the same rule the offer list and
+        // settlementAccount apply. Another property's leaf is never a target.
+        if (stamped != null && ownedBankLeaf.validFor(stamped.getId(), propertyId)) return stamped;
+        java.util.Optional<UUID> owned = ownedBankLeaf.forProperty(propertyId);
+        if (owned.isPresent()) return account(owned.get());
+        if (ownedBankLeaf.anyOwned()) {
+            // The tenant reconciles its banks, but none may take this property's money.
+            if (!refuse) return null;
+            throw new BusinessRuleViolationException("No bank account is set up for this property. Attach one of its"
+                    + " ledger accounts to a bank account (Bank reconciliation → Ledger accounts), or receive into cash.",
+                    "cheque.noBankForProperty", Map.of("row", label(cheque)));
+        }
+        return stamped;
     }
 
     /**
@@ -1339,7 +1404,7 @@ public class ChequeService {
         leaseAccessPolicy.requireManageable(cheque.getLease());
         Account stamped = cheque.getDebitAccount() != null && isSettlementAccount(cheque.getDebitAccount())
                 ? cheque.getDebitAccount() : null;
-        Account target = reconcilableLeaf(stamped, cheque);
+        Account target = reconcilableLeaf(stamped, cheque, false);
         UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
         List<com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option> options = new ArrayList<>();
         for (OwnedBankLeaf.Option o : ownedBankLeaf.optionsFor(property)) {
@@ -1375,6 +1440,26 @@ public class ChequeService {
         }
     }
 
+    /**
+     * F14-21: a cheque clears on or after the day it was deposited and on or
+     * after the date written on it. The batch path says the same per row.
+     */
+    static void requireNotClearedEarly(Cheque cheque, LocalDate date) {
+        if (date == null) return;
+        if (cheque.getDepositedAt() != null && date.isBefore(cheque.getDepositedAt())) {
+            throw new BusinessRuleViolationException(label(cheque) + " was deposited on "
+                    + cheque.getDepositedAt().format(DMY) + "; it cannot clear on " + date.format(DMY) + ", before that.",
+                    "cheque.clearBeforeDeposit", Map.of("row", label(cheque),
+                            "deposited", cheque.getDepositedAt().format(DMY), "date", date.format(DMY)));
+        }
+        if (cheque.getChequeDate() != null && date.isBefore(cheque.getChequeDate())) {
+            throw new BusinessRuleViolationException(label(cheque) + " is dated "
+                    + cheque.getChequeDate().format(DMY) + "; it cannot clear on " + date.format(DMY) + ", before its date.",
+                    "cheque.clearBeforeChequeDate", Map.of("row", label(cheque),
+                            "chequeDate", cheque.getChequeDate().format(DMY), "date", date.format(DMY)));
+        }
+    }
+
     /** The date the row entered the ledger: its PDR's entry date, else its posting date. */
     LocalDate bookedOn(Cheque cheque) {
         if (cheque.getPdrJournalId() != null) {
@@ -1394,6 +1479,8 @@ public class ChequeService {
             throw new BusinessRuleViolationException(
                     label(cheque) + " has no registering journal to reverse");
         }
+        // Not held to the F14-41 date rule on purpose: a termination hands back rows an
+        // extension registered on a date still ahead, so their PDRs are reversed earlier.
         postingService.reverse(cheque.getPdrJournalId(), date, reason);
     }
 

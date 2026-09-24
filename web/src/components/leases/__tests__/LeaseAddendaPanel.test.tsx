@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
+import type { LeaseAddendum } from "@/lib/api/leasing";
 
 const recordAddendumEjari = vi.fn();
 vi.mock("@/lib/api/leasing", async orig => {
@@ -21,9 +22,13 @@ const SUPERSEDED = {
     ...PENDING, id: "a2", addendumNumber: "ADD-27/2", tcoEntryNumber: "TCO-27/11", superseded: true,
 };
 
+const RECORDED = {
+    ...PENDING, id: "a3", addendumNumber: "ADD-27/3", ejariNumber: "EJ-9", ejariPending: false,
+};
+
 afterEach(() => { cleanup(); recordAddendumEjari.mockReset(); });
 
-function renderPanel(canRecord: boolean, onChanged = vi.fn(), addenda = [PENDING]) {
+function renderPanel(canRecord: boolean, onChanged = vi.fn(), addenda: LeaseAddendum[] = [PENDING]) {
     render(
         <NextIntlClientProvider locale="en" messages={en}>
             <LeaseAddendaPanel leaseId="lease-1" addenda={addenda} canRecordEjari={canRecord} onChanged={onChanged} />
@@ -63,5 +68,30 @@ describe("LeaseAddendaPanel", () => {
         renderPanel(true);
         expect(screen.queryByText("Superseded by amendment")).not.toBeInTheDocument();
         expect(screen.getByTestId("addendum-ejari-a1")).toBeInTheDocument();
+    });
+
+    it("lets an already-recorded Ejari be edited (F14-33)", async () => {
+        recordAddendumEjari.mockResolvedValue({ ...RECORDED, ejariNumber: "EJ-10" });
+        const onChanged = renderPanel(true, vi.fn(), [RECORDED]);
+        // Read-only by default: the number shown, no input yet.
+        expect(screen.getByText("EJ-9")).toBeInTheDocument();
+        expect(screen.queryByTestId("addendum-ejari-a3")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId("addendum-ejari-edit-a3"));
+        const input = screen.getByTestId("addendum-ejari-a3") as HTMLInputElement;
+        expect(input.value).toBe("EJ-9"); // seeded from the current number
+        fireEvent.change(input, { target: { value: "EJ-10" } });
+        fireEvent.click(screen.getByTestId("addendum-ejari-save-a3"));
+
+        await waitFor(() => expect(onChanged).toHaveBeenCalled());
+        expect(recordAddendumEjari).toHaveBeenCalledWith("lease-1", "a3", "EJ-10");
+    });
+
+    it("hides the edit pencil on a recorded Ejari from a role that cannot post, and on a superseded addendum", () => {
+        renderPanel(false, vi.fn(), [RECORDED]);
+        expect(screen.queryByTestId("addendum-ejari-edit-a3")).not.toBeInTheDocument();
+        cleanup();
+        renderPanel(true, vi.fn(), [{ ...RECORDED, superseded: true }]);
+        expect(screen.queryByTestId("addendum-ejari-edit-a3")).not.toBeInTheDocument();
     });
 });

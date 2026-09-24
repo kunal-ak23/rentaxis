@@ -69,7 +69,9 @@ public class BankAccountService {
         apply(existing, request);
         if (request.isDefault() != null) existing.setDefault(request.isDefault());
         if (request.active() != null) existing.setActive(request.active());
-        return repository.save(existing);
+        BankAccount saved = repository.save(existing);
+        if (saved.isDefault()) clearOtherDefaults(saved);
+        return saved;
     }
 
     private void apply(BankAccount b, BankAccountRequest r) {
@@ -157,9 +159,27 @@ public class BankAccountService {
                 log.warn("No Bank account group (A-02-02) for tenant; creating bank account without a ledger account");
             }
         }
+        // R2 ruling (b): the first bank account is the default one, and only one is.
+        boolean anyOther = repository.findAll().stream()
+                .anyMatch(o -> o.isActive() && inCurrentTenant(o.getTenantId()));
+        if (!anyOther) bankAccount.setDefault(true);
         BankAccount saved = repository.save(bankAccount);
+        if (saved.isDefault()) clearOtherDefaults(saved);
         ownLeaf(saved);
+        // …and it takes every property's own bank leaf no bank account owns yet.
+        if (ownedBankLeaf != null) ownedBankLeaf.attachUnownedPropertyLeaves(saved.getId());
         return saved;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+
+    /** R2 ruling (b): one default bank account per organisation. */
+    private void clearOtherDefaults(BankAccount keep) {
+        repository.flush();
+        jdbc.update("update bank_accounts set is_default = false where tenant_id = :t and id <> :b and is_default",
+                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t", keep.getTenantId())
+                        .addValue("b", keep.getId()));
     }
 
     /**

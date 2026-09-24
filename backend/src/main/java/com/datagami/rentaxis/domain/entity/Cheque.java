@@ -229,6 +229,10 @@ public class Cheque extends BaseTenantEntity {
     @Column(name = "crt_journal_id")
     private UUID crtJournalId;
 
+    /** F14-24: the receipt's number (RR-yy/n), given when the money landed; null on rows cleared before it. */
+    @Column(name = "receipt_number", length = 30)
+    private String receiptNumber;
+
     @Column(name = "cbr_journal_id")
     private UUID cbrJournalId;
 

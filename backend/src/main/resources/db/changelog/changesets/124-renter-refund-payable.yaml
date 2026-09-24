@@ -1,0 +1,43 @@
+# F14-36: a settlement no longer pays the deposit refund straight out of a bank
+# leaf. Finalize credits "Refunds payable – renters" (B-01-07, role
+# RENTER_REFUND_PAYABLE) and the refund is paid by a payment voucher that names
+# the settlement (vouchers.settlement_id); a post-dated refund cheque sits in the
+# issued-cheque register, which therefore no longer needs a vendor.
+databaseChangeLog:
+  - changeSet:
+      id: 124-renter-refund-payable
+      author: claude
+      changes:
+        - sql:
+            comment: B-01-07 Refunds payable – renters, for every tenant whose chart has the B-01 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'B-01-07', 'Refunds payable – renters',
+                     'Refunds payable – renters', 'مبالغ مستردة مستحقة للمستأجرين', 'LIABILITY', 'OTHER_LIABILITY',
+                     g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'B-01'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'B-01-07');
+        - sql:
+            comment: RENTER_REFUND_PAYABLE tenant default mapping onto B-01-07
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'RENTER_REFUND_PAYABLE', a.id
+                FROM accounts a
+               WHERE a.code = 'B-01-07'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'RENTER_REFUND_PAYABLE');
+        - addColumn:
+            tableName: vouchers
+            columns:
+              - column: { name: settlement_id, type: uuid, constraints: { foreignKeyName: fk_vouchers_settlement, referencedTableName: lease_settlements, referencedColumnNames: id } }
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_settlement, columns: [ { column: { name: settlement_id } } ] }
+        - dropNotNullConstraint: { tableName: issued_cheques, columnName: vendor_id, columnDataType: uuid }
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role = 'RENTER_REFUND_PAYABLE';
+              DELETE FROM accounts a WHERE a.code = 'B-01-07'
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              ALTER TABLE vouchers DROP COLUMN IF EXISTS settlement_id;

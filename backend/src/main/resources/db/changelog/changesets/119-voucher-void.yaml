@@ -1,0 +1,17 @@
+# F14-42: a posted voucher can be voided — reversed with a reason and marked VOID.
+databaseChangeLog:
+  - changeSet:
+      id: 119-voucher-status-void
+      author: claude
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS ck_vouchers_status;
+              ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_status
+                CHECK (status IN ('DRAFT','POSTED','REVERSED','VOID'))
+      rollback:
+        - sql:
+            sql: >-
+              ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS ck_vouchers_status;
+              ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_status
+                CHECK (status IN ('DRAFT','POSTED','REVERSED'))

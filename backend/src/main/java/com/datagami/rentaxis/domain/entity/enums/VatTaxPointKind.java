@@ -4,6 +4,8 @@ package com.datagami.rentaxis.domain.entity.enums;
 public enum VatTaxPointKind {
     /** One instalment's tax point: min(cheque date, receipt date). */
     INSTALMENT,
+    /** F14-37: VAT on the recharges (damage, cleaning, keys) deducted at a settlement; posted on the STL. */
+    SETTLEMENT,
     /** The settling pair a termination posts on its TCR; negative when it credits VAT back. */
     TERMINATION_ADJUSTMENT,
     /**

@@ -47,6 +47,12 @@ export type Advance = {
     paid: number;
     allocated: number;
     unallocated: number;
+    /**
+     * F14-40: an unallocated PCN (supplier credit note) shows here too, next
+     * to a BPV's unallocated advances — both are "money the vendor is owed
+     * less than". Absent (or "BPV") on a row from before this field existed.
+     */
+    docType?: "BPV" | "PCN";
 };
 
 /** `AllocationDTO`. `live` is false once released. */
@@ -136,6 +142,23 @@ export function dueDateFrom(supplierDate: string, terms: number | null | undefin
     const [y, m, d] = supplierDate.split("-").map(Number);
     const due = new Date(Date.UTC(y, m - 1, d + (terms ?? 30)));
     return due.toISOString().slice(0, 10);
+}
+
+/**
+ * Days a due date is past, counted to a given as-of date (not "today") — used
+ * by the payment-voucher allocation grid, where the open items API returns
+ * `daysOverdue` counted to today but the grid is dated to the voucher itself
+ * (F14-46: a payment dated 01/08 should not say "42 days overdue" counted to
+ * whenever it happens to be opened).
+ */
+export function daysOverdueAsOf(dueDate: string, asOf: string): number {
+    if (!dueDate || !asOf) return 0;
+    const parse = (s: string) => {
+        const [y, m, d] = s.split("-").map(Number);
+        return Date.UTC(y, m - 1, d);
+    };
+    const diff = Math.round((parse(asOf) - parse(dueDate)) / 86400000);
+    return diff > 0 ? diff : 0;
 }
 
 /** Overdue = every bucket past due. */
@@ -252,6 +275,8 @@ export type PaymentRun = {
 export type PostRunRequest = {
     vendors: { vendorId: string; netPayment: number; advanceApplied: number; chequeNumber: string | null;
         items: { itemId: string; paid: number }[] }[];
+    /** F14-20: see {@link IssuedChequeActionInput.notOnStatement} — resend once confirmed. */
+    notOnStatement?: boolean;
 };
 
 /** `PaymentRunPreviewDTO`: one payment per vendor, and every problem at once. */
@@ -357,11 +382,14 @@ export const paymentRunsApi = {
     bankFileUrl: (id: string, bom = false) => `${PROXY}/finance/payment-runs/${id}/bank-file.csv${bom ? "?bom=true" : ""}`,
 };
 
+/** `IssuedChequeActionDTO` for `POST .../present`: F14-20's notOnStatement flag. */
+export type IssuedChequeActionInput = { date: string; reason?: string | null; notOnStatement?: boolean };
+
 export const issuedChequesApi = {
     list: (q: { status?: IssuedChequeStatus; bankAccountId?: string; from?: string; to?: string; duePresent?: boolean }) =>
         apiGet<IssuedCheque[]>(`/finance/issued-cheques${qs(q)}`),
     summary: () => apiGet<IssuedChequeSummary>("/finance/issued-cheques/summary"),
-    present: (id: string, date: string) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, { date }),
+    present: (id: string, body: IssuedChequeActionInput) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, body),
     cancel: (id: string, date: string, reason: string) =>
         apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/cancel`, { date, reason }),
     unpresent: (id: string, date: string, reason: string) =>

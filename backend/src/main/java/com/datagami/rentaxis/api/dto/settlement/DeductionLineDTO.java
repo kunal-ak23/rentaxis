@@ -26,5 +26,7 @@ public record DeductionLineDTO(
         UUID accountId,
         String accountName,
         boolean autoCalculated,
-        List<DeductionAttachmentDTO> attachments) {
+        List<DeductionAttachmentDTO> attachments,
+        /* F14-37: 5 % output VAT on a taxable recharge of a VAT lease; zero otherwise. */
+        BigDecimal vatAmount) {
 }

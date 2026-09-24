@@ -111,6 +111,34 @@ describe("F14-03 re-mapping to a new layout", () => {
     });
 });
 
+describe("F14-59 a saved profile does not fit the uploaded file's kind", () => {
+    it("ignores a CSV-shaped saved profile when the upload is XLSX, and does not seed a column from data-row text", async () => {
+        // Saved against a CSV that had a title row: header on row 2, and a
+        // cheque-number column the CSV called "REF".
+        const grid = [["Date", "Description", "Amount"], ["01/09/2026", "Payment", "-500.00"]];
+        stubFetch((u, init) => {
+            if (u.endsWith("/profile") && init?.method === "PUT") return { match: "", body: {} };
+            if (u.endsWith("/profile")) return { match: "", body: {
+                fileKind: "CSV", headerRow: 2, firstDataRow: 3, csvDelimiter: ",", dateFormats: ["dd/MM/yyyy"],
+                columns: { chequeNo: "REF" }, amountMode: "SPLIT", decimalSeparator: "." } };
+            if (u.includes("/imports")) return { match: "", body: result(grid, { fileKind: "XLSX", csvDelimiter: null }) };
+            return undefined;
+        });
+        renderIn("en", <StatementImportDialog bankAccountId="ba-1" bankName="EI" onClose={() => {}} onImported={() => {}} />);
+        fireEvent.change(screen.getByTestId("import-file"), { target: { files: [new File(["x"], "s.xlsx")] } });
+        expect(await screen.findByTestId("mapping-wizard")).toBeInTheDocument();
+
+        // Not row 2 (the CSV profile's header row, which is a DATA row in this
+        // XLSX) — the detected row, 1.
+        expect(screen.getByTestId("map-header-row")).toHaveValue(1);
+        expect(screen.getByTestId("map-txnDate")).toHaveValue("Date");
+        // "REF" never appears in this file's header, so the saved chequeNo
+        // mapping (and the data-row text it would otherwise be read against)
+        // must not survive into the seeded columns.
+        expect(screen.getByTestId("map-chequeNo")).toHaveValue("");
+    });
+});
+
 describe("F14-04 a semicolon CSV", () => {
     it("defaults the delimiter to the detected one, re-splits on change, and saves it", async () => {
         const semi = [["Date", "Description", "Amount"], ["01/09/2026", "CHARGE", "-10,50"]];
@@ -267,5 +295,41 @@ describe("F14-05 the statement pane fits its half of the workspace", () => {
         // The value date shows only where it differs from the date.
         expect(screen.getByTestId("vd-b")).toHaveTextContent("11/09/2026");
         expect(screen.queryByTestId("vd-a")).not.toBeInTheDocument();
+
+        // F14-05 (still failing at 1568px before this fix): the statement table
+        // is `table-fixed` with an explicit width on every column but the
+        // truncating description one, so the table can never lay out wider
+        // than its container — nothing can end up rendered under the sticky
+        // Actions column, at any pane width, without a sideways scroll.
+        const table = cell.closest("table")!;
+        expect(table).toHaveClass("table-fixed");
+        expect(cell).toHaveClass("bg-surface"); // opaque — a row's tint must not show through
+        // The sticky column's own z-index must stay below the Σ footer's, so a
+        // tall pane's sticky cell never paints over the footer bar.
+        expect(cell.className).toContain("z-[1]");
+        expect(screen.getByTestId("sigma-footer").className).toMatch(/\bz-10\b/);
+    });
+});
+
+describe("F14-48 the CSV export carries the current locale", () => {
+    const ws = {
+        bankAccountId: "ba-1", leaves: [], needsLeaf: false, bookItems: [], matches: [], reconciledThrough: null,
+        statementLines: [], openingItems: [],
+    };
+
+    it("passes lang=en in English", async () => {
+        const { BankReconciliationWorkspace } = await import("../BankReconciliationWorkspace");
+        stubFetch(u => (u.includes("/workspace") ? { match: "", body: ws } : undefined));
+        renderIn("en", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await waitFor(() => expect(screen.getByText("Export CSV").closest("a"))
+            .toHaveAttribute("href", expect.stringContaining("lang=en")));
+    });
+
+    it("passes lang=ar in Arabic", async () => {
+        const { BankReconciliationWorkspace } = await import("../BankReconciliationWorkspace");
+        stubFetch(u => (u.includes("/workspace") ? { match: "", body: ws } : undefined));
+        renderIn("ar", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await waitFor(() => expect(screen.getByText(ar.BankRec.exportCsv).closest("a"))
+            .toHaveAttribute("href", expect.stringContaining("lang=ar")));
     });
 });

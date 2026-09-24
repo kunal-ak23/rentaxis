@@ -113,6 +113,15 @@ public class PenaltyAssessmentController {
         return ResponseEntity.ok(service.waive(id, body(request).note()));
     }
 
+    /** F14-28: reduce a proposal (partial waiver) — {"amount": 300, "note": "why"}. */
+    public record ReducePenaltyRequest(java.math.BigDecimal amount, String note) { }
+
+    @PostMapping("/{id}/reduce")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<PenaltyAssessmentDTO> reduce(@PathVariable UUID id, @RequestBody ReducePenaltyRequest request) {
+        return ResponseEntity.ok(service.reduce(id, request.amount(), request.note()));
+    }
+
     @PostMapping("/{id}/reverse")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<PenaltyAssessmentDTO> reverse(@PathVariable UUID id,

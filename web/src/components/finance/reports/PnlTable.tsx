@@ -188,7 +188,7 @@ export default function PnlTable({
                         <td className={td}>{t("noi")}</td>
                         {amountCells(data.noi, c => ({ column: c, label: t("noi") }), "noi")}
                     </tr>
-                    {data.allocation && !pivot && (
+                    {data.allocation && (
                         <>
                             <tr className="text-muted italic" data-testid="allocation-row">
                                 <td className={td}>{t("allocatedRow")}</td>

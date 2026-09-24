@@ -65,7 +65,9 @@ export type AccountRole =
   | "PDC_PAYABLE"
   | "BANK_CHARGES"
   | "BANK_INTEREST_INCOME"
-  | "BANK_SUSPENSE";
+  | "BANK_SUSPENSE"
+  /** F14-36: "Refunds payable – renters" — what the STL credits for a deposit refund owed. */
+  | "RENTER_REFUND_PAYABLE";
 
 export type JournalDocType =
   | "TCO"

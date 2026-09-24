@@ -38,6 +38,8 @@ export type SettlementRow = {
     accountName?: string | null;
     autoCalculated: boolean;
     attachments: DeductionAttachment[];
+    /** F14-37: VAT this recharge line carries — already inside `amount`. */
+    vatAmount: number;
 };
 
 /** Half-up to the fils — the server's `money(...)` scale. */
@@ -48,6 +50,11 @@ export function round2(n: number): number {
 
 export function totalOf(rows: SettlementRow[], type: SettlementLineType): number {
     return round2(rows.filter(r => r.type === type).reduce((s, r) => s + (r.amount || 0), 0));
+}
+
+/** F14-37: Σ of the deduction rows' VAT — "VAT on recharges", already inside `totalOf(rows, "DEDUCTION")`. */
+export function totalVatOf(rows: SettlementRow[]): number {
+    return round2(rows.filter(r => r.type === "DEDUCTION").reduce((s, r) => s + (r.vatAmount || 0), 0));
 }
 
 export function netRefundOf(statement: SettlementStatement, rows: SettlementRow[]): number {

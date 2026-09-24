@@ -2,6 +2,7 @@ package com.datagami.rentaxis.domain.entity.enums;
 
 /** Journal number prefixes. Match PACT's vocabulary so the client's accountant recognises them (spec §3). */
 public enum JournalDocType {
+    PCN,  // F14-40: supplier credit note (our debit note)
     TCO,  // tenancy contract posting
     TCR,  // contract reversal / unearned rent on termination
     PDR,  // PDC registered

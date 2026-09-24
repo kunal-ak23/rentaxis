@@ -200,6 +200,55 @@ describe("payment-run wizard", () => {
         expect(nav.push).not.toHaveBeenCalled();
     });
 
+    it("shows bank.statementCovers with a checkbox and resends with notOnStatement (F14-20)", async () => {
+        let posts = 0;
+        stubFetch([
+            { match: "/payment-runs/candidates", body: CANDIDATES },
+            { method: "POST", match: "/payment-runs", body: RUN },
+            { match: "/properties", body: [] },
+        ]);
+        const base = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).getMockImplementation() as
+            (url: string, init?: RequestInit) => Promise<Response>;
+        vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+            const u = String(url);
+            if (u.includes("/preview")) {
+                calls.push({ method: "GET", url: u, body: undefined });
+                return new Response(JSON.stringify(PREVIEW), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            if (u.endsWith("/payment-runs/run-1/post") && (init?.method ?? "GET") === "POST") {
+                posts++;
+                calls.push({ method: "POST", url: u, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+                if (posts === 1) {
+                    const body = JSON.stringify({
+                        code: "bank.statementCovers",
+                        args: { bank: "Emirates Islamic 0123", from: "01/09/2026", to: "30/09/2026", date: "10/09/2026" },
+                        message: "covered",
+                    });
+                    return new Response(body, { status: 400, headers: { "Content-Type": "application/json" } });
+                }
+                return new Response(JSON.stringify(RUN), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            return base(u, init);
+        }));
+        renderIn("en", <PaymentRunWizard />);
+        fireEvent.click(await screen.findByTestId("run-pick-INV-7781"));
+        await waitFor(() => expect(screen.getByTestId("run-account").querySelectorAll("option").length).toBe(2));
+        fireEvent.change(screen.getByTestId("run-account"), { target: { value: "bank-1" } });
+        fireEvent.click(screen.getByTestId("run-save-preview"));
+        await screen.findByTestId("run-preview");
+        fireEvent.click(screen.getByTestId("run-post"));
+        fireEvent.click(await screen.findByTestId("run-confirm-post"));
+
+        expect(await screen.findByTestId("run-post-notice")).toHaveTextContent("Emirates Islamic 0123");
+        expect(nav.push).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByTestId("run-post-not-on-statement"));
+        fireEvent.click(screen.getByTestId("run-confirm-post"));
+        await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/dashboard/finance/payables/payment-runs/run-1"));
+        const secondPost = calls.filter(c => c.method === "POST" && c.url.endsWith("/payment-runs/run-1/post"))[1];
+        expect(secondPost.body).toMatchObject({ notOnStatement: true });
+    });
+
     it("refuses an amount above what the invoice has open", async () => {
         renderIn("en", <PaymentRunWizard />);
         fireEvent.click(await screen.findByTestId("run-pick-INV-7781"));
@@ -318,7 +367,8 @@ describe("issued cheques", () => {
 
         fireEvent.click(screen.getByTestId("present-000031"));
         fireEvent.change(await screen.findByTestId("cheque-action-date"), { target: { value: "2026-09-19" } });
-        expect(screen.getByTestId("cheque-early")).toHaveTextContent("A cheque cannot be presented before 2026-09-20");
+        // F14-46: dd/mm/yyyy, not raw ISO.
+        expect(screen.getByTestId("cheque-early")).toHaveTextContent("A cheque cannot be presented before 20/09/2026");
         expect(screen.getByTestId("cheque-confirm")).toBeDisabled();
         fireEvent.change(screen.getByTestId("cheque-action-date"), { target: { value: "2026-09-20" } });
         fireEvent.click(screen.getByTestId("cheque-confirm"));

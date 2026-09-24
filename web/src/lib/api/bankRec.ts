@@ -351,7 +351,8 @@ export const bankRecApi = {
     deleteImport: (importId: string) => apiSend<void>("DELETE", `${ROOT}/imports/${importId}`),
     workspace: (id: string, q: { from?: string; to?: string; state?: "UNMATCHED" | "SUGGESTED" | "ALL" }) =>
         apiGet<Workspace>(`${ROOT}/bank-accounts/${id}/workspace${qs(q)}`),
-    linesCsvUrl: (id: string, q: { from?: string; to?: string }) => `${BASE}${ROOT}/bank-accounts/${id}/lines.csv${qs(q)}`,
+    /** F14-48: `lang` (the current locale) so the export's column headers and text come back in it, same as the PDF. */
+    linesCsvUrl: (id: string, q: { from?: string; to?: string; lang?: string }) => `${BASE}${ROOT}/bank-accounts/${id}/lines.csv${qs(q)}`,
     autoMatch: (id: string, q: { from?: string; to?: string }) =>
         apiSend<{ proposed: number; byMethod: Record<string, number> }>("POST", `${ROOT}/bank-accounts/${id}/auto-match${qs(q)}`),
     match: (body: { statementLineIds: string[]; journalLineIds: string[]; openingItemIds?: string[] }) =>

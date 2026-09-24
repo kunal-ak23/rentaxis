@@ -13,6 +13,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
 import OverduePaymentsWidget from "@/components/dashboard/OverduePaymentsWidget";
 import ChequesToDepositWidget from "@/components/dashboard/ChequesToDepositWidget";
+import RecognitionBehindWidget from "@/components/dashboard/RecognitionBehindWidget";
 
 type DashboardSummary = {
   totalProperties: number;
@@ -258,6 +259,7 @@ export default function DashboardPage() {
   const locale = useLocale();
   const { data: session } = useSession();
   const canManageLeases = hasPermission(session?.user?.role as UserRole | undefined, "canManageLeases");
+  const canRunRecognition = hasPermission(session?.user?.role as UserRole | undefined, "canRunRecognition");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -423,6 +425,8 @@ export default function DashboardPage() {
         <OverduePaymentsWidget />
         <ChequesToDepositWidget />
       </div>
+
+      {canRunRecognition && <RecognitionBehindWidget />}
 
       <FollowUpsWidget />
 

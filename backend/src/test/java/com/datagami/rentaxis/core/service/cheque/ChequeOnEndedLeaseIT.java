@@ -655,6 +655,11 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(agingRows(later)).as("absorbed by STL: the ledger no longer carries it")
                 .noneMatch(r -> r.chequeId().equals(kept));
         assertThat(statusOf(kept)).isEqualTo(ChequeStatus.BOUNCED);
+        // F14-52: the row itself says so too — not overdue, settled by the ledger.
+        var row = chequeQueries.get(kept);
+        assertThat(row.overdue()).isFalse();
+        assertThat(row.daysOverdue()).isZero();
+        assertThat(row.ledgerSettled()).isTrue();
     }
 
     private List<com.datagami.rentaxis.api.dto.cheque.AgingReportDTO.Row> agingRows(LocalDate on) {

@@ -120,7 +120,8 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
                         sharedLine(salaries.getId(),
                                 "Watchman salary", new BigDecimal("2500.00"), BigDecimal.ZERO, null, null))));
 
-        Voucher posted = vouchers.post(v.getId());
+        // F14-42: the till is empty in this fixture; the user confirmed the overdraft.
+        Voucher posted = vouchers.post(v.getId(), List.of(), null, VoucherService.PostOptions.of(null, true));
         JournalEntry e = tx.execute(s -> entries.findById(posted.getJournalId()).orElseThrow());
 
         assertThat(e.getDocType()).isEqualTo(JournalDocType.BPV);
@@ -144,7 +145,8 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
                 bank.getId(), "000451", LocalDate.of(2026, 10, 20),
                 List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
-        Voucher posted = vouchers.post(v.getId());
+        // F14-42: the till is empty in this fixture; the user confirmed the overdraft.
+        Voucher posted = vouchers.post(v.getId(), List.of(), null, VoucherService.PostOptions.of(null, true));
         assertThat(journalRows(posted.getJournalId()))
                 .filteredOn(r -> r.accountId().equals(bank.getId()))
                 .singleElement()
@@ -157,6 +159,32 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
      * Assets" (A-02): {@code createLeaf} inherits the parent's sub-type, and only
      * a BANK or CASH sub-type is money that can actually leave.
      */
+    /** F14-42: a cash payment may not take the till below zero unless the user confirms it. */
+    @Test
+    void aCashPaymentThatWouldOverdrawTheTillIsRefusedUntilConfirmed() {
+        Account cash = accounts.createLeaf("Petty Cash", accounts.getAccountByCode("A-02-05"), null);
+        Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "Petty cash", null, null,
+                cash.getId(), null, null,
+                List.of(sharedLine(salaries.getId(), null, new BigDecimal("300.00"), BigDecimal.ZERO, null, null))));
+        assertThatThrownBy(() -> vouchers.post(v.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Petty Cash holds 0.00 on 20/10/2026; paying 300.00 from it would leave it at -300.00");
+        assertThat(vouchers.post(v.getId(), List.of(), null, VoucherService.PostOptions.of(null, true)).getStatus())
+                .isEqualTo(VoucherStatus.POSTED);
+    }
+
+    /** F14-42: a line paid to the payment account itself moves nothing and is refused. */
+    @Test
+    void aLinePaidToThePaymentAccountItselfIsRefused() {
+        assertThatThrownBy(() -> vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(
+                VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "Neutralise", null, null,
+                bank.getId(), null, null,
+                List.of(sharedLine(bank.getId(), null, new BigDecimal("0.01"), BigDecimal.ZERO, null, null)))).getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("the account the payment is made from");
+    }
+
     @Test
     void cashPaymentsUseTheCashLeafAsThePaymentAccount() {
         Account cash = accounts.createLeaf("Petty Cash", accounts.getAccountByCode("A-02-05"), null);
@@ -165,7 +193,8 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
                 cash.getId(), null, null,
                 List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("300.00"), BigDecimal.ZERO, null, null))));
-        Voucher posted = vouchers.post(v.getId());
+        // F14-42: the till is empty in this fixture; the user confirmed the overdraft.
+        Voucher posted = vouchers.post(v.getId(), List.of(), null, VoucherService.PostOptions.of(null, true));
         assertThat(journalRows(posted.getJournalId()))
                 .extracting(Row::accountId, Row::credit)
                 .contains(tuple(cash.getId(), new BigDecimal("300.00")));

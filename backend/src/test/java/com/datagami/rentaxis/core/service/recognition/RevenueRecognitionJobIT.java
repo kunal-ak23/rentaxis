@@ -291,6 +291,51 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
         assertThat(cilNumbersOf(beta.tenantId())).containsExactly("CIL-26/1", "CIL-26/2", "CIL-26/3");
     }
 
+    @Autowired RecognitionRunLog runLog;
+
+    /** lockAtLeastFor = PT1M would make a second call inside a minute skip silently. */
+    private void freeLockAndCatchUp() {
+        // Released rather than deleted: ShedLock remembers the row exists and only UPDATEs it.
+        jdbc.update("""
+                insert into shedlock (name, lock_until, locked_at, locked_by)
+                values ('revenue-recognition', now() - interval '1 minute', now() - interval '2 minutes', 'test')
+                on conflict (name) do update set lock_until = now() - interval '1 minute'""");
+        job.catchUp();
+    }
+
+    /**
+     * F14-27: a night whose 00:30 pass was lost (a restart at that minute) is caught
+     * up by the hourly check once a pass for an earlier day is on record, and what
+     * the pass did is kept for the recognition status.
+     */
+    @Test
+    void aMissedNightIsCaughtUpAndThePassIsRecorded() {
+        org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", true);
+        try {
+            jdbc.update("delete from recognition_runs");
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
+
+            freeLockAndCatchUp();   // no pass on record: nothing to catch up
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
+
+            jdbc.update("insert into recognition_runs (tenant_id, run_for, posted, failed) values (?, ?, 0, 0)",
+                    alpha.tenantId(), TODAY);
+            freeLockAndCatchUp();   // today's pass is on record
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
+
+            jdbc.update("update recognition_runs set run_for = ? where tenant_id = ?", TODAY.minusDays(1), alpha.tenantId());
+            freeLockAndCatchUp();
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isZero();
+            assertThat(runLog.last(alpha.tenantId())).hasValueSatisfying(r -> {
+                assertThat(r.runFor()).isEqualTo(TODAY);
+                assertThat(r.posted()).isEqualTo(3);
+                assertThat(r.failed()).isZero();
+            });
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", false);
+        }
+    }
+
     /** A second pass on the same night finds nothing left to do and writes nothing. */
     @Test
     void aSecondPassIsANoOp() {

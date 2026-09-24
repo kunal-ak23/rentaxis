@@ -265,9 +265,15 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         // CRT-26/104: 000452 cleared by hand on 30/09; the bank credits it on 01/10.
         ChequeDTO c452 = cheque(marina, "15000", "000452");
         deposit(SEP_30, c452);
-        chequeService.clear(c452.id(), ChequeActionRequest.on(SEP_30));
+        // F14-20: inside the imported statement's range, so the user confirms it is not on it.
+        chequeService.clear(c452.id(), new ChequeActionRequest(SEP_30, null, null, null, true));
         // BPV-26/60: current-dated cheque 000077 to the vendor, not yet debited.
-        Voucher chq77 = payment(SEP_29, "8000.00", "000077", SEP_29, null);
+        Voucher chq77 = vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.BPV, SEP_29,
+                gulf.getId(), null, "Payment", null, null, marinaBank.getId(), "000077", SEP_29,
+                List.of(new VoucherService.VoucherLineInput(gulf.getPayableAccount().getId(), "Settlement",
+                        new BigDecimal("8000.00"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.CHEQUE, null)).getId(), List.of(), null,
+                VoucherService.PostOptions.of(true, false));
 
         BankRecDTOs.Reconciliation draft = recs.create(ei.getId(), period(SEP_1, SEP_30));
         return new September(draft.id(), c452, chq77, interest.journalEntryIds().get(0));
@@ -299,9 +305,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
             assertThat(i.date()).isEqualTo(SEP_30);
             assertThat(i.withoutEvidence()).as("cleared by hand, no statement line").isTrue();
         });
-        assertThat(r.withoutEvidenceCount()).isEqualTo(1);
+        // F14-20: cheque 000077 was confirmed "not on the statement" when it was posted.
+        assertThat(r.withoutEvidenceCount()).isEqualTo(2);
         assertThat(r.unpresentedItems()).singleElement().satisfies(i -> {
             assertThat(i.chequeNo()).isEqualTo("000077");
+            assertThat(i.withoutEvidence()).isTrue();
             assertThat(i.amount()).isEqualByComparingTo("-8000.00");
         });
         assertThat(r.unrecordedItems()).isEmpty();
@@ -339,7 +347,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(reopened.status()).isEqualTo("REOPENED");
         assertThat(reopened.reopenReason()).isEqualTo("000452 was credited on 30/09 after all");
         assertThat(reconciledThrough()).isNull();
-        chequeService.clear(late.id(), ChequeActionRequest.on(SEP_29));
+        // F14-20: 29/09 is inside the imported statement; the clearing is confirmed as not on it.
+        chequeService.clear(late.id(), new ChequeActionRequest(SEP_29, null, null, null, true));
 
         // A new draft for the same period is finalized again, now with the later clearing in transit.
         BankRecDTOs.Reconciliation again = recs.create(ei.getId(), period(SEP_1, SEP_30));

@@ -48,6 +48,9 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
+import com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod;
+import com.datagami.rentaxis.domain.entity.enums.VoucherType;
+import com.datagami.rentaxis.domain.entity.Voucher;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -489,6 +492,42 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * "arrears" off the register's dates — which is what the old preview did —
      * would show zero there and refund the deposit alone.</p>
      */
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @Autowired com.datagami.rentaxis.core.service.voucher.VoucherService vouchers;
+
+    /**
+     * F14-37: on a VAT lease a damage recharge carries 5 % output VAT, declared by the
+     * STL with a tax invoice; utility arrears pass through to the property's
+     * Utilities expense leaf instead of income.
+     */
+    @Test
+    void aVatLeasesRechargeCarriesVatAndATaxInvoiceAndUtilityArrearsPassThrough() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000"),
+                        line("SECURITY_DEPOSIT", "3000")), 4, null).lease().getId();
+        leaseService.markExpired(leaseId, END.plusDays(1));
+        saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "2000"),
+                deduction(DeductionCategory.UTILITY_ARREARS, "650"));
+
+        SettlementStatementDTO statement = settlement.statement(leaseId);
+        assertThat(statement.totalDeductionVat()).isEqualByComparingTo("100.00");
+        assertThat(statement.deductions()).filteredOn(d -> d.category() == DeductionCategory.UTILITY_ARREARS)
+                .singleElement().satisfies(d -> assertThat(d.vatAmount()).isEqualByComparingTo("0"));
+
+        settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(END.plusDays(3), leaf(AccountRole.BANK).getId(), true), null);
+        JournalEntry stl = stlOf(leaseId);
+        assertThat(creditOn(stl, leaf(AccountRole.OUTPUT_VAT).getId())).isEqualByComparingTo("100.00");
+        UUID utilities = jdbcTemplate.queryForObject("""
+                select id from accounts where report_line = 'EXP_UTILITIES' and property_id = ? limit 1""",
+                UUID.class, fixtures.property().getId());
+        assertThat(creditOn(stl, utilities)).isEqualByComparingTo("650.00");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from tax_invoices where lease_id = ? and kind = 'TAX_INVOICE' and vat_amount = 100.00
+                  and taxable_amount = 2000.00""", Integer.class, leaseId)).isEqualTo(1);
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void statementShowsCreditOwedToTenant() {
         UUID leaseId = terminatedGalah();
@@ -612,7 +651,9 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(response.getReceivedTotal()).isEqualByComparingTo("30500.00");
         assertThat(response.getReceivableBalance()).isEqualByComparingTo("-5239.73");
         assertThat(response.getDepositsHeld()).isEqualByComparingTo("3000.00");
-        assertThat(response.getRefundBankAccountId()).isEqualTo(bank);
+        // F14-36: the refund is owed to the renter, not paid out of a bank here.
+        assertThat(response.getRefundBankAccountId()).isNull();
+        assertThat(response.getRefundOutstanding()).isEqualByComparingTo("8239.73");
         assertThat(response.getCollectionChequeId()).as("nothing to collect").isNull();
         assertThat(response.getJournalNumber()).startsWith("STL");
 
@@ -621,7 +662,9 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(linesOf(stl.getId())).hasSize(3);
         assertThat(debitOn(stl, deposit)).as("Dr Security Deposit").isEqualByComparingTo("3000.00");
         assertThat(debitOn(stl, receivable)).as("Dr Rent Receivable").isEqualByComparingTo("5239.73");
-        assertThat(creditOn(stl, bank)).as("Cr Bank").isEqualByComparingTo("8239.73");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).as("Cr Refunds payable")
+                .isEqualByComparingTo("8239.73");
+        assertThat(creditOn(stl, bank)).as("no bank movement at settlement").isEqualByComparingTo("0.00");
         // Dimensions: the entry is filed under the contract it closes.
         assertThat(stl.getLeaseId()).isEqualTo(leaseId);
         assertThat(stl.getPropertyId()).isEqualTo(fixtures.property().getId());
@@ -711,7 +754,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
         assertThat(response.getRefundAmount()).isEqualByComparingTo("4239.73");
         assertThat(response.getCollectionChequeId()).isNull();
-        assertThat(creditOn(stlOf(leaseId), leaf(AccountRole.BANK).getId())).isEqualByComparingTo("4239.73");
+        assertThat(creditOn(stlOf(leaseId), leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("4239.73");
         assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
         assertTrialBalanceBalances();
     }
@@ -736,7 +779,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
         JournalEntry stl = stlOf(leaseId);
         assertThat(debitOn(stl, otherIncome)).isEqualByComparingTo("150.00");
-        assertThat(creditOn(stl, leaf(AccountRole.BANK).getId())).isEqualByComparingTo("8389.73");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("8389.73");
         assertTrialBalanceBalances();
     }
 
@@ -1054,21 +1097,108 @@ class SettlementServiceIT extends AbstractPostgresIT {
     }
 
     /** A refund needs somewhere to come from, and a balance due needs nothing. */
+    /**
+     * R1 P1: a settlement finalized before F14-36 paid the refund from the bank; its
+     * STL carries no refund-payable credit. It owes nothing, and a refund voucher
+     * against it is refused.
+     */
     @Test
-    void aRefundNeedsAUsableBankAccount() {
+    void aSettlementFinalizedUnderTheOldFlowOwesNoRefund() {
         UUID leaseId = terminatedGalah();
         saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        UUID bank = leaf(AccountRole.BANK).getId();
+        // Reshape into the legacy settlement: its journal paid the refund straight from the bank.
+        String narration = "legacy STL";
+        UUID legacyStl = tx.execute(st -> postingService.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(
+                JournalDocType.JV, SETTLED_ON, narration, null,
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null, List.of(
+                        com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(leaf(AccountRole.SECURITY_DEPOSIT).getId(), new BigDecimal("8239.73")),
+                        com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(bank, new BigDecimal("8239.73"))))).getId());
+        jdbcTemplate.update("update lease_settlements set journal_id = ?, refund_bank_account_id = ? where id = ?",
+                legacyStl, bank, done.getId());
 
-        assertThatThrownBy(() -> finalize(leaseId, null))
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("0.00");
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        assertThatThrownBy(() -> vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, bank, null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        payable, "Refund", new BigDecimal("8239.73"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-LEGACY", done.getId())))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("needs a bank account to pay from");
+                .hasMessageContaining("was paid when it was finalized");
+    }
 
-        assertThatThrownBy(() -> finalize(leaseId, leaf(AccountRole.OTHER_INCOME).getId()))
+    /** R2 N2: owed is read off the STL's own refund line, so a later mapping change does not zero it. */
+    @Test
+    void owedFollowsTheLeafTheFinalizeCreditedEvenAfterTheMappingChanges() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        UUID original = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        UUID other = tx.execute(st -> accountService.createLeaf("Refunds payable – elsewhere",
+                accountService.getAccountByCode("B-01"), null).getId());
+        jdbcTemplate.update("update tenant_default_account_mappings set account_id = ? where role = 'RENTER_REFUND_PAYABLE'"
+                + " and tenant_id = ?", other, fixtures.tenantId());
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("8239.73");
+        Voucher paid = vouchers.post(vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, leaf(AccountRole.BANK).getId(), null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        original, "Refund", new BigDecimal("8239.73"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-N2", done.getId())).getId(), List.of());
+        assertThat(paid.getStatus()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.VoucherStatus.POSTED);
+    }
+
+    /** R1 P2-4: the refund payable is only paid through a voucher naming the settlement. */
+    @Test
+    void aPlainPaymentOnTheRefundPayableIsRefused() {
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        assertThatThrownBy(() -> vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, leaf(AccountRole.BANK).getId(), null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        payable, "Refund", new BigDecimal("100.00"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-X")))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("cannot pay a refund; name an active asset leaf");
+                .hasMessageContaining("use Pay refund");
+    }
 
-        assertThat(tx.execute(s -> settlement.buildSettlementResponse(leaseId)).getStatus())
-                .isEqualTo(SettlementStatus.DRAFT.name());
+    @Test
+    void aRefundIsOwedToTheRenterAndPaidByAPaymentVoucherNamingTheSettlement() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        assertThat(done.getRefundOutstanding()).isEqualByComparingTo("8239.73");
+        UUID settlementId = done.getId();
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        UUID bank = leaf(AccountRole.BANK).getId();
+
+        java.util.function.BiFunction<String, String, com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput> refund =
+                (amount, chequeDate) -> new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                        VoucherType.BPV, SETTLED_ON, null, null, "Deposit refund", null, null, bank,
+                        chequeDate == null ? null : "000901", chequeDate == null ? null : LocalDate.parse(chequeDate),
+                        List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                                payable, "Refund", new BigDecimal(amount), BigDecimal.ZERO, null, null)),
+                        null, null, chequeDate == null ? VoucherPaymentMethod.TRANSFER : VoucherPaymentMethod.CHEQUE,
+                        chequeDate == null ? "TRF-REF-1" : null, settlementId);
+
+        // More than is owed: refused at post.
+        Voucher tooMuch = vouchers.createDraft(refund.apply("9000.00", null));
+        assertThatThrownBy(() -> vouchers.post(tooMuch.getId(), List.of()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("The renter is owed 8239.73");
+        vouchers.deleteDraft(tooMuch.getId());
+
+        // Part by transfer, the rest by a post-dated cheque held in PDC payable.
+        vouchers.post(vouchers.createDraft(refund.apply("3000.00", null)).getId(), List.of());
+        Voucher pdc = vouchers.post(vouchers.createDraft(refund.apply("5239.73", "2027-03-15")).getId(), List.of());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from issued_cheques where voucher_id = ? and vendor_id is null",
+                Integer.class, pdc.getId())).isEqualTo(1);
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("0.00");
+        assertThat(balanceOf(payable, leaseId)).as("the renter is paid in full").isEqualByComparingTo("0.00");
+        assertTrialBalanceBalances();
     }
 
     /**
@@ -1184,7 +1314,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(response.getRefundAmount()).isEqualByComparingTo("3000.00");
         JournalEntry stl = stlOf(predecessor);
         assertThat(debitOn(stl, leaf(AccountRole.SECURITY_DEPOSIT).getId())).isEqualByComparingTo("3000.00");
-        assertThat(creditOn(stl, bank)).isEqualByComparingTo("3000.00");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("3000.00");
 
         assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, predecessor)).isEqualByComparingTo("0.00");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, predecessor)).isEqualByComparingTo("0.00");

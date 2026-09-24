@@ -113,8 +113,10 @@ public class RentReceiptService {
         // RR-YYYY-MM-SHORT_ID, dated by when the money landed rather than by when
         // the PDF was asked for: two downloads of one receipt are one receipt.
         LocalDate clearedAt = cheque.getClearedAt() != null ? cheque.getClearedAt() : cheque.getChequeDate();
-        String receiptNumber = "RR-" + String.format("%d-%02d", clearedAt.getYear(), clearedAt.getMonthValue())
-                + "-" + cheque.getId().toString().substring(0, 8).toUpperCase();
+        // F14-24: the sequence number given at clearing; rows cleared before it keep the old form.
+        String receiptNumber = cheque.getReceiptNumber() != null ? cheque.getReceiptNumber()
+                : "RR-" + String.format("%d-%02d", clearedAt.getYear(), clearedAt.getMonthValue())
+                        + "-" + cheque.getId().toString().substring(0, 8).toUpperCase();
 
         DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
@@ -146,7 +148,7 @@ public class RentReceiptService {
         // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
         // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
         // and update RentReceiptPayload accordingly.
-        String receiptFileName = "receipt-" + receiptNumber + ".pdf";
+        String receiptFileName = "receipt-" + receiptNumber.replace("/", "-") + ".pdf";
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.RENT_RECEIPT_AVAILABLE,
                 tenantId,

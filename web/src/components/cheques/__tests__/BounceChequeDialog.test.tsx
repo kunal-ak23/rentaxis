@@ -34,7 +34,7 @@ const CHEQUE: Cheque = {
     failureReason: null, replacesId: null, replacedById: null, imageUrl: null,
     depositedAt: "2026-06-02", clearedAt: null, bouncedAt: null, returnedAt: null,
     pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
-    due: false, overdue: false, daysOverdue: 0,
+    due: false, overdue: false, daysOverdue: 0, ledgerSettled: false,
 };
 
 afterEach(() => {
@@ -70,6 +70,22 @@ describe("BounceChequeDialog", () => {
             date: "2026-06-10",
             notes: "Returned by ENBD",
             failureReason: "ACCOUNT_CLOSED",
+        });
+    });
+
+    it("labels the two newer failure reasons, not their raw enum names (F14-22)", () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        const options = Array.from(
+            (screen.getByTestId("bounce-failure-reason") as HTMLSelectElement).options,
+        ).map(o => ({ value: o.value, text: o.textContent }));
+        expect(options).toContainEqual({ value: "STOPPED_PAYMENT", text: "Payment stopped" });
+        expect(options).toContainEqual({
+            value: "TECHNICAL_RETURN",
+            text: "Technical return (stale, post-dated, amount mismatch)",
         });
     });
 });

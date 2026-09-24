@@ -143,7 +143,14 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
         setResult(r);
         if (r.status === "PROFILE_REQUIRED") {
             setGrid(r.grid);
-            const saved = await bankRecApi.profile(bankAccountId).catch(() => null);
+            const savedRaw = await bankRecApi.profile(bankAccountId).catch(() => null);
+            // F14-59: a saved profile is a mapping for one file SHAPE (CSV row/column
+            // layout differs completely from XLSX). Seeding headerRow/firstDataRow — or
+            // any column mapping — from a profile saved against the other kind puts the
+            // header pointer on a DATA row, and guessColumns then "pre-selects" columns by
+            // matching against data text instead of header text. Only trust the saved
+            // profile when this upload is the same kind it was saved against.
+            const saved = savedRaw?.fileKind === r.fileKind ? savedRaw : null;
             const headerRow = saved?.headerRow ?? Math.max(1, r.grid.findIndex(row => row.filter(c => c).length >= 3) + 1);
             const hdr = r.grid[headerRow - 1] ?? [];
             const amountMode = saved?.amountMode ?? "SPLIT";

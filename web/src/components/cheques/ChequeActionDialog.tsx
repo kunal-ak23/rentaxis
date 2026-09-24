@@ -21,6 +21,8 @@ import { vatMoveFor, type VatMove } from "./vatMove";
 import type { RegisterAction } from "./registerActions";
 import { chequeRowIsValid } from "./chequeRowRules";
 import { chequeTitle } from "./chequeLabel";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 /**
  * Deposit, receive, correct or cancel one cheque — the register's own
@@ -45,7 +47,7 @@ const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
-const FAILURE_REASONS: ChequeFailureReason[] = ["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED"];
+const FAILURE_REASONS: ChequeFailureReason[] = ["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"];
 
 /**
  * Every row action this dialog can carry out: the register's whole set bar
@@ -65,7 +67,9 @@ type Props = {
 export default function ChequeActionDialog({ action, cheque, propertyId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
+    const cover = useStatementCoverGuard(tCommon);
     const accountLabel = (o: SettlementOption) => {
         const name = locale === "ar" && o.nameAr ? o.nameAr : o.name;
         const kind = o.kind === "CASH" ? t("cashInHand") : o.bankAccount ?? t("bankAccountKind");
@@ -106,6 +110,8 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         setError(null);
         setVatMove(null);
         setMoveVatTo("");
+        cover.reset();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [action, cheque]);
 
     // The server refuses to cancel a row whose VAT is still to be declared unless
@@ -185,12 +191,12 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     await chequeApi.deposit(cheque.id, { date, notes: notes || null, debitAccountId });
                     break;
                 case "clear":
-                    await chequeApi.clear(cheque.id, { date, notes: notes || null });
+                    await chequeApi.clear(cheque.id, { date, notes: notes || null, notOnStatement: cover.notOnStatement || undefined });
                     break;
                 case "receive":
                     // The account shown is the account sent: the server's own target
                     // unless the user picked another (R1 P2-3).
-                    await chequeApi.receive(cheque.id, { date, notes: notes || null, debitAccountId });
+                    await chequeApi.receive(cheque.id, { date, notes: notes || null, debitAccountId, notOnStatement: cover.notOnStatement || undefined });
                     break;
                 case "bounce":
                     await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason });
@@ -233,7 +239,11 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
             }
             onDone();
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            if ((action === "clear" || action === "receive") && cover.catchStatementCover(e)) {
+                // The notice + checkbox is now showing; the user resubmits.
+            } else {
+                setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            }
         } finally {
             setBusy(false);
         }
@@ -455,6 +465,15 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             onChange={e => setNotes(e.target.value)}
                         />
                     </div>
+                )}
+
+                {cover.notice && (action === "clear" || action === "receive") && (
+                    <StatementCoverNotice
+                        notice={cover.notice}
+                        checked={cover.notOnStatement}
+                        onChange={cover.setNotOnStatement}
+                        testIdPrefix={`cheque-${action}`}
+                    />
                 )}
 
                 {error && (

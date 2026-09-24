@@ -118,7 +118,9 @@ public class VoucherController {
     public ResponseEntity<VoucherDetailDTO> post(@PathVariable UUID id,
                                                  @Valid @RequestBody(required = false) PostVoucherDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(detail(vouchers.post(id, allocations(body == null ? null : body.allocations()))));
+        return ResponseEntity.ok(detail(vouchers.post(id, allocations(body == null ? null : body.allocations()), null,
+                body == null ? VoucherService.PostOptions.NONE
+                        : VoucherService.PostOptions.of(body.notOnStatement(), body.allowNegativeCash()))));
     }
 
     @PostMapping("/{id}/amend")
@@ -127,11 +129,20 @@ public class VoucherController {
         return ResponseEntity.ok(detail(vouchers.amend(id, body.reversalDate(), body.reason(),
                 toInput(body.replacement()),
                 // Absent: the replacement payment carries the original's allocations.
-                body.allocations() == null ? null : allocations(body.allocations()))));
+                body.allocations() == null ? null : allocations(body.allocations()),
+                VoucherService.PostOptions.of(body.notOnStatement(), body.allowNegativeCash()))));
     }
 
     /** Spec §2: PISRs and opening items with what is still owed on them, now. */
-    @GetMapping("/open-items")
+    /** F14-42: reverse a posted voucher with a reason and mark it VOID. */
+    @PostMapping("/{id}/void")
+    public ResponseEntity<VoucherDetailDTO> voidVoucher(@PathVariable UUID id,
+                                                        @Valid @RequestBody com.datagami.rentaxis.api.dto.voucher.VoidVoucherDTO body) {
+        requireTenantSelected();
+        return ResponseEntity.ok(detail(vouchers.voidVoucher(id, body.date(), body.reason())));
+    }
+
+        @GetMapping("/open-items")
     public ResponseEntity<List<OpenItemDTO>> openItems(
             @RequestParam(required = false) UUID vendorId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore,
@@ -265,7 +276,7 @@ public class VoucherController {
                 d.lines().stream().map(l -> new VoucherService.VoucherLineInput(
                         l.accountId(), l.description(), l.amount(), l.vatRate(), l.propertyId(), l.unitId(),
                         Boolean.TRUE.equals(l.shared()))).toList(),
-                d.supplierInvoiceDate(), d.dueDate(), d.paymentMethod(), d.paymentReference());
+                d.supplierInvoiceDate(), d.dueDate(), d.paymentMethod(), d.paymentReference(), d.settlementId());
     }
 
     /** A voucher needs an organisation to belong to; see the class Javadoc. */

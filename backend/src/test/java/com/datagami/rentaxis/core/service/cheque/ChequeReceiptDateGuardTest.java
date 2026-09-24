@@ -39,4 +39,19 @@ class ChequeReceiptDateGuardTest {
     void aRowWithNoBookingDateIsNotBlocked() {
         assertThatCode(() -> ChequeService.requireNotBeforeBooked(row(), null, BOOKED)).doesNotThrowAnyException();
     }
+
+    /** F14-21: a clearing is dated on or after the deposit and the date written on the cheque. */
+    @Test
+    void aClearingBeforeTheDepositOrTheChequesDateIsRefused() {
+        Cheque c = row();
+        c.setChequeDate(LocalDate.of(2026, 2, 1));
+        c.setDepositedAt(LocalDate.of(2026, 1, 25));
+        assertThatThrownBy(() -> ChequeService.requireNotClearedEarly(c, LocalDate.of(2026, 1, 31)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is dated 01/02/2026; it cannot clear on 31/01/2026");
+        c.setDepositedAt(LocalDate.of(2026, 2, 3));
+        assertThatThrownBy(() -> ChequeService.requireNotClearedEarly(c, LocalDate.of(2026, 2, 2)))
+                .hasMessageContaining("was deposited on 03/02/2026; it cannot clear on 02/02/2026");
+        assertThatCode(() -> ChequeService.requireNotClearedEarly(c, LocalDate.of(2026, 2, 3))).doesNotThrowAnyException();
+    }
 }

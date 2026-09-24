@@ -188,7 +188,7 @@ public class VoucherAttachmentService {
 
     /** REVERSED is the terminal, corrected state of a document — its paper trail is frozen with it. */
     private void requireMutable(Voucher v) {
-        if (v.getStatus() == VoucherStatus.REVERSED) {
+        if (v.getStatus() == VoucherStatus.REVERSED || v.getStatus() == VoucherStatus.VOID) {
             throw new BusinessRuleViolationException("Voucher "
                     + (v.getVoucherNumber() == null ? v.getId() : v.getVoucherNumber())
                     + " is REVERSED; its attachments are read-only");

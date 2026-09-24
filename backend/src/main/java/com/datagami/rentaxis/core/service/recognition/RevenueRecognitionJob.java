@@ -83,10 +83,47 @@ public class RevenueRecognitionJob {
     @Value("${rentaxis.recognition.job.enabled:true}")
     private boolean enabled;
 
-    public RevenueRecognitionJob(LandlordOrgRepository orgs, RecognitionService recognition, Clock clock) {
+    private final RecognitionRunLog runLog;
+
+    /** Off in the test suite (src/test/resources), whose shared database must not be closed behind a test's back. */
+    @Value("${rentaxis.recognition.job.catch-up-enabled:true}")
+    private boolean catchUpEnabled;
+
+    public RevenueRecognitionJob(LandlordOrgRepository orgs, RecognitionService recognition, Clock clock,
+                                 RecognitionRunLog runLog) {
         this.orgs = orgs;
         this.recognition = recognition;
         this.clock = clock;
+        this.runLog = runLog;
+    }
+
+    /**
+     * F14-27: the catch-up. The nightly trigger fires once, at 00:30 app time
+     * (Asia/Dubai, the JVM default zone), and a pass that falls inside a deploy's
+     * restart window is simply lost: nothing ran it again until the next night.
+     * The production deploy of 23/09 ran 20:25–20:33 UTC, which spans 00:30 Dubai
+     * on 24/09 — the most likely reason leases posted on 23/09 kept every ended
+     * period PLANNED all of 24/09 (no application log was available to confirm).
+     *
+     * <p>Every hour (first check a few minutes after start-up) this asks whether the
+     * last recorded nightly pass was for an earlier day and, once the nightly hour
+     * has passed, runs the pass for today under the same ShedLock name. The pass is
+     * idempotent: it only posts PLANNED rows whose period has ended. With no pass
+     * ever recorded (a fresh database, a test context) it does nothing; the next
+     * night records one.</p>
+     */
+    @Scheduled(initialDelayString = "${rentaxis.recognition.job.catch-up-initial-delay-ms:300000}",
+            fixedDelayString = "${rentaxis.recognition.job.catch-up-interval-ms:3600000}")
+    @SchedulerLock(name = "revenue-recognition", lockAtMostFor = "PT30M", lockAtLeastFor = "PT0S")
+    public void catchUp() {
+        if (!enabled || !catchUpEnabled) return;
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(clock);
+        LocalDate today = now.toLocalDate();
+        if (now.toLocalTime().isBefore(java.time.LocalTime.of(0, 30))) return;
+        LocalDate last = runLog.oldestLastRunFor();
+        if (last == null || !last.isBefore(today)) return;
+        log.warn("Revenue recognition: the last nightly pass ran for {}; catching up for {}", last, today);
+        runFor(today);
     }
 
     /**
@@ -159,6 +196,9 @@ public class RevenueRecognitionJob {
         TenantContextHolder.setTenantId(tenantId);
         try {
             RecognitionRunResult result = recognition.runTo(today, false);
+            // F14-27: a row that failed is not only a WARN line: the recognition
+            // screen reads what the last pass could not post.
+            runLog.record(tenantId, today, result.posted(), result.errors());
             log.info("recognition tenant_id={} posted={} amount={} skipped_locked={} failed={}",
                     tenantId, result.posted(), result.amount(), result.skippedLocked(), result.errors().size());
             result.errors().forEach(e -> log.warn("recognition tenant_id={} refused: {}", tenantId, e));
@@ -175,6 +215,11 @@ public class RevenueRecognitionJob {
             }
             // One organisation's mapping gap is not the other forty's problem.
             log.error("Revenue recognition failed for tenant {}: {}", tenantId, e.getMessage(), e);
+            try {
+                runLog.record(tenantId, today, 0, List.of("The pass failed: " + e.getMessage()));
+            } catch (RuntimeException ignored) {
+                // The log line above is the record of last resort.
+            }
             return 0;
         } finally {
             TenantContextHolder.clear();

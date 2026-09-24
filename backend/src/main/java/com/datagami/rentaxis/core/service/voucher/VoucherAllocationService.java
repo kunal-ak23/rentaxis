@@ -95,13 +95,17 @@ public class VoucherAllocationService {
         return allocations.findByOpeningItemIdOrderByAllocatedOnAscCreatedAtAsc(openingItemId);
     }
 
-    /** What a payment voucher paid the vendor it names: Σ of its lines on that vendor's payable leaf. */
+    /**
+     * What a payment voucher paid the vendor it names: Σ of its lines on that vendor's
+     * payable leaf. F14-40: a supplier credit note debits the vendor its gross.
+     */
     @Transactional(readOnly = true)
     public BigDecimal payableAmount(UUID paymentId) {
         return jdbc.queryForObject("""
-                select coalesce(sum(l.amount), 0)
+                select coalesce(sum(case when v.doc_type = 'PCN' then l.amount + l.vat_amount
+                                         when l.account_id = d.payable_account_id then l.amount else 0 end), 0)
                 from voucher_lines l join vouchers v on v.id = l.voucher_id join vendors d on d.id = v.vendor_id
-                where v.id = :id and v.tenant_id = :t and l.account_id = d.payable_account_id
+                where v.id = :id and v.tenant_id = :t
                 """, params(requireTenant()).addValue("id", paymentId), BigDecimal.class);
     }
 
@@ -313,7 +317,7 @@ public class VoucherAllocationService {
     void carryPaymentToReplacement(List<VoucherAllocation> released, UUID replacementId, LocalDate reversalDate) {
         if (released.isEmpty()) return;
         Doc payment = lockVouchers(List.of(replacementId)).get(replacementId);
-        if (!"BPV".equals(payment.docType()) || !"POSTED".equals(payment.status())) return;
+        if (!("BPV".equals(payment.docType()) || "PCN".equals(payment.docType())) || !"POSTED".equals(payment.status())) return;
         BigDecimal left = payableAmount(replacementId).subtract(allocations.liveTotalForPayment(replacementId));
         LocalDate lock = lockedThroughShared();
         for (VoucherAllocation a : released) {
@@ -384,8 +388,8 @@ public class VoucherAllocationService {
         }
         BigDecimal amount = rawAmount.setScale(2, RoundingMode.HALF_UP);
         // Rule 1.
-        if (!"BPV".equals(payment.docType())) {
-            throw new BusinessRuleViolationException("Only a payment voucher can be allocated to an invoice");
+        if (!"BPV".equals(payment.docType()) && !"PCN".equals(payment.docType())) {
+            throw new BusinessRuleViolationException("Only a payment voucher or a supplier credit note can be allocated to an invoice");
         }
         if (!"POSTED".equals(payment.status())) {
             throw new BusinessRuleViolationException("Payment " + payment.label() + " is " + payment.status()

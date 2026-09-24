@@ -274,10 +274,27 @@ public class LeaseService {
                         java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
     }
 
+    /**
+     * F14-57: {@code unit.actualRent} is an annual figure — the property stats add
+     * it up beside {@code expectedRent} as revenue at capacity vs actual. A lease's
+     * {@code rentAmount} is the rent for its whole term, so it is annualised:
+     * rent ÷ term days × 365, rounded to whole dirhams. A term with no usable dates
+     * keeps the contract figure.
+     */
+    public static BigDecimal annualRent(Lease lease) {
+        BigDecimal rent = lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
+        if (lease.getStartDate() == null || lease.getEndDate() == null || lease.getEndDate().isBefore(lease.getStartDate())) {
+            return rent;
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+        return rent.multiply(BigDecimal.valueOf(365))
+                .divide(BigDecimal.valueOf(days), 0, java.math.RoundingMode.HALF_UP);
+    }
+
     /** Whether the unit's holder fields changed. */
     private static boolean applyHolder(Unit unit, Lease holder) {
         String name = holder.getRenter() != null ? holder.getRenter().getNameEn() : null;
-        BigDecimal rent = holder.getRentAmount() != null ? holder.getRentAmount() : BigDecimal.ZERO;
+        BigDecimal rent = annualRent(holder);
         boolean changed = !java.util.Objects.equals(name, unit.getCurrentTenantName())
                 || unit.getActualRent() == null || unit.getActualRent().compareTo(rent) != 0
                 || (unit.getStatus() != UnitStatus.OCCUPIED && unit.getStatus() != UnitStatus.MAINTENANCE);
@@ -679,15 +696,23 @@ public class LeaseService {
             throw new BusinessRuleViolationException("Only DRAFT leases can be edited");
         }
 
-        // If unit changed, validate the new unit is vacant
-        if (!lease.getUnit().getId().equals(dto.getUnitId())) {
-            Unit newUnit = unitRepository.findById(dto.getUnitId())
-                    .orElseThrow(() -> new NotFoundException("Unit not found"));
-            requireUnitFreeFor(newUnit, dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate(),
-                    dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate(), lease.getId(),
-                    lease.getRenewedFromLeaseId(), "Cannot assign lease. Unit is not vacant.");
-            lease.setUnit(newUnit);
+        // F14-58: an edit is judged like the draft it replaces — the renewal must
+        // start after its predecessor, and the unit must be free for the (possibly
+        // new) dates, whether or not the unit changed. Same messages as create/post.
+        LocalDate newStart = dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate();
+        LocalDate newEnd = dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate();
+        if (lease.getRenewedFromLeaseId() != null) {
+            leaseRepository.findById(lease.getRenewedFromLeaseId())
+                    .flatMap(p -> renewalStartsTooEarly(p, newStart))
+                    .ifPresent(m -> { throw new BusinessRuleViolationException(m); });
         }
+        boolean unitChanged = !lease.getUnit().getId().equals(dto.getUnitId());
+        Unit targetUnit = unitChanged
+                ? unitRepository.findById(dto.getUnitId()).orElseThrow(() -> new NotFoundException("Unit not found"))
+                : lease.getUnit();
+        requireUnitFreeFor(targetUnit, newStart, newEnd, lease.getId(), lease.getRenewedFromLeaseId(),
+                unitChanged ? "Cannot assign lease. Unit is not vacant." : "Cannot update lease. Unit is not vacant.");
+        if (unitChanged) lease.setUnit(targetUnit);
 
         // If renter changed
         if (!lease.getRenter().getId().equals(dto.getRenterId())) {

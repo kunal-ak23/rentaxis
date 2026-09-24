@@ -45,6 +45,16 @@ class BankReconciliationPdfRendererTest {
         assertThat(html).contains("مقاصة يدوية");
     }
 
+    /** F14-48: an account without an IBAN is labelled as an account number; labels and values sit in their own cells. */
+    @Test
+    void anAccountNumberIsNotCalledAnIbanAndArabicLabelsAreSeparated() {
+        assertThat(BankReconciliationService.maskIban(null, "0001")).isEqualTo("0001");
+        assertThat(BankReconciliationService.maskIban("AE070260000000000000123", null)).startsWith("AE");
+        String en = renderer.html(sample(), "en");
+        assertThat(en).contains("IBAN:");
+        assertThat(en).contains("<table class=\"meta\"><tr><td>Bank account:</td>");
+    }
+
     @Test
     void theEnglishStatementRendersToAPdf() {
         String html = renderer.html(sample(), "en");

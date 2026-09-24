@@ -23,12 +23,12 @@ const BASE = "/api/proxy/v1";
 // ---- enums (domain/entity/enums/VoucherType.java, VoucherStatus.java) ----
 
 /** RCP exists in the Java enum but is refused by every voucher endpoint — see `voucherRules.ts`. */
-export type VoucherType = "PISR" | "BPV" | "RCP";
+export type VoucherType = "PISR" | "BPV" | "RCP" | "PCN";
 
-/** The two types this screen can actually create. */
-export type EditableVoucherType = "PISR" | "BPV";
+/** The three types this screen can actually create. F14-40: PCN — a supplier credit note. */
+export type EditableVoucherType = "PISR" | "BPV" | "PCN";
 
-export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED";
+export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED" | "VOID";
 
 /** `VoucherPaymentMethod.java` (finance-ops spec §2): CASH pays from a cash leaf, the others from a bank leaf. */
 export type PaymentMethod = "TRANSFER" | "CHEQUE" | "CASH";
@@ -107,6 +107,8 @@ export type Voucher = {
     /** BPV only. */
     paymentMethod?: PaymentMethod | null;
     paymentReference?: string | null;
+    /** F14-36: set on a BPV that pays out a deposit refund; names the settlement. */
+    settlementId?: string | null;
 };
 
 /**
@@ -126,6 +128,8 @@ export type VoucherDetail = Voucher & {
     lines: VoucherLine[];
     attachments: VoucherAttachment[];
     settlement?: Settlement | null;
+    /** F14-36: on a refund BPV, the settlement it pays out (read back on GET). */
+    refundSettlementId?: string | null;
 };
 
 // ---- requests ----
@@ -159,19 +163,37 @@ export type VoucherInput = {
     dueDate?: string | null;
     paymentMethod?: PaymentMethod | null;
     paymentReference?: string | null;
+    /** F14-36: set on a BPV that pays out a deposit refund; names the settlement. */
+    settlementId?: string | null;
 };
 
 /** One invoice a payment settles: `AllocationInputDTO`. */
 export type VoucherAllocationInput = { invoiceId?: string | null; openingItemId?: string | null; amount: number };
 
-/** `AmendVoucherDTO`. `reversalDate` is `@NotNull`; `reason` is free text. */
+/** `AmendVoucherDTO`. `reversalDate` is `@NotNull`; `reason` is now `@NotBlank` (F14-41). */
 export type AmendVoucherInput = {
     reversalDate: string;
     reason: string;
     replacement: VoucherInput;
     /** The invoices a replacement payment voucher settles. */
     allocations?: VoucherAllocationInput[];
+    /** F14-20: see {@link PostVoucherInput.notOnStatement}. */
+    notOnStatement?: boolean;
+    /** F14-42: see {@link PostVoucherInput.allowNegativeCash}. */
+    allowNegativeCash?: boolean;
 };
+
+/** `PostVoucherDTO`. */
+export type PostVoucherInput = {
+    allocations?: VoucherAllocationInput[];
+    /** F14-20: `bank.statementCovers` refused this once — confirmed, resend true. */
+    notOnStatement?: boolean;
+    /** F14-42: `voucher.cashNegative` refused this once — confirmed, resend true. */
+    allowNegativeCash?: boolean;
+};
+
+/** `VoidVoucherDTO` — `POST /finance/vouchers/{id}/void` (F14-42). `reason` is required. */
+export type VoidVoucherInput = { date: string; reason: string };
 
 export type VoucherQuery = {
     docType?: VoucherType | "";
@@ -233,12 +255,20 @@ export const voucherApi = {
     /** `DELETE /finance/vouchers/{id}` → 204. DRAFT only. */
     remove: (id: string) => apiSend<void>("DELETE", `/finance/vouchers/${id}`),
     /** For a BPV, `allocations` names the invoices it settles; the rest is an advance. */
-    post: (id: string, allocations?: VoucherAllocationInput[]) =>
-        apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`,
-            allocations && allocations.length ? { allocations } : undefined),
+    post: (id: string, allocations?: VoucherAllocationInput[], opts?: Pick<PostVoucherInput, "notOnStatement" | "allowNegativeCash">) => {
+        const body: PostVoucherInput = {
+            ...(allocations && allocations.length ? { allocations } : {}),
+            ...(opts?.notOnStatement ? { notOnStatement: true } : {}),
+            ...(opts?.allowNegativeCash ? { allowNegativeCash: true } : {}),
+        };
+        return apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`, Object.keys(body).length ? body : undefined);
+    },
     /** Reverses this voucher's journal and posts the replacement; returns the NEW, posted voucher. */
     amend: (id: string, body: AmendVoucherInput) =>
         apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/amend`, body),
+    /** `POST /finance/vouchers/{id}/void` (F14-42): returns the voucher, now VOID. */
+    void: (id: string, body: VoidVoucherInput) =>
+        apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/void`, body),
     attachments: {
         list: (voucherId: string) => apiGet<VoucherAttachment[]>(`/finance/vouchers/${voucherId}/attachments`),
         /**

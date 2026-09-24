@@ -1,0 +1,17 @@
+# F14-27: the nightly recognition pass records, per organisation, the day it last
+# ran for and what it could not post, so a missed night is caught up and a
+# failure is visible on the recognition screen instead of only in the log.
+databaseChangeLog:
+  - changeSet:
+      id: 120-recognition-runs
+      author: claude
+      changes:
+        - createTable:
+            tableName: recognition_runs
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { primaryKey: true, nullable: false, foreignKeyName: fk_recognition_runs_tenant, referencedTableName: landlord_org, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: run_for, type: date, constraints: { nullable: false } }
+              - column: { name: finished_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: posted, type: int, constraints: { nullable: false } }
+              - column: { name: failed, type: int, constraints: { nullable: false } }
+              - column: { name: errors, type: text }

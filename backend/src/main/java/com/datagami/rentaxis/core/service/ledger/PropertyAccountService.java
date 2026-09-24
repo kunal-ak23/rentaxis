@@ -167,6 +167,7 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.BANK_CHARGES, "D-02-003");
         defaultIfMissing(AccountRole.BANK_INTEREST_INCOME, "C-02-001");
         defaultIfMissing(AccountRole.BANK_SUSPENSE, "B-01-06");
+        defaultIfMissing(AccountRole.RENTER_REFUND_PAYABLE, "B-01-07");
     }
 
     /**
@@ -216,8 +217,15 @@ public class PropertyAccountService {
         }
         for (PropertyAccountTemplateRow row : rows) {
             if (mappingRepo.findByPropertyIdAndRole(propertyId, row.getRole()).isPresent()) continue;
-            if (row.getRole() == AccountRole.BANK && mapToOwnedBankLeaf(propertyId)) continue;
-            String name = row.getNamePattern().replace("{property}", property.getNameEn());
+            // R2 ruling: every property has its own BANK leaf, and every BANK leaf is
+            // owned by a bank account. The leaf is generated as before F14-44 and, when
+            // the tenant has a bank account, attached to its operating account below
+            // (named after that bank).
+            java.util.Optional<com.datagami.rentaxis.core.service.bank.OwnedBankLeaf.Operating> operating = row.getRole() == AccountRole.BANK
+                    ? ownedBankLeaf.operatingBankAccount() : java.util.Optional.empty();
+            String name = operating.isPresent()
+                    ? operating.get().bankName() + " - " + property.getNameEn()
+                    : row.getNamePattern().replace("{property}", property.getNameEn());
             String nameAr = arabicLeafName(
                     ROLE_LABEL_AR.getOrDefault(row.getRole(), row.getParentAccount().getNameAr()), property);
             Account leaf = accountRepo.findByNameAndParent_Id(name, row.getParentAccount().getId())
@@ -239,31 +247,15 @@ public class PropertyAccountService {
             m.setRole(row.getRole());
             m.setAccount(leaf);
             mappingRepo.save(m);
+            if (operating.isPresent()) {
+                accountRepo.flush();
+                ownedBankLeaf.attach(operating.get().id(), leaf.getId());
+            }
         }
         generateDirectExpenseLeaves(property, propertyId);
         return getMappings(propertyId);
     }
 
-    /**
-     * F14-16: a new property's receipts land in a leaf some bank account owns. When
-     * the tenant has a bank account with a ledger leaf, the property's BANK role is
-     * mapped to that leaf ({@link com.datagami.rentaxis.core.service.bank.OwnedBankLeaf})
-     * instead of generating "Emirates Islamic – &lt;property&gt;", which no bank
-     * account owned and so could never be reconciled. A tenant with no bank account
-     * yet keeps the generated leaf; the bank-rec screen can adopt it later.
-     */
-    private boolean mapToOwnedBankLeaf(UUID propertyId) {
-        Optional<UUID> owned = ownedBankLeaf.forProperty(propertyId);
-        if (owned.isEmpty()) return false;
-        Account leaf = accountRepo.findById(owned.get()).orElse(null);
-        if (leaf == null) return false;
-        PropertyAccountMapping m = new PropertyAccountMapping();
-        m.setPropertyId(propertyId);
-        m.setRole(AccountRole.BANK);
-        m.setAccount(leaf);
-        mappingRepo.save(m);
-        return true;
-    }
 
     /**
      * Building running costs, one leaf per property per category — which is what

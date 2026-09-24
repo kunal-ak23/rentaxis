@@ -31,8 +31,8 @@ export default function VoucherDocumentPage({
     descKey,
 }: {
     type: EditableVoucherType;
-    titleKey: "purchaseInvoice" | "paymentVoucher";
-    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc";
+    titleKey: "purchaseInvoice" | "paymentVoucher" | "supplierCreditNote";
+    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc" | "supplierCreditNoteDesc";
 }) {
     return (
         <Suspense
@@ -53,8 +53,8 @@ function VoucherDocument({
     descKey,
 }: {
     type: EditableVoucherType;
-    titleKey: "purchaseInvoice" | "paymentVoucher";
-    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc";
+    titleKey: "purchaseInvoice" | "paymentVoucher" | "supplierCreditNote";
+    descKey: "purchaseInvoiceDesc" | "paymentVoucherDesc" | "supplierCreditNoteDesc";
 }) {
     const t = useTranslations("Vouchers");
     const tLedger = useTranslations("Ledger");
@@ -104,6 +104,18 @@ function VoucherDocument({
             <VoucherForm
                 type={type}
                 voucherId={params.get("id") ?? undefined}
+                // F14-36: "Pay refund" on the settlement page links here with
+                // these — a brand-new BPV prefilled and locked to the refund.
+                refundPrefill={
+                    !params.get("id") && params.get("settlementId")
+                        ? {
+                              settlementId: params.get("settlementId")!,
+                              renterName: params.get("renter") ?? "",
+                              unitLabel: params.get("unit") ?? "",
+                              amount: Number(params.get("amount") ?? 0),
+                          }
+                        : null
+                }
                 onPosted={() => router.push("/dashboard/finance/vouchers")}
                 onDeleted={() => router.push("/dashboard/finance/vouchers")}
             />

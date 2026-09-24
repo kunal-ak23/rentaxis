@@ -77,6 +77,19 @@ public class PenaltyAssessment extends BaseTenantEntity {
     @Column(columnDefinition = "text")
     private String description;
 
+    /** F14-31: the description as a message code, rendered in the reader's language; null on typed descriptions. */
+    @Column(name = "description_code", length = 64)
+    private String descriptionCode;
+
+    /** F14-31: the code's arguments (cheque number, failure reason, dates…). */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "description_args", columnDefinition = "jsonb")
+    private java.util.Map<String, String> descriptionArgs;
+
+    /** F14-28: the amount first proposed, when a reduction changed {@code amount}. */
+    @Column(name = "proposed_amount", precision = 14, scale = 2)
+    private BigDecimal proposedAmount;
+
     /** When the charged-for thing happened (#12); null on rows older than changeset 93. */
     @Column(name = "incident_date")
     private java.time.LocalDate incidentDate;
