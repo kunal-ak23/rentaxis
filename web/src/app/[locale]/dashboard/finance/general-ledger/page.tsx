@@ -41,9 +41,20 @@ function GeneralLedger() {
     const vendorId = params.get("vendorId");
     const accountId = params.get("accountId");
 
+    // A drill-down from the property P&L (finance-ops spec §1) arrives with the
+    // cell's leaves, property and period, and asks for the P&L's own property
+    // rule — coalesce(line property, account property) — so the ledger lists
+    // every line the cell summed.
+    const accountIdsParam = params.get("accountIds");
+    const range = defaultLedgerRange();
     const initial: LedgerQuery = {
-        ...defaultLedgerRange(),
-        accountIds: accountId ? [accountId] : undefined,
+        ...range,
+        from: params.get("from") || range.from,
+        to: params.get("to") || range.to,
+        propertyId: params.get("propertyId") || undefined,
+        effectiveProperty: params.get("effectiveProperty") === "true" || undefined,
+        accountIds: accountIdsParam ? accountIdsParam.split(",").filter(Boolean)
+            : accountId ? [accountId] : undefined,
     };
     // `draft` is what the filter bar edits; `applied` is what the report shows.
     // Splitting them is what makes Apply mean anything — editing a date must not

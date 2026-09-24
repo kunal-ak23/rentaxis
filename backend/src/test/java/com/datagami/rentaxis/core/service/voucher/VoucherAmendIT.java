@@ -87,7 +87,7 @@ class VoucherAmendIT extends AbstractPostgresIT {
         return new VoucherService.VoucherInput(
                 VoucherType.PISR, docDate, vendor.getId(), "ASF-11",
                 "AC servicing", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(expense.getId(), "AC servicing",
+                List.of(sharedLine(expense.getId(), "AC servicing",
                         new BigDecimal(amount), new BigDecimal("5"), null, null)));
     }
 
@@ -286,5 +286,16 @@ class VoucherAmendIT extends AbstractPostgresIT {
                 .isEqualTo(JournalStatus.POSTED);
         assertThat(entryCount()).as("no reversal written").isEqualTo(entriesBefore);
         assertThat(vendorBalance()).isEqualByComparingTo("-4200.00");
+    }
+
+    /**
+     * A line marked Shared / head office (finance-ops spec §1): this fixture's
+     * expense and income leaves carry no property, and the voucher rule now asks
+     * such a line to say it is shared. The rule itself is pinned in
+     * PropertyPnlServiceIT.voucherLinesMustNameAPropertyOrSayShared.
+     */
+    private static VoucherService.VoucherLineInput sharedLine(java.util.UUID accountId, String description,
+            java.math.BigDecimal amount, java.math.BigDecimal vatRate, java.util.UUID propertyId, java.util.UUID unitId) {
+        return new VoucherService.VoucherLineInput(accountId, description, amount, vatRate, propertyId, unitId, true);
     }
 }

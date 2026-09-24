@@ -64,8 +64,26 @@ public class VoucherService {
     static final String BPV_VAT_REFUSAL =
             "A payment voucher line cannot carry VAT — record the VAT on the purchase invoice";
 
+    /**
+     * {@code shared}: the caller ticked "Shared / head office" for a line with no
+     * property. Not persisted (a null property already means shared); it only lets
+     * {@link #validate} tell a deliberate head-office cost from a forgotten property.
+     */
     public record VoucherLineInput(UUID accountId, String description, BigDecimal amount,
-                                   BigDecimal vatRate, UUID propertyId, UUID unitId) {}
+                                   BigDecimal vatRate, UUID propertyId, UUID unitId, boolean shared) {
+        public VoucherLineInput(UUID accountId, String description, BigDecimal amount,
+                                BigDecimal vatRate, UUID propertyId, UUID unitId) {
+            this(accountId, description, amount, vatRate, propertyId, unitId, false);
+        }
+    }
+
+    /**
+     * Finance-ops spec §1 (S12 / O8): an income or expense line with no property
+     * drops out of every property report, so it must name one — on the line, on
+     * the header, or through a property-bound account — or say it is shared.
+     */
+    static final String LINE_PROPERTY_REFUSAL =
+            "needs a property, or tick Shared / head office for a cost that belongs to no single property";
 
     public record VoucherInput(VoucherType docType, LocalDate docDate, UUID vendorId, String invoiceNumber,
                                String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
@@ -158,9 +176,13 @@ public class VoucherService {
 
         List<PostingRequest.Line> journalLines = new ArrayList<>();
         for (VoucherLine l : v.getLines()) {
-            journalLines.add(PostingRequest.dr(l.getAccount().getId(), l.getAmount())
+            PostingRequest.Line jl = PostingRequest.dr(l.getAccount().getId(), l.getAmount())
                     .withDims(new PostingRequest.Dimensions(l.getPropertyId(), l.getUnitId(), null, null, null))
-                    .withNarration(l.getDescription()));
+                    .withNarration(l.getDescription());
+            // apply() already copied the header's property onto every line that did
+            // not name its own, so a line still without one was marked Shared / head
+            // office: it must not pick the header's property up again at posting.
+            journalLines.add(l.getPropertyId() == null ? jl.withOwnProperty() : jl);
         }
 
         switch (v.getDocType()) {
@@ -454,6 +476,12 @@ public class VoucherService {
                         + lineAccount.getName() + " is " + lineAccount.getAccountType()
                         + "; a purchase invoice line must be an expense or asset account");
             }
+            if ((lineAccount.getAccountType() == AccountType.INCOME || lineAccount.getAccountType() == AccountType.EXPENSE)
+                    && l.propertyId() == null && in.propertyId() == null && lineAccount.getPropertyId() == null
+                    && !l.shared()) {
+                throw new BusinessRuleViolationException("Line account " + lineAccount.getCode() + " "
+                        + lineAccount.getName() + " " + LINE_PROPERTY_REFUSAL);
+            }
             BigDecimal rate = l.vatRate() == null ? BigDecimal.ZERO : l.vatRate();
             // Controller ruling (Plan 4): a BPV line carries no VAT — VAT belongs to the
             // purchase invoice the payment settles, never to the payment itself.
@@ -557,8 +585,11 @@ public class VoucherService {
             BigDecimal rate = li.vatRate() == null ? BigDecimal.ZERO : li.vatRate();
             l.setVatRate(rate.setScale(2, java.math.RoundingMode.HALF_UP));
             l.setVatAmount(VoucherMath.vat(l.getAmount(), rate));
-            l.setPropertyId(li.propertyId() == null ? in.propertyId() : li.propertyId());
-            l.setUnitId(li.unitId() == null ? in.unitId() : li.unitId());
+            // "Shared / head office" keeps the line off every property, header included.
+            l.setPropertyId(li.shared() && li.propertyId() == null ? null
+                    : li.propertyId() == null ? in.propertyId() : li.propertyId());
+            l.setUnitId(li.shared() && li.propertyId() == null ? null
+                    : li.unitId() == null ? in.unitId() : li.unitId());
             newLines.add(l);
         }
         v.replaceLines(newLines);

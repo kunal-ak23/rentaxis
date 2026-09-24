@@ -17,6 +17,7 @@ import {
     type CreateAccountBody,
 } from "@/lib/api/ledger";
 import { ApiError } from "@/lib/api/facilities";
+import { propertyReportsApi, type ReportLineOption } from "@/lib/api/propertyReports";
 import AccountPicker, { invalidateAccounts } from "@/components/finance/AccountPicker";
 
 /** GET /v1/properties wraps each property in a portfolio-summary row. */
@@ -51,6 +52,7 @@ const EMPTY_FORM = {
     propertyId: "",
     description: "",
     group: false,
+    reportLine: "",
 };
 
 /** "" (the form's empty value) is not a valid enum name or UUID — send null. */
@@ -59,6 +61,7 @@ const orNull = (v: string) => (v.trim() ? v.trim() : null);
 export default function AccountsPage() {
     const t = useTranslations("Finance");
     const tl = useTranslations("Ledger");
+    const tr = useTranslations("PropertyReports");
     const locale = useLocale();
     const isAr = locale === "ar";
     const typeLabel = (type: string) => (tl.has(`accountTypes.${type}`) ? tl(`accountTypes.${type}`) : type);
@@ -66,6 +69,9 @@ export default function AccountsPage() {
 
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [properties, setProperties] = useState<PropertySummary[]>([]);
+    // The P&L row keys a leaf can be grouped under (finance-ops spec §1). A
+    // failure leaves the picker with "Own row" only; the account still saves.
+    const [reportLines, setReportLines] = useState<ReportLineOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [seeding, setSeeding] = useState(false);
@@ -139,6 +145,10 @@ export default function AccountsPage() {
         fetchAccounts();
         fetchProperties();
     }, [fetchAccounts, fetchProperties]);
+
+    useEffect(() => {
+        propertyReportsApi.reportLines().then(setReportLines).catch(() => setReportLines([]));
+    }, []);
 
     const propertyName = useCallback(
         (id: string) => {
@@ -256,6 +266,7 @@ export default function AccountsPage() {
                 parentId: orNull(formData.parentId),
                 propertyId: orNull(formData.propertyId),
                 group: formData.group,
+                reportLine: formData.group ? null : orNull(formData.reportLine),
             };
             if (formData.code.trim()) body.code = formData.code.trim();
 
@@ -295,6 +306,8 @@ export default function AccountsPage() {
                 active: current?.active ?? true,
                 displayOrder: current?.displayOrder ?? 0,
                 propertyId: orNull(formData.propertyId),
+                // "" clears the report line; the server leaves it alone only on null.
+                reportLine: formData.group ? null : formData.reportLine,
             });
             invalidateAccounts();
             setShowEditModal(false);
@@ -333,6 +346,7 @@ export default function AccountsPage() {
             propertyId: account.propertyId || "",
             description: account.description || "",
             group: account.group,
+            reportLine: account.reportLine || "",
         });
         setEditId(account.id);
         setFormError(null);
@@ -385,7 +399,8 @@ export default function AccountsPage() {
                     disabled={isEdit}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.accountType}
-                    onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
+                    // A report line belongs to one account type, so a type change drops it.
+                    onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "", reportLine: "" })}
                 >
                     {TYPE_ORDER.map(type => <option key={type} value={type}>{typeLabel(type)}</option>)}
                 </select>
@@ -470,6 +485,23 @@ export default function AccountsPage() {
                     ))}
                 </select>
             </div>
+            {!formData.group && (
+                <div className="col-span-1">
+                    <label htmlFor="account-report-line" className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{tr("reportLine")}</label>
+                    <select
+                        id="account-report-line"
+                        data-testid="account-report-line"
+                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                        value={formData.reportLine}
+                        onChange={ev => setFormData({ ...formData, reportLine: ev.target.value })}
+                    >
+                        <option value="">{tr("reportLineNone")}</option>
+                        {reportLines.filter(r => r.accountType === formData.accountType).map(r => (
+                            <option key={r.key} value={r.key}>{isAr && r.labelAr ? r.labelAr : r.labelEn}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
             <div className="col-span-2">
                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("description")}</label>
                 <textarea

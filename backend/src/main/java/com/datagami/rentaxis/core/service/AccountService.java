@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.report.ReportLines;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -61,9 +62,37 @@ public class AccountService {
      * sending a partial body drops the tag — the field is meaningful only to the
      * accounts screen, which always sends it.
      */
+    /**
+     * {@code reportLine}: null leaves the stored value alone, blank clears it, anything
+     * else must be a {@link ReportLines#known()} key (finance-ops spec §1: the CoA
+     * screen's "Report line" picker, so an imported chart can be grouped too).
+     */
     public record AccountUpdate(String name, String nameEn, String nameAr, String alias, String description,
                                 AccountSubType accountSubType, Boolean active, Integer displayOrder,
-                                UUID propertyId) {}
+                                UUID propertyId, String reportLine) {
+        public AccountUpdate(String name, String nameEn, String nameAr, String alias, String description,
+                             AccountSubType accountSubType, Boolean active, Integer displayOrder, UUID propertyId) {
+            this(name, nameEn, nameAr, alias, description, accountSubType, active, displayOrder, propertyId, null);
+        }
+    }
+
+    /**
+     * Null for blank; the key itself when known and natural for the account type
+     * ({@link ReportLines#naturalType}); refused otherwise.
+     */
+    public static String normaliseReportLine(String reportLine, AccountType accountType) {
+        if (reportLine == null || reportLine.isBlank()) return null;
+        String key = reportLine.strip();
+        if (!ReportLines.isKnown(key)) {
+            throw new BusinessRuleViolationException("Unknown report line '" + key + "'. Use one of: " + ReportLines.knownList());
+        }
+        AccountType natural = ReportLines.naturalType(key);
+        if (accountType != null && natural != accountType) {
+            throw new BusinessRuleViolationException("Report line " + key + " belongs on an " + natural
+                    + " account, not " + accountType);
+        }
+        return key;
+    }
 
     /**
      * Loads a property the caller named by id. Goes through the tenant-filtered
@@ -138,6 +167,7 @@ public class AccountService {
         if (account.getName() == null && account.getNameEn() != null) {
             account.setName(account.getNameEn());
         }
+        account.setReportLine(normaliseReportLine(account.getReportLine(), account.getAccountType()));
         return repository.save(account);
     }
 
@@ -219,6 +249,14 @@ public class AccountService {
             existing.setDisplayOrder(updates.displayOrder());
         }
         existing.setProperty(resolveProperty(updates.propertyId()));
+        // Validated only when it changes: the web sends the stored value back on every
+        // edit, and a line that predates the type rule must not block a rename.
+        if (updates.reportLine() != null) {
+            String requested = updates.reportLine().isBlank() ? null : updates.reportLine().strip();
+            if (!java.util.Objects.equals(requested, existing.getReportLine())) {
+                existing.setReportLine(normaliseReportLine(requested, existing.getAccountType()));
+            }
+        }
         return repository.save(existing);
     }
 

@@ -509,4 +509,26 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
         """)
     List<Cheque> findAllDue(@Param("today") LocalDate today);
+
+    /** The property statement's register rows (finance-ops spec §1, sections 2 and 4). Tenant-filtered: call inside a transaction. */
+    List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
+
+    /**
+     * Section 4's candidates for "owed on {@code at}": dated by then and either
+     * still uncleared, bounced, or cleared only after it. The status filter keeps
+     * years of cleared history out; the fetch joins keep the renter / unit / lease
+     * reads to this one query.
+     */
+    @Query("""
+        select c from Cheque c
+          left join fetch c.lease left join fetch c.renter left join fetch c.unit
+        where c.property.id = :propertyId and c.chequeDate <= :at
+          and (c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING,
+                            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+               or (c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED and c.clearedAt > :at))
+        order by c.chequeDate asc
+        """)
+    List<Cheque> findOwedCandidatesAt(@Param("propertyId") UUID propertyId, @Param("at") LocalDate at);
 }

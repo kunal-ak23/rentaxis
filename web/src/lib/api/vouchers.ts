@@ -115,6 +115,8 @@ export type VoucherLineInput = {
     vatRate: number;
     propertyId?: string | null;
     unitId?: string | null;
+    /** "Shared / head office": no property on purpose. Not persisted; it answers the server's property check. */
+    shared?: boolean;
 };
 
 /** `VoucherInputDTO`. `docType`, `docDate` and a non-empty `lines` are required. */

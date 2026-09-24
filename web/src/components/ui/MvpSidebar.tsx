@@ -34,6 +34,8 @@ import {
     CalendarClock,
     Banknote,
     RefreshCcw,
+    PieChart,
+    FileSpreadsheet,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -85,6 +87,7 @@ export default function MvpSidebar() {
     // every dashboard page for every role, so in Arabic the whole primary
     // navigation stayed English inside an RTL layout.
     const tNav = useTranslations("Navigation");
+    const tReports = useTranslations("PropertyReports");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -219,6 +222,14 @@ export default function MvpSidebar() {
         ] : []),
     ];
 
+    // Finance → Reports (finance-ops spec §1). PropertyReportController admits
+    // PROPERTY_MANAGER read-only, narrowed to assigned properties server-side,
+    // so this is its own group rather than part of the canAccessFinance ledger set.
+    const reportItems = hasPermission(userRole, 'canViewPropertyReports') ? [
+        { name: tReports("propertyPl"), href: "/dashboard/finance/reports/property-pl", icon: PieChart, tourId: 'sidebar-property-pl' },
+        { name: tReports("propertyStatement"), href: "/dashboard/finance/reports/property-statement", icon: FileSpreadsheet, tourId: 'sidebar-property-statement' },
+    ] : [];
+
     // StaffController is hasAnyRole('SUPER_ADMIN','TENANT_ADMIN') — same gate.
     const hrItems = hasPermission(userRole, 'canAccessFinanceOps') ? [
         { name: tStaff("title"), href: "/dashboard/staff", icon: UserCog },
@@ -262,7 +273,7 @@ export default function MvpSidebar() {
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
 
     // Every item the sidebar renders, so the longest match wins across sections.
-    const navHrefs = () => [...allItems, ...financeItems, ...hrItems, ...settingsItems].map((i) => i.href);
+    const navHrefs = () => [...allItems, ...financeItems, ...reportItems, ...hrItems, ...settingsItems].map((i) => i.href);
 
     const renderSection = (
         items: { name: string; href: string; icon: React.ElementType; tourId?: string }[],
@@ -381,6 +392,7 @@ export default function MvpSidebar() {
 
                 {allItems.length > 0 && renderSection(allItems, tNav("sectionWorkspace"), "overview")}
                 {financeItems.length > 0 && renderSection(financeItems, tNav("sectionOperations"), "finance", "sidebar-finance")}
+                {reportItems.length > 0 && renderSection(reportItems, tNav("sectionReports"), "reports", "sidebar-reports")}
                 {hrItems.length > 0 && renderSection(hrItems, tNav("sectionOperations"), "hr")}
                 {settingsItems.length > 0 && renderSection(settingsItems, tNav("sectionOperations"), "settings")}
 

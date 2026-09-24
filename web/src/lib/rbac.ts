@@ -161,14 +161,21 @@ export const PERMISSIONS = {
     // (RecognitionController.java:110-111).
     canViewRecognitionSchedule: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     // "Run VAT tax points to date" (spec 2026-09-24 §1). Mirrors
-    // VatController#run's @PreAuthorize("hasAnyRole('TENANT_ADMIN', 'ACCOUNTANT')"):
-    // declaring an organisation's output VAT is narrower than the month-end close.
-    canRunVatTaxPoints: ['TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // VatController#run's @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    // (#92 added SUPER_ADMIN): declaring an organisation's output VAT is narrower
+    // than the month-end close, which property managers may also run.
+    canRunVatTaxPoints: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     // Mirrors ChargeTypeController's write methods (POST, PUT /{id}):
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). The
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
     // and Spring Security does not combine the two — the narrower one wins on writes.
     canManageChargeTypes: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Finance → Reports: the property P&L and statement pack (finance-ops spec §1).
+    // Mirrors PropertyReportController's class-level
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')");
+    // a manager is narrowed to assigned properties on the server and never sees
+    // the tenant-wide Unassigned / Total columns.
+    canViewPropertyReports: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
 
     // ---- accounting-v2 plan 4: vouchers ----
     //

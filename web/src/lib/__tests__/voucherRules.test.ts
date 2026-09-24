@@ -231,6 +231,7 @@ describe("draftRefusal", () => {
             type: "PISR" as const, vendorId: "v1", paymentAccountId: null,
             lines: [{ accountId: "a1", amount: 100, vatRate: 5 }],
             accounts: { a1: a },
+            headerPropertyId: "prop-1",
         });
 
         expect(draftRefusal(shape(good))).toBeNull();
@@ -246,6 +247,7 @@ describe("draftRefusal", () => {
             type: "BPV" as const, vendorId: "", paymentAccountId: "p1",
             lines: [{ accountId: "a1", amount: 100, vatRate: 0 }],
             accounts: { p1: a, a1: account({ id: "a1" }) },
+            headerPropertyId: "prop-1",
         });
         expect(draftRefusal(shape(account({ id: "p1", accountType: "ASSET", accountSubType: "BANK" })))).toBeNull();
         expect(
@@ -276,6 +278,35 @@ describe("draftRefusal", () => {
         });
         expect(r?.key).toBe("lineAmountRequired");
         expect(r?.line).toBe(2);
+    });
+});
+
+/**
+ * `VoucherService.LINE_PROPERTY_REFUSAL` (finance-ops spec §1, S12/O8): an income
+ * or expense line names a property — its own, the header's, or its leaf's — or is
+ * marked Shared / head office.
+ */
+describe("line property", () => {
+    const shape = (line: { propertyId?: string | null; shared?: boolean }, over: Partial<Account> = {}, header: string | null = null) => ({
+        type: "PISR" as const, vendorId: "v1", paymentAccountId: null,
+        lines: [{ accountId: "a1", amount: 100, vatRate: 5, ...line }],
+        accounts: { a1: account({ id: "a1", ...over }) },
+        headerPropertyId: header,
+    });
+
+    it("refuses an expense line with no property anywhere and not marked shared", () => {
+        expect(draftRefusal(shape({}))).toEqual({ key: "linePropertyRequired", line: 1 });
+    });
+
+    it("accepts the line's own property, the header's, a property-bound leaf, or Shared", () => {
+        expect(draftRefusal(shape({ propertyId: "p1" }))).toBeNull();
+        expect(draftRefusal(shape({}, {}, "p1"))).toBeNull();
+        expect(draftRefusal(shape({}, { propertyId: "p1" }))).toBeNull();
+        expect(draftRefusal(shape({ shared: true }))).toBeNull();
+    });
+
+    it("leaves balance-sheet lines alone", () => {
+        expect(draftRefusal(shape({}, { accountType: "ASSET", accountSubType: "FIXED_ASSET" }))).toBeNull();
     });
 });
 

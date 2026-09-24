@@ -77,7 +77,12 @@ type DraftLine = {
      */
     propertyId: string;
     unitId: string;
+    /** "Shared / head office" chosen in the property picker (finance-ops spec §1). */
+    shared: boolean;
 };
+
+/** The property picker's value for "Shared / head office"; never sent as an id. */
+const SHARED = "__shared__";
 
 type VendorRow = {
     id: string;
@@ -99,6 +104,7 @@ const newLine = (propertyId = ""): DraftLine => ({
     vatRate: "0",
     propertyId,
     unitId: "",
+    shared: false,
 });
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -260,6 +266,8 @@ export default function VoucherForm({
                       vatRate: String(l.vatRate ?? 0),
                       propertyId: l.propertyId ?? "",
                       unitId: l.unitId ?? "",
+                      // A saved line with no property was accepted as shared (or predates the rule).
+                      shared: !l.propertyId,
                   }))
                 : [newLine(v.propertyId ?? "")],
         );
@@ -342,13 +350,16 @@ export default function VoucherForm({
                     accountId: l.accountId ?? "",
                     amount: numericLines[i].amount,
                     vatRate: numericLines[i].vatRate,
+                    propertyId: l.propertyId || null,
+                    shared: l.shared,
                 })),
+                headerPropertyId: propertyId || null,
                 payableAccountIds: vendors.length ? payableAccountIds : undefined,
                 vendorPayableAccountId,
                 accounts: Object.keys(accounts).length ? accounts : undefined,
             }),
         [type, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
-         vendorPayableAccountId, vendors.length, accounts],
+         vendorPayableAccountId, vendors.length, accounts, propertyId],
     );
 
     // ---- requests ----
@@ -378,6 +389,7 @@ export default function VoucherForm({
                 // header, which is what an unset row should mean.
                 propertyId: l.propertyId || null,
                 unitId: l.unitId || null,
+                ...(l.shared && !l.propertyId ? { shared: true } : {}),
             })),
         }),
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
@@ -409,6 +421,7 @@ export default function VoucherForm({
                 vatRate: withVat ? l.vatRate ?? 0 : 0,
                 propertyId: l.propertyId ?? null,
                 unitId: l.unitId ?? null,
+                ...(!l.propertyId ? { shared: true } : {}),
             })),
         };
         return JSON.stringify(current) !== JSON.stringify(original);
@@ -795,14 +808,17 @@ export default function VoucherForm({
                                                 aria-label={t("property")}
                                                 className={`${field} w-40`}
                                                 disabled={!editable}
-                                                value={l.propertyId}
+                                                value={l.shared && !l.propertyId ? SHARED : l.propertyId}
                                                 // Changing the property drops the unit with it:
                                                 // a unit belongs to exactly one property, so a
                                                 // kept one would post a line whose unit is not
                                                 // in its own building.
-                                                onChange={e => setLine(i, { propertyId: e.target.value, unitId: "" })}
+                                                onChange={e => setLine(i, e.target.value === SHARED
+                                                    ? { propertyId: "", unitId: "", shared: true }
+                                                    : { propertyId: e.target.value, unitId: "", shared: false })}
                                             >
-                                                <option value="">{t("allProperties")}</option>
+                                                <option value="">{t("sameAsHeader")}</option>
+                                                <option value={SHARED}>{t("sharedHeadOffice")}</option>
                                                 {properties.options.map(pr => (
                                                     <option key={pr.id} value={pr.id}>
                                                         {pr.label}

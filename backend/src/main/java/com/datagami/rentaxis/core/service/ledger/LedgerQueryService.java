@@ -50,12 +50,22 @@ public class LedgerQueryService {
      */
     public static final int MAX_TOTAL_ROWS = 20_000;
 
-    public record LedgerFilter(LocalDate from, LocalDate to, UUID propertyId, UUID unitId, UUID leaseId, UUID renterId) {
+    /**
+     * {@code effectiveProperty}: filter on coalesce(line property, account property)
+     * instead of the line dimension alone — the P&L's rule (finance-ops spec §1), so
+     * a drill-down from a P&L cell lists every line that cell sums.
+     */
+    public record LedgerFilter(LocalDate from, LocalDate to, UUID propertyId, UUID unitId, UUID leaseId, UUID renterId,
+                               boolean effectiveProperty) {
+        public LedgerFilter(LocalDate from, LocalDate to, UUID propertyId, UUID unitId, UUID leaseId, UUID renterId) {
+            this(from, to, propertyId, unitId, leaseId, renterId, false);
+        }
+
         LedgerFilter normalised() {
             LocalDate f = from == null ? LocalDate.of(2000, 1, 1) : from;
             LocalDate t = to == null ? LocalDate.of(2099, 12, 31) : to;
             if (t.isBefore(f)) throw new BusinessRuleViolationException("'to' must not be before 'from'");
-            return new LedgerFilter(f, t, propertyId, unitId, leaseId, renterId);
+            return new LedgerFilter(f, t, propertyId, unitId, leaseId, renterId, effectiveProperty);
         }
     }
 
@@ -71,8 +81,8 @@ public class LedgerQueryService {
         LedgerFilter f = filter.normalised();
         UUID tenantId = TenantContextHolder.getTenantId();
         Account account = accounts.findById(accountId).orElseThrow(() -> new NotFoundException("Account not found"));
-        BigDecimal opening = orZero(lines.balanceBefore(tenantId, accountId, f.from(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId()));
-        List<LineRow> raw = lines.ledgerRows(tenantId, accountId, f.from(), f.to(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId(), MAX_ROWS + 1);
+        BigDecimal opening = orZero(lines.balanceBefore(tenantId, accountId, f.from(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId(), f.effectiveProperty()));
+        List<LineRow> raw = lines.ledgerRows(tenantId, accountId, f.from(), f.to(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId(), f.effectiveProperty(), MAX_ROWS + 1);
         boolean truncated = raw.size() > MAX_ROWS;
         if (truncated) raw = raw.subList(0, MAX_ROWS);
 
@@ -101,16 +111,17 @@ public class LedgerQueryService {
     public List<AccountLedgerDTO> generalLedger(List<UUID> accountIds, LedgerFilter filter) {
         LocalDate from = filter.from() == null ? LocalDate.now().withDayOfMonth(1) : filter.from();
         LocalDate to = filter.to() == null ? LocalDate.now() : filter.to();
-        LedgerFilter f = new LedgerFilter(from, to, filter.propertyId(), filter.unitId(), filter.leaseId(), filter.renterId()).normalised();
+        LedgerFilter f = new LedgerFilter(from, to, filter.propertyId(), filter.unitId(), filter.leaseId(), filter.renterId(),
+                filter.effectiveProperty()).normalised();
         List<UUID> ids = (accountIds == null || accountIds.isEmpty())
-                ? lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId())
+                ? lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), f.propertyId(), f.unitId(), f.leaseId(), f.renterId(), f.effectiveProperty())
                 : accountIds;
         return ledgers(ids, f);
     }
 
     public List<AccountLedgerDTO> renterLedger(UUID renterId, LocalDate from, LocalDate to) {
         LedgerFilter f = new LedgerFilter(from, to, null, null, null, renterId).normalised();
-        List<UUID> ids = lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), null, null, null, renterId);
+        List<UUID> ids = lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), null, null, null, renterId, false);
         return ledgers(ids, f);
     }
 

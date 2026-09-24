@@ -57,7 +57,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
         return new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), "INV-8812",
                 "Monthly cleaning", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(
+                List.of(sharedLine(
                         cleaningExpense.getId(), "October cleaning", amount, rate, null, null)));
     }
 
@@ -78,8 +78,8 @@ class VoucherDraftIT extends AbstractPostgresIT {
         VoucherService.VoucherInput two = new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), "INV-8812",
                 "Monthly cleaning", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), "A", new BigDecimal("200.00"), new BigDecimal("5"), null, null),
-                        new VoucherService.VoucherLineInput(cleaningExpense.getId(), "B", new BigDecimal("300.00"), BigDecimal.ZERO, null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), "A", new BigDecimal("200.00"), new BigDecimal("5"), null, null),
+                        sharedLine(cleaningExpense.getId(), "B", new BigDecimal("300.00"), BigDecimal.ZERO, null, null)));
         Voucher updated = vouchers.updateDraft(v.getId(), two);
         assertThat(updated.getLines()).extracting(VoucherLine::getLineNo).containsExactly(1, 2);
         assertThat(VoucherMath.grossTotal(updated.getLines())).isEqualByComparingTo("510.00");
@@ -95,7 +95,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
      */
     @Test
     void perLineVatIsRoundedThenSummedOnTheSavedDraft() {
-        VoucherService.VoucherLineInput odd = new VoucherService.VoucherLineInput(
+        VoucherService.VoucherLineInput odd = sharedLine(
                 cleaningExpense.getId(), "100.10 at 5%", new BigDecimal("100.10"), new BigDecimal("5"), null, null);
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), "INV-8813", "Three odd lines",
@@ -113,7 +113,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
     void aPisrWithoutAVendorIsRejected() {
         VoucherService.VoucherInput noVendor = new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), null, null, "x", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(noVendor))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("vendor");
@@ -123,7 +123,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
     void aBpvWithoutAPaymentAccountIsRejected() {
         VoucherService.VoucherInput noBank = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(noBank))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("payment account");
@@ -140,7 +140,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
         Account bank = accounts.createLeaf("Emirates Islamic - Ops", accounts.getAccountByCode("A-02-02"), null);
         VoucherService.VoucherInput vatOnBpv = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null, bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null, new BigDecimal("10.00"), new BigDecimal("5"), null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), null, new BigDecimal("10.00"), new BigDecimal("5"), null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(vatOnBpv))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("A payment voucher line cannot carry VAT — record the VAT on the purchase invoice");
@@ -152,11 +152,11 @@ class VoucherDraftIT extends AbstractPostgresIT {
         Account bank = accounts.createLeaf("Mashreq - Ops", accounts.getAccountByCode("A-02-02"), null);
         VoucherService.VoucherInput clean = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null, bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         Voucher v = vouchers.createDraft(clean);
         VoucherService.VoucherInput withVat = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null, bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null, new BigDecimal("10.00"), new BigDecimal("5"), null, null)));
+                List.of(sharedLine(cleaningExpense.getId(), null, new BigDecimal("10.00"), new BigDecimal("5"), null, null)));
         assertThatThrownBy(() -> vouchers.updateDraft(v.getId(), withVat))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("A payment voucher line cannot carry VAT — record the VAT on the purchase invoice");
@@ -167,7 +167,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
     void aLineOnAGroupAccountIsRejected() {
         VoucherService.VoucherInput onGroup = new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), null, "x", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(groupAccount.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
+                List.of(sharedLine(groupAccount.getId(), null, new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(onGroup))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("group");
@@ -231,7 +231,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
         VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
                 receivable.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                List.of(sharedLine(cleaningExpense.getId(), null,
                         new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(bad))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -248,13 +248,13 @@ class VoucherDraftIT extends AbstractPostgresIT {
         VoucherService.VoucherInput clean = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
                 bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                List.of(sharedLine(cleaningExpense.getId(), null,
                         new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         Voucher v = vouchers.createDraft(clean);
         VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 5), null, null, "x", null, null,
                 receivable.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(cleaningExpense.getId(), null,
+                List.of(sharedLine(cleaningExpense.getId(), null,
                         new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.updateDraft(v.getId(), bad))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -268,7 +268,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
         Account income = accounts.createLeaf("Other Income - Test", accounts.getAccountByCode("C-01-02"), null);
         VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), null, "x", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(income.getId(), null,
+                List.of(sharedLine(income.getId(), null,
                         new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.createDraft(bad))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -283,11 +283,22 @@ class VoucherDraftIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(pisr(new BigDecimal("100.00"), BigDecimal.ZERO));
         VoucherService.VoucherInput bad = new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 5), vendor.getId(), null, "x", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(income.getId(), null,
+                List.of(sharedLine(income.getId(), null,
                         new BigDecimal("10.00"), BigDecimal.ZERO, null, null)));
         assertThatThrownBy(() -> vouchers.updateDraft(v.getId(), bad))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining(income.getCode())
                 .hasMessageContaining("expense or asset");
+    }
+
+    /**
+     * A line marked Shared / head office (finance-ops spec §1): this fixture's
+     * expense and income leaves carry no property, and the voucher rule now asks
+     * such a line to say it is shared. The rule itself is pinned in
+     * PropertyPnlServiceIT.voucherLinesMustNameAPropertyOrSayShared.
+     */
+    private static VoucherService.VoucherLineInput sharedLine(java.util.UUID accountId, String description,
+            java.math.BigDecimal amount, java.math.BigDecimal vatRate, java.util.UUID propertyId, java.util.UUID unitId) {
+        return new VoucherService.VoucherLineInput(accountId, description, amount, vatRate, propertyId, unitId, true);
     }
 }

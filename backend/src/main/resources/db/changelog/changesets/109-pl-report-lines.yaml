@@ -1,0 +1,59 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §1: per-property P&L. Every property has its own
+  # leaf per role and per expense category ("Rental Income Marina", "Rental
+  # Income Palm"), so a report grouped by account id never lines up across
+  # properties. accounts.report_line is the shared row key:
+  #
+  #   - a leaf mapped to a property role (property_account_mappings) takes the
+  #     role name. A leaf mapped to two roles keeps the first by AccountRole
+  #     ordinal — the array below is that enum in declaration order;
+  #   - a property leaf under D-01 named "<category> - " takes EXP_<CATEGORY>
+  #     (PropertyAccountService's direct-expense categories). The prefix
+  #     includes " - " so a hand-made "Security Deposit Refunds" is not taken
+  #     for "Security - <property>", and a leaf that survived a property rename
+  #     still matches;
+  #   - anything else stays null and is its own row.
+  #
+  # Read-only over the ledger: no journal row is touched. Existing values are
+  # never overwritten (report_line IS NULL on every update).
+  - changeSet:
+      id: 109-pl-report-lines
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: accounts
+            columns:
+              - column:
+                  name: report_line
+                  type: varchar(40)
+                  constraints: { nullable: true }
+        - sql:
+            comment: Role leaves take their role; a leaf mapped to several roles keeps the first by ordinal
+            sql: |
+              UPDATE accounts a SET report_line = m.role
+              FROM (
+                SELECT DISTINCT ON (pam.account_id) pam.account_id, pam.role
+                FROM property_account_mappings pam
+                ORDER BY pam.account_id,
+                         array_position(ARRAY['RENT_RECEIVABLE','ADVANCE_RENT','RENTAL_INCOME','PDC_RECEIVABLE','BANK',
+                                              'SECURITY_DEPOSIT','ADMIN_FEE','PARKING_INCOME','PARKING_DEPOSIT','COOLING_CHARGES',
+                                              'MAINTENANCE_CHARGES','RENT_PENALTY','CHEQUE_RETURN_PENALTY','OTHER_INCOME',
+                                              'FORFEITED_INCOME','DISCOUNT_ALLOWED','ROUNDING_OFF','CASH','OUTPUT_VAT','INPUT_VAT',
+                                              'OPENING_BALANCE_DIFFERENCE','OUTPUT_VAT_DEFERRED']::text[], pam.role::text),
+                         pam.role
+              ) m
+              WHERE a.id = m.account_id AND a.report_line IS NULL
+        - sql:
+            comment: Per-property direct-expense leaves under D-01 take EXP_<CATEGORY> by name prefix
+            sql: |
+              UPDATE accounts a SET report_line = c.line
+              FROM accounts p,
+                   (VALUES ('Repairs & Maintenance - ', 'EXP_REPAIRS_MAINTENANCE'),
+                           ('Cleaning - ', 'EXP_CLEANING'),
+                           ('Security - ', 'EXP_SECURITY'),
+                           ('Utilities - ', 'EXP_UTILITIES'),
+                           ('Insurance - ', 'EXP_INSURANCE'),
+                           ('Management Fees - ', 'EXP_MANAGEMENT_FEES')) AS c(prefix, line)
+              WHERE a.parent_id = p.id AND p.code = 'D-01' AND p.tenant_id = a.tenant_id
+                AND a.property_id IS NOT NULL AND a.report_line IS NULL
+                AND left(a.name, length(c.prefix)) = c.prefix

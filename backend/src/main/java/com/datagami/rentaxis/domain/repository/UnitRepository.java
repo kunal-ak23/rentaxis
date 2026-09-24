@@ -71,4 +71,8 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM Unit u WHERE u.id = :id")
     Optional<Unit> findByIdForUpdate(@Param("id") UUID id);
+
+    /** [propertyId, unit count] for the tenant, in one query (the P&L's allocation by units). */
+    @Query("select u.property.id, count(u) from Unit u where u.tenantId = :tenantId and u.property is not null group by u.property.id")
+    List<Object[]> countByProperty(@Param("tenantId") UUID tenantId);
 }

@@ -114,9 +114,9 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), vendor.getId(), null,
                 "October payment run", null, null, bank.getId(), "000451", LocalDate.of(2026, 10, 22),
-                List.of(new VoucherService.VoucherLineInput(vendor.getPayableAccount().getId(),
+                List.of(sharedLine(vendor.getPayableAccount().getId(),
                                 "Settle EMR-4471", new BigDecimal("5100.00"), BigDecimal.ZERO, null, null),
-                        new VoucherService.VoucherLineInput(salaries.getId(),
+                        sharedLine(salaries.getId(),
                                 "Watchman salary", new BigDecimal("2500.00"), BigDecimal.ZERO, null, null))));
 
         Voucher posted = vouchers.post(v.getId());
@@ -141,7 +141,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
                 bank.getId(), "000451", LocalDate.of(2026, 10, 22),
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
         Voucher posted = vouchers.post(v.getId());
         assertThat(journalRows(posted.getJournalId()))
@@ -162,7 +162,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "Petty cash", null, null,
                 cash.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("300.00"), BigDecimal.ZERO, null, null))));
         Voucher posted = vouchers.post(v.getId());
         assertThat(journalRows(posted.getJournalId()))
@@ -184,7 +184,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
                 bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("1000.00"), BigDecimal.ZERO, null, null))));
         jdbc.update("update voucher_lines set vat_rate = 5.00, vat_amount = 50.00 where voucher_id = ?", v.getId());
 
@@ -205,7 +205,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
                 bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("1000.00"), BigDecimal.ZERO, null, null))));
         jdbc.update("update voucher_lines set vat_rate = 5.00 where voucher_id = ?", v.getId());
 
@@ -236,7 +236,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
                 bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), null,
+                List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
         jdbc.update("update vouchers set payment_account_id = ? where id = ?", receivable.getId(), v.getId());
         assertThatThrownBy(() -> vouchers.post(v.getId()))
@@ -255,7 +255,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         Voucher invoice = vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), "EMR-4471",
                 "October services", null, null, null, null, null,
-                List.of(new VoucherService.VoucherLineInput(salaries.getId(), "Manpower",
+                List.of(sharedLine(salaries.getId(), "Manpower",
                         new BigDecimal("5000.00"), new BigDecimal("5"), null, null)))).getId());
         assertThat(invoice.getStatus()).isEqualTo(VoucherStatus.POSTED);
 
@@ -266,7 +266,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), vendor.getId(), null, "Settle EMR-4471", null, null,
                 bank.getId(), "000451", LocalDate.of(2026, 10, 20),
-                List.of(new VoucherService.VoucherLineInput(vendor.getPayableAccount().getId(), "EMR-4471",
+                List.of(sharedLine(vendor.getPayableAccount().getId(), "EMR-4471",
                         new BigDecimal("5250.00"), BigDecimal.ZERO, null, null)))).getId());
 
         AccountLedgerDTO afterPayment = tx.execute(s -> ledger.vendorLedger(vendor.getId(), null, null));
@@ -286,7 +286,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         return new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), vendorId, null, "Payment run", null, null,
                 bank.getId(), null, null,
-                List.of(new VoucherService.VoucherLineInput(lineAccountId, "Settlement",
+                List.of(sharedLine(lineAccountId, "Settlement",
                         new BigDecimal("1000.00"), BigDecimal.ZERO, null, null)));
     }
 
@@ -371,5 +371,16 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
     void aPaymentWithNoPayableLineNeedsNoVendor() {
         Voucher posted = vouchers.post(vouchers.createDraft(payment(null, salaries.getId())).getId());
         assertThat(posted.getStatus()).isEqualTo(VoucherStatus.POSTED);
+    }
+
+    /**
+     * A line marked Shared / head office (finance-ops spec §1): this fixture's
+     * expense and income leaves carry no property, and the voucher rule now asks
+     * such a line to say it is shared. The rule itself is pinned in
+     * PropertyPnlServiceIT.voucherLinesMustNameAPropertyOrSayShared.
+     */
+    private static VoucherService.VoucherLineInput sharedLine(java.util.UUID accountId, String description,
+            java.math.BigDecimal amount, java.math.BigDecimal vatRate, java.util.UUID propertyId, java.util.UUID unitId) {
+        return new VoucherService.VoucherLineInput(accountId, description, amount, vatRate, propertyId, unitId, true);
     }
 }

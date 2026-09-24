@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.ledger.TemplateRowDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.report.ReportLines;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.PropertyAccountMapping;
@@ -36,32 +37,8 @@ public class PropertyAccountService {
     /** Parent of the per-property building-cost leaves. */
     private static final String DIRECT_EXPENSE_PARENT_CODE = "D-01";
 
-    /**
-     * The running costs a UAE residential building actually incurs, and the set a
-     * supplier invoice has to be codeable to on day one. Kept deliberately short —
-     * anything more specific is a leaf the customer adds themselves from the Chart
-     * of Accounts screen.
-     */
-    private static final List<String> DIRECT_EXPENSE_CATEGORIES = List.of(
-            "Repairs & Maintenance",
-            "Cleaning",
-            "Security",
-            "Utilities",
-            "Insurance",
-            "Management Fees");
-
-    /**
-     * Arabic for each direct-expense category, same order as the English list. A
-     * category missing here gets a leaf with no Arabic name (the web falls back
-     * to English).
-     */
-    private static final Map<String, String> DIRECT_EXPENSE_CATEGORIES_AR = Map.of(
-            "Repairs & Maintenance", "الإصلاح والصيانة",
-            "Cleaning", "التنظيف",
-            "Security", "الأمن والحراسة",
-            "Utilities", "المرافق",
-            "Insurance", "التأمين على المبنى",
-            "Management Fees", "رسوم الإدارة");
+    // The direct-expense categories (names, Arabic names, report lines) live in
+    // ReportLines.DIRECT_EXPENSE_CATEGORIES, shared with the P&L and changeset 109.
 
     /**
      * The Arabic label a property leaf is named with, per role (gap #68).
@@ -236,10 +213,18 @@ public class PropertyAccountService {
                     ROLE_LABEL_AR.getOrDefault(row.getRole(), row.getParentAccount().getNameAr()), property);
             Account leaf = accountRepo.findByNameAndParent_Id(name, row.getParentAccount().getId())
                     .orElseGet(() -> accountService.createLeaf(name, nameAr, row.getParentAccount(), propertyId));
+            boolean dirty = false;
             if (leaf.getProperty() == null) {
                 leaf.setProperty(property);
-                accountRepo.save(leaf);
+                dirty = true;
             }
+            // The P&L row key (finance-ops §1). A reused leaf already carrying a line
+            // keeps it: the first role it was mapped to wins, as in changeset 109.
+            if (leaf.getReportLine() == null && reportLineFits(row.getRole().name(), leaf)) {
+                leaf.setReportLine(row.getRole().name());
+                dirty = true;
+            }
+            if (dirty) accountRepo.save(leaf);
             PropertyAccountMapping m = new PropertyAccountMapping();
             m.setPropertyId(propertyId);
             m.setRole(row.getRole());
@@ -274,8 +259,8 @@ public class PropertyAccountService {
                     DIRECT_EXPENSE_PARENT_CODE, propertyId);
             return;
         }
-        for (String category : DIRECT_EXPENSE_CATEGORIES) {
-            String prefix = category + " - ";
+        for (ReportLines.ExpenseCategory category : ReportLines.DIRECT_EXPENSE_CATEGORIES) {
+            String prefix = category.leafPrefix();
             String name = prefix + property.getNameEn();
             // Scoped to this property, not just this name: two properties with the
             // same display name must not share one leaf (see the repository method's
@@ -286,9 +271,27 @@ public class PropertyAccountService {
             if (accountRepo.existsByParent_IdAndProperty_IdAndNameStartingWith(parent.get().getId(), propertyId, prefix)) {
                 continue;
             }
-            accountService.createLeaf(name,
-                    arabicLeafName(DIRECT_EXPENSE_CATEGORIES_AR.get(category), property), parent.get(), propertyId);
+            Account leaf = accountService.createLeaf(name,
+                    arabicLeafName(category.nameAr(), property), parent.get(), propertyId);
+            if (reportLineFits(category.reportLine(), leaf)) {
+                leaf.setReportLine(category.reportLine());
+                accountRepo.save(leaf);
+            }
         }
+    }
+
+    /**
+     * Whether a report line may be written onto this leaf automatically: only when
+     * its account type is the line's natural one (ReportLines.naturalType), the same
+     * rule the chart of accounts enforces. A mismatch — a template parent of an
+     * unexpected type on an imported chart — is skipped and logged, never fatal:
+     * the leaf is then its own P&L row.
+     */
+    static boolean reportLineFits(String key, Account leaf) {
+        if (ReportLines.naturalType(key) == leaf.getAccountType()) return true;
+        log.warn("not setting report line {} on {} {} ({}): it belongs on a {} account", key, leaf.getCode(),
+                leaf.getName(), leaf.getAccountType(), ReportLines.naturalType(key));
+        return false;
     }
 
     @Transactional(readOnly = true)
@@ -345,6 +348,11 @@ public class PropertyAccountService {
         m.setRole(role);
         m.setAccount(account);
         mappingRepo.save(m);
+        // A leaf mapped by hand joins its role's P&L row unless it already has one.
+        if (account.getReportLine() == null && reportLineFits(role.name(), account)) {
+            account.setReportLine(role.name());
+            accountRepo.save(account);
+        }
         return dto(role, account, false);
     }
 

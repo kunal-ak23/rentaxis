@@ -940,3 +940,53 @@ describe("VoucherForm — one load, never a reload over unsaved lines", () => {
         expect(api.get).toHaveBeenCalledTimes(1);
     });
 });
+
+/**
+ * Finance-ops spec §1 (S12/O8): an income or expense line with no property drops
+ * out of every property report, so the form — like VoucherService.validate —
+ * asks for one, or for "Shared / head office", before it will post.
+ */
+describe("VoucherForm — line property", () => {
+    beforeEach(() => {
+        chart.rows = [{
+            id: "acct-1", code: "510100", name: "Bank charges", accountType: "EXPENSE", accountSubType: "OTHER_EXPENSE",
+            group: false, active: true, propertyId: null,
+        } as (typeof chart.rows)[number]];
+    });
+
+    it("refuses an expense line with no property until Shared / head office is chosen, and sends shared", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillLine(0, "100", "0");
+        await waitFor(() =>
+            expect(screen.getByTestId("voucher-blocker")).toHaveTextContent("Line 1: choose a property"),
+        );
+        expect(screen.getByTestId("post-voucher")).toBeDisabled();
+
+        const picker = screen.getByTestId("line-property-0");
+        expect(screen.getAllByRole("option", { name: en.Vouchers.sharedHeadOffice }).length).toBeGreaterThan(0);
+        fireEvent.change(picker, { target: { value: "__shared__" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        const body = api.create.mock.calls.at(-1)![0];
+        expect(body.lines[0]).toMatchObject({ propertyId: null, shared: true });
+    });
+
+    it("accepts a line that names a property and does not send shared", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillLine(0, "100", "0");
+        await waitFor(() => expect(screen.getAllByRole("option", { name: "L'Olivier" }).length).toBeGreaterThan(0));
+        fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-1" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        const body = api.create.mock.calls.at(-1)![0];
+        expect(body.lines[0].propertyId).toBe("prop-1");
+        expect(body.lines[0]).not.toHaveProperty("shared");
+    });
+});

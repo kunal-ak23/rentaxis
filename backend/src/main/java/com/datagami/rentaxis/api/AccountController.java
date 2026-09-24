@@ -65,7 +65,7 @@ public class AccountController {
      */
     public record CreateAccountRequest(String code, String name, String nameEn, String nameAr, String alias,
                                        AccountType accountType, AccountSubType accountSubType, String description,
-                                       UUID parentId, UUID propertyId, Boolean group,
+                                       UUID parentId, UUID propertyId, Boolean group, String reportLine,
                                        @JsonAnySetter Map<String, Object> unknown) {}
 
     /**
@@ -76,7 +76,7 @@ public class AccountController {
      */
     public record UpdateAccountRequest(String name, String nameEn, String nameAr, String alias, String description,
                                        AccountSubType accountSubType, Boolean active, Integer displayOrder,
-                                       UUID propertyId,
+                                       UUID propertyId, String reportLine,
                                        @JsonAnySetter Map<String, Object> unknown) {}
 
     /** A body this endpoint does not understand is refused, never partially applied. */
@@ -125,6 +125,7 @@ public class AccountController {
         a.setAccountSubType(r.accountSubType());
         a.setDescription(r.description());
         a.setGroup(Boolean.TRUE.equals(r.group()));
+        a.setReportLine(r.reportLine());   // validated against the (possibly inherited) type in createAccount
         if (r.parentId() != null) {
             Account p = new Account();
             p.setId(r.parentId());
@@ -162,7 +163,7 @@ public class AccountController {
         rejectUnknownFields(r.unknown());
         return ResponseEntity.ok(service.updateAccount(id, new AccountService.AccountUpdate(
                 r.name(), r.nameEn(), r.nameAr(), r.alias(), r.description(),
-                r.accountSubType(), r.active(), r.displayOrder(), r.propertyId())));
+                r.accountSubType(), r.active(), r.displayOrder(), r.propertyId(), r.reportLine())));
     }
 
     @PostMapping("/import")
