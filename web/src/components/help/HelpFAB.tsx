@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HelpCircle, BookOpen, Play, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Link, usePathname } from '@/i18n/routing';
 import { getContextualHelp } from '@/lib/help';
@@ -11,6 +12,7 @@ import { getTourById } from '@/components/tour/tours';
 import { useAnyDialogOpen } from '@/lib/useAnyDialogOpen';
 
 export default function HelpFAB() {
+  const t = useTranslations('Help');
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -44,7 +46,7 @@ export default function HelpFAB() {
   }
 
   return (
-    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 right-6 z-40">
+    <div ref={wrapperRef} data-tour="help-fab" className="fixed bottom-6 end-6 z-40">
       <AnimatePresence>
         {open && (
           <motion.div
@@ -52,12 +54,12 @@ export default function HelpFAB() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="absolute bottom-16 right-0 w-64 rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden"
+            className="absolute bottom-16 end-0 w-64 rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden"
           >
             {/* Header */}
             <div className="bg-[var(--ink-900)] px-4 py-3 text-white">
-              <p className="font-semibold text-sm">Need Help?</p>
-              <p className="text-xs text-white/70">Resources for this page</p>
+              <p className="font-semibold text-sm">{t('needHelp')}</p>
+              <p className="text-xs text-white/70">{t('resourcesForPage')}</p>
             </div>
 
             {/* Options */}
@@ -72,7 +74,7 @@ export default function HelpFAB() {
                   )}
                 >
                   <BookOpen className="w-4 h-4 text-[var(--gold-500)] shrink-0" />
-                  View Page Help
+                  {t('viewPageHelp')}
                 </Link>
               )}
 
@@ -83,12 +85,12 @@ export default function HelpFAB() {
                     startTour(ctx.tour!);
                   }}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground w-full text-left',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground w-full text-start',
                     'hover:bg-[var(--sand-100)] transition-colors'
                   )}
                 >
                   <Play className="w-4 h-4 text-[var(--gold-500)] shrink-0" />
-                  Take a Tour
+                  {t('takeTour')}
                 </button>
               )}
 
@@ -101,7 +103,7 @@ export default function HelpFAB() {
                 )}
               >
                 <HelpCircle className="w-4 h-4 text-[var(--gold-500)] shrink-0" />
-                Help Center
+                {t('title')}
               </Link>
             </div>
           </motion.div>
@@ -112,6 +114,7 @@ export default function HelpFAB() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(prev => !prev)}
+        aria-label={open ? t('closeHelp') : t('openHelp')}
         className={cn(
           'w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-colors',
           open

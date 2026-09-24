@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("@/i18n/routing", () => ({
     usePathname: () => "/dashboard/leases",
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,

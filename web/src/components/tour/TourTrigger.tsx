@@ -2,6 +2,7 @@
 
 import { Play, CheckCircle2 } from 'lucide-react';
 import { useTour, isTourCompleted } from './TourProvider';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { TourDef } from './tours/types';
 
@@ -11,6 +12,7 @@ interface TourTriggerProps {
 }
 
 export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps) {
+  const t = useTranslations('Help');
   const { startTour, completedTourIds } = useTour();
   const completed = completedTourIds.includes(tour.id);
 
@@ -21,7 +23,7 @@ export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps
         className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
       >
         <Play size={14} />
-        {completed ? 'Retake Tour' : 'Start Tour'}
+        {completed ? t('retakeTour') : t('startTour')}
       </button>
     );
   }

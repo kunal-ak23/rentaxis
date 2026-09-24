@@ -2882,5 +2882,36 @@
       "PENALTY_INCURRED": {"title": "فُرضت غرامة", "body": "أُضيفت غرامة بقيمة {amount} ({reason}). يُرجى سدادها بتحويل بنكي أو بشيك أو نقدًا."},
       "PENALTY_INCURRED_INSTALMENT": {"title": "فُرضت غرامة", "body": "أُضيفت غرامة بقيمة {amount} على القسط رقم {seq} ({reason}). يُرجى سدادها بتحويل بنكي أو بشيك أو نقدًا."}
     }
+  },
+  "Help": {
+    "title": "مركز المساعدة",
+    "subtitle": "اعثر على أدلة وشروحات لاستخدام RentAxis",
+    "allArticles": "جميع المقالات",
+    "categories": {"getting-started": "البدء", "properties": "العقارات", "leases": "عقود الإيجار", "finance": "المالية", "renter": "بوابة المستأجر", "admin": "الإدارة"},
+    "showAllRoles": "عرض جميع الأدوار",
+    "searchPlaceholder": "ابحث في مقالات المساعدة...",
+    "clearSearch": "مسح البحث",
+    "noMatch": "لا توجد مقالات مطابقة لبحثك.",
+    "noArticlesForRole": "لا توجد مقالات مساعدة متاحة لدورك.",
+    "readingMinutes": "{count} د",
+    "minRead": "مدة القراءة {count} د",
+    "contentEnglishOnly": "المقالات متاحة باللغة الإنجليزية حاليًا.",
+    "interactiveTours": "الجولات التفاعلية",
+    "interactiveToursDesc": "خذ جولة إرشادية في أهم الميزات.",
+    "backToHelp": "العودة إلى مركز المساعدة",
+    "tourAvailable": "تتوفر جولة تفاعلية",
+    "notFoundTitle": "المقالة غير موجودة",
+    "notFoundDesc": "مقالة المساعدة التي تبحث عنها غير موجودة أو أُزيلت.",
+    "needHelp": "تحتاج إلى مساعدة؟",
+    "resourcesForPage": "موارد هذه الصفحة",
+    "viewPageHelp": "عرض مساعدة الصفحة",
+    "takeTour": "ابدأ جولة",
+    "openHelp": "المساعدة",
+    "closeHelp": "إغلاق المساعدة",
+    "startTour": "بدء الجولة",
+    "retakeTour": "إعادة الجولة",
+    "welcomeTitle": "مرحبًا بك في RentAxis!",
+    "welcomeDesc": "خذ جولة سريعة لتتعرّف على البوابة.",
+    "dismiss": "إغلاق"
   }
 }

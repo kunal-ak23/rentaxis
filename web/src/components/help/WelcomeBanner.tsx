@@ -7,11 +7,13 @@ import { useTour, isTourCompleted } from '@/components/tour/TourProvider';
 import { useSession } from 'next-auth/react';
 import { getToursForRole } from '@/components/tour/tours';
 import type { UserRole } from '@/lib/rbac';
+import { useTranslations } from 'next-intl';
 
 const BANNER_DISMISSED_KEY = 'rentaxis_welcome_dismissed';
 
 export default function WelcomeBanner() {
   const [visible, setVisible] = useState(false);
+  const t = useTranslations('Help');
   const { startTour } = useTour();
   const { data: session } = useSession();
   const userRole = session?.user?.role as UserRole | undefined;
@@ -61,8 +63,8 @@ export default function WelcomeBanner() {
                 <Sparkles size={20} className="text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">Welcome to RentAxis!</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Take a quick tour to learn your way around the portal.</p>
+                <h3 className="text-sm font-semibold text-gray-900">{t('welcomeTitle')}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{t('welcomeDesc')}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -71,10 +73,11 @@ export default function WelcomeBanner() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 <Play size={12} />
-                Start Tour
+                {t('startTour')}
               </button>
               <button
                 onClick={dismiss}
+                aria-label={t('dismiss')}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 <X size={14} />

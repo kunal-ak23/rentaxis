@@ -2882,5 +2882,36 @@
       "PENALTY_INCURRED": {"title": "Penalty incurred", "body": "A penalty of {amount} has been added ({reason}). Please clear it via bank transfer, cheque, or cash."},
       "PENALTY_INCURRED_INSTALMENT": {"title": "Penalty incurred", "body": "A penalty of {amount} has been added for instalment #{seq} ({reason}). Please clear it via bank transfer, cheque, or cash."}
     }
+  },
+  "Help": {
+    "title": "Help Center",
+    "subtitle": "Find guides and tutorials for using RentAxis",
+    "allArticles": "All Articles",
+    "categories": {"getting-started": "Getting Started", "properties": "Properties", "leases": "Leases", "finance": "Finance", "renter": "Renter Portal", "admin": "Administration"},
+    "showAllRoles": "Show all roles",
+    "searchPlaceholder": "Search help articles...",
+    "clearSearch": "Clear search",
+    "noMatch": "No articles match your search.",
+    "noArticlesForRole": "No help articles available for your role.",
+    "readingMinutes": "{count} min",
+    "minRead": "{count} min read",
+    "contentEnglishOnly": "Articles are in English for now.",
+    "interactiveTours": "Interactive Tours",
+    "interactiveToursDesc": "Take a guided walkthrough of key features.",
+    "backToHelp": "Back to Help Center",
+    "tourAvailable": "Interactive Tour Available",
+    "notFoundTitle": "Article Not Found",
+    "notFoundDesc": "The help article you're looking for doesn't exist or has been removed.",
+    "needHelp": "Need Help?",
+    "resourcesForPage": "Resources for this page",
+    "viewPageHelp": "View Page Help",
+    "takeTour": "Take a Tour",
+    "openHelp": "Help",
+    "closeHelp": "Close help",
+    "startTour": "Start Tour",
+    "retakeTour": "Retake Tour",
+    "welcomeTitle": "Welcome to RentAxis!",
+    "welcomeDesc": "Take a quick tour to learn your way around the portal.",
+    "dismiss": "Dismiss"
   }
 }

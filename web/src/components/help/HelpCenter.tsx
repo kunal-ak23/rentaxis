@@ -13,9 +13,10 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
+import { useLocale, useTranslations } from 'next-intl';
 import { useSession } from 'next-auth/react';
 import { cn } from '@/lib/utils';
-import { type UserRole, getRoleLabel } from '@/lib/rbac';
+import { type UserRole } from '@/lib/rbac';
 import {
   HELP_CATEGORIES,
   filterArticlesByRole,
@@ -44,6 +45,8 @@ interface HelpCenterProps {
 
 export default function HelpCenter({ articles }: HelpCenterProps) {
   const { data: session } = useSession();
+  const t = useTranslations('Help');
+  const locale = useLocale();
   const userRole = (session?.user as { role?: UserRole } | undefined)?.role;
   const isAdmin = userRole === 'SUPER_ADMIN' || userRole === 'TENANT_ADMIN';
 
@@ -94,9 +97,9 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
             <BookOpen size={24} className="text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Help Center</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
             <p className="text-sm text-gray-500">
-              Find guides and tutorials for using RentAxis
+              {t('subtitle')}
             </p>
           </div>
         </div>
@@ -117,7 +120,7 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
                   : 'text-gray-600 hover:bg-gray-100'
               )}
             >
-              <span>All Articles</span>
+              <span>{t('allArticles')}</span>
               <span className="text-xs text-gray-400">{totalCount}</span>
             </button>
 
@@ -137,7 +140,7 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
                 >
                   <span className="flex items-center gap-2">
                     {CATEGORY_ICONS[cat.id]}
-                    {cat.label}
+                    {t.has(`categories.${cat.id}`) ? t(`categories.${cat.id}`) : cat.label}
                   </span>
                   <span className="text-xs text-gray-400">{count}</span>
                 </button>
@@ -155,7 +158,7 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
                   onChange={(e) => setShowAllRoles(e.target.checked)}
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
-                Show all roles
+                {t('showAllRoles')}
               </label>
             </div>
           )}
@@ -165,6 +168,11 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
         <div className="flex-1 min-w-0">
           {/* Search */}
           <HelpSearch onSearch={handleSearch} className="mb-6" />
+          {/* The articles themselves are English content for now; say so
+              rather than let an Arabic reader land on them unannounced. */}
+          {locale === 'ar' && (
+            <p className="-mt-3 mb-6 text-xs text-gray-500">{t('contentEnglishOnly')}</p>
+          )}
 
           {/* Article grid */}
           {displayedArticles.length > 0 ? (
@@ -176,22 +184,22 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
                   className="group flex flex-col p-4 rounded-lg border border-gray-200 bg-white hover:shadow-md hover:border-primary/30 transition-all"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-gray-900 group-hover:text-primary transition-colors">
+                    <h3 lang="en" dir="auto" className="text-sm font-semibold text-gray-900 group-hover:text-primary transition-colors">
                       {article.title}
                     </h3>
                     <ChevronRight
                       size={16}
-                      className="text-gray-300 group-hover:text-primary shrink-0 mt-0.5 transition-colors"
+                      className="text-gray-300 group-hover:text-primary shrink-0 mt-0.5 transition-colors rtl:rotate-180"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-2">
+                  <p lang="en" dir="auto" className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-2">
                     {article.description}
                   </p>
                   <div className="mt-auto flex items-center justify-between">
                     <RoleFilter roles={article.roles} compact />
                     <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
                       <Clock size={10} />
-                      {readingTime(article.content)} min
+                      {t('readingMinutes', { count: readingTime(article.content) })}
                     </span>
                   </div>
                 </Link>
@@ -201,8 +209,8 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
             <div className="text-center py-12">
               <p className="text-gray-400 text-sm">
                 {query
-                  ? 'No articles match your search.'
-                  : 'No help articles available for your role.'}
+                  ? t('noMatch')
+                  : t('noArticlesForRole')}
               </p>
             </div>
           )}
@@ -211,10 +219,10 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
           {availableTours.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Interactive Tours
+                {t('interactiveTours')}
               </h2>
               <p className="text-sm text-gray-500 mb-4">
-                Take a guided walkthrough of key features.
+                {t('interactiveToursDesc')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {availableTours.map((tour) => (
