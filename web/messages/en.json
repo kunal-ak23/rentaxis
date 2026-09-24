@@ -2327,7 +2327,7 @@
     "postAnyway": "Post anyway",
     "errors": {
       "bank": {
-        "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. An entry dated {date} falls inside it: record it from its statement line in Bank reconciliation, or confirm that it is not on the statement."
+        "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. {when, select, before {An entry dated {date} is before the statement starts ({from}), so it changes the balance the statement opens with: confirm that it is not on the statement to post it.} other {An entry dated {date} is inside the statement period ({from} to {to}): record it from its statement line in Bank reconciliation, or confirm that it is not on the statement.}}"
       },
       "voucher": {
         "cashNegative": "{account} holds {balance} on {date}; paying {amount} would leave it at {after}.",

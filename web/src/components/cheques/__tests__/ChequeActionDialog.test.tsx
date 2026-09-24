@@ -243,6 +243,25 @@ describe("ChequeActionDialog — a statement already covers this date (F14-20)",
         await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(2));
         expect(api.receive).toHaveBeenLastCalledWith("c1", expect.objectContaining({ notOnStatement: true }));
     });
+
+    it.each([
+        ["before", "06/07/2026", "is before the statement starts (03/09/2026)"],
+        ["inside", "10/09/2026", "is inside the statement period (03/09/2026 to 24/09/2026)"],
+    ])("says where a date %s the statement falls (F14-60)", async (when, date, text) => {
+        const cash = { id: "acc-cash", code: "A-02-05-001", name: "Cash in hand", nameAr: null, kind: "CASH" as const, bankAccount: null };
+        api.settlementTarget.mockResolvedValue({ target: cash, options: [cash] });
+        api.receive.mockRejectedValueOnce(new ApiError(400, "covered", JSON.stringify({
+            code: "bank.statementCovers",
+            args: { bank: "Emirates Islamic 2001", from: "03/09/2026", to: "24/09/2026", date, when },
+            message: "covered",
+        })));
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(false));
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        const notice = await screen.findByTestId("cheque-receive-notice");
+        expect(notice).toHaveTextContent(`An entry dated ${date} ${text}`);
+        if (when === "before") expect(notice).not.toHaveTextContent("inside");
+    });
 });
 
 function point(chequeId: string, over: Partial<VatTaxPoint> = {}): VatTaxPoint {
