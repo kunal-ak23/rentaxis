@@ -46,10 +46,12 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
                ca.name as contraAccountName,
                l.property_id as propertyId, l.unit_id as unitId, l.lease_id as leaseId, l.renter_id as renterId, l.cheque_id as chequeId, l.line_no as lineNo
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts la on la.id = l.account_id
              left join accounts ca on ca.id = l.contra_account_id
         where l.tenant_id = :tenantId and l.account_id = :accountId
           and e.entry_date between :from and :to
-          and (cast(:propertyId as uuid) is null or l.property_id = :propertyId)
+          and (cast(:propertyId as uuid) is null
+               or (case when :effective then coalesce(l.property_id, la.property_id) else l.property_id end) = :propertyId)
           and (cast(:unitId as uuid) is null or l.unit_id = :unitId)
           and (cast(:leaseId as uuid) is null or l.lease_id = :leaseId)
           and (cast(:renterId as uuid) is null or l.renter_id = :renterId)
@@ -60,20 +62,23 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
                              @Param("from") LocalDate from, @Param("to") LocalDate to,
                              @Param("propertyId") UUID propertyId, @Param("unitId") UUID unitId,
                              @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId,
-                             @Param("limit") int limit);
+                             @Param("effective") boolean effective, @Param("limit") int limit);
 
     @Query(value = """
         select coalesce(sum(l.debit),0) - coalesce(sum(l.credit),0)
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts la on la.id = l.account_id
         where l.tenant_id = :tenantId and l.account_id = :accountId and e.entry_date < :before
-          and (cast(:propertyId as uuid) is null or l.property_id = :propertyId)
+          and (cast(:propertyId as uuid) is null
+               or (case when :effective then coalesce(l.property_id, la.property_id) else l.property_id end) = :propertyId)
           and (cast(:unitId as uuid) is null or l.unit_id = :unitId)
           and (cast(:leaseId as uuid) is null or l.lease_id = :leaseId)
           and (cast(:renterId as uuid) is null or l.renter_id = :renterId)
         """, nativeQuery = true)
     BigDecimal balanceBefore(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId,
                              @Param("before") LocalDate before, @Param("propertyId") UUID propertyId,
-                             @Param("unitId") UUID unitId, @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId);
+                             @Param("unitId") UUID unitId, @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId,
+                             @Param("effective") boolean effective);
 
     /**
      * Names of the OTHER accounts on each entry — the "Particular" column for lines the
@@ -92,15 +97,18 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     @Query(value = """
         select distinct l.account_id as accountId
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts la on la.id = l.account_id
         where l.tenant_id = :tenantId and e.entry_date between :from and :to
-          and (cast(:propertyId as uuid) is null or l.property_id = :propertyId)
+          and (cast(:propertyId as uuid) is null
+               or (case when :effective then coalesce(l.property_id, la.property_id) else l.property_id end) = :propertyId)
           and (cast(:unitId as uuid) is null or l.unit_id = :unitId)
           and (cast(:leaseId as uuid) is null or l.lease_id = :leaseId)
           and (cast(:renterId as uuid) is null or l.renter_id = :renterId)
         """, nativeQuery = true)
     List<UUID> activeAccountIds(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
                                 @Param("propertyId") UUID propertyId, @Param("unitId") UUID unitId,
-                                @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId);
+                                @Param("leaseId") UUID leaseId, @Param("renterId") UUID renterId,
+                                @Param("effective") boolean effective);
 
     /**
      * What one account still owes on one lease: Σcredit − Σdebit, credit-positive.
@@ -133,4 +141,125 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
         having coalesce(sum(l.debit),0) <> 0 or coalesce(sum(l.credit),0) <> 0
         """, nativeQuery = true)
     List<BalanceRow> balancesAsOf(@Param("tenantId") UUID tenantId, @Param("asOf") LocalDate asOf, @Param("propertyId") UUID propertyId);
+
+    // ---- property P&L and statement pack (finance-ops spec §1) ----
+    //
+    // Effective property of a line = coalesce(line dimension, account's property):
+    // an expense posted to "Cleaning - Marina Tower" without a line dimension still
+    // belongs to Marina Tower. Null on both sides is Unassigned. Reversed entries
+    // and their mirrors both count, as in the trial balance. YEC (the year-end close
+    // entry, not built yet) is excluded so a closed year still shows its P&L. Every
+    // query takes tenantId explicitly: native SQL bypasses the tenant filter.
+
+    interface PnlCellRow {
+        UUID getPropertyId(); UUID getAccountId(); BigDecimal getDebit(); BigDecimal getCredit(); long getMismatchLines();
+    }
+
+    @Query(value = """
+        select coalesce(l.property_id, a.property_id) as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit,
+               count(*) filter (where l.property_id is not null and a.property_id is not null
+                                      and l.property_id <> a.property_id) as mismatchLines
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId
+          and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE')
+          and e.doc_type <> 'YEC'
+        group by coalesce(l.property_id, a.property_id), l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> pnlCells(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * Net income-statement movement, tenant-wide, credit-positive: the P&L check
+     * row. Written without the property grouping on purpose, so a mistake in
+     * {@link #pnlCells} shows up as a difference rather than agreeing with itself.
+     */
+    @Query(value = """
+        select coalesce(sum(l.credit),0) - coalesce(sum(l.debit),0)
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
+        """, nativeQuery = true)
+    BigDecimal pnlNetMovement(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    interface PnlLineRow {
+        UUID getEntryId(); String getEntryNumber(); LocalDate getEntryDate(); String getDocType(); String getNarration();
+        UUID getAccountId(); String getAccountCode(); String getAccountName(); String getAccountNameAr();
+        BigDecimal getDebit(); BigDecimal getCredit(); UUID getLinePropertyId(); UUID getAccountPropertyId();
+    }
+
+    /**
+     * The journal lines behind one P&L cell. {@code mode} is PROPERTY (effective
+     * property = propertyId), UNASSIGNED (effective property null) or ALL.
+     */
+    @Query(value = """
+        select e.id as entryId, e.entry_number as entryNumber, e.entry_date as entryDate, e.doc_type as docType,
+               coalesce(l.narration, e.narration) as narration,
+               a.id as accountId, a.code as accountCode, a.name as accountName, a.name_ar as accountNameAr,
+               l.debit as debit, l.credit as credit, l.property_id as linePropertyId, a.property_id as accountPropertyId
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
+          and l.account_id in (:accountIds)
+          and (:mode = 'ALL'
+               or (:mode = 'UNASSIGNED' and coalesce(l.property_id, a.property_id) is null)
+               or (:mode = 'PROPERTY' and coalesce(l.property_id, a.property_id) = cast(:propertyId as uuid)))
+        order by e.entry_date, e.created_at, e.entry_number, l.line_no
+        limit :limit
+        """, nativeQuery = true)
+    List<PnlLineRow> pnlLines(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                              @Param("accountIds") Collection<UUID> accountIds, @Param("mode") String mode,
+                              @Param("propertyId") UUID propertyId, @Param("limit") int limit);
+
+    interface MovementRow { UUID getAccountId(); String getDocType(); String getChequeMode(); BigDecimal getDebit(); BigDecimal getCredit(); }
+
+    /**
+     * Movement on the given accounts for one effective property, by document type
+     * and by the mode of the cheque row a line names (null when it names none).
+     */
+    @Query(value = """
+        select l.account_id as accountId, e.doc_type as docType, c.mode as chequeMode,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+             left join cheques c on c.id = l.cheque_id and c.tenant_id = l.tenant_id
+        where l.tenant_id = :tenantId and l.account_id in (:accountIds)
+          and coalesce(l.property_id, a.property_id) = :propertyId
+          and e.entry_date between :from and :to
+        group by l.account_id, e.doc_type, c.mode
+        """, nativeQuery = true)
+    List<MovementRow> movementForProperty(@Param("tenantId") UUID tenantId, @Param("accountIds") Collection<UUID> accountIds,
+                                          @Param("propertyId") UUID propertyId,
+                                          @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    interface ExpenseEntryRow {
+        UUID getEntryId(); String getEntryNumber(); LocalDate getEntryDate(); String getDocType();
+        String getSourceType(); UUID getSourceId(); String getNarration(); BigDecimal getExpense(); BigDecimal getInputVat();
+    }
+
+    /**
+     * Each entry's expense (debit-positive) for one effective property, with the
+     * input VAT the same entry carries for it. {@code inputVatAccountIds} must not
+     * be empty; pass a random id when the tenant has no input-VAT account.
+     */
+    @Query(value = """
+        select e.id as entryId, e.entry_number as entryNumber, e.entry_date as entryDate, e.doc_type as docType,
+               e.source_type as sourceType, e.source_id as sourceId, e.narration as narration,
+               coalesce(sum(case when a.account_type = 'EXPENSE' then l.debit - l.credit end), 0) as expense,
+               coalesce(sum(case when a.id in (:inputVatAccountIds) then l.debit - l.credit end), 0) as inputVat
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.entry_date between :from and :to and e.doc_type <> 'YEC'
+          and coalesce(l.property_id, a.property_id) = :propertyId
+          and (a.account_type = 'EXPENSE' or a.id in (:inputVatAccountIds))
+        group by e.id, e.entry_number, e.entry_date, e.doc_type, e.source_type, e.source_id, e.narration
+        having coalesce(sum(case when a.account_type = 'EXPENSE' then l.debit - l.credit end), 0) <> 0
+        order by e.entry_date, e.entry_number
+        """, nativeQuery = true)
+    List<ExpenseEntryRow> expenseEntriesForProperty(@Param("tenantId") UUID tenantId, @Param("propertyId") UUID propertyId,
+                                                    @Param("from") LocalDate from, @Param("to") LocalDate to,
+                                                    @Param("inputVatAccountIds") Collection<UUID> inputVatAccountIds);
 }

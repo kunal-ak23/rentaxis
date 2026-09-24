@@ -509,4 +509,9 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
         """)
     List<Cheque> findAllDue(@Param("today") LocalDate today);
+
+    /** The property statement's register rows (finance-ops spec §1, sections 2 and 4). Tenant-filtered: call inside a transaction. */
+    List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
+
+    List<Cheque> findByProperty_IdAndChequeDateLessThanEqualOrderByChequeDateAsc(UUID propertyId, LocalDate to);
 }

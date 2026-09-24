@@ -33,8 +33,10 @@ public class LedgerController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) UUID propertyId, @RequestParam(required = false) UUID unitId,
-            @RequestParam(required = false) UUID leaseId, @RequestParam(required = false) UUID renterId) {
-        return ResponseEntity.ok(service.generalLedger(accountIds, new LedgerFilter(from, to, propertyId, unitId, leaseId, renterId)));
+            @RequestParam(required = false) UUID leaseId, @RequestParam(required = false) UUID renterId,
+            @RequestParam(defaultValue = "false") boolean effectiveProperty) {
+        return ResponseEntity.ok(service.generalLedger(accountIds,
+                new LedgerFilter(from, to, propertyId, unitId, leaseId, renterId, effectiveProperty)));
     }
 
     @GetMapping("/ledger/account/{accountId}")
