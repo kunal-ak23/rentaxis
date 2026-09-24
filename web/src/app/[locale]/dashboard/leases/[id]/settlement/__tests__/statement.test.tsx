@@ -584,3 +584,26 @@ describe("An acknowledgement the screen could not know about", () => {
         expect(screen.queryByTestId("settlement-acknowledge")).toBeNull();
     });
 });
+
+describe("VAT on recharges (F14-37)", () => {
+    it("shows each deduction line's VAT, and a 'VAT on recharges' total row", async () => {
+        api.get.mockResolvedValue(stored({
+            totalDeductions: 1050, refundAmount: 9114.38,
+            deductions: [
+                { id: "d1", category: "UTILITY_ARREARS", description: "DEWA", amount: 1050, autoCalculated: false,
+                  type: "DEDUCTION", additionCategory: null, accountId: "acc-1", accountName: "Utilities recharge",
+                  attachments: [], vatAmount: 50 },
+            ],
+        }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("incl. VAT 50.00");
+        expect(screen.getByTestId("settlement-total-deduction-vat")).toHaveTextContent("- 50.00");
+    });
+
+    it("shows neither row when no deduction carries VAT", async () => {
+        renderPage();
+        await screen.findByTestId("settlement-total-deductions");
+        expect(screen.queryByTestId("settlement-total-deduction-vat")).not.toBeInTheDocument();
+    });
+});

@@ -147,6 +147,16 @@ describe("VatScheduleTab", () => {
         await waitFor(() => expect(api.leaseInvoices).toHaveBeenCalledTimes(2));
     });
 
+    it("labels a SETTLEMENT tax point and counts it into the live total (F14-37)", async () => {
+        api.schedule.mockResolvedValue([
+            point({ id: "s1", kind: "SETTLEMENT", vatAmount: 250, status: "POSTED", chequeId: null }),
+        ]);
+        api.leaseInvoices.mockResolvedValue([]);
+        renderTab();
+        expect(await screen.findByText("Recharges at move-out")).toBeInTheDocument();
+        expect(screen.getByTestId("vat-schedule-total")).toHaveTextContent("250.00");
+    });
+
     it("counts a CONTRACT-timed tax point into the live total (F14-54)", async () => {
         api.schedule.mockResolvedValue([
             point({ id: "c1", kind: "CONTRACT", vatAmount: 6000, status: "POSTED" }),

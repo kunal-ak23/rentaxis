@@ -20,7 +20,7 @@ import { assetSrc } from "@/lib/assetUrl";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
-    netRefundOf, toSaveLines, totalOf, type SettlementRow,
+    netRefundOf, toSaveLines, totalOf, totalVatOf, type SettlementRow,
 } from "@/components/leases/settlementMath";
 import {
     ApiError, leaseApi, settlementApi,
@@ -261,6 +261,7 @@ export default function SettlementPage() {
             accountName: d.accountName ?? null,
             autoCalculated: d.autoCalculated ?? false,
             attachments: d.attachments ?? [],
+            vatAmount: d.vatAmount ?? 0,
         }));
     }, []);
 
@@ -341,6 +342,9 @@ export default function SettlementPage() {
                 totalDeductions: storedRow.totalDeductions ?? 0,
                 totalAdditions: storedRow.totalAdditions ?? 0,
                 netRefund: (storedRow.refundAmount ?? 0) - (storedRow.balanceDue ?? 0),
+                // F14-37: not on SettlementResponseDTO — recomputed from the
+                // stored lines' own vatAmount, same as the draft branch.
+                totalDeductionVat: totalVatOf(rows),
             };
         }
         if (!statement) return null;
@@ -353,6 +357,7 @@ export default function SettlementPage() {
             totalDeductions: totalOf(rows, "DEDUCTION"),
             totalAdditions: totalOf(rows, "ADDITION"),
             netRefund: netRefundOf(statement, rows),
+            totalDeductionVat: totalVatOf(rows),
         };
     }, [finalized, storedRow, statement, rows]);
 
@@ -403,6 +408,7 @@ export default function SettlementPage() {
                 accountId: null,
                 autoCalculated: false,
                 attachments: [],
+                vatAmount: 0,
             },
         ]);
         setDirty(true);
@@ -781,6 +787,9 @@ export default function SettlementPage() {
             {shown && (
                 <div className="bg-surface border border-border rounded-xl px-5 py-4 space-y-3">
                     <Row label={t("totalDeductions")} value={`- ${fmtAmount(shown.totalDeductions)}`} tone="error" testId="settlement-total-deductions" />
+                    {shown.totalDeductionVat > 0 && (
+                        <Row label={t("totalDeductionVat")} value={`- ${fmtAmount(shown.totalDeductionVat)}`} tone="error" testId="settlement-total-deduction-vat" />
+                    )}
                     <Row label={t("totalAdditions")} value={`+ ${fmtAmount(shown.totalAdditions)}`} tone="success" testId="settlement-total-additions" />
                     <div className="border-t-2 border-border pt-3 flex justify-between items-center">
                         <span className="text-sm font-bold text-foreground">
@@ -1051,6 +1060,14 @@ function LineTable({
                                         />
                                     ) : (
                                         <span className="tabular-nums">{fmtAmount(r.amount)}</span>
+                                    )}
+                                    {r.type === "DEDUCTION" && r.vatAmount > 0 && (
+                                        <span
+                                            className="block text-[10px] text-muted tabular-nums"
+                                            data-testid={`settlement-line-vat-${index}`}
+                                        >
+                                            {t("lineVat", { amount: fmtAmount(r.vatAmount) })}
+                                        </span>
                                     )}
                                 </td>
                                 <td className={td}>

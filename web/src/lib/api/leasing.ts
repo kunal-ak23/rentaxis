@@ -441,7 +441,7 @@ export type SettlementOption = {
 };
 export type SettlementTarget = { target: SettlementOption | null; options: SettlementOption[] };
 
-export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT";
+export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT" | "SETTLEMENT";
 export type VatTaxPointStatus = "PLANNED" | "POSTED" | "CANCELLED";
 export type TaxInvoiceKind = "TAX_INVOICE" | "CREDIT_NOTE";
 
@@ -670,6 +670,8 @@ export type DeductionLine = {
   accountName: string | null;
   autoCalculated: boolean;
   attachments: DeductionAttachment[];
+  /** F14-37: VAT this recharge line carries — already inside `amount`, and already subtracted out of the statement's `netRefund`. */
+  vatAmount?: number | null;
 };
 
 /** AdditionLineDTO — something the landlord owes the renter on top of the deposit. */
@@ -726,6 +728,8 @@ export type SettlementStatement = {
   additions: AdditionLine[];
   totalDeductions: number;
   totalAdditions: number;
+  /** F14-37: Σ of the deduction lines' `vatAmount` — already inside `totalDeductions` and `netRefund`, shown as its own row. */
+  totalDeductionVat?: number;
   /** >0 the landlord pays out, <0 the renter still owes. */
   netRefund: number;
   /** PLANNED recognition rows. Non-zero → run recognition before settling. */
@@ -744,6 +748,8 @@ export type SettlementLine = {
   accountId: string | null;
   accountName: string | null;
   attachments: DeductionAttachment[];
+  /** F14-37: mirrors DeductionLineDTO.vatAmount on the stored (saved/finalized) row. */
+  vatAmount?: number | null;
 };
 
 /** SettlementResponseDTO — the stored row: the draft as saved, or what finalise posted. */

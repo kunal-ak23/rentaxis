@@ -116,7 +116,10 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated, vatTi
     // instead of one per instalment, but it is still a live point the footer
     // must add in — excluding it made a declared contract VAT show as a
     // difference against the contract total instead of matching it.
-    const instalments = useMemo(() => points.filter(p => p.kind === "INSTALMENT" || p.kind === "CONTRACT"), [points]);
+    const instalments = useMemo(
+        () => points.filter(p => p.kind === "INSTALMENT" || p.kind === "CONTRACT" || p.kind === "SETTLEMENT"),
+        [points],
+    );
     const live = useMemo(() => sum(instalments.filter(p => p.status !== "CANCELLED").map(p => p.vatAmount)), [instalments]);
     const declared = useMemo(() => sum(points.filter(p => p.status === "POSTED").map(p => p.vatAmount)), [points]);
     const difference = contractVat == null ? null : Math.round((live - contractVat) * 100) / 100;
@@ -180,6 +183,8 @@ export default function VatScheduleTab({ leaseId, contractVat, terminated, vatTi
                                             ? t("terminationAdjustment")
                                             : p.kind === "CONTRACT"
                                             ? t("contractTaxPoint")
+                                            : p.kind === "SETTLEMENT"
+                                            ? t("settlementTaxPoint")
                                             : t("instalmentLabel", {
                                                   seq: p.chequeSeqNo ?? "—",
                                                   number: p.chequeNumber ?? "—",
