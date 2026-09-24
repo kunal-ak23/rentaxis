@@ -236,8 +236,14 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
      * would put a second, un-recognised charge into every figure below.</p>
      */
     private UUID commercialGalah() {
+        return commercialGalah(com.datagami.rentaxis.domain.entity.enums.VatTiming.INSTALMENT);
+    }
+
+    /** The same, with the VAT timing a lease posted before changeset 108 would carry. */
+    private UUID commercialGalah(com.datagami.rentaxis.domain.entity.enums.VatTiming timing) {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(LeaseTestFixtures.vatLine("RENT", "51000")));
+        jdbc.update("update leases set vat_timing = ? where id = ?", timing.name(), leaseId);
         chequeGeneration.saveRows(leaseId, List.of(
                 row("200041", CONTRACT_DATE, RENT_1, "13387.50"),
                 row("200042", CONTRACT_DATE, RENT_2, "13387.50"),
@@ -626,8 +632,10 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
      * rent nobody supplied, and the settlement collected it.</p>
      */
     @Test
-    void terminatingAVatBearingLeaseCreditsTheVatOnTheUnearnedRent() {
-        UUID leaseId = commercialGalah();
+    void aLegacyContractLeaseTerminatesOnTheOldPath() {
+        // Posted before VAT per instalment (spec 2026-09-24 §1): changeset 108 marks
+        // such a lease CONTRACT, and it keeps today's Dr OUTPUT_VAT credit note.
+        UUID leaseId = commercialGalah(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
         UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
         assertThat(balanceOf(outputVat, leaseId)).as("VAT charged on the whole contract")
                 .isEqualByComparingTo("-2550.00");
@@ -657,6 +665,59 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, leaseId)).isEqualByComparingTo("26775.00");
         assertThat(balanceOf(AccountRole.RENTAL_INCOME, leaseId)).isEqualByComparingTo("-20260.27");
         assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("0.00");
+        assertThat(jdbc.queryForObject("select count(*) from vat_tax_points where lease_id = ?", Long.class, leaseId))
+                .as("a legacy lease has no VAT schedule").isZero();
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * The same commercial tenancy on the INSTALMENT model, terminated where the VAT
+     * on unearned rent exceeds what is still waiting to be declared ({@code U > P},
+     * spec 2026-09-24 §1).
+     *
+     * <p>Four instalments of 637.50 VAT on 2 Oct, 2 Jan, 2 Apr and 2 Jul. At T = 15 Feb
+     * the October and January tax points post first (1,275 declared); April and July
+     * are pending, P = 1,275, and are cancelled. U = 1,536.99. The TCR reverses
+     * min(P, U) = 1,275 out of the deferred account and credits back U − P = 261.99
+     * of VAT already declared — a tax credit note. Output VAT ends at 5% of the rent
+     * earned, the deferred account at zero, and the receivable exactly where the
+     * legacy path leaves it.</p>
+     */
+    @Test
+    void terminatingAnInstalmentVatLeaseCreditsBackVatAlreadyDeclaredWhenUExceedsP() {
+        UUID leaseId = commercialGalah();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        UUID deferred = leaf(AccountRole.OUTPUT_VAT_DEFERRED).getId();
+        assertThat(balanceOf(outputVat, leaseId)).as("the contract date declares no VAT").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(deferred, leaseId)).isEqualByComparingTo("-2550.00");
+
+        TerminationPreviewDTO preview = termination.preview(leaseId, T);
+        assertThat(preview.unearnedVat()).isEqualByComparingTo("1536.99");
+        assertThat(preview.receivableAfter()).isEqualByComparingTo("-5501.72");
+        assertThat(preview.vatSettlement().dueByTerminationDate()).isEqualByComparingTo("1275.00");
+        assertThat(preview.vatSettlement().pendingCancelled()).isEqualByComparingTo("1275.00");
+        assertThat(preview.vatSettlement().reversedFromDeferred()).isEqualByComparingTo("1275.00");
+        assertThat(preview.vatSettlement().declaredAtTermination()).isEqualByComparingTo("0.00");
+        assertThat(preview.vatSettlement().creditedBack()).isEqualByComparingTo("261.99");
+
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
+        recognition.runTo(T, false);
+
+        JournalEntry tcr = journal(lease(leaseId).getTerminationJournalId());
+        assertThat(linesOf(tcr.getId())).as("rent, deferred VAT reversed, VAT credited back").hasSize(6);
+        assertThat(debitOn(tcr, AccountRole.ADVANCE_RENT)).isEqualByComparingTo("30739.73");
+        assertThat(debitOn(tcr, deferred)).isEqualByComparingTo("1275.00");
+        assertThat(debitOn(tcr, outputVat)).isEqualByComparingTo("261.99");
+        assertThat(creditOn(tcr, AccountRole.RENT_RECEIVABLE)).isEqualByComparingTo("32276.72");
+        assertThat(journalCount(JournalDocType.VTP)).as("October and January declared first").isEqualTo(2);
+
+        assertThat(balanceOf(outputVat, leaseId)).as("VAT on earned rent only").isEqualByComparingTo("-1013.01");
+        assertThat(balanceOf(deferred, leaseId)).as("nothing left waiting").isEqualByComparingTo("0.00");
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("-5501.72");
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'"
+                + " and vat_amount = 261.99 and invoice_number like 'TCN-%'", Long.class, leaseId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from vat_tax_points where lease_id = ? and status = 'PLANNED'",
+                Long.class, leaseId)).isZero();
         assertTrialBalanceBalances();
     }
 

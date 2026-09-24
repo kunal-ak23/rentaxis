@@ -317,7 +317,8 @@ public class RecognitionService {
     public record TerminationRecognition(BigDecimal earnedThrough, BigDecimal recognisedSoFar,
                                          BigDecimal unearned, BigDecimal unearnedVat,
                                          List<UnearnedDeferral> deferrals,
-                                         LocalDate latestPostingDate) {
+                                         LocalDate latestPostingDate,
+                                         BigDecimal unearnedVatTaxable) {
     }
 
     /** One segment's worth of unearned rent, and the liability leaf it sits in. */
@@ -409,6 +410,9 @@ public class RecognitionService {
         BigDecimal earned = BigDecimal.ZERO;
         BigDecimal unearned = BigDecimal.ZERO;
         BigDecimal unearnedVat = BigDecimal.ZERO;
+        // The part of `unearned` that VAT was charged on — the net a termination's
+        // VAT settlement is computed against (spec 2026-09-24 §1).
+        BigDecimal unearnedVatTaxable = BigDecimal.ZERO;
         List<UnearnedDeferral> deferrals = new ArrayList<>();
         for (RentSegment segment : live) {
             BigDecimal segmentEarned = ProrationEngine.earnedThrough(
@@ -422,7 +426,9 @@ public class RecognitionService {
                 // VAT on, the part of it the tenancy never used is handed back too.
                 // Asked of LeaseVat rather than multiplied here — one definition of
                 // which lines are taxed and at what rate (spec §6.2).
-                unearnedVat = unearnedVat.add(LeaseVat.vatOnPortion(lineOf(segment), segmentUnearned));
+                BigDecimal segmentVat = LeaseVat.vatOnPortion(lineOf(segment), segmentUnearned);
+                unearnedVat = unearnedVat.add(segmentVat);
+                if (segmentVat.signum() > 0) unearnedVatTaxable = unearnedVatTaxable.add(segmentUnearned);
             }
         }
         List<RecognitionEntry> posted = entries
@@ -435,7 +441,8 @@ public class RecognitionService {
                 unearned.setScale(2, RoundingMode.HALF_UP),
                 unearnedVat.setScale(2, RoundingMode.HALF_UP),
                 List.copyOf(deferrals),
-                latestPostingDate(posted, t));
+                latestPostingDate(posted, t),
+                unearnedVatTaxable.setScale(2, RoundingMode.HALF_UP));
     }
 
     /**
