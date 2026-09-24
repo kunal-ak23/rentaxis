@@ -180,6 +180,8 @@ public class JournalService {
             case IMPORT -> "import batch; reverse the whole batch instead";
             case OPENING_BALANCE -> "opening balance; correct it from the opening-balance screen";
             case REVERSAL -> "reversal of another entry, and a reversal is never reversed";
+            case VAT_TAX_POINT -> "VAT tax point; its tax invoice has been issued, so correct it with a credit note"
+                    + " (terminate or vary the lease)";
             case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
         };
         return "This journal belongs to a " + belongsTo;

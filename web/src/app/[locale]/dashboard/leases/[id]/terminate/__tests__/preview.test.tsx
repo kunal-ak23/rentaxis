@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../../messages/en.json";
+import ar from "../../../../../../../../messages/ar.json";
 import type { Cheque, LeaseDetail, TerminationPreview } from "@/lib/api/leasing";
 
 /**
@@ -269,6 +270,42 @@ describe("Unearned VAT", () => {
         expect(screen.queryByTestId("terminate-unearned-vat")).toBeNull();
     });
 
+    it("describes the instalment settlement on an INSTALMENT lease (EN)", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "INSTALMENT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        renderPage();
+        const card = (await screen.findByTestId("terminate-unearned-vat")).parentElement!;
+        expect(card).toHaveTextContent(en.Termination.unearnedVatInstalmentHint);
+        expect(card).not.toHaveTextContent(en.Termination.unearnedVatHint);
+    });
+
+    it("keeps the credit-note wording on a legacy CONTRACT lease, and when the server does not say", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "CONTRACT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        renderPage();
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(en.Termination.unearnedVatHint);
+        cleanup();
+
+        api.get.mockResolvedValue(LEASE);
+        renderPage();
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(en.Termination.unearnedVatHint);
+    });
+
+    it("has the instalment wording in Arabic too", async () => {
+        api.get.mockResolvedValue({ ...LEASE, vatTiming: "INSTALMENT" });
+        api.preview.mockResolvedValue({ ...PREVIEW, unearnedVat: 3008.22 });
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <TerminateLeasePage />
+            </NextIntlClientProvider>,
+        );
+        expect((await screen.findByTestId("terminate-unearned-vat")).parentElement!)
+            .toHaveTextContent(ar.Termination.unearnedVatInstalmentHint);
+        expect(ar.Termination.unearnedVatInstalmentHint).not.toEqual(en.Termination.unearnedVatInstalmentHint);
+    });
+
     it("is absent from an older server's answer and read as zero, not as NaN", async () => {
         const withoutVat: TerminationPreview = { ...PREVIEW };
         delete withoutVat.unearnedVat;
@@ -277,5 +314,53 @@ describe("Unearned VAT", () => {
         await screen.findByTestId("terminate-unearned");
         expect(screen.queryByTestId("terminate-unearned-vat")).toBeNull();
         expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("5,000.00");
+    });
+});
+
+/**
+ * VAT per instalment (spec 2026-09-24 §1): the preview shows what the TCR does to
+ * VAT not yet declared — the tax points due by T posted first, the pending VAT
+ * reversed from the deferred account, and either VAT declared at T (P > U) or
+ * credited back (U > P).
+ */
+describe("VAT settlement", () => {
+    it("shows the declared-at-T pair when pending VAT exceeds the VAT on unearned rent", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            unearnedVat: 2975.34,
+            vatSettlement: {
+                dueByTerminationDate: 0, pendingCancelled: 3000, reversedFromDeferred: 2975.34,
+                declaredAtTermination: 24.66, creditedBack: 0,
+            },
+        });
+        renderPage();
+        expect(await screen.findByTestId("terminate-vat-settlement")).toBeInTheDocument();
+        expect(screen.getByTestId("terminate-vat-reversed")).toHaveTextContent("2,975.34");
+        expect(screen.getByTestId("terminate-vat-declared")).toHaveTextContent("24.66");
+        expect(screen.queryByTestId("terminate-vat-credited")).toBeNull();
+    });
+
+    it("shows the credit note when the VAT on unearned rent exceeds what is pending", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            unearnedVat: 1536.99,
+            vatSettlement: {
+                dueByTerminationDate: 1275, pendingCancelled: 1275, reversedFromDeferred: 1275,
+                declaredAtTermination: 0, creditedBack: 261.99,
+            },
+        });
+        renderPage();
+        expect(await screen.findByTestId("terminate-vat-credited")).toHaveTextContent("261.99");
+        expect(screen.getByTestId("terminate-vat-due")).toHaveTextContent("1,275.00");
+    });
+
+    it("is not shown on a lease with no VAT to settle", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            vatSettlement: { dueByTerminationDate: 0, pendingCancelled: 0, reversedFromDeferred: 0, declaredAtTermination: 0, creditedBack: 0 },
+        });
+        renderPage();
+        await screen.findByTestId("terminate-unearned");
+        expect(screen.queryByTestId("terminate-vat-settlement")).toBeNull();
     });
 });

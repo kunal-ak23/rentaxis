@@ -452,6 +452,10 @@ public class ContractImportPersistService {
         lease.setStartDate(date(row, hi, "StartDate"));
         lease.setEndDate(date(row, hi, "EndDate"));
         lease.setFirstDueDate(lease.getStartDate());
+        // PACT declared this contract's VAT on its contract date, so it stays on the
+        // CONTRACT model: the TCO credits Output VAT in full, with no tax points and
+        // no tax invoices of ours (spec 2026-09-24 §1, cut-over ruling).
+        lease.setVatTiming(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
         // A blank cell is the property's default, not zero (gap #65).
         String grace = SheetCells.cell(row, hi, "GracePeriodDays");
         leaseService.applyGracePeriod(lease, grace.isBlank() ? null : Integer.parseInt(grace.trim()), unit);

@@ -948,7 +948,12 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         PostLeaseResponse r = renewal.extend(leaseId, withVat);
         // Net pair plus the VAT pair.
         assertThat(linesOf(r.tcoJournalId())).hasSize(4);
-        assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(leaf(AccountRole.OUTPUT_VAT).getId());
+        // The extension parks its VAT in the deferred account (spec 2026-09-24 §1),
+        // and its one new row carries all of it.
+        assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId())
+                .isEqualTo(leaf(AccountRole.OUTPUT_VAT_DEFERRED).getId());
+        assertThat(r.cheques()).filteredOn(c -> c.chequeDate().equals(LocalDate.of(2027, 10, 2)))
+                .singleElement().satisfies(c -> assertThat(c.vatAmount()).isEqualByComparingTo("50.00"));
     }
 
     /**
@@ -973,7 +978,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         PostLeaseResponse r = renewal.extend(leaseId, extension("12000", "12600"));
 
         assertThat(leaseLines(leaseId).get(2).vatApplicable()).isTrue();
-        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT_DEFERRED).getId();
         assertThat(linesOf(r.tcoJournalId()))
                 .filteredOn(l -> outputVat.equals(l.getAccountId()))
                 .singleElement()

@@ -10,6 +10,7 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.slf4j.Logger;
@@ -98,7 +99,27 @@ public class ContractImportLeasePoster {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Posted postOne(UUID batchId, UUID leaseId, LocalDate recogniseThrough) {
-        return postAndReplay(leaseId, batchId, recogniseThrough, () -> leasePosting.post(leaseId, batchId));
+        return postAndReplay(leaseId, batchId, recogniseThrough, () -> {
+            onContractVatTiming(leaseId);
+            leasePosting.post(leaseId, batchId);
+        });
+    }
+
+    /**
+     * A cut-over contract is posted on the CONTRACT VAT model, whatever its draft
+     * says: PACT declared its VAT on the contract date, so the {@code TCO} credits
+     * Output VAT in full and there are no tax points, catch-up or later, and no tax
+     * invoices of ours (spec 2026-09-24 §1, cut-over ruling). The import writes its
+     * drafts that way; this also covers a draft persisted before the column existed,
+     * which changeset 108 defaulted to INSTALMENT.
+     */
+    private void onContractVatTiming(UUID leaseId) {
+        Lease lease = leases.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new BusinessRuleViolationException("This lease no longer exists"));
+        if (lease.getVatTiming() != VatTiming.CONTRACT) {
+            lease.setVatTiming(VatTiming.CONTRACT);
+            leases.saveAndFlush(lease);
+        }
     }
 
     /**
@@ -122,6 +143,10 @@ public class ContractImportLeasePoster {
      * The truth is unknown here, so the lease stays DRAFT with
      * {@link #RUNNING_TENANCY_REFUSAL}; the cut-over import is the door that
      * records each instrument's status. Today is the app clock's (Asia/Dubai).</p>
+     *
+     * <p>Its VAT stays on the lease's own model (INSTALMENT for a new draft): unlike
+     * a cut-over contract, this is a new tenancy whose cheques are all still to come,
+     * so no other system has declared its VAT.</p>
      *
      * @param importGeneratedRows the rows the import generated rather than read off
      *        the sheet — the only ones that may be registered without a number.

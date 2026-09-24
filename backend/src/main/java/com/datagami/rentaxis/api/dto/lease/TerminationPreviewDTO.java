@@ -46,6 +46,13 @@ import java.util.List;
  * @param receivableAfter       what the lease's rent receivable will read once the
  *                              returns and the {@code TCR} are posted. Negative
  *                              means the landlord owes the renter.
+ * @param vatSettlement         on an INSTALMENT lease (spec 2026-09-24 §1), what the
+ *                              termination does to the VAT not yet declared: the
+ *                              tax points due by {@code T} it posts first, the
+ *                              pending VAT {@code P} it cancels, and the settling
+ *                              pair — reversed from the deferred account, declared at
+ *                              {@code T} ({@code P > U}) or credited back
+ *                              ({@code U > P}). All zeros on a legacy lease.
  */
 public record TerminationPreviewDTO(LocalDate terminationDate,
                                     BigDecimal earnedRentThroughDate,
@@ -55,5 +62,14 @@ public record TerminationPreviewDTO(LocalDate terminationDate,
                                     List<ChequeDTO> chequesToReturn,
                                     List<ChequeDTO> chequesToKeep,
                                     List<ChequeDTO> bouncedOutstanding,
-                                    BigDecimal receivableAfter) {
+                                    BigDecimal receivableAfter,
+                                    VatSettlement vatSettlement) {
+
+    /** See {@code VatTaxPointService.TerminationVat}; amounts are positive. */
+    public record VatSettlement(BigDecimal dueByTerminationDate,
+                                BigDecimal pendingCancelled,
+                                BigDecimal reversedFromDeferred,
+                                BigDecimal declaredAtTermination,
+                                BigDecimal creditedBack) {
+    }
 }

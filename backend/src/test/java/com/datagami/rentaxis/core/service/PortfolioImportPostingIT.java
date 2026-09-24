@@ -99,6 +99,8 @@ class PortfolioImportPostingIT extends AbstractPostgresIT {
     void setUp() {
         LandlordOrg org = new LandlordOrg();
         org.setName("IT-AlWaha-" + UUID.randomUUID());
+        // A VAT-bearing contract needs the landlord's TRN to post (spec 2026-09-24 §1).
+        org.setTrn(com.datagami.rentaxis.testsupport.LeaseTestFixtures.FIXTURE_TRN);
         tenantId = orgs.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         admin = new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null,

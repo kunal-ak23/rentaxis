@@ -99,4 +99,78 @@ class LeaseVatTest {
                 .filter(g -> LeaseVat.netOfGross(g, true, rent) == null).count();
         assertThat(gaps).as("some gross amounts have no net").isPositive();
     }
+    // ------------------------------------------------------------------
+    // allocate (spec 2026-09-24 §1)
+    // ------------------------------------------------------------------
+
+    private static java.util.List<BigDecimal> bds(String... v) {
+        return java.util.Arrays.stream(v).map(BigDecimal::new).toList();
+    }
+
+    @Test
+    void allocateSplitsProRataAndSumsExactly() {
+        java.util.List<BigDecimal> parts = LeaseVat.allocate(new BigDecimal("6000"), bds("31500", "31500", "31500", "31500"));
+        assertThat(parts).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("1500", "1500", "1500", "1500").toArray(BigDecimal[]::new));
+    }
+
+    /** 100 over three equal rows: 33.33 twice, and the last row absorbs the fils. */
+    @Test
+    void allocateGivesTheRemainderToTheLastRow() {
+        java.util.List<BigDecimal> parts = LeaseVat.allocate(new BigDecimal("100"), bds("1", "1", "1"));
+        assertThat(parts).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("33.33", "33.33", "33.34").toArray(BigDecimal[]::new));
+        assertThat(parts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("100");
+
+        java.util.List<BigDecimal> first = LeaseVat.allocateFirstAbsorbs(new BigDecimal("100"), bds("1", "1", "1"));
+        assertThat(first).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("33.34", "33.33", "33.33").toArray(BigDecimal[]::new));
+    }
+
+    /** Zero-weight rows get nothing; a zero total gives every row zero; no weights at all loses nothing. */
+    @Test
+    void allocateHandlesZeroRows() {
+        assertThat(LeaseVat.allocate(new BigDecimal("50"), bds("0", "10", "0"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "50", "0").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(BigDecimal.ZERO, bds("5", "5"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "0").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(new BigDecimal("7.50"), bds("0", "0"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bds("0", "7.50").toArray(BigDecimal[]::new));
+        assertThat(LeaseVat.allocate(new BigDecimal("10"), java.util.List.of())).isEmpty();
+    }
+
+    /**
+     * PR #348 review P3-1: the review's two counter-examples, where rounding every
+     * share half-up and letting the last row absorb the difference left it at −0.01
+     * and −0.03. Largest remainder never goes negative and never moves a share more
+     * than a fils from its exact value, whichever row takes ties.
+     */
+    @Test
+    void allocateNeverGivesARowANegativeShare() {
+        java.util.List<BigDecimal> six = new java.util.ArrayList<>(java.util.Collections.nCopies(6, new BigDecimal("10500")));
+        six.add(new BigDecimal("5.00"));
+        java.util.List<BigDecimal> twelve = new java.util.ArrayList<>(java.util.Collections.nCopies(12, new BigDecimal("21015")));
+        twelve.add(new BigDecimal("5.00"));
+        for (var c : java.util.List.of(new Object[]{"500.03", six}, new Object[]{"1000.05", twelve})) {
+            BigDecimal total = new BigDecimal((String) c[0]);
+            @SuppressWarnings("unchecked") java.util.List<BigDecimal> w = (java.util.List<BigDecimal>) c[1];
+            BigDecimal sum = w.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            for (var parts : java.util.List.of(LeaseVat.allocate(total, w), LeaseVat.allocateFirstAbsorbs(total, w))) {
+                assertThat(parts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo(total);
+                for (int i = 0; i < w.size(); i++) {
+                    BigDecimal exact = total.multiply(w.get(i)).divide(sum, 10, java.math.RoundingMode.HALF_UP);
+                    assertThat(parts.get(i).signum()).as("row %s of %s", i, total).isNotNegative();
+                    assertThat(parts.get(i).subtract(exact).abs()).isLessThan(new BigDecimal("0.01"));
+                }
+            }
+            // The 5.00 row's exact share is about 0.04: never below it by a fils or more.
+            assertThat(LeaseVat.allocate(total, w).get(w.size() - 1)).isPositive();
+        }
+    }
+
+    @Test
+    void allocateSplitsACreditTheSameWayAsADebit() {
+        assertThat(LeaseVat.allocate(new BigDecimal("-100"), bds("1", "1", "1"))).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("-33.33"), new BigDecimal("-33.33"), new BigDecimal("-33.34"));
+    }
 }

@@ -109,6 +109,24 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "rent_vat_applicable", nullable = false)
     private boolean rentVatApplicable = false;
 
+    /**
+     * When this lease's output VAT is declared (spec 2026-09-24 §1): per instalment
+     * for every lease posted from changeset 108 on, on the contract date for the
+     * ones already on the books before it.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vat_timing", nullable = false, length = 12)
+    private com.datagami.rentaxis.domain.entity.enums.VatTiming vatTiming =
+            com.datagami.rentaxis.domain.entity.enums.VatTiming.INSTALMENT;
+
+    /**
+     * The organisation's TRN when this lease posted with VAT on the INSTALMENT
+     * model — what its tax invoices fall back to if the TRN is later cleared, so a
+     * receipt or a termination never fails on a setting changed after the fact.
+     */
+    @Column(name = "vat_trn", length = 50)
+    private String vatTrn;
+
     // ---- contract header (spec §6.3) ----------------------------------------
 
     /**

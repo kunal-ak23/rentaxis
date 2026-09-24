@@ -275,6 +275,45 @@ class PortfolioImportPersistServiceTest {
                 .contains("more than the rows it pays toward");
     }
 
+    /**
+     * PR #348 review P2-3: the rows the import generates carry the generator's own
+     * VAT — the rent row its share, the deposit row none — so the pro-rata default
+     * never hands a deposit the rent's VAT (and a tax invoice).
+     */
+    @Test
+    void persist_generatedRowsCarryTheGeneratorsVat_soADepositRowGetsNone() {
+        java.time.LocalDate d = java.time.LocalDate.of(2026, 1, 1);
+        when(chequeGenerationService.proposeForSystemImport(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(new ChequeGenerationService.Proposal(List.of(
+                        new ChequeGenerationService.Row(1, d, d, new java.math.BigDecimal("31500"),
+                                "Rent - 1st Installment", new java.math.BigDecimal("1500"), new java.math.BigDecimal("30000")),
+                        new ChequeGenerationService.Row(2, d, d, new java.math.BigDecimal("10000"), "SD",
+                                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO)), null));
+
+        service.persistWorkbook(buildWorkbookWithOneLease(b -> { }), newJob());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
+        verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
+        assertThat(rows.getValue()).extracting(ChequeRowInput::vatAmount)
+                .usingElementComparator(java.math.BigDecimal::compareTo)
+                .containsExactly(new java.math.BigDecimal("1500"), java.math.BigDecimal.ZERO);
+    }
+
+    /** A booking cheque taken off a VAT-bearing row leaves the row its VAT, up to what is left of it. */
+    @Test
+    void takeBookingOff_keepsEachRowsVatWithinWhatIsLeftOfIt() {
+        java.time.LocalDate d = java.time.LocalDate.of(2026, 1, 1);
+        List<ChequeRowInput> rows = new java.util.ArrayList<>(List.of(
+                new ChequeRowInput(null, null, d, null, d, null, null, null, new java.math.BigDecimal("41500"), "x",
+                        com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC, new java.math.BigDecimal("1500")),
+                new ChequeRowInput(null, null, d, null, d, null, null, null, new java.math.BigDecimal("1000"), "y",
+                        com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC, new java.math.BigDecimal("900"))));
+        assertThat(PortfolioImportPersistService.takeBookingOff(rows, new java.math.BigDecimal("41000"))).isNull();
+        assertThat(rows).extracting(ChequeRowInput::vatAmount).usingElementComparator(java.math.BigDecimal::compareTo)
+                .containsExactly(new java.math.BigDecimal("500"), new java.math.BigDecimal("900"));
+    }
+
     @Test
     void persist_monthlyRent_computesTotalCorrectly() {
         // 12-month lease, MonthlyRent=5000, no RentAmount.

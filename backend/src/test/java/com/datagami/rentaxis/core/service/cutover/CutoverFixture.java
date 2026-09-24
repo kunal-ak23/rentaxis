@@ -77,6 +77,8 @@ public class CutoverFixture {
     public UUID newTenant(String prefix) {
         LandlordOrg org = new LandlordOrg();
         org.setName(prefix + "-" + UUID.randomUUID());
+        // A VAT-bearing contract issues tax invoices, which need the TRN (spec 2026-09-24 §1).
+        org.setTrn(com.datagami.rentaxis.testsupport.LeaseTestFixtures.FIXTURE_TRN);
         return orgs.save(org).getId();
     }
 

@@ -17,6 +17,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
 import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
+import com.datagami.rentaxis.core.service.vat.VatTaxPointService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.ChargeType;
@@ -38,6 +39,7 @@ import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -45,6 +47,7 @@ import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchLeaseRepository;
 import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -133,6 +136,12 @@ public class LeasePostingService {
     private final ImportBatchLeaseRepository importBatchLeases;
     private final ImportBatchRepository importBatches;
 
+    /** Where the organisation's TRN lives — a VAT-bearing contract needs one (spec 2026-09-24 §1). */
+    private final LandlordOrgRepository landlordOrgs;
+
+    /** The instalment VAT schedule, for the amendment rules (spec 2026-09-24 §1). */
+    private final VatTaxPointService vatTaxPoints;
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -148,7 +157,9 @@ public class LeasePostingService {
                                RenewalOpportunityService renewalOpportunities,
                                ApplicationEventPublisher events,
                                ImportBatchLeaseRepository importBatchLeases,
-                               ImportBatchRepository importBatches) {
+                               ImportBatchRepository importBatches,
+                               LandlordOrgRepository landlordOrgs,
+                               VatTaxPointService vatTaxPoints) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -165,6 +176,8 @@ public class LeasePostingService {
         this.events = events;
         this.importBatchLeases = importBatchLeases;
         this.importBatches = importBatches;
+        this.landlordOrgs = landlordOrgs;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     // ------------------------------------------------------------------
@@ -300,6 +313,7 @@ public class LeasePostingService {
         Lease lease = lockLease(leaseId);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        allocateVatIfNeverAllocated(lease, lines, cheques);
 
         PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt);
         plan.throwIfRefused(propertyIdOf(lease));
@@ -321,6 +335,10 @@ public class LeasePostingService {
 
         lease.setPostingJournalId(tco.getId());
         lease.setPostedAt(Instant.now());
+        if (lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
+            // What the tax invoices fall back to if the TRN is cleared later.
+            lease.setVatTrn(supplierTrn(lease));
+        }
         lease.setPostedBy(currentUserId());
 
         leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), announce);
@@ -412,6 +430,11 @@ public class LeasePostingService {
             }
             if (LeaseVat.vatOf(line).signum() > 0) {
                 roles.add(AccountRole.OUTPUT_VAT);
+                // The TCO parks an INSTALMENT lease's VAT here until each
+                // instalment's tax point moves it to OUTPUT_VAT (spec 2026-09-24 §1).
+                if (lease.getVatTiming() == VatTiming.INSTALMENT) {
+                    roles.add(AccountRole.OUTPUT_VAT_DEFERRED);
+                }
             }
         }
         for (Cheque c : cheques) {
@@ -478,15 +501,31 @@ public class LeasePostingService {
                         + "; amend is only possible while all cheques are REGISTERED");
             }
         }
+        // Anything whose VAT has been declared is settled, and settled things are
+        // corrected by an addendum's delta, never rewritten (spec 2026-09-24 §1).
+        vatTaxPoints.requireNothingDeclared(leaseId);
 
         leaseService.applyAmendedLines(lease, newLines);
         leaseService.syncDerivedTotals(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        if (lease.getVatTiming() == VatTiming.INSTALMENT) {
+            // The new lines may charge different VAT; the register rows are the same
+            // paper, so their VAT is re-spread before the Σ check below — kept as it
+            // is when the total did not move, and otherwise in proportion to the VAT
+            // each row already carries, so a deposit row stays at zero (review P2-3).
+            InstalmentVat.respread(cheques, lines);
+            chequeRepository.saveAll(cheques);
+        }
 
         // ACTIVE is the right status for an amendment and the wrong one for a first
         // post, so the status rule is checked above and skipped here.
         PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
+
+        // Nothing declared, so every point is PLANNED: cancelled here, and the
+        // amended event rebuilds the schedule from the re-spread rows. The TCO
+        // reversal below carries the deferred credit away with it.
+        vatTaxPoints.cancelPlanned(leaseId);
 
         LocalDate reversedOn = LocalDate.now();
         // Collected as they are reversed, so the event names exactly the entries this
@@ -680,6 +719,7 @@ public class LeasePostingService {
                     + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
                     + money(gross) + ".");
         }
+        otherErrors.addAll(instalmentVatErrors(lease, lines, cheques, checks.periodLockApplies()));
 
         if (checks.periodLockApplies()) {
             otherErrors.addAll(periodLockErrors(lease, cheques));
@@ -743,9 +783,15 @@ public class LeasePostingService {
             }
             if (lineVat.signum() > 0) {
                 String vatNarration = "VAT on " + (type != null ? type.getNameEn() : code);
+                // INSTALMENT: the contract is not a tax invoice, so it creates no tax
+                // point — the VAT waits in OUTPUT_VAT_DEFERRED for each instalment's
+                // (spec 2026-09-24 §1). CONTRACT: a lease posted before that model,
+                // whose VAT has always been declared on the contract date.
+                AccountRole vatRole = lease.getVatTiming() == VatTiming.CONTRACT
+                        ? AccountRole.OUTPUT_VAT : AccountRole.OUTPUT_VAT_DEFERRED;
                 pairs.add(PostingRequest.pair(
                         LeaseChequeRegistrar.drReceivable(lease, lineVat).withNarration(vatNarration),
-                        PostingRequest.cr(AccountRole.OUTPUT_VAT, lineVat).withNarration(vatNarration)));
+                        PostingRequest.cr(vatRole, lineVat).withNarration(vatNarration)));
             }
         }
         return new LinePlan(pairs, net, gross, errors);
@@ -838,6 +884,122 @@ public class LeasePostingService {
             }
         }
         return errors;
+    }
+
+    /**
+     * What stops an INSTALMENT lease's VAT from being declared instalment by
+     * instalment (spec 2026-09-24 §1):
+     * <ul>
+     *   <li>{@code Σ row.vat_amount} must equal the contract's VAT exactly — the
+     *       rows are what the tax points will move, so a fils short strands it in
+     *       the deferred account for ever. A grid that was never allocated (every
+     *       row zero) is not refused: {@link #allocateVatIfNeverAllocated} spreads
+     *       it at post, and the dry run reports what that post would see;</li>
+     *   <li>the organisation needs a TRN — every tax point issues a tax invoice
+     *       (product decision 2026-09-24) and one without the supplier's TRN is not
+     *       a tax invoice;</li>
+     *   <li>no row's tax point may fall inside the period lock: the nightly job skips
+     *       a locked date, so the VAT would never be declared.</li>
+     * </ul>
+     * A legacy CONTRACT lease is exempt from all three; a lease that charges no VAT
+     * must carry none on its rows (review P2-4).
+     */
+    private List<String> instalmentVatErrors(Lease lease, List<LeaseLine> lines, List<Cheque> cheques,
+                                             boolean periodLockApplies) {
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) return List.of();
+        BigDecimal contractVat = InstalmentVat.contractVat(lines);
+        BigDecimal rowVat = InstalmentVat.rowVat(cheques);
+        if (contractVat.signum() == 0) {
+            // A grid that still carries VAT from before the lines stopped charging it
+            // would declare VAT the contract never charged (review P2-4).
+            return rowVat.signum() == 0 ? List.of() : List.of("The cheque grid carries VAT of " + money(rowVat)
+                    + " but the contract charges none; set every instalment's VAT to zero, or re-spread the VAT.");
+        }
+        List<String> errors = new ArrayList<>();
+        if (rowVat.signum() != 0 && rowVat.compareTo(contractVat) != 0) {
+            errors.add("The cheque grid carries VAT of " + money(rowVat) + " but the contract charges "
+                    + money(contractVat) + "; the instalments' VAT must add up to the contract's.");
+        }
+        if (supplierTrn(lease) == null) {
+            errors.add("This contract charges VAT, so each instalment issues a tax invoice, and the"
+                    + " organisation has no TRN. Add the TRN to the organisation's details first.");
+        }
+        if (periodLockApplies) {
+            for (Cheque c : cheques) {
+                boolean carriesVat = rowVat.signum() == 0 || (c.getVatAmount() != null && c.getVatAmount().signum() > 0);
+                if (carriesVat) errors.addAll(taxPointLockErrors(List.of(c)));
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * What stops an addendum's or extension's new rows from being declared (review
+     * P2-2, P3-2, P3-4) — the same three rules the first post applies, on the new
+     * lines and rows only: their VAT adds up to the new lines', the organisation (or
+     * the lease's snapshot) has a TRN, and no new row's tax point falls in the
+     * locked period, where the job would skip it for ever and a termination could
+     * not post it. A CONTRACT lease is exempt, as at first post.
+     */
+    List<String> newRowsVatErrors(Lease lease, List<LeaseLine> newLines, List<Cheque> newRows) {
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) return List.of();
+        BigDecimal charged = InstalmentVat.contractVat(newLines);
+        BigDecimal rowVat = InstalmentVat.rowVat(newRows);
+        List<String> errors = new ArrayList<>();
+        if (rowVat.compareTo(charged) != 0) {
+            errors.add("The new rows carry VAT of " + money(rowVat) + " but the new lines charge "
+                    + money(charged) + "; the rows' VAT must add up to the lines'.");
+        }
+        if (charged.signum() > 0 && supplierTrn(lease) == null) {
+            errors.add("These lines charge VAT, so each instalment issues a tax invoice, and the"
+                    + " organisation has no TRN. Add the TRN to the organisation's details first.");
+        }
+        errors.addAll(taxPointLockErrors(newRows.stream()
+                .filter(c -> c.getVatAmount() != null && c.getVatAmount().signum() > 0).toList()));
+        return errors;
+    }
+
+    /** "Cheque X's VAT tax point (D) falls in a locked period" for each row dated on or before the lock. */
+    private List<String> taxPointLockErrors(List<Cheque> rows) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        LocalDate locked = tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
+                .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
+        if (locked == null) return List.of();
+        List<String> errors = new ArrayList<>();
+        for (Cheque c : rows) {
+            LocalDate taxPoint = VatTaxPointService.taxPointDate(c);
+            if (taxPoint != null && !taxPoint.isAfter(locked)) {
+                errors.add("Cheque " + label(c) + "'s VAT tax point (" + taxPoint
+                        + ") falls in a locked period: books are locked through " + locked + ".");
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * The TRN this lease's tax invoices will carry: the organisation's, or failing
+     * that the one snapshotted on the lease when it first posted. Null when neither.
+     */
+    private String supplierTrn(Lease lease) {
+        UUID tenantId = lease.getTenantId();
+        String trn = tenantId == null ? null : landlordOrgs.findById(tenantId).map(o -> o.getTrn()).orElse(null);
+        if (trn != null && !trn.isBlank()) return trn.trim();
+        return lease.getVatTrn() == null || lease.getVatTrn().isBlank() ? null : lease.getVatTrn();
+    }
+
+    /**
+     * A grid saved before its lease's VAT was spread over it — every row still at
+     * zero while the contract charges VAT — is allocated pro rata here, at post,
+     * rather than refused: nothing about it is wrong except that nobody asked.
+     * Only an INSTALMENT lease's DRAFT rows are touched.
+     */
+    private void allocateVatIfNeverAllocated(Lease lease, List<LeaseLine> lines, List<Cheque> cheques) {
+        if (lease.getVatTiming() != VatTiming.INSTALMENT || cheques.isEmpty()) return;
+        BigDecimal contractVat = InstalmentVat.contractVat(lines);
+        if (contractVat.signum() == 0 || InstalmentVat.rowVat(cheques).signum() != 0) return;
+        if (cheques.stream().anyMatch(c -> c.getStatus() != ChequeStatus.DRAFT)) return;
+        InstalmentVat.fill(cheques, java.util.Set.of(), lines);
+        chequeRepository.saveAll(cheques);
     }
 
     /**

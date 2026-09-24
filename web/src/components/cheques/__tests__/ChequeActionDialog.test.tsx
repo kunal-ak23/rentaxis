@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
+import ar from "../../../../messages/ar.json";
+import type { VatTaxPoint } from "@/lib/api/leasing";
 import type { Cheque } from "@/lib/api/leasing";
 import type { ChequeAction } from "../ChequeActionDialog";
 
@@ -15,11 +17,24 @@ import type { ChequeAction } from "../ChequeActionDialog";
 
 vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-testid="account-picker" /> }));
 
-const api = vi.hoisted(() => ({ replace: vi.fn(), releaseOnline: vi.fn() }));
+const api = vi.hoisted(() => ({
+    replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
+    fiscal: vi.fn(),
+}));
+
+vi.mock("@/lib/api/ledger", async orig => {
+    const m = await orig<typeof import("@/lib/api/ledger")>();
+    return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: { ...m.ledgerApi.fiscal, get: api.fiscal } } };
+});
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline } };
+    return {
+        ...m,
+        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel },
+        vatApi: { ...m.vatApi, schedule: api.schedule },
+        leaseApi: { ...m.leaseApi, cheques: api.leaseCheques },
+    };
 });
 
 import ChequeActionDialog from "../ChequeActionDialog";
@@ -39,9 +54,9 @@ function cheque(over: Partial<Cheque> = {}): Cheque {
     };
 }
 
-function renderDialog(action: ChequeAction, over: Partial<Cheque> = {}) {
+function renderDialog(action: ChequeAction, over: Partial<Cheque> = {}, locale: "en" | "ar" = "en") {
     return render(
-        <NextIntlClientProvider locale="en" messages={en}>
+        <NextIntlClientProvider locale={locale} messages={locale === "en" ? en : ar}>
             <ChequeActionDialog
                 action={action}
                 cheque={cheque(over)}
@@ -56,6 +71,10 @@ function renderDialog(action: ChequeAction, over: Partial<Cheque> = {}) {
 afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+});
+
+beforeEach(() => {
+    api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
 });
 
 describe("ChequeActionDialog — replace", () => {
@@ -117,5 +136,120 @@ describe("ChequeActionDialog — release online", () => {
         fireEvent.click(screen.getByTestId("cheque-releaseOnline-confirm"));
 
         await waitFor(() => expect(api.releaseOnline).toHaveBeenCalledWith("c1", expect.objectContaining({ notes: null })));
+    });
+});
+
+function point(chequeId: string, over: Partial<VatTaxPoint> = {}): VatTaxPoint {
+    return {
+        id: `vtp-${chequeId}`, leaseId: "l1", chequeId, chequeSeqNo: null, chequeNumber: null,
+        propertyId: "p1", propertyName: null, unitNumber: null, kind: "INSTALMENT",
+        taxPointDate: "2026-06-01", taxableAmount: 12000, vatAmount: 600, status: "PLANNED",
+        journalId: null, journalNumber: null, invoiceId: null, invoiceNumber: null,
+        ...over,
+    };
+}
+
+/**
+ * Cancelling a REGISTERED row whose VAT is not declared yet: the server refuses
+ * without `?moveVatTo=` (VatTaxPointService.beforeCancel), so the dialog asks
+ * which other pending instalment of the lease takes it — the next one by date
+ * unless the user picks another.
+ */
+describe("ChequeActionDialog — cancel with pending VAT", () => {
+    const own = cheque({ id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01", chequeNumber: "100043" });
+    const rows = [
+        cheque({ id: "c1", seqNo: 1, status: "CLEARED", chequeDate: "2026-01-01", chequeNumber: "100041" }),
+        cheque({ id: "c2", seqNo: 2, status: "REGISTERED", chequeDate: "2026-03-01", chequeNumber: "100042" }),
+        own,
+        cheque({ id: "c5", seqNo: 5, status: "REGISTERED", chequeDate: "2026-12-01", chequeNumber: "100045" }),
+        cheque({ id: "c4", seqNo: 4, status: "DEPOSITED", chequeDate: "2026-09-01", chequeNumber: "100044" }),
+        // Declared already: VAT cannot move onto it.
+        cheque({ id: "c6", seqNo: 6, status: "REGISTERED", chequeDate: "2026-07-01", chequeNumber: "100046" }),
+    ];
+    const schedule = [
+        point("c1", { status: "POSTED" }), point("c2"), point("c3", { vatAmount: 650 }),
+        point("c4"), point("c5"), point("c6", { status: "POSTED" }),
+    ];
+
+    it("offers the other pending rows, defaults to the next by date, and sends moveVatTo", async () => {
+        api.schedule.mockResolvedValue(schedule);
+        api.leaseCheques.mockResolvedValue(rows);
+        api.cancel.mockResolvedValue({});
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01", chequeNumber: "100043" });
+
+        const picker = (await screen.findByTestId("cheque-move-vat-to")) as HTMLSelectElement;
+        const offered = Array.from(picker.options).map(o => o.value);
+        expect(offered).toEqual(["c2", "c4", "c5"]);
+        expect(picker.value).toBe("c4");
+        expect(screen.getByTestId("cheque-move-vat-hint")).toHaveTextContent("650.00");
+
+        fireEvent.click(screen.getByTestId("cheque-cancel-confirm"));
+        await waitFor(() => expect(api.cancel).toHaveBeenCalledTimes(1));
+        expect(api.cancel.mock.calls[0][0]).toBe("c3");
+        expect(api.cancel.mock.calls[0][2]).toBe("c4");
+    });
+
+    it("sends the row the user picks instead", async () => {
+        api.schedule.mockResolvedValue(schedule);
+        api.leaseCheques.mockResolvedValue(rows);
+        api.cancel.mockResolvedValue({});
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01" });
+
+        const picker = await screen.findByTestId("cheque-move-vat-to");
+        fireEvent.change(picker, { target: { value: "c2" } });
+        fireEvent.click(screen.getByTestId("cheque-cancel-confirm"));
+        await waitFor(() => expect(api.cancel).toHaveBeenCalledTimes(1));
+        expect(api.cancel.mock.calls[0][2]).toBe("c2");
+    });
+
+    it("says so and blocks Cancel when no other instalment can take the VAT", async () => {
+        api.schedule.mockResolvedValue([point("c3"), point("c1", { status: "POSTED" })]);
+        api.leaseCheques.mockResolvedValue([rows[0], own]);
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01" });
+
+        expect(await screen.findByTestId("cheque-move-vat-none")).toHaveTextContent("600.00");
+        expect(screen.getByTestId("cheque-cancel-confirm")).toBeDisabled();
+    });
+
+    it("asks nothing on a row with no undeclared VAT (a CONTRACT lease has no schedule)", async () => {
+        api.schedule.mockResolvedValue([]);
+        api.leaseCheques.mockResolvedValue(rows);
+        api.cancel.mockResolvedValue({});
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED" });
+
+        await waitFor(() => expect(api.schedule).toHaveBeenCalled());
+        expect(screen.queryByTestId("cheque-move-vat")).toBeNull();
+        fireEvent.click(screen.getByTestId("cheque-cancel-confirm"));
+        await waitFor(() => expect(api.cancel).toHaveBeenCalledTimes(1));
+        expect(api.cancel.mock.calls[0][2]).toBeNull();
+    });
+
+    it("does not look a schedule up for a row that is not REGISTERED", () => {
+        renderDialog("cancel", { status: "DEPOSITED" });
+        expect(api.schedule).not.toHaveBeenCalled();
+    });
+
+    it("never offers a deposit row, nor one dated inside the locked period", async () => {
+        api.schedule.mockResolvedValue(schedule);
+        api.leaseCheques.mockResolvedValue([
+            ...rows,
+            cheque({ id: "d1", seqNo: 7, status: "REGISTERED", chequeDate: "2026-08-01", rowKind: "DEPOSIT" }),
+        ]);
+        api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-03-31" });
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01" });
+
+        const picker = (await screen.findByTestId("cheque-move-vat-to")) as HTMLSelectElement;
+        // c2 (01/03) is inside the lock; d1 is a deposit.
+        expect(Array.from(picker.options).map(o => o.value)).toEqual(["c4", "c5"]);
+    });
+
+    it("reads in Arabic", async () => {
+        api.schedule.mockResolvedValue(schedule);
+        api.leaseCheques.mockResolvedValue(rows);
+        renderDialog("cancel", { id: "c3", seqNo: 3, status: "REGISTERED", chequeDate: "2026-06-01" }, "ar");
+
+        await screen.findByTestId("cheque-move-vat-to");
+        expect(screen.getByText(ar.Cheques.moveVatTo)).toBeInTheDocument();
+        expect(ar.Cheques.moveVatTo).not.toEqual(en.Cheques.moveVatTo);
     });
 });

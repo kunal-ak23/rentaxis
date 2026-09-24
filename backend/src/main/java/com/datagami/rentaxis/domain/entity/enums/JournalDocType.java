@@ -14,5 +14,6 @@ public enum JournalDocType {
     PISR, // purchase / service invoice
     BPV,  // bank / cash payment voucher
     OB,   // opening balance
-    JV    // manual journal
+    JV,   // manual journal
+    VTP   // VAT tax point: deferred output VAT becomes due (spec 2026-09-24 §1)
 }

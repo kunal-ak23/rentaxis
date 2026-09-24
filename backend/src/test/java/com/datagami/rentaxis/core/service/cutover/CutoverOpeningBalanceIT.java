@@ -6,10 +6,17 @@ import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.cutover.OpeningBalanceService.ReconciliationRow;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
+import com.datagami.rentaxis.core.service.ledger.PostingRequest;
+import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
+import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.repository.TenantDefaultAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +29,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * never calls the bulk post, {@code CutoverReconciliationIT} never posts the opening
  * balances — so the one arithmetic that matters on the client's first day was
  * untested. It was also wrong: the opening journal posted PACT's figure <em>gross</em>
- * on every account outside the nine {@link OpeningBalanceService#DERIVED_ROLES}, and
+ * on every account outside the (then nine) {@link OpeningBalanceService#DERIVED_ROLES}, and
  * step 1 writes to two accounts that are not in that set and that the accountant does
  * type from PACT's file — the <b>bank</b> a cleared cheque reaches ({@code CRT}) and
  * <b>output VAT</b> a VAT-bearing contract raises ({@code TCO}). Both came out
@@ -61,6 +70,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   Output VAT on Sales      -1,050.00   NOT derived — SAMPLE-0002's VAT
  *   Rent Receivable - ST1         0.00   derived (RENT_RECEIVABLE)
  * </pre>
+ *
+ * <p>Output VAT is SAMPLE-0002's whole 1,050 because a cut-over contract is posted on
+ * the CONTRACT VAT model (spec 2026-09-24 §1, cut-over ruling): PACT declared it on
+ * the contract date, so the {@code TCO} credits Output VAT itself and nothing waits in
+ * Output VAT – not yet due. {@link
+ * #aLeasePostedHereBeforeTheCutOverKeepsItsDeferredVatAndPactsOutputVatCoversIt}
+ * covers the other case.</p>
  *
  * <p>PACT's trial balance ({@code P}) is a real one: a bank balance of 250,000 that is
  * not just the cleared cheque, 3,000 of output VAT of which only 1,050 came from these
@@ -96,6 +112,9 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
     @Autowired LedgerQueryService ledger;
     @Autowired TenantDefaultAccountMappingRepository defaultMappings;
     @Autowired TransactionTemplate tx;
+    @Autowired PostingService postingService;
+    @Autowired TenantFiscalSettingsRepository fiscalSettings;
+    @Autowired TenantFiscalSettingsService fiscal;
 
     UUID tenantId;
 
@@ -153,6 +172,42 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
                         .filter(m -> m.getRole() == AccountRole.OUTPUT_VAT)
                         .findFirst().orElseThrow(() -> new AssertionError("OUTPUT_VAT is not mapped"))
                         .getAccount().getId()).getName());
+    }
+
+    /** The leaf the tenant's default OUTPUT_VAT_DEFERRED mapping points at. */
+    private String deferredVatName() {
+        return tx.execute(s -> defaultMappings.findAll().stream()
+                .filter(m -> m.getRole() == AccountRole.OUTPUT_VAT_DEFERRED)
+                .findFirst().orElseThrow(() -> new AssertionError("OUTPUT_VAT_DEFERRED is not mapped"))
+                .getAccount().getName());
+    }
+
+    /**
+     * A lease posted here, on the INSTALMENT model, before the cut-over date — stood
+     * in for by the one pair of its {@code TCO} that matters to the opening balance:
+     * {@code Dr rent receivable / Cr Output VAT – not yet due}. It was posted before
+     * the books were locked, so the lock is lifted for it and put back.
+     */
+    private void postDeferredVatBeforeTheCutOver(String amount) {
+        tx.executeWithoutResult(s -> {
+            TenantFiscalSettings settings = fiscalSettings.findById(tenantId).orElseThrow();
+            settings.setBooksLockedThrough(null);
+            fiscalSettings.saveAndFlush(settings);
+        });
+        tx.executeWithoutResult(s -> {
+            UUID receivable = accounts.getAllAccounts().stream()
+                    .filter(a -> "Rent Receivable - ST1".equals(a.getName()))
+                    .findFirst().orElseThrow().getId();
+            BigDecimal value = new BigDecimal(amount);
+            String narration = "VAT on a lease posted before the cut-over";
+            postingService.post(PostingRequest.ofPairs(
+                    JournalDocType.TCO, LocalDate.of(2026, 9, 10), narration, PostingRequest.Dimensions.none(),
+                    JournalSourceType.LEASE, UUID.randomUUID(), null,
+                    List.of(PostingRequest.pair(
+                            PostingRequest.dr(receivable, value).withNarration(narration),
+                            PostingRequest.cr(AccountRole.OUTPUT_VAT_DEFERRED, value).withNarration(narration)))));
+        });
+        fiscal.lockThrough(CutoverFixture.AS_OF);
     }
 
     private String differenceAccountName() {
@@ -245,7 +300,7 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         var grid = openingBalances.grid();
         var bank = grid.rows().stream().filter(r -> "Sample Bank - ST1".equals(r.name()))
                 .findFirst().orElseThrow();
-        assertThat(bank.derived()).as("the bank is NOT one of the nine derived roles").isFalse();
+        assertThat(bank.derived()).as("the bank is NOT one of the derived roles").isFalse();
         // entered = PACT's file, untouched; derived = what step 1 left; post = the two subtracted.
         assertThat(bank.enteredDebit()).isEqualByComparingTo("250000.00");
         assertThat(bank.derivedDebit()).isEqualByComparingTo("31000.00");
@@ -257,6 +312,10 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         assertThat(vat.enteredCredit()).isEqualByComparingTo("3000.00");
         assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
         assertThat(vat.postCredit()).isEqualByComparingTo("1950.00");
+        // A cut-over contract is CONTRACT-timed, so nothing is deferred and the Output
+        // VAT line is measured against Output VAT alone — no pairing, no warning.
+        assertThat(grid.problems()).noneMatch(p -> p.message().contains("not yet due"));
+        assertThat(balanceOf(deferredVatName())).isEqualByComparingTo("0.00");
 
         // A derived row still shows PACT's figure — the reconciliation screen compares
         // against it — but nothing will be posted to it.
@@ -353,6 +412,71 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
     }
 
     /**
+     * The other case of the Output VAT pairing (spec 2026-09-24 §1): a lease posted
+     * here on the INSTALMENT model before the cut-over date, with 500.00 of its VAT
+     * still waiting in Output VAT – not yet due at D − 1. PACT booked that lease's VAT
+     * into Output VAT on its contract date, so PACT's 3,000 already includes the 500.
+     *
+     * <pre>
+     *   ours at D − 1:  Output VAT −1,050.00 (SAMPLE-0002, CONTRACT-timed)
+     *                   Output VAT – not yet due −500.00 (derived)
+     *                   Rent Receivable − ST1   +500.00 (derived; PACT names none)
+     *
+     *   Sample Bank - ST1     Dr 219,000.00   = 250,000.00 − 31,000.00
+     *   Output VAT on Sales   Cr   1,450.00   =   3,000.00 − (1,050.00 + 500.00)
+     *   Capital Account       Cr 218,050.00
+     *   Opening Balance Diff  Dr     500.00   = PDC gap 1,000.00 − receivable 500.00
+     * </pre>
+     *
+     * The two VAT accounts end at −2,500 and −500: PACT's 3,000 exactly, once. The
+     * deferred leaf is derived, so it is never posted to, and its own "gap" against
+     * PACT (which names no such account) is the one the Output VAT line absorbed —
+     * so it is left out of the identity.
+     */
+    @Test
+    void aLeasePostedHereBeforeTheCutOverKeepsItsDeferredVatAndPactsOutputVatCoversIt() throws Exception {
+        importAndPost();
+        postDeferredVatBeforeTheCutOver("500.00");
+        uploadPactTrialBalance();
+
+        var grid = openingBalances.grid();
+        var vat = grid.rows().stream().filter(r -> outputVatName().equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(vat.enteredCredit()).isEqualByComparingTo("3000.00");
+        assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
+        assertThat(vat.postCredit()).isEqualByComparingTo("1450.00");
+        assertThat(grid.problems()).anySatisfy(p -> assertThat(p.message())
+                .contains("500.00 of it is already on the books as output VAT not yet due"));
+        var deferred = grid.rows().stream().filter(r -> deferredVatName().equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(deferred.derived()).as("OUTPUT_VAT_DEFERRED is derived").isTrue();
+        assertThat(deferred.derivedCredit()).isEqualByComparingTo("500.00");
+        assertThat(deferred.postDebit()).isEqualByComparingTo("0.00");
+        assertThat(deferred.postCredit()).isEqualByComparingTo("0.00");
+
+        openingBalances.post();
+
+        assertThat(balanceOf(outputVatName())).isEqualByComparingTo("-2500.00");
+        assertThat(balanceOf(deferredVatName())).as("the deferred VAT is left intact")
+                .isEqualByComparingTo("-500.00");
+        assertThat(balanceOf(outputVatName()).add(balanceOf(deferredVatName())))
+                .as("PACT's output VAT, on the books once").isEqualByComparingTo("-3000.00");
+        assertThat(balanceOf(differenceAccountName())).isEqualByComparingTo("500.00");
+
+        BigDecimal gapOnDerivedRoles = tx.execute(s -> openingBalances.reconcile().stream()
+                .filter(ReconciliationRow::derived)
+                .filter(r -> !deferredVatName().equals(r.name()))
+                .map(ReconciliationRow::difference)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .negate());
+        assertThat(balanceOf(differenceAccountName())).isEqualByComparingTo(gapOnDerivedRoles);
+
+        BigDecimal net = tx.execute(s -> ledger.trialBalance(CutoverFixture.AS_OF, null).stream()
+                .map(TrialBalanceRowDTO::balance).reduce(BigDecimal.ZERO, BigDecimal::add));
+        assertThat(net).isEqualByComparingTo("0.00");
+    }
+
+    /**
      * The {@code −ours} branch of {@link OpeningBalanceService#postable} (review C2,
      * finding N3): an account our books hold a balance on that PACT's file never
      * names at all, rather than one it names at 0.
@@ -373,7 +497,7 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         var grid = openingBalances.grid();
         var vat = grid.rows().stream().filter(r -> outputVatName().equals(r.name()))
                 .findFirst().orElseThrow();
-        assertThat(vat.derived()).as("output VAT is NOT one of the nine derived roles").isFalse();
+        assertThat(vat.derived()).as("output VAT is NOT one of the derived roles").isFalse();
         // PACT never named it at all, so entered* is empty — unlike the difference
         // row, which is empty for the same reason but computed rather than skipped.
         assertThat(vat.enteredDebit()).isEqualByComparingTo("0.00");

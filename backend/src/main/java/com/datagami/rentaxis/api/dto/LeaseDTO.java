@@ -60,6 +60,12 @@ public class LeaseDTO {
     private Integer gracePeriodDays;
     /** TRUE when the grace was set on this lease, FALSE when it came from the property (gap #65). */
     private Boolean gracePeriodOverridden;
+    /**
+     * When this lease's output VAT is declared (spec 2026-09-24 §1): INSTALMENT on
+     * each instalment's tax point, CONTRACT on the contract date (leases posted
+     * before the change, and cut-over imports whose VAT PACT already declared).
+     */
+    private com.datagami.rentaxis.domain.entity.enums.VatTiming vatTiming;
     private LocalDate firstDueDate;
 
     /**

@@ -60,7 +60,8 @@ export type AccountRole =
   | "CASH"
   | "OUTPUT_VAT"
   | "INPUT_VAT"
-  | "OPENING_BALANCE_DIFFERENCE";
+  | "OPENING_BALANCE_DIFFERENCE"
+  | "OUTPUT_VAT_DEFERRED";
 
 export type JournalDocType =
   | "TCO"
@@ -75,7 +76,8 @@ export type JournalDocType =
   | "PISR"
   | "BPV"
   | "OB"
-  | "JV";
+  | "JV"
+  | "VTP";
 
 export type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
 
@@ -98,7 +100,8 @@ export type JournalSourceType =
   | "OPENING_BALANCE"
   | "IMPORT"
   | "MANUAL"
-  | "REVERSAL";
+  | "REVERSAL"
+  | "VAT_TAX_POINT";
 
 export type AccountSubType =
   | "FIXED_ASSET"

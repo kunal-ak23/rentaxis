@@ -91,6 +91,16 @@ public final class LeaseVat {
     }
 
     /**
+     * The net this line's VAT is charged on: its net amount when it carries VAT,
+     * zero when it does not. What a tax point's {@code taxable_amount} is built
+     * from, by the same rule {@link #vatOf(LeaseLine)} uses to decide there is VAT.
+     */
+    public static BigDecimal taxableOf(LeaseLine line) {
+        if (!carriesVat(line) || line.getNetAmount() == null) return BigDecimal.ZERO;
+        return line.getNetAmount();
+    }
+
+    /**
      * VAT on <em>part</em> of a line's net amount — what a termination credits back
      * for the rent it un-earns (spec §9.1, review I-5).
      *
@@ -137,6 +147,90 @@ public final class LeaseVat {
             if (net.add(vatOf(net)).compareTo(gross) == 0) return net;
         }
         return null;
+    }
+
+    /**
+     * Split {@code total} across rows in proportion to {@code weights}, to the
+     * fils, so the parts sum to {@code total} exactly (spec 2026-09-24 §1).
+     *
+     * <p>Largest remainder (PR #348 review P3-1): every positive-weight row gets its
+     * exact share rounded <em>down</em> to the fils, and the fils left over go one
+     * each to the rows with the largest remainders, ties to the <b>last</b> such row.
+     * No share is ever negative or more than a fils above its exact value — rounding
+     * each share half-up and letting one row absorb the difference could leave that
+     * row at −0.01 (500.03 over six rows of 10,500 and one of 5.00). Rows with a zero
+     * (or null, or negative) weight get zero. With no positive weight at all the
+     * whole total lands on the last row, so money is never dropped: a caller that
+     * allocates VAT onto a grid of zero-amount rows gets a visible figure it can
+     * refuse, not a silent loss.</p>
+     *
+     * <p>This is how the VAT a contract charges is spread over its instalments;
+     * {@link #RATE} is still applied only per line, above. Nothing here computes
+     * tax — it divides tax that has already been computed.</p>
+     *
+     * @return one amount per weight, in order; empty for no weights.
+     */
+    public static java.util.List<BigDecimal> allocate(BigDecimal total, java.util.List<BigDecimal> weights) {
+        return allocate(total, weights, false);
+    }
+
+    /**
+     * {@link #allocate} with ties going to the <b>first</b> row — how the cheque
+     * generator rounds, where the residual belongs on the cheque handed over at
+     * signing ({@code ChequeRoundingCalculator}, FIRST_LARGER).
+     */
+    public static java.util.List<BigDecimal> allocateFirstAbsorbs(BigDecimal total, java.util.List<BigDecimal> weights) {
+        return allocate(total, weights, true);
+    }
+
+    private static java.util.List<BigDecimal> allocate(BigDecimal total, java.util.List<BigDecimal> weights,
+                                                        boolean firstTakesTies) {
+        int n = weights == null ? 0 : weights.size();
+        java.util.List<BigDecimal> out = new java.util.ArrayList<>(n);
+        if (n == 0) return out;
+        BigDecimal t = (total == null ? BigDecimal.ZERO : total).setScale(2, RoundingMode.HALF_UP);
+        for (int i = 0; i < n; i++) out.add(BigDecimal.ZERO.setScale(2));
+        if (t.signum() == 0) return out;
+        BigDecimal sum = BigDecimal.ZERO;
+        java.util.List<Integer> positive = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            BigDecimal w = weights.get(i);
+            if (w != null && w.signum() > 0) {
+                sum = sum.add(w);
+                positive.add(i);
+            }
+        }
+        if (positive.isEmpty()) {
+            out.set(n - 1, t);
+            return out;
+        }
+        // Work on the magnitude so a negative total (a credit) splits the same way.
+        BigDecimal abs = t.abs();
+        BigDecimal[] remainder = new BigDecimal[n];
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i : positive) {
+            BigDecimal exact = abs.multiply(weights.get(i)).divide(sum, 12, RoundingMode.HALF_UP);
+            BigDecimal floor = exact.setScale(2, RoundingMode.DOWN);
+            remainder[i] = exact.subtract(floor);
+            out.set(i, floor);
+            allocated = allocated.add(floor);
+        }
+        int fils = abs.subtract(allocated).movePointRight(2).intValueExact();
+        java.util.List<Integer> order = new java.util.ArrayList<>(positive);
+        order.sort((a, b) -> {
+            int byRemainder = remainder[b].compareTo(remainder[a]);
+            if (byRemainder != 0) return byRemainder;
+            return firstTakesTies ? Integer.compare(a, b) : Integer.compare(b, a);
+        });
+        BigDecimal cent = new BigDecimal("0.01");
+        for (int k = 0; k < fils; k++) {
+            int i = order.get(k % order.size());
+            out.set(i, out.get(i).add(cent));
+        }
+        if (t.signum() < 0) {
+            for (int i = 0; i < n; i++) out.set(i, out.get(i).negate());
+        }
+        return out;
     }
 
     /** What the line is actually collected for: net plus its own VAT. */

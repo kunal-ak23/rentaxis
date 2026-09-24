@@ -180,6 +180,7 @@ export default function TerminateLeasePage() {
     const receivableAfter = preview ? receivableAfterForSplit(preview, decisions) : 0;
     /** Absent on an older server, and zero on every residential tenancy. */
     const unearnedVat = preview?.unearnedVat ?? 0;
+    const vatSettlement = preview?.vatSettlement ?? null;
     const returnedCount = rows.filter(c => decisions[c.id] === "RETURN").length;
 
     const submit = async () => {
@@ -329,7 +330,8 @@ export default function TerminateLeasePage() {
                                     <Figure
                                         label={t("unearnedVat")}
                                         value={fmtAmount(unearnedVat)}
-                                        hint={t("unearnedVatHint")}
+                                        hint={t(lease?.vatTiming === "INSTALMENT"
+                                            ? "unearnedVatInstalmentHint" : "unearnedVatHint")}
                                         testId="terminate-unearned-vat"
                                     />
                                 )}
@@ -341,6 +343,46 @@ export default function TerminateLeasePage() {
                                     tone={receivableAfter > 0 ? "warning" : "default"}
                                 />
                             </div>
+
+                            {/*
+                              VAT per instalment (spec 2026-09-24 §1): what the
+                              termination does to the VAT not yet declared. Only
+                              when there is any — a legacy or VAT-free lease has
+                              all zeros here.
+                            */}
+                            {vatSettlement && (vatSettlement.pendingCancelled > 0 || vatSettlement.dueByTerminationDate > 0
+                                || vatSettlement.creditedBack > 0 || vatSettlement.declaredAtTermination > 0) && (
+                                <div
+                                    className="bg-surface border border-border rounded-xl p-4 space-y-2"
+                                    data-testid="terminate-vat-settlement"
+                                >
+                                    <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                                        {t("vatSettlementTitle")}
+                                    </h3>
+                                    <ul className="text-xs space-y-1">
+                                        {vatSettlement.dueByTerminationDate > 0 && (
+                                            <li data-testid="terminate-vat-due">
+                                                {t("vatDueByT", { amount: fmtAmount(vatSettlement.dueByTerminationDate) })}
+                                            </li>
+                                        )}
+                                        {vatSettlement.reversedFromDeferred > 0 && (
+                                            <li data-testid="terminate-vat-reversed">
+                                                {t("vatReversedFromDeferred", { amount: fmtAmount(vatSettlement.reversedFromDeferred) })}
+                                            </li>
+                                        )}
+                                        {vatSettlement.declaredAtTermination > 0 && (
+                                            <li data-testid="terminate-vat-declared">
+                                                {t("vatDeclaredAtT", { amount: fmtAmount(vatSettlement.declaredAtTermination) })}
+                                            </li>
+                                        )}
+                                        {vatSettlement.creditedBack > 0 && (
+                                            <li data-testid="terminate-vat-credited">
+                                                {t("vatCreditedBack", { amount: fmtAmount(vatSettlement.creditedBack) })}
+                                            </li>
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
 
                             <ChequeReturnTable
                                 rows={rows}

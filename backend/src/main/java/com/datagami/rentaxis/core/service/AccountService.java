@@ -281,6 +281,10 @@ public class AccountService {
         seed(byCode, "B-01-02", "Security Deposits", "التأمينات", AccountType.LIABILITY, AccountSubType.DEPOSIT_HELD, "B-01", "Deposits held, one leaf per property", true);
         seed(byCode, "B-01-03", "Output VAT", "ضريبة المخرجات", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, true);
         seed(byCode, "B-01-03-001", "Output VAT on Sales", "ضريبة المخرجات على المبيعات", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01-03", null, false);
+        // Spec 2026-09-24 §1: VAT on a contract whose instalment has not reached its
+        // tax point yet (role OUTPUT_VAT_DEFERRED). Changeset 108 adds it to charts
+        // seeded before it existed.
+        seed(byCode, "B-01-03-002", "Output VAT – not yet due", "ضريبة المخرجات غير المستحقة بعد", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01-03", null, false);
         seed(byCode, "B-01-04", "Vendors", "الموردون", AccountType.LIABILITY, AccountSubType.PAYABLE, "B-01", "One leaf per vendor, created with the vendor", true);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
 

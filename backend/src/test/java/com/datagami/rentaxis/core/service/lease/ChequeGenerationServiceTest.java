@@ -54,6 +54,32 @@ class ChequeGenerationServiceTest {
                 bd("11000"), bd("10000"), bd("10000"), bd("10000"), bd("10000"), bd("10000"));
     }
 
+    /**
+     * The generator writes each row's VAT as it builds it (spec 2026-09-24 §1): the
+     * rent VAT follows the rent rows' amounts with the first row absorbing the
+     * remainder, and a folded fee adds its own VAT to row 1.
+     */
+    @Test
+    void theGeneratorSpreadsRentVatOverTheRentRowsAndFoldsAFeesVat() {
+        List<ChequeGenerationService.Row> rows = ChequeGenerationService.buildRows(
+                bd("126000"), bd("6000"), bd("120000"),
+                List.of(new ChequeGenerationService.Extra("SD", bd("5000")),
+                        new ChequeGenerationService.Extra("Admin", bd("1050"), bd("50"), bd("1000"))),
+                4,
+                LocalDate.of(2026, 4, 20),
+                LocalDate.of(2026, 5, 1),
+                LocalDate.of(2027, 4, 30),
+                InstallmentDistribution.FIRST_LARGER,
+                true);
+
+        assertThat(rows).extracting(ChequeGenerationService.Row::amount).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bd("37550"), bd("31500"), bd("31500"), bd("31500"));
+        assertThat(rows).extracting(ChequeGenerationService.Row::vat).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bd("1550"), bd("1500"), bd("1500"), bd("1500"));
+        assertThat(rows).extracting(ChequeGenerationService.Row::taxable).usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(bd("31000"), bd("30000"), bd("30000"), bd("30000"));
+    }
+
     @Test
     void foldingDepositsAndFeesIntoFirstRowMatchesPact() {
         List<ChequeGenerationService.Row> rows = ChequeGenerationService.buildRows(

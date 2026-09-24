@@ -89,6 +89,12 @@ type Props = {
     propertyId?: string | null;
     /** Σ of the lease's lines including VAT — what the grid must add up to. */
     contractValueInclVat: number;
+    /**
+     * Σ of the lines' VAT — what the rows' VAT column must add up to (spec
+     * 2026-09-24 §1: each instalment declares its own share at its tax point).
+     * The VAT column appears only when the contract, or some row, carries VAT.
+     */
+    contractVat?: number;
     defaultInstallments?: number;
     defaultFirstDueDate?: string | null;
     /** Installment distribution chosen in the lease's Terms step — see #46. */
@@ -129,6 +135,7 @@ export default function ChequeGrid({
     defaultBankAccountId,
     propertyId,
     contractValueInclVat,
+    contractVat = 0,
     defaultInstallments = 4,
     defaultFirstDueDate,
     defaultDistribution,
@@ -162,6 +169,13 @@ export default function ChequeGrid({
 
     const total = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const matches = Math.abs(round2(total - contractValueInclVat)) < 0.005;
+    // VAT per instalment (spec 2026-09-24 §1). A row with no figure yet (typed on
+    // the grid, or its amount edited) is filled in pro rata by the server on save,
+    // so the footer only checks the sum once every row has one.
+    const showVat = contractVat > 0 || cheques.some(c => (c.vatAmount ?? 0) > 0);
+    const vatPending = cheques.some(c => c.vatAmount === null || c.vatAmount === undefined);
+    const vatTotal = cheques.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0);
+    const vatMatches = Math.abs(round2(vatTotal - contractVat)) < 0.005;
 
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
@@ -184,7 +198,7 @@ export default function ChequeGrid({
         registerActionsFor(c.status, c.mode, canCancelCheques, { status: leaseStatus, settlementFinalized });
 
     const showActions = !editable && !!onRowAction && cheques.some(c => actionsOf(c).length > 0);
-    const cols = 9 + (editable ? 0 : 1) + (showActions ? 1 : 0);
+    const cols = 9 + (showVat ? 1 : 0) + (editable ? 0 : 1) + (showActions ? 1 : 0);
 
     return (
         <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm" data-testid="cheque-grid">
@@ -373,6 +387,7 @@ export default function ChequeGrid({
                             <th className={th}>{t("payeeBank")}</th>
                             <th className={th}>{t("debitAccount")}</th>
                             <th className={thNum}>{t("amount")}</th>
+                            {showVat && <th className={thNum}>{t("vatColumn")}</th>}
                             <th className={th}>{t("narration")}</th>
                             <th className={th}>{t("chequeMode")}</th>
                             {!editable && <th className={th}>{tLedger("status")}</th>}
@@ -453,12 +468,37 @@ export default function ChequeGrid({
                                             step={0.01}
                                             className={numField}
                                             value={c.amount}
-                                            onChange={v => patch(c.id, { amount: v })}
+                                            // A new amount clears the row's VAT, so the
+                                            // server re-spreads it pro rata on save.
+                                            onChange={v => patch(c.id, { amount: v, vatAmount: null })}
                                         />
                                     ) : (
                                         fmtAmount(c.amount || 0)
                                     )}
                                 </td>
+                                {showVat && (
+                                    <td className={tdNum} data-testid={`cheque-vat-${i}`}>
+                                        {editable && c.status === "DRAFT" ? (
+                                            <NumberInput
+                                                // Remounted when the row flips between "auto" and a
+                                                // figure, so an explicit 0 shows as 0 and "auto" as blank.
+                                                key={`${c.id}-${c.vatAmount == null ? "auto" : "set"}`}
+                                                aria-label={`${t("vatColumn")} ${i + 1}`}
+                                                min={0}
+                                                step={0.01}
+                                                className={numField}
+                                                placeholder={t("vatAuto")}
+                                                showZero={c.vatAmount != null}
+                                                value={c.vatAmount ?? 0}
+                                                onChange={v => patch(c.id, { vatAmount: v })}
+                                            />
+                                        ) : c.vatAmount === null || c.vatAmount === undefined ? (
+                                            <span className="text-muted">{t("vatAuto")}</span>
+                                        ) : (
+                                            fmtAmount(c.vatAmount)
+                                        )}
+                                    </td>
+                                )}
                                 <td className={td}>
                                     {editable ? (
                                         <input
@@ -532,7 +572,10 @@ export default function ChequeGrid({
                                 {t("chequeTotal")}
                             </td>
                             <td className={tdNum} data-testid="cheque-grid-total">{fmtAmount(total)}</td>
-                            <td className={td} colSpan={cols - 7} />
+                            {showVat && (
+                                <td className={tdNum} data-testid="cheque-grid-vat-total">{fmtAmount(vatTotal)}</td>
+                            )}
+                            <td className={td} colSpan={cols - 7 - (showVat ? 1 : 0)} />
                         </tr>
                         <tr className={cn("font-bold border-t border-border", matches ? "bg-success/10" : "bg-error/10")}>
                             <td className={`${td} ${matches ? "text-success" : "text-error"}`} colSpan={cols}>
@@ -551,6 +594,50 @@ export default function ChequeGrid({
                                 </span>
                             </td>
                         </tr>
+                        {/* A legacy lease declared its VAT on the contract date, so its
+                            posted rows carry none — no footer to argue with it. */}
+                        {showVat && (editable || vatTotal > 0) && (
+                            <tr
+                                className={cn(
+                                    "font-bold border-t border-border",
+                                    vatPending ? "bg-input/40" : vatMatches ? "bg-success/10" : "bg-error/10",
+                                )}
+                            >
+                                <td
+                                    className={`${td} ${vatPending ? "text-muted" : vatMatches ? "text-success" : "text-error"}`}
+                                    colSpan={cols}
+                                >
+                                    <span
+                                        data-testid="cheque-grid-vat-match"
+                                        data-match={vatPending ? "pending" : vatMatches ? "true" : "false"}
+                                        className="inline-flex items-center gap-1.5"
+                                    >
+                                        {vatPending ? null : vatMatches ? <CheckCircle2 size={13} /> : <TriangleAlert size={13} />}
+                                        {vatPending
+                                            ? t("vatPendingAllocation", { contract: fmtAmount(contractVat) })
+                                            : t(vatMatches ? "vatMatches" : "vatMustEqual", {
+                                                  rows: fmtAmount(vatTotal),
+                                                  contract: fmtAmount(contractVat),
+                                              })}
+                                    </span>
+                                    {/* The lines changed under a grid whose rows kept their
+                                        old VAT: rather than retyping every row, hand them
+                                        all back to the server's default, which spreads the
+                                        contract's VAT again when the grid is saved (PR #348
+                                        review P3-8). */}
+                                    {editable && onChange && !vatPending && !vatMatches && (
+                                        <button
+                                            type="button"
+                                            data-testid="cheque-grid-vat-respread"
+                                            className="ms-3 underline font-semibold"
+                                            onClick={() => onChange(cheques.map(c => ({ ...c, vatAmount: null })))}
+                                        >
+                                            {t("vatRespread")}
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        )}
                     </tfoot>
                 </table>
             </div>
@@ -590,5 +677,8 @@ export function toChequeRows(cheques: Cheque[]): ChequeRowInput[] {
         amount: c.amount || 0,
         narration: c.narration || null,
         mode: c.mode,
+        // Null asks the server for the pro-rata default (spec 2026-09-24 §1).
+        vatAmount: c.vatAmount ?? null,
+        rowKind: c.rowKind ?? null,
     }));
 }

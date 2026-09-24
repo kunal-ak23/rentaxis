@@ -166,7 +166,7 @@ class ChargeTypeServiceIT extends AbstractPostgresIT {
                         AccountRole.RENT_RECEIVABLE, AccountRole.PDC_RECEIVABLE, AccountRole.BANK,
                         AccountRole.CASH, AccountRole.OUTPUT_VAT, AccountRole.INPUT_VAT,
                         AccountRole.DISCOUNT_ALLOWED, AccountRole.ROUNDING_OFF,
-                        AccountRole.OPENING_BALANCE_DIFFERENCE);
+                        AccountRole.OPENING_BALANCE_DIFFERENCE, AccountRole.OUTPUT_VAT_DEFERRED);
         // every seeded particular clears its own guard
         assertThat(service.list(false)).allSatisfy(t -> assertThat(creditable).contains(t.role()));
     }

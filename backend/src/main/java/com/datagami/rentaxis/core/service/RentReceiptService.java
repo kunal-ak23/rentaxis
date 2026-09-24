@@ -192,7 +192,7 @@ public class RentReceiptService {
      * logo is read through the storage SDK — only from this account's
      * {@code shared} container or this tenant's own — and inlined.</p>
      */
-    String logoImg(LandlordOrg org, UUID tenantId) {
+    public String logoImg(LandlordOrg org, UUID tenantId) {
         String url = org != null ? org.getLogoUrl() : null;
         if (url == null || url.isBlank()) {
             return "";

@@ -87,9 +87,9 @@ public class ChargeTypeService {
      * paid the moment it posts; crediting {@code OUTPUT_VAT} would book tax the
      * tenant never charged. Under the previous "everything else is INCOME" default
      * both were accepted — the arithmetic balanced, so nothing downstream would
-     * have objected. The nine roles left out are the asset, tax and
+     * have objected. The roles left out are the asset, tax and
      * contra/adjustment ones: RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH,
-     * OUTPUT_VAT, INPUT_VAT, DISCOUNT_ALLOWED, ROUNDING_OFF and
+     * OUTPUT_VAT, OUTPUT_VAT_DEFERRED, INPUT_VAT, DISCOUNT_ALLOWED, ROUNDING_OFF and
      * OPENING_BALANCE_DIFFERENCE. Posting reaches all of them, but only ever as the
      * other side of an entry the posting rules own, never as a line a user picked.</p>
      *

@@ -10,6 +10,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import VatTaxPointRunPanel from "@/components/finance/VatTaxPointRunPanel";
 import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import {
@@ -437,6 +438,10 @@ export default function RecognitionPage() {
                     </div>
                 )}
             </div>
+
+            {/* VAT per instalment (spec 2026-09-24 §1): the manual twin of the
+                nightly tax point run, beside the month-end close it usually precedes. */}
+            {hasPermission(userRole, "canRunVatTaxPoints") && <VatTaxPointRunPanel />}
 
             <ConfirmDialog
                 isOpen={confirmOpen}

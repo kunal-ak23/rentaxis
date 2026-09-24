@@ -169,6 +169,44 @@ class TenantDeletionPostedLeaseIT extends AbstractPostgresIT {
         assertThat(triggersEnabled("journal_lines")).isTrue();
     }
 
+    @Autowired com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService terminations;
+
+    /**
+     * VAT per instalment (spec 2026-09-24 §1) adds two tenant-scoped tables, and
+     * {@code tax_invoices} is append-only (changeset 108's trigger) with changeset
+     * 89's purge exemption. A tenant whose VAT lease has declared tax points, issued
+     * tax invoices and a termination credit note must still delete cleanly — and
+     * the trigger must still refuse an ordinary delete afterwards.
+     */
+    @Test
+    void deletesATenantWithVatTaxPointsAndTaxInvoices() {
+        PostLeaseResponse posted = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000")), 4, "100040");
+        UUID leaseId = posted.lease().getId();
+        vatTaxPoints.runTo(LocalDate.of(2027, 1, 31), false);
+        terminations.terminate(leaseId, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(
+                LocalDate.of(2027, 2, 15), null, null, null), null);
+        UUID tenantId = fixtures.tenantId();
+        LandlordOrg org = orgRepo.findById(tenantId).orElseThrow();
+        assertThat(rows("vat_tax_points", tenantId)).isPositive();
+        assertThat(rows("tax_invoices", tenantId)).isPositive();
+
+        // Outside a purge the documents cannot be deleted or edited.
+        assertThatThrownBy(() -> jdbc.update("delete from tax_invoices where tenant_id = ?", tenantId))
+                .hasMessageContaining("tax invoices are immutable");
+        assertThatThrownBy(() -> jdbc.update("update tax_invoices set vat_amount = 0 where tenant_id = ?", tenantId))
+                .hasMessageContaining("tax invoices are immutable");
+
+        TenantContextHolder.clear();
+        service.deleteTenant(tenantId, org.getName());
+
+        assertThat(orgRepo.findById(tenantId)).isEmpty();
+        for (String table : List.of("tax_invoices", "vat_tax_points", "journal_entries", "leases", "cheques")) {
+            assertThat(rows(table, tenantId)).as("rows surviving in %s", table).isZero();
+        }
+    }
+
     /**
      * The tenant the production Playwright suite builds and then deletes at
      * {@code 99-cleanup} — which still answered 500 after the ledger was dealt

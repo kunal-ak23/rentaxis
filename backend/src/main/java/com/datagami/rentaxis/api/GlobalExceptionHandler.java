@@ -335,6 +335,27 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    /**
+     * Two requests wanted the same rows at once: a lock timeout, a deadlock Postgres
+     * broke (40P01), or an optimistic version check (a VAT tax point's
+     * {@code @Version}). Nothing was written; the same request a moment later
+     * succeeds — so a 409 that says so, not a 500 (PR #348 re-review N3).
+     */
+    @ExceptionHandler({org.springframework.dao.ConcurrencyFailureException.class,
+            jakarta.persistence.PessimisticLockException.class,
+            jakarta.persistence.OptimisticLockException.class,
+            jakarta.persistence.LockTimeoutException.class,
+            org.hibernate.exception.LockAcquisitionException.class,
+            org.hibernate.StaleStateException.class})
+    public ResponseEntity<Map<String, Object>> handleConcurrency(Exception ex) {
+        log.warn("Concurrent update refused: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", true,
+                "message", "This record was being changed by another request at the same time. Please try again.",
+                "status", 409
+        ));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);

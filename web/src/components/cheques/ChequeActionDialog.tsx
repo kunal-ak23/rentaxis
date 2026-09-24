@@ -5,14 +5,17 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
-import { fmtAmount } from "@/lib/api/ledger";
+import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import {
     ApiError,
     chequeApi,
+    leaseApi,
+    vatApi,
     type Cheque,
     type ChequeFailureReason,
 } from "@/lib/api/leasing";
+import { vatMoveFor, type VatMove } from "./vatMove";
 import type { RegisterAction } from "./registerActions";
 import { chequeRowIsValid } from "./chequeRowRules";
 import { chequeTitle } from "./chequeLabel";
@@ -71,6 +74,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
     const [amount, setAmount] = useState(0);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Cancelling a REGISTERED row with undeclared VAT: where that VAT goes.
+    const [vatMove, setVatMove] = useState<VatMove | null>(null);
+    const [moveVatTo, setMoveVatTo] = useState("");
 
     useEffect(() => {
         if (!action || !cheque) return;
@@ -88,6 +94,33 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         setPayeeBank(cheque.payeeBank ?? "");
         setAmount(cheque.amount);
         setError(null);
+        setVatMove(null);
+        setMoveVatTo("");
+    }, [action, cheque]);
+
+    // The server refuses to cancel a row whose VAT is still to be declared unless
+    // another pending instalment takes it (VatTaxPointService.beforeCancel), so the
+    // dialog asks which one up front. A CONTRACT-timed lease has no schedule and
+    // never gets here; a schedule the user may not read leaves the server to say so.
+    useEffect(() => {
+        if (action !== "cancel" || !cheque || cheque.status !== "REGISTERED") return;
+        let live = true;
+        Promise.all([
+            vatApi.schedule(cheque.leaseId),
+            leaseApi.cheques(cheque.leaseId),
+            // The lock date only narrows the list; a failure to read it must not hide it.
+            ledgerApi.fiscal.get().then(f => f.booksLockedThrough ?? null).catch(() => null),
+        ])
+            .then(([schedule, rows, lockedThrough]) => {
+                if (!live) return;
+                const move = vatMoveFor(cheque, rows, schedule, lockedThrough);
+                setVatMove(move);
+                setMoveVatTo(move?.defaultId ?? "");
+            })
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
     }, [action, cheque]);
 
     if (!action || !cheque) return null;
@@ -123,7 +156,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason });
                     break;
                 case "cancel":
-                    await chequeApi.cancel(cheque.id, { date, notes: notes || null });
+                    await chequeApi.cancel(cheque.id, { date, notes: notes || null }, vatMove ? moveVatTo || null : null);
                     break;
                 case "releaseOnline":
                     await chequeApi.releaseOnline(cheque.id, { date, notes: notes || null });
@@ -178,7 +211,10 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
             cancelText={tl("cancel")}
             busy={busy}
             destructive={action === "bounce" || action === "cancel"}
-            confirmDisabled={action === "replace" && !chequeRowIsValid(replacementRow)}
+            confirmDisabled={
+                (action === "replace" && !chequeRowIsValid(replacementRow))
+                || (action === "cancel" && vatMove !== null && !moveVatTo)
+            }
             confirmTestId={`cheque-${action}-confirm`}
         >
             <div className="space-y-3">
@@ -206,6 +242,42 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             value={date}
                             onChange={e => setDate(e.target.value)}
                         />
+                    </div>
+                )}
+
+                {action === "cancel" && vatMove && (
+                    <div data-testid="cheque-move-vat">
+                        {vatMove.candidates.length === 0 ? (
+                            <p className="text-[11px] text-error" data-testid="cheque-move-vat-none">
+                                {t("moveVatToNone", { vat: fmtAmount(vatMove.pendingVat) })}
+                            </p>
+                        ) : (
+                            <>
+                                <label className={label} htmlFor="cheque-move-vat-to">
+                                    {t("moveVatTo")}
+                                </label>
+                                <select
+                                    id="cheque-move-vat-to"
+                                    data-testid="cheque-move-vat-to"
+                                    className={field}
+                                    value={moveVatTo}
+                                    onChange={e => setMoveVatTo(e.target.value)}
+                                >
+                                    {vatMove.candidates.map(c => (
+                                        <option key={c.id} value={c.id}>
+                                            {t("moveVatOption", {
+                                                label: c.chequeNumber || `#${c.seqNo}`,
+                                                date: (c.chequeDate ?? "").slice(0, 10),
+                                                amount: fmtAmount(c.amount),
+                                            })}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-muted mt-1" data-testid="cheque-move-vat-hint">
+                                    {t("moveVatToHint", { vat: fmtAmount(vatMove.pendingVat) })}
+                                </p>
+                            </>
+                        )}
                     </div>
                 )}
 

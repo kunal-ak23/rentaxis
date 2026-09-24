@@ -26,6 +26,8 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
+import com.datagami.rentaxis.domain.entity.enums.ChequeRowKind;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
@@ -115,11 +117,37 @@ public class ChequeGenerationService {
     // pure helpers — the arithmetic, testable without a database
     // ------------------------------------------------------------------
 
-    /** A non-rent charge as the grid sees it: a label for the narration and an amount. */
-    public record Extra(String label, BigDecimal amount) {}
+    /**
+     * A non-rent charge as the grid sees it: a label for the narration, an amount
+     * (gross), and the VAT inside that amount with the net it is charged on (spec
+     * 2026-09-24 §1). The two-argument form carries no VAT.
+     */
+    public record Extra(String label, BigDecimal amount, BigDecimal vat, BigDecimal taxable, ChequeRowKind kind) {
+        public Extra(String label, BigDecimal amount, BigDecimal vat, BigDecimal taxable) {
+            this(label, amount, vat, taxable, ChequeRowKind.FEE);
+        }
 
-    /** One proposed grid row before it is given a renter, a property and an id. */
-    public record Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration) {}
+        public Extra(String label, BigDecimal amount) {
+            this(label, amount, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+    }
+
+    /**
+     * One proposed grid row before it is given a renter, a property and an id —
+     * with the VAT it collects and the net that VAT is charged on. The five-argument
+     * form carries no VAT.
+     */
+    public record Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration,
+                      BigDecimal vat, BigDecimal taxable, ChequeRowKind kind) {
+        public Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration,
+                   BigDecimal vat, BigDecimal taxable) {
+            this(seqNo, postingDate, chequeDate, amount, narration, vat, taxable, null);
+        }
+
+        public Row(int seqNo, LocalDate postingDate, LocalDate chequeDate, BigDecimal amount, String narration) {
+            this(seqNo, postingDate, chequeDate, amount, narration, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+    }
 
     /**
      * The grid itself: rent split into {@code n} instalments, with the deposits and
@@ -156,6 +184,33 @@ public class ChequeGenerationService {
                                       LocalDate leaseEnd,
                                       InstallmentDistribution distribution,
                                       boolean fold) {
+        return buildRows(rent, BigDecimal.ZERO, BigDecimal.ZERO, extras, n, postingDate, firstDueDate, leaseEnd,
+                distribution, fold);
+    }
+
+    /**
+     * {@link #buildRows(BigDecimal, List, int, LocalDate, LocalDate, LocalDate, InstallmentDistribution, boolean)}
+     * with the rent's VAT spread across the rent rows (spec 2026-09-24 §1).
+     *
+     * <p>Each rent row carries the rent VAT in proportion to its amount, rounded to
+     * the fils with the <b>first</b> row absorbing the remainder — the same row
+     * {@code ChequeRoundingCalculator} gives the residual to — so Σ row VAT is the
+     * rent VAT exactly. A folded extra adds its own VAT to row 1; an unfolded one
+     * carries it on its own row. A deposit carries none ({@code LeaseVat}).</p>
+     *
+     * @param rentVat     Σ {@code LeaseVat.vatOf} over the RENT lines — already inside {@code rent}.
+     * @param rentTaxable Σ of the VAT-bearing RENT lines' net.
+     */
+    public static List<Row> buildRows(BigDecimal rent,
+                                      BigDecimal rentVat,
+                                      BigDecimal rentTaxable,
+                                      List<Extra> extras,
+                                      int n,
+                                      LocalDate postingDate,
+                                      LocalDate firstDueDate,
+                                      LocalDate leaseEnd,
+                                      InstallmentDistribution distribution,
+                                      boolean fold) {
         if (n < 1) throw new BusinessRuleViolationException("Number of instalments must be at least 1");
         if (firstDueDate == null) throw new BusinessRuleViolationException("First due date is required");
         if (leaseEnd == null) throw new BusinessRuleViolationException("Lease end date is required");
@@ -173,17 +228,26 @@ public class ChequeGenerationService {
                     .distribute(rent, n, distribution == null ? InstallmentDistribution.FIRST_LARGER : distribution, TEN)
                     .amounts();
             long months = DateMath.monthsInclusive(firstDueDate, leaseEnd);
+            boolean rentTaxed = rentVat != null && rentVat.signum() > 0;
+            List<BigDecimal> vats = rentTaxed ? LeaseVat.allocateFirstAbsorbs(rentVat, amounts) : null;
+            List<BigDecimal> taxables = rentTaxed ? LeaseVat.allocateFirstAbsorbs(rentTaxable, amounts) : null;
             for (int i = 0; i < n; i++) {
                 long monthOffset = (long) Math.floor((double) i * months / n);
                 BigDecimal amount = amounts.get(i);
+                BigDecimal vat = rentTaxed ? vats.get(i) : BigDecimal.ZERO;
+                BigDecimal taxable = rentTaxed ? taxables.get(i) : BigDecimal.ZERO;
                 String narration = "Rent - " + ordinal(i + 1) + " Installment";
+                ChequeRowKind kind = i == 0 && fold && !nonRent.isEmpty() ? ChequeRowKind.MIXED : ChequeRowKind.RENT;
                 if (i == 0 && fold) {
                     for (Extra e : nonRent) {
                         amount = amount.add(e.amount());
+                        vat = vat.add(nz(e.vat()));
+                        taxable = taxable.add(nz(e.taxable()));
                         narration = narration + " | " + e.label();
                     }
                 }
-                rows.add(new Row(seq++, postingDate, firstDueDate.plusMonths(monthOffset), amount, narration));
+                rows.add(new Row(seq++, postingDate, firstDueDate.plusMonths(monthOffset), amount, narration,
+                        vat, taxable, kind));
             }
         }
 
@@ -191,7 +255,8 @@ public class ChequeGenerationService {
         // since there is no first instalment to fold them into.
         if (!fold || !hasRent) {
             for (Extra e : nonRent) {
-                rows.add(new Row(seq++, postingDate, postingDate, e.amount(), e.label()));
+                rows.add(new Row(seq++, postingDate, postingDate, e.amount(), e.label(), nz(e.vat()), nz(e.taxable()),
+                        e.kind() == null ? ChequeRowKind.FEE : e.kind()));
             }
         }
         return rows;
@@ -331,6 +396,9 @@ public class ChequeGenerationService {
             c.setPostingDate(row.postingDate());
             c.setChequeDate(row.chequeDate());
             c.setAmount(row.amount());
+            c.setVatAmount(row.vat());
+            c.setVatTaxableAmount(row.taxable());
+            c.setRowKind(row.kind());
             c.setNarration(row.narration());
             c.setMode(mode);
             c.setPayeeBank(r.payeeBank());
@@ -397,14 +465,20 @@ public class ChequeGenerationService {
         // the same helper, which is what makes Σ cheques = contract value + VAT
         // true by construction rather than by a reconciliation.
         BigDecimal rent = BigDecimal.ZERO;
+        BigDecimal rentVat = BigDecimal.ZERO;
+        BigDecimal rentTaxable = BigDecimal.ZERO;
         List<Extra> extras = new ArrayList<>();
         for (LeaseLine line : lines) {
             ChargeType type = line.getChargeType();
             BigDecimal gross = LeaseVat.grossOf(line);
             if (type != null && type.getBehaviour() == ChargeBehaviour.RENT) {
                 rent = rent.add(gross);
+                rentVat = rentVat.add(LeaseVat.vatOf(line));
+                rentTaxable = rentTaxable.add(LeaseVat.taxableOf(line));
             } else if (gross.signum() > 0) {
-                extras.add(new Extra(foldLabel(type), gross));
+                extras.add(new Extra(foldLabel(type), gross, LeaseVat.vatOf(line), LeaseVat.taxableOf(line),
+                        type != null && type.getBehaviour() == ChargeBehaviour.DEPOSIT
+                                ? ChequeRowKind.DEPOSIT : ChequeRowKind.FEE));
             }
         }
 
@@ -415,7 +489,7 @@ public class ChequeGenerationService {
         }
         int n = installments(r, lease);
         LocalDate firstDueDate = firstNonNull(r.firstDueDate(), lease.getFirstDueDate(), lease.getStartDate());
-        return buildRows(rent, extras, n, lease.getContractDate(), firstDueDate,
+        return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                 lease.getEndDate(), distribution, fold);
     }
 
@@ -538,6 +612,7 @@ public class ChequeGenerationService {
         Account fallbackDebit = null;
         boolean fallbackResolved = false;
         List<Cheque> out = new ArrayList<>(input.size());
+        Set<Cheque> fixedVat = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         int seq = 1;
         for (ChequeRowInput row : input) {
             Cheque c = row.id() != null ? drafts.get(row.id()) : blank(lease);
@@ -546,6 +621,8 @@ public class ChequeGenerationService {
             c.setChequeDate(row.chequeDate());
             c.setAmount(row.amount());
             c.setNarration(row.narration());
+            // A row that says what it collects keeps saying it; one that does not keeps its kind.
+            if (row.rowKind() != null) c.setRowKind(row.rowKind());
             c.setMode(row.mode() == null ? ChequeMode.PDC : row.mode());
             c.setChequeNumber(blankToNull(row.chequeNumber()));
             c.setPayeeBank(row.payeeBank());
@@ -561,8 +638,21 @@ public class ChequeGenerationService {
                 }
                 c.setDebitAccount(fallbackDebit);
             }
+            if (row.vatAmount() != null) {
+                if (row.vatAmount().signum() < 0 || (row.amount() != null && row.vatAmount().compareTo(row.amount()) > 0)) {
+                    throw new BusinessRuleViolationException("Row " + c.getSeqNo() + ": VAT " + row.vatAmount()
+                            + " must be between zero and the row amount.");
+                }
+                c.setVatAmount(row.vatAmount());
+                fixedVat.add(c);
+            }
             out.add(c);
         }
+        // Rows that named their VAT keep it; the rest share what is left of the
+        // contract's VAT pro rata (spec 2026-09-24 §1). Every row of a DRAFT grid is
+        // in `out`, so the Σ this aims at is the whole contract's.
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        InstalmentVat.fill(out, fixedVat, lines);
         chequeRepository.saveAll(out);
         chequeRepository.flush();
         return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
@@ -590,6 +680,17 @@ public class ChequeGenerationService {
      *                            extension's contract date, not today.
      */
     List<Cheque> appendRows(Lease lease, List<ChequeRowInput> rows, LocalDate fallbackPostingDate) {
+        return appendRows(lease, rows, fallbackPostingDate, List.of());
+    }
+
+    /**
+     * The same, with the VAT of {@code newLines} spread over the new rows (spec
+     * 2026-09-24 §1: "the new rows carry VAT allocated from the new lines only") —
+     * for a lease on the INSTALMENT model. A legacy CONTRACT lease declared its VAT
+     * at the TCO, so its rows carry none.
+     */
+    List<Cheque> appendRows(Lease lease, List<ChequeRowInput> rows, LocalDate fallbackPostingDate,
+                            List<LeaseLine> newLines) {
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         Set<String> taken = register.stream()
                 .filter(c -> c.getMode() == ChequeMode.PDC && c.getChequeNumber() != null)
@@ -601,6 +702,7 @@ public class ChequeGenerationService {
         Account fallbackDebit = null;
         boolean fallbackResolved = false;
         List<Cheque> out = new ArrayList<>(rows.size());
+        Set<Cheque> fixedVat = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         for (ChequeRowInput row : rows) {
             Cheque c = blank(lease);
             c.setSeqNo(++seq);
@@ -608,6 +710,8 @@ public class ChequeGenerationService {
             c.setChequeDate(row.chequeDate());
             c.setAmount(row.amount());
             c.setNarration(row.narration());
+            // Said by the caller, or read off the new lines when they are all one kind.
+            c.setRowKind(row.rowKind() != null ? row.rowKind() : InstalmentVat.kindOf(newLines));
             c.setMode(row.mode() == null ? ChequeMode.PDC : row.mode());
             c.setChequeNumber(blankToNull(row.chequeNumber()));
             c.setPayeeBank(row.payeeBank());
@@ -623,7 +727,31 @@ public class ChequeGenerationService {
                 }
                 c.setDebitAccount(fallbackDebit);
             }
+            if (row.vatAmount() != null && lease.getVatTiming() == VatTiming.INSTALMENT) {
+                // The grid's own rule (saveRows), on this door too (review P3-2).
+                if (row.vatAmount().signum() < 0 || (row.amount() != null && row.vatAmount().compareTo(row.amount()) > 0)) {
+                    throw new BusinessRuleViolationException("Row " + c.getSeqNo() + ": VAT " + row.vatAmount()
+                            + " must be between zero and the row amount.");
+                }
+                c.setVatAmount(row.vatAmount());
+                fixedVat.add(c);
+            }
             out.add(c);
+        }
+        if (lease.getVatTiming() == VatTiming.INSTALMENT && !fixedVat.isEmpty()) {
+            // Rows that name their VAT may not claim more than the new lines charge:
+            // the rest would get zero and the tax points would declare more than the
+            // TCO deferred (review P3-2).
+            BigDecimal claimed = InstalmentVat.rowVat(List.copyOf(fixedVat));
+            BigDecimal charged = newLines == null ? BigDecimal.ZERO : InstalmentVat.contractVat(newLines);
+            if (claimed.compareTo(charged) > 0) {
+                throw new BusinessRuleViolationException("The new rows name VAT of " + claimed.setScale(2, java.math.RoundingMode.HALF_UP)
+                        + " but the new lines charge " + charged.setScale(2, java.math.RoundingMode.HALF_UP)
+                        + "; the rows' VAT must add up to the lines'.");
+            }
+        }
+        if (lease.getVatTiming() == VatTiming.INSTALMENT && newLines != null && !newLines.isEmpty()) {
+            InstalmentVat.fill(out, fixedVat, newLines);
         }
         chequeRepository.saveAll(out);
         chequeRepository.flush();
@@ -790,6 +918,10 @@ public class ChequeGenerationService {
         LocalDate today = LocalDate.now();
         int graceDays = lease.getGracePeriodDays();
         return cheques.stream().map(c -> ChequeMapper.toDto(c, today, graceDays)).toList();
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     private static String blankToNull(String s) {

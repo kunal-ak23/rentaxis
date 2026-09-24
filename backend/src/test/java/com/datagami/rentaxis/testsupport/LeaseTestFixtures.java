@@ -147,10 +147,16 @@ public class LeaseTestFixtures {
         SecurityContextHolder.clearContext();
     }
 
+    /** The TRN every fixture landlord carries. Fifteen digits, as the FTA issues them. */
+    public static final String FIXTURE_TRN = "100123456700003";
+
     /** A new landlord org, made current. */
     public UUID newTenant() {
         LandlordOrg org = new LandlordOrg();
         org.setName("Lease-IT-" + UUID.randomUUID());
+        // A VAT-bearing contract issues a tax invoice per instalment, which needs the
+        // supplier's TRN (spec 2026-09-24 §1); a landlord without one cannot post it.
+        org.setTrn(FIXTURE_TRN);
         this.tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         return tenantId;

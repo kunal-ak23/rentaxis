@@ -15,6 +15,8 @@ import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
+import com.datagami.rentaxis.core.service.vat.VatTaxPointService;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
@@ -96,6 +98,7 @@ public class LeaseTerminationService {
     private final AccountResolver accountResolver;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final Clock clock;
+    private final VatTaxPointService vatTaxPoints;
 
     public LeaseTerminationService(LeaseRepository leaseRepository,
                                    ChequeRepository chequeRepository,
@@ -108,7 +111,8 @@ public class LeaseTerminationService {
                                    LedgerQueryService ledgerQueryService,
                                    AccountResolver accountResolver,
                                    LeaseAccessPolicy leaseAccessPolicy,
-                                   Clock clock) {
+                                   Clock clock,
+                                   VatTaxPointService vatTaxPoints) {
         this.leaseRepository = leaseRepository;
         this.chequeRepository = chequeRepository;
         this.fiscalSettings = fiscalSettings;
@@ -121,6 +125,7 @@ public class LeaseTerminationService {
         this.accountResolver = accountResolver;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.clock = clock;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     // ------------------------------------------------------------------
@@ -143,6 +148,7 @@ public class LeaseTerminationService {
 
         Split split = defaultSplit(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), t);
         RecognitionService.TerminationRecognition plan = recognitionService.previewTermination(leaseId, t);
+        VatTaxPointService.TerminationVat vat = vatTaxPoints.previewTermination(leaseId, t, plan.unearnedVat());
         return new TerminationPreviewDTO(
                 t,
                 plan.earnedThrough(),
@@ -152,7 +158,9 @@ public class LeaseTerminationService {
                 dtos(split.toReturn(), lease),
                 dtos(split.toKeep(), lease),
                 dtos(split.bounced(), lease),
-                receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())));
+                receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())),
+                new TerminationPreviewDTO.VatSettlement(vat.dueByT(), vat.pending(), vat.reversedFromDeferred(),
+                        vat.declaredAtT(), vat.creditedBack()));
     }
 
     // ------------------------------------------------------------------
@@ -190,7 +198,10 @@ public class LeaseTerminationService {
         }
 
         RecognitionService.TerminationRecognition plan = recognitionService.truncateForTermination(leaseId, t);
-        UUID tcrId = postUnearnedReversal(lease, plan, t);
+        // Steps 1–2 of spec 2026-09-24 §1: the tax points due by T post now, the rest
+        // are cancelled and their total P is settled on the TCR below.
+        VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
+        UUID tcrId = postUnearnedReversal(lease, plan, vat, t);
 
         return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser);
     }
@@ -219,8 +230,11 @@ public class LeaseTerminationService {
      *         for zero is not a document. The VAT follows the rent: there is never
      *         VAT to credit back where there is no unearned rent to credit it on.
      */
-    private UUID postUnearnedReversal(Lease lease, RecognitionService.TerminationRecognition plan, LocalDate t) {
-        if (plan.unearned().signum() <= 0) {
+    private UUID postUnearnedReversal(Lease lease, RecognitionService.TerminationRecognition plan,
+                                      VatTaxPointService.TerminationVat vat, LocalDate t) {
+        boolean instalment = lease.getVatTiming() == VatTiming.INSTALMENT;
+        boolean vatToSettle = instalment && (vat.pending().signum() > 0 || vat.unearnedVat().signum() > 0);
+        if (plan.unearned().signum() <= 0 && !vatToSettle) {
             return null;
         }
         String narration = "Unearned rent reversed on termination";
@@ -243,11 +257,40 @@ public class LeaseTerminationService {
         // the entry should see the tax as a line of its own rather than folded into
         // the rent.
         BigDecimal unearnedVat = plan.unearnedVat();
-        if (unearnedVat != null && unearnedVat.signum() > 0) {
-            String vatNarration = "VAT on unearned rent reversed on termination";
-            pairs.add(PostingRequest.pair(
-                    PostingRequest.dr(AccountRole.OUTPUT_VAT, unearnedVat).withNarration(vatNarration),
-                    LeaseChequeRegistrar.crReceivable(lease, unearnedVat).withNarration(vatNarration)));
+        if (!instalment) {
+            // A legacy CONTRACT lease declared all its VAT at the TCO: the unearned
+            // part is credited straight back out of OUTPUT_VAT, as it always was.
+            if (unearnedVat != null && unearnedVat.signum() > 0) {
+                String vatNarration = "VAT on unearned rent reversed on termination";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.OUTPUT_VAT, unearnedVat).withNarration(vatNarration),
+                        LeaseChequeRegistrar.crReceivable(lease, unearnedVat).withNarration(vatNarration)));
+            }
+        } else {
+            // Spec 2026-09-24 §1 step 4. After it the lease's deferred VAT is zero,
+            // the receivable has fallen by exactly U, and the lease's declared output
+            // VAT is the VAT on the rent actually earned.
+            if (vat.reversedFromDeferred().signum() > 0) {
+                String n = "Undeclared VAT on unearned rent reversed on termination";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.OUTPUT_VAT_DEFERRED, vat.reversedFromDeferred()).withNarration(n),
+                        LeaseChequeRegistrar.crReceivable(lease, vat.reversedFromDeferred()).withNarration(n)));
+            }
+            if (vat.declaredAtT().signum() > 0) {
+                String n = "VAT declared on termination for rent earned but not yet invoiced";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.OUTPUT_VAT_DEFERRED, vat.declaredAtT()).withNarration(n),
+                        PostingRequest.cr(AccountRole.OUTPUT_VAT, vat.declaredAtT()).withNarration(n)));
+            }
+            if (vat.creditedBack().signum() > 0) {
+                String n = "VAT credited back on termination for rent not supplied";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.OUTPUT_VAT, vat.creditedBack()).withNarration(n),
+                        LeaseChequeRegistrar.crReceivable(lease, vat.creditedBack()).withNarration(n)));
+            }
+        }
+        if (pairs.isEmpty()) {
+            return null;
         }
         JournalEntry tcr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.TCR,
@@ -258,6 +301,13 @@ public class LeaseTerminationService {
                 lease.getId(),
                 null,
                 pairs));
+        if (instalment) {
+            // The adjustment is a tax point of its own, with its document: a tax
+            // invoice for VAT declared at T, a tax credit note for VAT handed back.
+            BigDecimal adjustment = vat.declaredAtT().subtract(vat.creditedBack());
+            BigDecimal taxable = vat.pendingTaxable().subtract(plan.unearnedVatTaxable());
+            vatTaxPoints.recordTerminationAdjustment(lease, t, adjustment, taxable, tcr.getId());
+        }
         return tcr.getId();
     }
 

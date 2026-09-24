@@ -221,3 +221,5 @@ databaseChangeLog:
       file: db/changelog/changesets/106-notification-message-params.yaml
   - include:
       file: db/changelog/changesets/107-lease-grace-override.yaml
+  - include:
+      file: db/changelog/changesets/108-vat-per-instalment.yaml

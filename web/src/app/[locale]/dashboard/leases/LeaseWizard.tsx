@@ -533,6 +533,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 onGenerateNumbers={generateNumbers}
                                 propertyId={lease.propertyId}
                                 contractValueInclVat={totals.inclVat}
+                                contractVat={totals.vat}
                                 defaultInstallments={terms.paymentTerms}
                                 defaultFirstDueDate={terms.firstDueDate || terms.startDate}
                                 defaultDistribution={terms.installmentDistribution}

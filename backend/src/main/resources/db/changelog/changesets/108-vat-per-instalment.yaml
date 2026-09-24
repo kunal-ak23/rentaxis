@@ -1,0 +1,236 @@
+databaseChangeLog:
+  # Gap #56 / spec 2026-09-24-prod-readiness-features-design.md §1: output VAT is
+  # declared on each instalment's tax point, not on the contract date.
+  #
+  #   - cheques carry the VAT (and the net it is charged on) each instalment
+  #     collects, so a tax point knows its own figure and VAT201 box 1 needs no
+  #     ÷ 0.05 back-calculation;
+  #   - vat_tax_points is the schedule a nightly job posts (VTP: deferred →
+  #     output VAT), mirroring recognition_entries;
+  #   - leases.vat_timing keeps every lease already on the books on the old
+  #     CONTRACT model (its VAT is already in OUTPUT_VAT, possibly in a filed
+  #     return), while drafts and new leases take INSTALMENT;
+  #   - tax_invoices is the numbered document each VTP (or termination
+  #     adjustment) produces — product decision 2026-09-24. A tax invoice is a
+  #     legal document, so the table is append-only in the database, with the
+  #     same tenant-purge exemption changeset 89 gives the journal;
+  #   - B-01-03-002 "Output VAT – not yet due" and the OUTPUT_VAT_DEFERRED default
+  #     mapping for every tenant whose chart has the B-01-03 group.
+  - changeSet:
+      id: 108-vat-per-instalment
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column:
+                  name: vat_amount
+                  type: "numeric(14,2)"
+                  defaultValueNumeric: 0
+                  constraints: { nullable: false }
+              - column:
+                  name: vat_taxable_amount
+                  type: "numeric(14,2)"
+                  defaultValueNumeric: 0
+                  constraints: { nullable: false }
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: vat_timing
+                  type: varchar(12)
+                  defaultValue: INSTALMENT
+                  constraints: { nullable: false }
+        - sql:
+            comment: Leases already on the books keep the contract-date VAT model
+            sql: UPDATE leases SET vat_timing = 'CONTRACT' WHERE posted_at IS NOT NULL
+
+        - createTable:
+            tableName: vat_tax_points
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_vtp_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: cheque_id, type: uuid, constraints: { foreignKeyName: fk_vtp_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: property_id, type: uuid }
+              - column: { name: unit_id, type: uuid }
+              - column: { name: renter_id, type: uuid }
+              - column: { name: emirate, type: varchar(30) }
+              - column: { name: kind, type: varchar(24), constraints: { nullable: false } }
+              - column: { name: tax_point_date, type: date, constraints: { nullable: false } }
+              - column: { name: taxable_amount, type: "numeric(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: vat_amount, type: "numeric(14,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false }, defaultValue: PLANNED }
+              # Nullable so a tenant purge can let go of the journal before
+              # deleting it (LandlordOrgService.purgeLedger NULLs every inbound
+              # journal pointer; see changeset 92 for the same rule).
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_vtp_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: vat_tax_points, indexName: idx_vtp_tenant_status_date, columns: [ { column: { name: tenant_id } }, { column: { name: status } }, { column: { name: tax_point_date } } ] }
+        - createIndex: { tableName: vat_tax_points, indexName: idx_vtp_lease, columns: [ { column: { name: lease_id } } ] }
+        - createIndex: { tableName: vat_tax_points, indexName: idx_vtp_cheque, columns: [ { column: { name: cheque_id } } ] }
+        - sql:
+            comment: At most one live tax point per instalment, and each VTP journal belongs to one point
+            sql: |
+              CREATE UNIQUE INDEX ux_vtp_cheque_live ON vat_tax_points (cheque_id)
+                WHERE cheque_id IS NOT NULL AND status <> 'CANCELLED';
+              CREATE UNIQUE INDEX ux_vtp_journal ON vat_tax_points (journal_id)
+                WHERE journal_id IS NOT NULL;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_status
+                CHECK (status IN ('PLANNED', 'POSTED', 'CANCELLED'));
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT'));
+
+        - createTable:
+            tableName: tax_invoices
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: invoice_number, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: kind, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: tax_point_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ti_tax_point, referencedTableName: vat_tax_points, referencedColumnNames: id } }
+              # The VTP (or TCR) the document was issued on. Deliberately NOT a foreign
+              # key: a tenant purge NULLs every inbound journal pointer before it has
+              # set the purge exemption, and an append-only document must not be
+              # updated to let go of one. The tax point row carries the enforced link.
+              - column: { name: journal_id, type: uuid }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ti_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { foreignKeyName: fk_ti_renter, referencedTableName: renters, referencedColumnNames: id } }
+              - column: { name: property_id, type: uuid }
+              - column: { name: unit_id, type: uuid }
+              - column: { name: cheque_id, type: uuid }
+              - column: { name: issue_date, type: date, constraints: { nullable: false } }
+              - column: { name: period_start, type: date }
+              - column: { name: period_end, type: date }
+              - column: { name: supplier_name, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: supplier_trn, type: varchar(50), constraints: { nullable: false } }
+              - column: { name: supplier_address, type: text }
+              - column: { name: customer_name, type: varchar(255) }
+              - column: { name: customer_name_ar, type: varchar(255) }
+              - column: { name: customer_trn, type: varchar(50) }
+              - column: { name: property_name, type: varchar(255) }
+              - column: { name: unit_number, type: varchar(100) }
+              - column: { name: description, type: text }
+              - column: { name: taxable_amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: vat_rate, type: "numeric(5,4)", constraints: { nullable: false } }
+              - column: { name: vat_amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: total_amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: tax_invoices, columnNames: "tenant_id, invoice_number", constraintName: uq_tax_invoices_number }
+        - addUniqueConstraint: { tableName: tax_invoices, columnNames: "tax_point_id", constraintName: uq_tax_invoices_tax_point }
+        - createIndex: { tableName: tax_invoices, indexName: idx_ti_lease, columns: [ { column: { name: lease_id } } ] }
+        - createIndex: { tableName: tax_invoices, indexName: idx_ti_renter, columns: [ { column: { name: renter_id } } ] }
+        - sql:
+            comment: Tax invoices are append-only, except for the tenant purge (changeset 89's exemption)
+            splitStatements: false
+            sql: |
+              ALTER TABLE tax_invoices ADD CONSTRAINT ck_tax_invoices_kind
+                CHECK (kind IN ('TAX_INVOICE', 'CREDIT_NOTE'));
+
+              CREATE OR REPLACE FUNCTION tax_invoices_immutable() RETURNS trigger AS $$
+              BEGIN
+                IF current_setting('rentaxis.purging_tenant', true) = OLD.tenant_id::text THEN
+                  IF TG_OP = 'DELETE' THEN
+                    RETURN OLD;
+                  END IF;
+                  RETURN NEW;
+                END IF;
+                RAISE EXCEPTION 'tax invoices are immutable; issue a credit note instead';
+              END;
+              $$ LANGUAGE plpgsql;
+
+              CREATE TRIGGER trg_tax_invoices_immutable
+              BEFORE UPDATE OR DELETE ON tax_invoices
+              FOR EACH ROW EXECUTE FUNCTION tax_invoices_immutable();
+
+        - sql:
+            comment: B-01-03-002 Output VAT – not yet due, for every tenant whose chart has the B-01-03 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'B-01-03-002', 'Output VAT – not yet due',
+                     'Output VAT – not yet due', 'ضريبة المخرجات غير المستحقة بعد', 'LIABILITY', 'OTHER_LIABILITY',
+                     g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'B-01-03'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'B-01-03-002');
+        - sql:
+            comment: OUTPUT_VAT_DEFERRED tenant default mapping onto B-01-03-002
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'OUTPUT_VAT_DEFERRED', a.id
+                FROM accounts a
+               WHERE a.code = 'B-01-03-002'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'OUTPUT_VAT_DEFERRED');
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role = 'OUTPUT_VAT_DEFERRED';
+              DELETE FROM accounts a WHERE a.code = 'B-01-03-002'
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS tax_invoices;
+              DROP FUNCTION IF EXISTS tax_invoices_immutable();
+              DROP TABLE IF EXISTS vat_tax_points;
+              ALTER TABLE leases DROP COLUMN IF EXISTS vat_timing;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS vat_amount;
+              ALTER TABLE cheques DROP COLUMN IF EXISTS vat_taxable_amount;
+
+  # PR #348 review. A second changeSet in the same (unmerged) file rather than an
+  # edit to the first, so a dev database that already ran 108 picks these up
+  # instead of failing its checksum.
+  #   - vat_tax_points.version: optimistic lock beside the pessimistic one every
+  #     writer takes, so an UPDATE built from a stale read (a POSTED point seen as
+  #     PLANNED) fails instead of undoing the post (P2-1);
+  #   - leases.vat_trn: the organisation's TRN as it stood when the lease posted,
+  #     so an instalment's tax invoice can still be issued if the TRN is later
+  #     cleared (a receipt or a termination must not fail on it);
+  #   - tax_invoices.reference_note: what a credit note adjusts — the original
+  #     tax invoices' numbers and dates (Executive Regulation Art. 60).
+  - changeSet:
+      id: 108-vat-per-instalment-review
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: vat_tax_points
+            columns:
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints: { nullable: false }
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: vat_trn, type: varchar(50) }
+        - addColumn:
+            tableName: tax_invoices
+            columns:
+              - column: { name: reference_note, type: text }
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE tax_invoices DROP COLUMN IF EXISTS reference_note;
+              ALTER TABLE leases DROP COLUMN IF EXISTS vat_trn;
+              ALTER TABLE vat_tax_points DROP COLUMN IF EXISTS version;
+
+  # PR #348 re-review N1: a cheque row says what it collects, so VAT is spread by
+  # what a row is rather than guessed from its amount (a rent cheque equal to the
+  # deposit used to be taken for the deposit). Nullable: rows written before this
+  # fall back to the amount-and-narration heuristic.
+  - changeSet:
+      id: 108-vat-per-instalment-row-kind
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: row_kind, type: varchar(12) }
+        - sql:
+            comment: RENT, FEE, DEPOSIT or MIXED
+            sql: ALTER TABLE cheques ADD CONSTRAINT ck_cheques_row_kind CHECK (row_kind IN ('RENT', 'FEE', 'DEPOSIT', 'MIXED'))
+      rollback:
+        - sql:
+            sql: ALTER TABLE cheques DROP CONSTRAINT IF EXISTS ck_cheques_row_kind; ALTER TABLE cheques DROP COLUMN IF EXISTS row_kind;

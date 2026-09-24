@@ -104,6 +104,23 @@ public class Cheque extends BaseTenantEntity {
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal amount;
 
+    /**
+     * The output VAT this instalment collects — part of {@link #amount}, not on top
+     * of it (spec 2026-09-24 §1). Σ over a lease's rows equals the contract's VAT
+     * exactly; the row's tax point moves this much from deferred to output VAT.
+     */
+    @Column(name = "vat_amount", nullable = false, precision = 14, scale = 2)
+    private BigDecimal vatAmount = BigDecimal.ZERO;
+
+    /** The net value {@link #vatAmount} is charged on — VAT201 box 1 without a ÷ 0.05. */
+    @Column(name = "vat_taxable_amount", nullable = false, precision = 14, scale = 2)
+    private BigDecimal vatTaxableAmount = BigDecimal.ZERO;
+
+    /** What the row collects; null on a row that never said (see {@code ChequeRowKind}). */
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "row_kind", length = 12)
+    private com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind;
+
     @Column(length = 255)
     private String narration;
 
