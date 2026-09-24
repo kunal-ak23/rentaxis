@@ -209,12 +209,12 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                     {/* F14-05: compact cells, long text cut (full text on hover), the value date only when it
                         differs, so Amount and the actions fit a half-width pane; the actions column also sticks
                         to the inline end (the left edge in Arabic) when the pane does scroll. */}
-                    <table className="w-full">
+                    <table className="w-full table-fixed">
                         <thead><tr>
-                            <th className={thS} /><th className={thS}>{t("date")}</th>
-                            <th className={thS}>{t("description")}</th><th className={thS}>{t("reference")}</th>
-                            <th className={thS}>{t("chequeNo")}</th><th className={`${thS} text-end`}>{t("amount")}</th>
-                            <th className={`${thS} ${stickyEnd}`}><span className="sr-only">{t("actions")}</span></th>
+                            <th className={`${thS} w-6`} /><th className={`${thS} w-20`}>{t("date")}</th>
+                            <th className={thS}>{t("description")}</th><th className={`${thS} w-16`}>{t("reference")}</th>
+                            <th className={`${thS} w-12`}>{t("chequeNo")}</th><th className={`${thS} w-20 text-end`}>{t("amount")}</th>
+                            <th className={`${thS} w-16 ${stickyEnd}`}><span className="sr-only">{t("actions")}</span></th>
                         </tr></thead>
                         <tbody className="divide-y divide-border">
                             {lines.map(l => (
@@ -225,17 +225,17 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                                                    onChange={() => toggle(selLines, l.id, setSelLines)} />
                                         )}
                                     </td>
-                                    <td className={`${tdS} whitespace-nowrap`}>
-                                        <bdi dir="ltr">{dmy(l.txnDate)}</bdi>
+                                    <td className={tdS}>
+                                        <bdi dir="ltr" className="whitespace-nowrap">{dmy(l.txnDate)}</bdi>
                                         {l.valueDate && l.valueDate !== l.txnDate && (
                                             <span className="block text-[10px] text-muted" title={t("valueDate")} data-testid={`vd-${l.id}`}>
                                                 {t("valueDate")} <bdi dir="ltr">{dmy(l.valueDate)}</bdi>
                                             </span>
                                         )}
                                     </td>
-                                    <td className={tdS}><span className="block max-w-40 truncate" title={l.description}>{l.description}</span></td>
-                                    <td className={tdS}><span className="block max-w-24 truncate" title={l.reference ?? undefined}>{l.reference ?? ""}</span></td>
-                                    <td className={`${tdS} whitespace-nowrap`}>{l.chequeNo ?? ""}</td>
+                                    <td className={tdS}><span className="block truncate" title={l.description}>{l.description}</span></td>
+                                    <td className={tdS}><span className="block truncate" title={l.reference ?? undefined}>{l.reference ?? ""}</span></td>
+                                    <td className={tdS}><span className="block truncate" title={l.chequeNo ?? undefined}>{l.chequeNo ?? ""}</span></td>
                                     <td className={`${tdS} text-end whitespace-nowrap`}><Money v={l.amount} /></td>
                                     <td className={`${tdS} text-end whitespace-nowrap ${stickyEnd}`} data-testid={`sl-actions-${l.id}`}>
                                         {l.matchStatus === "CONFIRMED" && (
@@ -299,7 +299,9 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                 </section>
             </div>
 
-            <div className="sticky bottom-0 bg-surface border border-border rounded-xl px-4 py-3 flex flex-wrap items-center gap-4 text-xs" data-testid="sigma-footer">
+            {/* F14-05: z-10, above the statement pane's sticky Actions column
+                (z-[1]) — the footer must never sit under it. */}
+            <div className="sticky bottom-0 z-10 bg-surface border border-border rounded-xl px-4 py-3 flex flex-wrap items-center gap-4 text-xs" data-testid="sigma-footer">
                 <span>{t("sumStatement")}: <Money v={sumS / 100} strong testId="sum-statement" /></span>
                 <span>{t("sumBook")}: <Money v={sumB / 100} strong testId="sum-book" /></span>
                 <span>{t("difference")}: <Money v={(sumS - sumB) / 100} strong testId="sum-difference" /></span>
