@@ -54,6 +54,19 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const [reason, setReason] = useState("BOUNCE");
     const [accountId, setAccountId] = useState("");
     const [narration, setNarration] = useState("");
+    // A charge over several lines states its split (PR #353 review P2-3): prefilled with
+    // the larger line as the charge and the smaller as VAT only when that is at most 5%.
+    const multiCharge = lines.length > 1;
+    const [netText, setNetText] = useState(() => {
+        const a = lines.map(l => Math.abs(l.amount)).sort((x, y) => y - x);
+        const plausible = a.length === 2 && a[1] <= Math.round(a[0] * 5) / 100 + 0.01;
+        return (plausible ? a[0] : a.reduce((s, x) => s + x, 0)).toFixed(2);
+    });
+    const [vatText, setVatText] = useState(() => {
+        const a = lines.map(l => Math.abs(l.amount)).sort((x, y) => y - x);
+        const plausible = a.length === 2 && a[1] <= Math.round(a[0] * 5) / 100 + 0.01;
+        return (plausible ? a[1] : 0).toFixed(2);
+    });
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -88,7 +101,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const pickedTotal = sumCents(list.filter(c => picked.has(c.id)).map(c => c.amount)) / 100;
     const needsLeaf = ["charge", "interest", "suspense", "other"].includes(action) && (cands?.leaves.length ?? 0) > 1;
     const bankTrnSet = !!cands?.bankTrnSet;
-    const split = chargeSplit(lines.map(l => l.amount), vatIncluded, bankTrnSet);
+    const stated = multiCharge ? { net: Number(netText) || 0, vat: Number(vatText) || 0 } : null;
+    const split = chargeSplit(lines.map(l => l.amount), vatIncluded, bankTrnSet, stated);
     const leafName = cands?.leaves.find(l => l.id === leafId)?.name ?? t("gross");
     const abs = Math.abs(total);
 
@@ -119,6 +133,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
             case "clear": return picked.size > 0 && Math.round(pickedTotal * 100) === Math.round(total * 100);
             case "receive": case "receiveSuspense": case "bounce": case "present": return picked.size === 1;
             case "other": return !!accountId;
+            case "charge": return !split.error;
             default: return true;
         }
     })();
@@ -140,6 +155,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                         statementLineIds: lines.map(l => l.id),
                         kind: action === "charge" ? "CHARGE" : action === "interest" ? "INTEREST" : action === "suspense" ? "SUSPENSE" : "OTHER",
                         vatIncluded, accountId: action === "other" ? accountId : null, bankLeafId: leafId || null,
+                        net: action === "charge" && stated ? stated.net : null, vat: action === "charge" && stated ? stated.vat : null,
                         shared: shared ?? undefined, narration: narration || null,
                     });
             }
@@ -215,6 +231,19 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                                 <input type="checkbox" checked={vatIncluded} onChange={e => setVatIncluded(e.target.checked)} data-testid="vat-included" />
                                 {t("vatIncluded")}
                             </label>
+                        )}
+                        {multiCharge && (
+                            <div className="flex gap-3">
+                                <label><span className={`${label} block mb-1`}>{t("net")}</span>
+                                    <input className={`${field} w-28`} dir="ltr" inputMode="decimal" value={netText}
+                                           onChange={e => setNetText(e.target.value)} data-testid="charge-net" /></label>
+                                <label><span className={`${label} block mb-1`}>{t("vat")}</span>
+                                    <input className={`${field} w-28`} dir="ltr" inputMode="decimal" value={vatText}
+                                           onChange={e => setVatText(e.target.value)} data-testid="charge-vat" /></label>
+                            </div>
+                        )}
+                        {split.error && split.error !== "split" && (
+                            <p className="text-error" data-testid="charge-error">{t(`chargeError_${split.error}`)}</p>
                         )}
                         {!bankTrnSet && <p className="text-warning" data-testid="no-trn">{t("noTrnNoVat")}</p>}
                     </div>

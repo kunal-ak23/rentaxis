@@ -29,6 +29,19 @@ export function columnLetter(i: number): string {
     return s;
 }
 
+export const DATE_FORMATS = ["dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "dd-MMM-yyyy", "dd/MM/yy", "yyyy-MM-dd", "MM/dd/yyyy"];
+
+/** The format the first dates look like, or null when the grid does not say. */
+export function guessDateFormat(sample: string[]): string | null {
+    const s = sample.map(x => x.trim()).filter(Boolean);
+    if (s.length === 0) return null;
+    if (s.every(x => /^\d{4}-\d{2}-\d{2}/.test(x))) return "yyyy-MM-dd";
+    if (s.every(x => /^\d{2}-[A-Za-z]{3}-\d{4}/.test(x))) return "dd-MMM-yyyy";
+    if (s.every(x => /^\d{2}\/\d{2}\/\d{4}/.test(x))) return "dd/MM/yyyy";
+    if (s.every(x => /^\d{2}\/\d{2}\/\d{2}(\D|$)/.test(x))) return "dd/MM/yy";
+    return null;
+}
+
 const REQUIRED: Record<AmountMode, StatementField[]> = {
     SPLIT: ["txnDate", "description", "debit", "credit"],
     SIGNED: ["txnDate", "description", "amount"],
@@ -106,9 +119,16 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                 columns: saved?.columns ?? guessColumns(r.grid[headerRow - 1] ?? []),
                 amountMode: saved?.amountMode ?? "SPLIT",
                 dateFormats: saved?.dateFormats ?? null,
+                decimalSeparator: saved?.decimalSeparator ?? ".",
                 chequeNoPattern: saved?.chequeNoPattern ?? null,
                 matchWindowDays: saved?.matchWindowDays ?? null,
             });
+            if (!saved?.dateFormats?.length) {
+                const cols = guessColumns(r.grid[headerRow - 1] ?? []);
+                const idx = (r.grid[headerRow - 1] ?? []).findIndex(h => h?.trim() === cols.txnDate);
+                const guess = idx < 0 ? null : guessDateFormat(r.grid.slice(headerRow).map(row => row[idx] ?? ""));
+                if (guess) setMapping(m => (m ? { ...m, dateFormats: [guess] } : m));
+            }
         } else {
             setMapping(null);
         }
@@ -128,6 +148,8 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
     const header = mapping ? (grid[mapping.headerRow - 1] ?? []) : [];
     const options = header.map((h, i) => ({ value: h?.trim() ? h.trim() : columnLetter(i), text: `${columnLetter(i)} · ${h ?? ""}` }));
     const missing = mapping ? REQUIRED[mapping.amountMode].filter(f => !mapping.columns[f]) : [];
+    // The date format is the accountant's statement, never a guess (PR #353 review).
+    const noDateFormat = !!mapping && !(mapping.dateFormats && mapping.dateFormats.length > 0);
 
     const saveAndImport = async () => {
         if (!file || !mapping) return;
@@ -204,6 +226,20 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                                 <input type="number" min={2} className={`${field} w-20`} value={mapping.firstDataRow}
                                        onChange={e => setMapping({ ...mapping, firstDataRow: Math.max(mapping.headerRow + 1, Number(e.target.value) || 2) })} />
                             </label>
+                            <label className="text-xs"><span className={`${label} block mb-1`}>{t("dateFormat")} *</span>
+                                <select className={field} data-testid="map-date-format" value={mapping.dateFormats?.[0] ?? ""}
+                                        onChange={e => setMapping({ ...mapping, dateFormats: e.target.value ? [e.target.value] : null })}>
+                                    <option value="">{t("notMapped")}</option>
+                                    {DATE_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                            </label>
+                            <label className="text-xs"><span className={`${label} block mb-1`}>{t("decimalSeparator")}</span>
+                                <select className={field} data-testid="map-decimal" value={mapping.decimalSeparator ?? "."}
+                                        onChange={e => setMapping({ ...mapping, decimalSeparator: e.target.value as "." | "," })}>
+                                    <option value=".">1,234.50</option>
+                                    <option value=",">1.234,50</option>
+                                </select>
+                            </label>
                             <label className="text-xs"><span className={`${label} block mb-1`}>{t("amountMode")}</span>
                                 <select className={field} data-testid="map-amount-mode" value={mapping.amountMode}
                                         onChange={e => setMapping({ ...mapping, amountMode: e.target.value as AmountMode })}>
@@ -236,12 +272,17 @@ export function StatementImportDialog({ bankAccountId, bankName, onClose, onImpo
                                 </tbody></table>
                             </div>
                         </details>
-                        <button type="button" className={primary} data-testid="map-save" disabled={busy || missing.length > 0}
+                        <button type="button" className={primary} data-testid="map-save" disabled={busy || missing.length > 0 || noDateFormat}
                                 onClick={saveAndImport}>{t("saveAndImport")}</button>
                     </div>
                 )}
 
-                {result && result.status !== "PROFILE_REQUIRED" && !done && (
+                {result?.status === "ALREADY_IMPORTED" && (
+                    <div role="alert" data-testid="already-imported" className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
+                        {result.reason}
+                    </div>
+                )}
+                {result && result.status !== "PROFILE_REQUIRED" && result.status !== "ALREADY_IMPORTED" && !done && (
                     <ResultCard result={result} />
                 )}
                 {result && result.status === "PREVIEW" && !mapping && !done && (

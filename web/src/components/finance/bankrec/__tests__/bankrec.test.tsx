@@ -113,6 +113,7 @@ describe("the mapping wizard", () => {
         expect(screen.getByTestId("map-header-row")).toHaveValue(2);
         expect(screen.getByTestId("map-txnDate")).toHaveValue("Transaction Date");
         expect(screen.getByTestId("map-credit")).toHaveValue("Credit");
+        expect(screen.getByTestId("map-date-format")).toHaveValue("dd/MM/yyyy");
         // Live preview from a dry run carrying the unsaved mapping.
         expect(await screen.findByTestId("import-preview")).toHaveTextContent("CREDIT INTEREST");
         const previewCall = calls.find(c => c.url.includes("/imports") && c.body && (c.body as Record<string, unknown>).profile);
@@ -157,8 +158,20 @@ const WS = {
           matchStatus: null, reversalOfId: null, reversedById: null },
     ],
     matches: [{ id: "m1", method: "AUTO_GROUP", status: "SUGGESTED", confidence: "MEDIUM", statementLineIds: ["b"],
-        journalLineIds: ["j1", "j2"], statementTotal: 50000, bookTotal: 50000, createdAt: "2026-09-30T10:00:00Z", confirmedAt: null }],
+        journalLineIds: ["j1", "j2"], statementTotal: 50000, bookTotal: 50000, createdAt: "2026-09-30T10:00:00Z", confirmedAt: null,
+        createdDocTypes: [], reverseOnDefault: null }],
 };
+
+describe("the same file again", () => {
+    it("says it was already imported and offers nothing to commit", async () => {
+        stubFetch([{ match: "/imports", body: { ...importResult("ALREADY_IMPORTED", { rows: [], linesNew: 0, linesDuplicate: 7 }),
+            reason: "This file was already imported on 30/09/2026 (september.csv); nothing was imported" } }]);
+        renderIn("en", <StatementImportDialog bankAccountId="ba-1" bankName="EI" onClose={() => {}} onImported={() => {}} />);
+        fireEvent.change(screen.getByTestId("import-file"), { target: { files: [new File(["x"], "s.csv")] } });
+        expect(await screen.findByTestId("already-imported")).toHaveTextContent("already imported on 30/09/2026");
+        expect(screen.queryByTestId("import-commit")).not.toBeInTheDocument();
+    });
+});
 
 describe("the workspace", () => {
     it("sums both sides and enables Match only at a zero difference", async () => {
@@ -199,14 +212,48 @@ describe("the workspace", () => {
     });
 });
 
+describe("undo and reverse", () => {
+    const confirmed = (id: string, desc: string, docs: string[], reverseOnDefault: string | null) => ({
+        line: line(id, desc, -10, { matchId: `m-${id}`, matchStatus: "CONFIRMED" }),
+        match: { id: `m-${id}`, method: "CREATED", status: "CONFIRMED", confidence: null, statementLineIds: [id],
+            journalLineIds: [], statementTotal: -10, bookTotal: -10, createdAt: "2026-09-30T10:00:00Z", confirmedAt: null,
+            createdDocTypes: docs, reverseOnDefault },
+    });
+
+    it("is offered only where the server can reverse, and asks for the date first", async () => {
+        const bnk = confirmed("c1", "SERVICE CHARGE", ["BNK"], "2026-09-15");
+        const cbr = confirmed("c2", "RTN CHQ", ["CBR"], null);
+        stubFetch([{ match: "/workspace", body: { ...WS, statementLines: [bnk.line, cbr.line], bookItems: [], matches: [bnk.match, cbr.match] } },
+            { method: "DELETE", match: "/matches/", body: bnk.match }]);
+        renderIn("en", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await screen.findByTestId("sl-SERVICE CHARGE");
+        expect(screen.queryByTestId("undo-reverse-m-c2")).not.toBeInTheDocument();
+        expect(screen.getByTestId("undo-m-c2")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("undo-reverse-m-c1"));
+        expect(calls.some(c => c.method === "DELETE")).toBe(false);
+        expect(screen.getByTestId("reverse-on")).toHaveValue("2026-09-15");
+        fireEvent.change(screen.getByTestId("reverse-on"), { target: { value: "2026-09-20" } });
+        fireEvent.click(screen.getByTestId("reverse-go"));
+        await waitFor(() => expect(calls.some(c => c.method === "DELETE")).toBe(true));
+        const url = calls.find(c => c.method === "DELETE")!.url;
+        expect(url).toContain("reverseCreated=true");
+        expect(url).toContain("reverseOn=2026-09-20");
+    });
+});
+
 describe("create-from-line dialogs", () => {
     it("offers what fits the line's direction", () => {
         expect(actionsFor([line("x", "C", 10)])).toEqual(["clear", "receive", "interest", "suspense", "other"]);
         expect(actionsFor([line("x", "D", -10)])).toEqual(["bounce", "present", "charge", "other"]);
         expect(actionsFor([line("x", "D", -10), line("y", "V", -1)])).toEqual(["charge", "other"]);
-        expect(chargeSplit([-50, -2.5], false, true)).toEqual({ net: 50, vat: 2.5, gross: 52.5 });
-        expect(chargeSplit([-52.5], true, true)).toEqual({ net: 50, vat: 2.5, gross: 52.5 });
-        expect(chargeSplit([-52.5], true, false)).toEqual({ net: 52.5, vat: 0, gross: 52.5 });
+        // Several lines only with the split stated; VAT at most 5% of the net.
+        expect(chargeSplit([-50, -2.5], false, true).error).toBe("split");
+        expect(chargeSplit([-50, -2.5], false, true, { net: 50, vat: 2.5 })).toEqual({ net: 50, vat: 2.5, gross: 52.5, error: null });
+        expect(chargeSplit([-25, -25], false, true, { net: 25, vat: 25 }).error).toBe("rate");
+        expect(chargeSplit([-25, -25], false, true, { net: 40, vat: 2 }).error).toBe("sum");
+        expect(chargeSplit([-50, -2.5], false, false, { net: 50, vat: 2.5 }).error).toBe("trn");
+        expect(chargeSplit([-52.5], true, true)).toEqual({ net: 50, vat: 2.5, gross: 52.5, error: null });
+        expect(chargeSplit([-52.5], true, false)).toEqual({ net: 52.5, vat: 0, gross: 52.5, error: null });
     });
 
     it("previews the charge with its VAT, and posts one BNK for both lines on the chosen leaf", async () => {
@@ -230,8 +277,22 @@ describe("create-from-line dialogs", () => {
         fireEvent.click(screen.getByTestId("action-submit"));
         await waitFor(() => expect(onDone).toHaveBeenCalled());
         expect(calls.find(c => c.url.includes("/lines/actions/post"))!.body).toMatchObject({
-            statementLineIds: ["d1", "d2"], kind: "CHARGE", bankLeafId: "leaf-m",
+            statementLineIds: ["d1", "d2"], kind: "CHARGE", bankLeafId: "leaf-m", net: 50, vat: 2.5,
         });
+    });
+
+    it("refuses a two-line charge whose VAT would be more than 5% before sending it", async () => {
+        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], bounce: [], present: [],
+            suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
+        renderIn("en", <LineActionDialog lines={[line("x", "SMS ALERT FEE", -25), line("y", "SMS ALERT FEE", -25)]}
+                                          onClose={() => {}} onDone={() => {}} />);
+        // Not prefilled as 25 + 25 VAT: the whole 50 is the charge until the user says otherwise.
+        expect(await screen.findByTestId("charge-net")).toHaveValue("50.00");
+        expect(screen.getByTestId("charge-vat")).toHaveValue("0.00");
+        fireEvent.change(screen.getByTestId("charge-net"), { target: { value: "25" } });
+        fireEvent.change(screen.getByTestId("charge-vat"), { target: { value: "25" } });
+        expect(screen.getByTestId("charge-error")).toHaveTextContent(en.BankRec.chargeError_rate);
+        expect(screen.getByTestId("action-submit")).toBeDisabled();
     });
 
     it("pre-selects the cheque by number, and says when there is no bank TRN", async () => {

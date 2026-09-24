@@ -3607,6 +3607,13 @@
     "pdcReceivable": "شيكات مؤجلة مستحقة",
     "selectCheques": "اختر الشيكات ضمن هذا الإيداع؛ يجب أن يساوي مجموعها البند.",
     "chequesTotal": "المختار {total} من {line}",
-    "linesCol": "البنود"
+    "linesCol": "البنود",
+    "dateFormat": "صيغة التاريخ",
+    "decimalSeparator": "الفاصل العشري",
+    "reverseOn": "العكس بتاريخ",
+    "reverseConfirm": "عكس",
+    "chargeError_sum": "يجب أن يساوي الصافي والضريبة مجموع البنود.",
+    "chargeError_trn": "لا يوجد رقم ضريبي للبنك: لا يمكن استرداد ضريبة المدخلات.",
+    "chargeError_rate": "الضريبة أكثر من 5% من الصافي؛ قيّد البنود كرسوم منفصلة."
   }
 }

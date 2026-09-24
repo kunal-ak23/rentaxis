@@ -208,7 +208,10 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                                     <td className={`${td} text-end whitespace-nowrap`}>
                                         {l.matchStatus === "CONFIRMED" && (
                                             <UndoButton m={matchById.get(l.matchId!)} busy={busy}
-                                                onUndo={reverse => act(async () => { await bankRecApi.undo(l.matchId!, { reverseCreated: reverse }); return null; })} />
+                                                onUndo={(reverse, on) => act(async () => {
+                                                    await bankRecApi.undo(l.matchId!, reverse ? { reverseCreated: true, reverseOn: on } : {});
+                                                    return null;
+                                                })} />
                                         )}
                                         {lineActions(l) && (
                                             <button type="button" className={small} aria-label={t("actions")} data-testid={`act-${l.description}`}
@@ -289,16 +292,34 @@ function SuggestionRow({ m, n, busy, onConfirm, onReject }: {
     );
 }
 
-function UndoButton({ m, busy, onUndo }: { m: Match | undefined; busy: boolean; onUndo: (reverse: boolean) => void }) {
+/**
+ * Undo, and — only where the server can do it (a BNK or a BPC; PR #353 review) —
+ * undo and reverse, after a confirmation that shows and lets the user change the
+ * reversal date (the entry's own date while its period is open, else today).
+ */
+function UndoButton({ m, busy, onUndo }: { m: Match | undefined; busy: boolean; onUndo: (reverse: boolean, on?: string) => void }) {
     const t = useTranslations("BankRec");
+    const [asking, setAsking] = useState(false);
+    const [on, setOn] = useState(m?.reverseOnDefault ?? "");
     if (!m) return null;
     return (
-        <span className="inline-flex gap-1 me-1">
-            <button type="button" className={small} disabled={busy} onClick={() => onUndo(false)} title={t("undo")} aria-label={t("undo")}>
+        <span className="inline-flex gap-1 me-1 items-center">
+            <button type="button" className={small} disabled={busy} onClick={() => onUndo(false)} title={t("undo")} aria-label={t("undo")}
+                    data-testid={`undo-${m.id}`}>
                 <Undo2 size={12} />
             </button>
-            {m.method === "CREATED" && (
-                <button type="button" className={small} disabled={busy} onClick={() => onUndo(true)}>{t("undoReverse")}</button>
+            {m.reverseOnDefault && !asking && (
+                <button type="button" className={small} disabled={busy} onClick={() => { setOn(m.reverseOnDefault ?? ""); setAsking(true); }}
+                        data-testid={`undo-reverse-${m.id}`}>{t("undoReverse")}</button>
+            )}
+            {asking && (
+                <span className="inline-flex items-center gap-1 text-[11px]" data-testid={`reverse-confirm-${m.id}`}>
+                    {t("reverseOn")}
+                    <input type="date" className={`${field} py-1`} value={on} onChange={e => setOn(e.target.value)} data-testid="reverse-on" />
+                    <button type="button" className={small} disabled={busy || !on} data-testid="reverse-go"
+                            onClick={() => { setAsking(false); onUndo(true, on); }}>{t("reverseConfirm")}</button>
+                    <button type="button" className={small} onClick={() => setAsking(false)}>{t("cancel")}</button>
+                </span>
             )}
         </span>
     );

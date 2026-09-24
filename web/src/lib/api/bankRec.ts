@@ -45,6 +45,8 @@ export type Profile = {
     amountMode: AmountMode;
     chequeNoPattern?: string | null;
     matchWindowDays?: number | null;
+    /** "." or ","; the other one groups thousands. */
+    decimalSeparator?: "." | "," | null;
 };
 
 export type PreviewRow = {
@@ -59,7 +61,7 @@ export type PreviewRow = {
     duplicate: boolean;
 };
 
-export type ImportStatus = "PROFILE_REQUIRED" | "INVALID" | "PREVIEW" | "IMPORTED";
+export type ImportStatus = "PROFILE_REQUIRED" | "INVALID" | "PREVIEW" | "IMPORTED" | "ALREADY_IMPORTED";
 
 export type ImportResult = {
     status: ImportStatus;
@@ -143,6 +145,10 @@ export type Match = {
     bookTotal: number;
     createdAt: string;
     confirmedAt: string | null;
+    /** A CREATED match's documents. */
+    createdDocTypes: string[];
+    /** The date "undo and reverse" defaults to; null when this match's entries are not reversed from here. */
+    reverseOnDefault: string | null;
 };
 
 export type Workspace = {
@@ -230,21 +236,35 @@ export const bankRecApi = {
     present: (body: { statementLineId: string; issuedChequeId: string }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/present`, body),
     post: (body: { statementLineIds: string[]; kind: PostKind; vatIncluded?: boolean; accountId?: string | null;
-                   propertyId?: string | null; bankLeafId?: string | null; shared?: boolean; narration?: string | null }) =>
+                   propertyId?: string | null; bankLeafId?: string | null; shared?: boolean; narration?: string | null;
+                   net?: number | null; vat?: number | null }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/post`, body),
     chequeEvidence: (ids: string[]) =>
         ids.length === 0 ? Promise.resolve([] as ChequeEvidence[]) : apiGet<ChequeEvidence[]>(`/cheques/bank-evidence${qs({ ids })}`),
 };
 
-/** The charge split the server would post (BankStatementPostingService.chargeSplit), for the dialog preview. */
-export function chargeSplit(debits: number[], vatIncluded: boolean, bankTrnSet: boolean): { net: number; vat: number; gross: number } {
+/**
+ * The charge split the server would post (BankStatementPostingService.chargeSplit):
+ * one line whole, or VAT = 5/105 of it with vatIncluded; several lines only with
+ * the net and VAT stated. `error` says why the server would refuse.
+ */
+export function chargeSplit(debits: number[], vatIncluded: boolean, bankTrnSet: boolean,
+                            stated?: { net: number; vat: number } | null): { net: number; vat: number; gross: number; error: string | null } {
     const cents = (n: number) => Math.round(Math.abs(n) * 100);
     const gross = debits.reduce((s, d) => s + cents(d), 0);
-    if (!bankTrnSet || debits.length === 0) return { net: gross / 100, vat: 0, gross: gross / 100 };
-    let vat = 0;
-    if (debits.length === 2) vat = Math.min(...debits.map(cents));
-    else if (vatIncluded) vat = Math.round((gross * 5) / 105);
-    return { net: (gross - vat) / 100, vat: vat / 100, gross: gross / 100 };
+    if (stated) {
+        const net = Math.round(stated.net * 100);
+        const vat = Math.round(stated.vat * 100);
+        let error: string | null = null;
+        if (net + vat !== gross) error = "sum";
+        else if (vat > 0 && !bankTrnSet) error = "trn";
+        else if (vat > Math.round(net * 0.05) + 1) error = "rate";
+        return { net: net / 100, vat: vat / 100, gross: gross / 100, error };
+    }
+    if (debits.length > 1) return { net: gross / 100, vat: 0, gross: gross / 100, error: "split" };
+    if (!bankTrnSet || !vatIncluded) return { net: gross / 100, vat: 0, gross: gross / 100, error: null };
+    const vat = Math.round((gross * 5) / 105);
+    return { net: (gross - vat) / 100, vat: vat / 100, gross: gross / 100, error: null };
 }
 
 /** dd/MM/yyyy for a `yyyy-MM-dd`. */

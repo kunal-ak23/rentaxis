@@ -3607,6 +3607,13 @@
     "pdcReceivable": "PDC receivable",
     "selectCheques": "Select the cheques in this credit; they must add up to the line.",
     "chequesTotal": "Selected {total} of {line}",
-    "linesCol": "Lines"
+    "linesCol": "Lines",
+    "dateFormat": "Date format",
+    "decimalSeparator": "Decimal separator",
+    "reverseOn": "Reverse on",
+    "reverseConfirm": "Reverse",
+    "chargeError_sum": "Net and VAT must add up to the lines.",
+    "chargeError_trn": "No bank TRN on file: no input VAT can be claimed.",
+    "chargeError_rate": "VAT is more than 5% of the net; book the lines as separate charges."
   }
 }
