@@ -235,3 +235,5 @@ databaseChangeLog:
       file: db/changelog/changesets/113-ap-opening-cheque-link.yaml
   - include:
       file: db/changelog/changesets/114-bank-statements.yaml
+  - include:
+      file: db/changelog/changesets/115-bank-reconciliations.yaml

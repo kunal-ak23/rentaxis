@@ -1,0 +1,105 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §4 (PR 5): the reconciliation statement, finalize
+  # and the per-bank lock. The spec calls this changeset 114; 113 and 114 went to
+  # PR #352's link and PR #353's bank statements, so it is 115.
+  #
+  #   - bank_reconciliations: one period of one bank account. DRAFT while it is
+  #     worked on (one at a time per bank account), FINALIZED once signed off,
+  #     REOPENED when an admin took it back (the row stays for audit). The figures
+  #     and the item lists (snapshot) are stored at finalize;
+  #   - bank_rec_opening_items: the items outstanding at the first
+  #     reconciliation's start that were booked before the system (PACT-era
+  #     unpresented cheques inside the OB bank balance). They are matchable, so
+  #     bank_match_book_items.opening_item_id gets its FK here;
+  #   - bank_accounts.rec_start_date (the first finalized reconciliation's start)
+  #     and bank_accounts.reconciled_through (the lock);
+  #   - tenant_fiscal_settings.bank_rec_started: set when a tenant creates its
+  #     first reconciliation. While it is false, PostingService takes no bank lock
+  #     and runs no query for it (the fast path).
+  - changeSet:
+      id: 115-bank-reconciliations
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: bank_accounts
+            columns:
+              - column: { name: rec_start_date, type: date }
+              - column: { name: reconciled_through, type: date }
+
+        - addColumn:
+            tableName: tenant_fiscal_settings
+            columns:
+              - column: { name: bank_rec_started, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+
+        - createTable:
+            tableName: bank_reconciliations
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_reconciliations_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_reconciliations_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: period_from, type: date, constraints: { nullable: false } }
+              - column: { name: period_to, type: date, constraints: { nullable: false } }
+              # While DRAFT: the typed balances (null = derived from the statement lines).
+              # From FINALIZED on: the figures the reconciliation was signed off with.
+              - column: { name: statement_opening, type: "numeric(14,2)" }
+              - column: { name: statement_closing, type: "numeric(14,2)" }
+              - column: { name: book_balance, type: "numeric(14,2)" }
+              - column: { name: deposits_in_transit, type: "numeric(14,2)" }
+              - column: { name: unpresented_payments, type: "numeric(14,2)" }
+              - column: { name: unrecorded_items, type: "numeric(14,2)" }
+              - column: { name: difference, type: "numeric(14,2)" }
+              - column: { name: status, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: finalized_by, type: uuid }
+              - column: { name: finalized_at, type: timestamptz }
+              - column: { name: reopened_by, type: uuid }
+              - column: { name: reopened_at, type: timestamptz }
+              - column: { name: reopen_reason, type: text }
+              - column: { name: snapshot, type: jsonb }
+        - sql:
+            comment: Closed status set, an ordered period, one draft and one finalized reconciliation per period start
+            sql: |
+              ALTER TABLE bank_reconciliations
+                ADD CONSTRAINT ck_bank_reconciliations_status CHECK (status IN ('DRAFT', 'FINALIZED', 'REOPENED')),
+                ADD CONSTRAINT ck_bank_reconciliations_period CHECK (period_to >= period_from);
+              CREATE UNIQUE INDEX ux_bank_reconciliations_draft ON bank_reconciliations (bank_account_id) WHERE status = 'DRAFT';
+              CREATE UNIQUE INDEX ux_bank_reconciliations_finalized ON bank_reconciliations (bank_account_id, period_from)
+                WHERE status = 'FINALIZED';
+        - createIndex: { tableName: bank_reconciliations, indexName: idx_bank_reconciliations_account, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } }, { column: { name: period_to } } ] }
+
+        - createTable:
+            tableName: bank_rec_opening_items
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_rec_opening_items_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_rec_opening_items_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: item_date, type: date, constraints: { nullable: false } }
+              - column: { name: description, type: text, constraints: { nullable: false } }
+              - column: { name: reference, type: varchar(200) }
+              - column: { name: cheque_no, type: varchar(50) }
+              # Signed book-side: + a deposit in transit, − an unpresented payment.
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz }
+        - sql:
+            comment: An opening item moves money
+            sql: ALTER TABLE bank_rec_opening_items ADD CONSTRAINT ck_bank_rec_opening_items_amount CHECK (amount <> 0);
+        - createIndex: { tableName: bank_rec_opening_items, indexName: idx_bank_rec_opening_items_account, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } } ] }
+        - addForeignKeyConstraint:
+            baseTableName: bank_match_book_items
+            baseColumnNames: opening_item_id
+            constraintName: fk_bank_match_items_opening_item
+            referencedTableName: bank_rec_opening_items
+            referencedColumnNames: id
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE bank_match_book_items DROP CONSTRAINT IF EXISTS fk_bank_match_items_opening_item;
+              DROP TABLE IF EXISTS bank_rec_opening_items;
+              DROP TABLE IF EXISTS bank_reconciliations;
+              ALTER TABLE tenant_fiscal_settings DROP COLUMN IF EXISTS bank_rec_started;
+              ALTER TABLE bank_accounts DROP COLUMN IF EXISTS reconciled_through;
+              ALTER TABLE bank_accounts DROP COLUMN IF EXISTS rec_start_date;

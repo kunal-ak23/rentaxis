@@ -50,9 +50,13 @@ public class JournalService {
     private final LeaseRepository leases;
     private final RenterRepository renters;
 
+    /** Finance-ops spec §4: a reversal inside a reconciled bank period is refused before any work. */
+    private final BankLockService bankLock;
+
     public JournalService(PostingService posting, JournalEntryRepository entries, JournalLineRepository lines,
                           PropertyRepository properties, UnitRepository units, LeaseRepository leases,
-                          RenterRepository renters) {
+                          RenterRepository renters, BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.posting = posting;
         this.entries = entries;
         this.lines = lines;
@@ -151,6 +155,7 @@ public class JournalService {
         requireManual(entry);
         ReverseRequest req = r == null ? new ReverseRequest(null, null) : r;
         LocalDate date = req.date() == null ? LocalDate.now() : req.date();
+        bankLock.assertOpenForEntry(id, date);
         // PostingService owns the rest of the immutability rule: an entry that is
         // already REVERSED, and a reversal entry itself, are refused there.
         return toDto(posting.reverse(id, date, req.reason()), true);

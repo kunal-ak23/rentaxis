@@ -41,11 +41,13 @@ public class PostingService {
     private final AccountResolver resolver;
     private final EntryNumberService numbers;
     private final TenantFiscalSettingsService fiscal;
+    private final BankLockService bankLock;
 
     public PostingService(JournalEntryRepository entries, JournalLineRepository lines, AccountRepository accounts,
-                          AccountResolver resolver, EntryNumberService numbers, TenantFiscalSettingsService fiscal) {
+                          AccountResolver resolver, EntryNumberService numbers, TenantFiscalSettingsService fiscal,
+                          BankLockService bankLock) {
         this.entries = entries; this.lines = lines; this.accounts = accounts;
-        this.resolver = resolver; this.numbers = numbers; this.fiscal = fiscal;
+        this.resolver = resolver; this.numbers = numbers; this.fiscal = fiscal; this.bankLock = bankLock;
     }
 
     @Transactional
@@ -67,7 +69,6 @@ public class PostingService {
         e.setPostedBy(currentUserId());
         e.setPostedAt(Instant.now());
         e.setStatus(JournalStatus.POSTED);
-        e.setEntryNumber(numbers.next(r.docType(), r.entryDate()));
 
         BigDecimal dr = BigDecimal.ZERO, cr = BigDecimal.ZERO;
         Map<Integer, List<JournalLine>> pairs = new HashMap<>();
@@ -97,6 +98,11 @@ public class PostingService {
         if (dr.compareTo(cr) != 0) {
             throw new BusinessRuleViolationException("Journal entry is not balanced: debit " + dr + " vs credit " + cr);
         }
+        // Finance-ops spec §4: the bank lock, no doc-type exemptions. Before the
+        // entry number, so a posting waiting on a finalize (FOR SHARE against its
+        // FOR UPDATE) never holds the number sequence while it waits.
+        bankLock.assertOpen(tenantOf(e), e.getLines().stream().map(l -> l.getAccount().getId()).toList(), r.entryDate());
+        e.setEntryNumber(numbers.next(r.docType(), r.entryDate()));
         linkContraAccounts(pairs);
         return entries.save(e);
     }
@@ -165,6 +171,11 @@ public class PostingService {
         //      telling the truth — the entry really does belong to the import's
         //      history — not a bug to filter away.
         if (original.getDocType() != JournalDocType.OB && original.getImportBatchId() == null) fiscal.assertOpen(date);
+        List<JournalLine> originalLines = lines.findByEntry_IdOrderByLineNoAsc(original.getId());
+        // The bank lock has no exemption: an OB or import mirror dated inside a
+        // reconciled period would change it just the same (spec §4). The check is on
+        // the MIRROR's date — a September entry reversed in October is allowed.
+        bankLock.assertOpen(original.getTenantId(), originalLines.stream().map(l -> l.getAccount().getId()).toList(), date);
 
         JournalEntry rev = new JournalEntry();
         rev.setDocType(original.getDocType() == JournalDocType.TCO ? JournalDocType.TCR : original.getDocType());
@@ -179,7 +190,7 @@ public class PostingService {
         rev.setReversalOfId(original.getId());
         rev.setPostedBy(currentUserId()); rev.setPostedAt(Instant.now());
         rev.setEntryNumber(numbers.next(rev.getDocType(), date));
-        for (JournalLine ol : lines.findByEntry_IdOrderByLineNoAsc(original.getId())) {
+        for (JournalLine ol : originalLines) {
             JournalLine nl = new JournalLine();
             nl.setAccount(ol.getAccount());
             // The counter-account travels with the line: the mirror row has to face the
@@ -211,6 +222,13 @@ public class PostingService {
         if (ref instanceof ByRole br) return resolver.resolve(br.role(), propertyId);
         UUID id = ((ById) ref).accountId();
         return accounts.findById(id).orElseThrow(() -> new NotFoundException("Account not found: " + id));
+    }
+
+    /** The tenant the entry is written for: the request's, else the (tenant-scoped) accounts'. */
+    private static UUID tenantOf(JournalEntry e) {
+        UUID t = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (t != null) return t;
+        return e.getLines().isEmpty() ? null : e.getLines().get(0).getAccount().getTenantId();
     }
 
     private static UUID currentUserId() {

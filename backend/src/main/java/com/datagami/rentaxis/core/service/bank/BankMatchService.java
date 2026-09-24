@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.bank;
 import com.datagami.rentaxis.api.dto.bank.BankRecDTOs;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.ledger.BankLockService;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.payables.IssuedChequeService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -52,11 +53,14 @@ public class BankMatchService {
     private final Clock clock;
     private final com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
+    private final BankLockService bankLock;
 
     public BankMatchService(BankAccountLedgerService ledgers, NamedParameterJdbcTemplate jdbc, PostingService posting,
                             IssuedChequeService issuedCheques, Clock clock,
                             com.datagami.rentaxis.core.security.PropertyScope propertyScope,
-                            com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal) {
+                            com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal,
+                            BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.fiscal = fiscal;
         this.propertyScope = propertyScope;
         this.ledgers = ledgers;
@@ -174,7 +178,35 @@ public class BankMatchService {
                 is.stream().map(i -> new BankRecDTOs.BookItem(i.jlId(), i.entryId(), i.entryNumber(), i.docType(),
                         i.date(), i.narration(), i.accountId(), i.accountName(), i.counter(), i.amount(), i.chequeNo(),
                         i.matchId(), i.matchStatus(), i.reversalOfId(), i.reversedById())).toList(),
-                matches(t, matchIds));
+                matchesWithOpening(t, matchIds, openingItems(t, bankAccountId), keep),
+                openingItems(t, bankAccountId).stream().filter(o -> keep.test(o.matchStatus())).toList(),
+                bankLock.reconciledThrough(bankAccountId).orElse(null));
+    }
+
+    /** The workspace's matches, plus those that hold only opening items (spec §4). */
+    private List<BankRecDTOs.Match> matchesWithOpening(UUID t, Set<UUID> matchIds, List<BankRecDTOs.OpeningItem> opening,
+                                                       Predicate<String> keep) {
+        Set<UUID> ids = new LinkedHashSet<>(matchIds);
+        opening.stream().filter(o -> keep.test(o.matchStatus()) && o.matchId() != null).forEach(o -> ids.add(o.matchId()));
+        return matches(t, ids);
+    }
+
+    /** The bank account's opening items with their live match (spec §4). */
+    public List<BankRecDTOs.OpeningItem> openingItems(UUID t, UUID bankAccountId) {
+        return jdbc.query("""
+                select o.id, o.bank_account_id, o.item_date, o.description, o.reference, o.cheque_no, o.amount,
+                       live.match_id, live.status
+                from bank_rec_opening_items o
+                left join lateral (select i.match_id, m.status from bank_match_book_items i
+                                   join bank_matches m on m.id = i.match_id
+                                   where i.opening_item_id = o.id and not i.released limit 1) live on true
+                where o.tenant_id = :t and o.bank_account_id = :b
+                order by o.item_date, o.created_at, o.id""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId),
+                (rs, i) -> new BankRecDTOs.OpeningItem(rs.getObject("id", UUID.class),
+                        rs.getObject("bank_account_id", UUID.class), rs.getObject("item_date", LocalDate.class),
+                        rs.getString("description"), rs.getString("reference"), rs.getString("cheque_no"),
+                        rs.getBigDecimal("amount"), rs.getObject("match_id", UUID.class), rs.getString("status")));
     }
 
     private List<BankRecDTOs.Match> matches(UUID t, Collection<UUID> ids) {
@@ -192,12 +224,17 @@ public class BankMatchService {
         });
         Map<UUID, List<UUID>> bl = new HashMap<>();
         Map<UUID, BigDecimal> bTotal = new HashMap<>();
+        Map<UUID, List<UUID>> ol = new HashMap<>();
         jdbc.query("""
-                select i.match_id, i.journal_line_id, (jl.debit - jl.credit) as amount from bank_match_book_items i
-                join journal_lines jl on jl.id = i.journal_line_id
+                select i.match_id, i.journal_line_id, i.opening_item_id,
+                       coalesce(jl.debit - jl.credit, o.amount) as amount from bank_match_book_items i
+                left join journal_lines jl on jl.id = i.journal_line_id
+                left join bank_rec_opening_items o on o.id = i.opening_item_id
                 where i.tenant_id = :t and i.match_id in (:m)""", p, rs -> {
             UUID m = rs.getObject("match_id", UUID.class);
-            bl.computeIfAbsent(m, k -> new ArrayList<>()).add(rs.getObject("journal_line_id", UUID.class));
+            UUID j = rs.getObject("journal_line_id", UUID.class);
+            if (j != null) bl.computeIfAbsent(m, k -> new ArrayList<>()).add(j);
+            else ol.computeIfAbsent(m, k -> new ArrayList<>()).add(rs.getObject("opening_item_id", UUID.class));
             bTotal.merge(m, rs.getBigDecimal("amount"), BigDecimal::add);
         });
         Map<UUID, List<String>> docs = new HashMap<>();
@@ -223,7 +260,7 @@ public class BankMatchService {
                             rs.getString("confidence"), sl.getOrDefault(id, List.of()), bl.getOrDefault(id, List.of()),
                             sTotal.getOrDefault(id, BigDecimal.ZERO), bTotal.getOrDefault(id, BigDecimal.ZERO),
                             instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("confirmed_at")), created,
-                            reversible ? reverseDate(entryDate.get(id)) : null);
+                            reversible ? reverseDate(entryDate.get(id)) : null, ol.getOrDefault(id, List.of()));
                 });
     }
 
@@ -264,7 +301,10 @@ public class BankMatchService {
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), Integer.class).stream().findFirst().orElse(3);
         dropSuggestions(t, bankAccountId, from, to);
 
-        List<SLine> pool = new ArrayList<>(lines(t, bankAccountId, from, to).stream().filter(l -> l.matchId() == null).toList());
+        // Spec §4: nothing inside a finalized reconciliation is proposed.
+        LocalDate locked = bankLock.reconciledThrough(bankAccountId).orElse(null);
+        List<SLine> pool = new ArrayList<>(lines(t, bankAccountId, from, to).stream()
+                .filter(l -> l.matchId() == null && (locked == null || l.txn().isAfter(locked))).toList());
         LocalDate lo = from == null ? null : from.minusDays(window);
         LocalDate hi = to == null ? null : to.plusDays(window);
         List<BItem> books = new ArrayList<>(items(t, leaves, lo, hi).stream().filter(i -> i.matchId() == null).toList());
@@ -281,6 +321,7 @@ public class BankMatchService {
             if (orig == null || pairedBook.contains(orig.jlId()) || pairedBook.contains(rev.jlId())) continue;
             if (orig.amount().add(rev.amount()).signum() != 0) continue;
             if (!inRange(orig.date(), from, to) || !inRange(rev.date(), from, to)) continue;
+            if (locked != null && !orig.date().isAfter(locked) && !rev.date().isAfter(locked)) continue;
             contraBooks.add(List.of(orig, rev));
             pairedBook.add(orig.jlId());
             pairedBook.add(rev.jlId());
@@ -432,13 +473,11 @@ public class BankMatchService {
         UUID t = BankAccountLedgerService.requireTenant();
         List<UUID> ls = in == null || in.statementLineIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.statementLineIds()));
         List<UUID> js = in == null || in.journalLineIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.journalLineIds()));
-        if (in != null && in.openingItemIds() != null && !in.openingItemIds().isEmpty()) {
-            throw new BusinessRuleViolationException("Opening items arrive with reconciliations; match journal lines here");
-        }
-        if (ls.isEmpty() && js.isEmpty()) throw new BusinessRuleViolationException("Select statement lines and book items to match");
-        UUID bankAccountId = bankAccountOf(t, ls, js);
-        Method method = ls.isEmpty() || js.isEmpty() ? Method.CONTRA : Method.MANUAL;
-        UUID id = record(t, bankAccountId, method, "CONFIRMED", null, ls, js);
+        List<UUID> os = in == null || in.openingItemIds() == null ? List.of() : List.copyOf(new LinkedHashSet<>(in.openingItemIds()));
+        if (ls.isEmpty() && js.isEmpty() && os.isEmpty()) throw new BusinessRuleViolationException("Select statement lines and book items to match");
+        UUID bankAccountId = bankAccountOf(t, ls, js, os);
+        Method method = ls.isEmpty() || (js.isEmpty() && os.isEmpty()) ? Method.CONTRA : Method.MANUAL;
+        UUID id = record(t, bankAccountId, method, "CONFIRMED", null, ls, js, os);
         return matches(t, List.of(id)).get(0);
     }
 
@@ -450,14 +489,15 @@ public class BankMatchService {
     @Transactional
     public UUID recordCreated(UUID bankAccountId, List<UUID> statementLineIds, List<UUID> journalLineIds) {
         UUID t = BankAccountLedgerService.requireTenant();
-        return record(t, bankAccountId, Method.CREATED, "CONFIRMED", null, statementLineIds, journalLineIds);
+        return record(t, bankAccountId, Method.CREATED, "CONFIRMED", null, statementLineIds, journalLineIds, List.of());
     }
 
     /** Validates tenant, bank account, leaf set, liveness and balance, then writes the match. */
     private UUID record(UUID t, UUID bankAccountId, Method method, String status, String confidence,
-                        List<UUID> ls, List<UUID> js) {
+                        List<UUID> ls, List<UUID> js, List<UUID> os) {
         lockAccount(t, bankAccountId);
         Set<UUID> leaves = ledgers.requireLeafSet(bankAccountId);
+        requireOutsideLock(t, bankAccountId, ls, js);
         BigDecimal sTotal = BigDecimal.ZERO;
         if (!ls.isEmpty()) {
             List<Map<String, Object>> rows = jdbc.queryForList("""
@@ -497,8 +537,54 @@ public class BankMatchService {
                     new MapSqlParameterSource("t", t).addValue("ids", js), Integer.class);
             if (live != null && live > 0) throw new BusinessRuleViolationException("A selected book item is already matched");
         }
-        requireBalanced(ls, js, sTotal, bTotal);
-        return insertMatch(t, bankAccountId, method, status, confidence, ls, js);
+        if (!os.isEmpty()) {
+            List<Map<String, Object>> rows = jdbc.queryForList("""
+                    select id, bank_account_id, amount from bank_rec_opening_items where tenant_id = :t and id in (:ids)""",
+                    new MapSqlParameterSource("t", t).addValue("ids", os));
+            if (rows.size() != os.size()) throw new NotFoundException("Opening item not found");
+            for (Map<String, Object> r : rows) {
+                if (!bankAccountId.equals(r.get("bank_account_id"))) {
+                    throw new BusinessRuleViolationException("A selected opening item belongs to another bank account");
+                }
+                bTotal = bTotal.add((BigDecimal) r.get("amount"));
+            }
+            Integer live = jdbc.queryForObject("""
+                    select count(*) from bank_match_book_items where tenant_id = :t and opening_item_id in (:ids) and not released""",
+                    new MapSqlParameterSource("t", t).addValue("ids", os), Integer.class);
+            if (live != null && live > 0) throw new BusinessRuleViolationException("A selected opening item is already matched");
+        }
+        List<UUID> book = new ArrayList<>(js);
+        book.addAll(os);
+        requireBalanced(ls, book, sTotal, bTotal);
+        return insertMatch(t, bankAccountId, method, status, confidence, ls, js, os);
+    }
+
+    /**
+     * Matches inside a finalized reconciliation are frozen (spec §4): no new match
+     * may take a statement line dated on or before the bank account's
+     * reconciled-through date, and no one-sided (contra) match may pair book items
+     * that all fall inside it; either would change a signed-off statement.
+     */
+    private void requireOutsideLock(UUID t, UUID bankAccountId, List<UUID> ls, List<UUID> js) {
+        LocalDate locked = bankLock.reconciledThrough(bankAccountId).orElse(null);
+        if (locked == null) return;
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("r", locked);
+        if (!ls.isEmpty()) {
+            Integer inside = jdbc.queryForObject("select count(*) from bank_statement_lines where tenant_id = :t and id in (:ids) and txn_date <= :r",
+                    p.addValue("ids", ls), Integer.class);
+            if (inside != null && inside > 0) throw frozen(locked);
+        } else if (!js.isEmpty()) {
+            Integer outside = jdbc.queryForObject("""
+                    select count(*) from journal_lines jl join journal_entries je on je.id = jl.journal_entry_id
+                    where jl.tenant_id = :t and jl.id in (:ids) and je.entry_date > :r""", p.addValue("ids", js), Integer.class);
+            if (outside == null || outside == 0) throw frozen(locked);
+        }
+    }
+
+    private static BusinessRuleViolationException frozen(LocalDate locked) {
+        return new BusinessRuleViolationException("This bank account is reconciled through "
+                + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                + "; matches inside a finalized reconciliation are frozen. Reopen that reconciliation first.");
     }
 
     /** The match balance invariant (spec §3): Σ statement = Σ book; a one-sided (contra) match sums to zero. */
@@ -520,6 +606,11 @@ public class BankMatchService {
 
     private UUID insertMatch(UUID t, UUID bankAccountId, Method method, String status, String confidence,
                              List<UUID> ls, List<UUID> js) {
+        return insertMatch(t, bankAccountId, method, status, confidence, ls, js, List.of());
+    }
+
+    private UUID insertMatch(UUID t, UUID bankAccountId, Method method, String status, String confidence,
+                             List<UUID> ls, List<UUID> js, List<UUID> os) {
         UUID id = UUID.randomUUID();
         UUID user = BankStatementImportService.currentUserId();
         boolean confirmed = "CONFIRMED".equals(status);
@@ -539,11 +630,22 @@ public class BankMatchService {
             jdbc.update("insert into bank_match_book_items (tenant_id, match_id, journal_line_id) values (:t, :m, :j)",
                     new MapSqlParameterSource("t", t).addValue("m", id).addValue("j", j));
         }
+        for (UUID o : os) {
+            jdbc.update("insert into bank_match_book_items (tenant_id, match_id, opening_item_id) values (:t, :m, :o)",
+                    new MapSqlParameterSource("t", t).addValue("m", id).addValue("o", o));
+        }
         return id;
     }
 
     /** The bank account the selection belongs to: the statement lines', else the owner of the book items' leaf. */
-    private UUID bankAccountOf(UUID t, List<UUID> ls, List<UUID> js) {
+    private UUID bankAccountOf(UUID t, List<UUID> ls, List<UUID> js, List<UUID> os) {
+        if (ls.isEmpty() && js.isEmpty()) {
+            List<UUID> b = jdbc.queryForList("select distinct bank_account_id from bank_rec_opening_items where tenant_id = :t and id in (:ids)",
+                    new MapSqlParameterSource("t", t).addValue("ids", os), UUID.class);
+            if (b.isEmpty()) throw new NotFoundException("Opening item not found");
+            if (b.size() > 1) throw new BusinessRuleViolationException("The opening items belong to different bank accounts");
+            return b.get(0);
+        }
         if (!ls.isEmpty()) {
             List<UUID> b = jdbc.queryForList("select distinct bank_account_id from bank_statement_lines where tenant_id = :t and id in (:ids)",
                     new MapSqlParameterSource("t", t).addValue("ids", ls), UUID.class);
@@ -579,7 +681,8 @@ public class BankMatchService {
         lockAccount(t, b.get(0));
     }
 
-    void lockAccount(UUID t, UUID bankAccountId) {
+    /** The bank account's row FOR UPDATE: every match write, import and finalize takes it first. */
+    public void lockAccount(UUID t, UUID bankAccountId) {
         jdbc.queryForList("select id from bank_accounts where id = :b and tenant_id = :t for update",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class);
     }
@@ -620,14 +723,23 @@ public class BankMatchService {
     private void confirmLocked(UUID t, UUID matchId) {
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("m", matchId);
         List<UUID> ls = jdbc.queryForList("select statement_line_id from bank_match_statement_lines where tenant_id = :t and match_id = :m and not released", p, UUID.class);
-        List<UUID> js = jdbc.queryForList("select journal_line_id from bank_match_book_items where tenant_id = :t and match_id = :m and not released", p, UUID.class);
+        List<UUID> js = jdbc.queryForList("select journal_line_id from bank_match_book_items where tenant_id = :t and match_id = :m and not released and journal_line_id is not null", p, UUID.class);
+        List<UUID> os = jdbc.queryForList("select opening_item_id from bank_match_book_items where tenant_id = :t and match_id = :m and not released and opening_item_id is not null", p, UUID.class);
+        UUID bankAccountId = jdbc.queryForObject("select bank_account_id from bank_matches where tenant_id = :t and id = :m", p, UUID.class);
+        requireOutsideLock(t, bankAccountId, ls, js);
         BigDecimal s = ls.isEmpty() ? BigDecimal.ZERO : jdbc.queryForObject(
                 "select coalesce(sum(amount), 0) from bank_statement_lines where tenant_id = :t and id in (:ids)",
                 new MapSqlParameterSource("t", t).addValue("ids", ls), BigDecimal.class);
         BigDecimal b = js.isEmpty() ? BigDecimal.ZERO : jdbc.queryForObject(
                 "select coalesce(sum(debit - credit), 0) from journal_lines where tenant_id = :t and id in (:ids)",
                 new MapSqlParameterSource("t", t).addValue("ids", js), BigDecimal.class);
-        requireBalanced(ls, js, s, b);
+        if (!os.isEmpty()) {
+            b = b.add(jdbc.queryForObject("select coalesce(sum(amount), 0) from bank_rec_opening_items where tenant_id = :t and id in (:ids)",
+                    new MapSqlParameterSource("t", t).addValue("ids", os), BigDecimal.class));
+        }
+        List<UUID> book = new ArrayList<>(js);
+        book.addAll(os);
+        requireBalanced(ls, book, s, b);
         jdbc.update("update bank_matches set status = 'CONFIRMED', confirmed_by = :u, confirmed_at = now() where id = :m and tenant_id = :t",
                 p.addValue("u", BankStatementImportService.currentUserId()));
     }
@@ -645,6 +757,7 @@ public class BankMatchService {
         lockAccountOfMatch(t, matchId);
         Map<String, Object> m = lockMatch(t, matchId);
         if ("UNDONE".equals(m.get("status"))) throw new BusinessRuleViolationException("This match was already undone");
+        requireUndoOutsideLock(t, (UUID) m.get("bank_account_id"), matchId);
         String why = reason == null || reason.isBlank() ? "Match undone" : reason.trim();
         // PR #353 review P2-4: an unidentified receipt that has paid register rows
         // stays booked; undoing (or reversing) it would leave those receipts with
@@ -673,6 +786,7 @@ public class BankMatchService {
                 on = reverseDate(entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
                         .min(Comparator.naturalOrder()).orElse(null));
             }
+            for (Map<String, Object> e : entries) bankLock.assertOpenForEntry((UUID) e.get("id"), on);
             for (Map<String, Object> e : entries) {
                 String doc = (String) e.get("doc_type");
                 if ("BNK".equals(doc)) {
@@ -693,6 +807,30 @@ public class BankMatchService {
                 update bank_matches set status = 'UNDONE', undone_by = :u, undone_at = now(), undo_reason = :r
                 where id = :m and tenant_id = :t""", p);
         return matches(t, List.of(matchId)).get(0);
+    }
+
+    /**
+     * Spec §4: undoing a match any of whose statement lines is dated on or before
+     * the reconciled-through date is refused; so is a contra match whose book
+     * items all fall inside it.
+     */
+    private void requireUndoOutsideLock(UUID t, UUID bankAccountId, UUID matchId) {
+        LocalDate locked = bankLock.reconciledThrough(bankAccountId).orElse(null);
+        if (locked == null) return;
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("m", matchId).addValue("r", locked);
+        Integer lines = jdbc.queryForObject("select count(*) from bank_match_statement_lines where tenant_id = :t and match_id = :m and not released", p, Integer.class);
+        if (lines != null && lines > 0) {
+            Integer inside = jdbc.queryForObject("""
+                    select count(*) from bank_match_statement_lines ml join bank_statement_lines l on l.id = ml.statement_line_id
+                    where ml.tenant_id = :t and ml.match_id = :m and not ml.released and l.txn_date <= :r""", p, Integer.class);
+            if (inside != null && inside > 0) throw frozen(locked);
+            return;
+        }
+        Integer outside = jdbc.queryForObject("""
+                select count(*) from bank_match_book_items i join journal_lines jl on jl.id = i.journal_line_id
+                join journal_entries je on je.id = jl.journal_entry_id
+                where i.tenant_id = :t and i.match_id = :m and not i.released and je.entry_date > :r""", p, Integer.class);
+        if (outside == null || outside == 0) throw frozen(locked);
     }
 
     // ------------------------------------------------------------------ register evidence
