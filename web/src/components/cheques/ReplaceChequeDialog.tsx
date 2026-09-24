@@ -144,7 +144,8 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
         >
             <div className="space-y-3">
                 <div>
-                    <label className={label} htmlFor="replace-date">{t("depositDate")}</label>
+                    {/* #84: the date of the replacement event, not a deposit — each row below carries the new cheque's own date. */}
+                    <label className={label} htmlFor="replace-date">{t("replacementDate")}</label>
                     <input
                         id="replace-date"
                         data-testid="replace-date"

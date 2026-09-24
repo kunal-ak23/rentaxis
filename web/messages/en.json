@@ -1954,6 +1954,7 @@
     "deposit": "Deposit",
     "depositBatch": "Deposit Batch",
     "depositDate": "Deposit Date",
+    "replacementDate": "Replacement date",
     "clearingDate": "Clearing Date",
     "receiptDate": "Receipt Date",
     "clear": "Clear",

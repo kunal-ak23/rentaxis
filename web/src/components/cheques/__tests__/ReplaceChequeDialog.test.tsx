@@ -43,6 +43,12 @@ afterEach(() => {
 });
 
 describe("ReplaceChequeDialog", () => {
+    it("labels its date field as the replacement date, not a deposit date (#84)", () => {
+        renderDialog(bouncedCheque(10000));
+        expect(screen.getByLabelText("Replacement date")).toBe(screen.getByTestId("replace-date"));
+        expect(screen.queryByText("Deposit Date")).toBeNull();
+    });
+
     it("defaults to one row at the bounced amount, with a residual of zero", () => {
         renderDialog(bouncedCheque(10000));
         expect((screen.getByTestId("replace-row-0-amount") as HTMLInputElement).value).toBe("10000");
