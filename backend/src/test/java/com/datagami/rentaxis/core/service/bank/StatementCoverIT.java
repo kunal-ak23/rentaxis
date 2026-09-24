@@ -173,6 +173,10 @@ class StatementCoverIT extends AbstractPostgresIT {
         chequeService.clearBatch(new ClearBatchRequest(List.of(inside.id()), SEP_5, null, true));
         // After the statement's last day nothing is asked.
         chequeService.clear(after.id(), ChequeActionRequest.on(SEP_12));
+        // F14-24: each receipt takes the next number of the tenant's RR series.
+        assertThat(jdbc.queryForList("select receipt_number from cheques where id in (?, ?, ?) order by receipt_number",
+                String.class, before.id(), inside.id(), after.id()))
+                .containsExactly("RR-26/1", "RR-26/2", "RR-26/3");
 
         BankRecDTOs.Reconciliation draft = recs.create(ei.getId(),
                 new BankRecDTOs.ReconciliationInput(SEP_3, SEP_10, null, null));

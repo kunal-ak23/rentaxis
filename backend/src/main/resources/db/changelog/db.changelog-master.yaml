@@ -249,3 +249,5 @@ databaseChangeLog:
       file: db/changelog/changesets/120-recognition-runs.yaml
   - include:
       file: db/changelog/changesets/121-penalty-description-code.yaml
+  - include:
+      file: db/changelog/changesets/122-cheque-receipt-number.yaml

@@ -250,6 +250,8 @@ public class ChequeService {
     private final VatTaxPointService vatTaxPoints;
     /** Finance-ops spec §4: the per-bank lock, checked before a clearing or a bounce does any work. */
     private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumbers;
 
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
@@ -1333,6 +1335,11 @@ public class ChequeService {
         offStatement.ifPresent(c -> bankLock.recordOffStatement(c, crt.getId(), date));
         cheque.setDebitAccount(debit);
         cheque.setCrtJournalId(crt.getId());
+        // F14-24: a live receipt is numbered from the tenant's RR series when the
+        // money lands, so the receipts form an auditable sequence. Replays keep none.
+        if (replay == null && entryNumbers != null && cheque.getReceiptNumber() == null) {
+            cheque.setReceiptNumber(entryNumbers.nextDocumentNumber("RR", date));
+        }
         cheque.setClearedAt(date);
         moveTo(cheque, ChequeStatus.CLEARED, notes);
         // Received before it fell due, the receipt is the VAT tax point: the

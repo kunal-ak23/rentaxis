@@ -1,0 +1,18 @@
+# F14-24: a receipt (clearing) gets a gap-free-per-series number, RR-yy/n, when
+# the money lands; rows cleared before this change keep the old RR-YYYY-MM-<id>.
+databaseChangeLog:
+  - changeSet:
+      id: 122-cheque-receipt-number
+      author: claude
+      changes:
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: receipt_number, type: varchar(30) }
+        - createIndex:
+            tableName: cheques
+            indexName: ux_cheques_receipt_number
+            unique: true
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: receipt_number }
