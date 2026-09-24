@@ -555,6 +555,22 @@ class PortfolioImportPersistServiceTest {
         assertThat(saved.getEjariNumber()).isEqualTo("EJ-2026-001");
     }
 
+    /** #82: the persist phase reads a day-first date exactly as the validator accepted it. */
+    @Test
+    void persist_dayFirstDates_landAsTheDatesTyped() {
+        Workbook wb = PortfolioImportServiceTest.buildLegacyWorkbook();
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "EndDate", "28/02/2027");
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "AgreementDate", "20-02-2026");
+
+        service.persistWorkbook(wb, newJob());
+
+        Lease saved = captureSavedLease();
+        assertThat(saved.getStartDate()).isEqualTo(java.time.LocalDate.of(2026, 3, 1));
+        assertThat(saved.getEndDate()).isEqualTo(java.time.LocalDate.of(2027, 2, 28));
+        assertThat(saved.getAgreementDate()).isEqualTo(java.time.LocalDate.of(2026, 2, 20));
+    }
+
     // ----- Helpers -----
 
     /**

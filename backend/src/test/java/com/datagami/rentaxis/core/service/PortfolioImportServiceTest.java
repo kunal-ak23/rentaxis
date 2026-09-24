@@ -384,6 +384,67 @@ class PortfolioImportServiceTest {
         assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("RentAmount", "MonthlyRent");
     }
 
+    // ----- #82: the dates a UAE user types -----
+
+    @Test
+    void dayFirstDates_areAcceptedInEveryLeasesDateColumn() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        setCell(wb, "Leases", 1, "EndDate", "28/02/2027");
+        setCell(wb, "Leases", 1, "AgreementDate", "20-02-2026");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField)
+                .doesNotContain("StartDate", "EndDate", "AgreementDate");
+    }
+
+    @Test
+    void realExcelDateCells_areAccepted() {
+        Workbook wb = buildLegacyWorkbook();
+        org.apache.poi.ss.usermodel.CellStyle dateStyle = wb.createCellStyle();
+        dateStyle.setDataFormat(wb.getCreationHelper().createDataFormat().getFormat("dd/mm/yyyy"));
+        Row row = wb.getSheet("Leases").getRow(1);
+        Cell start = row.getCell(4);
+        start.setCellValue(java.time.LocalDate.of(2026, 3, 1));
+        start.setCellStyle(dateStyle);
+        Cell end = row.getCell(5);
+        end.setCellValue(java.time.LocalDate.of(2027, 2, 28));
+        end.setCellStyle(dateStyle);
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("StartDate", "EndDate");
+    }
+
+    /** Month-first cannot be told from day-first, so it is not guessed at: 12/31 is refused. */
+    @Test
+    void monthFirstDates_areRefusedWithTheFormatsThatWork() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "EndDate", "12/31/2026");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("EndDate");
+            assertThat(e.getMessage()).contains("YYYY-MM-DD").contains("DD/MM/YYYY");
+        });
+    }
+
+    @Test
+    void chequesSheetDates_acceptDayFirstAndRefuseGarbage() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "PaymentTerms", "1");
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "01/01/2026", "not-a-date", "C-1", "ENBD", "60000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("DueDate");
+        assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("ChequeOrPaymentDate"));
+    }
+
     // ----- Test helpers -----
 
     /** Builds the original 4-sheet, 10-column Leases workbook (no new columns, no Cheques sheet). */

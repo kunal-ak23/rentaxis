@@ -22,7 +22,6 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -268,15 +267,17 @@ public class PortfolioImportService {
             if (startDateStr.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", "Start date is required"));
             } else {
-                try { startDate = parseDate(startDateStr); } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", "Invalid date format. Use YYYY-MM-DD"));
+                startDate = parseDate(startDateStr);
+                if (startDate == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", DATE_HELP));
                 }
             }
             if (endDateStr.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "End date is required"));
             } else {
-                try { endDate = parseDate(endDateStr); } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "Invalid date format. Use YYYY-MM-DD"));
+                endDate = parseDate(endDateStr);
+                if (endDate == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", DATE_HELP));
                 }
             }
             if (startDate != null && endDate != null && !endDate.isAfter(startDate)) {
@@ -359,9 +360,8 @@ public class PortfolioImportService {
             // AgreementDate
             String agreementDate = cell(row, hi, "AgreementDate");
             if (!agreementDate.isEmpty()) {
-                try { LocalDate.parse(agreementDate); }
-                catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "AgreementDate", "AgreementDate must be ISO format (YYYY-MM-DD)"));
+                if (parseDate(agreementDate) == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "AgreementDate", "AgreementDate: " + DATE_HELP));
                 }
             }
 
@@ -389,10 +389,9 @@ public class PortfolioImportService {
                 }
             }
             if (!bdDate.isEmpty()) {
-                try { LocalDate.parse(bdDate); }
-                catch (DateTimeParseException e) {
+                if (parseDate(bdDate) == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Date",
-                            "BookingDeposit_Date must be ISO format (YYYY-MM-DD)"));
+                            "BookingDeposit_Date: " + DATE_HELP));
                 }
             }
 
@@ -546,17 +545,20 @@ public class PortfolioImportService {
 
             // DueDate parse + outside-lease window warning.
             if (!dueDate.isEmpty()) {
-                try {
-                    LocalDate dd = LocalDate.parse(dueDate);
-                    if (dd.isBefore(lease.startDate()) || dd.isAfter(lease.endDate())) {
-                        warnings.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
-                                "DueDate " + dd + " is outside lease period "
-                                        + lease.startDate() + ".." + lease.endDate()));
-                    }
-                } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
-                            "DueDate must be ISO format (YYYY-MM-DD)"));
+                LocalDate dd = parseDate(dueDate);
+                if (dd == null) {
+                    errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate", "DueDate: " + DATE_HELP));
+                } else if (dd.isBefore(lease.startDate()) || dd.isAfter(lease.endDate())) {
+                    warnings.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
+                            "DueDate " + dd + " is outside lease period "
+                                    + lease.startDate() + ".." + lease.endDate()));
                 }
+            }
+            // Read by the persist phase as the date on the instrument; a value it
+            // cannot read used to be dropped silently in favour of DueDate.
+            if (!chequeOrPaymentDate.isEmpty() && parseDate(chequeOrPaymentDate) == null) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "ChequeOrPaymentDate",
+                        "ChequeOrPaymentDate: " + DATE_HELP));
             }
         }
 
@@ -742,9 +744,18 @@ public class PortfolioImportService {
 
     // --- Helpers ---
 
-    private LocalDate parseDate(String value) {
-        return LocalDate.parse(value.trim());
+    /**
+     * Every date column of the v1 workbook (gap #82): ISO, the day-first forms a UAE
+     * user types (DD/MM/YYYY, DD-MM-YYYY) and a real Excel date cell, which
+     * {@link SheetCells#getCellString} has already rendered ISO. The cut-over import
+     * reads dates through the same {@link SheetCells#parseDateOrNull}, so the two
+     * importers accept exactly the same cells. Null when it is none of them.
+     */
+    static LocalDate parseDate(String value) {
+        return SheetCells.parseDateOrNull(value);
     }
+
+    static final String DATE_HELP = "Invalid date. Use YYYY-MM-DD or DD/MM/YYYY (or an Excel date cell)";
 
     // The three readers and the header index now live in SheetCells, so the
     // cut-over validator in core.service.cutover reads the identical cell the

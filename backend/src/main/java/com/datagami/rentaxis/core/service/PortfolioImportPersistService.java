@@ -26,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Slf4j
@@ -301,8 +300,7 @@ public class PortfolioImportPersistService {
 
             String agreementStr = cell(row, leaseHi, "AgreementDate");
             if (!agreementStr.isEmpty()) {
-                try { lease.setAgreementDate(LocalDate.parse(agreementStr)); }
-                catch (DateTimeParseException ignored) { /* validator already flagged this */ }
+                lease.setAgreementDate(parseDate(agreementStr));
             }
 
             String statusStr = cell(row, leaseHi, "Status").toUpperCase();
@@ -365,7 +363,7 @@ public class PortfolioImportPersistService {
                 }
                 bookingDepositsCreated++;
                 bookingDeposit = new ChequeRowInput(null, null, lease.getContractDate(), bdNum,
-                        LocalDate.parse(bdDateStr), bdBank, null, null,
+                        parseDate(bdDateStr), bdBank, null, null,
                         parseDecimalOrZero(bdAmt), "Booking Deposit", ChequeMode.PDC);
             }
 
@@ -614,17 +612,16 @@ public class PortfolioImportPersistService {
                 log.debug("Cheques row {} dropped: InstallmentNo not numeric (validator should have flagged)", r + 1);
                 continue;
             }
-            LocalDate dueDate;
-            try { dueDate = LocalDate.parse(cell(row, hi, "DueDate")); }
-            catch (DateTimeParseException e) {
+            LocalDate dueDate = parseDate(cell(row, hi, "DueDate"));
+            if (dueDate == null) {
                 log.debug("Cheques row {} dropped: DueDate not ISO (validator should have flagged)", r + 1);
                 continue;
             }
             String chequeOrPaymentDateStr = cell(row, hi, "ChequeOrPaymentDate");
             LocalDate chequeOrPaymentDate = null;
             if (!chequeOrPaymentDateStr.isEmpty()) {
-                try { chequeOrPaymentDate = LocalDate.parse(chequeOrPaymentDateStr); }
-                catch (DateTimeParseException ignored) {
+                chequeOrPaymentDate = parseDate(chequeOrPaymentDateStr);
+                if (chequeOrPaymentDate == null) {
                     log.debug("Cheques row {} ChequeOrPaymentDate not ISO (validator should have flagged)", r + 1);
                 }
             }
@@ -741,8 +738,9 @@ public class PortfolioImportPersistService {
 
     // --- Helpers ---
 
-    private LocalDate parseDate(String value) {
-        return LocalDate.parse(value.trim());
+    /** The validator's rule (gap #82): ISO, DD/MM/YYYY, DD-MM-YYYY or an Excel date cell. */
+    private static LocalDate parseDate(String value) {
+        return PortfolioImportService.parseDate(value);
     }
 
     private String getCellString(Row row, int col) {
