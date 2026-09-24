@@ -27,6 +27,10 @@ public class SettlementResponseDTO {
     private BigDecimal depositAmount;
     private BigDecimal totalDeductions;
     private BigDecimal totalAdditions;
+    /** F14-61: output VAT on the VAT-able recharges — on a FINALIZED row, what the STL booked. */
+    private BigDecimal totalDeductionVat;
+    /** F14-61: {@code totalDeductions + totalDeductionVat}. */
+    private BigDecimal totalDeductionsGross;
     /** What the landlord pays out — {@code max(netRefund, 0)}. */
     private BigDecimal refundAmount;
     /** F14-36: paid so far by payment vouchers naming this settlement, and what is still owed. */
@@ -69,6 +73,9 @@ public class SettlementResponseDTO {
         private String category;
         private String description;
         private BigDecimal amount;
+        /** F14-61: the VAT this deduction carries on top of {@link #amount}, and the two together. */
+        private BigDecimal vatAmount;
+        private BigDecimal grossAmount;
         private boolean autoCalculated;
         private String type;
         private String additionCategory;

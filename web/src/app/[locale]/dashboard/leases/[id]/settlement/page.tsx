@@ -19,7 +19,7 @@ import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
-    netRefundOf, toSaveLines, totalOf, totalVatOf, type SettlementRow,
+    netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
 } from "@/components/leases/settlementMath";
 import {
     ApiError, leaseApi, settlementApi,
@@ -327,6 +327,16 @@ export default function SettlementPage() {
     }, [settlementDate, finalized, storedRow, lease, minSettlementDate]);
 
     /**
+     * F14-61: the grid with each deduction's VAT. A FINALIZED settlement keeps
+     * what its stored lines say the STL booked; a draft re-prices every line —
+     * saved or just typed — with the statement's own VAT rule.
+     */
+    const pricedRows = useMemo(
+        () => (finalized ? rows : withLineVat(rows, statement)),
+        [finalized, rows, statement],
+    );
+
+    /**
      * A FINALIZED settlement shows its own snapshot; a draft shows the live
      * statement re-priced against whatever is currently in the grid.
      */
@@ -341,9 +351,8 @@ export default function SettlementPage() {
                 totalDeductions: storedRow.totalDeductions ?? 0,
                 totalAdditions: storedRow.totalAdditions ?? 0,
                 netRefund: (storedRow.refundAmount ?? 0) - (storedRow.balanceDue ?? 0),
-                // F14-37: not on SettlementResponseDTO — recomputed from the
-                // stored lines' own vatAmount, same as the draft branch.
-                totalDeductionVat: totalVatOf(rows),
+                // F14-61: what the STL booked, from the stored row.
+                totalDeductionVat: storedRow.totalDeductionVat ?? totalVatOf(rows),
             };
         }
         if (!statement) return null;
@@ -356,9 +365,9 @@ export default function SettlementPage() {
             totalDeductions: totalOf(rows, "DEDUCTION"),
             totalAdditions: totalOf(rows, "ADDITION"),
             netRefund: netRefundOf(statement, rows),
-            totalDeductionVat: totalVatOf(rows),
+            totalDeductionVat: totalVatOf(pricedRows),
         };
-    }, [finalized, storedRow, statement, rows]);
+    }, [finalized, storedRow, statement, rows, pricedRows]);
 
     const netRefund = shown?.netRefund ?? 0;
     const refunds = netRefund > 0;
@@ -511,7 +520,7 @@ export default function SettlementPage() {
         );
     }
 
-    const deductionRows = rows.filter(r => r.type === "DEDUCTION");
+    const deductionRows = pricedRows.filter(r => r.type === "DEDUCTION");
     const additionRows = rows.filter(r => r.type === "ADDITION");
 
     return (
@@ -784,7 +793,10 @@ export default function SettlementPage() {
                 <div className="bg-surface border border-border rounded-xl px-5 py-4 space-y-3">
                     <Row label={t("totalDeductions")} value={`- ${fmtAmount(shown.totalDeductions)}`} tone="error" testId="settlement-total-deductions" />
                     {shown.totalDeductionVat > 0 && (
-                        <Row label={t("totalDeductionVat")} value={`- ${fmtAmount(shown.totalDeductionVat)}`} tone="error" testId="settlement-total-deduction-vat" />
+                        <>
+                            <Row label={t("totalDeductionVat")} value={`- ${fmtAmount(shown.totalDeductionVat)}`} tone="error" testId="settlement-total-deduction-vat" />
+                            <Row label={t("totalDeductionsGross")} value={`- ${fmtAmount(round2(shown.totalDeductions + shown.totalDeductionVat))}`} tone="error" testId="settlement-total-deductions-gross" />
+                        </>
                     )}
                     <Row label={t("totalAdditions")} value={`+ ${fmtAmount(shown.totalAdditions)}`} tone="success" testId="settlement-total-additions" />
                     <div className="border-t-2 border-border pt-3 flex justify-between items-center">
@@ -1066,7 +1078,7 @@ function LineTable({
                                             className="block text-[10px] text-muted tabular-nums"
                                             data-testid={`settlement-line-vat-${index}`}
                                         >
-                                            {t("lineVat", { amount: fmtAmount(r.vatAmount) })}
+                                            {t("lineVat", { amount: fmtAmount(r.vatAmount), gross: fmtAmount(round2(r.amount + r.vatAmount)) })}
                                         </span>
                                     )}
                                 </td>

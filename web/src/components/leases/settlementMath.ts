@@ -7,7 +7,7 @@
  * statement comes from the ledger and does not move as lines are edited, so
  * the recomputation is exactly `SettlementService.buildStatement`:290-293:
  *
- *     netRefund = depositsHeld − receivableBalance − Σdeductions + Σadditions
+ *     netRefund = depositsHeld − receivableBalance − Σdeductions − Σdeduction VAT + Σadditions
  *
  * `>0` the landlord pays out, `<0` the renter still owes. Nothing else is
  * netted here — not the outstanding penalties (already inside
@@ -38,9 +38,30 @@ export type SettlementRow = {
     accountName?: string | null;
     autoCalculated: boolean;
     attachments: DeductionAttachment[];
-    /** F14-37: VAT this recharge line carries — already inside `amount`. */
+    /**
+     * F14-37/F14-61: the VAT a stored recharge line carries on top of `amount`
+     * (net). Used as-is on a FINALIZED settlement; a draft re-prices it with
+     * `lineVatOf` so an unsaved line shows its VAT too.
+     */
     vatAmount: number;
 };
+
+/** F14-61: the statement's VAT rule — `SettlementService.deductionVat`. */
+export type VatRule = { vatRate?: number | null; vatableCategories?: DeductionCategory[] | null };
+
+/** F14-61: VAT on one deduction row, half-up to the fils, exactly as the server prices it. */
+export function lineVatOf(row: Pick<SettlementRow, "type" | "category" | "amount">, rule: VatRule | null | undefined): number {
+    const rate = rule?.vatRate ?? 0;
+    if (row.type !== "DEDUCTION" || !rate || !(rule?.vatableCategories ?? []).includes(row.category as DeductionCategory)) {
+        return 0;
+    }
+    return round2((row.amount || 0) * rate);
+}
+
+/** F14-61: the rows with each deduction's VAT re-priced by the rule (a draft's live view). */
+export function withLineVat(rows: SettlementRow[], rule: VatRule | null | undefined): SettlementRow[] {
+    return rows.map(r => ({ ...r, vatAmount: lineVatOf(r, rule) }));
+}
 
 /** Half-up to the fils — the server's `money(...)` scale. */
 export function round2(n: number): number {
@@ -52,7 +73,7 @@ export function totalOf(rows: SettlementRow[], type: SettlementLineType): number
     return round2(rows.filter(r => r.type === type).reduce((s, r) => s + (r.amount || 0), 0));
 }
 
-/** F14-37: Σ of the deduction rows' VAT — "VAT on recharges", already inside `totalOf(rows, "DEDUCTION")`. */
+/** F14-37/F14-61: Σ of the deduction rows' VAT — "VAT on recharges", on top of `totalOf(rows, "DEDUCTION")`. */
 export function totalVatOf(rows: SettlementRow[]): number {
     return round2(rows.filter(r => r.type === "DEDUCTION").reduce((s, r) => s + (r.vatAmount || 0), 0));
 }
@@ -62,6 +83,7 @@ export function netRefundOf(statement: SettlementStatement, rows: SettlementRow[
         statement.depositsHeld
         - statement.receivableBalance
         - totalOf(rows, "DEDUCTION")
+        - totalVatOf(withLineVat(rows, statement))
         + totalOf(rows, "ADDITION"),
     );
 }
