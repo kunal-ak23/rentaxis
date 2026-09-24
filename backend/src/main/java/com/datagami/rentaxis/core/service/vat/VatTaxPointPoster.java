@@ -35,7 +35,7 @@ import java.util.UUID;
  * <p>A bean of its own for the reason {@code RecognitionPoster} is one: the nightly
  * run wants each point in its own transaction ({@link #post}, {@code REQUIRES_NEW}),
  * so one point that cannot post costs that point and nothing else, while a
- * termination, an early receipt and a cut-over catch-up want the point posted in
+ * termination and an early receipt want the point posted in
  * <em>their</em> transaction ({@link #postJoining}) so it rolls back with them.
  * Spring's advice lives on the proxy, so the two entry points have to be on a
  * different bean from their callers.</p>
@@ -73,19 +73,16 @@ public class VatTaxPointPoster {
     /** Post in a transaction of its own — the nightly run's entry point. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID post(UUID pointId) {
-        return postJoining(pointId, null);
+        return postJoining(pointId);
     }
 
     /**
      * Post in the caller's transaction.
      *
-     * @param importBatchId non-null only for a cut-over catch-up: the VTP carries the
-     *                      batch id, which exempts it from the period lock and lets a
-     *                      reverse of the batch take it off again.
      * @return the VTP's id
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public UUID postJoining(UUID pointId, UUID importBatchId) {
+    public UUID postJoining(UUID pointId) {
         VatTaxPoint point = lock(pointId);
         if (point.getStatus() != VatTaxPointStatus.PLANNED) {
             throw new BusinessRuleViolationException("VAT tax point " + pointId + " is already " + point.getStatus());
@@ -106,7 +103,7 @@ public class VatTaxPointPoster {
                 LeaseChequeRegistrar.dimensions(lease, point.getChequeId()),
                 JournalSourceType.VAT_TAX_POINT,
                 point.getId(),
-                importBatchId,
+                null,
                 List.of(PostingRequest.pair(
                         PostingRequest.dr(AccountRole.OUTPUT_VAT_DEFERRED, point.getVatAmount()).withNarration(narration),
                         PostingRequest.cr(AccountRole.OUTPUT_VAT, point.getVatAmount()).withNarration(narration)))));

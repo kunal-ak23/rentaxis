@@ -24,6 +24,7 @@ import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -238,10 +239,8 @@ class ContractImportPostIT extends AbstractPostgresIT {
                 .isEmpty();
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
-    com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints;
-    @org.springframework.beans.factory.annotation.Autowired
-    org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService termination;
 
     /** The template, with SAMPLE-0002's one VAT-bearing cheque re-dated / re-stated. */
     private UUID importWithSample2Cheque(String chequeDate, String status, String clearedDate) throws Exception {
@@ -260,68 +259,114 @@ class ContractImportPostIT extends AbstractPostgresIT {
     }
 
     /**
-     * Spec 2026-09-24 §1, cut-over import: the tax points dated before the books
-     * open post inside the batch, on their own dates (the batch id exempts them from
-     * the lock), each with its tax invoice. SAMPLE-0002's instalment re-dated to
-     * 20 Sep is one of them; its VAT is declared and nothing is left deferred.
+     * Spec 2026-09-24 §1, cut-over ruling: PACT already declared a cut-over
+     * contract's VAT on its contract date, so the import posts it on the CONTRACT
+     * model. SAMPLE-0002 charges 1,050 of VAT on 21,000 of rent: its TCO credits
+     * Output VAT with the whole 1,050 and Output VAT – not yet due with nothing, and
+     * there is no tax point, no VTP and no tax invoice of ours — not in the batch and
+     * not waiting for the live books either (its one instalment is dated 1 Oct, the
+     * day the books open).
      */
     @Test
-    void aTaxPointBeforeTheCutOverPostsInsideTheBatchOnItsOwnDate() throws Exception {
-        UUID batchId = importWithSample2Cheque("2026-09-20", "REGISTERED", null);
+    void aCutOverContractIsPostedOnTheContractVatModel() throws Exception {
+        UUID batchId = importTheTemplate();
+        tx.executeWithoutResult(s -> assertThat(leaseOf("SAMPLE-0002").getVatTiming())
+                .as("the draft the import writes").isEqualTo(VatTiming.CONTRACT));
+
         assertThat(postService.post(batchId).leasesFailed()).isZero();
 
         UUID second = leaseIdOf("SAMPLE-0002");
-        JournalEntry vtp = only(batchJournals(batchId), JournalDocType.VTP, second);
-        assertThat(vtp.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 20));
-        assertThat(vtp.getImportBatchId()).isEqualTo(batchId);
-        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
-                .singleElement().satisfies(p -> {
-                    assertThat(p.getStatus().name()).isEqualTo("POSTED");
-                    assertThat(p.getVatAmount()).isEqualByComparingTo("1050.00");
-                }));
-        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Long.class, second))
-                .isEqualTo(1);
+        tx.executeWithoutResult(s -> assertThat(leaseOf("SAMPLE-0002").getVatTiming()).isEqualTo(VatTiming.CONTRACT));
+        JournalEntry tco = only(batchJournals(batchId), JournalDocType.TCO, second);
+        assertThat(creditOnRole(tco.getId(), AccountRole.OUTPUT_VAT)).isEqualByComparingTo("1050.00");
+        assertThat(creditOnRole(tco.getId(), AccountRole.OUTPUT_VAT_DEFERRED)).isEqualByComparingTo("0.00");
+        assertNoInstalmentVat(batchId, second);
     }
 
-    /** A tax point on or after the cut-over date stays PLANNED for the live books. */
+    /**
+     * An instalment PACT says was received early changes nothing either: a CONTRACT
+     * lease has no tax point for the replayed clearance to move.
+     */
     @Test
-    void aTaxPointOnTheCutOverDateIsLeftForTheLiveBooks() throws Exception {
-        UUID batchId = importTheTemplate();
-        postService.post(batchId);
-
-        UUID second = leaseIdOf("SAMPLE-0002");
-        assertThat(batchJournals(batchId)).noneMatch(e -> e.getDocType() == JournalDocType.VTP);
-        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
-                .singleElement().satisfies(p -> {
-                    assertThat(p.getStatus().name()).isEqualTo("PLANNED");
-                    assertThat(p.getTaxPointDate()).isEqualTo(CutoverFixture.BOOKS_START);
-                }));
-    }
-
-    /** An instalment PACT says was received early is declared on the day it was received, in the batch. */
-    @Test
-    void anEarlyReceiptReplayedByTheImportDeclaresItsVatOnTheReceiptDate() throws Exception {
+    void anEarlyReceiptReplayedByTheImportDeclaresNothingAgain() throws Exception {
         UUID batchId = importWithSample2Cheque("2026-10-01", "CLEARED", "2026-09-15");
         assertThat(postService.post(batchId).leasesFailed()).isZero();
 
-        JournalEntry vtp = only(batchJournals(batchId), JournalDocType.VTP, leaseIdOf("SAMPLE-0002"));
-        assertThat(vtp.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 15));
+        assertNoInstalmentVat(batchId, leaseIdOf("SAMPLE-0002"));
     }
 
-    /** Reversing the batch takes the VTP off with everything else and cancels the schedule. */
+    /**
+     * A draft written before changeset 108 was defaulted to INSTALMENT; the bulk post
+     * puts it on the CONTRACT model all the same, because the rule is about where the
+     * contract came from, not about what its draft says.
+     */
     @Test
-    void reversingTheBatchReversesItsTaxPoints() throws Exception {
+    void aCutOverDraftStillMarkedInstalmentIsPostedOnTheContractModel() throws Exception {
         UUID batchId = importWithSample2Cheque("2026-09-20", "REGISTERED", null);
-        postService.post(batchId);
         UUID second = leaseIdOf("SAMPLE-0002");
+        jdbc.update("update leases set vat_timing = 'INSTALMENT' where id = ?", second);
 
-        batches.reverse(batchId, "wrong file");
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
 
-        assertThat(jdbc.queryForObject(
-                "select count(*) from journal_entries where lease_id = ? and doc_type = 'VTP' and status = 'POSTED'"
-                        + " and reversal_of_id is null", Long.class, second)).isZero();
-        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
-                .allSatisfy(p -> assertThat(p.getStatus().name()).isEqualTo("CANCELLED")));
+        tx.executeWithoutResult(s -> assertThat(leaseRepo.findById(second).orElseThrow().getVatTiming())
+                .isEqualTo(VatTiming.CONTRACT));
+        JournalEntry tco = only(batchJournals(batchId), JournalDocType.TCO, second);
+        assertThat(creditOnRole(tco.getId(), AccountRole.OUTPUT_VAT)).isEqualByComparingTo("1050.00");
+        assertNoInstalmentVat(batchId, second);
+    }
+
+    /**
+     * And terminating it later takes the legacy path: the TCR credits the VAT on the
+     * unearned rent straight back out of Output VAT, with no deferred-VAT settlement,
+     * no tax points and no credit note.
+     */
+    @Test
+    void aCutOverVatContractTerminatesOnTheLegacyPath() throws Exception {
+        UUID batchId = importTheTemplate();
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
+        UUID second = leaseIdOf("SAMPLE-0002");
+        LocalDate t = LocalDate.of(2027, 1, 15);
+
+        var preview = termination.preview(second, t);
+        assertThat(preview.unearnedRent()).isPositive();
+        assertThat(preview.unearnedVat()).isEqualByComparingTo(
+                preview.unearnedRent().multiply(new BigDecimal("0.05")).setScale(2, java.math.RoundingMode.HALF_UP));
+        assertThat(preview.vatSettlement().pendingCancelled()).isEqualByComparingTo("0");
+        assertThat(preview.vatSettlement().declaredAtTermination()).isEqualByComparingTo("0");
+        assertThat(preview.vatSettlement().creditedBack()).isEqualByComparingTo("0");
+
+        termination.terminate(second, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(t, null, null, null), null);
+
+        UUID tcr = tx.execute(s -> leaseRepo.findById(second).orElseThrow().getTerminationJournalId());
+        assertThat(tcr).isNotNull();
+        assertThat(debitOnRole(tcr, AccountRole.OUTPUT_VAT)).isEqualByComparingTo(preview.unearnedVat());
+        assertThat(debitOnRole(tcr, AccountRole.OUTPUT_VAT_DEFERRED)).isEqualByComparingTo("0.00");
+        assertNoInstalmentVat(batchId, second);
+    }
+
+    private void assertNoInstalmentVat(UUID batchId, UUID leaseId) {
+        assertThat(batchJournals(batchId)).noneMatch(e -> e.getDocType() == JournalDocType.VTP);
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where lease_id = ? and doc_type = 'VTP'",
+                Long.class, leaseId)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from vat_tax_points where lease_id = ?", Long.class, leaseId))
+                .as("no VAT schedule").isZero();
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Long.class, leaseId))
+                .as("no tax invoice or credit note").isZero();
+    }
+
+    /** Σ credit on the journal's lines whose account the tenant's default mapping for {@code role} points at. */
+    private BigDecimal creditOnRole(UUID journalId, AccountRole role) {
+        return sumOnRole(journalId, role, "credit");
+    }
+
+    private BigDecimal debitOnRole(UUID journalId, AccountRole role) {
+        return sumOnRole(journalId, role, "debit");
+    }
+
+    private BigDecimal sumOnRole(UUID journalId, AccountRole role, String side) {
+        return jdbc.queryForObject("select coalesce(sum(l." + side + "), 0) from journal_lines l"
+                + " join tenant_default_account_mappings m on m.account_id = l.account_id and m.role = ?"
+                + " where l.journal_entry_id = ?", BigDecimal.class, role.name(), journalId);
     }
 
     /**

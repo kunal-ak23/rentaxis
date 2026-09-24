@@ -1251,7 +1251,7 @@ public class ChequeService {
         // Received before it fell due, the receipt is the VAT tax point: the
         // instalment's VTP posts now, dated the receipt, in this same transaction
         // (spec 2026-09-24 §1). On or after the due date nothing changes.
-        vatTaxPoints.onCleared(cheque, date, Replay.batchIdOf(replay));
+        vatTaxPoints.onCleared(cheque, date);
     }
 
     private void reversePdr(Cheque cheque, LocalDate date, String reason) {

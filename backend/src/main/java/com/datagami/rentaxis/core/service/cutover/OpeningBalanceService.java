@@ -158,11 +158,12 @@ public class OpeningBalanceService {
      * *_PENALTY are excluded from manual entry (derived by step 1)." The two
      * {@code *_PENALTY} roles are RENT_PENALTY and CHEQUE_RETURN_PENALTY.
      *
-     * <p>{@code OUTPUT_VAT_DEFERRED} joins them (spec 2026-09-24 §1): the contract
-     * import raises it with each VAT-bearing TCO and runs it down with the tax points
-     * before the books open, and PACT never names such an account. Treated as manual,
-     * the R16 delta rule would post {@code −ours} against it and wipe the VAT still
-     * waiting for its instalments.</p>
+     * <p>{@code OUTPUT_VAT_DEFERRED} joins them (spec 2026-09-24 §1). The cut-over
+     * import never raises it — its contracts are on the CONTRACT VAT model, because
+     * PACT declared their VAT on the contract date — but a lease posted here, on the
+     * INSTALMENT model, before the cut-over date can still hold VAT waiting for its
+     * instalments, and PACT never names such an account. Treated as manual, the R16
+     * delta rule would post {@code −ours} against it and wipe that VAT.</p>
      */
     public static final Set<AccountRole> DERIVED_ROLES = Collections.unmodifiableSet(EnumSet.of(
             AccountRole.RENT_RECEIVABLE, AccountRole.PDC_RECEIVABLE, AccountRole.ADVANCE_RENT,
@@ -760,12 +761,13 @@ public class OpeningBalanceService {
         }
 
         // Output VAT per instalment (spec 2026-09-24 §1). PACT books a contract's VAT
-        // into Output VAT at the contract date; the import parks the part whose
-        // instalment has not reached its tax point in OUTPUT_VAT_DEFERRED (derived, so
-        // never posted to here). PACT's Output VAT figure therefore covers both of our
-        // accounts, and the delta on Output VAT is taken against their sum — otherwise
-        // the deferred VAT would be counted twice, once in each account, with the
-        // excess parked on the difference line.
+        // into Output VAT at the contract date. The cut-over import does the same (its
+        // contracts are CONTRACT-timed), so for them this is a no-op. A lease posted
+        // here on the INSTALMENT model before the cut-over date parks the VAT whose
+        // tax point has not come in OUTPUT_VAT_DEFERRED (derived, so never posted to
+        // here) — VAT that PACT's Output VAT figure also carries. The delta on Output
+        // VAT is therefore taken against the sum of the two accounts; otherwise that
+        // VAT would be on the books twice, once in each.
         ours = foldDeferredVatIntoOutputVat(ours, derived, problems);
 
         LinkedHashMap<UUID, BigDecimal> byAccount = new LinkedHashMap<>();
@@ -825,8 +827,8 @@ public class OpeningBalanceService {
         out.merge(outputVat.getId(), deferred, BigDecimal::add);
         problems.add(GridProblemDTO.warning(outputVat.getCode() + " " + outputVat.getName() + ": "
                 + deferred.negate().setScale(2, RoundingMode.HALF_UP).toPlainString()
-                + " of it is already on the books as output VAT not yet due on the imported contracts'"
-                + " instalments, so only the rest of PACT's figure is posted to it."));
+                + " of it is already on the books as output VAT not yet due on leases posted here"
+                + " before the cut-over, so only the rest of PACT's figure is posted to it."));
         return out;
     }
 

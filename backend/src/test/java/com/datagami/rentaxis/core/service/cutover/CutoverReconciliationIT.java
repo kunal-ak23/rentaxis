@@ -46,9 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   TCO 0001   Dr rent receivable 51,000   Cr advance rent      51,000
  *              Dr rent receivable  5,000   Cr security deposit   5,000
  *   TCO 0002   Dr rent receivable 21,000   Cr advance rent      21,000
- *              Dr rent receivable  1,050   Cr output VAT – not yet due  1,050
- *              (its instalment falls due on 1 Oct, the day the books open, so its
- *              tax point is after the cut-over — spec 2026-09-24 §1)
+ *              Dr rent receivable  1,050   Cr output VAT         1,050
  *   PDR ×3     Dr PDC receivable  31,000 / 25,000 / 22,050      Cr rent receivable
  *   CRT        Dr bank            31,000                        Cr PDC receivable
  *   CIL        Dr advance rent       978.08                     Cr rental income
@@ -184,16 +182,8 @@ class CutoverReconciliationIT extends AbstractPostgresIT {
         // second pair at the contract date, so a regression that dropped the pair or
         // credited the wrong leaf would show here as a 1,050 gap rather than passing
         // unnoticed.
-        //
-        // With VAT per instalment (spec 2026-09-24 §1) the 1,050 waits on "Output VAT –
-        // not yet due" until the instalment's tax point on 1 Oct. PACT booked it into
-        // Output VAT on the contract date, so the report shows the same 1,050 as a
-        // difference on each of the two accounts, in opposite directions — and they
-        // net to nothing, which is the check that nothing was lost or doubled.
-        assertThat(recon(rows, outputVatName()).derivedBalance()).isEqualByComparingTo("0.00");
-        assertThat(recon(rows, outputVatName()).difference()).isEqualByComparingTo("1050.00");
-        assertThat(recon(rows, deferredVatName()).derivedBalance()).isEqualByComparingTo("-1050.00");
-        assertThat(recon(rows, deferredVatName()).difference()).isEqualByComparingTo("-1050.00");
+        assertThat(recon(rows, outputVatName()).derivedBalance()).isEqualByComparingTo("-1050.00");
+        assertThat(recon(rows, outputVatName()).difference()).isEqualByComparingTo("0.00");
 
         // A code PACT exported and our chart has no account for: kept and shown, with
         // its whole balance as the difference, rather than silently dropped.
@@ -251,14 +241,6 @@ class CutoverReconciliationIT extends AbstractPostgresIT {
      * and a test that named the leaf directly would still pass if the mapping moved
      * to a different one.</p>
      */
-    /** The leaf the tenant's default OUTPUT_VAT_DEFERRED mapping points at. */
-    private String deferredVatName() {
-        return tx.execute(s -> defaultMappings.findAll().stream()
-                .filter(m -> m.getRole() == AccountRole.OUTPUT_VAT_DEFERRED)
-                .findFirst().orElseThrow(() -> new AssertionError("OUTPUT_VAT_DEFERRED is not mapped"))
-                .getAccount().getName());
-    }
-
     private String outputVatName() {
         return tx.execute(s -> accounts.getAccountById(
                 defaultMappings.findAll().stream()

@@ -7,7 +7,6 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
-import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.TaxInvoice;
@@ -57,8 +56,10 @@ import java.util.UUID;
  * <p><b>Shape.</b> The schedule is built when rows join the books (post, extension,
  * addendum, amendment) — one PLANNED point per VAT-bearing row. {@link
  * VatTaxPointJob} posts every PLANNED point whose date has come, each in its own
- * transaction through {@link VatTaxPointPoster}; an early receipt, a termination
- * and a cut-over catch-up post theirs in the caller's transaction. Posting is the
+ * transaction through {@link VatTaxPointPoster}; an early receipt and a
+ * termination post theirs in the caller's transaction. A cut-over contract has no
+ * schedule at all: PACT declared its VAT on the contract date, so the import posts it
+ * on the CONTRACT model. Posting is the
  * only way a point's VAT reaches {@code OUTPUT_VAT}, and {@code PostingService} is
  * the only way anything reaches the ledger.</p>
  *
@@ -171,18 +172,16 @@ public class VatTaxPointService {
      * the clearing's transaction (spec 2026-09-24 §1, "Row received early").
      * Received on or after its due date, nothing changes — the due date already was
      * the tax point, and the job posts (or has posted) it there.
-     *
-     * @param importBatchId the cut-over batch when this is a replayed clearance, else null
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void onCleared(Cheque cheque, LocalDate clearedOn, UUID importBatchId) {
+    public void onCleared(Cheque cheque, LocalDate clearedOn) {
         if (clearedOn == null) return;
         VatTaxPoint point = points.findLiveByChequeId(cheque.getId()).orElse(null);
         if (point == null || point.getStatus() != VatTaxPointStatus.PLANNED) return;
         if (!clearedOn.isBefore(point.getTaxPointDate())) return;
         point.setTaxPointDate(clearedOn);
         points.saveAndFlush(point);
-        poster.postJoining(point.getId(), importBatchId);
+        poster.postJoining(point.getId());
     }
 
     /**
@@ -364,7 +363,7 @@ public class VatTaxPointService {
         BigDecimal pendingTaxable = BigDecimal.ZERO;
         for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(), VatTaxPointStatus.PLANNED)) {
             if (!p.getTaxPointDate().isAfter(t)) {
-                poster.postJoining(p.getId(), null);
+                poster.postJoining(p.getId());
                 dueByT = dueByT.add(p.getVatAmount());
             } else {
                 pending = pending.add(p.getVatAmount());
@@ -448,64 +447,6 @@ public class VatTaxPointService {
         }
         return new VatTaxPointRunResult(preview, preview ? 0 : done.size(), done.size(), s2(total), done, skipped,
                 plan.locked(), errors);
-    }
-
-    /**
-     * A cut-over contract's tax points dated ≤ {@code through} (the day before the
-     * books open), posted inside the batch with its id — the same catch-up
-     * recognition does for the months already earned (spec 2026-09-24 §1).
-     */
-    @Transactional(propagation = Propagation.MANDATORY)
-    public int catchUpLease(UUID leaseId, LocalDate through, UUID importBatchId) {
-        lease(leaseId);
-        int posted = 0;
-        for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.PLANNED)) {
-            if (p.getTaxPointDate().isAfter(through)) continue;
-            poster.postJoining(p.getId(), importBatchId);
-            posted++;
-        }
-        return posted;
-    }
-
-    // ------------------------------------------------------------------
-    // cut-over reverse
-    // ------------------------------------------------------------------
-
-    /**
-     * What stops a batch reverse from taking this lease's VAT back: a tax point that
-     * posted after the cut-over, outside the batch. Its VAT may already be in a
-     * filed return, and the invoice is in the renter's hands.
-     */
-    @Transactional(propagation = Propagation.MANDATORY)
-    public List<String> blockersAgainstRevert(UUID leaseId, UUID batchId, String who) {
-        List<String> out = new ArrayList<>();
-        for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.POSTED)) {
-            if (p.getJournalId() == null) continue;
-            JournalEntry e = journals.findById(p.getJournalId()).orElse(null);
-            if (e != null && !batchId.equals(e.getImportBatchId())) {
-                out.add(who + ": VAT on " + p.getTaxPointDate() + " was declared after the cut-over ("
-                        + e.getEntryNumber() + "); a batch cannot be reversed once its VAT has been declared.");
-            }
-        }
-        return out;
-    }
-
-    /** Every live point CANCELLED — the batch's VTPs were reversed with the rest of its journals. */
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void cancelAllForRevert(UUID leaseId) {
-        for (VatTaxPoint p : points.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(leaseId)) {
-            if (p.getStatus() == VatTaxPointStatus.CANCELLED) continue;
-            p.setStatus(VatTaxPointStatus.CANCELLED);
-            points.save(p);
-        }
-        points.flush();
-    }
-
-    /** Deleted outright — a discarded draft lease's schedule (it never posted, so there is nothing else). */
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void deleteForDiscard(UUID leaseId) {
-        points.deleteAll(points.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(leaseId));
-        points.flush();
     }
 
     // ------------------------------------------------------------------
