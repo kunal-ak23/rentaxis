@@ -5,7 +5,8 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
-import { activityText, type ActivityItem } from "@/components/dashboard/activityText";
+import { activityText, isolate, type ActivityItem } from "@/components/dashboard/activityText";
+import { collectionTile, type CollectionSummary } from "@/components/dashboard/collectionTile";
 import { cn } from "@/lib/utils";
 import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
@@ -26,10 +27,8 @@ type DashboardSummary = {
   pendingAmount: number;
   pendingThisMonthAmount: number;
   overdueAmount: number;
-  receivedThisMonth?: number | null;
-  receivedLastMonth?: number | null;
   recentActivity: ActivityItem[];
-};
+} & CollectionSummary;
 
 type MonthlyPoint = {
   month: string;
@@ -88,6 +87,7 @@ function StatCard({
   delta,
   deltaPos = true,
   sub,
+  note,
   sparkData,
   sparkColor,
 }: {
@@ -97,6 +97,8 @@ function StatCard({
   delta?: string;
   deltaPos?: boolean;
   sub?: string;
+  /** A second, quieter line under `sub`. */
+  note?: string;
   sparkData?: number[];
   sparkColor?: string;
 }) {
@@ -115,6 +117,7 @@ function StatCard({
         {unit && <span className="text-[13px] text-[var(--ink-500)] font-medium">{unit}</span>}
       </div>
       {sub && <p className="text-[12px] text-[var(--ink-500)]">{sub}</p>}
+      {note && <p className="text-[11.5px] text-[var(--ink-500)]">{note}</p>}
       {sparkData && <Sparkline data={sparkData} color={sparkColor ?? "var(--accent)"} />}
     </div>
   );
@@ -277,22 +280,25 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  // Collected card = cash actually received this month (matches the
-  // Transactions ledger), against this month's dues for context. Falls back
-  // to the due-month series for older backends without receivedThisMonth.
-  const thisMonth = monthly.length ? monthly[monthly.length - 1] : null;
-  const collectedThisMonth =
-    summary.receivedThisMonth ?? (thisMonth ? thisMonth.collected : summary.collectedAmount);
-  const expectedThisMonth = thisMonth ? thisMonth.expected : summary.totalRentRevenue;
-  const collectedSpark = monthly.map((m) => m.collected);
-  let collectedDelta: string | undefined;
-  let collectedDeltaPos = true;
-  if (summary.receivedThisMonth != null && (summary.receivedLastMonth ?? 0) > 0) {
-    const last = summary.receivedLastMonth as number;
-    const pct = ((collectedThisMonth - last) / last) * 100;
-    collectedDeltaPos = pct >= 0;
-    collectedDelta = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+  // Collected against this month's dues (gap #59): both sides by due date, so
+  // a catch-up banking run of old cheques shows as arrears rather than as a
+  // multiple of the month. The sparkline is the monthly series, which is by
+  // due month too.
+  const tile = collectionTile(summary);
+  const money = (v: number) => isolate(formatCurrencyCompact(v));
+  const collectedSub =
+    tile.percent == null
+      ? t("nothingDueThisMonth")
+      : t("ofDueThisMonth", { amount: money(tile.due), percent: tile.percent });
+  let collectedNote: string | undefined;
+  if (tile.arrears > 0 && tile.advance > 0) {
+    collectedNote = t("collectedArrearsAndAdvance", { arrears: money(tile.arrears), advance: money(tile.advance) });
+  } else if (tile.arrears > 0) {
+    collectedNote = t("collectedArrearsOnly", { amount: money(tile.arrears) });
+  } else if (tile.advance > 0) {
+    collectedNote = t("collectedAdvanceOnly", { amount: money(tile.advance) });
   }
+  const collectedSpark = monthly.map((m) => m.collected);
 
   return (
     <div className="flex flex-col gap-5">
@@ -321,11 +327,10 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <StatCard
-          label={t("collectedThisMonth")}
-          value={formatCurrencyCompact(collectedThisMonth)}
-          delta={collectedDelta}
-          deltaPos={collectedDeltaPos}
-          sub={t("ofExpected", { amount: formatCurrencyCompact(expectedThisMonth) })}
+          label={t("collectedAgainstDues")}
+          value={formatCurrencyCompact(tile.collected)}
+          sub={collectedSub}
+          note={collectedNote}
           sparkData={collectedSpark.length ? collectedSpark : undefined}
           sparkColor="var(--green-600)"
         />

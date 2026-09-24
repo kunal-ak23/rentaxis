@@ -421,6 +421,35 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                  @Param("propertyIds") Collection<UUID> propertyIds);
 
     /**
+     * What cleared in {@code [from, to)}, split by when it was due: before the
+     * window (arrears), inside it, and after it (advance) — the dashboard's
+     * collection tile (gap #59).
+     *
+     * <p>Returns one row {@code [BigDecimal dueBefore, BigDecimal dueWithin,
+     * BigDecimal dueAfter]}. The where clause is {@link #sumClearedBetween}'s
+     * exactly, so the three columns always add up to what that method reports for
+     * the same window and scope. A cleared row with no cheque date counts as due
+     * within the window — it cannot be arrears or advance of anything.</p>
+     */
+    @Query("""
+        select coalesce(sum(case when c.chequeDate < :from then c.amount else 0 end), 0),
+               coalesce(sum(case when c.chequeDate is null
+                                  or (c.chequeDate >= :from and c.chequeDate < :to)
+                                 then c.amount else 0 end), 0),
+               coalesce(sum(case when c.chequeDate >= :to then c.amount else 0 end), 0)
+        from Cheque c
+        where c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED
+          and c.clearedAt >= :from and c.clearedAt < :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        """)
+    List<Object[]> sumClearedBetweenByDueWindow(@Param("from") LocalDate from,
+                                                @Param("to") LocalDate to,
+                                                @Param("unrestricted") boolean unrestricted,
+                                                @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
      * The register grouped by the month a cheque matures in, expected against
      * collected — the dashboard's twelve-month chart in one query.
      *

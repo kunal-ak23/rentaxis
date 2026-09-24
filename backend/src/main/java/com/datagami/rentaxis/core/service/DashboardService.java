@@ -70,6 +70,8 @@ public class DashboardService {
     public DashboardSummaryDTO getSummary() {
         DashboardSummaryDTO summary = new DashboardSummaryDTO();
         Scope scope = scope();
+        // The landlord's day: the JVM default zone is app.time-zone (Asia/Dubai,
+        // see AppTimeZone), so "this month" starts at midnight Dubai time.
         LocalDate today = LocalDate.now();
 
         // --- Portfolio ---
@@ -181,6 +183,36 @@ public class DashboardService {
         summary.setReceivedLastMonth(scope.blocked() ? BigDecimal.ZERO
                 : nz(chequeRepository.sumClearedBetween(monthStart.minusMonths(1), monthStart, null,
                         scope.unrestricted(), scope.propertyIds())));
+
+        // --- The collection tile, on one basis (gap #59) ---
+        // The old tile divided money cleared this month by money dated this month,
+        // and one catch-up banking run read "139,550 of 3,667". The headline is now
+        // this month's dues against what of them has come in; money that came in
+        // for other months is reported beside it as arrears or advance. The split
+        // is one query with sumClearedBetween's where clause, so the three parts
+        // add up to receivedThisMonth by construction.
+        BigDecimal dueThisMonth = BigDecimal.ZERO;
+        BigDecimal againstDue = BigDecimal.ZERO;
+        BigDecimal arrears = BigDecimal.ZERO;
+        BigDecimal advance = BigDecimal.ZERO;
+        if (!scope.blocked()) {
+            for (Object[] row : chequeRepository.aggregateMonthly(monthStart, nextMonthStart,
+                    scope.unrestricted(), scope.propertyIds())) {
+                dueThisMonth = dueThisMonth.add(nz((BigDecimal) row[1]));
+            }
+            List<Object[]> split = chequeRepository.sumClearedBetweenByDueWindow(monthStart, nextMonthStart,
+                    scope.unrestricted(), scope.propertyIds());
+            if (split != null && !split.isEmpty()) {
+                Object[] row = split.getFirst();
+                arrears = nz((BigDecimal) row[0]);
+                againstDue = nz((BigDecimal) row[1]);
+                advance = nz((BigDecimal) row[2]);
+            }
+        }
+        summary.setDueThisMonth(dueThisMonth);
+        summary.setCollectedAgainstDueThisMonth(againstDue);
+        summary.setCollectedArrears(arrears);
+        summary.setCollectedAdvance(advance);
 
         // --- Recent Activity ---
         List<DashboardSummaryDTO.RecentActivityItem> activityItems = new ArrayList<>();

@@ -39,8 +39,10 @@ const SUMMARY = {
     collectedAmount: 0,
     pendingThisMonthAmount: 0,
     totalRentRevenue: 0,
-    receivedThisMonth: 0,
-    receivedLastMonth: 0,
+    dueThisMonth: 3667,
+    collectedAgainstDueThisMonth: 0,
+    collectedArrears: 139550,
+    collectedAdvance: 0,
     recentActivity: [],
 };
 
@@ -71,7 +73,7 @@ describe("dashboard home localization", () => {
         renderAr();
 
         await waitFor(() =>
-            expect(screen.getByText(ar.Dashboard.collectedThisMonth)).toBeInTheDocument(),
+            expect(screen.getByText(ar.Dashboard.collectedAgainstDues)).toBeInTheDocument(),
         );
         expect(screen.getByText(ar.Dashboard.pendingThisMonth)).toBeInTheDocument();
         expect(screen.getByText(ar.Dashboard.portfolioSnapshot)).toBeInTheDocument();
@@ -83,12 +85,12 @@ describe("dashboard home localization", () => {
     it("leaves no English card label on the Arabic page", async () => {
         const { container } = renderAr();
         await waitFor(() =>
-            expect(screen.getByText(ar.Dashboard.collectedThisMonth)).toBeInTheDocument(),
+            expect(screen.getByText(ar.Dashboard.collectedAgainstDues)).toBeInTheDocument(),
         );
         const text = container.textContent ?? "";
 
         for (const literal of [
-            "Collected this month", "Pending this month", "Portfolio snapshot",
+            "Collected against this month", "arrears collected", "Pending this month", "Portfolio snapshot",
             "Current totals", "Draft leases", "Vacant units", "New lease", "Export",
             "Recent activity", "Requires follow-up",
             // The two summary widgets, previously stubbed out of this test and
@@ -107,7 +109,7 @@ describe("dashboard home localization", () => {
 
         renderAr();
         await waitFor(() =>
-            expect(screen.getByText(ar.Dashboard.collectedThisMonth)).toBeInTheDocument(),
+            expect(screen.getByText(ar.Dashboard.collectedAgainstDues)).toBeInTheDocument(),
         );
 
         const afternoon = ar.Dashboard.greetingAfternoon.replace("{name}", "Tutorial");

@@ -85,7 +85,7 @@ describe("DashboardPage charts use real data", () => {
         expect(screen.getByText("80%")).toBeTruthy();
     });
 
-    it("prefers cash received this month (and its MoM delta) for the collected card", async () => {
+    it("heads the collected card by due date, not by cash received this month (gap #59)", async () => {
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
             if (u.includes("/dashboard/monthly-collections")) {
@@ -97,6 +97,10 @@ describe("DashboardPage charts use real data", () => {
                     ...SUMMARY,
                     receivedThisMonth: 12500,
                     receivedLastMonth: 10000,
+                    dueThisMonth: 10000,
+                    collectedAgainstDueThisMonth: 7500,
+                    collectedArrears: 5000,
+                    collectedAdvance: 0,
                 }),
             } as Response;
         }) as unknown as typeof fetch;
@@ -107,8 +111,12 @@ describe("DashboardPage charts use real data", () => {
             </NextIntlClientProvider>,
         );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
-        // Delta derives from receipts (12500 vs 10000), not the due-month series.
-        expect(screen.getByText("+25.0%")).toBeTruthy();
+        const card = screen.getByText(en.Dashboard.collectedAgainstDues).closest("div.flex-col") as HTMLElement;
+        const text = (card.textContent ?? "").replace(/[\u2068\u2069]/g, "").replace(/\u00a0/g, " ");
+        expect(text).toContain("AED 7,500");
+        expect(text).toContain("of AED 10,000 due (75%)");
+        // Receipts month-on-month compared two different bases; no delta now.
+        expect(screen.queryByText("+25.0%")).toBeNull();
     });
 
     it("does not render the old hardcoded mock deltas", async () => {
