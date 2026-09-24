@@ -544,7 +544,27 @@
     "amountDue": "Amount due",
     "penaltyRow": "Penalty",
     "payFailed": "The payment could not be verified.",
-    "cancelFailed": "The payment could not be cancelled."
+    "cancelFailed": "The payment could not be cancelled.",
+    "rentSettingsDesc": "Configure rent due dates, grace periods, and late penalties per property.",
+    "selectPropertyHeading": "Select Property",
+    "selectPropertyPlaceholder": "-- Select a property --",
+    "loadingSettings": "Loading settings...",
+    "dueDayHint": "Day of month when rent is due (1-28)",
+    "gracePeriodHint": "Days after due date before penalty applies (0-30)",
+    "penaltyAmountPerDay": "Amount per day (AED)",
+    "penaltyPercentPerDay": "Percentage per day (%)",
+    "onlineEnabledHint": "Renters can pay rent online through the portal.",
+    "onlineDisabledHint": "Online payments are disabled for this property.",
+    "toggleOnlinePayment": "Toggle online payment",
+    "overridesActive": "{count, plural, one {# override active} other {# overrides active}}",
+    "unitAed": "AED",
+    "unitDays": "days",
+    "unitAedPerDay": "AED/day",
+    "accessDeniedTitle": "Access Denied",
+    "rentSettingsAccessDenied": "You do not have permission to configure rent settings.",
+    "loadSettingsFailed": "Failed to load rent settings.",
+    "saveSettingsFailed": "Failed to save settings.",
+    "networkError": "Network error. Please try again."
   },
   "Vendors": {
     "title": "Vendors",
@@ -579,7 +599,12 @@
     "saveFailed": "Failed to save vendor.",
     "deleteFailed": "Failed to delete vendor.",
     "viewLedger": "Ledger",
-    "payableAccountManaged": "Created and maintained automatically"
+    "payableAccountManaged": "Created and maintained automatically",
+    "status": "Status",
+    "actions": "Actions",
+    "search": "Search...",
+    "close": "Close",
+    "delete": "Delete"
   },
   "BankAccounts": {
     "title": "Bank Accounts",

@@ -1,10 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
-    useLocale: () => "en",
-}));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: null }),
@@ -65,8 +62,8 @@ describe("RentSettingsPage fetchSettings", () => {
     it("treats the backend's 204 No Content as 'no settings yet' without parsing the body", async () => {
         await selectProperty();
 
-        // The settings form (headed by the "settings" card title) renders with defaults.
-        expect(await screen.findByText("settings")).toBeTruthy();
+        // The settings form (headed by the "Settings" card title) renders with defaults.
+        expect(await screen.findByText("Settings")).toBeTruthy();
         expect(screen.queryByText("Failed to load rent settings.")).toBeNull();
     });
 
@@ -85,7 +82,7 @@ describe("RentSettingsPage fetchSettings", () => {
         };
         await selectProperty();
 
-        expect(await screen.findByText("settings")).toBeTruthy();
+        expect(await screen.findByText("Settings")).toBeTruthy();
         expect(screen.getByDisplayValue("15")).toBeTruthy();
     });
 
@@ -94,7 +91,7 @@ describe("RentSettingsPage fetchSettings", () => {
         await selectProperty();
 
         expect(await screen.findByText("Failed to load rent settings.")).toBeTruthy();
-        expect(screen.queryByText("settings")).toBeNull();
+        expect(screen.queryByText("Settings")).toBeNull();
     });
 
     it("surfaces an error on a network failure instead of pretending there are no settings", async () => {
@@ -115,6 +112,6 @@ describe("RentSettingsPage fetchSettings", () => {
         fireEvent.change(select, { target: { value: "p1" } });
 
         expect(await screen.findByText("Failed to load rent settings.")).toBeTruthy();
-        expect(screen.queryByText("settings")).toBeNull();
+        expect(screen.queryByText("Settings")).toBeNull();
     });
 });

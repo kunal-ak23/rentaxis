@@ -544,7 +544,27 @@
     "amountDue": "المبلغ المستحق",
     "penaltyRow": "غرامة",
     "payFailed": "تعذّر التحقق من الدفعة.",
-    "cancelFailed": "تعذّر إلغاء الدفعة."
+    "cancelFailed": "تعذّر إلغاء الدفعة.",
+    "rentSettingsDesc": "اضبط مواعيد استحقاق الإيجار وفترات السماح وغرامات التأخير لكل عقار.",
+    "selectPropertyHeading": "اختر العقار",
+    "selectPropertyPlaceholder": "-- اختر عقارًا --",
+    "loadingSettings": "جارٍ تحميل الإعدادات...",
+    "dueDayHint": "يوم الشهر الذي يستحق فيه الإيجار (1-28)",
+    "gracePeriodHint": "عدد الأيام بعد تاريخ الاستحقاق قبل تطبيق الغرامة (0-30)",
+    "penaltyAmountPerDay": "المبلغ اليومي (درهم)",
+    "penaltyPercentPerDay": "النسبة اليومية (%)",
+    "onlineEnabledHint": "يمكن للمستأجرين دفع الإيجار إلكترونيًا عبر البوابة.",
+    "onlineDisabledHint": "الدفع الإلكتروني معطّل لهذا العقار.",
+    "toggleOnlinePayment": "تفعيل الدفع الإلكتروني أو تعطيله",
+    "overridesActive": "{count, plural, zero {لا تجاوزات مفعّلة} one {تجاوز واحد مفعّل} two {تجاوزان مفعّلان} few {# تجاوزات مفعّلة} many {# تجاوزًا مفعّلًا} other {# تجاوز مفعّل}}",
+    "unitAed": "درهم",
+    "unitDays": "أيام",
+    "unitAedPerDay": "درهم/يوم",
+    "accessDeniedTitle": "الوصول مرفوض",
+    "rentSettingsAccessDenied": "ليست لديك صلاحية لضبط إعدادات الإيجار.",
+    "loadSettingsFailed": "تعذّر تحميل إعدادات الإيجار.",
+    "saveSettingsFailed": "تعذّر حفظ الإعدادات.",
+    "networkError": "خطأ في الشبكة. يُرجى المحاولة مرة أخرى."
   },
   "Vendors": {
     "title": "الموردون",
@@ -579,7 +599,12 @@
     "saveFailed": "فشل حفظ المورد.",
     "deleteFailed": "فشل حذف المورد.",
     "viewLedger": "دفتر الأستاذ",
-    "payableAccountManaged": "يُنشأ ويُدار تلقائيًا"
+    "payableAccountManaged": "يُنشأ ويُدار تلقائيًا",
+    "status": "الحالة",
+    "actions": "الإجراءات",
+    "search": "بحث...",
+    "close": "إغلاق",
+    "delete": "حذف"
   },
   "BankAccounts": {
     "title": "الحسابات البنكية",
