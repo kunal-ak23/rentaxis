@@ -252,7 +252,7 @@ databaseChangeLog:
   # PR #353 review: a cut-over "Cancelled cheque <no>" opening item edited by hand
   # before 113 ran kept no link. Link it on vendor and name alone, where exactly
   # one unlinked cancelled cheque fits; report what is still unlinked as a NOTICE.
-  # A separate changeset because 113 has already run in production.
+  # Kept as its own changeset so 113 stays as reviewed in PR #352.
   - changeSet:
       id: 114-ap-opening-cheque-link-fallback
       author: rentaxis-system
