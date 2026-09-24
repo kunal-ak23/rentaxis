@@ -61,6 +61,14 @@ function getOccupancyTextColor(pct: number) {
 export default function PropertiesPage() {
     const t = useTranslations("MasterData");
     const e = useTranslations("Emirates");
+    const tCommon = useTranslations("Common");
+    // Enum codes to labels; an unknown code falls back to its readable form.
+    const propertyTypeLabel = (code: string | null | undefined) =>
+        code && t.has(`propertyType${code}`) ? t(`propertyType${code}`) : (code ?? "").replace(/_/g, " ");
+    const unitTypeLabel = (code: string) =>
+        t.has(`unitType${code}`) ? t(`unitType${code}`) : code.replace("BHK", "BHK ");
+    const sheetLabel = (sheet: string) => (sheet === "General" ? t("sheetGeneral") : sheet);
+    const rowLabel = (row: number | null) => (row == null ? t("rowFile") : t("rowNumber", { row }));
     const locale = useLocale();
     const [stats, setStats] = useState<PropertyStats[]>([]);
     const [loading, setLoading] = useState(true);
@@ -146,11 +154,11 @@ export default function PropertiesPage() {
                 setStats(data);
                 setError(null);
             } else {
-                setError("Failed to load properties");
+                setError(tCommon("loadFailedProperties"));
             }
         } catch (err) {
             console.error(err);
-            setError("Failed to load properties");
+            setError(tCommon("loadFailedProperties"));
         } finally {
             setLoading(false);
         }
@@ -179,7 +187,7 @@ export default function PropertiesPage() {
             });
         } catch (err) {
             console.error(err);
-            setProjectFormError(err instanceof ApiError ? err.message : "Failed to create project. Please try again.");
+            setProjectFormError(err instanceof ApiError ? err.message : t("projectCreateFailed"));
         }
     };
 
@@ -216,7 +224,7 @@ export default function PropertiesPage() {
             });
         } catch (err) {
             console.error(err);
-            setPropertyFormError(err instanceof ApiError ? err.message : "Failed to create property. Please try again.");
+            setPropertyFormError(err instanceof ApiError ? err.message : t("propertyCreateFailed"));
         }
     };
 
@@ -244,11 +252,11 @@ export default function PropertiesPage() {
                 setPortfolioStep("processing");
                 pollPortfolioStatus(data.jobId);
             } else {
-                setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: data.error || "Upload failed" }] });
+                setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: data.error || t("uploadFailed") }] });
                 setPortfolioStep("result");
             }
         } catch (err) {
-            setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: "Network error" }] });
+            setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: t("networkError") }] });
             setPortfolioStep("result");
         } finally {
             setPortfolioUploading(false);
@@ -275,15 +283,15 @@ export default function PropertiesPage() {
             try {
                 const res = await fetch(`/api/proxy/v1/import/portfolio/${jobId}/status`);
                 if (res.status === 401 || res.status === 403) {
-                    stopWithError("Your session has expired. Please sign in again and retry the import.");
+                    stopWithError(t("importSessionExpired"));
                     return;
                 }
                 if (res.status === 404) {
-                    stopWithError("Import job not found. Please upload the file again.");
+                    stopWithError(t("importJobNotFound"));
                     return;
                 }
                 if (!res.ok) {
-                    if (polls >= maxPolls) stopWithError("Could not retrieve import status. Please try again later.");
+                    if (polls >= maxPolls) stopWithError(t("importStatusFailed"));
                     return;
                 }
                 const data = await res.json();
@@ -294,10 +302,10 @@ export default function PropertiesPage() {
                     setPortfolioStep("result");
                     if (data.status === "COMPLETED") fetchStats();
                 } else if (polls >= maxPolls) {
-                    stopWithError("Import timed out. The job may still be running - please check again later.");
+                    stopWithError(t("importTimedOut"));
                 }
             } catch {
-                if (polls >= maxPolls) stopWithError("Network error while checking import status. Please try again.");
+                if (polls >= maxPolls) stopWithError(t("importStatusNetworkError"));
             }
         }, 2000);
         pollingRef.current = interval;
@@ -308,7 +316,7 @@ export default function PropertiesPage() {
         try {
             const res = await fetch("/api/proxy/v1/import/portfolio/template");
             if (!res.ok) {
-                setPortfolioTemplateError("Failed to download template. Please try again.");
+                setPortfolioTemplateError(t("templateDownloadFailed"));
                 return;
             }
             const blob = await res.blob();
@@ -319,7 +327,7 @@ export default function PropertiesPage() {
             a.click();
             URL.revokeObjectURL(url);
         } catch {
-            setPortfolioTemplateError("Failed to download template. Please try again.");
+            setPortfolioTemplateError(t("templateDownloadFailed"));
         }
     };
 
@@ -366,12 +374,12 @@ export default function PropertiesPage() {
                 method: "POST",
                 body: formData,
             });
-            const data = await res.json().catch(() => ({ error: true, message: `Import failed (status ${res.status})` }));
+            const data = await res.json().catch(() => ({ error: true, message: t("importFailedStatus", { status: res.status }) }));
             setImportResult(data);
             if (res.ok) fetchStats();
         } catch (err) {
             console.error(err);
-            setImportResult({ error: true, message: "Import failed due to a network error. Please try again." });
+            setImportResult({ error: true, message: t("importNetworkError") });
         } finally {
             setImportLoading(false);
         }
@@ -460,13 +468,13 @@ export default function PropertiesPage() {
                 </div>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
                             placeholder={t("search")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
                     <div className="flex items-center gap-3">
@@ -526,14 +534,14 @@ export default function PropertiesPage() {
                                 className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <Upload size={14} />
-                                Import Property
+                                {t("importProperty")}
                             </button>
                             <button
                                 onClick={() => setShowPortfolioImport(true)}
                                 className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <FileSpreadsheet size={14} />
-                                Import Portfolio
+                                {t("importPortfolio")}
                             </button>
                         </>
                     )}
@@ -545,22 +553,22 @@ export default function PropertiesPage() {
             {showProjectForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
-                        <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <button onClick={() => setShowProjectForm(false)} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProject")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">
                             {t("addProjectDescription")}
                         </p>
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
-                                <input placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameEn")}</label>
+                                <input placeholder={t("projectNamePlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
-                                <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameAr} onChange={ev => setProjectFormData({ ...projectFormData, nameAr: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameAr")}</label>
+                                <input dir="rtl" placeholder="اسم المشروع بالعربية" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameAr} onChange={ev => setProjectFormData({ ...projectFormData, nameAr: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("emirate")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("emirate")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.emirate} onChange={ev => setProjectFormData({ ...projectFormData, emirate: ev.target.value })}>
                                     {["DUBAI", "ABU_DHABI", "SHARJAH", "AJMAN", "UMM_AL_QUWAIN", "RAS_AL_KHAIMAH", "FUJAIRAH"].map(opt => (
                                         <option key={opt} value={opt}>{e(opt)}</option>
@@ -568,29 +576,29 @@ export default function PropertiesPage() {
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("type")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.type} onChange={ev => setProjectFormData({ ...projectFormData, type: ev.target.value })}>
                                     {["RESIDENTIAL", "COMMERCIAL", "MIXED"].map(opt => (
-                                        <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+                                        <option key={opt} value={opt}>{propertyTypeLabel(opt)}</option>
                                     ))}
                                 </select>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("address")}
                                 </label>
-                                <input placeholder="Building name, street, area" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.address} onChange={ev => setProjectFormData({ ...projectFormData, address: ev.target.value })} />
+                                <input placeholder={t("addressPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.address} onChange={ev => setProjectFormData({ ...projectFormData, address: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("makaniNumber")}
                                 </label>
-                                <input placeholder="e.g. 12345-67890" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.makaniNumber} onChange={ev => setProjectFormData({ ...projectFormData, makaniNumber: ev.target.value })} />
+                                <input placeholder={t("makaniPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.makaniNumber} onChange={ev => setProjectFormData({ ...projectFormData, makaniNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("fixedExpenses")}
                                 </label>
                                 <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses} onChange={(v) => setProjectFormData({ ...projectFormData, fixedExpenses: v })} />
@@ -614,14 +622,14 @@ export default function PropertiesPage() {
             {showPropertyForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
-                        <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <button onClick={() => setShowPropertyForm(false)} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProperty")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">
                             {t("addPropertyDescription")}
                         </p>
                         <form onSubmit={handlePropertySubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-2">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("selectProject")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
@@ -631,40 +639,40 @@ export default function PropertiesPage() {
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unitNumber")}</label>
-                                <input required placeholder="e.g. 101" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("unitNumber")}</label>
+                                <input required placeholder={t("unitNumberPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("type")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.type} onChange={ev => setPropertyFormData({ ...propertyFormData, type: ev.target.value })}>
                                     {["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"].map(opt => (
-                                        <option key={opt} value={opt}>{opt.replace("BHK", "BHK ")}</option>
+                                        <option key={opt} value={opt}>{unitTypeLabel(opt)}</option>
                                     ))}
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("sizeSqft")}
                                 </label>
                                 <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.sizeSqft} onChange={(v) => setPropertyFormData({ ...propertyFormData, sizeSqft: v })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("status")}
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.status} onChange={ev => setPropertyFormData({ ...propertyFormData, status: ev.target.value })}>
-                                    <option value="VACANT">Vacant</option>
-                                    <option value="OCCUPIED">Occupied</option>
+                                    <option value="VACANT">{t("vacant")}</option>
+                                    <option value="OCCUPIED">{t("occupied")}</option>
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("expectedRent")}</label>
                                 <NumberInput placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, expectedRent: v })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("actualRent")}
                                 </label>
                                 <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, actualRent: v })} />
@@ -688,7 +696,7 @@ export default function PropertiesPage() {
             {showPortfolioImport && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
-                        <button onClick={resetPortfolioImport} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">
+                        <button onClick={resetPortfolioImport} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">
                             <X size={18} />
                         </button>
 
@@ -700,16 +708,16 @@ export default function PropertiesPage() {
                                         <FileSpreadsheet size={20} />
                                     </div>
                                     <div>
-                                        <h2 className="text-lg font-bold">Import Portfolio</h2>
-                                        <p className="text-xs text-muted font-medium">Upload a multi-sheet Excel workbook to import properties, units, renters, and leases at once.</p>
+                                        <h2 className="text-lg font-bold">{t("importPortfolio")}</h2>
+                                        <p className="text-xs text-muted font-medium">{t("portfolioImportDesc")}</p>
                                     </div>
                                 </div>
 
                                 <div className="mt-6 mb-4 flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-muted uppercase tracking-[0.15em]">Excel File (.xlsx)</span>
+                                    <span className="text-xs font-semibold text-muted uppercase tracking-[0.15em]">{t("excelFile")}</span>
                                     <button type="button" onClick={downloadPortfolioTemplate} className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
                                         <Download size={12} />
-                                        Download Template
+                                        {t("downloadTemplate")}
                                     </button>
                                 </div>
 
@@ -737,8 +745,8 @@ export default function PropertiesPage() {
                                         <div className="flex items-center justify-center gap-3">
                                             <FileSpreadsheet size={18} className="text-primary" />
                                             <span className="text-sm font-semibold text-foreground">{portfolioFile.name}</span>
-                                            <span className="text-xs text-muted">({(portfolioFile.size / 1024).toFixed(1)} KB)</span>
-                                            <button type="button" onClick={() => setPortfolioFile(null)} className="cursor-pointer text-muted hover:text-error transition-colors ml-2">
+                                            <span className="text-xs text-muted">({t("fileSizeKb", { size: (portfolioFile.size / 1024).toFixed(1) })})</span>
+                                            <button type="button" onClick={() => setPortfolioFile(null)} className="cursor-pointer text-muted hover:text-error transition-colors ms-2">
                                                 <X size={14} />
                                             </button>
                                         </div>
@@ -746,8 +754,8 @@ export default function PropertiesPage() {
                                         <label className="cursor-pointer">
                                             <div className="flex flex-col items-center gap-3">
                                                 <Upload size={28} className="text-muted" />
-                                                <span className="text-xs text-muted font-medium">Drop .xlsx file here or click to browse</span>
-                                                <span className="text-[10px] text-muted/60">Sheets: Properties, Units, Renters, Leases</span>
+                                                <span className="text-xs text-muted font-medium">{t("dropXlsx")}</span>
+                                                <span className="text-[10px] text-muted/60">{t("portfolioSheets")}</span>
                                             </div>
                                             <input
                                                 type="file"
@@ -763,7 +771,7 @@ export default function PropertiesPage() {
                                 </div>
 
                                 <div className="flex justify-end gap-3 mt-6">
-                                    <button type="button" onClick={resetPortfolioImport} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">Cancel</button>
+                                    <button type="button" onClick={resetPortfolioImport} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                     <button
                                         type="button"
                                         onClick={handlePortfolioUpload}
@@ -773,7 +781,7 @@ export default function PropertiesPage() {
                                             (!portfolioFile || portfolioUploading) && "opacity-50 cursor-not-allowed"
                                         )}
                                     >
-                                        {portfolioUploading ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : <>Upload & Import</>}
+                                        {portfolioUploading ? <><Loader2 size={14} className="animate-spin" /> {t("uploading")}</> : <>{t("uploadAndImport")}</>}
                                     </button>
                                 </div>
                             </div>
@@ -783,9 +791,9 @@ export default function PropertiesPage() {
                         {portfolioStep === "processing" && (
                             <div className="text-center py-8">
                                 <Loader2 size={40} className="animate-spin text-primary mx-auto mb-6" />
-                                <h2 className="text-lg font-bold mb-2">Processing Import</h2>
-                                <p className="text-xs text-muted font-medium mb-1">Validating and importing your portfolio data...</p>
-                                <p className="text-[10px] text-muted/60">This may take a few moments for large files.</p>
+                                <h2 className="text-lg font-bold mb-2">{t("processingImport")}</h2>
+                                <p className="text-xs text-muted font-medium mb-1">{t("processingImportDesc")}</p>
+                                <p className="text-[10px] text-muted/60">{t("processingImportHint")}</p>
                             </div>
                         )}
 
@@ -799,27 +807,27 @@ export default function PropertiesPage() {
                                                 <CheckCircle2 size={20} />
                                             </div>
                                             <div>
-                                                <h2 className="text-lg font-bold text-success">Import Successful</h2>
-                                                <p className="text-xs text-muted font-medium">Your portfolio has been imported successfully.</p>
+                                                <h2 className="text-lg font-bold text-success">{t("importSuccessful")}</h2>
+                                                <p className="text-xs text-muted font-medium">{t("portfolioImported")}</p>
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-3 gap-3 mb-6">
                                             {[
-                                                { label: "Properties", count: portfolioResult.propertiesCreated },
-                                                { label: "Buildings", count: portfolioResult.buildingsCreated },
-                                                { label: "Units", count: portfolioResult.unitsCreated },
-                                                { label: "Renters", count: portfolioResult.rentersCreated },
-                                                { label: "Leases", count: portfolioResult.leasesCreated },
+                                                { label: t("resultProperties"), count: portfolioResult.propertiesCreated },
+                                                { label: t("resultBuildings"), count: portfolioResult.buildingsCreated },
+                                                { label: t("resultUnits"), count: portfolioResult.unitsCreated },
+                                                { label: t("resultRenters"), count: portfolioResult.rentersCreated },
+                                                { label: t("resultLeases"), count: portfolioResult.leasesCreated },
                                                 // ACTIVE rows actually posted (on the books); any that could
                                                 // not post are DRAFT and listed below as "Imported as draft".
-                                                { label: "Leases posted", count: portfolioResult.leasesPosted ?? 0 },
-                                                { label: "Cheques", count: portfolioResult.chequesCreated ?? portfolioResult.paymentSchedulesCreated ?? 0 },
+                                                { label: t("resultLeasesPosted"), count: portfolioResult.leasesPosted ?? 0 },
+                                                { label: t("resultCheques"), count: portfolioResult.chequesCreated ?? portfolioResult.paymentSchedulesCreated ?? 0 },
                                                 ...(portfolioResult.chequesFromSheet > 0
-                                                    ? [{ label: "Cheques (from sheet)", count: portfolioResult.chequesFromSheet }]
+                                                    ? [{ label: t("resultChequesFromSheet"), count: portfolioResult.chequesFromSheet }]
                                                     : []),
                                                 ...(portfolioResult.bookingDepositsCreated > 0
-                                                    ? [{ label: "Booking Deposits", count: portfolioResult.bookingDepositsCreated }]
+                                                    ? [{ label: t("resultBookingDeposits"), count: portfolioResult.bookingDepositsCreated }]
                                                     : []),
                                             ].map(item => (
                                                 <div key={item.label} className="bg-input/50 rounded-lg p-3 border border-border text-center">
@@ -833,7 +841,7 @@ export default function PropertiesPage() {
                                             <div className="mb-6 max-h-64 overflow-y-auto">
                                                 <h4 className="text-xs font-semibold text-warning mb-2 flex items-center gap-1.5">
                                                     <AlertCircle size={12} />
-                                                    Warnings
+                                                    {t("warnings")}
                                                     <span className="text-[10px] font-medium text-muted">
                                                         ({portfolioResult.warnings.length})
                                                     </span>
@@ -841,9 +849,9 @@ export default function PropertiesPage() {
                                                 <div className="space-y-1">
                                                     {(portfolioResult.warnings as Array<{ sheet: string; row: number | null; field: string; message: string }>).map((w, i) => (
                                                         <div key={i} className="flex items-start gap-2 text-xs bg-warning/5 border border-warning/20 rounded-lg px-3 py-2">
-                                                            <span className="text-[10px] font-mono text-muted shrink-0">{w.sheet}</span>
+                                                            <span className="text-[10px] font-mono text-muted shrink-0">{sheetLabel(w.sheet)}</span>
                                                             <span className="text-[10px] font-mono text-muted shrink-0">
-                                                                {w.row == null ? "File" : `Row ${w.row}`}
+                                                                {rowLabel(w.row)}
                                                             </span>
                                                             {w.field && <span className="text-[10px] font-semibold text-warning shrink-0">{w.field}:</span>}
                                                             <span className="text-foreground">{w.message}</span>
@@ -861,12 +869,12 @@ export default function PropertiesPage() {
                                             </div>
                                             <div>
                                                 <h2 className="text-lg font-bold text-error">
-                                                    {portfolioResult.status === "VALIDATION_FAILED" ? "Validation Failed" : "Import Failed"}
+                                                    {portfolioResult.status === "VALIDATION_FAILED" ? t("validationFailed") : t("importFailed")}
                                                 </h2>
                                                 <p className="text-xs text-muted font-medium">
                                                     {portfolioResult.status === "VALIDATION_FAILED"
-                                                        ? "Please fix the errors below and re-upload."
-                                                        : "An unexpected error occurred during import."}
+                                                        ? t("fixErrorsReupload")
+                                                        : t("unexpectedImportError")}
                                                 </p>
                                             </div>
                                         </div>
@@ -884,15 +892,15 @@ export default function PropertiesPage() {
                                                     <div key={sheet} className="mb-3">
                                                         <h4 className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
                                                             <FileSpreadsheet size={12} className="text-muted" />
-                                                            {sheet}
-                                                            <span className="text-[10px] text-error font-medium">({(errors as Array<{ row: number | null; field: string; message: string }>).length} {(errors as Array<{ row: number | null; field: string; message: string }>).length === 1 ? 'error' : 'errors'})</span>
+                                                            {sheetLabel(sheet)}
+                                                            <span className="text-[10px] text-error font-medium">({t("errorCount", { count: (errors as Array<{ row: number | null; field: string; message: string }>).length })})</span>
                                                         </h4>
                                                         <div className="space-y-1">
                                                             {(errors as Array<{ row: number | null; field: string; message: string }>).map((err, i) => (
                                                                 <div key={i} className="flex items-start gap-2 text-xs bg-error/5 border border-error/10 rounded-lg px-3 py-2">
                                                                     {/* Null is a file-level problem, not row zero. */}
                                                                     <span className="text-[10px] font-mono text-muted shrink-0">
-                                                                        {err.row == null ? "File" : `Row ${err.row}`}
+                                                                        {rowLabel(err.row)}
                                                                     </span>
                                                                     {err.field && <span className="text-[10px] font-semibold text-error shrink-0">{err.field}:</span>}
                                                                     <span className="text-foreground">{err.message}</span>
@@ -913,7 +921,7 @@ export default function PropertiesPage() {
                                             onClick={() => { setPortfolioStep("upload"); setPortfolioFile(null); setPortfolioResult(null); }}
                                             className="cursor-pointer px-6 py-3 text-xs font-bold text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
                                         >
-                                            Try Again
+                                            {t("tryAgain")}
                                         </button>
                                     )}
                                     <button
@@ -921,7 +929,7 @@ export default function PropertiesPage() {
                                         onClick={resetPortfolioImport}
                                         className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     >
-                                        Close
+                                        {t("close")}
                                     </button>
                                 </div>
                             </div>
@@ -934,10 +942,10 @@ export default function PropertiesPage() {
             {showImportForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
-                        <button onClick={() => { setShowImportForm(false); setImportFile(null); setImportPreview([]); setImportResult(null); }} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-bold mb-1">Import Property</h2>
+                        <button onClick={() => { setShowImportForm(false); setImportFile(null); setImportPreview([]); setImportResult(null); }} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">{t("importProperty")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">
-                            Bulk import buildings and units from a CSV file into a new or existing project.
+                            {t("importPropertyDesc")}
                         </p>
 
                         {/* Import Result */}
@@ -958,7 +966,7 @@ export default function PropertiesPage() {
                                 )}>
                                     {errorList.length > 0 ? (
                                         <div>
-                                            <p className="font-semibold mb-2">Import failed:</p>
+                                            <p className="font-semibold mb-2">{t("importFailedList")}</p>
                                             <ul className="list-disc list-inside space-y-1 text-xs">
                                                 {errorList.map((err: string, i: number) => (
                                                     <li key={i}>{err}</li>
@@ -971,14 +979,14 @@ export default function PropertiesPage() {
                                                 ? importResult.message
                                                 : typeof importResult.error === "string"
                                                     ? importResult.error
-                                                    : "Import failed. Please check the file and try again."}
+                                                    : t("importCheckFile")}
                                         </p>
                                     ) : (
                                         <div>
-                                            <p className="font-semibold mb-1">Import successful!</p>
+                                            <p className="font-semibold mb-1">{t("importSuccessfulExcl")}</p>
                                             <p className="text-xs">
-                                                {importResult.buildingsCreated !== undefined && `Buildings created: ${importResult.buildingsCreated}. `}
-                                                {importResult.unitsCreated !== undefined && `Units created: ${importResult.unitsCreated}.`}
+                                                {importResult.buildingsCreated !== undefined && `${t("buildingsCreated", { count: importResult.buildingsCreated })} `}
+                                                {importResult.unitsCreated !== undefined && t("unitsCreated", { count: importResult.unitsCreated })}
                                             </p>
                                         </div>
                                     )}
@@ -988,15 +996,15 @@ export default function PropertiesPage() {
 
                         <form onSubmit={handleImportSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")} *</label>
-                                <input required placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameEn} onChange={ev => setImportFormData({ ...importFormData, nameEn: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameEn")} *</label>
+                                <input required placeholder={t("projectNamePlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameEn} onChange={ev => setImportFormData({ ...importFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
-                                <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameAr} onChange={ev => setImportFormData({ ...importFormData, nameAr: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameAr")}</label>
+                                <input dir="rtl" placeholder="اسم المشروع بالعربية" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameAr} onChange={ev => setImportFormData({ ...importFormData, nameAr: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("emirate")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("emirate")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.emirate} onChange={ev => setImportFormData({ ...importFormData, emirate: ev.target.value })}>
                                     {["DUBAI", "ABU_DHABI", "SHARJAH", "AJMAN", "UMM_AL_QUWAIN", "RAS_AL_KHAIMAH", "FUJAIRAH"].map(opt => (
                                         <option key={opt} value={opt}>{e(opt)}</option>
@@ -1004,28 +1012,28 @@ export default function PropertiesPage() {
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Type</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("type")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.type} onChange={ev => setImportFormData({ ...importFormData, type: ev.target.value })}>
                                     {["RESIDENTIAL", "COMMERCIAL", "MIXED"].map(opt => (
-                                        <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+                                        <option key={opt} value={opt}>{propertyTypeLabel(opt)}</option>
                                     ))}
                                 </select>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Address</label>
-                                <input placeholder="Building name, street, area" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.address} onChange={ev => setImportFormData({ ...importFormData, address: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("address")}</label>
+                                <input placeholder={t("addressPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.address} onChange={ev => setImportFormData({ ...importFormData, address: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Makani Number</label>
-                                <input placeholder="e.g. 12345-67890" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.makaniNumber} onChange={ev => setImportFormData({ ...importFormData, makaniNumber: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("makaniNumber")}</label>
+                                <input placeholder={t("makaniPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.makaniNumber} onChange={ev => setImportFormData({ ...importFormData, makaniNumber: ev.target.value })} />
                             </div>
 
                             {/* CSV Upload Section */}
                             <div className="col-span-2 mt-2">
                                 <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] ml-1">CSV File *</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] ms-1">{t("csvFile")} *</label>
                                     <button type="button" onClick={downloadTemplate} className="cursor-pointer text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
-                                        Download Template
+                                        {t("downloadTemplate")}
                                     </button>
                                 </div>
                                 <div
@@ -1045,7 +1053,7 @@ export default function PropertiesPage() {
                                         <div className="flex items-center justify-center gap-2">
                                             <Upload size={14} className="text-primary" />
                                             <span className="text-xs font-semibold text-foreground">{importFile.name}</span>
-                                            <button type="button" onClick={() => { setImportFile(null); setImportPreview([]); }} className="cursor-pointer text-muted hover:text-error transition-colors ml-2">
+                                            <button type="button" onClick={() => { setImportFile(null); setImportPreview([]); }} className="cursor-pointer text-muted hover:text-error transition-colors ms-2">
                                                 <X size={14} />
                                             </button>
                                         </div>
@@ -1053,7 +1061,7 @@ export default function PropertiesPage() {
                                         <label className="cursor-pointer">
                                             <div className="flex flex-col items-center gap-2">
                                                 <Upload size={20} className="text-muted" />
-                                                <span className="text-xs text-muted font-medium">Drop CSV file here or click to browse</span>
+                                                <span className="text-xs text-muted font-medium">{t("dropCsv")}</span>
                                             </div>
                                             <input
                                                 type="file"
@@ -1072,7 +1080,7 @@ export default function PropertiesPage() {
                             {/* CSV Preview */}
                             {importPreview.length > 0 && (
                                 <div className="col-span-2 mt-1">
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-2 ml-1">Preview</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-2 ms-1">{t("preview")}</label>
                                     <div className="overflow-x-auto rounded-lg border border-border">
                                         <table className="w-full text-xs">
                                             <thead>
@@ -1106,7 +1114,7 @@ export default function PropertiesPage() {
                                         (importLoading || !importFile || !importFormData.nameEn) && "opacity-50 cursor-not-allowed"
                                     )}
                                 >
-                                    {importLoading ? "Importing..." : "Import"}
+                                    {importLoading ? t("importing") : t("import")}
                                 </button>
                             </div>
                         </form>
@@ -1140,8 +1148,8 @@ export default function PropertiesPage() {
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
                                                 {t("occupancy")}
                                             </th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Revenue at Capacity</th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actual Revenue</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("revenueAtCapacity")}</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actualRevenue")}</th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
                                                 {t("actions")}
                                             </th>
@@ -1160,7 +1168,7 @@ export default function PropertiesPage() {
                                                     </td>
                                                     <td className="px-5 py-3.5">
                                                         <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
-                                                            {s.property.type}
+                                                            {propertyTypeLabel(s.property.type)}
                                                         </span>
                                                     </td>
                                                     <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{s.propertyCount}</td>
@@ -1211,7 +1219,7 @@ export default function PropertiesPage() {
                                                     <Building2 size={20} />
                                                 </div>
                                                 <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
-                                                    {s.property.type}
+                                                    {propertyTypeLabel(s.property.type)}
                                                 </span>
                                             </div>
                                             <h3 className="text-base font-bold text-foreground tracking-tight mb-1">
@@ -1225,13 +1233,13 @@ export default function PropertiesPage() {
 
                                         {/* Stats Row */}
                                         <div className="grid grid-cols-3 border-t border-border">
-                                            <div className="px-5 py-3 border-r border-border">
+                                            <div className="px-5 py-3 border-e border-border">
                                                 <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
                                                     {t("unitsCount")}
                                                 </p>
                                                 <p className="text-sm font-bold text-foreground tabular-nums">{s.propertyCount}</p>
                                             </div>
-                                            <div className="px-5 py-3 border-r border-border">
+                                            <div className="px-5 py-3 border-e border-border">
                                                 <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
                                                     {t("vacant")}
                                                 </p>
@@ -1288,7 +1296,7 @@ export default function PropertiesPage() {
                                             <span className="text-xs font-semibold text-primary">
                                                 {t("manageProperty")}
                                             </span>
-                                            <ArrowRight size={14} className="text-primary group-hover:translate-x-1 transition-transform" />
+                                            <ArrowRight size={14} className="text-primary rtl:rotate-180 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
                                         </div>
                                     </Link>
                                 );

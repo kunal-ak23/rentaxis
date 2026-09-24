@@ -224,7 +224,7 @@ export default function PropertyDetailPage() {
                         <div className="flex items-center gap-3 mb-2">
                             <h1 className="text-2xl font-bold text-foreground tracking-tight">{displayName}</h1>
                             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 bg-primary/10 text-primary rounded-lg border border-primary/20">
-                                {property.type}
+                                {property.type && t.has(`propertyType${property.type}`) ? t(`propertyType${property.type}`) : property.type}
                             </span>
                         </div>
                         <p className="text-sm font-medium text-muted flex items-center gap-2">
@@ -724,12 +724,12 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 <form onSubmit={handleAddUnit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Unit Number</label>
-                        <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
+                        <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder={t("unitNumberPlaceholder")} value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Type</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("type")}</label>
                         <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
-                            {unitTypes.map(ut => <option key={ut} value={ut}>{ut.replace("BHK", " BHK ")}</option>)}
+                            {unitTypes.map(ut => <option key={ut} value={ut}>{t.has(`unitType${ut}`) ? t(`unitType${ut}`) : ut}</option>)}
                         </select>
                     </div>
                     <div>
@@ -804,7 +804,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                                 </td>
                                 <td className="px-6 py-4">
                                     <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest bg-background rounded-md">
-                                        {u.type}
+                                        {u.type && t.has(`unitType${u.type}`) ? t(`unitType${u.type}`) : u.type}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4">
