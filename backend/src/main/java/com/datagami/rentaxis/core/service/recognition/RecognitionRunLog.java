@@ -39,6 +39,19 @@ public class RecognitionRunLog {
     }
 
     /** The earliest "last run" across organisations that have one: a pass that missed any of them is behind. */
+    /**
+     * F14-63: whether any organisation has no pass recorded for {@code today} — its
+     * last one is for an earlier day, or it has none at all (the first night after a
+     * deploy that created {@code recognition_runs}, or an organisation added since).
+     */
+    public boolean anyBehind(LocalDate today) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists (select 1 from landlord_org o
+                               left join recognition_runs r on r.tenant_id = o.id
+                               where r.run_for is null or r.run_for < :d)""",
+                new MapSqlParameterSource("d", today), Boolean.class));
+    }
+
     public LocalDate oldestLastRunFor() {
         return jdbc.getJdbcTemplate().queryForObject("select min(run_for) from recognition_runs", LocalDate.class);
     }
