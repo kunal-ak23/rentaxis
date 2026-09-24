@@ -118,7 +118,7 @@ class GatePassServiceTest {
         assertThat(result.getApprovedByUserId()).isEqualTo(approverId);
         assertThat(result.getApprovedAt()).isNotNull();
         verify(notificationService, times(1)).notifyInApp(eq(tenantId), eq(createdBy),
-                eq("GATE_PASS_APPROVED"), any(), any(), eq("GATE_PASS"), eq(passId));
+                eq("GATE_PASS_APPROVED"), any(), any(), eq("GATE_PASS"), eq(passId), any());
     }
 
     @Test
@@ -133,7 +133,7 @@ class GatePassServiceTest {
 
         assertThat(result.getStatus()).isEqualTo(GatePassStatus.CANCELLED);
         verify(notificationService, times(1)).notifyInApp(eq(tenantId), eq(createdBy),
-                eq("GATE_PASS_REJECTED"), any(), any(), eq("GATE_PASS"), eq(passId));
+                eq("GATE_PASS_REJECTED"), any(), any(), eq("GATE_PASS"), eq(passId), any());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.event.BookingDecidedEvent;
 import com.datagami.rentaxis.core.event.BookingRequestedEvent;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
@@ -81,6 +82,7 @@ public class BookingNotificationService {
             return;
         }
         String resourceName = resourceName(bookingOpt.get());
+        NotificationMessage structured = structured("BOOKING_REQUESTED", bookingOpt.get());
 
         Set<UserRole> notifyRoles = Set.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
         List<User> recipients = userRepository.findByTenantId(event.tenantId()).stream()
@@ -95,7 +97,8 @@ public class BookingNotificationService {
                         "New booking request",
                         "A renter has requested " + resourceName + ".",
                         "BOOKING",
-                        event.bookingId());
+                        event.bookingId(),
+                        structured);
             } catch (Exception ex) {
                 log.error("Failed to notify user {} for booking {} — {}",
                         recipient.getId(), event.bookingId(), ex.getMessage());
@@ -119,9 +122,11 @@ public class BookingNotificationService {
         if (type == null) {
             return;
         }
-        String resourceName = bookingRepository.findById(event.bookingId())
-                .map(this::resourceName)
-                .orElse("your booking");
+        Optional<BookingRequest> booking = bookingRepository.findById(event.bookingId());
+        String resourceName = booking.map(this::resourceName).orElse("your booking");
+        // No resource values when the booking is gone: the reader then says "your booking".
+        NotificationMessage structured = booking.map(b -> structured(type, b))
+                .orElseGet(() -> NotificationMessage.of(type));
         String message = switch (event.status()) {
             case APPROVED -> "Your booking request for " + resourceName + " has been approved.";
             case REJECTED -> "Your booking request for " + resourceName + " has been rejected.";
@@ -129,11 +134,28 @@ public class BookingNotificationService {
         };
         try {
             notificationService.notifyInAppInNewTx(event.tenantId(), event.renterUserId(), type,
-                    "Booking update", message, "BOOKING", event.bookingId());
+                    "Booking update", message, "BOOKING", event.bookingId(),
+                    structured);
         } catch (Exception ex) {
             log.error("Failed to notify renter {} for booking {} — {}",
                     event.renterUserId(), event.bookingId(), ex.getMessage());
         }
+    }
+
+    /**
+     * The booked resource as values (#81): its kind, and the amenity's name or the
+     * spot's number. The web words "parking spot P1" in the reader's language; the
+     * English {@link #resourceName} stays the stored copy.
+     */
+    private NotificationMessage structured(String key, BookingRequest booking) {
+        if (booking.getResourceType() == BookingResourceType.AMENITY) {
+            return NotificationMessage.of(key, "resourceType", "AMENITY",
+                    "resourceName", amenityRepository.findById(booking.getAmenityId())
+                            .map(PropertyAmenity::getNameEn).orElse(null));
+        }
+        return NotificationMessage.of(key, "resourceType", "PARKING",
+                "resourceName", parkingSpotRepository.findById(booking.getParkingSpotId())
+                        .map(s -> s.getSpotNumber()).orElse(null));
     }
 
     private String resourceName(BookingRequest booking) {

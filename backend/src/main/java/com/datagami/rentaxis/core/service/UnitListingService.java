@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.dto.InterestDTO;
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
 import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
@@ -216,7 +217,9 @@ public class UnitListingService {
                             "Listing Availability Update",
                             message,
                             "LISTING",
-                            listing.getId());
+                            listing.getId(),
+                            NotificationMessage.of(date == null ? "LISTING_NOW_AVAILABLE" : "LISTING_AVAILABILITY_UPDATED",
+                                    "date", date));
                 } catch (Exception e) {
                     log.warn("Failed to notify renter {} about listing availability change for listing {}",
                             interest.getRenterUserId(), listing.getId(), e);

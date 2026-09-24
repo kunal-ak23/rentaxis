@@ -86,7 +86,7 @@ class ListingNotificationServiceTest {
         service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
 
         verify(notificationService, times(2)).notifyInAppInNewTx(
-                eq(tenantId), any(UUID.class), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId));
+                eq(tenantId), any(UUID.class), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId), any());
         verify(interestRepository, times(2)).save(any(UnitListingInterest.class));
         assertThat(i1.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
         assertThat(i1.getNotifiedAt()).isNotNull();
@@ -109,7 +109,7 @@ class ListingNotificationServiceTest {
 
         service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
 
-        verify(notificationService, never()).notifyInAppInNewTx(any(), any(), any(), any(), any(), any(), any());
+        verify(notificationService, never()).notifyInAppInNewTx(any(), any(), any(), any(), any(), any(), any(), any());
         verify(interestRepository, never()).save(any());
     }
 
@@ -127,7 +127,7 @@ class ListingNotificationServiceTest {
                 .thenReturn(List.of(failing, healthy));
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing(tenantId, listingId)));
         doThrow(new RuntimeException("boom")).when(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(failingRenter), anyString(), any(), any(), anyString(), any());
+                eq(tenantId), eq(failingRenter), anyString(), any(), any(), anyString(), any(), any());
 
         service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
 
@@ -139,7 +139,7 @@ class ListingNotificationServiceTest {
 
         // The rest of the batch still goes out and transitions to NOTIFIED.
         verify(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(healthyRenter), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId));
+                eq(tenantId), eq(healthyRenter), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId), any());
         assertThat(healthy.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
         assertThat(healthy.getNotifiedAt()).isNotNull();
         verify(interestRepository).save(healthy);
@@ -161,7 +161,7 @@ class ListingNotificationServiceTest {
 
         verify(notificationService).notifyInAppInNewTx(
                 eq(tenantId), eq(renter1), eq("LISTING_AVAILABLE"),
-                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId));
+                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId), any());
         assertThat(messageCaptor.getValue()).contains("A listing you wishlisted");
     }
 
@@ -180,7 +180,7 @@ class ListingNotificationServiceTest {
 
         verify(notificationService).notifyInAppInNewTx(
                 eq(tenantId), eq(admin.getId()), eq("LISTING_INTEREST_RECEIVED"),
-                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId));
+                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId), any());
         assertThat(messageCaptor.getValue()).contains("your listing");
     }
 
@@ -202,13 +202,13 @@ class ListingNotificationServiceTest {
         service.onInterestReceived(new InterestReceivedEvent(interestId, listingId, renterUserId, tenantId));
 
         verify(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(admin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
+                eq(tenantId), eq(admin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId), any());
         verify(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(pm.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
+                eq(tenantId), eq(pm.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId), any());
         verify(notificationService, never()).notifyInAppInNewTx(
-                eq(tenantId), eq(renter.getId()), anyString(), any(), any(), anyString(), any());
+                eq(tenantId), eq(renter.getId()), anyString(), any(), any(), anyString(), any(), any());
         verify(notificationService, never()).notifyInAppInNewTx(
-                eq(tenantId), eq(tenantUser.getId()), anyString(), any(), any(), anyString(), any());
+                eq(tenantId), eq(tenantUser.getId()), anyString(), any(), any(), anyString(), any(), any());
     }
 
     @Test
@@ -223,11 +223,11 @@ class ListingNotificationServiceTest {
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing(tenantId, listingId)));
         when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(failingAdmin, healthyAdmin));
         doThrow(new RuntimeException("boom")).when(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(failingAdmin.getId()), anyString(), any(), any(), anyString(), any());
+                eq(tenantId), eq(failingAdmin.getId()), anyString(), any(), any(), anyString(), any(), any());
 
         service.onInterestReceived(new InterestReceivedEvent(interestId, listingId, UUID.randomUUID(), tenantId));
 
         verify(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(healthyAdmin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
+                eq(tenantId), eq(healthyAdmin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId), any());
     }
 }

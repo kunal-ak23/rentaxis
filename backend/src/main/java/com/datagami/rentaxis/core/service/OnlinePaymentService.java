@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterChequeDTO;
 import com.datagami.rentaxis.api.dto.UnappliedOnlinePaymentDTO;
@@ -519,7 +520,8 @@ public class OnlinePaymentService {
             // A captured payment is left as it is, and the renter is not told it failed.
             if (ignored == null) {
                 notifyRenter(onlinePayment, "PAYMENT_FAILED", "Online Payment Failed",
-                        "Your online payment could not be verified. Please try again.");
+                        "Your online payment could not be verified. Please try again.",
+                        NotificationMessage.of("ONLINE_PAYMENT_FAILED"));
             }
         }
         return response;
@@ -841,7 +843,9 @@ public class OnlinePaymentService {
                 "ONLINE_PAYMENT_RECEIVED:" + onlinePayment.getId()));
         notifyRenter(onlinePayment, "PAYMENT_CLEARED", "Online Payment Successful",
                 "Instalment #" + cheque.getSeqNo() + " of " + cheque.getAmount()
-                        + " AED was paid online. Your receipt is available.");
+                        + " AED was paid online. Your receipt is available.",
+                NotificationMessage.of("ONLINE_PAYMENT_SUCCEEDED",
+                        "seq", cheque.getSeqNo(), "amount", cheque.getAmount()));
         return null;
     }
 
@@ -1078,14 +1082,15 @@ public class OnlinePaymentService {
         return lease;
     }
 
-    private void notifyRenter(OnlinePayment onlinePayment, String type, String title, String message) {
+    private void notifyRenter(OnlinePayment onlinePayment, String type, String title, String message,
+                              NotificationMessage structured) {
         try {
             Cheque cheque = onlinePayment.getCheque();
             UUID renterUserId = cheque != null && cheque.getRenter() != null
                     ? cheque.getRenter().getUserId() : null;
             if (renterUserId != null) {
                 notificationService.notifyInAppInNewTx(onlinePayment.getTenantId(), renterUserId,
-                        type, title, message, "CHEQUE", cheque.getId());
+                        type, title, message, "CHEQUE", cheque.getId(), structured);
             }
         } catch (Exception e) {
             log.warn("Failed to send {} notification for online payment {}: {}",

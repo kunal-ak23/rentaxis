@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -56,7 +57,8 @@ public class LandlordOrgService {
                 notificationService.notify(null, admin.getId(),
                         "TENANT_PROVISIONED", "New Organization Created",
                         "A new organization '" + name + "' has been provisioned.",
-                        "TENANT", saved.getId());
+                        "TENANT", saved.getId(),
+                        NotificationMessage.of("TENANT_PROVISIONED", "orgName", name));
             });
         } catch (Exception e) {
             log.warn("Failed to send tenant provisioned notification: {}", e.getMessage());

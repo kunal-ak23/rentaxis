@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.dto.CreateMeetingDTO;
 import com.datagami.rentaxis.api.dto.MeetingDTO;
 import com.datagami.rentaxis.api.dto.MeetingDetailDTO;
@@ -149,7 +150,8 @@ public class MeetingService {
                     saved.getTenantId(), saved.getHostUserId(),
                     "MEETING_REQUESTED", "New Meeting Requested",
                     "A meeting has been requested for " + formatSlotForDisplay(saved.getSlotStart()),
-                    "MEETING", saved.getId());
+                    "MEETING", saved.getId(),
+                    NotificationMessage.of("MEETING_REQUESTED_HOST", "slot", saved.getSlotStart()));
         } catch (Exception e) {
             log.warn("Failed to send MEETING_REQUESTED notification for meeting {}", saved.getId(), e);
         }
@@ -161,7 +163,8 @@ public class MeetingService {
                         saved.getTenantId(), saved.getRequesterUserId(),
                         "MEETING_REQUESTED", "Meeting Request Submitted",
                         "Your meeting request for " + formatSlotForDisplay(saved.getSlotStart()) + " has been submitted and is awaiting approval.",
-                        "MEETING", saved.getId());
+                        "MEETING", saved.getId(),
+                        NotificationMessage.of("MEETING_REQUESTED_REQUESTER", "slot", saved.getSlotStart()));
             } catch (Exception e) {
                 log.warn("Failed to send MEETING_REQUESTED confirmation for meeting {} to requester", saved.getId(), e);
             }
@@ -193,7 +196,8 @@ public class MeetingService {
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_APPROVED", "Meeting Approved",
                     "Your meeting request has been approved for " + formatSlotForDisplay(saved.getSlotStart()),
-                    "MEETING", saved.getId());
+                    "MEETING", saved.getId(),
+                    NotificationMessage.of("MEETING_APPROVED", "slot", saved.getSlotStart()));
         } catch (Exception e) {
             log.warn("Failed to send MEETING_APPROVED notification for meeting {}", meetingId, e);
         }
@@ -226,10 +230,14 @@ public class MeetingService {
         try {
             String cancellerName = userRepository.findDisplayNameById(cancelledByUserId).orElse("Someone");
             String msg = cancellerName + " cancelled the meeting: " + (saved.getTitle() != null ? saved.getTitle() : saved.getPurpose().name());
+            // The title when there is one, else the purpose code the reader translates.
+            NotificationMessage structured = NotificationMessage.of("MEETING_CANCELLED",
+                    "name", cancellerName, "title", saved.getTitle(), "purpose", saved.getPurpose(),
+                    "slot", saved.getSlotStart());
             notificationService.notify(saved.getTenantId(), saved.getHostUserId(),
-                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId());
+                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId(), structured);
             notificationService.notify(saved.getTenantId(), saved.getRequesterUserId(),
-                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId());
+                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId(), structured);
         } catch (Exception e) {
             log.warn("Failed to send MEETING_CANCELLED notification for meeting {}", meetingId, e);
         }
@@ -260,7 +268,8 @@ public class MeetingService {
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_COMPLETED", "Meeting Completed",
                     "Your meeting on " + formatSlotForDisplay(saved.getSlotStart()) + " has been marked as completed.",
-                    "MEETING", saved.getId());
+                    "MEETING", saved.getId(),
+                    NotificationMessage.of("MEETING_COMPLETED", "slot", saved.getSlotStart()));
         } catch (Exception e) {
             log.warn("Failed to send MEETING_COMPLETED notification for meeting {}", meetingId, e);
         }
@@ -291,7 +300,8 @@ public class MeetingService {
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_NO_SHOW", "Meeting Marked No-Show",
                     "Your meeting on " + formatSlotForDisplay(saved.getSlotStart()) + " was marked as no-show.",
-                    "MEETING", saved.getId());
+                    "MEETING", saved.getId(),
+                    NotificationMessage.of("MEETING_NO_SHOW", "slot", saved.getSlotStart()));
         } catch (Exception e) {
             log.warn("Failed to send MEETING_NO_SHOW notification for meeting {}", meetingId, e);
         }

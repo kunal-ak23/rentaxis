@@ -7,6 +7,7 @@ import { Link } from "@/i18n/routing";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
+import { notificationText, timeAgo } from "@/lib/notificationText";
 import { LogOut, User, ChevronDown, Bell } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import GlobalSearch from "./GlobalSearch";
@@ -15,6 +16,8 @@ type Notification = {
     id: string;
     title: string;
     message: string;
+    messageKey?: string | null;
+    params?: Record<string, string> | null;
     type: string;
     referenceType: string | null;
     referenceId: string | null;
@@ -22,22 +25,10 @@ type Notification = {
     createdAt: string;
 };
 
-function timeAgo(dateStr: string): string {
-    const now = new Date();
-    const date = new Date(dateStr);
-    const diffMs = now.getTime() - date.getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(diffMs / 3600000);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(diffMs / 86400000);
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString();
-}
-
 export function TopHeader() {
     const tRoles = useTranslations("Roles");
+    const tNotifications = useTranslations("Notifications");
+    const tMeetings = useTranslations("Meetings");
     // t.has guards a role the catalogue does not know; getRoleLabel is the
     // English fallback rather than letting next-intl throw.
     const roleLabel = (role: string) =>
@@ -181,30 +172,33 @@ export function TopHeader() {
                             {showDropdown && (
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
-                                    <div className="absolute right-0 top-full mt-2 w-80 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+                                    <div className="absolute end-0 top-full mt-2 w-80 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
                                         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                                            <h3 className="text-xs font-semibold text-foreground">Notifications</h3>
+                                            <h3 className="text-xs font-semibold text-foreground">{tNotifications("title")}</h3>
                                             {unreadCount > 0 && (
-                                                <button onClick={markAllRead} className="text-[10px] text-primary font-semibold cursor-pointer">Mark all read</button>
+                                                <button onClick={markAllRead} className="text-[10px] text-primary font-semibold cursor-pointer">{tNotifications("markAllRead")}</button>
                                             )}
                                         </div>
                                         <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                                            {notifications.map((n) => (
+                                            {notifications.map((n) => {
+                                                const text = notificationText(n, tNotifications, locale, tMeetings);
+                                                return (
                                                 <div key={n.id} onClick={() => handleNotificationClick(n)} className={cn("px-4 py-3 hover:bg-input/50 cursor-pointer transition-colors", !n.isRead && "bg-primary/5")}>
-                                                    <p className="text-xs font-medium text-foreground">{n.title}</p>
-                                                    <p className="text-[10px] text-muted mt-0.5 line-clamp-1">{n.message}</p>
-                                                    <p className="text-[9px] text-muted mt-1">{timeAgo(n.createdAt)}</p>
+                                                    <p className="text-xs font-medium text-foreground">{text.title}</p>
+                                                    <p className="text-[10px] text-muted mt-0.5 line-clamp-1">{text.body}</p>
+                                                    <p className="text-[9px] text-muted mt-1">{timeAgo(n.createdAt, tNotifications, locale)}</p>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                             {notifications.length === 0 && (
                                                 <div className="px-4 py-8 text-center text-muted">
                                                     <Bell size={20} className="mx-auto mb-2 opacity-40" />
-                                                    <p className="text-xs">No notifications</p>
+                                                    <p className="text-xs">{tNotifications("empty")}</p>
                                                 </div>
                                             )}
                                         </div>
                                         <Link href="/dashboard/notifications" onClick={() => setShowDropdown(false)} className="block px-4 py-2.5 text-center text-xs font-semibold text-primary border-t border-border hover:bg-input/50 transition-colors">
-                                            View All Notifications
+                                            {tNotifications("viewAll")}
                                         </Link>
                                     </div>
                                 </>

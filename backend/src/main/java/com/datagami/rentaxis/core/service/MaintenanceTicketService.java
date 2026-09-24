@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -520,7 +521,9 @@ public class MaintenanceTicketService {
             notificationService.notify(ticket.getTenantId(), assignTo,
                     "TICKET_ASSIGNED", "Ticket Assigned to You",
                     "Ticket: " + ticket.getTitle(),
-                    "TICKET", ticket.getId());
+                    "TICKET", ticket.getId(),
+                    NotificationMessage.of("TICKET_ASSIGNED",
+                            "ticketTitle", ticket.getTitle(), "ticketRef", ticket.getReference()));
         } catch (Exception e) {
             log.warn("Failed to send ticket assignment notification for ticket {}", ticketId, e);
         }
@@ -597,9 +600,11 @@ public class MaintenanceTicketService {
         if (otpOnResolve != null) {
             switch (otpOnResolve) {
                 case ISSUED, REISSUED, KEPT -> notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
-                        "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.");
+                        "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.",
+                        "TICKET_RESOLVED_SHARE_OTP");
                 case OTP_OFF, CAPPED -> notifyOtpHolder(ticket, "TICKET_RESOLVED", "Ticket Resolved",
-                        "Your ticket '" + ticket.getTitle() + "' has been resolved.");
+                        "Your ticket '" + ticket.getTitle() + "' has been resolved.",
+                        "TICKET_RESOLVED");
                 case LOCKED -> { }
             }
         }
@@ -806,12 +811,15 @@ public class MaintenanceTicketService {
         ticket.setClosureOtpFailedAttempts(0);
     }
 
-    private void notifyOtpHolder(MaintenanceTicket ticket, String type, String title, String message) {
+    private void notifyOtpHolder(MaintenanceTicket ticket, String type, String title, String message,
+                                 String messageKey) {
         UUID holder = otpHolder(ticket);
         if (holder == null) return;
         try {
             notificationService.notify(ticket.getTenantId(), holder,
-                    type, title, message, "TICKET", ticket.getId());
+                    type, title, message, "TICKET", ticket.getId(),
+                    NotificationMessage.of(messageKey,
+                            "ticketTitle", ticket.getTitle(), "ticketRef", ticket.getReference()));
         } catch (Exception e) {
             log.warn("Failed to send closure OTP notification for ticket {}", ticket.getId(), e);
         }
@@ -855,7 +863,8 @@ public class MaintenanceTicketService {
         recordHistory(saved, "OTP_REISSUED", null, null, null, null, performedBy,
                 "A new closure OTP was sent to the renter");
         notifyOtpHolder(saved, "TICKET_OTP_REISSUED", "New closure OTP",
-                "A new OTP was issued for your ticket '" + saved.getTitle() + "'. Share it to close the ticket.");
+                "A new OTP was issued for your ticket '" + saved.getTitle() + "'. Share it to close the ticket.",
+                "TICKET_OTP_REISSUED");
         return mapToDTO(saved, performedBy);
     }
 
@@ -1001,7 +1010,9 @@ public class MaintenanceTicketService {
                 notificationService.notify(ticket.getTenantId(), notifyUser,
                         "TICKET_REPLY", "New Reply on Ticket",
                         "New reply on: " + ticket.getTitle(),
-                        "TICKET", ticket.getId());
+                        "TICKET", ticket.getId(),
+                        NotificationMessage.of("TICKET_REPLY",
+                                "ticketTitle", ticket.getTitle(), "ticketRef", ticket.getReference()));
             }
         } catch (Exception e) {
             log.warn("Failed to send ticket reply notification for ticket {}", ticketId, e);

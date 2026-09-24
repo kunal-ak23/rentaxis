@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.notification.PushNotificationEvent;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
@@ -51,13 +52,18 @@ public class NotificationService {
      * {@link #notifyInApp} to avoid duplication.
      */
     private void saveNotificationRow(UUID tenantId, UUID userId, String type, String title,
-                                     String message, String referenceType, UUID referenceId) {
+                                     String message, String referenceType, UUID referenceId,
+                                     NotificationMessage structured) {
         Notification n = new Notification();
         n.setTenantId(tenantId);
         n.setUserId(userId);
         n.setType(type);
         n.setTitle(title);
         n.setMessage(message);
+        if (structured != null) {
+            n.setMessageKey(structured.key());
+            n.setParams(structured.params().isEmpty() ? null : structured.params());
+        }
         n.setReferenceType(referenceType);
         n.setReferenceId(referenceId);
         n.setChannel("IN_APP");
@@ -78,7 +84,18 @@ public class NotificationService {
     @Transactional
     public void notify(UUID tenantId, UUID userId, String type, String title, String message,
                        String referenceType, UUID referenceId) {
-        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
+        notify(tenantId, userId, type, title, message, referenceType, referenceId, null);
+    }
+
+    /**
+     * {@link #notify} with the text also in structured form, so the web can
+     * render it in the reader's language (#81). {@code title}/{@code message}
+     * remain the English copy for push, email and older readers.
+     */
+    @Transactional
+    public void notify(UUID tenantId, UUID userId, String type, String title, String message,
+                       String referenceType, UUID referenceId, NotificationMessage structured) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId, structured);
 
         EmailEventType mapped = mapLegacyType(type);
         if (mapped != null) {
@@ -101,7 +118,14 @@ public class NotificationService {
     @Transactional
     public void notifyInApp(UUID tenantId, UUID userId, String type, String title, String message,
                             String referenceType, UUID referenceId) {
-        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
+        notifyInApp(tenantId, userId, type, title, message, referenceType, referenceId, null);
+    }
+
+    /** {@link #notifyInApp} with the text also in structured form (#81). */
+    @Transactional
+    public void notifyInApp(UUID tenantId, UUID userId, String type, String title, String message,
+                            String referenceType, UUID referenceId, NotificationMessage structured) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId, structured);
     }
 
     /**
@@ -117,7 +141,14 @@ public class NotificationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notifyInAppInNewTx(UUID tenantId, UUID userId, String type, String title, String message,
                                    String referenceType, UUID referenceId) {
-        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
+        notifyInAppInNewTx(tenantId, userId, type, title, message, referenceType, referenceId, null);
+    }
+
+    /** {@link #notifyInAppInNewTx} with the text also in structured form (#81). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyInAppInNewTx(UUID tenantId, UUID userId, String type, String title, String message,
+                                   String referenceType, UUID referenceId, NotificationMessage structured) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId, structured);
     }
 
     private EmailEventType mapLegacyType(String legacy) {
@@ -196,7 +227,11 @@ public class NotificationService {
                 + " (" + assessment.getReason().label()
                 + "). Please clear it via bank transfer, cheque, or cash.";
         saveNotificationRow(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
-                body, "PENALTY", assessment.getId());
+                body, "PENALTY", assessment.getId(),
+                NotificationMessage.of(cheque != null ? "PENALTY_INCURRED_INSTALMENT" : "PENALTY_INCURRED",
+                        "amount", assessment.getAmount(),
+                        "seq", cheque != null ? cheque.getSeqNo() : null,
+                        "reason", assessment.getReason()));
     }
 
     // sendPenaltyCleared / sendPenaltyWaived went with the v1 penalty tables
@@ -260,6 +295,8 @@ public class NotificationService {
         dto.setType(n.getType());
         dto.setTitle(n.getTitle());
         dto.setMessage(n.getMessage());
+        dto.setMessageKey(n.getMessageKey());
+        dto.setParams(n.getParams());
         dto.setReferenceType(n.getReferenceType());
         dto.setReferenceId(n.getReferenceId());
         dto.setChannel(n.getChannel());

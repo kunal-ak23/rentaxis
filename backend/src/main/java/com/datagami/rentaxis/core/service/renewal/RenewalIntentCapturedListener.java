@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.renewal;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.RenewalIntentCapturedEvent;
@@ -46,7 +47,9 @@ public class RenewalIntentCapturedListener {
                         "RENEWAL_INTENT",
                         "Renter responded to renewal reminder",
                         renterName + " selected " + ev.intent() + " for lease " + unitNumber,
-                        "LEASE", ev.leaseId());
+                        "LEASE", ev.leaseId(),
+                        NotificationMessage.of("RENEWAL_INTENT", "renterName", renterName,
+                                "intent", ev.intent(), "unit", unitNumber, "property", propertyName));
             } catch (Exception e) {
                 log.warn("Failed to notify admin {} of intent capture: {}", admin.getId(), e.getMessage());
             }

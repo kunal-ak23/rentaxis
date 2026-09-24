@@ -217,3 +217,5 @@ databaseChangeLog:
       file: db/changelog/changesets/104-cheque-image-uploads.yaml
   - include:
       file: db/changelog/changesets/105-cheque-image-upload-claim-unique.yaml
+  - include:
+      file: db/changelog/changesets/106-notification-message-params.yaml

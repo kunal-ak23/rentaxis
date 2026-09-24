@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.renewal;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LeaseRenewalReminderPayload;
@@ -165,7 +166,9 @@ public class RenewalReminderService {
                             "Your lease ends in " + slot + " days",
                             "Lease ends " + o.getLease().getEndDate()
                                     + ". Choose your renewal option in the renter web portal.",
-                            "LEASE", o.getLease().getId());
+                            "LEASE", o.getLease().getId(),
+                            NotificationMessage.of("LEASE_RENEWAL_REMINDER", "days", slot,
+                                    "date", o.getLease().getEndDate()));
                 }
             }
             r.setStatus(ReminderStatus.SENT);

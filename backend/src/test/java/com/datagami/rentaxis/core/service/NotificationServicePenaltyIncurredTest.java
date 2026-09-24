@@ -86,6 +86,10 @@ class NotificationServicePenaltyIncurredTest {
         assertThat(saved.getReferenceType()).isEqualTo("PENALTY");
         assertThat(saved.getReferenceId()).isEqualTo(assessment.getId());
         assertThat(saved.getUserId()).isEqualTo(renterUserId);
+        // #81: the same facts in structured form, for the reader's language.
+        assertThat(saved.getMessageKey()).isEqualTo("PENALTY_INCURRED_INSTALMENT");
+        assertThat(saved.getParams()).containsExactlyInAnyOrderEntriesOf(
+                java.util.Map.of("amount", "500", "seq", "3", "reason", "CHEQUE_RETURN"));
     }
 
     /**
