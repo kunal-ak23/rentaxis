@@ -310,3 +310,26 @@ describe("F14-05 the statement pane fits its half of the workspace", () => {
         expect(screen.getByTestId("sigma-footer").className).toMatch(/\bz-10\b/);
     });
 });
+
+describe("F14-48 the CSV export carries the current locale", () => {
+    const ws = {
+        bankAccountId: "ba-1", leaves: [], needsLeaf: false, bookItems: [], matches: [], reconciledThrough: null,
+        statementLines: [], openingItems: [],
+    };
+
+    it("passes lang=en in English", async () => {
+        const { BankReconciliationWorkspace } = await import("../BankReconciliationWorkspace");
+        stubFetch(u => (u.includes("/workspace") ? { match: "", body: ws } : undefined));
+        renderIn("en", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await waitFor(() => expect(screen.getByText("Export CSV").closest("a"))
+            .toHaveAttribute("href", expect.stringContaining("lang=en")));
+    });
+
+    it("passes lang=ar in Arabic", async () => {
+        const { BankReconciliationWorkspace } = await import("../BankReconciliationWorkspace");
+        stubFetch(u => (u.includes("/workspace") ? { match: "", body: ws } : undefined));
+        renderIn("ar", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        await waitFor(() => expect(screen.getByText(ar.BankRec.exportCsv).closest("a"))
+            .toHaveAttribute("href", expect.stringContaining("lang=ar")));
+    });
+});

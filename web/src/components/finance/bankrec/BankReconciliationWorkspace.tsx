@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCheck, Download, Link2, Lock, MoreHorizontal, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -44,6 +44,7 @@ export function matchesQuery(q: string, text: (string | null | undefined)[], amo
 export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: string }) {
     const t = useTranslations("BankRec");
     const tCommon = useTranslations("Common");
+    const locale = useLocale();
     const { data: session } = useSession();
     const allowed = hasPermission(session?.user?.role as UserRole | undefined, "canReconcileBank");
 
@@ -165,7 +166,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                                 const r = await bankRecApi.confirmAll(bankAccountId, { from, to });
                                 return t("confirmedCount", { count: r.confirmed });
                             })}><CheckCheck size={13} />{t("confirmAllHigh")}</button>
-                    <a className={button} href={bankRecApi.linesCsvUrl(bankAccountId, { from, to })} download><Download size={13} />{t("exportCsv")}</a>
+                    <a className={button} href={bankRecApi.linesCsvUrl(bankAccountId, { from, to, lang: locale })} download><Download size={13} />{t("exportCsv")}</a>
                 </div>
             </div>
 
