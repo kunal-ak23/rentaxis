@@ -3,7 +3,7 @@ import { lineVatOf, vatFilsOf } from "../settlementMath";
 
 /** The server's rule in exact integers: fils × 5 / 100, HALF_UP (BigDecimal.setScale(2, HALF_UP)). */
 function serverVatFils(fils: bigint): bigint {
-    return (fils * 5n + 50n) / 100n;
+    return (fils * BigInt(5) + BigInt(50)) / BigInt(100);
 }
 
 const rule = { vatRate: 0.05, vatableCategories: ["PROPERTY_DAMAGE" as const] };
