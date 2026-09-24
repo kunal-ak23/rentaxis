@@ -73,10 +73,13 @@ public class TaxInvoiceService {
     private final EntryNumberService numbers;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final TaxInvoicePdfRenderer renderer;
+    private final com.datagami.rentaxis.domain.repository.VatTaxPointRepository points;
 
     public TaxInvoiceService(TaxInvoiceRepository invoices, LeaseRepository leases,
                              ChequeRepository cheques, LandlordOrgRepository orgs, EntryNumberService numbers,
-                             LeaseAccessPolicy leaseAccessPolicy, TaxInvoicePdfRenderer renderer) {
+                             LeaseAccessPolicy leaseAccessPolicy, TaxInvoicePdfRenderer renderer,
+                             com.datagami.rentaxis.domain.repository.VatTaxPointRepository points) {
+        this.points = points;
         this.invoices = invoices;
         this.leases = leases;
         this.cheques = cheques;
@@ -175,6 +178,7 @@ public class TaxInvoiceService {
                     ? new LocalDate[]{start, t}
                     : new LocalDate[]{t.plusDays(1), end};
         }
+        if (point.getKind() == VatTaxPointKind.CONTRACT) return new LocalDate[]{start, end};
         if (cheque == null || cheque.getChequeDate() == null) return new LocalDate[]{start, end};
         LocalDate from = start != null && cheque.getChequeDate().isBefore(start) ? start : cheque.getChequeDate();
         LocalDate next = cheques.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
@@ -207,7 +211,8 @@ public class TaxInvoiceService {
     private String referencesFor(VatTaxPoint point, Lease lease) {
         LocalDate t = point.getTaxPointDate();
         List<TaxInvoice> issued = invoices.findByLeaseIdOrderByIssueDateAscCreatedAtAsc(lease.getId()).stream()
-                .filter(i -> i.getKind() == TaxInvoiceKind.TAX_INVOICE && i.getChequeId() != null)
+                .filter(i -> i.getKind() == TaxInvoiceKind.TAX_INVOICE
+                        && (i.getChequeId() != null || i.getTaxPointId() != null && isContractPoint(i.getTaxPointId())))
                 .toList();
         List<TaxInvoice> covering = issued.stream()
                 .filter(i -> i.getPeriodEnd() == null || i.getPeriodEnd().isAfter(t))
@@ -219,6 +224,10 @@ public class TaxInvoiceService {
                 .collect(java.util.stream.Collectors.joining(", "));
     }
 
+    private boolean isContractPoint(UUID pointId) {
+        return points.findById(pointId).map(p -> p.getKind() == VatTaxPointKind.CONTRACT).orElse(false);
+    }
+
     private static String describe(VatTaxPoint point, Cheque cheque, LocalDate[] period) {
         String span = period[0] == null || period[1] == null ? ""
                 : " (" + DAY.format(period[0]) + " – " + DAY.format(period[1]) + ")";
@@ -226,6 +235,9 @@ public class TaxInvoiceService {
             return (point.getVatAmount().signum() >= 0
                     ? "VAT on rent earned to termination not declared by an instalment"
                     : "VAT credited back on rent not supplied after termination") + span;
+        }
+        if (point.getKind() == VatTaxPointKind.CONTRACT) {
+            return (point.getVatAmount().signum() >= 0 ? "Tenancy contract" : "Tenancy contract amended") + span;
         }
         String what = cheque == null ? "Instalment"
                 : (cheque.getNarration() != null && !cheque.getNarration().isBlank()

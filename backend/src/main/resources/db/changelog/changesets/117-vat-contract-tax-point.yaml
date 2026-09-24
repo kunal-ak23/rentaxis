@@ -1,0 +1,19 @@
+# F14-11: a CONTRACT-timing lease declares its VAT on the contract date, so its
+# posting is a tax point of its own (kind CONTRACT) that issues the tax invoice.
+databaseChangeLog:
+  - changeSet:
+      id: 117-vtp-kind-contract
+      author: claude
+      comment: Allow the CONTRACT tax point kind
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT'))
+      rollback:
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT'))

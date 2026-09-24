@@ -80,12 +80,15 @@ public class ChequeDetailsService {
 
     private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
     private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+    private final ChequeNumberClash numberClash;
 
     public ChequeDetailsService(ChequeRepository chequeRepository,
                                 LeaseRepository leaseRepository,
                                 LeaseAccessPolicy leaseAccessPolicy,
                                 com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads,
-                                com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
+                                com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints,
+                                ChequeNumberClash numberClash) {
+        this.numberClash = numberClash;
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
@@ -140,6 +143,8 @@ public class ChequeDetailsService {
         if (input.payerName() != null && !input.payerName().isBlank()) {
             cheque.setPayerName(input.payerName().trim());
         }
+        // F14-19: not a cheque (drawer bank, number, renter) registered on another lease.
+        numberClash.requireUnique(lease, cheque);
         chequeRepository.save(cheque);
         return ChequeMapper.toDto(cheque, LocalDate.now(), lease.getGracePeriodDays());
     }
@@ -320,6 +325,12 @@ public class ChequeDetailsService {
             c.setPayeeBank(blankToNull(it.getBankName()));
             if (it.getPayerName() != null && !it.getPayerName().isBlank()) {
                 c.setPayerName(it.getPayerName().trim());
+            }
+            // F14-19: a registered row may not take the number of a cheque registered
+            // on another lease (a draft row is checked when its lease posts). The
+            // refusal rolls the whole batch back.
+            if (c.getStatus() != ChequeStatus.DRAFT) {
+                numberClash.requireUnique(lease, c);
             }
             if (it.getChequeDate() != null) {
                 c.setChequeDate(it.getChequeDate());

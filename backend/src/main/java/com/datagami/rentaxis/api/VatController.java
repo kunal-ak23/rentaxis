@@ -80,6 +80,16 @@ public class VatController {
         return ResponseEntity.ok(taxInvoices.forLease(id));
     }
 
+    /**
+     * F14-11 backfill: issue the contract tax invoice of a CONTRACT-timing lease
+     * posted before posting issued one. Idempotent; refused for cut-over contracts.
+     */
+    @PostMapping("/leases/{id}/tax-invoices/contract")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<List<TaxInvoiceDTO>> issueContractInvoice(@PathVariable UUID id) {
+        return ResponseEntity.ok(vatTaxPoints.issueContractInvoice(id));
+    }
+
     /** The calling renter's tax invoices, newest first. */
     @GetMapping("/tax-invoices/mine")
     @PreAuthorize("hasRole('RENTER')")

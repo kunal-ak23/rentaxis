@@ -307,6 +307,12 @@ public class LeaseTerminationService {
             BigDecimal adjustment = vat.declaredAtT().subtract(vat.creditedBack());
             BigDecimal taxable = vat.pendingTaxable().subtract(plan.unearnedVatTaxable());
             vatTaxPoints.recordTerminationAdjustment(lease, t, adjustment, taxable, tcr.getId());
+        } else if (unearnedVat != null && unearnedVat.signum() > 0 && vatTaxPoints.contractDocumented(lease.getId())) {
+            // F14-11: a CONTRACT lease whose contract tax invoice we issued gets the
+            // credit note for the VAT handed back. A cut-over or pre-rule lease has no
+            // invoice of ours to correct, so none is issued for it.
+            vatTaxPoints.recordTerminationAdjustment(lease, t, unearnedVat.negate(),
+                    plan.unearnedVatTaxable().negate(), tcr.getId());
         }
         return tcr.getId();
     }

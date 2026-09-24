@@ -531,4 +531,20 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         order by c.chequeDate asc
         """)
     List<Cheque> findOwedCandidatesAt(@Param("propertyId") UUID propertyId, @Param("at") LocalDate at);
+
+    /**
+     * F14-19: numbered cheques of this renter on <em>other</em> leases that are still
+     * instruments (not a draft, not replaced, not cancelled) — the candidates a new
+     * row with the same drawer bank and number would duplicate.
+     */
+    @Query("""
+        select c from Cheque c join fetch c.lease l left join fetch l.unit
+        where c.renter.id = :renterId and c.chequeNumber in :numbers and l.id <> :leaseId
+          and c.status not in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED)
+        """)
+    List<Cheque> findLiveNumberedOnOtherLeases(@org.springframework.data.repository.query.Param("renterId") UUID renterId,
+                                               @org.springframework.data.repository.query.Param("numbers") java.util.Collection<String> numbers,
+                                               @org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
 }

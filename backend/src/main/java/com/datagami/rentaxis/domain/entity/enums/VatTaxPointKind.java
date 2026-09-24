@@ -5,5 +5,11 @@ public enum VatTaxPointKind {
     /** One instalment's tax point: min(cheque date, receipt date). */
     INSTALMENT,
     /** The settling pair a termination posts on its TCR; negative when it credits VAT back. */
-    TERMINATION_ADJUSTMENT
+    TERMINATION_ADJUSTMENT,
+    /**
+     * F14-11: a CONTRACT-timing lease declares its VAT on the contract date, so the
+     * posting itself is the tax point: POSTED with the TCO, and its tax invoice is
+     * issued in the same transaction. An amendment records the delta the same way.
+     */
+    CONTRACT
 }

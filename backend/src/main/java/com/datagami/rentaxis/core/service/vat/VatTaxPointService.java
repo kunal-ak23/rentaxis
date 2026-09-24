@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
+import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.TaxInvoice;
@@ -360,6 +361,9 @@ public class VatTaxPointService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void requireNothingDeclared(UUID leaseId) {
         for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.POSTED)) {
+            // A CONTRACT lease's own tax point is the contract's; an amendment
+            // re-posts the contract and records the VAT delta (recordContractVat).
+            if (p.getKind() == VatTaxPointKind.CONTRACT) continue;
             String which = p.getChequeId() == null ? "this lease"
                     : cheques.findById(p.getChequeId()).map(VatTaxPointService::label).orElse("an instalment");
             throw new BusinessRuleViolationException("VAT already declared on instalment " + which
@@ -479,6 +483,85 @@ public class VatTaxPointService {
         }
         points.flush();
         return settlement(dueByT, pending, pendingTaxable, unearnedVat);
+    }
+
+    /**
+     * F14-11: a CONTRACT-timing lease puts its Output VAT on the books with the TCO,
+     * so the TCO is the tax point and needs its tax invoice (TI series), issued in
+     * the posting transaction. The point records the VAT not yet documented: the
+     * contract's VAT from its lines less what this lease's CONTRACT points already
+     * declared — the whole of it at the first post, the delta (a TI, or a TCN when
+     * it went down) at an amendment.
+     *
+     * <p>{@code firstPost} false (an amendment) acts only on a lease that already has
+     * a CONTRACT point: a cut-over contract (PACT invoiced it) or one posted before
+     * this rule has no documents of ours, and an amendment must not invent them.
+     * The caller skips cut-over posts altogether.</p>
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordContractVat(Lease lease, LocalDate taxPointDate, UUID tcoJournalId, boolean firstPost) {
+        if (lease.getVatTiming() != com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT) return;
+        List<VatTaxPoint> declared = points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(),
+                VatTaxPointStatus.POSTED).stream().filter(p -> p.getKind() == VatTaxPointKind.CONTRACT).toList();
+        if (!firstPost && declared.isEmpty()) return;
+        List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        BigDecimal vat = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractVat(lines)
+                .subtract(declared.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines)
+                .subtract(declared.stream().map(VatTaxPoint::getTaxableAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+        if (vat.signum() == 0) return;
+        VatTaxPoint p = new VatTaxPoint();
+        p.setTenantId(lease.getTenantId());
+        p.setLeaseId(lease.getId());
+        stampWhere(p, lease);
+        p.setKind(VatTaxPointKind.CONTRACT);
+        p.setTaxPointDate(taxPointDate);
+        p.setVatAmount(vat);
+        p.setTaxableAmount(taxable);
+        p.setStatus(VatTaxPointStatus.POSTED);
+        p.setJournalId(tcoJournalId);
+        p.setPostedAt(Instant.now());
+        p = points.saveAndFlush(p);
+        taxInvoices.issueFor(p, lease, null);
+    }
+
+    /** Whether this lease's contract VAT carries a tax invoice of ours (a POSTED CONTRACT point). */
+    @Transactional(readOnly = true)
+    public boolean contractDocumented(UUID leaseId) {
+        return points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.POSTED).stream()
+                .anyMatch(p -> p.getKind() == VatTaxPointKind.CONTRACT);
+    }
+
+    /**
+     * F14-11 backfill, one lease at a time and idempotent: the contract tax invoice
+     * of a CONTRACT-timing lease posted before posting issued one. Refused for a
+     * lease not yet posted, not on CONTRACT timing, or brought over by a cut-over
+     * import (its TCO carries an import batch: PACT invoiced it). A second call
+     * issues nothing — the VAT already documented is subtracted.
+     *
+     * @return the lease's tax invoices after the call
+     */
+    @Transactional
+    public List<com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO> issueContractInvoice(UUID leaseId) {
+        Lease lease = lease(leaseId);
+        leaseAccessPolicy.requireReadable(lease);
+        if (lease.getVatTiming() != com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT) {
+            throw new BusinessRuleViolationException("Only a lease that declares its VAT on the contract date has a"
+                    + " contract tax invoice; this one issues one per instalment.");
+        }
+        if (lease.getPostingJournalId() == null) {
+            throw new BusinessRuleViolationException("This lease is not posted yet; posting it issues the tax invoice.");
+        }
+        List<JournalEntry> tcos = journals.findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.LEASE, leaseId).stream()
+                .filter(e -> e.getDocType() == com.datagami.rentaxis.domain.entity.enums.JournalDocType.TCO)
+                .toList();
+        if (tcos.stream().anyMatch(e -> e.getImportBatchId() != null)) {
+            throw new BusinessRuleViolationException("This contract was brought over from the previous system,"
+                    + " which issued its tax invoice; no new one is issued.");
+        }
+        recordContractVat(lease, lease.getContractDate(), lease.getPostingJournalId(), true);
+        return taxInvoices.forLease(leaseId);
     }
 
     /**
