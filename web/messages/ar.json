@@ -1851,7 +1851,9 @@
     "sourceLease": "عقد الإيجار المصدر",
     "cancel": "إلغاء",
     "importBatchFilter": "دفعة الاستيراد",
-    "removeFilter": "إزالة هذا المرشّح"
+    "removeFilter": "إزالة هذا المرشّح",
+    "accountCodeLabel": "رمز الحساب",
+    "accountNameLabel": "الاسم"
   },
   "Leasing": {
     "renewCopiedChargesNotice": "{count, plural, one {سيُنسخ هذا الرسم} two {سيُنسخ هذان الرسمان} few {ستُنسخ هذه الرسوم} many {ستُنسخ هذه الرسوم} other {ستُنسخ هذه الرسوم}} إلى المدة الجديدة: {list}. ألغِ تحديد «نسخ بنود الرسوم» لتعديل{count, plural, one {ه} two {هما} other {ها}}.",
