@@ -250,6 +250,20 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         assertThat(fig(s, "collected", "collected")).isEqualByComparingTo("24500.00");
     }
 
+    /** Re-review N3: a bank closed since still carries the bounces of the periods it was open in. */
+    @Test
+    void aDeactivatedBanksBounceInAnOlderPeriodIsStillSubtracted() {
+        com.datagami.rentaxis.domain.entity.Account old =
+                accounts.createLeaf("ADCB Old Account", accounts.getAccountByCode("A-02-02"), null);
+        posting.post(new PostingRequest(JournalDocType.CBR, LocalDate.of(2026, 8, 20), "bounced from ADCB",
+                Dimensions.ofProperty(fx.p1.getId()), JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("2500.00")), cr(old.getId(), new BigDecimal("2500.00")))));
+        old.setActive(false);
+        accountRepo.save(old);
+        PropertyStatementDTO aug = statements.statement(fx.p1.getId(), LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null);
+        assertThat(fig(aug, "collected", "bouncedAfterClearing")).isEqualByComparingTo("2500.00");
+    }
+
     @Test
     void netCashCountsOnlyTheDepositRefundThatLeftTheBank() {
         // Palm: a 10,000 deposit; on settlement 5,000 goes to arrears and 5,000 is refunded.

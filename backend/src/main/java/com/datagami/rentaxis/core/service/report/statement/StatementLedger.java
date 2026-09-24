@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service.report.statement;
 
-import com.datagami.rentaxis.core.service.cheque.ChequeService;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -49,14 +50,18 @@ public class StatementLedger {
     }
 
     /**
-     * Every bank and cash leaf of the tenant ({@code ChequeService.isSettlementAccount}),
+     * Every bank and cash leaf of the tenant, active or not (the settlement-account
+     * shape of {@code ChequeService.isSettlementAccount} without its active check),
      * cached per statement: a cheque is banked, and a refund paid, from whichever one
      * the clerk picked, not only the property's BANK role leaf.
      */
     public List<UUID> settlementAccounts(StatementContext ctx) {
         return ctx.cached("settlementAccounts", () -> accounts.findAll().stream()
                 .filter(a -> ctx.tenantId().equals(a.getTenantId()))
-                .filter(ChequeService::isSettlementAccount)
+                // By type, not the active flag: a bank closed since still carries the
+                // bounces and refunds of the periods it was open in.
+                .filter(a -> !a.isGroup() && a.getAccountType() == AccountType.ASSET
+                        && (a.getAccountSubType() == AccountSubType.BANK || a.getAccountSubType() == AccountSubType.CASH))
                 .map(Account::getId).toList());
     }
 

@@ -238,6 +238,24 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         assertThat(palm.allocation().allocatedToOthers()).isEqualByComparingTo("30.00");
     }
 
+    /** Re-review N5: a deleted property keeps its column (its lines outlive it) but takes no share. */
+    @Test
+    void aDeletedPropertyTakesNoShareOfTheSharedCosts() {
+        UUID gone = UUID.randomUUID();   // lines with a property whose row no longer exists
+        // journal_entries.property_id has a foreign key; the line dimension has none,
+        // which is how lines outlive a property row.
+        posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 15), "old building",
+                Dimensions.none(), JournalSourceType.MANUAL, null, null, List.of(
+                dr(AccountRole.CASH, new BigDecimal("100.00")),
+                cr(fx.bankInterest.getId(), new BigDecimal("100.00")).withDims(Dimensions.ofProperty(gone)))));
+        PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.EQUAL);
+        assertThat(r.columns()).extracting(PropertyPnlDTO.Column::name).anyMatch(n -> n.startsWith("Deleted property"));
+        assertThat(r.allocation().allocated().get(gone.toString())).isEqualByComparingTo("0.00");
+        // The 70.00 net income of Unassigned (a cost of −70.00) splits over Marina and Palm only.
+        assertThat(r.allocation().allocated().get(fx.p1.getId().toString())).isEqualByComparingTo("-35.00");
+        assertThat(r.allocation().allocatedToOthers()).isEqualByComparingTo("0.00");
+    }
+
     @Test
     void theCheckRowComparesTheDisplayedTotalWithTheLedgerForTheSameScope() {
         fx.role(JournalDocType.CIL, SEP_30, Dimensions.ofProperty(fx.p2.getId()),

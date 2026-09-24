@@ -475,6 +475,7 @@ public class PropertyPnlService {
      * basis, then reports the shares of the properties on the report; whatever
      * falls to the others is {@code allocatedToOthers}. Spreading over the shown
      * columns only would load one selected building with the whole head office.
+     * A deleted property's column shows a zero share.
      */
     private Allocation allocate(Basis basis, List<String> shownKeys, Map<String, BigDecimal> noiNow,
                                 List<PnlCellRow> current, Map<UUID, Account> byId, UUID tenantId) {
@@ -482,10 +483,11 @@ public class PropertyPnlService {
                 .map(r -> r.getCredit().subtract(r.getDebit())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal unassignedCost = money(unassignedNet.negate());
 
+        // The tenant's property rows only. There is no archive flag on a property; a
+        // deleted one (its lines outlive it, shown as a "Deleted property" column)
+        // takes no share of today's head-office cost.
         Set<String> everyProperty = new LinkedHashSet<>();
         properties.findByTenantIdOrderByNameEnAsc(tenantId).forEach(p -> everyProperty.add(p.getId().toString()));
-        current.stream().filter(r -> r.getPropertyId() != null).forEach(r -> everyProperty.add(r.getPropertyId().toString()));
-        everyProperty.addAll(shownKeys);
 
         Map<String, BigDecimal> rent = new HashMap<>();
         if (basis == Basis.RENT) {

@@ -220,7 +220,7 @@ public class PropertyAccountService {
             }
             // The P&L row key (finance-ops §1). A reused leaf already carrying a line
             // keeps it: the first role it was mapped to wins, as in changeset 109.
-            if (leaf.getReportLine() == null) {
+            if (leaf.getReportLine() == null && reportLineFits(row.getRole().name(), leaf)) {
                 leaf.setReportLine(row.getRole().name());
                 dirty = true;
             }
@@ -273,9 +273,25 @@ public class PropertyAccountService {
             }
             Account leaf = accountService.createLeaf(name,
                     arabicLeafName(category.nameAr(), property), parent.get(), propertyId);
-            leaf.setReportLine(category.reportLine());
-            accountRepo.save(leaf);
+            if (reportLineFits(category.reportLine(), leaf)) {
+                leaf.setReportLine(category.reportLine());
+                accountRepo.save(leaf);
+            }
         }
+    }
+
+    /**
+     * Whether a report line may be written onto this leaf automatically: only when
+     * its account type is the line's natural one (ReportLines.naturalType), the same
+     * rule the chart of accounts enforces. A mismatch — a template parent of an
+     * unexpected type on an imported chart — is skipped and logged, never fatal:
+     * the leaf is then its own P&L row.
+     */
+    static boolean reportLineFits(String key, Account leaf) {
+        if (ReportLines.naturalType(key) == leaf.getAccountType()) return true;
+        log.warn("not setting report line {} on {} {} ({}): it belongs on a {} account", key, leaf.getCode(),
+                leaf.getName(), leaf.getAccountType(), ReportLines.naturalType(key));
+        return false;
     }
 
     @Transactional(readOnly = true)
@@ -333,7 +349,7 @@ public class PropertyAccountService {
         m.setAccount(account);
         mappingRepo.save(m);
         // A leaf mapped by hand joins its role's P&L row unless it already has one.
-        if (account.getReportLine() == null) {
+        if (account.getReportLine() == null && reportLineFits(role.name(), account)) {
             account.setReportLine(role.name());
             accountRepo.save(account);
         }

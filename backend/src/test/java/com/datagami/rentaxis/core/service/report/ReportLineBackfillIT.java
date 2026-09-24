@@ -116,4 +116,33 @@ class ReportLineBackfillIT extends AbstractPostgresIT {
             status.setRollbackOnly();
         });
     }
+
+    /** Re-review N1: a report line that predates the type rule does not block editing the account. */
+    @Test
+    void anAccountWithAMismatchedLineCanStillBeRenamed() {
+        tx.executeWithoutResult(status -> {
+            LandlordOrg landlord = new LandlordOrg();
+            landlord.setName("Backfill-rename-" + UUID.randomUUID());
+            TenantContextHolder.setTenantId(orgRepo.save(landlord).getId());
+            accounts.seedDefaultAccounts();
+            Account leaf = accounts.createLeaf("Pest Control", accounts.getAccountByCode("D-01"), null);
+            em.flush();
+            jdbc.update("UPDATE accounts SET report_line = 'RENTAL_INCOME' WHERE id = ?", leaf.getId());
+            em.clear();
+
+            Account renamed = accounts.updateAccount(leaf.getId(), new AccountService.AccountUpdate(
+                    "Pest Control AMC", "Pest Control AMC", null, null, null, null, null, null, null, "RENTAL_INCOME"));
+            assertThat(renamed.getName()).isEqualTo("Pest Control AMC");
+            assertThat(renamed.getReportLine()).isEqualTo("RENTAL_INCOME");
+            // Changing it to another mismatched line is still refused; to a fitting one, allowed.
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> accounts.updateAccount(leaf.getId(),
+                    new AccountService.AccountUpdate("Pest Control AMC", "Pest Control AMC", null, null, null, null,
+                            null, null, null, "ADMIN_FEE")))
+                    .hasMessageContaining("INCOME");
+            assertThat(accounts.updateAccount(leaf.getId(), new AccountService.AccountUpdate("Pest Control AMC",
+                    "Pest Control AMC", null, null, null, null, null, null, null, "EXP_CLEANING")).getReportLine())
+                    .isEqualTo("EXP_CLEANING");
+            status.setRollbackOnly();
+        });
+    }
 }

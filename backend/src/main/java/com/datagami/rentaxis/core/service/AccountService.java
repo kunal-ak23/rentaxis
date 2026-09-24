@@ -249,8 +249,13 @@ public class AccountService {
             existing.setDisplayOrder(updates.displayOrder());
         }
         existing.setProperty(resolveProperty(updates.propertyId()));
+        // Validated only when it changes: the web sends the stored value back on every
+        // edit, and a line that predates the type rule must not block a rename.
         if (updates.reportLine() != null) {
-            existing.setReportLine(normaliseReportLine(updates.reportLine(), existing.getAccountType()));
+            String requested = updates.reportLine().isBlank() ? null : updates.reportLine().strip();
+            if (!java.util.Objects.equals(requested, existing.getReportLine())) {
+                existing.setReportLine(normaliseReportLine(requested, existing.getAccountType()));
+            }
         }
         return repository.save(existing);
     }
