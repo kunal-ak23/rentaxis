@@ -8,13 +8,15 @@ public enum AccountRole {
     FORFEITED_INCOME, DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT,
     OPENING_BALANCE_DIFFERENCE,
     /** "Output VAT – not yet due" (spec 2026-09-24 §1): VAT charged on a contract whose instalment has not reached its tax point. */
-    OUTPUT_VAT_DEFERRED;
+    OUTPUT_VAT_DEFERRED,
+    /** Finance-ops spec §2: post-dated cheques we issued and the bank has not paid yet (B-02-001). */
+    PDC_PAYABLE;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
         return switch (this) {
             case DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT, OPENING_BALANCE_DIFFERENCE,
-                 OUTPUT_VAT_DEFERRED -> false;
+                 OUTPUT_VAT_DEFERRED, PDC_PAYABLE -> false;
             default -> true;
         };
     }

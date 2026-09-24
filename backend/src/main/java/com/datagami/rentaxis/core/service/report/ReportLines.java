@@ -73,6 +73,7 @@ public final class ReportLines {
         role(AccountRole.INPUT_VAT, "Input VAT", "ضريبة المدخلات");
         role(AccountRole.OPENING_BALANCE_DIFFERENCE, "Opening balance difference", "فرق الأرصدة الافتتاحية");
         role(AccountRole.OUTPUT_VAT_DEFERRED, "Output VAT – not yet due", "ضريبة المخرجات غير المستحقة بعد");
+        role(AccountRole.PDC_PAYABLE, "PDC payable – issued cheques", "شيكات مؤجلة صادرة");
         for (ExpenseCategory c : DIRECT_EXPENSE_CATEGORIES) {
             LABELS.put(c.reportLine(), new String[]{c.nameEn(), c.nameAr()});
         }
@@ -96,7 +97,7 @@ public final class ReportLines {
                  CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME -> AccountType.INCOME;
             case DISCOUNT_ALLOWED, ROUNDING_OFF -> AccountType.EXPENSE;
             case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT -> AccountType.ASSET;
-            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED -> AccountType.LIABILITY;
+            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED, PDC_PAYABLE -> AccountType.LIABILITY;
             case OPENING_BALANCE_DIFFERENCE -> AccountType.EQUITY;
         };
     }

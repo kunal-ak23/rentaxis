@@ -15,5 +15,6 @@ public enum JournalDocType {
     BPV,  // bank / cash payment voucher
     OB,   // opening balance
     JV,   // manual journal
-    VTP   // VAT tax point: deferred output VAT becomes due (spec 2026-09-24 §1)
+    VTP,  // VAT tax point: deferred output VAT becomes due (spec 2026-09-24 §1)
+    BPC   // issued (supplier) cheque presented: Dr PDC_PAYABLE / Cr bank (finance-ops spec §2)
 }

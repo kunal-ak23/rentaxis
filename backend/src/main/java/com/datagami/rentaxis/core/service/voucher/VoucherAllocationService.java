@@ -205,6 +205,11 @@ public class VoucherAllocationService {
 
     /** As above, dated no earlier than {@code notBefore} (an amend's reversal date). */
     void allocateOnPost(UUID paymentId, List<AllocationInput> inputs, LocalDate notBefore) {
+        allocateOnPost(paymentId, inputs, notBefore, null);
+    }
+
+    /** As above; {@code runId}: the payment run posting the payment, recorded on each allocation. */
+    void allocateOnPost(UUID paymentId, List<AllocationInput> inputs, LocalDate notBefore, UUID runId) {
         if (inputs == null || inputs.isEmpty()) return;
         requireTenant();
         Set<String> seen = new HashSet<>();
@@ -219,8 +224,41 @@ public class VoucherAllocationService {
             if (in.invoiceId() != null) ids.add(in.invoiceId());
             Map<UUID, Doc> locked = lockVouchers(ids);
             Doc target = in.invoiceId() != null ? locked.get(in.invoiceId()) : lockOpeningItem(in.openingItemId());
-            write(locked.get(paymentId), target, in.amount(), null, lock, notBefore);
+            VoucherAllocation a = write(locked.get(paymentId), target, in.amount(), null, lock, notBefore);
+            if (runId != null) {
+                a.setPaymentRunId(runId);
+                allocations.saveAndFlush(a);
+            }
         }
+    }
+
+    /**
+     * A payment run applies a vendor's advance: part of an earlier posted payment
+     * settles an invoice the run pays. No journal, like any advance; dated no
+     * earlier than the run's payment date and tagged with the run.
+     */
+    public VoucherAllocation allocateForRun(UUID paymentId, UUID invoiceId, UUID openingItemId, BigDecimal amount,
+                                            LocalDate runDate, UUID runId) {
+        requireTenant();
+        requireOneTarget(invoiceId, openingItemId);
+        List<UUID> ids = new ArrayList<>(List.of(paymentId));
+        if (invoiceId != null) ids.add(invoiceId);
+        Map<UUID, Doc> locked = lockVouchers(ids);
+        Doc target = invoiceId != null ? locked.get(invoiceId) : lockOpeningItem(openingItemId);
+        VoucherAllocation a = write(locked.get(paymentId), target, amount, null, lockedThroughShared(), runDate);
+        a.setPaymentRunId(runId);
+        return allocations.saveAndFlush(a);
+    }
+
+    /**
+     * A payment run's locks, taken before anything is read or written: every
+     * voucher row (the invoices it pays and the advances it applies) in one
+     * id-ordered statement, then the opening items in id order — the order
+     * {@link #allocate} and {@link #lockCounterparts} use.
+     */
+    public void lockForRun(Collection<UUID> voucherIds, Collection<UUID> openingItemIds) {
+        if (voucherIds != null && !voucherIds.isEmpty()) lockVouchers(voucherIds);
+        if (openingItemIds != null) new TreeSet<>(openingItemIds).forEach(this::lockOpeningItem);
     }
 
     /**

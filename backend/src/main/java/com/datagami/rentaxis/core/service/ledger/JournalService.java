@@ -182,6 +182,7 @@ public class JournalService {
             case REVERSAL -> "reversal of another entry, and a reversal is never reversed";
             case VAT_TAX_POINT -> "VAT tax point; its tax invoice has been issued, so correct it with a credit note"
                     + " (terminate or vary the lease)";
+            case ISSUED_CHEQUE -> "supplier cheque; present, unpresent or cancel it from the issued-cheques register";
             case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
         };
         return "This journal belongs to a " + belongsTo;

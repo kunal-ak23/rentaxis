@@ -227,3 +227,7 @@ databaseChangeLog:
       file: db/changelog/changesets/109-pl-report-lines.yaml
   - include:
       file: db/changelog/changesets/110-ap-open-items.yaml
+  - include:
+      file: db/changelog/changesets/111-payment-runs.yaml
+  - include:
+      file: db/changelog/changesets/112-pdc-payable.yaml

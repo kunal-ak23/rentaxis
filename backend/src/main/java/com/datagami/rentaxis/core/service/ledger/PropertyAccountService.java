@@ -159,6 +159,7 @@ public class PropertyAccountService {
         // leaf of its own resolves to, and no template row creates one per property.
         defaultIfMissing(AccountRole.FORFEITED_INCOME, "C-01-02-001");
         defaultIfMissing(AccountRole.OPENING_BALANCE_DIFFERENCE, "F-02");
+        defaultIfMissing(AccountRole.PDC_PAYABLE, "B-02-001");
     }
 
     /**

@@ -1,0 +1,79 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §2 (PR 3b): post-dated supplier cheques.
+  #
+  #   - issued_cheques: a cheque we wrote. A BPV paid by CHEQUE with a cheque date
+  #     after its own date credits PDC_PAYABLE instead of the bank and registers
+  #     its cheque here as ISSUED; presenting it posts a BPC (Dr PDC_PAYABLE /
+  #     Cr the bank leaf) and makes it PRESENTED; cancelling an ISSUED one
+  #     reverses its BPV. Cut-over cheques (opening = true) have no BPV: their
+  #     money arrived as an OB balance on PDC_PAYABLE. A cheque number is unique
+  #     per bank leaf among the cheques that are not CANCELLED;
+  #   - B-02-001 "PDC Payable – issued cheques" under the seeded B-02 group, and
+  #     the PDC_PAYABLE tenant default mapping onto it, for every tenant whose
+  #     chart has the group (the per-row tolerance of the seed).
+  - changeSet:
+      id: 112-pdc-payable
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: issued_cheques
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_issued_cheques_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: voucher_id, type: uuid, constraints: { foreignKeyName: fk_issued_cheques_voucher, referencedTableName: vouchers, referencedColumnNames: id } }
+              - column: { name: vendor_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_issued_cheques_vendor, referencedTableName: vendors, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_issued_cheques_bank_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: cheque_number, type: varchar(50), constraints: { nullable: false } }
+              - column: { name: cheque_date, type: date, constraints: { nullable: false } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), defaultValue: ISSUED, constraints: { nullable: false } }
+              - column: { name: presented_on, type: date }
+              - column: { name: bpc_journal_id, type: uuid, constraints: { foreignKeyName: fk_issued_cheques_bpc, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: cancelled_on, type: date }
+              - column: { name: cancel_reason, type: text }
+              - column: { name: cancel_journal_id, type: uuid, constraints: { foreignKeyName: fk_issued_cheques_cancel_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: opening, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz }
+        - sql:
+            comment: Closed status set; a positive amount; an opening cheque has no voucher and every other one has
+            sql: |
+              ALTER TABLE issued_cheques
+                ADD CONSTRAINT ck_issued_cheques_status CHECK (status IN ('ISSUED', 'PRESENTED', 'CANCELLED')),
+                ADD CONSTRAINT ck_issued_cheques_amount CHECK (amount > 0),
+                ADD CONSTRAINT ck_issued_cheques_source CHECK (opening = (voucher_id IS NULL)),
+                ADD CONSTRAINT ck_issued_cheques_presented CHECK ((status = 'PRESENTED') = (presented_on IS NOT NULL));
+              CREATE UNIQUE INDEX ux_issued_cheques_number ON issued_cheques (tenant_id, bank_account_id, cheque_number)
+                WHERE status <> 'CANCELLED';
+        - createIndex: { tableName: issued_cheques, indexName: idx_issued_cheques_voucher, columns: [ { column: { name: voucher_id } } ] }
+        - createIndex: { tableName: issued_cheques, indexName: idx_issued_cheques_status, columns: [ { column: { name: tenant_id } }, { column: { name: status } } ] }
+
+        - sql:
+            comment: B-02-001 PDC Payable – issued cheques, for every tenant whose chart has the B-02 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'B-02-001', 'PDC Payable – issued cheques',
+                     'PDC Payable – issued cheques', 'شيكات مؤجلة صادرة', 'LIABILITY', 'PDC_PAYABLE',
+                     g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'B-02'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'B-02-001');
+        - sql:
+            comment: PDC_PAYABLE tenant default mapping onto B-02-001
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'PDC_PAYABLE', a.id
+                FROM accounts a
+               WHERE a.code = 'B-02-001'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'PDC_PAYABLE');
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role = 'PDC_PAYABLE';
+              DELETE FROM accounts a WHERE a.code = 'B-02-001'
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS issued_cheques;
