@@ -696,15 +696,23 @@ public class LeaseService {
             throw new BusinessRuleViolationException("Only DRAFT leases can be edited");
         }
 
-        // If unit changed, validate the new unit is vacant
-        if (!lease.getUnit().getId().equals(dto.getUnitId())) {
-            Unit newUnit = unitRepository.findById(dto.getUnitId())
-                    .orElseThrow(() -> new NotFoundException("Unit not found"));
-            requireUnitFreeFor(newUnit, dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate(),
-                    dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate(), lease.getId(),
-                    lease.getRenewedFromLeaseId(), "Cannot assign lease. Unit is not vacant.");
-            lease.setUnit(newUnit);
+        // F14-58: an edit is judged like the draft it replaces — the renewal must
+        // start after its predecessor, and the unit must be free for the (possibly
+        // new) dates, whether or not the unit changed. Same messages as create/post.
+        LocalDate newStart = dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate();
+        LocalDate newEnd = dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate();
+        if (lease.getRenewedFromLeaseId() != null) {
+            leaseRepository.findById(lease.getRenewedFromLeaseId())
+                    .flatMap(p -> renewalStartsTooEarly(p, newStart))
+                    .ifPresent(m -> { throw new BusinessRuleViolationException(m); });
         }
+        boolean unitChanged = !lease.getUnit().getId().equals(dto.getUnitId());
+        Unit targetUnit = unitChanged
+                ? unitRepository.findById(dto.getUnitId()).orElseThrow(() -> new NotFoundException("Unit not found"))
+                : lease.getUnit();
+        requireUnitFreeFor(targetUnit, newStart, newEnd, lease.getId(), lease.getRenewedFromLeaseId(),
+                unitChanged ? "Cannot assign lease. Unit is not vacant." : "Cannot update lease. Unit is not vacant.");
+        if (unitChanged) lease.setUnit(targetUnit);
 
         // If renter changed
         if (!lease.getRenter().getId().equals(dto.getRenterId())) {

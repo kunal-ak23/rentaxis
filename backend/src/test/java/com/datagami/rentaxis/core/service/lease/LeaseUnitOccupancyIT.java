@@ -245,6 +245,27 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
                 .extracting(Unit::getOccupancy).containsExactly("OCCUPIED");
     }
 
+    /** F14-58: editing a draft's dates is judged like creating it. */
+    @Test
+    void editingADraftIntoAPostedLeasesDatesOrARenewalBeforeItsPredecessorIsRefused() {
+        Unit unit = fixtures.createUnit(fixtures.property(), "ED-" + UUID.randomUUID().toString().substring(0, 4));
+        UUID current = posted(unit, fixtures.renter(), CUR_START, CUR_END);
+        Renter next = fixtures.createRenter("Next Renter");
+        UUID draft = fixtures.draftLease(unit, next, TODAY, CUR_END.plusDays(1), CUR_END.plusYears(1),
+                List.of(line("RENT", "36000")));
+        assertThatThrownBy(() -> leaseService.updateDraftLease(draft,
+                fixtures.draftDto(unit, next, CUR_END, CUR_END.plusYears(1), List.of(line("RENT", "36000")))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("overlapping dates");
+
+        UUID renewalDraft = renewal.renew(current, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(
+                CUR_START, CUR_END.plusDays(1), CUR_END.plusYears(1), List.of(line("RENT", "48000")), false)).getId();
+        assertThatThrownBy(() -> leaseService.updateDraftLease(renewalDraft,
+                fixtures.draftDto(unit, fixtures.renter(), CUR_END.minusDays(5), CUR_END.plusYears(1),
+                        List.of(line("RENT", "48000")))))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
     /** R1 P2-5: a renewal posted ahead takes over the unit's rent on its start date. */
     @Test
     void aRenewalTakesOverTheUnitsRentOnItsStartDate() {
