@@ -551,13 +551,33 @@ public class BankLineActionService {
         throw BankRecRefusal.refuse("chooseLeaf", "This bank account has several ledger accounts; choose the one to post to");
     }
 
-    /** The property's BANK leaf when it is in the set; else the pick; else the only leaf. */
+    /**
+     * The property's BANK leaf when it is in the set; else the pick; else the only
+     * leaf. R1 P2-2: only among the set's leaves this property may receive into
+     * (tenant-wide or its own) — another property's leaf is refused by name.
+     */
     private UUID leafFor(Set<UUID> leaves, UUID propertyId, UUID picked) {
-        if (picked != null) return pickLeaf(leaves, picked);
+        Set<UUID> usable = new java.util.LinkedHashSet<>();
+        for (UUID l : leaves) {
+            List<UUID> scoped = jdbc.queryForList("select property_id from accounts where id = :a",
+                    new MapSqlParameterSource("a", l), UUID.class);
+            UUID p = scoped.isEmpty() ? null : scoped.get(0);
+            if (p == null || p.equals(propertyId)) usable.add(l);
+        }
+        if (usable.isEmpty()) {
+            throw BankRecRefusal.refuse("noBankForProperty", "No bank account is set up for this property: none of"
+                    + " this bank account's ledger accounts is the property's own or shared");
+        }
+        if (picked != null) {
+            if (leaves.contains(picked) && !usable.contains(picked)) {
+                throw BankRecRefusal.refuse("leafOfOtherProperty", "That ledger account belongs to another property");
+            }
+            return pickLeaf(usable, picked);
+        }
         if (propertyId != null) {
             Account a = resolver.resolveOrNull(AccountRole.BANK, propertyId);
-            if (a != null && leaves.contains(a.getId())) return a.getId();
+            if (a != null && usable.contains(a.getId())) return a.getId();
         }
-        return pickLeaf(leaves, null);
+        return pickLeaf(usable, null);
     }
 }

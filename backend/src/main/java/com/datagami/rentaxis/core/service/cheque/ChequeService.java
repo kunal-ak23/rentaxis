@@ -1358,6 +1358,11 @@ public class ChequeService {
      * no account still settles to the CASH role.
      */
     private Account reconcilableLeaf(Account stamped, Cheque cheque) {
+        return reconcilableLeaf(stamped, cheque, true);
+    }
+
+    /** {@code refuse}: false for the read-only settlement target, which reports "none" instead. */
+    private Account reconcilableLeaf(Account stamped, Cheque cheque, boolean refuse) {
         UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
         if (cheque.getMode() == ChequeMode.CASH) {
             // R1 P2-2: cash is counted into the till unless somebody chose otherwise.
@@ -1369,9 +1374,21 @@ public class ChequeService {
             if (stamped == null) return null;
         }
         if (stamped != null && stamped.getAccountSubType() != AccountSubType.BANK) return stamped;
-        if (stamped != null && ownedBankLeaf.isOwned(stamped.getId())) return stamped;
         UUID propertyId = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
-        return ownedBankLeaf.forProperty(propertyId).map(this::account).orElse(stamped);
+        // R1 P2-2: a stamped leaf is kept only when a bank account owns it and it is
+        // tenant-wide or this property's — the same rule the offer list and
+        // settlementAccount apply. Another property's leaf is never a target.
+        if (stamped != null && ownedBankLeaf.validFor(stamped.getId(), propertyId)) return stamped;
+        java.util.Optional<UUID> owned = ownedBankLeaf.forProperty(propertyId);
+        if (owned.isPresent()) return account(owned.get());
+        if (ownedBankLeaf.anyOwned()) {
+            // The tenant reconciles its banks, but none may take this property's money.
+            if (!refuse) return null;
+            throw new BusinessRuleViolationException("No bank account is set up for this property. Attach one of its"
+                    + " ledger accounts to a bank account (Bank reconciliation → Ledger accounts), or receive into cash.",
+                    "cheque.noBankForProperty", Map.of("row", label(cheque)));
+        }
+        return stamped;
     }
 
     /**
@@ -1387,7 +1404,7 @@ public class ChequeService {
         leaseAccessPolicy.requireManageable(cheque.getLease());
         Account stamped = cheque.getDebitAccount() != null && isSettlementAccount(cheque.getDebitAccount())
                 ? cheque.getDebitAccount() : null;
-        Account target = reconcilableLeaf(stamped, cheque);
+        Account target = reconcilableLeaf(stamped, cheque, false);
         UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
         List<com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option> options = new ArrayList<>();
         for (OwnedBankLeaf.Option o : ownedBankLeaf.optionsFor(property)) {
@@ -1462,6 +1479,8 @@ public class ChequeService {
             throw new BusinessRuleViolationException(
                     label(cheque) + " has no registering journal to reverse");
         }
+        // Not held to the F14-41 date rule on purpose: a termination hands back rows an
+        // extension registered on a date still ahead, so their PDRs are reversed earlier.
         postingService.reverse(cheque.getPdrJournalId(), date, reason);
     }
 

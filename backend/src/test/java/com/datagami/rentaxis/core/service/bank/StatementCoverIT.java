@@ -205,6 +205,30 @@ class StatementCoverIT extends AbstractPostgresIT {
                 .isEqualTo("PRESENTED");
     }
 
+    @Autowired BankLineActionService actions;
+
+    /** R1 P2-2: a statement-line receipt never lands in another property's leaf. */
+    @Test
+    void aStatementLineReceiptForAPropertyWithoutItsOwnLeafIsRefused() {
+        Property palm = fx.createProperty("PALM");
+        // Palm's BANK role points at Marina's leaf (the one the bank account owns): the
+        // posting accepts it, but a receipt for Palm must never land in it.
+        jdbc.update("insert into property_account_mappings (id, tenant_id, property_id, role, account_id)"
+                + " values (gen_random_uuid(), ?, ?, 'BANK', ?) on conflict do nothing",
+                fx.tenantId(), palm.getId(), marinaBank.getId());
+        Unit u = fx.createUnit(palm, "P-1");
+        Renter r = fx.createRenter("Palm Renter");
+        var lease = fx.postedLease(u, r, AUG_1, AUG_1, LocalDate.of(2027, 7, 31), List.of(line("RENT", "50000")), 1, "000801");
+        ChequeDTO row = chequeService.addRowToPostedLease(lease.lease().getId(),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, SEP_10, null, SEP_10, null, null,
+                        null, new BigDecimal("500.00"), "Transfer", ChequeMode.TRANSFER));
+        UUID line = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and txn_date = ?",
+                UUID.class, ei.getId(), SEP_10);
+        assertThatThrownBy(() -> actions.receive(new BankRecDTOs.ReceiveInput(line, row.id(), false, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("No bank account is set up for this property");
+    }
+
     @Test
     void aChequeCannotClearBeforeItsDepositOrItsOwnDate() {
         Unit u = fx.createUnit(marina, "U-700");
