@@ -1,4 +1,4 @@
-import { apiGet, qs } from "@/lib/api/ledger";
+import { apiGet, apiSend, qs } from "@/lib/api/ledger";
 
 /**
  * Finance → Reports: the per-property P&L and the property statement pack
@@ -64,6 +64,8 @@ export type PropertyPnl = {
     unassignedCost: number;
     allocated: Record<string, number>;
     noiAfter: Record<string, number>;
+    /** The Unassigned cost's share that falls to properties not on this report. */
+    allocatedToOthers: number;
   } | null;
   check: { ledgerNet: number; reportNet: number; difference: number; ok: boolean } | null;
   dataQuality: { lineAccountPropertyMismatches: number };
@@ -110,7 +112,22 @@ export type PropertyStatement = {
   footer: { isFinal: boolean; booksLockedThrough: string | null; generatedAt: string; generatedBy: string | null };
 };
 
-export type ReportLineOption = { key: string; labelEn: string; labelAr: string | null };
+export type ReportLineOption = { key: string; labelEn: string; labelAr: string | null; accountType: string };
+
+/**
+ * A drill-down names its figure by key, not by account ids, so a NOI over
+ * hundreds of leaves stays a small request: `rowKey` for a row, `groupId` for a
+ * group subtotal, neither for NOI. `propertyIds` is the report's selection, so a
+ * TOTAL drill lists what the Total column adds up.
+ */
+export type LinesQuery = {
+  from: string;
+  to: string;
+  column: string;
+  rowKey?: string | null;
+  groupId?: string | null;
+  propertyIds?: string[];
+};
 
 export type PnlQuery = {
   from: string;
@@ -140,8 +157,7 @@ const PROXY = "/api/proxy/v1";
 export const propertyReportsApi = {
   pnl: (q: PnlQuery) => apiGet<PropertyPnl>(`/finance/reports/property-pl${pnlQuery(q)}`),
   pnlCsvUrl: (q: PnlQuery, lang: string) => `${PROXY}/finance/reports/property-pl.csv${pnlQuery(q, { lang })}`,
-  lines: (q: { from: string; to: string; column: string; accountIds: string[] }) =>
-    apiGet<PnlLines>(`/finance/reports/property-pl/lines${qs(q)}`),
+  lines: (q: LinesQuery) => apiSend<PnlLines>("POST", "/finance/reports/property-pl/lines", q),
   statement: (q: { propertyId: string; from: string; to: string }) =>
     apiGet<PropertyStatement>(`/finance/reports/property-statement${qs(q)}`),
   statementPdfUrl: (q: { propertyId: string; from: string; to: string; lang: string }) =>

@@ -495,7 +495,7 @@ export default function AccountsPage() {
                         onChange={ev => setFormData({ ...formData, reportLine: ev.target.value })}
                     >
                         <option value="">{tr("reportLineNone")}</option>
-                        {reportLines.map(r => (
+                        {reportLines.filter(r => r.accountType === formData.accountType).map(r => (
                             <option key={r.key} value={r.key}>{isAr && r.labelAr ? r.labelAr : r.labelEn}</option>
                         ))}
                     </select>

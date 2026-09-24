@@ -23,6 +23,7 @@ export default function DrillDrawer({
     target,
     from,
     to,
+    propertyIds,
     locale,
     canOpenLedger,
     onClose,
@@ -30,6 +31,8 @@ export default function DrillDrawer({
     target: DrillTarget;
     from: string;
     to: string;
+    /** The report's property selection, so a Total drill matches the Total column. */
+    propertyIds: string[];
     locale: string;
     canOpenLedger: boolean;
     onClose: () => void;
@@ -43,15 +46,19 @@ export default function DrillDrawer({
         // drawer rather than resetting this one's state from inside the effect.
         let live = true;
         propertyReportsApi
-            .lines({ from, to, column: target.column.key, accountIds: target.accountIds })
+            .lines({
+                from, to, column: target.column.key,
+                rowKey: target.rowKey ?? null, groupId: target.groupId ?? null, propertyIds,
+            })
             .then(d => live && setData(d))
             .catch(e => live && setError(e instanceof ApiError ? e.message : String(e)));
         return () => {
             live = false;
         };
-    }, [target, from, to]);
+    }, [target, from, to, propertyIds]);
 
-    const ledgerHref = target.column.propertyId
+    // Row drills only: a group or NOI would put every leaf in the URL.
+    const ledgerHref = target.column.propertyId && target.accountIds?.length
         ? `/dashboard/finance/general-ledger?${new URLSearchParams({
               accountIds: target.accountIds.join(","),
               propertyId: target.column.propertyId,

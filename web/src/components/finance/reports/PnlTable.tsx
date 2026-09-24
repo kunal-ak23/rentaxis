@@ -12,8 +12,18 @@ import {
     type PropertyPnl,
 } from "@/lib/api/propertyReports";
 
-/** Which figure a drill-down asks for: one row (or a whole group / total) in one column. */
-export type DrillTarget = { column: PnlColumn; label: string; accountIds: string[] };
+/**
+ * Which figure a drill-down asks for, in one column: a row (`rowKey`), a group
+ * subtotal (`groupId`) or NOI (neither). `accountIds` is the row's own leaves,
+ * for the general-ledger link only — never sent for a group or NOI.
+ */
+export type DrillTarget = {
+    column: PnlColumn;
+    label: string;
+    rowKey?: string;
+    groupId?: string;
+    accountIds?: string[];
+};
 
 const th = "px-3 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-3 py-2 text-xs";
@@ -58,7 +68,6 @@ export default function PnlTable({
         ? [t("thisPeriod"), t("prior"), t("delta"), t("deltaPct")]
         : [t("thisPeriod")];
     const span = subHeads.length;
-    const allAccountIds = data.groups.flatMap(g => g.rows.flatMap(r => r.accountIds));
 
     const amountCells = (
         cells: Record<string, PnlAmount> | undefined,
@@ -154,7 +163,7 @@ export default function PnlTable({
                             {g.rows.map(r => (
                                 <tr key={r.key} className="border-t border-border hover:bg-input/30" data-testid={`row-${r.key}`}>
                                     <td className={td}>{rowLabel(r)}</td>
-                                    {amountCells(r.cells, c => ({ column: c, label: rowLabel(r), accountIds: r.accountIds }), r.key)}
+                                    {amountCells(r.cells, c => ({ column: c, label: rowLabel(r), rowKey: r.key, accountIds: r.accountIds }), r.key)}
                                 </tr>
                             ))}
                             <tr className="bg-input/40 font-semibold border-t border-border">
@@ -162,7 +171,7 @@ export default function PnlTable({
                                 {amountCells(g.subtotal, c => ({
                                     column: c,
                                     label: ar && g.nameAr ? g.nameAr : g.name,
-                                    accountIds: g.rows.flatMap(r => r.accountIds),
+                                    groupId: g.groupId,
                                 }), `sub-${g.code}`)}
                             </tr>
                         </Fragment>
@@ -177,7 +186,7 @@ export default function PnlTable({
                     </tr>
                     <tr className="bg-warning/10 font-bold border-t border-border" data-testid="noi-row">
                         <td className={td}>{t("noi")}</td>
-                        {amountCells(data.noi, c => ({ column: c, label: t("noi"), accountIds: allAccountIds }), "noi")}
+                        {amountCells(data.noi, c => ({ column: c, label: t("noi") }), "noi")}
                     </tr>
                     {data.allocation && !pivot && (
                         <>

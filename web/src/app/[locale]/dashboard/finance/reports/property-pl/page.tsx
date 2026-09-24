@@ -147,6 +147,11 @@ export default function PropertyPlPage() {
             ) : data ? (
                 <>
                     <PnlTable data={data} locale={locale} onDrill={setDrill} />
+                    {data.allocation && data.allocation.allocatedToOthers !== 0 && (
+                        <p className="mt-2 text-xs text-muted" data-testid="allocated-to-others">
+                            {t("allocatedToOthers", { amount: fmtAmount(data.allocation.allocatedToOthers) })}
+                        </p>
+                    )}
                     {data.allocation && data.allocation.basisUsed !== data.allocation.basis && (
                         <p className="mt-2 text-xs text-warning">{t("allocationFallback")}</p>
                     )}
@@ -160,10 +165,11 @@ export default function PropertyPlPage() {
 
             {drill && (
                 <DrillDrawer
-                    key={`${drill.column.key}|${drill.label}|${drill.accountIds.join(",")}`}
+                    key={`${drill.column.key}|${drill.rowKey ?? ""}|${drill.groupId ?? ""}`}
                     target={drill}
                     from={applied.from}
                     to={applied.to}
+                    propertyIds={applied.propertyIds}
                     locale={locale}
                     canOpenLedger={canOpenLedger}
                     onClose={() => setDrill(null)}

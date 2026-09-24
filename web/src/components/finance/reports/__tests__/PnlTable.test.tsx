@@ -121,8 +121,16 @@ describe("PnlTable", () => {
         const onDrill = renderTable(pnl({ columns: [P1, P2, "UNASSIGNED", "TOTAL"], compare: false }));
         fireEvent.click(screen.getByTestId(`drill-RENTAL_INCOME-${P1}`));
         expect(onDrill).toHaveBeenCalledWith(expect.objectContaining({
-            accountIds: ["a1", "a2"], column: expect.objectContaining({ key: P1 }),
+            rowKey: "RENTAL_INCOME", accountIds: ["a1", "a2"], column: expect.objectContaining({ key: P1 }),
         }));
+        // A group subtotal and NOI are named by key, never by a list of every leaf.
+        fireEvent.click(screen.getByTestId(`drill-sub-C-01-${P1}`));
+        expect(onDrill).toHaveBeenLastCalledWith(expect.objectContaining({ groupId: "g1" }));
+        expect(onDrill.mock.lastCall![0].accountIds).toBeUndefined();
+        fireEvent.click(screen.getByTestId(`drill-noi-${P1}`));
+        expect(onDrill.mock.lastCall![0]).toEqual(expect.objectContaining({ label: "NOI" }));
+        expect(onDrill.mock.lastCall![0].accountIds).toBeUndefined();
+        expect(onDrill.mock.lastCall![0].rowKey).toBeUndefined();
         // A zero is not a link.
         expect(screen.queryByTestId(`drill-RENTAL_INCOME-${P2}`)).toBeNull();
     });
