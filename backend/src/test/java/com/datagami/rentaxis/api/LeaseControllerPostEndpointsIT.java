@@ -164,6 +164,8 @@ class LeaseControllerPostEndpointsIT extends AbstractPostgresIT {
     private void generateGrid() {
         chequeGenerationService.generate(leaseId,
                 new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+        chequeGenerationService.generateNumbers(leaseId,
+                com.datagami.rentaxis.testsupport.LeaseTestFixtures.nextChequeBook());
     }
 
     private LeaseStatus currentStatus() {

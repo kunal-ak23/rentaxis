@@ -88,9 +88,11 @@ class ChequeDetailsServiceBulkAttachIT extends AbstractPostgresIT {
                 .bootstrap()
                 .withLeaseServices(leaseService, generation, posting);
         tenantId = fixtures.tenantId();
-        // Unnumbered on purpose: the numbers are what this test is about.
-        leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
-                List.of(line("RENT", "51000")), 4, null).lease().getId();
+        // Unnumbered on purpose: the numbers are what this test is about. Only an
+        // import can post unnumbered PDCs now (#80), so the fixture posts through
+        // that door.
+        leaseId = fixtures.postedLeaseUnnumbered(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000")), 4).lease().getId();
         register = reread();
     }
 

@@ -31,6 +31,7 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -545,23 +546,36 @@ public class LeasePostingService {
      * books. One shared flag hid that, and reading {@code validate(…, false)} at the
      * call site told you nothing about which rule was being waived.</p>
      */
+    /*
+     * pdcNumbersRequired (#80): a post-dated cheque with no number cannot be
+     * matched at the bank, bounced by number or searched for, so a post refuses
+     * one. The cut-over keeps the rule too — ContractImportValidator already
+     * refuses a PDC row without its number, so a batch never reaches here with one.
+     *
+     * The PORTFOLIO import alone is exempt, deliberately: its deposit and fee rows
+     * (and, with no Cheques sheet, the whole grid) are generated, so no number
+     * exists to give them, and refusing would leave a running tenancy off the
+     * books (gap #83) — the worse error. The numbers are typed in afterwards on
+     * the REGISTERED cheques (ChequeDetailsService, bulk attach).
+     */
     private record Preconditions(boolean leaseMustBeUnposted, boolean chequesMustBeDraft,
-                                 boolean periodLockApplies) {
-        static final Preconditions FOR_POST = new Preconditions(true, true, true);
-        static final Preconditions FOR_AMEND = new Preconditions(false, false, true);
+                                 boolean periodLockApplies, boolean pdcNumbersRequired) {
+        static final Preconditions FOR_POST = new Preconditions(true, true, true, true);
+        /** An amendment does not touch the cheques, so it has nothing to say about their numbers. */
+        static final Preconditions FOR_AMEND = new Preconditions(false, false, true, false);
         /**
          * A cut-over import: the same untouched-lease rules, and no period-lock
          * pre-check. Its journals carry the batch id and {@code PostingService}
          * exempts them, so checking the lock here would refuse a contract the
          * ledger is about to accept — see {@link #post(UUID, UUID)}.
          */
-        static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false);
+        static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false, true);
         /**
          * A portfolio import's post: the interactive rules, lock included — its
          * journals carry no batch id, so {@code PostingService} enforces the lock on
          * them and the pre-check has to say so first.
          */
-        static final Preconditions FOR_PORTFOLIO_IMPORT = new Preconditions(true, true, true);
+        static final Preconditions FOR_PORTFOLIO_IMPORT = new Preconditions(true, true, true, false);
     }
 
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks) {
@@ -627,6 +641,12 @@ public class LeasePostingService {
             }
             if (c.getChequeDate() == null) {
                 otherErrors.add("Cheque " + label(c) + " has no cheque date.");
+            }
+            if (checks.pdcNumbersRequired() && c.getMode() == ChequeMode.PDC
+                    && (c.getChequeNumber() == null || c.getChequeNumber().isBlank())) {
+                // Cash and transfer rows have no cheque number by nature.
+                otherErrors.add("Cheque #" + c.getSeqNo() + " has no number; a post-dated cheque needs"
+                        + " its number before the lease is posted.");
             }
             if (c.getPostingDate() == null) {
                 otherErrors.add("Cheque " + label(c) + " has no posting date.");

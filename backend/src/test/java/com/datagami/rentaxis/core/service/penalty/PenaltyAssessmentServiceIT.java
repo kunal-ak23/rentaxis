@@ -913,6 +913,7 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
                 otherUnit, otherRenter, START, END, List.of(line("RENT", "24000")))).getId();
         generation.generate(otherLeaseId, new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
                 2, START, null, "Emirates NBD", null, false, null));
+        generation.generateNumbers(otherLeaseId, LeaseTestFixtures.nextChequeBook());
         posting.post(otherLeaseId);
         PenaltyAssessmentDTO onOtherProperty = proposal(otherLeaseId, null, PenaltyReason.OTHER, "700");
 
@@ -969,6 +970,7 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
                 otherUnit, otherRenter, START, END, List.of(line("RENT", "24000")))).getId();
         generation.generate(otherLeaseId, new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
                 2, START, null, "Emirates NBD", null, false, null));
+        generation.generateNumbers(otherLeaseId, LeaseTestFixtures.nextChequeBook());
         posting.post(otherLeaseId);
         service.approve(proposal(otherLeaseId, null, PenaltyReason.OTHER, "999").id(), APPROVE_DATE);
 
@@ -1080,6 +1082,7 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
                 otherUnit, otherRenter, START, END, List.of(line("RENT", "24000")))).getId();
         generation.generate(otherLeaseId, new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
                 2, START, null, "Emirates NBD", null, false, null));
+        generation.generateNumbers(otherLeaseId, LeaseTestFixtures.nextChequeBook());
         PostLeaseResponse other = posting.post(otherLeaseId);
 
         assertThatThrownBy(() -> service.propose(new ProposePenaltyRequest(

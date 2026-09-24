@@ -300,6 +300,14 @@ public class LeaseTestFixtures {
      * can bounce the deposit without bouncing the first month's rent with it.
      */
     public List<ChequeDTO> generateGrid(UUID leaseId, int installments, LocalDate firstDueDate) {
+        unnumberedGrid(leaseId, installments, firstDueDate);
+        // Numbered from a fresh fixture book: the interactive post refuses a PDC
+        // without a number (#80), and a grid is generated here to be posted.
+        return numberGrid(leaseId, nextChequeBook());
+    }
+
+    /** The same grid with its PDC rows left unnumbered, as the generator writes it. */
+    public List<ChequeDTO> unnumberedGrid(UUID leaseId, int installments, LocalDate firstDueDate) {
         requireLeaseServices();
         return chequeGeneration.generate(leaseId, new GenerateChequesRequest(
                 installments, firstDueDate, null, "Emirates NBD", null, false, null));
@@ -315,7 +323,8 @@ public class LeaseTestFixtures {
      * Draft, grid, numbers, post: a lease on the books whose register holds one
      * REGISTERED cheque per row, each with its own PDR.
      *
-     * @param startingNumber first cheque number, or null to leave the rows unnumbered.
+     * @param startingNumber first cheque number, or null for a fresh fixture book —
+     *                       a post-dated cheque must carry a number to post (#80).
      */
     public PostLeaseResponse postedLease(LocalDate contractDate, LocalDate start, LocalDate end,
                                          List<LeaseLineInput> lines, int installments, String startingNumber) {
@@ -336,6 +345,20 @@ public class LeaseTestFixtures {
     }
 
     /**
+     * A posted lease whose PDC rows carry <b>no numbers</b> — which the interactive
+     * post now refuses (#80), so this goes through the portfolio-import door, the
+     * way such a register really comes about: an import whose sheet did not carry
+     * the numbers, left to be filled in afterwards (bulk attach, cheque details).
+     */
+    public PostLeaseResponse postedLeaseUnnumbered(LocalDate contractDate, LocalDate start, LocalDate end,
+                                                   List<LeaseLineInput> lines, int installments) {
+        requireLeaseServices();
+        UUID leaseId = draftLease(unit, renter, contractDate, start, end, lines);
+        unnumberedGrid(leaseId, installments, start);
+        return leasePosting.postForPortfolioImport(leaseId);
+    }
+
+    /**
      * A line covering an explicit period — what an extension's rent line is, and
      * what a renewal's copied rent line becomes.
      */
@@ -344,10 +367,29 @@ public class LeaseTestFixtures {
                 null, null, null, from, to);
     }
 
-    /** One cheque row: an amount on a date, PDC by default, no number. */
+    /**
+     * One cheque row: an amount on a date, PDC by default, with a number of its own
+     * — the interactive post refuses a PDC without one (#80), and a fresh number per
+     * row keeps two rows of one grid from colliding.
+     */
     public static ChequeRowInput chequeRow(String amount, LocalDate chequeDate) {
-        return new ChequeRowInput(null, null, null, null, chequeDate, "Emirates NBD", null, null,
+        return new ChequeRowInput(null, null, null, nextChequeNumber(), chequeDate, "Emirates NBD", null, null,
                 new BigDecimal(amount), null, null);
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong CHEQUE_NUMBERS =
+            new java.util.concurrent.atomic.AtomicLong(700_000);
+
+    /** A cheque number no other fixture row has used. */
+    public static String nextChequeNumber() {
+        return String.valueOf(CHEQUE_NUMBERS.incrementAndGet());
+    }
+
+    /** A starting number with room for a whole grid after it. */
+    public static String nextChequeBook() {
+        // The book is numbers start..start+99, all of them past the counter, so a
+        // later chequeRow() cannot land inside it.
+        return String.valueOf(CHEQUE_NUMBERS.getAndAdd(100) + 1);
     }
 
     private LeaseService requireLeaseServices() {

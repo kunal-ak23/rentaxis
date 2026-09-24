@@ -25,6 +25,7 @@ import com.datagami.rentaxis.domain.entity.JournalLine;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
@@ -154,8 +155,10 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
      * describe and which gives the grid one row per charged thing.
      */
     private List<ChequeDTO> grid(UUID leaseId) {
-        return cheques.generate(leaseId, new GenerateChequesRequest(
+        cheques.generate(leaseId, new GenerateChequesRequest(
                 4, START, null, "Emirates NBD", null, false, null));
+        // Numbered, as a grid is before it posts: a PDC needs its number (#80).
+        return cheques.generateNumbers(leaseId, com.datagami.rentaxis.testsupport.LeaseTestFixtures.nextChequeBook());
     }
 
     private UUID readyToPost() {
@@ -553,12 +556,13 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         PostLeaseDryRunResponse dry = posting.dryRun(leaseId);
         assertThat(dry.ok()).isFalse();
         assertThat(dry.errors()).hasSize(1);
+        String fifth = generated.get(4).chequeNumber();
         assertThat(dry.errors().get(0)).isEqualTo(
-                "Cheque row 5 cannot post on 2026-08-20: books are locked through 2026-08-31.");
+                "Cheque " + fifth + " cannot post on 2026-08-20: books are locked through 2026-08-31.");
 
         assertThatThrownBy(() -> posting.post(leaseId))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Cheque row 5 cannot post on 2026-08-20")
+                .hasMessageContaining("Cheque " + fifth + " cannot post on 2026-08-20")
                 .hasMessageContaining("books are locked through 2026-08-31");
 
         // Nothing at all: no TCO, no four-fifths of a grid, no claimed unit.
@@ -954,6 +958,69 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
                 "select count(*) from journal_entries where tenant_id = ? and doc_type = 'PDR' and lease_id = ?",
                 Long.class, tenant, leaseId);
         assertThat(pdrs).isEqualTo(5L);
+        assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    // ------------------------------------------------------------------
+    // #80: a post-dated cheque needs its number
+    // ------------------------------------------------------------------
+
+    /**
+     * The generator writes PDC rows without numbers; posting them would register
+     * paper that cannot be matched at the bank, bounced by number or found again.
+     * The review dialog (dry run) lists every such row and the post refuses.
+     */
+    @Test
+    void aPdcWithoutANumberIsRefusedByTheDryRunAndThePost() {
+        UUID leaseId = draft();
+        cheques.generate(leaseId, new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+
+        PostLeaseDryRunResponse dry = posting.dryRun(leaseId);
+        assertThat(dry.ok()).isFalse();
+        assertThat(dry.errors()).contains(
+                "Cheque #3 has no number; a post-dated cheque needs its number before the lease is posted.");
+
+        assertThatThrownBy(() -> posting.post(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque #1 has no number");
+        assertThat(journalEntryRows()).isZero();
+        assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /** Cash and transfer receipts have no cheque number by nature and are not asked for one. */
+    @Test
+    void cashAndTransferRowsNeedNoNumber() {
+        UUID leaseId = draft();
+        List<ChequeDTO> generated = cheques.generate(leaseId,
+                new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+        List<ChequeRowInput> rows = new ArrayList<>();
+        for (int i = 0; i < generated.size(); i++) {
+            ChequeDTO r = generated.get(i);
+            ChequeMode mode = i % 2 == 0 ? ChequeMode.CASH : ChequeMode.TRANSFER;
+            rows.add(new ChequeRowInput(r.id(), null, r.postingDate(), null, r.chequeDate(),
+                    null, r.payerName(), r.debitAccountId(), r.amount(), r.narration(), mode));
+        }
+        cheques.saveRows(leaseId, rows);
+
+        PostLeaseDryRunResponse dry = posting.dryRun(leaseId);
+        assertThat(dry.errors()).noneMatch(e -> e.contains("has no number"));
+        assertThat(dry.ok()).as(String.join(" | ", dry.errors())).isTrue();
+        posting.post(leaseId);
+        assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /**
+     * The import doors are exempt (see LeasePostingService.Preconditions): a
+     * portfolio import posts an unnumbered PDC grid, and the numbers are filled in
+     * afterwards on the REGISTERED rows.
+     */
+    @Test
+    void thePortfolioImportDoorPostsAnUnnumberedGrid() {
+        UUID leaseId = draft();
+        cheques.generate(leaseId, new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+
+        posting.postForPortfolioImport(leaseId);
+
         assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
     }
 }
