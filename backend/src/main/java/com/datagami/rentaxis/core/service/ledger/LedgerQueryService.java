@@ -121,8 +121,16 @@ public class LedgerQueryService {
 
     public List<AccountLedgerDTO> renterLedger(UUID renterId, LocalDate from, LocalDate to) {
         LedgerFilter f = new LedgerFilter(from, to, null, null, null, renterId).normalised();
-        List<UUID> ids = lines.activeAccountIds(TenantContextHolder.getTenantId(), f.from(), f.to(), null, null, null, renterId, false);
-        return ledgers(ids, f);
+        // F14-07: every account the renter carries at the end of the window, not only
+        // those that moved inside it. An account with an opening balance and no
+        // movement (advance rent, deposit held) is still on the statement, or the
+        // report total is meaningless. Accounts settled to nil before the window and
+        // quiet in it are left out.
+        List<UUID> ids = lines.activeAccountIds(TenantContextHolder.getTenantId(), LocalDate.of(2000, 1, 1), f.to(),
+                null, null, null, renterId, false);
+        return ledgers(ids, f).stream()
+                .filter(l -> !l.rows().isEmpty() || l.openingBalance().signum() != 0)
+                .toList();
     }
 
     /**

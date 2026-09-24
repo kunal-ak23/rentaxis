@@ -151,6 +151,25 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
         assertThat(ledger.renterLedger(UUID.randomUUID(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))).isEmpty();
     }
 
+    /**
+     * F14-07: a window after the contract was posted still shows every account the
+     * renter carries — advance rent, the deposit, the fee and the receivable open
+     * with their balances and no rows — so the statement's total means something.
+     */
+    @Test
+    void renterLedgerForAWindowKeepsAccountsWithAnOpeningBalanceAndNoMovement() {
+        List<AccountLedgerDTO> l = ledger.renterLedger(renterId, LocalDate.of(2026, 9, 12), LocalDate.of(2026, 9, 30));
+        assertThat(l).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder(
+                "Rent Receivable - L'Olivier", "Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
+                "PDC Receivable L'Olivier", "Emirates Islamic - L'Olivier");
+        AccountLedgerDTO advance = l.stream().filter(a -> a.accountName().startsWith("Advance Rent")).findFirst().orElseThrow();
+        assertThat(advance.rows()).isEmpty();
+        assertThat(advance.openingBalance()).isEqualByComparingTo("-61000");
+        assertThat(advance.closingBalance()).isEqualByComparingTo("-61000");
+        // Before anything was posted there is nothing to carry.
+        assertThat(ledger.renterLedger(renterId, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 9, 10))).isEmpty();
+    }
+
     @Test
     void generalLedgerWithNoAccountIdsReturnsEveryLeafWithActivityInRange() {
         List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(LocalDate.of(2026, 9, 15), LocalDate.of(2026, 9, 15), null, null, null, null));
