@@ -72,4 +72,20 @@ describe("BounceChequeDialog", () => {
             failureReason: "ACCOUNT_CLOSED",
         });
     });
+
+    it("labels the two newer failure reasons, not their raw enum names (F14-22)", () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        const options = Array.from(
+            (screen.getByTestId("bounce-failure-reason") as HTMLSelectElement).options,
+        ).map(o => ({ value: o.value, text: o.textContent }));
+        expect(options).toContainEqual({ value: "STOPPED_PAYMENT", text: "Payment stopped" });
+        expect(options).toContainEqual({
+            value: "TECHNICAL_RETURN",
+            text: "Technical return (stale, post-dated, amount mismatch)",
+        });
+    });
 });

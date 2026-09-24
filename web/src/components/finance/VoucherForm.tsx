@@ -20,9 +20,12 @@ import {
 import { autoAllocate, daysOverdueAsOf, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
 import {
     ALLOWED_VAT_RATES, ATTACHMENT_ACCEPT, attachmentRefusal, canAmendVoucher,
-    canEditVoucher, canManageAttachments, draftRefusal, isDateLocked, lineAccountTypes,
+    canEditVoucher, canManageAttachments, canVoidVoucher, draftRefusal, isDateLocked, lineAccountTypes,
     vatAllowedOn, type DraftRefusalResult,
 } from "@/lib/voucherRules";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * One form for both voucher documents (spec §10.1, §11): a Purchase/Service
@@ -154,6 +157,9 @@ const STATUS_CLASS: Record<VoucherStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
     REVERSED: "bg-warning/10 text-warning border-warning/30",
+    // F14-42: void reuses REVERSED's styling — both are a posted document
+    // undone after the fact, just without a replacement.
+    VOID: "bg-warning/10 text-warning border-warning/30",
 };
 
 export default function VoucherForm({
@@ -234,9 +240,19 @@ export default function VoucherForm({
     const [loadError, setLoadError] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
-    const [confirm, setConfirm] = useState<"post" | "delete" | "amend" | null>(null);
+    const [confirm, setConfirm] = useState<"post" | "delete" | "amend" | "void" | null>(null);
     const [amendDate, setAmendDate] = useState(todayIso);
     const [amendReason, setAmendReason] = useState("");
+    // F14-20: bank.statementCovers, on post and amend.
+    const statementCover = useStatementCoverGuard(tCommon);
+    // F14-42: voucher.cashNegative — a BPV paid from a CASH leaf that would go
+    // negative. The server's own sentence is the notice; ticking "Post anyway"
+    // resends with allowNegativeCash.
+    const [cashNegativeNotice, setCashNegativeNotice] = useState<string | null>(null);
+    const [allowNegativeCash, setAllowNegativeCash] = useState(false);
+    // F14-42: void a POSTED voucher.
+    const [voidDate, setVoidDate] = useState(todayIso);
+    const [voidReason, setVoidReason] = useState("");
     /** True from the moment Amend is clicked until it is posted or cancelled. */
     const [amending, setAmending] = useState(false);
     /** The posted document as loaded, so Cancel amendment can put it back verbatim. */
@@ -465,6 +481,10 @@ export default function VoucherForm({
     const editable = canEditVoucher(status) || amending;
     const locked = isDateLocked(docDate, booksLockedThrough);
     const amendDateLocked = isDateLocked(amendDate, booksLockedThrough);
+    // F14-41: the server now requires the amend reason (@NotBlank) and refuses
+    // a reversal dated before the voucher it reverses.
+    const amendReasonBlank = !amendReason.trim();
+    const amendDateBeforeDoc = !!posted && !!amendDate && amendDate < posted.docDate;
 
     // ---- supplier AP (finance-ops spec §2) ----
 
@@ -721,13 +741,24 @@ export default function VoucherForm({
     const postVoucher = () =>
         run(async () => {
             const saved = await persist();
-            const posted = type === "BPV" && allocationInputs.length
-                ? await voucherApi.post(saved.id, allocationInputs)
-                : await voucherApi.post(saved.id);
-            applyDetail(posted);
-            setPostedNumber(posted.voucherNumber);
-            setConfirm(null);
-            onPosted?.(posted);
+            try {
+                const posted = await voucherApi.post(saved.id, type === "BPV" ? allocationInputs : undefined, {
+                    notOnStatement: statementCover.notOnStatement || undefined,
+                    allowNegativeCash: allowNegativeCash || undefined,
+                });
+                applyDetail(posted);
+                setPostedNumber(posted.voucherNumber);
+                setConfirm(null);
+                onPosted?.(posted);
+            } catch (e) {
+                if (statementCover.catchStatementCover(e)) return; // notice showing; stays on the confirm dialog
+                const c = codedOf(e);
+                if (c.code === "voucher.cashNegative") {
+                    setCashNegativeNotice(serverText(tCommon, e));
+                    return;
+                }
+                throw e;
+            }
         });
 
     const deleteDraft = () =>
@@ -735,6 +766,15 @@ export default function VoucherForm({
             if (savedId) await voucherApi.remove(savedId);
             setConfirm(null);
             onDeleted?.();
+        });
+
+    /** F14-42: void a POSTED voucher — reversed with a reason, no replacement. */
+    const voidVoucher = () =>
+        run(async () => {
+            if (!savedId) return;
+            const voided = await voucherApi.void(savedId, { date: voidDate, reason: voidReason.trim() });
+            applyDetail(voided);
+            setConfirm(null);
         });
 
     /** Enter amend mode. The fields re-open; nothing is sent until Post amendment. */
@@ -766,25 +806,37 @@ export default function VoucherForm({
     const amend = () =>
         run(async () => {
             if (!savedId) return;
-            // One transaction on the server: the original's journal is reversed and
-            // the replacement is posted, so a reversal cannot survive a failed
-            // replacement. What comes back is the NEW voucher, already POSTED.
-            const fresh = await voucherApi.amend(savedId, {
-                reversalDate: amendDate,
-                reason: amendReason,
-                replacement: body(),
-                // The panel is the whole answer for a payment: what it lists is settled,
-                // an empty panel leaves the replacement as an advance.
-                ...(type === "BPV" ? { allocations: allocationInputs } : {}),
-            });
-            setAmending(false);
-            applyDetail(fresh);
-            setPostedNumber(fresh.voucherNumber);
-            setConfirm(null);
-            // Deliberately NOT onPosted: that navigates to the list, and an
-            // amendment's whole result is the replacement — its new number, and
-            // the link back to the original now marked REVERSED. The accountant
-            // stays on it.
+            try {
+                // One transaction on the server: the original's journal is reversed and
+                // the replacement is posted, so a reversal cannot survive a failed
+                // replacement. What comes back is the NEW voucher, already POSTED.
+                const fresh = await voucherApi.amend(savedId, {
+                    reversalDate: amendDate,
+                    reason: amendReason,
+                    replacement: body(),
+                    // The panel is the whole answer for a payment: what it lists is settled,
+                    // an empty panel leaves the replacement as an advance.
+                    ...(type === "BPV" ? { allocations: allocationInputs } : {}),
+                    notOnStatement: statementCover.notOnStatement || undefined,
+                    allowNegativeCash: allowNegativeCash || undefined,
+                });
+                setAmending(false);
+                applyDetail(fresh);
+                setPostedNumber(fresh.voucherNumber);
+                setConfirm(null);
+                // Deliberately NOT onPosted: that navigates to the list, and an
+                // amendment's whole result is the replacement — its new number, and
+                // the link back to the original now marked REVERSED. The accountant
+                // stays on it.
+            } catch (e) {
+                if (statementCover.catchStatementCover(e)) return;
+                const c = codedOf(e);
+                if (c.code === "voucher.cashNegative") {
+                    setCashNegativeNotice(serverText(tCommon, e));
+                    return;
+                }
+                throw e;
+            }
         });
 
     const uploadAttachment = (file: File) => {
@@ -862,7 +914,10 @@ export default function VoucherForm({
                         data-status={status}
                         className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${STATUS_CLASS[status]}`}
                     >
-                        {status === "DRAFT" ? t("draft") : status === "POSTED" ? tLedger("posted") : tLedger("reversed")}
+                        {status === "DRAFT" ? t("draft")
+                            : status === "POSTED" ? tLedger("posted")
+                            : status === "VOID" ? tLedger("void")
+                            : tLedger("reversed")}
                     </span>
                     {status === "POSTED" && settlement?.status && (
                         <span
@@ -1626,7 +1681,7 @@ export default function VoucherForm({
                         data-testid="post-voucher"
                         disabled={!canPost}
                         aria-describedby={blocker ? BLOCKER_ID : undefined}
-                        onClick={() => setConfirm("post")}
+                        onClick={() => { statementCover.reset(); setCashNegativeNotice(null); setAllowNegativeCash(false); setConfirm("post"); }}
                         className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {busy ? t("posting") : t("post")}
@@ -1649,7 +1704,7 @@ export default function VoucherForm({
                             data-testid="post-amendment"
                             disabled={!canPost}
                             aria-describedby={blocker ? BLOCKER_ID : undefined}
-                            onClick={() => setConfirm("amend")}
+                            onClick={() => { statementCover.reset(); setCashNegativeNotice(null); setAllowNegativeCash(false); setConfirm("amend"); }}
                             className="px-5 py-2.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {busy ? t("posting") : t("postAmendment")}
@@ -1671,6 +1726,20 @@ export default function VoucherForm({
                         {t("amend")}
                     </button>
                 )}
+
+                {/* F14-42: void — a posted voucher that should never have posted at
+                    all, reversed with a reason and no replacement (unlike amend). */}
+                {canVoidVoucher(status) && !amending && (
+                    <button
+                        type="button"
+                        data-testid="void-voucher"
+                        disabled={busy}
+                        onClick={() => { setVoidDate(todayIso()); setVoidReason(""); setFormError(null); setConfirm("void"); }}
+                        className="px-5 py-2.5 rounded-lg text-xs font-bold border border-danger text-danger cursor-pointer disabled:opacity-50"
+                    >
+                        {t("void")}
+                    </button>
+                )}
             </div>
 
             <ConfirmDialog
@@ -1683,7 +1752,31 @@ export default function VoucherForm({
                 confirmText={t("post")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-post"
-            />
+                confirmDisabled={!!cashNegativeNotice && !allowNegativeCash}
+            >
+                {statementCover.notice && (
+                    <StatementCoverNotice
+                        notice={statementCover.notice}
+                        checked={statementCover.notOnStatement}
+                        onChange={statementCover.setNotOnStatement}
+                        testIdPrefix="voucher-post"
+                    />
+                )}
+                {cashNegativeNotice && (
+                    <div className="space-y-1.5" data-testid="voucher-cash-negative-notice">
+                        <p className="text-[11px] text-warning">{cashNegativeNotice}</p>
+                        <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                            <input
+                                type="checkbox"
+                                data-testid="voucher-allow-negative-cash"
+                                checked={allowNegativeCash}
+                                onChange={e => setAllowNegativeCash(e.target.checked)}
+                            />
+                            {tCommon("postAnyway")}
+                        </label>
+                    </div>
+                )}
+            </ConfirmDialog>
 
             <ConfirmDialog
                 isOpen={confirm === "delete"}
@@ -1710,8 +1803,12 @@ export default function VoucherForm({
                 confirmTestId="confirm-amend"
                 // VoucherService.amend calls fiscal.assertOpen(reversalDate) before
                 // it writes anything, so the refusal belongs beside the field that
-                // causes it rather than after the round trip.
-                confirmDisabled={amendDateLocked}
+                // causes it rather than after the round trip. F14-41: the reason is
+                // now @NotBlank on the server, and a reversal cannot predate the
+                // voucher it reverses — both checked here so the button disables
+                // instead of a 400 landing after the round trip.
+                confirmDisabled={amendDateLocked || amendReasonBlank || amendDateBeforeDoc
+                    || (!!cashNegativeNotice && !allowNegativeCash)}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
                 {type === "BPV" && reopened.length > 0 && (
@@ -1743,13 +1840,95 @@ export default function VoucherForm({
                         value={amendReason}
                         onChange={e => setAmendReason(e.target.value)}
                     />
+                    {amendReasonBlank && (
+                        <p className="text-[11px] text-muted mt-1" data-testid="amend-reason-hint">
+                            {t("amendReasonRequired")}
+                        </p>
+                    )}
                 </div>
                 {amendDateLocked && (
                     <p role="alert" data-testid="amend-blocker" className="text-xs font-semibold text-warning">
                         {t("amendReversalLocked", { date: formatDate(booksLockedThrough) })}
                     </p>
                 )}
+                {!amendDateLocked && amendDateBeforeDoc && (
+                    <p role="alert" data-testid="amend-date-before-doc" className="text-xs font-semibold text-warning">
+                        {tCommon("errors.voucher.reverseBeforeDocument", { voucher: posted?.voucherNumber ?? "", docDate: formatDate(posted?.docDate) })}
+                    </p>
+                )}
+                {statementCover.notice && (
+                    <StatementCoverNotice
+                        notice={statementCover.notice}
+                        checked={statementCover.notOnStatement}
+                        onChange={statementCover.setNotOnStatement}
+                        testIdPrefix="voucher-amend"
+                    />
+                )}
+                {cashNegativeNotice && (
+                    <div className="space-y-1.5" data-testid="voucher-amend-cash-negative-notice">
+                        <p className="text-[11px] text-warning">{cashNegativeNotice}</p>
+                        <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                            <input
+                                type="checkbox"
+                                data-testid="voucher-amend-allow-negative-cash"
+                                checked={allowNegativeCash}
+                                onChange={e => setAllowNegativeCash(e.target.checked)}
+                            />
+                            {tCommon("postAnyway")}
+                        </label>
+                    </div>
+                )}
                 {vendorId && <p className="sr-only">{vendorName(vendorId)}</p>}
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                isOpen={confirm === "void"}
+                onClose={() => setConfirm(null)}
+                onConfirm={voidVoucher}
+                isLoading={busy}
+                isDestructive
+                title={t("void")}
+                description={t("confirmVoid", { number: voucherNumber ?? "" })}
+                confirmText={t("void")}
+                cancelText={tLedger("cancel")}
+                confirmTestId="confirm-void"
+                confirmDisabled={!voidReason.trim() || (!!posted && voidDate < posted.docDate)}
+            >
+                <div>
+                    <label className={fieldLabel} htmlFor="voucher-void-date">
+                        {tLedger("reverseDate")}
+                    </label>
+                    <input
+                        id="voucher-void-date"
+                        data-testid="void-date"
+                        type="date"
+                        className={field}
+                        value={voidDate}
+                        onChange={e => setVoidDate(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className={fieldLabel} htmlFor="voucher-void-reason">
+                        {t("voidReason")}
+                    </label>
+                    <input
+                        id="voucher-void-reason"
+                        data-testid="void-reason"
+                        className={field}
+                        value={voidReason}
+                        onChange={e => setVoidReason(e.target.value)}
+                    />
+                    {!voidReason.trim() && (
+                        <p className="text-[11px] text-muted mt-1" data-testid="void-reason-hint">
+                            {t("voidReasonRequired")}
+                        </p>
+                    )}
+                </div>
+                {!!posted && voidDate < posted.docDate && (
+                    <p role="alert" data-testid="void-date-before-doc" className="text-xs font-semibold text-warning">
+                        {tCommon("errors.voucher.reverseBeforeDocument", { voucher: posted?.voucherNumber ?? "", docDate: formatDate(posted?.docDate) })}
+                    </p>
+                )}
             </ConfirmDialog>
         </div>
     );

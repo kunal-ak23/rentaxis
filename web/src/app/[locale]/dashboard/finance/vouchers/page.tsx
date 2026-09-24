@@ -39,6 +39,8 @@ const STATUS_CLASS: Record<VoucherStatus, string> = {
     DRAFT: "bg-input text-muted border-border",
     POSTED: "bg-success/10 text-success border-success/30",
     REVERSED: "bg-warning/10 text-warning border-warning/30",
+    // F14-42: void reuses REVERSED's styling.
+    VOID: "bg-warning/10 text-warning border-warning/30",
 };
 
 /** A voucher opens on the page that can render its own document type. */
@@ -193,6 +195,7 @@ export default function VoucherListPage() {
                     <option value="DRAFT">{t("draft")}</option>
                     <option value="POSTED">{tLedger("posted")}</option>
                     <option value="REVERSED">{tLedger("reversed")}</option>
+                    <option value="VOID">{tLedger("void")}</option>
                 </select>
                 <select
                     data-testid="filter-property"
@@ -311,7 +314,9 @@ export default function VoucherListPage() {
                                                     ? t("draft")
                                                     : v.status === "POSTED"
                                                       ? tLedger("posted")
-                                                      : tLedger("reversed")}
+                                                      : v.status === "VOID"
+                                                        ? tLedger("void")
+                                                        : tLedger("reversed")}
                                             </span>
                                         </td>
                                         <td className={`${td} text-end whitespace-nowrap`}>

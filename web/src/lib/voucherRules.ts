@@ -282,6 +282,15 @@ export function canAmendVoucher(status: VoucherStatus): boolean {
 }
 
 /**
+ * `POST /finance/vouchers/{id}/void` (F14-42): only a POSTED voucher can be
+ * voided — a DRAFT is deleted instead, and a REVERSED (amended-away) or an
+ * already-VOID one has nothing left to void.
+ */
+export function canVoidVoucher(status: VoucherStatus): boolean {
+    return status === "POSTED";
+}
+
+/**
  * `core/service/voucher/VoucherAttachmentService.requireMutable` (`:134-140`):
  * paperwork may arrive after posting — a scan filed a day later — but REVERSED
  * is a document's terminal state and its paper trail is frozen with it.

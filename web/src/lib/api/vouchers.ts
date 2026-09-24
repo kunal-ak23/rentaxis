@@ -28,7 +28,7 @@ export type VoucherType = "PISR" | "BPV" | "RCP";
 /** The two types this screen can actually create. */
 export type EditableVoucherType = "PISR" | "BPV";
 
-export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED";
+export type VoucherStatus = "DRAFT" | "POSTED" | "REVERSED" | "VOID";
 
 /** `VoucherPaymentMethod.java` (finance-ops spec §2): CASH pays from a cash leaf, the others from a bank leaf. */
 export type PaymentMethod = "TRANSFER" | "CHEQUE" | "CASH";
@@ -164,14 +164,30 @@ export type VoucherInput = {
 /** One invoice a payment settles: `AllocationInputDTO`. */
 export type VoucherAllocationInput = { invoiceId?: string | null; openingItemId?: string | null; amount: number };
 
-/** `AmendVoucherDTO`. `reversalDate` is `@NotNull`; `reason` is free text. */
+/** `AmendVoucherDTO`. `reversalDate` is `@NotNull`; `reason` is now `@NotBlank` (F14-41). */
 export type AmendVoucherInput = {
     reversalDate: string;
     reason: string;
     replacement: VoucherInput;
     /** The invoices a replacement payment voucher settles. */
     allocations?: VoucherAllocationInput[];
+    /** F14-20: see {@link PostVoucherInput.notOnStatement}. */
+    notOnStatement?: boolean;
+    /** F14-42: see {@link PostVoucherInput.allowNegativeCash}. */
+    allowNegativeCash?: boolean;
 };
+
+/** `PostVoucherDTO`. */
+export type PostVoucherInput = {
+    allocations?: VoucherAllocationInput[];
+    /** F14-20: `bank.statementCovers` refused this once — confirmed, resend true. */
+    notOnStatement?: boolean;
+    /** F14-42: `voucher.cashNegative` refused this once — confirmed, resend true. */
+    allowNegativeCash?: boolean;
+};
+
+/** `VoidVoucherDTO` — `POST /finance/vouchers/{id}/void` (F14-42). `reason` is required. */
+export type VoidVoucherInput = { date: string; reason: string };
 
 export type VoucherQuery = {
     docType?: VoucherType | "";
@@ -233,12 +249,20 @@ export const voucherApi = {
     /** `DELETE /finance/vouchers/{id}` → 204. DRAFT only. */
     remove: (id: string) => apiSend<void>("DELETE", `/finance/vouchers/${id}`),
     /** For a BPV, `allocations` names the invoices it settles; the rest is an advance. */
-    post: (id: string, allocations?: VoucherAllocationInput[]) =>
-        apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`,
-            allocations && allocations.length ? { allocations } : undefined),
+    post: (id: string, allocations?: VoucherAllocationInput[], opts?: Pick<PostVoucherInput, "notOnStatement" | "allowNegativeCash">) => {
+        const body: PostVoucherInput = {
+            ...(allocations && allocations.length ? { allocations } : {}),
+            ...(opts?.notOnStatement ? { notOnStatement: true } : {}),
+            ...(opts?.allowNegativeCash ? { allowNegativeCash: true } : {}),
+        };
+        return apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/post`, Object.keys(body).length ? body : undefined);
+    },
     /** Reverses this voucher's journal and posts the replacement; returns the NEW, posted voucher. */
     amend: (id: string, body: AmendVoucherInput) =>
         apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/amend`, body),
+    /** `POST /finance/vouchers/{id}/void` (F14-42): returns the voucher, now VOID. */
+    void: (id: string, body: VoidVoucherInput) =>
+        apiSend<VoucherDetail>("POST", `/finance/vouchers/${id}/void`, body),
     attachments: {
         list: (voucherId: string) => apiGet<VoucherAttachment[]>(`/finance/vouchers/${voucherId}/attachments`),
         /**

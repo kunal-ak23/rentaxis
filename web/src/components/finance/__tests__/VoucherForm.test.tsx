@@ -69,6 +69,7 @@ const api = vi.hoisted(() => ({
     post: vi.fn(),
     remove: vi.fn(),
     amend: vi.fn(),
+    void: vi.fn(),
     attachList: vi.fn(async () => []),
     attachUpload: vi.fn(),
     attachRemove: vi.fn(),
@@ -87,6 +88,7 @@ vi.mock("@/lib/api/vouchers", async orig => {
             remove: api.remove,
             post: api.post,
             amend: api.amend,
+            void: api.void,
             attachments: {
                 list: api.attachList,
                 upload: api.attachUpload,
@@ -554,7 +556,8 @@ describe("VoucherForm — amend actually amends", () => {
         fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
         await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
         fireEvent.click(screen.getByTestId("post-amendment"));
-        fireEvent.click(await screen.findByTestId("confirm-amend"));
+        fireEvent.change(await screen.findByTestId("amend-reason"), { target: { value: "correction" } });
+        fireEvent.click(screen.getByTestId("confirm-amend"));
 
         expect(await screen.findByTestId("voucher-posted")).toHaveTextContent("PISR/2026/0008");
         expect(screen.getByTestId("voucher-number")).toHaveTextContent("PISR/2026/0008");
@@ -595,6 +598,7 @@ describe("VoucherForm — amend actually amends", () => {
         fireEvent.click(screen.getByTestId("post-amendment"));
 
         fireEvent.change(await screen.findByTestId("amend-date"), { target: { value: "2026-09-30" } });
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "correction" } });
         await waitFor(() => expect(screen.getByTestId("confirm-amend")).toBeDisabled());
         // F14-46: dd/mm/yyyy, not raw ISO.
         expect(screen.getByTestId("amend-blocker")).toHaveTextContent("30/09/2026");
@@ -624,7 +628,7 @@ describe("VoucherForm — posting", () => {
         fireEvent.click(screen.getByTestId("post-voucher"));
         fireEvent.click(await screen.findByTestId("confirm-post"));
 
-        await waitFor(() => expect(api.post).toHaveBeenCalledWith("v-new"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("v-new", undefined, expect.any(Object)));
         expect(api.create).toHaveBeenCalledTimes(1);
         expect(await screen.findByTestId("voucher-posted")).toHaveTextContent("PISR/2026/0007");
     });
@@ -636,6 +640,130 @@ describe("VoucherForm — posting", () => {
         api.get.mockRejectedValue(new ApiError(400, "Select an organisation first"));
         renderForm("PISR", { voucherId: "v1" });
         expect(await screen.findByRole("alert")).toHaveTextContent("Select an organisation first");
+    });
+
+    it("shows bank.statementCovers with a checkbox and resends with notOnStatement (F14-20)", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        const covered = new ApiError(400, "covered", JSON.stringify({
+            code: "bank.statementCovers",
+            args: { bank: "Emirates Islamic 0123", from: "01/09/2026", to: "30/09/2026", date: "20/09/2026" },
+            message: "covered",
+        }));
+        api.post.mockReset();
+        api.post.mockRejectedValueOnce(covered)
+            .mockResolvedValueOnce(detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
+        fillLine(0, "1000", "5");
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        expect(await screen.findByTestId("voucher-post-notice")).toHaveTextContent("Emirates Islamic 0123");
+
+        fireEvent.click(screen.getByTestId("voucher-post-not-on-statement"));
+        fireEvent.click(screen.getByTestId("confirm-post"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+        expect(api.post).toHaveBeenLastCalledWith(expect.any(String), undefined, expect.objectContaining({ notOnStatement: true }));
+    });
+
+    it("shows voucher.cashNegative with a Post anyway checkbox and resends allowNegativeCash (F14-42)", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        const negative = new ApiError(400, "negative", JSON.stringify({
+            code: "voucher.cashNegative",
+            args: { account: "Cash in hand", balance: "500.00", date: "20/09/2026", amount: "800.00", after: "-300.00" },
+            message: "negative",
+        }));
+        api.post.mockReset();
+        api.post.mockRejectedValueOnce(negative)
+            .mockResolvedValueOnce(detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
+        fillLine(0, "1000", "5");
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+
+        fireEvent.click(screen.getByTestId("post-voucher"));
+        fireEvent.click(await screen.findByTestId("confirm-post"));
+        expect(await screen.findByTestId("voucher-cash-negative-notice")).toHaveTextContent("Cash in hand");
+        // The button refuses a second try until the checkbox is ticked.
+        expect(screen.getByTestId("confirm-post")).toBeDisabled();
+
+        fireEvent.click(screen.getByTestId("voucher-allow-negative-cash"));
+        expect(screen.getByTestId("confirm-post")).toBeEnabled();
+        fireEvent.click(screen.getByTestId("confirm-post"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+        expect(api.post).toHaveBeenLastCalledWith(expect.any(String), undefined, expect.objectContaining({ allowNegativeCash: true }));
+    });
+});
+
+describe("VoucherForm — void (F14-42)", () => {
+    const posted = () =>
+        detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1", docDate: "2026-09-20" });
+
+    it("offers Void on a POSTED voucher, requires a reason, and sends date+reason", async () => {
+        api.get.mockResolvedValue(posted());
+        api.void.mockResolvedValue(detail({ status: "VOID", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("void-voucher"));
+        expect(screen.getByTestId("confirm-void")).toBeDisabled();
+
+        fireEvent.change(screen.getByTestId("void-reason"), { target: { value: "posted by mistake" } });
+        fireEvent.change(screen.getByTestId("void-date"), { target: { value: "2026-09-25" } });
+        expect(screen.getByTestId("confirm-void")).toBeEnabled();
+        fireEvent.click(screen.getByTestId("confirm-void"));
+        await waitFor(() => expect(api.void).toHaveBeenCalledWith("v1", { date: "2026-09-25", reason: "posted by mistake" }));
+        await waitFor(() => expect(screen.getByTestId("voucher-status")).toHaveAttribute("data-status", "VOID"));
+    });
+
+    it("refuses a void date before the voucher's own document date", async () => {
+        api.get.mockResolvedValue(posted());
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("void-voucher"));
+        fireEvent.change(screen.getByTestId("void-reason"), { target: { value: "posted by mistake" } });
+        fireEvent.change(screen.getByTestId("void-date"), { target: { value: "2026-09-19" } });
+        expect(screen.getByTestId("confirm-void")).toBeDisabled();
+        expect(screen.getByTestId("void-date-before-doc")).toHaveTextContent("PISR/2026/0007");
+    });
+
+    it("never offers Void on a DRAFT or REVERSED voucher", async () => {
+        api.get.mockResolvedValue(detail({ status: "REVERSED", voucherNumber: "PISR/2026/0007" }));
+        renderForm("PISR", { voucherId: "v1" });
+        await waitFor(() => expect(screen.getByTestId("voucher-status")).toHaveAttribute("data-status", "REVERSED"));
+        expect(screen.queryByTestId("void-voucher")).not.toBeInTheDocument();
+    });
+});
+
+describe("VoucherForm — amend reason and date (F14-41)", () => {
+    const posted = () =>
+        detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1", docDate: "2026-09-20" });
+
+    it("disables Post amendment until a reason is typed, with a hint", async () => {
+        api.get.mockResolvedValue(posted());
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("amend-voucher"));
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        fireEvent.click(await screen.findByTestId("post-amendment"));
+        expect(screen.getByTestId("confirm-amend")).toBeDisabled();
+        expect(screen.getByTestId("amend-reason-hint")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "wrong amount" } });
+        expect(screen.getByTestId("confirm-amend")).toBeEnabled();
+    });
+
+    it("refuses a reversal date before the voucher's own document date", async () => {
+        api.get.mockResolvedValue(posted());
+        renderForm("PISR", { voucherId: "v1" });
+        fireEvent.click(await screen.findByTestId("amend-voucher"));
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1200" } });
+        fireEvent.click(await screen.findByTestId("post-amendment"));
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "wrong amount" } });
+        fireEvent.change(screen.getByTestId("amend-date"), { target: { value: "2026-09-19" } });
+        expect(screen.getByTestId("confirm-amend")).toBeDisabled();
+        expect(screen.getByTestId("amend-date-before-doc")).toHaveTextContent("PISR/2026/0007");
     });
 });
 
@@ -776,7 +904,8 @@ describe("VoucherForm — line dimensions", () => {
         fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1100" } });
         await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
         fireEvent.click(screen.getByTestId("post-amendment"));
-        fireEvent.click(await screen.findByTestId("confirm-amend"));
+        fireEvent.change(await screen.findByTestId("amend-reason"), { target: { value: "correction" } });
+        fireEvent.click(screen.getByTestId("confirm-amend"));
 
         await waitFor(() => expect(api.amend).toHaveBeenCalled());
         const replacement = api.amend.mock.calls.at(-1)![1].replacement;
@@ -1187,6 +1316,7 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
         fireEvent.click(screen.getByTestId("post-amendment"));
         await screen.findByTestId("amend-date");
         expect(screen.queryByTestId("amend-releases")).not.toBeInTheDocument();
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "correction" } });
         fireEvent.click(screen.getByTestId("confirm-amend"));
         await waitFor(() => expect(api.amend).toHaveBeenCalled());
         expect(api.amend.mock.calls.at(-1)![1].allocations).toEqual([
@@ -1239,6 +1369,7 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
         fireEvent.click(screen.getByTestId("post-amendment"));
         expect(await screen.findByTestId("amend-releases"))
             .toHaveTextContent("This payment settles INV-7781. They will show as unpaid.");
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "correction" } });
         fireEvent.click(screen.getByTestId("confirm-amend"));
         await waitFor(() => expect(api.amend).toHaveBeenCalled());
         expect(api.amend.mock.calls.at(-1)![1].allocations).toEqual([{ invoiceId: "inv-90", amount: 600 }]);
