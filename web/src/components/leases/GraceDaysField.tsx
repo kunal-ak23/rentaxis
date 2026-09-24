@@ -53,7 +53,8 @@ export function GraceDaysField({
                         return;
                     }
                     const parsed = Number(next);
-                    if (!Number.isNaN(parsed)) onChange(Math.max(0, Math.trunc(parsed)));
+                    // 0..90, as the server enforces: typing 999 is not sent as 999.
+                    if (!Number.isNaN(parsed)) onChange(Math.min(90, Math.max(0, Math.trunc(parsed))));
                 }}
             />
             {value != null && (

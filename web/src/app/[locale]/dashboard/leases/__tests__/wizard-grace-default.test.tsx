@@ -119,6 +119,15 @@ describe("lease wizard: grace inherits the property's default (#65)", () => {
         expect(body.gracePeriodDays).toBe(0);
     });
 
+    it("caps a typed grace at 90 days, the server's limit", async () => {
+        await toTermsStep();
+        fireEvent.change(screen.getByTestId("grace-days-input"), { target: { value: "999" } });
+        expect((screen.getByTestId("grace-days-input") as HTMLInputElement).value).toBe("90");
+
+        const body = await saveCharges();
+        expect(body.gracePeriodDays).toBe(90);
+    });
+
     it("'Use property default' clears an override back to null", async () => {
         await toTermsStep();
         fireEvent.change(screen.getByTestId("grace-days-input"), { target: { value: "7" } });

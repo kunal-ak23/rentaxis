@@ -440,7 +440,13 @@ class _L {
       : 'No rent settings configured for this property';
   String get propertySettings => ar ? 'إعدادات العقار' : 'Property Settings';
   String get dueDay => ar ? 'يوم الاستحقاق الشهري' : 'Due Day of Month';
-  String get gracePeriod => ar ? 'فترة السماح' : 'Grace Period';
+  // Same wording as the web rent-settings page: this number is only the
+  // default a new lease inherits (gap #65), not every lease's grace. The
+  // web's "(days before a cheque counts as overdue)" is left off here; the
+  // row's value already reads "N days".
+  String get gracePeriod => ar
+      ? 'مهلة السماح الافتراضية للعقود الجديدة'
+      : 'Default grace for new leases';
   String get penaltyType => ar ? 'نوع الغرامة' : 'Penalty Type';
   String get penaltyAmount =>
       ar ? 'مبلغ غرامة التأخير' : 'Late Payment Penalty';

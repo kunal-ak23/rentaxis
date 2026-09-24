@@ -23,10 +23,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
@@ -60,6 +64,7 @@ class LeaseGraceInheritanceIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired RentCollectionSettingsRepository rentCollectionSettingsRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired JdbcTemplate jdbc;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 9, 16);
     private static final LocalDate START = LocalDate.of(2026, 10, 2);
@@ -160,6 +165,72 @@ class LeaseGraceInheritanceIT extends AbstractPostgresIT {
         assertThat(successor.getGracePeriodOverridden()).isTrue();
     }
 
+    /**
+     * Review P2-2: changeset 107's backfill. Leases drafted on the web before this
+     * change carry a bug-forced 0 marked as overridden; where the property has a
+     * positive default they are re-marked as inherited, so a renewal re-reads the
+     * property. A named non-zero grace, and a zero where the property's default
+     * is also zero, stay overridden. The changeset's own SQL is run (read from the
+     * changelog) inside a transaction that is rolled back, so it touches nothing
+     * else in the shared database.
+     */
+    @Test
+    void theWizardZerosBackfillReMarksOnlyZerosUnderAPositiveDefault() {
+        propertyGrace(5);
+        UUID wizardZero = leaseService.createDraftLease(dto(0)).getId();
+        CreateLeaseDTO seven = dto(7);
+        seven.setUnitId(fixtures.createUnit(fixtures.property(), "102").getId());
+        UUID agreedSeven = leaseService.createDraftLease(seven).getId();
+        var otherProperty = fixtures.createProperty("ZRO");
+        var otherUnit = fixtures.createUnit(otherProperty, "201");
+        CreateLeaseDTO zeroElsewhere = dto(0);
+        zeroElsewhere.setUnitId(otherUnit.getId());
+        UUID zeroUnderZeroDefault = leaseService.createDraftLease(zeroElsewhere).getId();
+        // ZRO has no rent-collection settings at all: nothing to inherit.
+        var zeroDefaultProperty = fixtures.createProperty("ZDF");
+        propertyGrace(zeroDefaultProperty, 0);
+        CreateLeaseDTO zeroUnderZero = dto(0);
+        zeroUnderZero.setUnitId(fixtures.createUnit(zeroDefaultProperty, "301").getId());
+        UUID zeroUnderExplicitZeroDefault = leaseService.createDraftLease(zeroUnderZero).getId();
+        assertThat(reread(wizardZero).isGracePeriodOverridden()).isTrue();
+
+        String sql = backfillSql();
+        tx.executeWithoutResult(status -> {
+            jdbc.update(sql);
+            assertThat(overridden(wizardZero)).as("bug-forced 0 under a 5-day default").isFalse();
+            assertThat(overridden(agreedSeven)).as("a named 7 is kept").isTrue();
+            assertThat(overridden(zeroUnderZeroDefault)).as("no settings row to inherit from").isTrue();
+            assertThat(overridden(zeroUnderExplicitZeroDefault)).as("a default of 0 is no positive default").isTrue();
+            assertThat(jdbc.queryForObject("select grace_period_days from leases where id = ?",
+                    Integer.class, wizardZero)).as("the lease's own snapshot is unchanged").isZero();
+            status.setRollbackOnly();
+        });
+    }
+
+    private Boolean overridden(UUID leaseId) {
+        return jdbc.queryForObject("select grace_period_overridden from leases where id = ?",
+                Boolean.class, leaseId);
+    }
+
+    /** The UPDATE in changeset 107-lease-grace-override-wizard-zeros, as Liquibase runs it. */
+    @SuppressWarnings("unchecked")
+    private static String backfillSql() {
+        try (InputStream in = new ClassPathResource(
+                "db/changelog/changesets/107-lease-grace-override.yaml").getInputStream()) {
+            Map<String, Object> root = new org.yaml.snakeyaml.Yaml().load(in);
+            for (Object entry : (List<Object>) root.get("databaseChangeLog")) {
+                Map<String, Object> cs = (Map<String, Object>) ((Map<String, Object>) entry).get("changeSet");
+                if (cs != null && "107-lease-grace-override-wizard-zeros".equals(cs.get("id"))) {
+                    Map<String, Object> change = (Map<String, Object>) ((List<Object>) cs.get("changes")).getFirst();
+                    return (String) ((Map<String, Object>) change.get("sql")).get("sql");
+                }
+            }
+            throw new AssertionError("changeset 107-lease-grace-override-wizard-zeros not found");
+        } catch (java.io.IOException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     private CreateLeaseDTO dto(Integer grace) {
         CreateLeaseDTO dto = fixtures.draftDto(START, END, List.of(line("RENT", "51000")));
         dto.setContractDate(CONTRACT_DATE);
@@ -177,13 +248,17 @@ class LeaseGraceInheritanceIT extends AbstractPostgresIT {
 
     /** The fixture property's rent-collection policy. */
     private void propertyGrace(Integer days) {
+        propertyGrace(fixtures.property(), days);
+    }
+
+    private void propertyGrace(com.datagami.rentaxis.domain.entity.Property property, Integer days) {
         tx.executeWithoutResult(s -> {
             RentCollectionSettings settings = rentCollectionSettingsRepo
-                    .findByPropertyId(fixtures.property().getId())
+                    .findByPropertyId(property.getId())
                     .orElseGet(() -> {
                         RentCollectionSettings fresh = new RentCollectionSettings();
                         fresh.setTenantId(fixtures.tenantId());
-                        fresh.setProperty(fixtures.property());
+                        fresh.setProperty(property);
                         return fresh;
                     });
             settings.setGracePeriodDays(days);
