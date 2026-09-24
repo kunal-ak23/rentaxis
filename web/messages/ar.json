@@ -2023,6 +2023,7 @@
     "noAddenda": "لا توجد ملاحق على هذا العقد.",
     "ejariPending": "إيجاري قيد الانتظار",
     "recordEjari": "تسجيل إيجاري",
+    "editEjari": "تعديل إيجاري",
     "recordEjariFailed": "تعذّر حفظ رقم إيجاري.",
     "addendumSuperseded": "استُبدل بتعديل",
     "addendumNo": "الرقم",

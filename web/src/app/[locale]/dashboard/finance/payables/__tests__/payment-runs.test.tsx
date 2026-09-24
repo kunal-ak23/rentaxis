@@ -318,7 +318,8 @@ describe("issued cheques", () => {
 
         fireEvent.click(screen.getByTestId("present-000031"));
         fireEvent.change(await screen.findByTestId("cheque-action-date"), { target: { value: "2026-09-19" } });
-        expect(screen.getByTestId("cheque-early")).toHaveTextContent("A cheque cannot be presented before 2026-09-20");
+        // F14-46: dd/mm/yyyy, not raw ISO.
+        expect(screen.getByTestId("cheque-early")).toHaveTextContent("A cheque cannot be presented before 20/09/2026");
         expect(screen.getByTestId("cheque-confirm")).toBeDisabled();
         fireEvent.change(screen.getByTestId("cheque-action-date"), { target: { value: "2026-09-20" } });
         fireEvent.click(screen.getByTestId("cheque-confirm"));

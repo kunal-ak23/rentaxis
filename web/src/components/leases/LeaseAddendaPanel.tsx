@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { Pencil } from "lucide-react";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ApiError, leaseApi, type LeaseAddendum } from "@/lib/api/leasing";
@@ -25,16 +26,25 @@ export default function LeaseAddendaPanel({ leaseId, addenda, canRecordEjari, on
     const t = useTranslations("Leasing");
     const locale = useLocale();
     const [drafts, setDrafts] = useState<Record<string, string>>({});
+    // Which already-recorded rows (PATCH /addenda/{id}/ejari accepts a new
+    // value) are open for editing — the number stays read-only until then.
+    const [editing, setEditing] = useState<Record<string, boolean>>({});
     const [error, setError] = useState<string | null>(null);
 
     const save = async (a: LeaseAddendum) => {
         setError(null);
         try {
             await leaseApi.recordAddendumEjari(leaseId, a.id, (drafts[a.id] ?? "").trim());
+            setEditing(d => ({ ...d, [a.id]: false }));
             onChanged();
         } catch (e) {
             setError(e instanceof ApiError ? e.message : t("recordEjariFailed"));
         }
+    };
+
+    const startEdit = (a: LeaseAddendum) => {
+        setDrafts(d => ({ ...d, [a.id]: a.ejariNumber ?? "" }));
+        setEditing(d => ({ ...d, [a.id]: true }));
     };
 
     return (
@@ -96,8 +106,48 @@ export default function LeaseAddendaPanel({ leaseId, addenda, canRecordEjari, on
                                                 </>
                                             )}
                                         </span>
+                                    ) : editing[a.id] ? (
+                                        <span className="inline-flex items-center gap-2">
+                                            <input
+                                                data-testid={`addendum-ejari-${a.id}`}
+                                                aria-label={`${t("recordEjari")} ${a.addendumNumber}`}
+                                                className="bg-input border border-border rounded-md px-2 py-1 text-xs"
+                                                value={drafts[a.id] ?? ""}
+                                                onChange={e => setDrafts(d => ({ ...d, [a.id]: e.target.value }))}
+                                            />
+                                            <button
+                                                type="button"
+                                                data-testid={`addendum-ejari-save-${a.id}`}
+                                                disabled={!(drafts[a.id] ?? "").trim()}
+                                                onClick={() => save(a)}
+                                                className="px-2 py-1 rounded-md text-[11px] font-semibold border border-border disabled:opacity-50 cursor-pointer"
+                                            >
+                                                {t("recordEjari")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                data-testid={`addendum-ejari-cancel-${a.id}`}
+                                                onClick={() => setEditing(d => ({ ...d, [a.id]: false }))}
+                                                className="px-2 py-1 rounded-md text-[11px] font-semibold text-muted cursor-pointer"
+                                            >
+                                                {t("cancel")}
+                                            </button>
+                                        </span>
                                     ) : (
-                                        a.ejariNumber
+                                        <span className="inline-flex items-center gap-2">
+                                            {a.ejariNumber}
+                                            {canRecordEjari && !a.superseded && (
+                                                <button
+                                                    type="button"
+                                                    data-testid={`addendum-ejari-edit-${a.id}`}
+                                                    aria-label={`${t("editEjari")} ${a.addendumNumber}`}
+                                                    onClick={() => startEdit(a)}
+                                                    className="text-muted hover:text-foreground cursor-pointer"
+                                                >
+                                                    <Pencil size={12} />
+                                                </button>
+                                            )}
+                                        </span>
                                     )}
                                 </td>
                             </tr>
