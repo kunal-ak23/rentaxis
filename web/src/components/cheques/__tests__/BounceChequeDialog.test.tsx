@@ -34,7 +34,7 @@ const CHEQUE: Cheque = {
     failureReason: null, replacesId: null, replacedById: null, imageUrl: null,
     depositedAt: "2026-06-02", clearedAt: null, bouncedAt: null, returnedAt: null,
     pdrJournalId: null, crtJournalId: null, cbrJournalId: null, penaltyAssessmentId: null,
-    due: false, overdue: false, daysOverdue: 0,
+    due: false, overdue: false, daysOverdue: 0, ledgerSettled: false,
 };
 
 afterEach(() => {

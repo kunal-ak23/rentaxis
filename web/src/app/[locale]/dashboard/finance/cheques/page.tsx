@@ -466,7 +466,7 @@ export default function ChequeRegisterPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {rows.map(c => {
-                                    const actions = registerActionsFor(c.status, c.mode, canCancel);
+                                    const actions = registerActionsFor(c.status, c.mode, canCancel, undefined, c.ledgerSettled);
                                     return (
                                         <tr key={c.id} data-testid={`cheque-row-${c.id}`} className="hover:bg-input/60 transition-colors">
                                             {batchMode && (
@@ -499,6 +499,11 @@ export default function ChequeRegisterPage() {
                                             <td className={td}>{tl(`mode.${c.mode}`)}</td>
                                             <td className={td}>
                                                 <ChequeStatusBadge status={c.status} testId={`cheque-status-${c.id}`} />
+                                                {c.ledgerSettled && (
+                                                    <span className="block text-[10px] text-muted" data-testid={`cheque-ledger-settled-${c.id}`}>
+                                                        {t("ledgerSettled")}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className={td} data-testid={`cheque-bank-${c.id}`}>
                                                 {c.status !== "CLEARED" ? "—" : (() => {

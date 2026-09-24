@@ -411,6 +411,13 @@ export type Cheque = {
   overdue: boolean;
   daysOverdue: number;
   /**
+   * F14-52: this row is settled in the ledger by something other than its own
+   * clearing (e.g. absorbed into a lease settlement) — the server already
+   * sends `overdue: false, daysOverdue: 0` for it, but the UI has its own
+   * "Replace" action and overdue badge to withhold too.
+   */
+  ledgerSettled: boolean;
+  /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
    * yet, whose VAT the server has still to work out, is typed honestly.
