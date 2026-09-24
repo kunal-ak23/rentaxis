@@ -59,6 +59,8 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired TransactionTemplate tx;
+    @Autowired LeaseRenewalService renewal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
 
@@ -168,5 +170,39 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
                 .extracting(Unit::getOccupancy).containsExactly("RESERVED");
         assertThat(units).filteredOn(u -> u.getId().equals(future.getId()))
                 .extracting(Unit::getNextLeaseStart).containsExactly(TODAY.plusDays(20));
+    }
+
+    /**
+     * F14-35: a renewal that starts before its predecessor ends is refused at draft,
+     * dry run and post with one message; back-to-back is allowed.
+     */
+    @Test
+    void aRenewalMustStartAfterThePredecessorEnds() {
+        UUID current = posted(fixtures.unit(), fixtures.renter(), CUR_START, CUR_END);
+        String refusal = "A renewal must start after the lease it renews ends";
+
+        assertThatThrownBy(() -> renewal.renew(current, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(
+                CUR_START, CUR_END.minusDays(20), CUR_END.plusYears(1), null, false)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(refusal);
+        assertThatThrownBy(() -> renewal.renew(current, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(
+                CUR_START, CUR_END, CUR_END.plusYears(1), null, false)))
+                .as("sharing the last day").isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(refusal);
+
+        UUID draft = renewal.renew(current, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(
+                CUR_START, CUR_END.plusDays(1), CUR_END.plusYears(1), null, false)).getId();
+        fixtures.generateGrid(draft, 2, CUR_END.plusDays(1));
+        assertThat(posting.dryRun(draft).errors()).as("back-to-back").isEmpty();
+
+        // A start moved earlier after drafting is caught by the dry run and the post.
+        jdbc.update("update leases set start_date = ? where id = ?", CUR_END.minusDays(20), draft);
+        PostLeaseDryRunResponse dry = posting.dryRun(draft);
+        assertThat(dry.ok()).isFalse();
+        assertThat(dry.errors()).anyMatch(e -> e.startsWith(refusal));
+        assertThatThrownBy(() -> posting.post(draft))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(refusal);
+        assertThat(statusOf(current)).isEqualTo(LeaseStatus.ACTIVE);
     }
 }

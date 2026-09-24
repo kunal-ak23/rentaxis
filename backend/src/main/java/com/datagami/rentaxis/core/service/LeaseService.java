@@ -317,6 +317,11 @@ public class LeaseService {
      */
     @Transactional(readOnly = true)
     public java.util.Optional<String> postingConflict(Lease lease) {
+        if (lease.getRenewedFromLeaseId() != null) {
+            Lease predecessor = leaseRepository.findById(lease.getRenewedFromLeaseId()).orElse(null);
+            java.util.Optional<String> early = renewalStartsTooEarly(predecessor, lease.getStartDate());
+            if (early.isPresent()) return early;
+        }
         if (lease.getUnit() == null) return java.util.Optional.empty();
         return overlappingLease(lease.getUnit().getId(), lease.getStartDate(), lease.getEndDate(),
                 lease.getId(), lease.getRenewedFromLeaseId())
@@ -373,6 +378,24 @@ public class LeaseService {
         unit.setCurrentTenantName(null);
         unit.setActualRent(BigDecimal.ZERO);
         unitRepository.save(unit);
+    }
+
+    /**
+     * F14-35: a renewal starts no earlier than the day after the lease it renews
+     * ends (its termination date when it was cut short). The overlap check leaves
+     * the predecessor out on purpose — the sitting renter stays in the unit — so
+     * without this an early renewal ran both leases over the same days and
+     * recognised the rent twice. Back-to-back (predecessor end + 1) is allowed.
+     * One message for draft, dry run and post.
+     */
+    static java.util.Optional<String> renewalStartsTooEarly(Lease predecessor, LocalDate renewalStart) {
+        if (predecessor == null || renewalStart == null) return java.util.Optional.empty();
+        LocalDate until = holdsUntil(predecessor);
+        if (until == null || renewalStart.isAfter(until)) return java.util.Optional.empty();
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return java.util.Optional.of("A renewal must start after the lease it renews ends on " + until.format(dmy)
+                + "; this one starts on " + renewalStart.format(dmy) + ". Start it on " + until.plusDays(1).format(dmy)
+                + " or later, or terminate the current lease first.");
     }
 
     /**
@@ -498,6 +521,8 @@ public class LeaseService {
         // keep letting it to the person living in it. Any other occupancy is still
         // refused, so a renewal cannot be used to slip a second lease onto a unit
         // a third contract holds.
+        renewalStartsTooEarly(predecessor, dto.getStartDate())
+                .ifPresent(m -> { throw new BusinessRuleViolationException(m); });
         requireUnitFreeFor(unit, dto.getStartDate(), dto.getEndDate(), null,
                 predecessor != null ? predecessor.getId() : null, "Cannot create lease. Unit is not vacant.");
 
