@@ -176,9 +176,13 @@ public class VoucherService {
 
         List<PostingRequest.Line> journalLines = new ArrayList<>();
         for (VoucherLine l : v.getLines()) {
-            journalLines.add(PostingRequest.dr(l.getAccount().getId(), l.getAmount())
+            PostingRequest.Line jl = PostingRequest.dr(l.getAccount().getId(), l.getAmount())
                     .withDims(new PostingRequest.Dimensions(l.getPropertyId(), l.getUnitId(), null, null, null))
-                    .withNarration(l.getDescription()));
+                    .withNarration(l.getDescription());
+            // apply() already copied the header's property onto every line that did
+            // not name its own, so a line still without one was marked Shared / head
+            // office: it must not pick the header's property up again at posting.
+            journalLines.add(l.getPropertyId() == null ? jl.withOwnProperty() : jl);
         }
 
         switch (v.getDocType()) {
@@ -581,8 +585,11 @@ public class VoucherService {
             BigDecimal rate = li.vatRate() == null ? BigDecimal.ZERO : li.vatRate();
             l.setVatRate(rate.setScale(2, java.math.RoundingMode.HALF_UP));
             l.setVatAmount(VoucherMath.vat(l.getAmount(), rate));
-            l.setPropertyId(li.propertyId() == null ? in.propertyId() : li.propertyId());
-            l.setUnitId(li.unitId() == null ? in.unitId() : li.unitId());
+            // "Shared / head office" keeps the line off every property, header included.
+            l.setPropertyId(li.shared() && li.propertyId() == null ? null
+                    : li.propertyId() == null ? in.propertyId() : li.propertyId());
+            l.setUnitId(li.shared() && li.propertyId() == null ? null
+                    : li.unitId() == null ? in.unitId() : li.unitId());
             newLines.add(l);
         }
         v.replaceLines(newLines);

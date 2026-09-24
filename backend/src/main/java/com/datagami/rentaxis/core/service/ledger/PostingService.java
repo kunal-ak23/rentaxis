@@ -75,6 +75,10 @@ public class PostingService {
             BigDecimal amount = l.amount().setScale(2, RoundingMode.HALF_UP);
             if (amount.signum() <= 0) throw new BusinessRuleViolationException("Line amounts must be positive");
             Dimensions d = l.dims() == null ? header : l.dims().mergedOver(header);
+            if (l.ownProperty()) {
+                Dimensions own = l.dims() == null ? Dimensions.none() : l.dims();
+                d = new Dimensions(own.propertyId(), own.unitId(), d.leaseId(), d.renterId(), d.chequeId());
+            }
             Account account = resolveAccount(l.account(), d.propertyId());
             if (account.isGroup()) throw new BusinessRuleViolationException("Cannot post to group account " + account.getCode());
             if (!account.isActive()) throw new BusinessRuleViolationException("Cannot post to inactive account " + account.getCode());

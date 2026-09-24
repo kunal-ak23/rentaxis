@@ -51,13 +51,24 @@ public record PostingRequest(
      * ledger can print one counter-account per row (Addendum A). {@link #NO_PAIR}
      * means "not paired"; only {@link #ofPairs} hands out real keys.
      */
-    public record Line(AccountRef account, Side side, BigDecimal amount, Dimensions dims, String narration, int pairKey) {
-        public Line(AccountRef account, Side side, BigDecimal amount, Dimensions dims, String narration) {
-            this(account, side, amount, dims, narration, NO_PAIR);
+    /**
+     * {@code ownProperty}: the line's property and unit are exactly its own dims,
+     * null included — they do not fall back to the header's. A voucher line marked
+     * "Shared / head office" (finance-ops spec §1) must stay property-less even when
+     * the voucher header names a property.
+     */
+    public record Line(AccountRef account, Side side, BigDecimal amount, Dimensions dims, String narration, int pairKey,
+                       boolean ownProperty) {
+        public Line(AccountRef account, Side side, BigDecimal amount, Dimensions dims, String narration, int pairKey) {
+            this(account, side, amount, dims, narration, pairKey, false);
         }
-        public Line withDims(Dimensions d) { return new Line(account, side, amount, d, narration, pairKey); }
-        public Line withNarration(String n) { return new Line(account, side, amount, dims, n, pairKey); }
-        public Line withPairKey(int key) { return new Line(account, side, amount, dims, narration, key); }
+        public Line(AccountRef account, Side side, BigDecimal amount, Dimensions dims, String narration) {
+            this(account, side, amount, dims, narration, NO_PAIR, false);
+        }
+        public Line withDims(Dimensions d) { return new Line(account, side, amount, d, narration, pairKey, ownProperty); }
+        public Line withNarration(String n) { return new Line(account, side, amount, dims, n, pairKey, ownProperty); }
+        public Line withPairKey(int key) { return new Line(account, side, amount, dims, narration, key, ownProperty); }
+        public Line withOwnProperty() { return new Line(account, side, amount, dims, narration, pairKey, true); }
     }
 
     /** A debit line and the credit line it is paired with; both get each other's account as contra. */
