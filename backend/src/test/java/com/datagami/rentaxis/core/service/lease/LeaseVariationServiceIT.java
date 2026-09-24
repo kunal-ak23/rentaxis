@@ -350,6 +350,28 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(addendaOf(leaseId)).isEmpty();
     }
 
+    /**
+     * #80 on the addendum door (PR #344 review I4): a post-dated cheque added with
+     * the addendum needs its number like one on the original grid, and the
+     * addendum is refused whole — no TCO, no rows, no addendum.
+     */
+    @Test
+    void anUnnumberedPdcRefusesTheAddendumWhole() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        ChequeRowInput unnumbered = new ChequeRowInput(null, null, null, null, LocalDate.of(2027, 3, 1),
+                "Emirates NBD", null, null, new BigDecimal("6000"), null, null);
+
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Parking bay P-12", List.of(line("PARKING_FEE", "6000")), List.of(unnumbered))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has no number; a post-dated cheque needs its number");
+
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(addendaOf(leaseId)).isEmpty();
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
     @Test
     void aDepositLineIsRefused() {
         UUID leaseId = postedWithFee();

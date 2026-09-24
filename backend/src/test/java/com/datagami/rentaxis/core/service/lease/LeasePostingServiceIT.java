@@ -1010,17 +1010,41 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
     }
 
     /**
-     * The import doors are exempt (see LeasePostingService.Preconditions): a
-     * portfolio import posts an unnumbered PDC grid, and the numbers are filled in
+     * The portfolio import's exemption is per row (PR #344 review I5): the rows the
+     * import generated may post unnumbered, and the numbers are filled in
      * afterwards on the REGISTERED rows.
      */
     @Test
-    void thePortfolioImportDoorPostsAnUnnumberedGrid() {
+    void thePortfolioImportDoorPostsTheRowsItGeneratedUnnumbered() {
         UUID leaseId = draft();
-        cheques.generate(leaseId, new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+        List<ChequeDTO> generated = cheques.generate(leaseId,
+                new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
 
-        posting.postForPortfolioImport(leaseId);
+        posting.postForPortfolioImport(leaseId,
+                generated.stream().map(ChequeDTO::id).collect(java.util.stream.Collectors.toSet()));
 
         assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /**
+     * ...but not a row it did not generate: a sheet row has its UniqueId, and one
+     * without it is refused like on any other door, with nothing written.
+     */
+    @Test
+    void thePortfolioImportDoorRefusesAnUnnumberedRowItDidNotGenerate() {
+        UUID leaseId = draft();
+        List<ChequeDTO> generated = cheques.generate(leaseId,
+                new GenerateChequesRequest(4, START, null, "Emirates NBD", null, false, null));
+        // Every row but the second is the import's own.
+        java.util.Set<UUID> importGenerated = new java.util.HashSet<>();
+        for (int i = 0; i < generated.size(); i++) {
+            if (i != 1) importGenerated.add(generated.get(i).id());
+        }
+
+        assertThatThrownBy(() -> posting.postForPortfolioImport(leaseId, importGenerated))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque #2 has no number");
+        assertThat(journalEntryRows()).isZero();
+        assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 }

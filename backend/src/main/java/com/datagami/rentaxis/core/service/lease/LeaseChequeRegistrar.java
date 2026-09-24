@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.lease;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Line;
@@ -10,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
@@ -18,6 +20,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -88,6 +93,54 @@ public class LeaseChequeRegistrar {
      *                      user-facing path passes null.
      */
     public JournalEntry register(Lease lease, Cheque cheque, UUID importBatchId) {
+        String missing = missingNumber(cheque);
+        if (missing != null) {
+            throw new BusinessRuleViolationException(missing);
+        }
+        return post(lease, cheque, importBatchId);
+    }
+
+    /**
+     * The one exception to "a PDC is registered with its number" (#80): a row the
+     * <b>portfolio import generated</b> — the deposit and fee rows, and every rent
+     * row when the workbook had no Cheques sheet. No number exists for it to carry;
+     * refusing would keep a running tenancy off the books, and the import result
+     * tells the landlord how many to fill in (Cheque details, bulk attach).
+     * {@code LeasePostingService.postForPortfolioImport} is the only caller, and
+     * only for the rows the import itself named.
+     */
+    public JournalEntry registerGeneratedByImport(Lease lease, Cheque cheque) {
+        return post(lease, cheque, null);
+    }
+
+    /**
+     * #80, as a rule about the instrument rather than about the door it came
+     * through: a post-dated cheque with no number cannot be matched at the bank,
+     * bounced by number or found again. Every door that registers a row — first
+     * post, addendum, extension, replacement, a row added to a posted lease —
+     * reaches it through {@link #register}. Cash, transfer and online rows have no
+     * cheque number by nature.
+     *
+     * @return the refusal, or null when the row may be registered.
+     */
+    public static String missingNumber(Cheque c) {
+        if (c.getMode() != null && c.getMode() != ChequeMode.PDC) return null;
+        if (c.getChequeNumber() != null && !c.getChequeNumber().isBlank()) return null;
+        return "Cheque #" + c.getSeqNo() + " has no number; a post-dated cheque needs its number"
+                + " before it is registered.";
+    }
+
+    /** {@link #missingNumber} over a set of rows, for a caller that reports every problem at once. */
+    public static List<String> missingNumbers(Collection<Cheque> rows) {
+        List<String> out = new ArrayList<>();
+        for (Cheque c : rows) {
+            String m = missingNumber(c);
+            if (m != null) out.add(m);
+        }
+        return out;
+    }
+
+    private JournalEntry post(Lease lease, Cheque cheque, UUID importBatchId) {
         String narration = narrationOf(cheque);
         JournalEntry pdr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.PDR,

@@ -341,6 +341,10 @@ public class LeaseRenewalService {
         // in a closed month would be refused by PostingService halfway through
         // registering the set, after the TCO had gone in.
         problems.addAll(postingService.periodLockErrors(entryDate, newRows));
+        // #80 on every door that registers paper, not only the first post: a
+        // post-dated cheque needs its number. LeaseChequeRegistrar.register refuses
+        // one anyway; listing it here puts it beside every other problem at once.
+        problems.addAll(LeaseChequeRegistrar.missingNumbers(newRows));
         if (problems.isEmpty() && !missing.isEmpty()) {
             throw new UnmappedAccountRoleException(missing, LeasePostingService.propertyIdOf(lease));
         }

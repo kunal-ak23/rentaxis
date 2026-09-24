@@ -163,7 +163,7 @@ class PortfolioImportPersistServiceTest {
         assertThat(captureLastSavedUnit().getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(result.toPost()).singleElement()
                 .satisfies(p -> assertThat(p.rowNum()).isEqualTo(2));
-        verify(leasePoster, org.mockito.Mockito.never()).postPortfolioLease(any());
+        verify(leasePoster, org.mockito.Mockito.never()).postPortfolioLease(any(), any());
     }
 
     @Test
@@ -189,7 +189,7 @@ class PortfolioImportPersistServiceTest {
         Workbook wb = buildWorkbookWithOneLease(b -> b.status("ACTIVE"));
         ImportJob job = newJob();
         PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, job);
-        org.mockito.Mockito.when(leasePoster.postPortfolioLease(any())).thenThrow(
+        org.mockito.Mockito.when(leasePoster.postPortfolioLease(any(), any())).thenThrow(
                 new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
                         "Cheque grid totals 38,000.00 but contract value is 42,800.00."));
 
@@ -234,6 +234,28 @@ class PortfolioImportPersistServiceTest {
                 .isEqualByComparingTo("61481.40");
         assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("4500"), 13))
                 .isEqualByComparingTo("58500.00");
+    }
+
+    /**
+     * Review I2: with a Cheques sheet the rent is what the sheet's cheques add up
+     * to (net of VAT when the rent carries it — review I1); without one, the
+     * whole-dirham MonthlyRent rule.
+     */
+    @Test
+    void contractRent_withASheetIsTheSheetsTotal_withoutOneTheMonthlyRule() {
+        java.util.function.Function<String, PortfolioImportPersistService.ChequeRow> chq = amt ->
+                new PortfolioImportPersistService.ChequeRow(1, java.time.LocalDate.of(2027, 1, 1), null, "1", "B",
+                        new java.math.BigDecimal(amt), "CHEQUE");
+        List<PortfolioImportPersistService.ChequeRow> twelve = java.util.Collections.nCopies(12, chq.apply("8166.67"));
+        assertThat(PortfolioImportPersistService.contractRent("", "8166.67", 12, twelve, false))
+                .isEqualByComparingTo("98000.04");
+        assertThat(PortfolioImportPersistService.contractRent("", "8166.67", 12, List.of(), false))
+                .isEqualByComparingTo("98000.00");
+        // 2 × 52,500 incl. 5% VAT on rent: the rent line is 100,000.
+        assertThat(PortfolioImportPersistService.contractRent("100000", "", 12,
+                List.of(chq.apply("52500"), chq.apply("52500")), true)).isEqualByComparingTo("100000.00");
+        assertThat(PortfolioImportPersistService.contractRent("100000", "", 12, List.of(), true))
+                .isEqualByComparingTo("100000");
     }
 
     /** A booking cheque comes off the generated rows, first first; a row it empties is dropped. */

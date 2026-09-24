@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPersistService;
 import com.datagami.rentaxis.core.service.cutover.ContractImportValidator;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
@@ -85,7 +87,8 @@ public class PortfolioImportService {
         validateRentersSheet(rentersSheet, errors, renterEmails);
 
         // Validate Leases sheet (cross-sheet refs)
-        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails, leaseIndex);
+        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails, leaseIndex,
+                commercialProperties(propertiesSheet));
 
         // Validate optional Cheques sheet against the lease index
         Sheet chequesSheet = workbook.getSheet("Cheques");
@@ -103,7 +106,28 @@ public class PortfolioImportService {
 
     /** Summary of a Leases row, captured during validation, used by the Cheques-sheet checks. */
     record LeaseRowSummary(String paymentMethod, BigDecimal totalRent,
-                           LocalDate startDate, LocalDate endDate) {}
+                           LocalDate startDate, LocalDate endDate,
+                           BigDecimal monthlyRent, long months, boolean rentVat) {
+        LeaseRowSummary(String paymentMethod, BigDecimal totalRent, LocalDate startDate, LocalDate endDate) {
+            this(paymentMethod, totalRent, startDate, endDate, null, 0, false);
+        }
+    }
+
+    /**
+     * Lower-cased names of the sheet's COMMERCIAL properties — where
+     * RentVatApplicable defaults to true, as the persist phase reads it.
+     */
+    private Set<String> commercialProperties(Sheet sheet) {
+        Set<String> out = new HashSet<>();
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+            if ("COMMERCIAL".equals(getCellString(row, 4).trim().toUpperCase().replace(" ", "_"))) {
+                out.add(getCellString(row, 0).toLowerCase());
+            }
+        }
+        return out;
+    }
 
     private void validatePropertiesSheet(Sheet sheet, List<ImportErrorDTO> errors, Set<String> propertyNames) {
         Set<String> validEmirates = Arrays.stream(Emirate.values()).map(Enum::name).collect(Collectors.toSet());
@@ -215,7 +239,8 @@ public class PortfolioImportService {
     private void validateLeasesSheet(Sheet sheet, List<ImportErrorDTO> errors,
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
                                      Set<String> renterEmails,
-                                     Map<String, LeaseRowSummary> leaseIndex) {
+                                     Map<String, LeaseRowSummary> leaseIndex,
+                                     Set<String> commercialProperties) {
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -403,7 +428,18 @@ public class PortfolioImportService {
                 if (totalRent != null) {
                     String key = leaseKey(propertyName, unitNumber, renterEmail);
                     String method = paymentMethod.isEmpty() ? "CHEQUE" : paymentMethod.toUpperCase();
-                    leaseIndex.put(key, new LeaseRowSummary(method, totalRent, startDate, endDate));
+                    // The persist phase's reading of RentVatApplicable: blank takes the
+                    // property's default (COMMERCIAL = VAT on rent).
+                    String vatCell = cell(row, hi, "RentVatApplicable").trim().toLowerCase(Locale.ROOT);
+                    boolean rentVat = vatCell.isEmpty()
+                            ? commercialProperties.contains(propertyName.toLowerCase())
+                            : Set.of("true", "yes", "1").contains(vatCell);
+                    BigDecimal monthly = null;
+                    if (!monthlyRentStr.isEmpty()) {
+                        try { monthly = new BigDecimal(monthlyRentStr); } catch (NumberFormatException ignored) { }
+                    }
+                    leaseIndex.put(key, new LeaseRowSummary(method, totalRent, startDate, endDate, monthly,
+                            PortfolioImportPersistService.monthsInclusive(startDate, endDate), rentVat));
                 }
             }
         }
@@ -562,17 +598,57 @@ public class PortfolioImportService {
             }
         }
 
-        // Sum-vs-totalRent check, evaluated once per lease that had cheque rows.
-        BigDecimal tolerance = new BigDecimal("1.00");
+        // Sum-vs-rent check, once per lease that had cheque rows. Exact, because the
+        // post is exact (Σ cheques = contract value to the fils): a tolerance here
+        // showed a clean validation for a row the post then left as a draft
+        // (PR #344 review I3). The sheet states what the renter pays, so it is
+        // compared with the rent INCLUDING VAT when the rent carries VAT (review
+        // I1), and the rent the lease gets is then that sum (review I2 — see
+        // PortfolioImportPersistService.contractRent).
         for (String key : chequedLeases) {
             BigDecimal sum = sumByLease.getOrDefault(key, BigDecimal.ZERO);
-            BigDecimal totalRent = leaseIndex.get(key).totalRent();
-            if (sum.subtract(totalRent).abs().compareTo(tolerance) > 0) {
-                errors.add(ImportErrorDTO.file("Cheques", "Amount",
-                        "Sum of cheques (" + sum + ") does not match lease total rent ("
-                                + totalRent + ") for " + key));
+            String problem = sheetTotalProblem(sum, leaseIndex.get(key));
+            if (problem != null) {
+                errors.add(ImportErrorDTO.file("Cheques", "Amount", problem + " for " + key));
             }
         }
+    }
+
+    /**
+     * Whether a lease's Cheques-sheet rows add up to its rent, and if not, why.
+     *
+     * <ul>
+     *   <li>RentAmount: Σ sheet = RentAmount, plus 5% VAT when the rent carries it —
+     *       exactly.</li>
+     *   <li>MonthlyRent: the rent is Σ sheet (net of VAT), so Σ sheet has to be a
+     *       rent whose monthly share rounds to the typed figure — 12 × 8,166.67 =
+     *       98,000.04 is, and so is 98,000.00. The same test as
+     *       {@link PortfolioImportPersistService#rentFromMonthly}.</li>
+     * </ul>
+     *
+     * @return the refusal, or null when the sheet matches.
+     */
+    static String sheetTotalProblem(BigDecimal sum, LeaseRowSummary lease) {
+        String incl = lease.rentVat() ? " incl. 5% VAT on rent" : "";
+        BigDecimal net = PortfolioImportPersistService.rentFromSheet(sum, lease.rentVat());
+        if (lease.monthlyRent() != null && lease.months() > 0) {
+            BigDecimal expected = gross(lease.totalRent(), lease.rentVat());
+            if (net == null || net.divide(BigDecimal.valueOf(lease.months()), 2, RoundingMode.HALF_UP)
+                    .compareTo(lease.monthlyRent()) != 0) {
+                return "Sum of cheques (" + sum + ") does not match lease total rent (" + expected + incl
+                        + ": MonthlyRent " + lease.monthlyRent() + " × " + lease.months() + " months)";
+            }
+            return null;
+        }
+        BigDecimal expected = gross(lease.totalRent(), lease.rentVat());
+        if (sum.compareTo(expected) != 0) {
+            return "Sum of cheques (" + sum + ") does not match lease total rent (" + expected + incl + ")";
+        }
+        return null;
+    }
+
+    private static BigDecimal gross(BigDecimal rent, boolean vat) {
+        return rent.add(LeaseVat.vatOfNet(rent, vat, ChargeBehaviour.RENT));
     }
 
     private void validateDbConflicts(Set<String> propertyNames, Set<String> renterEmails, List<ImportErrorDTO> errors) {

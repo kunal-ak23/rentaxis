@@ -81,4 +81,22 @@ class LeaseVatTest {
         assertThat(LeaseVat.vatOf(bare)).isEqualByComparingTo("25.00");
         assertThat(LeaseVat.vatOf((LeaseLine) null)).isEqualByComparingTo("0");
     }
+
+    /** The inverse of net + VAT, for the portfolio import's VAT-inclusive Cheques sheet (PR #344 review I1). */
+    @Test
+    void netOfGross_invertsNetPlusVat_orSaysThereIsNone() {
+        var rent = com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.RENT;
+        assertThat(LeaseVat.netOfGross(new java.math.BigDecimal("105000"), true, rent)).isEqualByComparingTo("100000");
+        assertThat(LeaseVat.netOfGross(new java.math.BigDecimal("105000"), false, rent)).isEqualByComparingTo("105000");
+        // Every net from 0.01 to 30.00 round-trips.
+        for (int fils = 1; fils <= 3000; fils++) {
+            java.math.BigDecimal net = java.math.BigDecimal.valueOf(fils, 2);
+            java.math.BigDecimal gross = net.add(LeaseVat.vatOfNet(net, true, rent));
+            assertThat(LeaseVat.netOfGross(gross, true, rent)).as(net.toPlainString()).isEqualByComparingTo(net);
+        }
+        long gaps = java.util.stream.IntStream.rangeClosed(1, 3000)
+                .mapToObj(f -> java.math.BigDecimal.valueOf(f, 2))
+                .filter(g -> LeaseVat.netOfGross(g, true, rent) == null).count();
+        assertThat(gaps).as("some gross amounts have no net").isPositive();
+    }
 }

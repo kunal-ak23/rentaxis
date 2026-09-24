@@ -911,6 +911,25 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         assertThat(registerOf(leaseId)).hasSize(5);
     }
 
+    /** #80 on the extension door (PR #344 review I4): an unnumbered PDC refuses the extension whole. */
+    @Test
+    void extendRefusesAnUnnumberedPdc() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        ExtendLeaseRequest unnumbered = new ExtendLeaseRequest(NEW_END, EXTENSION_DATE,
+                List.of(line("RENT", "12000")),
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, null, null,
+                        LocalDate.of(2027, 10, 2), "Emirates NBD", null, null, new BigDecimal("12000"), null, null)));
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, unnumbered))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has no number; a post-dated cheque needs its number");
+
+        assertThat(reread(leaseId).getEndDate()).isEqualTo(END);
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
     /** VAT is part of what the cheques must cover, through the same helper the post uses. */
     @Test
     void extendRequiresTheChequesToCoverVatToo() {

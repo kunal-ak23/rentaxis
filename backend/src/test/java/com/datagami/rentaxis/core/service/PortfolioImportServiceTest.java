@@ -528,4 +528,33 @@ class PortfolioImportServiceTest {
                 installmentNo, dueDate, chequeOrPaymentDate,
                 uniqueId, bank, amount, method);
     }
+
+    /**
+     * PR #344 review I1/I2/I3: the Cheques-sheet total is checked exactly, against
+     * the rent including VAT when the rent carries it, and for MonthlyRent against
+     * any rent whose monthly share rounds to the typed figure.
+     */
+    @Test
+    void sheetTotalProblem_isExact_vatInclusive_andAcceptsTheMonthlyRounding() {
+        java.util.function.BiFunction<String, Boolean, PortfolioImportService.LeaseRowSummary> byAmount =
+                (rent, vat) -> new PortfolioImportService.LeaseRowSummary("CHEQUE", new java.math.BigDecimal(rent),
+                        java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 12, 31), null, 12, vat);
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("72000"), byAmount.apply("72000", false)))
+                .isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("71999.99"), byAmount.apply("72000", false)))
+                .contains("Sum of cheques (71999.99) does not match lease total rent (72000)");
+        // VAT on rent: the cheques carry it.
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("105000"), byAmount.apply("100000", true)))
+                .isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("100000"), byAmount.apply("100000", true)))
+                .contains("105000.00 incl. 5% VAT on rent");
+
+        PortfolioImportService.LeaseRowSummary monthly = new PortfolioImportService.LeaseRowSummary("CHEQUE",
+                new java.math.BigDecimal("98000.00"), java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 12, 31),
+                new java.math.BigDecimal("8166.67"), 12, false);
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.04"), monthly)).isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.00"), monthly)).isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.12"), monthly))
+                .contains("MonthlyRent 8166.67 × 12 months");
+    }
 }

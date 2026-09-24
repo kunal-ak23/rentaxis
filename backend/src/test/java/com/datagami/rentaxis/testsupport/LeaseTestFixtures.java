@@ -354,8 +354,10 @@ public class LeaseTestFixtures {
                                                    List<LeaseLineInput> lines, int installments) {
         requireLeaseServices();
         UUID leaseId = draftLease(unit, renter, contractDate, start, end, lines);
-        unnumberedGrid(leaseId, installments, start);
-        return leasePosting.postForPortfolioImport(leaseId);
+        List<ChequeDTO> grid = unnumberedGrid(leaseId, installments, start);
+        // Every row stands for one the import generated, so every row is exempt.
+        return leasePosting.postForPortfolioImport(leaseId,
+                grid.stream().map(ChequeDTO::id).collect(java.util.stream.Collectors.toSet()));
     }
 
     /**
