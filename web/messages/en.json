@@ -1974,6 +1974,7 @@
     "vatAuto": "auto",
     "vatMatches": "Σ VAT {rows} = contract VAT {contract}",
     "vatMustEqual": "Σ VAT {rows} but the contract charges VAT of {contract}",
+    "vatRespread": "Re-spread VAT",
     "vatPendingAllocation": "Contract VAT {contract} — rows marked auto get their share when the grid is saved",
     "vatScheduleTab": "VAT Schedule",
     "distributionUniform": "Uniform",

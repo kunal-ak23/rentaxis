@@ -70,6 +70,46 @@ describe("ChequeGrid VAT column", () => {
         expect(badge).toHaveTextContent("Σ VAT 5,900.00 but the contract charges VAT of 6,000.00");
     });
 
+    it("offers to re-spread a VAT column that no longer adds up, handing every row back to the default", () => {
+        const onChange = vi.fn();
+        renderGrid({
+            cheques: [cheque({ id: "a", seqNo: 1, vatAmount: 1400 }), ...four.slice(1)],
+            contractValueInclVat: 126000,
+            contractVat: 6000,
+            editable: true,
+            onChange,
+        });
+        fireEvent.click(screen.getByTestId("cheque-grid-vat-respread"));
+        expect(onChange).toHaveBeenCalledTimes(1);
+        const rows = onChange.mock.calls[0][0] as Cheque[];
+        expect(rows).toHaveLength(4);
+        expect(rows.every(r => r.vatAmount === null)).toBe(true);
+        expect(toChequeRows(rows).every(r => r.vatAmount === null)).toBe(true);
+    });
+
+    it("offers no re-spread when the VAT adds up, or on a read-only grid", () => {
+        renderGrid({ cheques: four, contractValueInclVat: 126000, contractVat: 6000, editable: true, onChange: vi.fn() });
+        expect(screen.queryByTestId("cheque-grid-vat-respread")).toBeNull();
+        cleanup();
+        renderGrid({
+            cheques: [cheque({ id: "a", seqNo: 1, vatAmount: 1400 }), ...four.slice(1)],
+            contractValueInclVat: 126000,
+            contractVat: 6000,
+        });
+        expect(screen.queryByTestId("cheque-grid-vat-respread")).toBeNull();
+    });
+
+    it("labels the re-spread action in Arabic", () => {
+        renderGrid({
+            cheques: [cheque({ id: "a", seqNo: 1, vatAmount: 1400 }), ...four.slice(1)],
+            contractValueInclVat: 126000,
+            contractVat: 6000,
+            editable: true,
+            onChange: vi.fn(),
+        }, ar, "ar");
+        expect(screen.getByTestId("cheque-grid-vat-respread")).toHaveTextContent(ar.Leasing.vatRespread);
+    });
+
     it("hides the column on a contract without VAT", () => {
         renderGrid({
             cheques: [cheque({ id: "a", seqNo: 1, vatAmount: 0, vatTaxableAmount: 0 })],

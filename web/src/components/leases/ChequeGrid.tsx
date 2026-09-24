@@ -620,6 +620,21 @@ export default function ChequeGrid({
                                                   contract: fmtAmount(contractVat),
                                               })}
                                     </span>
+                                    {/* The lines changed under a grid whose rows kept their
+                                        old VAT: rather than retyping every row, hand them
+                                        all back to the server's default, which spreads the
+                                        contract's VAT again when the grid is saved (PR #348
+                                        review P3-8). */}
+                                    {editable && onChange && !vatPending && !vatMatches && (
+                                        <button
+                                            type="button"
+                                            data-testid="cheque-grid-vat-respread"
+                                            className="ms-3 underline font-semibold"
+                                            onClick={() => onChange(cheques.map(c => ({ ...c, vatAmount: null })))}
+                                        >
+                                            {t("vatRespread")}
+                                        </button>
+                                    )}
                                 </td>
                             </tr>
                         )}
