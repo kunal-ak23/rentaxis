@@ -821,6 +821,32 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat((Long) tx.execute(s -> chequeRepo.countPenalisableBounces(leaseId))).isEqualTo(1L);
     }
 
+    /**
+     * F14-31 leftover: a system proposal written before description codes existed is
+     * read back into its code and arguments, so the Arabic screen renders it; the
+     * stored English sentence is not rewritten.
+     */
+    @Test
+    void aLegacySystemProposalIsReadBackIntoItsDescriptionCode() {
+        fineSettings(1, true, false);
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        bounceFirst(r);
+        UUID id = assessmentsOf(leaseId).get(0).getId();
+        String legacy = "Cheque 140106 returned (SIGNATURE_MISMATCH), bounce #2 on this lease";
+        jdbc.update("update penalty_assessments set description_code = null, description_args = null, description = ? where id = ?",
+                legacy, id);
+
+        PenaltyAssessmentDTO dto = tx.execute(s -> service.list(leaseId, null, null, PageRequest.of(0, 10)))
+                .getContent().stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
+        assertThat(dto.descriptionCode()).isEqualTo("chequeReturned");
+        assertThat(dto.descriptionArgs()).containsEntry("cheque", "140106")
+                .containsEntry("failureReason", "SIGNATURE_MISMATCH").containsEntry("bounces", "2");
+        assertThat(dto.description()).isEqualTo(legacy);
+        assertThat(jdbc.queryForObject("select description_code from penalty_assessments where id = ?", String.class, id))
+                .isNull();
+    }
+
     @Test
     void autoProposalTurnedOffLeavesTheWorklistEmptyHoweverManyBounce() {
         fineSettings(1, false, false);
