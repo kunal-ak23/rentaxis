@@ -9,6 +9,7 @@ import { Link } from "@/i18n/routing";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import { payablesApi, type Advance, type OpenItem } from "@/lib/api/payables";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -169,7 +170,7 @@ export default function VendorAccountPage() {
                                         <th className={`${th} text-end`}>{t("amount")}</th>
                                         <th className={`${th} text-end`}>{t("paid")}</th>
                                         <th className={`${th} text-end`}>{t("open")}</th>
-                                        <th className={th}>{t("status")}</th>
+                                        <th className={th}>{t("statusColumn")}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
@@ -181,8 +182,8 @@ export default function VendorAccountPage() {
                                                     <Link href={`/dashboard/finance/vouchers/purchase-invoice?id=${i.id}`} className="text-primary hover:underline">{i.docNumber}</Link>
                                                 ) : t("openingItem")}
                                             </td>
-                                            <td className={td}><bdi dir="ltr">{i.invoiceDate}</bdi></td>
-                                            <td className={td}><bdi dir="ltr">{i.dueDate}</bdi></td>
+                                            <td className={td}><bdi dir="ltr">{formatDate(i.invoiceDate)}</bdi></td>
+                                            <td className={td}><bdi dir="ltr">{formatDate(i.dueDate)}</bdi></td>
                                             <td className={`${td} text-end tabular-nums`}>{i.open > 0 && i.daysOverdue > 0 ? <bdi dir="ltr" className="text-error">{i.daysOverdue}</bdi> : "—"}</td>
                                             <td className={`${td} text-end`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(i.gross)}</bdi></td>
                                             <td className={`${td} text-end`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(i.allocated)}</bdi></td>
@@ -224,7 +225,7 @@ export default function VendorAccountPage() {
                                             <td className={`${td} font-mono`}>
                                                 <Link href={`/dashboard/finance/vouchers/payment?id=${a.paymentId}`} className="text-primary hover:underline">{a.voucherNumber}</Link>
                                             </td>
-                                            <td className={td}><bdi dir="ltr">{a.docDate}</bdi></td>
+                                            <td className={td}><bdi dir="ltr">{formatDate(a.docDate)}</bdi></td>
                                             <td className={td}>{a.reference ?? "—"}</td>
                                             <td className={`${td} text-end`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(a.paid)}</bdi></td>
                                             <td className={`${td} text-end font-semibold`}><bdi dir="ltr" className="tabular-nums">{fmtAmount(a.unallocated)}</bdi></td>

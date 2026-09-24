@@ -11,12 +11,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type Account } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import {
     grossTotalOf, netTotalOf, vatOf, vatTotalOf, voucherApi,
     type EditableVoucherType, type PaymentMethod, type Settlement, type VoucherAttachment, type VoucherDetail,
     type VoucherAllocationInput, type VoucherInput, type VoucherLineInput, type VoucherStatus,
 } from "@/lib/api/vouchers";
-import { autoAllocate, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
+import { autoAllocate, daysOverdueAsOf, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
 import {
     ALLOWED_VAT_RATES, ATTACHMENT_ACCEPT, attachmentRefusal, canAmendVoucher,
     canEditVoucher, canManageAttachments, draftRefusal, isDateLocked, lineAccountTypes,
@@ -686,7 +687,7 @@ export default function VoucherForm({
         : duplicateOf && editable
           ? t("duplicateInvoice", { invoice: invoiceNumber.trim(), vendor: vendor?.nameEn ?? "", number: duplicateOf })
           : locked
-          ? t("periodLocked", { date: booksLockedThrough ?? "" })
+          ? t("periodLocked", { date: formatDate(booksLockedThrough) })
           : amending && !dirty
             ? t("amendNoChanges")
             : null;
@@ -1388,9 +1389,9 @@ export default function VoucherForm({
                                             <td className={td}>{i.invoiceNumber}</td>
                                             <td className={`${td} font-mono`}>{i.docNumber ?? t("openingItem")}</td>
                                             <td className={td}>
-                                                <bdi dir="ltr">{i.dueDate}</bdi>
-                                                {i.daysOverdue > 0 && (
-                                                    <span className="ms-2 text-[10px] text-error">{t("daysOverdue", { days: i.daysOverdue })}</span>
+                                                <bdi dir="ltr">{formatDate(i.dueDate)}</bdi>
+                                                {daysOverdueAsOf(i.dueDate, docDate) > 0 && (
+                                                    <span className="ms-2 text-[10px] text-error">{t("daysOverdue", { days: daysOverdueAsOf(i.dueDate, docDate) })}</span>
                                                 )}
                                             </td>
                                             <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(i.open)}</bdi></td>
@@ -1472,7 +1473,7 @@ export default function VoucherForm({
                                                         type="button"
                                                         data-testid={`release-${a.id}`}
                                                         disabled={busy || lockedIn}
-                                                        title={lockedIn ? t("releaseLocked", { date: booksLockedThrough ?? "" }) : undefined}
+                                                        title={lockedIn ? t("releaseLocked", { date: formatDate(booksLockedThrough) }) : undefined}
                                                         onClick={() => setReleasing({ id: a.id, reason: "" })}
                                                         className="text-xs font-semibold text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                                     >
@@ -1678,7 +1679,7 @@ export default function VoucherForm({
                 onConfirm={postVoucher}
                 isLoading={busy}
                 title={t("post")}
-                description={t("confirmPost", { date: docDate })}
+                description={t("confirmPost", { date: formatDate(docDate) })}
                 confirmText={t("post")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="confirm-post"
@@ -1745,7 +1746,7 @@ export default function VoucherForm({
                 </div>
                 {amendDateLocked && (
                     <p role="alert" data-testid="amend-blocker" className="text-xs font-semibold text-warning">
-                        {t("amendReversalLocked", { date: booksLockedThrough ?? "" })}
+                        {t("amendReversalLocked", { date: formatDate(booksLockedThrough) })}
                     </p>
                 )}
                 {vendorId && <p className="sr-only">{vendorName(vendorId)}</p>}

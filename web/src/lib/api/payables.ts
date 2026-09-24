@@ -138,6 +138,23 @@ export function dueDateFrom(supplierDate: string, terms: number | null | undefin
     return due.toISOString().slice(0, 10);
 }
 
+/**
+ * Days a due date is past, counted to a given as-of date (not "today") — used
+ * by the payment-voucher allocation grid, where the open items API returns
+ * `daysOverdue` counted to today but the grid is dated to the voucher itself
+ * (F14-46: a payment dated 01/08 should not say "42 days overdue" counted to
+ * whenever it happens to be opened).
+ */
+export function daysOverdueAsOf(dueDate: string, asOf: string): number {
+    if (!dueDate || !asOf) return 0;
+    const parse = (s: string) => {
+        const [y, m, d] = s.split("-").map(Number);
+        return Date.UTC(y, m - 1, d);
+    };
+    const diff = Math.round((parse(asOf) - parse(dueDate)) / 86400000);
+    return diff > 0 ? diff : 0;
+}
+
 /** Overdue = every bucket past due. */
 export function overdueOf(f: AgingFigures): number {
     return f.d1to30 + f.d31to60 + f.d61to90 + f.d90plus;

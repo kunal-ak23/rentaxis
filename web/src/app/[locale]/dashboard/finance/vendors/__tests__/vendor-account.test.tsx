@@ -60,6 +60,32 @@ describe("vendor account page", () => {
         expect(screen.getByTestId("vendor-advance")).toHaveTextContent("5,000.00");
     });
 
+    it("shows a real Status column header, not the raw PAYABLES.status key (F14-46)", async () => {
+        renderPage();
+        await screen.findByTestId("vendor-item-INV-7790");
+        expect(screen.getByTestId("vendor-items")).toHaveTextContent("Status");
+        expect(screen.getByTestId("vendor-items")).not.toHaveTextContent("PAYABLES.status");
+        expect(screen.getByTestId("vendor-items")).not.toHaveTextContent("PAYABLES.STATUS");
+    });
+
+    it("formats invoice and due dates as dd/mm/yyyy, not raw ISO (F14-46)", async () => {
+        renderPage();
+        const row = await screen.findByTestId("vendor-item-INV-7790");
+        expect(row).toHaveTextContent("20/08/2026");
+        expect(row).toHaveTextContent("19/09/2026");
+        expect(row).not.toHaveTextContent("2026-08-20");
+        expect(row).not.toHaveTextContent("2026-09-19");
+    });
+
+    it("formats the advance payment date as dd/mm/yyyy (F14-46)", async () => {
+        renderPage();
+        await screen.findByTestId("vendor-item-INV-7790");
+        fireEvent.click(screen.getByTestId("tab-advances"));
+        const row = await screen.findByTestId("advance-BPV-26/60");
+        expect(row).toHaveTextContent("20/09/2026");
+        expect(row).not.toHaveTextContent("2026-09-20");
+    });
+
     it("applies an advance to an open invoice", async () => {
         renderPage();
         await screen.findByTestId("vendor-item-INV-7790");

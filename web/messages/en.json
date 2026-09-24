@@ -3299,6 +3299,7 @@
     "noInvoices": "No supplier invoices yet.",
     "voucher": "Voucher",
     "daysOverdue": "Days overdue",
+    "statusColumn": "Status",
     "status": {
       "OPEN": "Open",
       "PART_PAID": "Part-paid",

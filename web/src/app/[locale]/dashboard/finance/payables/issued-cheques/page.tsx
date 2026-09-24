@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, type Account } from "@/lib/api/ledger";
+import { formatDate, formatDatesInText } from "@/lib/format";
 import {
     issuedChequesApi,
     type IssuedCheque,
@@ -275,7 +276,7 @@ export default function IssuedChequesPage() {
                                 <td className={`${td} font-bold`}><bdi dir="ltr">{c.chequeNumber}</bdi>
                                     {c.opening && <span className="ms-2 text-[10px] font-semibold text-muted">{t("opening")}</span>}</td>
                                 <td className={td}>
-                                    <bdi dir="ltr">{c.chequeDate}</bdi>
+                                    <bdi dir="ltr">{formatDate(c.chequeDate)}</bdi>
                                     {c.duePresent && <span className="ms-2 text-[10px] font-bold text-warning" data-testid={`cheque-due-${c.chequeNumber}`}>{t("pastDate")}</span>}
                                 </td>
                                 <td className={td}>{c.vendorName}</td>
@@ -290,8 +291,8 @@ export default function IssuedChequesPage() {
                                 </td>
                                 <td className={td}>
                                     <span className="font-semibold">{t(`statuses.${c.status}`)}</span>
-                                    {c.presentedOn && <div className="text-[10px] text-muted">{t("presentedOn")} <bdi dir="ltr">{c.presentedOn}</bdi> · <bdi dir="ltr">{c.bpcNumber}</bdi></div>}
-                                    {c.cancelledOn && <div className="text-[10px] text-muted">{t("cancelledOn")} <bdi dir="ltr">{c.cancelledOn}</bdi></div>}
+                                    {c.presentedOn && <div className="text-[10px] text-muted">{t("presentedOn")} <bdi dir="ltr">{formatDate(c.presentedOn)}</bdi> · <bdi dir="ltr">{c.bpcNumber}</bdi></div>}
+                                    {c.cancelledOn && <div className="text-[10px] text-muted">{t("cancelledOn")} <bdi dir="ltr">{formatDate(c.cancelledOn)}</bdi></div>}
                                 </td>
                                 <td className={`${td} whitespace-nowrap`}>
                                     <span className="flex gap-1">
@@ -396,7 +397,7 @@ export default function IssuedChequesPage() {
                             <input type="date" data-testid="cheque-action-date" className={`${field} w-full`} value={actionDate}
                                    onChange={e => setActionDate(e.target.value)} />
                         </label>
-                        {early && <p className="text-xs text-danger" data-testid="cheque-early">{t("tooEarly", { date: action.cheque.chequeDate })}</p>}
+                        {early && <p className="text-xs text-danger" data-testid="cheque-early">{t("tooEarly", { date: formatDate(action.cheque.chequeDate) })}</p>}
                         {future && <p className="text-xs text-danger">{t("inFuture")}</p>}
                         {needsReason && (
                             <label className={`${label} block`}>
@@ -405,10 +406,10 @@ export default function IssuedChequesPage() {
                                        onChange={e => setReason(e.target.value)} />
                             </label>
                         )}
-                        {actionError && <p role="alert" className="text-xs text-danger" data-testid="cheque-action-error">{actionError}</p>}
+                        {actionError && <p role="alert" className="text-xs text-danger" data-testid="cheque-action-error">{formatDatesInText(actionError)}</p>}
                     </div>
                 )}
-                {action?.kind === "delete" && actionError && <p role="alert" className="text-xs text-danger">{actionError}</p>}
+                {action?.kind === "delete" && actionError && <p role="alert" className="text-xs text-danger">{formatDatesInText(actionError)}</p>}
             </ConfirmDialog>
         </div>
     );

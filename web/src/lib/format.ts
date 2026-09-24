@@ -49,6 +49,18 @@ export function formatDate(value: string | null | undefined): string {
 }
 
 /**
+ * Rewrite every yyyy-mm-dd substring in a piece of text to dd/mm/yyyy.
+ * For server-supplied strings (refusal messages, validation errors) that
+ * embed a raw ISO date the app has no structured field for — e.g. "a cheque
+ * dated 2026-07-15 cannot be presented before ...". Leaves everything else
+ * untouched; a string with no ISO date passes through unchanged.
+ */
+export function formatDatesInText(value: string | null | undefined): string {
+    if (!value) return value ?? '';
+    return value.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_m, y, mo, d) => `${d}/${mo}/${y}`);
+}
+
+/**
  * Format a number with 2 decimal places (no currency symbol).
  * Returns "1,234.56"
  */

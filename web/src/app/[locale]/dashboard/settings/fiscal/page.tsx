@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 
@@ -194,7 +195,7 @@ export default function FiscalSettingsPage() {
                             <div>
                                 <div className={label}>{t("booksLockedThrough")}</div>
                                 <div className="text-sm font-semibold text-foreground tabular-nums py-2">
-                                    {settings?.booksLockedThrough ?? "—"}
+                                    {settings?.booksLockedThrough ? formatDate(settings.booksLockedThrough) : "—"}
                                 </div>
                             </div>
                             <div>

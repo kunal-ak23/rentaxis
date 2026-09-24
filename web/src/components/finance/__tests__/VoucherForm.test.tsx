@@ -376,7 +376,9 @@ describe("VoucherForm — Post gating", () => {
         fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-08-31" } });
 
         await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeDisabled());
-        expect(screen.getByTestId("voucher-blocker")).toHaveTextContent("2026-08-31");
+        // F14-46: the lock date shown to the user is dd/mm/yyyy, not raw ISO.
+        expect(screen.getByTestId("voucher-blocker")).toHaveTextContent("31/08/2026");
+        expect(screen.getByTestId("voucher-blocker")).not.toHaveTextContent("2026-08-31");
 
         // The day after the lock is open again.
         fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-09-01" } });
@@ -594,7 +596,8 @@ describe("VoucherForm — amend actually amends", () => {
 
         fireEvent.change(await screen.findByTestId("amend-date"), { target: { value: "2026-09-30" } });
         await waitFor(() => expect(screen.getByTestId("confirm-amend")).toBeDisabled());
-        expect(screen.getByTestId("amend-blocker")).toHaveTextContent("2026-09-30");
+        // F14-46: dd/mm/yyyy, not raw ISO.
+        expect(screen.getByTestId("amend-blocker")).toHaveTextContent("30/09/2026");
 
         fireEvent.change(screen.getByTestId("amend-date"), { target: { value: "2026-10-01" } });
         await waitFor(() => expect(screen.getByTestId("confirm-amend")).toBeEnabled());
@@ -1130,6 +1133,23 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
         expect(allocs).toEqual([{ invoiceId: "inv-90", amount: 600 }, { invoiceId: "inv-81", amount: 1450 }]);
         const created = api.create.mock.calls.at(-1)![0];
         expect(created).toMatchObject({ paymentMethod: "TRANSFER", paymentReference: "TRF-7781", chequeNumber: null });
+    });
+
+    it("counts days overdue in the allocation grid to the voucher's own date, not today (F14-46)", async () => {
+        renderForm("BPV");
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        pickPaymentAccount("bank-1");
+        pickLineAccount(0, "pay-1");
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "500" } });
+
+        const row = await screen.findByTestId("allocate-row-INV-7781"); // due 2026-08-31
+        // Formatted dd/mm/yyyy, not raw ISO.
+        expect(row).toHaveTextContent("31/08/2026");
+        expect(row).not.toHaveTextContent("2026-08-31");
+
+        fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-09-15" } });
+        await waitFor(() => expect(row).toHaveTextContent("15 days overdue"));
     });
 
     it("refuses allocations beyond the payment", async () => {

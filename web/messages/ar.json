@@ -3299,6 +3299,7 @@
     "noInvoices": "لا توجد فواتير موردين بعد.",
     "voucher": "السند",
     "daysOverdue": "أيام التأخير",
+    "statusColumn": "الحالة",
     "status": {
       "OPEN": "مفتوحة",
       "PART_PAID": "مدفوعة جزئياً",
