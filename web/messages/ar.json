@@ -2236,7 +2236,12 @@
     "propose": "اقتراح",
     "approve": "اعتماد",
     "waive": "إعفاء",
+    "reduce": "تخفيض",
     "reverse": "عكس القيد",
+    "reducedFrom": "خُفِّضت من {amount}",
+    "newAmount": "المبلغ الجديد",
+    "reduceAmountInvalid": "يجب أن يكون أكبر من 0 وأقل من المبلغ الحالي ({amount}).",
+    "decisionNoteRequired": "السبب مطلوب.",
     "proposedQueue": "قائمة الاقتراحات",
     "approvedList": "المعتمدة",
     "proposedBySystem": "مقترح آليًا من النظام",
@@ -2244,6 +2249,10 @@
       "CHEQUE_RETURN": "ارتداد شيك",
       "LATE_PAYMENT": "تأخر السداد",
       "OTHER": "أخرى"
+    },
+    "penaltyDescription": {
+      "chequeReturned": "ارتد الشيك {cheque} ({failureReason}) — الارتداد رقم {bounces} على هذا العقد",
+      "clearedLate": "تحصّل الشيك {cheque} متأخرًا بـ {days} يوم/أيام (تاريخ الاستحقاق {due}، وتم التحصيل {cleared})"
     },
     "penaltyStatus": {
       "PROPOSED": "مقترحة",

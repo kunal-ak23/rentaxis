@@ -2236,7 +2236,12 @@
     "propose": "Propose",
     "approve": "Approve",
     "waive": "Waive",
+    "reduce": "Reduce",
     "reverse": "Reverse",
+    "reducedFrom": "reduced from {amount}",
+    "newAmount": "New amount",
+    "reduceAmountInvalid": "Must be more than 0 and less than the current amount ({amount}).",
+    "decisionNoteRequired": "A reason is required.",
     "proposedQueue": "Proposed",
     "approvedList": "Approved",
     "proposedBySystem": "Proposed by system",
@@ -2244,6 +2249,10 @@
       "CHEQUE_RETURN": "Cheque Return",
       "LATE_PAYMENT": "Late Payment",
       "OTHER": "Other"
+    },
+    "penaltyDescription": {
+      "chequeReturned": "Cheque {cheque} returned ({failureReason}) — bounce {bounces} on this contract",
+      "clearedLate": "Cheque {cheque} cleared {days} day(s) late (due {due}, cleared {cleared})"
     },
     "penaltyStatus": {
       "PROPOSED": "Proposed",

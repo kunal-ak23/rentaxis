@@ -37,7 +37,7 @@ const dialogField =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const dialogLabel = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
-type DecisionAction = "approve" | "waive" | "reverse";
+type DecisionAction = "approve" | "waive" | "reverse" | "reduce";
 
 type Props = {
     userRole: UserRole | undefined;
@@ -66,6 +66,8 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
     const [decision, setDecision] = useState<{ action: DecisionAction; row: PenaltyAssessment } | null>(null);
     const [decisionDate, setDecisionDate] = useState(todayIso());
     const [decisionNote, setDecisionNote] = useState("");
+    /** F14-28: the reduce dialog's new amount, as typed. */
+    const [reduceAmount, setReduceAmount] = useState("");
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -88,9 +90,17 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
     const openDecision = (action: DecisionAction, row: PenaltyAssessment) => {
         setDecisionDate(todayIso());
         setDecisionNote("");
+        setReduceAmount("");
         setActionError(null);
         setDecision({ action, row });
     };
+
+    const reduceAmountNumber = Number(reduceAmount);
+    // Server rule (F14-28): 0 < amount < the current amount.
+    const reduceAmountValid = decision?.action === "reduce"
+        && reduceAmount !== ""
+        && reduceAmountNumber > 0
+        && reduceAmountNumber < decision.row.amount;
 
     const confirmDecision = async () => {
         if (!decision) return;
@@ -100,7 +110,8 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
         try {
             if (action === "approve") await penaltyApi.approve(row.id, decisionDate);
             else if (action === "waive") await penaltyApi.waive(row.id, decisionNote || undefined);
-            else await penaltyApi.reverse(row.id, { date: decisionDate, note: decisionNote || undefined });
+            else if (action === "reduce") await penaltyApi.reduce(row.id, reduceAmountNumber, decisionNote.trim());
+            else await penaltyApi.reverse(row.id, { date: decisionDate, note: decisionNote.trim() });
             setDecision(null);
             await load();
         } catch (e) {
@@ -170,13 +181,30 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                         <td className={td}>
                                             {t(`reason.${p.reason}`)}
                                             {/*
-                                              * The justification the proposer was asked for
+                                              * F14-31: a server-generated row (a bounce or a late
+                                              * clearing raised automatically) carries a translation
+                                              * code and args instead of free text, so it reads in the
+                                              * viewer's own language; `failureReason` in those args is
+                                              * itself a code, read through the failure-reason labels.
+                                              * A row a human proposed keeps its free-text description
                                               * (`LeasePenaltiesTab` collects it and posts it as
                                               * `description`) — the approver is the only person who
                                               * acts on this row, and used to be the one person never
                                               * shown why it exists.
                                               */}
-                                            {p.description && (
+                                            {p.descriptionCode ? (
+                                                <span
+                                                    className="block text-[11px] text-muted mt-0.5"
+                                                    data-testid={`penalty-description-${i}`}
+                                                >
+                                                    {t(`penaltyDescription.${p.descriptionCode}`, {
+                                                        ...p.descriptionArgs,
+                                                        ...(p.descriptionArgs?.failureReason
+                                                            ? { failureReason: t(`failureReasons.${p.descriptionArgs.failureReason}`) }
+                                                            : {}),
+                                                    })}
+                                                </span>
+                                            ) : p.description && (
                                                 <span
                                                     className="block text-[11px] text-muted mt-0.5"
                                                     data-testid={`penalty-description-${i}`}
@@ -190,7 +218,14 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                                 </span>
                                             )}
                                         </td>
-                                        <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(p.amount)}</td>
+                                        <td className={`${td} text-end tabular-nums font-semibold`}>
+                                            {fmtAmount(p.amount)}
+                                            {p.proposedAmount != null && (
+                                                <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-reduced-from-${i}`}>
+                                                    {t("reducedFrom", { amount: fmtAmount(p.proposedAmount) })}
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className={`${td} text-muted`}>
                                             {p.proposedAt ? fmtIsoDate(p.proposedAt, locale) : "—"}
                                         </td>
@@ -215,6 +250,15 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                                             className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border cursor-pointer disabled:opacity-50"
                                                         >
                                                             {t("waive")}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`penalty-reduce-${i}`}
+                                                            disabled={busyId === p.id}
+                                                            onClick={() => openDecision("reduce", p)}
+                                                            className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border cursor-pointer disabled:opacity-50"
+                                                        >
+                                                            {t("reduce")}
                                                         </button>
                                                     </>
                                                 )}
@@ -253,7 +297,12 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                 onConfirm={confirmDecision}
                 confirmText={decision ? t(decision.action) : ""}
                 cancelText={tl("cancel")}
-                confirmDisabled={decision?.action === "waive" && !decisionNote.trim()}
+                confirmDisabled={
+                    (decision?.action === "waive" && !decisionNote.trim())
+                    // F14-28: the server now requires a note on Reverse.
+                    || (decision?.action === "reverse" && !decisionNote.trim())
+                    || (decision?.action === "reduce" && (!reduceAmountValid || !decisionNote.trim()))
+                }
                 busy={busyId === decision?.row.id}
                 destructive={decision?.action === "reverse"}
                 confirmTestId={decision ? `penalty-${decision.action}-confirm` : "penalty-decision-confirm"}
@@ -274,10 +323,33 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                             />
                         </div>
                     )}
-                    {(decision?.action === "waive" || decision?.action === "reverse") && (
+                    {decision?.action === "reduce" && (
+                        <div>
+                            <label className={dialogLabel} htmlFor="penalty-reduce-amount">
+                                {t("newAmount")}
+                            </label>
+                            <input
+                                id="penalty-reduce-amount"
+                                data-testid="penalty-reduce-amount"
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                className={dialogField}
+                                value={reduceAmount}
+                                onChange={e => setReduceAmount(e.target.value)}
+                            />
+                            {reduceAmount !== "" && !reduceAmountValid && (
+                                <p className="text-[10px] text-error mt-1" data-testid="penalty-reduce-amount-error">
+                                    {t("reduceAmountInvalid", { amount: fmtAmount(decision.row.amount) })}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                    {(decision?.action === "waive" || decision?.action === "reverse" || decision?.action === "reduce") && (
                         <div>
                             <label className={dialogLabel} htmlFor="penalty-decision-note">
                                 {t("decisionNote")}
+                                {(decision?.action === "reverse" || decision?.action === "reduce") ? " *" : ""}
                             </label>
                             <input
                                 id="penalty-decision-note"
@@ -286,6 +358,11 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                 value={decisionNote}
                                 onChange={e => setDecisionNote(e.target.value)}
                             />
+                            {(decision?.action === "reverse" || decision?.action === "reduce") && !decisionNote.trim() && (
+                                <p className="text-[10px] text-muted mt-1" data-testid="penalty-decision-note-hint">
+                                    {t("decisionNoteRequired")}
+                                </p>
+                            )}
                         </div>
                     )}
                 </div>

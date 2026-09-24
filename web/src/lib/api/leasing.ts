@@ -912,6 +912,16 @@ export type PenaltyAssessment = {
   reason: PenaltyReason;
   amount: number;
   description: string | null;
+  /**
+   * F14-31: when set, the description is server-generated and this names the
+   * translation key under `Cheques.penaltyDescription.<code>`, with
+   * `descriptionArgs` as its values — `failureReason` in those args is
+   * itself a `ChequeFailureReason` and reads through
+   * `Cheques.failureReasons`. `description` stays the free-text fallback for
+   * a row with no code.
+   */
+  descriptionCode?: "chequeReturned" | "clearedLate" | null;
+  descriptionArgs?: Record<string, string> | null;
   /** When the charged-for thing happened (#12); null on rows proposed before it was recorded. */
   incidentDate?: string | null;
   status: PenaltyAssessmentStatus;
@@ -923,6 +933,8 @@ export type PenaltyAssessment = {
   collectionChequeId: string | null;
   collectionStatus: ChequeStatus | null;
   resolutionNote: string | null;
+  /** F14-28: set once POST /penalties/{id}/reduce has lowered a PROPOSED row's amount. */
+  proposedAmount?: number | null;
 };
 
 /** ProposePenaltyRequest. */
@@ -1215,6 +1227,8 @@ export const penaltyApi = {
   propose: (body: ProposePenaltyInput) => send<PenaltyAssessment>("POST", "/penalties", body),
   approve: (id: string, date?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date }),
   waive: (id: string, note?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note }),
+  /** F14-28: PROPOSED only; 0 < amount < the current amount; note required. Status stays PROPOSED. */
+  reduce: (id: string, amount: number, note: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note }),
   reverse: (id: string, body: { date?: string; note?: string }) => send<PenaltyAssessment>("POST", `/penalties/${id}/reverse`, body),
   mine: () => get<PenaltyAssessment[]>("/penalties/mine"),
 };
