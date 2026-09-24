@@ -2343,7 +2343,9 @@
       "cheque": {
         "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
-        "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}"
+        "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}",
+        "depositBeforeBooked": "{row} was put on the books on {booked}; it cannot be deposited on {date}, before that date. Deposit it on or after {booked}.",
+        "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
         "reverseBeforeCharge": "A reversal cannot be dated before the penalty was charged ({charged})."

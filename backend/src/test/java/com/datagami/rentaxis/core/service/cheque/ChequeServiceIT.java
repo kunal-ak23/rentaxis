@@ -486,6 +486,32 @@ class ChequeServiceIT extends AbstractPostgresIT {
                 .isEqualTo(ChequeStatus.CLEARED);
     }
 
+    /** F14-64: nor can the paper go to the bank before the row existed — single or in a run. */
+    @Test
+    void depositingBeforeTheRowWasBookedIsRefused() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        // A replacement booked on REPLACE_DATE for a cheque written a fortnight earlier.
+        ChequeDTO pdc = service.addRowToPostedLease(leaseId,
+                row("646401", REPLACE_DATE, REPLACE_DATE.minusDays(14), "1500", ChequeMode.PDC));
+
+        assertThatThrownBy(() -> service.deposit(pdc.id(), ChequeActionRequest.on(REPLACE_DATE.minusDays(1))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("was put on the books on")
+                .hasMessageContaining("cannot be deposited on")
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("cheque.depositBeforeBooked");
+        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(
+                List.of(pdc.id()), REPLACE_DATE.minusDays(1), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot be deposited on");
+        assertThat(reread(pdc.id()).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+
+        // The day it was booked is fine.
+        assertThat(service.deposit(pdc.id(), ChequeActionRequest.on(REPLACE_DATE)).status())
+                .isEqualTo(ChequeStatus.DEPOSITED);
+    }
+
     @Test
     void receivingATransferLandsInTheBank() {
         PostLeaseResponse r = posted();

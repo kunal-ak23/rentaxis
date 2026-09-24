@@ -362,6 +362,8 @@ public class ChequeService {
         requireDepositable(cheque);
         if (replay == null) {
             requireNotPresentedEarly(cheque, r.dateOrToday());
+            // F14-64: the slip cannot predate the row, the same rule clearing applies.
+            requireNotDepositedBeforeBooked(cheque, bookedOn(cheque), r.dateOrToday());
         }
 
         applyDeposit(cheque, r.dateOrToday(), r.debitAccountId(), r.notes());
@@ -429,6 +431,10 @@ public class ChequeService {
                 // One date covers the whole selection, so a clerk banking
                 // October's pile can easily sweep up a November cheque.
                 problems.add(earlyPresentation(c, request.dateFor(c.getChequeDate())));
+            } else if (bookedOn(c) != null && request.dateFor(c.getChequeDate()).isBefore(bookedOn(c))) {
+                // F14-64: nor a replacement booked after the slip's date.
+                problems.add(label(c) + " was put on the books on " + bookedOn(c).format(DMY)
+                        + "; it cannot be deposited on " + request.dateFor(c.getChequeDate()).format(DMY));
             }
         }
         if (!problems.isEmpty()) {
@@ -1436,6 +1442,23 @@ public class ChequeService {
                     + booked.format(DMY) + "; it cannot be received or cleared on " + date.format(DMY)
                     + ", before that date. Receive it on or after " + booked.format(DMY) + ".",
                     "cheque.receiveBeforeBooked",
+                    Map.of("row", label(cheque), "booked", booked.format(DMY), "date", date.format(DMY)));
+        }
+    }
+
+    /**
+     * F14-64: a deposit slip cannot be dated before the row was put on the books —
+     * the register would show a cheque banked weeks before it existed, and the
+     * clearing (which {@link #requireNotBeforeBooked} guards) could then never
+     * follow on the deposit's date. Live actions only; a cut-over replay records
+     * what PACT did.
+     */
+    static void requireNotDepositedBeforeBooked(Cheque cheque, LocalDate booked, LocalDate date) {
+        if (booked != null && date != null && date.isBefore(booked)) {
+            throw new BusinessRuleViolationException(label(cheque) + " was put on the books on "
+                    + booked.format(DMY) + "; it cannot be deposited on " + date.format(DMY)
+                    + ", before that date. Deposit it on or after " + booked.format(DMY) + ".",
+                    "cheque.depositBeforeBooked",
                     Map.of("row", label(cheque), "booked", booked.format(DMY), "date", date.format(DMY)));
         }
     }

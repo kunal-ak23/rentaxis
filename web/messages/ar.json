@@ -2343,7 +2343,9 @@
       "cheque": {
         "noBankForProperty": "لا يوجد حساب بنكي مُعد لهذا العقار. اربط أحد حساباته بحساب بنكي، أو استلم نقدًا.",
         "clearBeforeDeposit": "تم إيداع {row} بتاريخ {deposited}؛ لا يمكن تحصيله بتاريخ {date}",
-        "clearBeforeChequeDate": "{row} مؤرخ بـ {chequeDate}؛ لا يمكن تحصيله بتاريخ {date}"
+        "clearBeforeChequeDate": "{row} مؤرخ بـ {chequeDate}؛ لا يمكن تحصيله بتاريخ {date}",
+        "depositBeforeBooked": "أُدرج {row} في الدفاتر بتاريخ {booked}؛ ولا يمكن إيداعه بتاريخ {date} السابق لذلك. أودعه بتاريخ {booked} أو بعده.",
+        "receiveBeforeBooked": "أُدرج {row} في الدفاتر بتاريخ {booked}؛ ولا يمكن استلامه أو تحصيله بتاريخ {date} السابق لذلك. استلمه بتاريخ {booked} أو بعده."
       },
       "penalty": {
         "reverseBeforeCharge": "لا يمكن أن يسبق تاريخ العكس تاريخ فرض الغرامة ({charged})."

@@ -22,6 +22,7 @@ import type { RegisterAction } from "./registerActions";
 import { chequeRowIsValid } from "./chequeRowRules";
 import { chequeTitle } from "./chequeLabel";
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 /**
@@ -242,7 +243,8 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
             if ((action === "clear" || action === "receive") && cover.catchStatementCover(e)) {
                 // The notice + checkbox is now showing; the user resubmits.
             } else {
-                setError(e instanceof ApiError ? e.message : t("actionFailed"));
+                // A coded refusal (e.g. F14-64 cheque.depositBeforeBooked) in the user's language.
+                setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
             }
         } finally {
             setBusy(false);
