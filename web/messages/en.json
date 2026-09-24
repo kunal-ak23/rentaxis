@@ -172,7 +172,11 @@
     "settlementSummary": "Settlement Summary",
     "totalDeductions": "Total deductions",
     "refundToRenter": "Refund to renter",
-    "interactions": "Interactions"
+    "interactions": "Interactions",
+    "language": "Language",
+    "languageEN": "English",
+    "languageAR": "Arabic",
+    "genericError": "Something went wrong. Please try again."
   },
   "LandlordOrg": {
     "phone": "Phone",

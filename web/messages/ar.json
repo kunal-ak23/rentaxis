@@ -172,7 +172,11 @@
     "settlementSummary": "ملخص التسوية",
     "totalDeductions": "إجمالي الخصومات",
     "refundToRenter": "المبلغ المُعاد للمستأجر",
-    "interactions": "التواصل"
+    "interactions": "التواصل",
+    "language": "اللغة",
+    "languageEN": "الإنجليزية",
+    "languageAR": "العربية",
+    "genericError": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
   },
   "LandlordOrg": {
     "phone": "الهاتف",
