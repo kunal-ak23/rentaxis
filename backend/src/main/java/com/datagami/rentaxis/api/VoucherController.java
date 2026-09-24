@@ -276,7 +276,7 @@ public class VoucherController {
                 d.lines().stream().map(l -> new VoucherService.VoucherLineInput(
                         l.accountId(), l.description(), l.amount(), l.vatRate(), l.propertyId(), l.unitId(),
                         Boolean.TRUE.equals(l.shared()))).toList(),
-                d.supplierInvoiceDate(), d.dueDate(), d.paymentMethod(), d.paymentReference());
+                d.supplierInvoiceDate(), d.dueDate(), d.paymentMethod(), d.paymentReference(), d.settlementId());
     }
 
     /** A voucher needs an organisation to belong to; see the class Javadoc. */

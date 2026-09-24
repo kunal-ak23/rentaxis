@@ -31,4 +31,6 @@ public record VoucherInputDTO(
         /** BPV: TRANSFER, CHEQUE or CASH; null is inferred from the cheque number and the account. */
         VoucherPaymentMethod paymentMethod,
         /** BPV: the bank transfer reference. */
-        @Size(max = 60) String paymentReference) {}
+        @Size(max = 60) String paymentReference,
+        /** F14-36: BPV: the finalized settlement whose deposit refund this pays. */
+        UUID settlementId) {}

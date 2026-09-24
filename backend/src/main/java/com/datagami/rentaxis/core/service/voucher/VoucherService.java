@@ -118,12 +118,22 @@ public class VoucherService {
                                String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
                                String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines,
                                LocalDate supplierInvoiceDate, LocalDate dueDate,
-                               VoucherPaymentMethod paymentMethod, String paymentReference) {
+                               VoucherPaymentMethod paymentMethod, String paymentReference,
+                               UUID settlementId) {
         public VoucherInput(VoucherType docType, LocalDate docDate, UUID vendorId, String invoiceNumber,
                             String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
                             String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines) {
             this(docType, docDate, vendorId, invoiceNumber, narration, propertyId, unitId, paymentAccountId,
-                    chequeNumber, chequeDate, lines, null, null, null, null);
+                    chequeNumber, chequeDate, lines, null, null, null, null, null);
+        }
+
+        public VoucherInput(VoucherType docType, LocalDate docDate, UUID vendorId, String invoiceNumber,
+                            String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
+                            String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines,
+                            LocalDate supplierInvoiceDate, LocalDate dueDate,
+                            VoucherPaymentMethod paymentMethod, String paymentReference) {
+            this(docType, docDate, vendorId, invoiceNumber, narration, propertyId, unitId, paymentAccountId,
+                    chequeNumber, chequeDate, lines, supplierInvoiceDate, dueDate, paymentMethod, paymentReference, null);
         }
     }
 
@@ -333,6 +343,27 @@ public class VoucherService {
 
         PostingRequest.Dimensions headerDims =
                 new PostingRequest.Dimensions(v.getPropertyId(), v.getUnitId(), null, null, null);
+        if (v.getSettlementId() != null) {
+            // F14-36: under the settlement's row lock, so two payments cannot both
+            // take the last of the refund; dimensioned by the lease and renter the
+            // STL credited, so the renter-refund payable nets to nil per lease.
+            com.datagami.rentaxis.domain.entity.LeaseSettlement s = entityManager.find(
+                    com.datagami.rentaxis.domain.entity.LeaseSettlement.class, v.getSettlementId(),
+                    LockModeType.PESSIMISTIC_WRITE);
+            BigDecimal outstanding = refundOutstanding(v.getSettlementId(), v.getId());
+            BigDecimal paying = VoucherMath.netTotal(v.getLines());
+            if (paying.compareTo(outstanding) > 0) {
+                throw new BusinessRuleViolationException("The renter is owed "
+                        + outstanding.setScale(2, RoundingMode.HALF_UP).toPlainString() + " on this settlement; "
+                        + paying.setScale(2, RoundingMode.HALF_UP).toPlainString() + " is more than that",
+                        "voucher.refundExceedsOwed", Map.of("owed", outstanding.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                                "amount", paying.setScale(2, RoundingMode.HALF_UP).toPlainString()));
+            }
+            com.datagami.rentaxis.domain.entity.Lease lease =
+                    entityManager.find(com.datagami.rentaxis.domain.entity.Lease.class, s.getLeaseId());
+            headerDims = new PostingRequest.Dimensions(v.getPropertyId(), v.getUnitId(), s.getLeaseId(),
+                    lease == null || lease.getRenter() == null ? null : lease.getRenter().getId(), null);
+        }
 
         List<PostingRequest.Line> journalLines = new ArrayList<>();
         for (VoucherLine l : v.getLines()) {
@@ -425,7 +456,8 @@ public class VoucherService {
         IssuedCheque c = new IssuedCheque();
         c.setVoucherId(v.getId());
         c.setVendorId(v.getVendor() == null ? null : v.getVendor().getId());
-        if (c.getVendorId() == null) throw new BusinessRuleViolationException(PDC_NEEDS_VENDOR);
+        // F14-36: a post-dated refund cheque is written to the renter, not a vendor.
+        if (c.getVendorId() == null && v.getSettlementId() == null) throw new BusinessRuleViolationException(PDC_NEEDS_VENDOR);
         c.setBankAccountId(v.getPaymentAccount().getId());
         c.setChequeNumber(v.getChequeNumber().trim());
         c.setChequeDate(v.getChequeDate());
@@ -1014,7 +1046,7 @@ public class VoucherService {
             // the vendor it was written to (issued_cheques names one). Said at draft
             // save, not first at post.
             if (method == VoucherPaymentMethod.CHEQUE && in.chequeDate() != null && in.docDate() != null
-                    && in.chequeDate().isAfter(in.docDate()) && in.vendorId() == null) {
+                    && in.chequeDate().isAfter(in.docDate()) && in.vendorId() == null && in.settlementId() == null) {
                 throw new BusinessRuleViolationException(PDC_NEEDS_VENDOR);
             }
             if (in.paymentReference() != null && in.paymentReference().trim().length() > 60) {
@@ -1057,6 +1089,73 @@ public class VoucherService {
                     in.lines().stream().map(VoucherLineInput::accountId).toList());
         }
         if (in.docType() == VoucherType.PISR) requireSupplierInvoiceRules(in, selfId);
+        if (in.settlementId() != null) requireRefundPayment(in);
+    }
+
+    /**
+     * F14-36: a payment of a settlement's deposit refund. A BPV with no vendor and
+     * exactly one line, on the renter-refund payable; paid from a cash leaf or a bank
+     * leaf some bank account owns; the settlement is this tenant's and FINALIZED
+     * with a refund. The amount against what is still unpaid is checked at post.
+     */
+    private void requireRefundPayment(VoucherInput in) {
+        if (in.docType() != VoucherType.BPV) {
+            throw new BusinessRuleViolationException("Only a payment voucher pays a settlement refund");
+        }
+        if (in.vendorId() != null) {
+            throw new BusinessRuleViolationException("A settlement refund is paid to the renter, not to a vendor");
+        }
+        com.datagami.rentaxis.domain.entity.LeaseSettlement s = refundSettlement(in.settlementId());
+        UUID payable = refundPayableLeaf();
+        if (in.lines().size() != 1 || !in.lines().get(0).accountId().equals(payable)) {
+            throw new BusinessRuleViolationException("A settlement refund payment has one line, on the renters'"
+                    + " refund payable account");
+        }
+        Account pay = accounts.findById(in.paymentAccountId()).orElse(null);
+        if (pay != null && pay.getAccountSubType() == AccountSubType.BANK && ownedBankLeaf != null
+                && ownedBankLeaf.anyOwned() && !ownedBankLeaf.isOwned(pay.getId())) {
+            throw new BusinessRuleViolationException(pay.getCode() + " " + pay.getName()
+                    + " is not the ledger account of any bank account; pay the refund from a bank account's"
+                    + " account or from cash", "cheque.bankLeafNotOwned", Map.of("account", pay.getCode() + " " + pay.getName()));
+        }
+        if (s.getRefundAmount() == null || s.getRefundAmount().signum() <= 0) {
+            throw new BusinessRuleViolationException("This settlement owes the renter no refund");
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
+
+    private com.datagami.rentaxis.domain.entity.LeaseSettlement refundSettlement(UUID settlementId) {
+        com.datagami.rentaxis.domain.entity.LeaseSettlement s =
+                entityManager.find(com.datagami.rentaxis.domain.entity.LeaseSettlement.class, settlementId);
+        UUID t = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (s == null || (t != null && !t.equals(s.getTenantId()))) {
+            throw new NotFoundException("Settlement not found");
+        }
+        if (s.getStatus() != com.datagami.rentaxis.domain.entity.enums.SettlementStatus.FINALIZED) {
+            throw new BusinessRuleViolationException("Only a finalized settlement's refund can be paid");
+        }
+        return s;
+    }
+
+    private UUID refundPayableLeaf() {
+        if (accountResolver == null) throw new IllegalStateException("No account resolver");
+        return accountResolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE, null).getId();
+    }
+
+    /** F14-36: what a settlement's refund still owes: its amount less every POSTED payment naming it. */
+    public BigDecimal refundOutstanding(UUID settlementId, UUID excludeVoucherId) {
+        com.datagami.rentaxis.domain.entity.LeaseSettlement s = refundSettlement(settlementId);
+        BigDecimal paid = (BigDecimal) entityManager.createQuery(
+                "select coalesce(sum(l.amount), 0) from VoucherLine l where l.voucher.settlementId = :s"
+                        + " and l.voucher.status = :posted and l.voucher.id <> :self")
+                .setParameter("s", settlementId).setParameter("posted", VoucherStatus.POSTED)
+                .setParameter("self", excludeVoucherId == null ? UUID.randomUUID() : excludeVoucherId)
+                .getSingleResult();
+        return (s.getRefundAmount() == null ? BigDecimal.ZERO : s.getRefundAmount()).subtract(paid);
     }
 
     /**
@@ -1217,6 +1316,17 @@ public class VoucherService {
                 .orElseThrow(() -> new NotFoundException("Payment account not found")));
         v.setChequeNumber(in.chequeNumber());
         v.setChequeDate(in.chequeDate());
+        v.setSettlementId(in.settlementId());
+        if (in.settlementId() != null) {
+            // The refund's lease and unit, so the payment sits beside the STL that owed it.
+            com.datagami.rentaxis.domain.entity.LeaseSettlement s = refundSettlement(in.settlementId());
+            com.datagami.rentaxis.domain.entity.Lease lease =
+                    entityManager.find(com.datagami.rentaxis.domain.entity.Lease.class, s.getLeaseId());
+            if (lease != null && lease.getUnit() != null) {
+                v.setUnitId(lease.getUnit().getId());
+                if (lease.getUnit().getProperty() != null) v.setPropertyId(lease.getUnit().getProperty().getId());
+            }
+        }
         if (in.docType() == VoucherType.PISR) {
             v.setInvoiceNumber(in.invoiceNumber() == null ? null : in.invoiceNumber().trim());
             v.setInvoiceNoNorm(normaliseInvoiceNumber(in.invoiceNumber()));

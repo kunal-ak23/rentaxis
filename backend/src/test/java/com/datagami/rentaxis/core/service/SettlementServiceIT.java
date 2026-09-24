@@ -48,6 +48,9 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
+import com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod;
+import com.datagami.rentaxis.domain.entity.enums.VoucherType;
+import com.datagami.rentaxis.domain.entity.Voucher;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -490,6 +493,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * would show zero there and refund the deposit alone.</p>
      */
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @Autowired com.datagami.rentaxis.core.service.voucher.VoucherService vouchers;
 
     /**
      * F14-37: on a VAT lease a damage recharge carries 5 % output VAT, declared by the
@@ -647,7 +651,9 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(response.getReceivedTotal()).isEqualByComparingTo("30500.00");
         assertThat(response.getReceivableBalance()).isEqualByComparingTo("-5239.73");
         assertThat(response.getDepositsHeld()).isEqualByComparingTo("3000.00");
-        assertThat(response.getRefundBankAccountId()).isEqualTo(bank);
+        // F14-36: the refund is owed to the renter, not paid out of a bank here.
+        assertThat(response.getRefundBankAccountId()).isNull();
+        assertThat(response.getRefundOutstanding()).isEqualByComparingTo("8239.73");
         assertThat(response.getCollectionChequeId()).as("nothing to collect").isNull();
         assertThat(response.getJournalNumber()).startsWith("STL");
 
@@ -656,7 +662,9 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(linesOf(stl.getId())).hasSize(3);
         assertThat(debitOn(stl, deposit)).as("Dr Security Deposit").isEqualByComparingTo("3000.00");
         assertThat(debitOn(stl, receivable)).as("Dr Rent Receivable").isEqualByComparingTo("5239.73");
-        assertThat(creditOn(stl, bank)).as("Cr Bank").isEqualByComparingTo("8239.73");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).as("Cr Refunds payable")
+                .isEqualByComparingTo("8239.73");
+        assertThat(creditOn(stl, bank)).as("no bank movement at settlement").isEqualByComparingTo("0.00");
         // Dimensions: the entry is filed under the contract it closes.
         assertThat(stl.getLeaseId()).isEqualTo(leaseId);
         assertThat(stl.getPropertyId()).isEqualTo(fixtures.property().getId());
@@ -746,7 +754,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
         assertThat(response.getRefundAmount()).isEqualByComparingTo("4239.73");
         assertThat(response.getCollectionChequeId()).isNull();
-        assertThat(creditOn(stlOf(leaseId), leaf(AccountRole.BANK).getId())).isEqualByComparingTo("4239.73");
+        assertThat(creditOn(stlOf(leaseId), leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("4239.73");
         assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
         assertTrialBalanceBalances();
     }
@@ -771,7 +779,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
         JournalEntry stl = stlOf(leaseId);
         assertThat(debitOn(stl, otherIncome)).isEqualByComparingTo("150.00");
-        assertThat(creditOn(stl, leaf(AccountRole.BANK).getId())).isEqualByComparingTo("8389.73");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("8389.73");
         assertTrialBalanceBalances();
     }
 
@@ -1090,20 +1098,40 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
     /** A refund needs somewhere to come from, and a balance due needs nothing. */
     @Test
-    void aRefundNeedsAUsableBankAccount() {
+    void aRefundIsOwedToTheRenterAndPaidByAPaymentVoucherNamingTheSettlement() {
         UUID leaseId = terminatedGalah();
         saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        assertThat(done.getRefundOutstanding()).isEqualByComparingTo("8239.73");
+        UUID settlementId = done.getId();
+        UUID payable = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        UUID bank = leaf(AccountRole.BANK).getId();
 
-        assertThatThrownBy(() -> finalize(leaseId, null))
+        java.util.function.BiFunction<String, String, com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput> refund =
+                (amount, chequeDate) -> new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                        VoucherType.BPV, SETTLED_ON, null, null, "Deposit refund", null, null, bank,
+                        chequeDate == null ? null : "000901", chequeDate == null ? null : LocalDate.parse(chequeDate),
+                        List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                                payable, "Refund", new BigDecimal(amount), BigDecimal.ZERO, null, null)),
+                        null, null, chequeDate == null ? VoucherPaymentMethod.TRANSFER : VoucherPaymentMethod.CHEQUE,
+                        chequeDate == null ? "TRF-REF-1" : null, settlementId);
+
+        // More than is owed: refused at post.
+        Voucher tooMuch = vouchers.createDraft(refund.apply("9000.00", null));
+        assertThatThrownBy(() -> vouchers.post(tooMuch.getId(), List.of()))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("needs a bank account to pay from");
+                .hasMessageContaining("The renter is owed 8239.73");
+        vouchers.deleteDraft(tooMuch.getId());
 
-        assertThatThrownBy(() -> finalize(leaseId, leaf(AccountRole.OTHER_INCOME).getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("cannot pay a refund; name an active asset leaf");
-
-        assertThat(tx.execute(s -> settlement.buildSettlementResponse(leaseId)).getStatus())
-                .isEqualTo(SettlementStatus.DRAFT.name());
+        // Part by transfer, the rest by a post-dated cheque held in PDC payable.
+        vouchers.post(vouchers.createDraft(refund.apply("3000.00", null)).getId(), List.of());
+        Voucher pdc = vouchers.post(vouchers.createDraft(refund.apply("5239.73", "2027-03-15")).getId(), List.of());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from issued_cheques where voucher_id = ? and vendor_id is null",
+                Integer.class, pdc.getId())).isEqualTo(1);
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("0.00");
+        assertThat(balanceOf(payable, leaseId)).as("the renter is paid in full").isEqualByComparingTo("0.00");
+        assertTrialBalanceBalances();
     }
 
     /**
@@ -1219,7 +1247,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(response.getRefundAmount()).isEqualByComparingTo("3000.00");
         JournalEntry stl = stlOf(predecessor);
         assertThat(debitOn(stl, leaf(AccountRole.SECURITY_DEPOSIT).getId())).isEqualByComparingTo("3000.00");
-        assertThat(creditOn(stl, bank)).isEqualByComparingTo("3000.00");
+        assertThat(creditOn(stl, leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("3000.00");
 
         assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, predecessor)).isEqualByComparingTo("0.00");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, predecessor)).isEqualByComparingTo("0.00");

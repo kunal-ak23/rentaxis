@@ -567,9 +567,11 @@ public class SettlementService {
 
         SettlementStatementDTO statement = buildStatement(lease, lines);
         BigDecimal netRefund = statement.netRefund();
-        Account refundBank = netRefund.signum() > 0
-                ? requireRefundBank(request.refundBankAccountId())
-                : null;
+        // F14-36: the refund is not paid here. It is owed to the renter (Cr
+        // RENTER_REFUND_PAYABLE) and paid by a payment voucher that names this
+        // settlement, by cheque (possibly post-dated) or transfer, so the bank moves
+        // on the day it really does and the statement line can be matched to it.
+        Account refundBank = null;
         boolean acknowledged = requireOutstandingAcknowledged(statement, request);
 
         UUID journalId = postSettlement(lease, statement, settlementDate, refundBank);
@@ -670,8 +672,8 @@ public class SettlementService {
         }
 
         if (netRefund.signum() > 0) {
-            lines.add(new PostingRequest.Line(new PostingRequest.ById(refundBank.getId()),
-                    PostingRequest.Side.CR, netRefund, null, "Deposit refund"));
+            lines.add(PostingRequest.cr(AccountRole.RENTER_REFUND_PAYABLE, netRefund)
+                    .withNarration("Deposit refund payable to the renter"));
         }
 
         if (lines.isEmpty()) {
@@ -735,6 +737,17 @@ public class SettlementService {
         response.setTotalDeductions(settlement.getTotalDeductions());
         response.setTotalAdditions(settlement.getTotalAdditions());
         response.setRefundAmount(settlement.getRefundAmount());
+        if (settlement.getId() != null && jdbc != null) {
+            BigDecimal paid = jdbc.queryForObject("""
+                    select coalesce(sum(l.amount), 0) from vouchers v join voucher_lines l on l.voucher_id = v.id
+                    where v.settlement_id = :s and v.status = 'POSTED'""",
+                    new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("s", settlement.getId()),
+                    BigDecimal.class);
+            response.setRefundPaid(money(paid));
+            BigDecimal owed = settlement.getRefundAmount() == null ? BigDecimal.ZERO : settlement.getRefundAmount();
+            response.setRefundOutstanding(settlement.getStatus() == SettlementStatus.FINALIZED
+                    ? money(owed.subtract(paid)) : BigDecimal.ZERO);
+        }
         response.setNotes(settlement.getNotes());
         response.setStatus(settlement.getStatus().name());
         response.setSettledBy(settlement.getSettledBy());
@@ -1022,23 +1035,6 @@ public class SettlementService {
         }
     }
 
-    /** The bank the refund is paid from: an active asset leaf of this tenant. */
-    private Account requireRefundBank(UUID accountId) {
-        if (accountId == null) {
-            throw new BusinessRuleViolationException(
-                    "This settlement refunds the renter, so it needs a bank account to pay from.");
-        }
-        Account account = accountRepository.findById(accountId).orElse(null);
-        UUID tenantId = TenantContextHolder.getTenantId();
-        if (account == null || (tenantId != null && !tenantId.equals(account.getTenantId()))) {
-            throw new NotFoundException("Account not found: " + accountId);
-        }
-        if (account.isGroup() || !account.isActive() || account.getAccountType() != AccountType.ASSET) {
-            throw new BusinessRuleViolationException(
-                    "Account " + account.getCode() + " cannot pay a refund; name an active asset leaf.");
-        }
-        return account;
-    }
 
     // ------------------------------------------------------------------
     // plumbing

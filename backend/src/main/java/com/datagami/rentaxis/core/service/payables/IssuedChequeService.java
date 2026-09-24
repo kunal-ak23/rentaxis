@@ -202,7 +202,7 @@ public class IssuedChequeService {
         bankLock.assertOpen(List.of(bank.getId()), date);
         java.util.Optional<BankLockService.StatementCover> offStatement =
                 bankLock.requireOffStatement(List.of(bank.getId()), date, evidence);
-        Vendor vendor = vendors.findById(c.getVendorId()).orElse(null);
+        Vendor vendor = c.getVendorId() == null ? null : vendors.findById(c.getVendorId()).orElse(null);
         UUID propertyId = c.getVoucherId() == null ? null
                 : voucherRepo.findById(c.getVoucherId()).map(Voucher::getPropertyId).orElse(null);
         String narration = "Cheque " + c.getChequeNumber() + " presented" + (vendor == null ? "" : " — " + vendor.getNameEn());
@@ -404,8 +404,23 @@ public class IssuedChequeService {
         if (rows.isEmpty()) return List.of();
         LocalDate today = today();
         Map<UUID, Account> banks = accountsById(rows.stream().map(IssuedCheque::getBankAccountId).collect(Collectors.toSet()));
-        Map<UUID, String> vendorNames = vendors.findAllById(rows.stream().map(IssuedCheque::getVendorId).collect(Collectors.toSet()))
+        Map<UUID, String> vendorNames = vendors.findAllById(rows.stream().map(IssuedCheque::getVendorId)
+                        .filter(Objects::nonNull).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Vendor::getId, Vendor::getNameEn));
+        // F14-36: a refund cheque is written to the renter its settlement refunds.
+        Map<UUID, String> renterPayees = new java.util.HashMap<>();
+        Set<UUID> refundVouchers = rows.stream().filter(c -> c.getVendorId() == null && c.getVoucherId() != null)
+                .map(IssuedCheque::getVoucherId).collect(Collectors.toSet());
+        if (!refundVouchers.isEmpty()) {
+            jdbc.query("""
+                    select v.id, r.name_en from vouchers v
+                    join lease_settlements s on s.id = v.settlement_id
+                    join leases l on l.id = s.lease_id
+                    join renters r on r.id = l.renter_id
+                    where v.tenant_id = :t and v.id in (:ids)""",
+                    new MapSqlParameterSource("t", TenantContextHolder.getTenantId()).addValue("ids", refundVouchers),
+                    rs -> { renterPayees.put(rs.getObject(1, UUID.class), rs.getString(2)); });
+        }
         Map<UUID, String> voucherNumbers = voucherRepo.findAllById(rows.stream().map(IssuedCheque::getVoucherId)
                         .filter(Objects::nonNull).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Voucher::getId, v -> Objects.toString(v.getVoucherNumber(), "")));
@@ -414,8 +429,9 @@ public class IssuedChequeService {
                 .stream().collect(Collectors.toMap(JournalEntry::getId, JournalEntry::getEntryNumber));
         return rows.stream().map(c -> {
             Account a = banks.get(c.getBankAccountId());
+            String payee = c.getVendorId() != null ? vendorNames.get(c.getVendorId()) : renterPayees.get(c.getVoucherId());
             return new IssuedChequeDTO(c.getId(), c.getVoucherId(), voucherNumbers.get(c.getVoucherId()), c.getVendorId(),
-                    vendorNames.get(c.getVendorId()), c.getBankAccountId(), a == null ? null : a.getCode(),
+                    payee, c.getBankAccountId(), a == null ? null : a.getCode(),
                     a == null ? null : a.getName(), c.getChequeNumber(), c.getChequeDate(), c.getAmount(),
                     c.getStatus().name(), c.getPresentedOn(), bpcNumbers.get(c.getBpcJournalId()), c.getCancelledOn(),
                     c.getCancelReason(), c.isOpening(), duePresent(c, today));

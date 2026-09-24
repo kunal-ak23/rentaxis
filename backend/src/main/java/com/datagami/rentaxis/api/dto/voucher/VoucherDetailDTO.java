@@ -25,7 +25,9 @@ public record VoucherDetailDTO(UUID id, VoucherType docType, LocalDate docDate,
                                List<VoucherLineDTO> lines, List<VoucherAttachmentDTO> attachments,
                                LocalDate supplierInvoiceDate, LocalDate dueDate,
                                com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod,
-                               String paymentReference, Settlement settlement) {
+                               String paymentReference, Settlement settlement,
+                               /* F14-36: the lease settlement whose deposit refund this payment pays. */
+                               UUID refundSettlementId) {
 
     /**
      * Spec §2, derived from live allocations, never stored. PISR: {@code amount} is
@@ -61,6 +63,7 @@ public record VoucherDetailDTO(UUID id, VoucherType docType, LocalDate docDate,
                 VoucherMath.netTotal(v.getLines()), VoucherMath.vatTotal(v.getLines()),
                 VoucherMath.grossTotal(v.getLines()), v.getPostedAt(),
                 v.getLines().stream().map(VoucherLineDTO::of).toList(), attachments,
-                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference(), settlement);
+                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference(), settlement,
+                v.getSettlementId());
     }
 }

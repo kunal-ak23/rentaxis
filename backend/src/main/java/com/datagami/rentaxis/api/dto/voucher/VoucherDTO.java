@@ -17,7 +17,9 @@ public record VoucherDTO(UUID id, VoucherType docType, LocalDate docDate, UUID v
                          VoucherStatus status, UUID journalId, String voucherNumber, UUID amendedFromId,
                          BigDecimal netTotal, BigDecimal vatTotal, BigDecimal grossTotal, Instant postedAt,
                          LocalDate supplierInvoiceDate, LocalDate dueDate,
-                         com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod, String paymentReference) {
+                         com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod, String paymentReference,
+                         /* F14-36: the settlement whose refund this payment pays. */
+                         UUID settlementId) {
 
     public static VoucherDTO of(Voucher v) {
         return new VoucherDTO(v.getId(), v.getDocType(), v.getDocDate(),
@@ -30,6 +32,7 @@ public record VoucherDTO(UUID id, VoucherType docType, LocalDate docDate, UUID v
                 v.getVoucherNumber(), v.getAmendedFromId(),
                 VoucherMath.netTotal(v.getLines()), VoucherMath.vatTotal(v.getLines()),
                 VoucherMath.grossTotal(v.getLines()), v.getPostedAt(),
-                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference());
+                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference(),
+                v.getSettlementId());
     }
 }

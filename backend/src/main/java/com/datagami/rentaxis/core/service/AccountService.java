@@ -327,6 +327,8 @@ public class AccountService {
         // Finance-ops spec §3: receipts on a bank statement nobody has identified yet
         // (role BANK_SUSPENSE). B-01-05 stays free for the owner layer. Changeset 114.
         seed(byCode, "B-01-06", "Unidentified bank receipts", "مقبوضات بنكية غير محددة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
+        // F14-36: deposit refunds owed to renters until paid (role RENTER_REFUND_PAYABLE). Changeset 124.
+        seed(byCode, "B-01-07", "Refunds payable – renters", "مبالغ مستردة مستحقة للمستأجرين", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
         // Finance-ops spec §2: post-dated cheques we issued, until the bank pays them
         // (role PDC_PAYABLE). Changeset 112 adds it to charts seeded before it existed.

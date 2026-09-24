@@ -102,6 +102,9 @@ public class Voucher extends BaseTenantEntity {
     /** The payment run that wrote this BPV (changeset 111), if any. */
     @Column(name = "payment_run_id") private UUID paymentRunId;
 
+    /** F14-36: the finalized settlement whose deposit refund this payment pays; null on every other voucher. */
+    @Column(name = "settlement_id") private UUID settlementId;
+
     @Column(name = "posted_by") private UUID postedBy;
     @Column(name = "posted_at") private Instant postedAt;
 

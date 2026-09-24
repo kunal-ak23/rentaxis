@@ -253,3 +253,5 @@ databaseChangeLog:
       file: db/changelog/changesets/122-cheque-receipt-number.yaml
   - include:
       file: db/changelog/changesets/123-vtp-kind-settlement.yaml
+  - include:
+      file: db/changelog/changesets/124-renter-refund-payable.yaml
