@@ -412,6 +412,11 @@ buildings, staff and bank accounts.
 - The property got its 20 ledger accounts.
 - The result warns that 14 generated cheques need numbers.
 
+**Post-deploy check · PR #346 (baf4bef5).**
+- The dashboard tile reads "AED 3,667 of AED 10,567 due (35%)" with "+ AED 135,883 arrears collected this month" on its own line. Pending this month shows 6,900, exactly the difference, so the catch-up clearances no longer inflate the headline (#59).
+- The draft wizard's Terms step shows "Grace before overdue (days)" empty, with the placeholder "Property default: 5 days" (#65).
+- This check found #91.
+
 **M25 · Jul 2026 — a mis-post, reversed.** A 750 lift-maintenance accrual was keyed to Bank
 Charges (JV-26/1, 15/07/2026, Dr Bank Charges / Cr Rounding Off). *Reverse* asked for a date
 and a reason and posted **JV-26/2**, the mirror entry, on 23/09/2026. JV-26/1 now shows as
