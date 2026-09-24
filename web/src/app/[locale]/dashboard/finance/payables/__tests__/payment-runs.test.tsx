@@ -394,7 +394,7 @@ describe("editing and posting a draft from its page (review P3-3, P3-4)", () => 
         calls = [];
         vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
             const u = String(url);
-            calls.push({ method: init?.method ?? "GET", url: u });
+            calls.push({ method: init?.method ?? "GET", url: u, body: undefined });
             const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
             if (u.includes("/candidates")) {
                 // Filtered by due date: nothing. Unfiltered: INV-7790 is still open; INV-7781 was paid elsewhere.
