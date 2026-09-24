@@ -274,10 +274,27 @@ public class LeaseService {
                         java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
     }
 
+    /**
+     * F14-57: {@code unit.actualRent} is an annual figure — the property stats add
+     * it up beside {@code expectedRent} as revenue at capacity vs actual. A lease's
+     * {@code rentAmount} is the rent for its whole term, so it is annualised:
+     * rent ÷ term days × 365, rounded to whole dirhams. A term with no usable dates
+     * keeps the contract figure.
+     */
+    public static BigDecimal annualRent(Lease lease) {
+        BigDecimal rent = lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
+        if (lease.getStartDate() == null || lease.getEndDate() == null || lease.getEndDate().isBefore(lease.getStartDate())) {
+            return rent;
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+        return rent.multiply(BigDecimal.valueOf(365))
+                .divide(BigDecimal.valueOf(days), 0, java.math.RoundingMode.HALF_UP);
+    }
+
     /** Whether the unit's holder fields changed. */
     private static boolean applyHolder(Unit unit, Lease holder) {
         String name = holder.getRenter() != null ? holder.getRenter().getNameEn() : null;
-        BigDecimal rent = holder.getRentAmount() != null ? holder.getRentAmount() : BigDecimal.ZERO;
+        BigDecimal rent = annualRent(holder);
         boolean changed = !java.util.Objects.equals(name, unit.getCurrentTenantName())
                 || unit.getActualRent() == null || unit.getActualRent().compareTo(rent) != 0
                 || (unit.getStatus() != UnitStatus.OCCUPIED && unit.getStatus() != UnitStatus.MAINTENANCE);

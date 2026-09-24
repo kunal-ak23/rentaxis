@@ -111,6 +111,50 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         ledgers.setLeaves(id, List.of(leaf));
     }
 
+    @Autowired com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+
+    private UUID bankAccount(boolean isDefault, UUID leaf) {
+        UUID id = tx.execute(s -> {
+            BankAccount b = new BankAccount();
+            b.setBankName(isDefault ? "Emirates Islamic" : "PROBE-A");
+            b.setAccountNumber("0012-" + UUID.randomUUID().toString().substring(0, 6));
+            b.setTenantId(fixtures.tenantId());
+            b.setDefault(isDefault);
+            return bankAccounts.save(b).getId();
+        });
+        ledgers.setLeaves(id, List.of(leaf));
+        return id;
+    }
+
+    /**
+     * F14-56: a property with no owned leaf of its own settles into the default
+     * bank account (its leaf may be scoped to another property), never into
+     * another bank account's tenant-wide leaf.
+     */
+    @Test
+    void aPropertyWithoutItsOwnLeafFallsBackToTheDefaultBankAccount() {
+        Property other = fixtures.createProperty("OTHER");   // generated, unowned bank leaf
+        UUID mainLeaf = bankLeafOf(fixtures.property());      // scoped to the first property
+        bankAccount(false, tenantBankLeaf());
+        bankAccount(true, mainLeaf);
+        java.util.Optional<UUID> target = ownedBankLeaf.forProperty(other.getId());
+        assertThat(target).contains(mainLeaf);
+        List<UUID> offered = ownedBankLeaf.optionsFor(other.getId()).stream()
+                .map(com.datagami.rentaxis.core.service.bank.OwnedBankLeaf.Option::id).toList();
+        assertThat(offered).contains(mainLeaf);
+    }
+
+    /** F14-44: with bank accounts but no leaf for the new property, no orphan bank leaf is generated. */
+    @Test
+    void generatingAccountsNeverCreatesABankLeafNoBankAccountOwns() {
+        bankAccount(false, tenantBankLeaf());
+        bankAccount(false, tenantBankLeaf());
+        Property third = fixtures.createProperty("NOBANK");
+        assertThat(accountRepo.findAll())
+                .noneMatch(a -> a.getName() != null && a.getName().contains(third.getNameEn())
+                        && a.getName().startsWith("Emirates Islamic"));
+    }
+
     @Test
     void aNewPropertyIsMappedToTheOwnedLeafInsteadOfAnOrphan() {
         UUID owned = tenantBankLeaf();

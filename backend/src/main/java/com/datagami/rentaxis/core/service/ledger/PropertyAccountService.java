@@ -217,6 +217,10 @@ public class PropertyAccountService {
         for (PropertyAccountTemplateRow row : rows) {
             if (mappingRepo.findByPropertyIdAndRole(propertyId, row.getRole()).isPresent()) continue;
             if (row.getRole() == AccountRole.BANK && mapToOwnedBankLeaf(propertyId)) continue;
+            // F14-44: with bank accounts in place, a generated "<bank> – <property>"
+            // leaf would be owned by none of them and could never be reconciled.
+            // The role stays unmapped; receipts fall back to the tenant default.
+            if (row.getRole() == AccountRole.BANK && ownedBankLeaf.anyOwned()) continue;
             String name = row.getNamePattern().replace("{property}", property.getNameEn());
             String nameAr = arabicLeafName(
                     ROLE_LABEL_AR.getOrDefault(row.getRole(), row.getParentAccount().getNameAr()), property);

@@ -255,8 +255,11 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
         fixtures.generateGrid(next, 2, CUR_END.plusDays(1));
         posting.post(next);
 
-        java.math.BigDecimal oldRent = tx.execute(s -> leaseRepo.findById(current).orElseThrow().getRentAmount());
-        java.math.BigDecimal newRent = tx.execute(s -> leaseRepo.findById(next).orElseThrow().getRentAmount());
+        // F14-57: the unit carries the holder's rent annualised.
+        java.math.BigDecimal oldRent = tx.execute(s -> com.datagami.rentaxis.core.service.LeaseService.annualRent(
+                leaseRepo.findById(current).orElseThrow()));
+        java.math.BigDecimal newRent = tx.execute(s -> com.datagami.rentaxis.core.service.LeaseService.annualRent(
+                leaseRepo.findById(next).orElseThrow()));
         assertThat(newRent).isNotEqualByComparingTo(oldRent);
         assertThat(rentOf(unit))
                 .as("the current lease still runs").isEqualByComparingTo(oldRent);

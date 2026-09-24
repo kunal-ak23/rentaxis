@@ -16,10 +16,11 @@ import java.util.UUID;
  * never appear in a reconciliation workspace.
  *
  * <p>In order: the property's own BANK mapping when a bank account owns it; the
- * leaf of a bank account attached to the property; the tenant's default BANK
- * mapping when owned; the default bank account's leaf; the only bank account's
- * leaf. Only leaves that are tenant-wide or this property's are considered (a
- * receipt may not land in another property's leaf). Within one bank account its chart account ({@code coa_account_id}) is
+ * leaf of a bank account attached to the property; the default bank account's
+ * leaf (F14-56: tenant-wide or this property's first, else its chart account);
+ * the tenant's default BANK mapping when owned; the only bank account's leaf.
+ * Apart from the default bank account, only leaves that are tenant-wide or this
+ * property's are considered. Within one bank account its chart account ({@code coa_account_id}) is
  * preferred when it is one of its leaves, else its first leaf by code. Empty when
  * the tenant has no bank account with a leaf at all (a fresh tenant, a cut-over in
  * progress): callers then keep their old behaviour.</p>
@@ -71,18 +72,26 @@ public class OwnedBankLeaf {
                     order by b.is_default desc, (l.account_id = b.coa_account_id) desc, a.code, a.id""", p);
             if (attached.isPresent()) return attached;
         }
-        // 3. the tenant default BANK mapping, when owned
+        // 3. F14-56: the default bank account — the tenant's operating bank. Its
+        //    leaves that are tenant-wide or this property's come first; failing those,
+        //    its chart account even when that leaf is scoped to another property
+        //    (one bank account, one ledger balance). Never another bank account's
+        //    leaf just because it happens to be tenant-wide.
+        Optional<UUID> byDefault = first("""
+                select l.account_id from bank_accounts b
+                join bank_account_ledgers l on l.bank_account_id = b.id and l.tenant_id = b.tenant_id
+                join accounts a on a.id = l.account_id and a.tenant_id = l.tenant_id and a.is_active
+                where b.tenant_id = :t and b.is_active and b.is_default
+                order by (a.property_id is null or a.property_id = :p) desc, (l.account_id = b.coa_account_id) desc,
+                         a.code, a.id""", p);
+        if (byDefault.isPresent()) return byDefault;
+        // 4. the tenant default BANK mapping, when owned
         Optional<UUID> tenantDefault = first("""
                 select d.account_id from tenant_default_account_mappings d
                 join bank_account_ledgers l on l.account_id = d.account_id and l.tenant_id = d.tenant_id
                 join accounts a on a.id = d.account_id and a.tenant_id = d.tenant_id
                 where d.tenant_id = :t and d.role = 'BANK' and (a.property_id is null or a.property_id = :p)""", p);
         if (tenantDefault.isPresent()) return tenantDefault;
-        // 4. the default bank account
-        Optional<UUID> byDefault = first(LEAF_OF_ACCOUNT + """
-                where b.tenant_id = :t and b.is_active and b.is_default
-                order by (l.account_id = b.coa_account_id) desc, a.code, a.id""", p);
-        if (byDefault.isPresent()) return byDefault;
         // 5. the only bank account with a leaf
         List<UUID> accounts = jdbc.queryForList("""
                 select distinct b.id from bank_accounts b
@@ -153,7 +162,7 @@ public class OwnedBankLeaf {
                 from bank_account_ledgers l
                 join bank_accounts b on b.id = l.bank_account_id and b.tenant_id = l.tenant_id and b.is_active
                 join accounts a on a.id = l.account_id and a.tenant_id = l.tenant_id and a.is_active
-                where l.tenant_id = :t and (a.property_id is null or a.property_id = :p)
+                where l.tenant_id = :t and (a.property_id is null or a.property_id = :p or b.is_default)
                 group by a.id, a.code, a.name, a.name_ar
                 order by ord, code, name""", p,
                 (rs, i) -> new Option(rs.getObject("id", UUID.class), rs.getString("code"), rs.getString("name"),
