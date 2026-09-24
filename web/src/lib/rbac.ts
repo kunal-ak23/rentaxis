@@ -169,6 +169,12 @@ export const PERMISSIONS = {
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
     // and Spring Security does not combine the two — the narrower one wins on writes.
     canManageChargeTypes: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Finance → Reports: the property P&L and statement pack (finance-ops spec §1).
+    // Mirrors PropertyReportController's class-level
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')");
+    // a manager is narrowed to assigned properties on the server and never sees
+    // the tenant-wide Unassigned / Total columns.
+    canViewPropertyReports: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
 
     // ---- accounting-v2 plan 4: vouchers ----
     //

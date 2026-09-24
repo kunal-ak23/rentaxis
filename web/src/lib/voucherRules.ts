@@ -87,6 +87,10 @@ export type DraftLine = {
     accountId: string;
     amount: number;
     vatRate: number;
+    /** The line's own property; blank falls back to the header's on the server. */
+    propertyId?: string | null;
+    /** "Shared / head office" was chosen for this line (finance-ops spec §1, S12). */
+    shared?: boolean;
 };
 
 export type DraftShape = {
@@ -121,6 +125,8 @@ export type DraftShape = {
      * relaxes these two checks only.
      */
     accounts?: Record<string, Account>;
+    /** The header's property, which a line with none of its own inherits. */
+    headerPropertyId?: string | null;
 };
 
 /**
@@ -140,7 +146,8 @@ export type DraftRefusal =
     | "lineAmountRequired"
     | "bpvNoVat"
     | "payableNeedsVendor"
-    | "otherVendorPayable";
+    | "otherVendorPayable"
+    | "linePropertyRequired";
 
 /**
  * A refusal, plus the 1-based line it is about where the rule is per-line. An
@@ -177,6 +184,15 @@ export function draftRefusal(d: DraftShape): DraftRefusalResult | null {
         if (!(l.amount > 0)) return { key: "lineAmountRequired", line };
         // BPV_VAT_REFUSAL.
         if (d.type === "BPV" && l.vatRate !== 0) return { key: "bpvNoVat", line };
+        // VoucherService.LINE_PROPERTY_REFUSAL (finance-ops spec §1, S12/O8): an
+        // income or expense line with no property drops out of every property
+        // report, so it names one — on the line, on the header, or through a
+        // property-bound leaf — or says it is shared. Needs the chart, like the
+        // account checks above.
+        if (account && (account.accountType === "INCOME" || account.accountType === "EXPENSE")
+            && !l.propertyId && !d.headerPropertyId && !account.propertyId && !l.shared) {
+            return { key: "linePropertyRequired", line };
+        }
 
         /*
          * A BPV line that settles a vendor payable must settle THIS voucher's

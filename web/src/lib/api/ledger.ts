@@ -140,6 +140,8 @@ export type Account = {
   active: boolean;
   displayOrder: number;
   description: string | null;
+  /** The P&L row key shared across properties (finance-ops spec §1); null when the account is its own row. */
+  reportLine?: string | null;
 };
 
 export type RoleMapping = {
@@ -259,6 +261,8 @@ export type LedgerQuery = {
   from?: string;
   to?: string;
   propertyId?: string;
+  /** Filter on coalesce(line property, account property) — the P&L drill-down's rule. */
+  effectiveProperty?: boolean;
   unitId?: string;
   leaseId?: string;
   renterId?: string;
@@ -278,6 +282,7 @@ export type CreateAccountBody = {
   parentId?: string | null;
   propertyId?: string | null;
   group?: boolean;
+  reportLine?: string | null;
 };
 
 export type UpdateAccountBody = {
@@ -291,6 +296,8 @@ export type UpdateAccountBody = {
   displayOrder?: number;
   /** Always applied — omitting it clears the account's property tag, so callers send the current value. */
   propertyId: string | null;
+  /** Omitted or null leaves the stored report line alone; "" clears it. */
+  reportLine?: string | null;
 };
 
 export type ManualJournalBody = {
