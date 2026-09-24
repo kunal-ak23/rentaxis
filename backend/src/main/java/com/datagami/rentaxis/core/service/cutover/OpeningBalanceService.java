@@ -428,6 +428,7 @@ public class OpeningBalanceService {
     @Transactional
     public JournalEntry post() {
         LocalDate asOf = asOf();
+        requireNotLocked(asOf, "posted");
         OpeningBalancePosting marker = lockMarker(asOf);
         if (liveJournal(marker) != null) {
             throw new BusinessRuleViolationException(
@@ -450,15 +451,17 @@ public class OpeningBalanceService {
     @Transactional
     public JournalEntry repost(String reason) {
         LocalDate asOf = asOf();
+        requireNotLocked(asOf, "re-posted");
         OpeningBalancePosting marker = lockMarker(asOf);
         JournalEntry live = liveJournal(marker);
         if (live != null) {
+            requireNotLocked(live.getEntryDate(), "re-posted");
+            requireReason(reason, "replacing");
             bankLock.assertOpenForEntry(live.getId(), live.getEntryDate());
             // PostingService.reverse, not JournalService.reverse: the HTTP-facing one
             // only reverses MANUAL journals and would refuse this by design. The date
             // is the ORIGINAL's, not asOf() — see reverse().
-            posting.reverse(live.getId(), live.getEntryDate(),
-                    reason == null || reason.isBlank() ? "Opening balances re-posted" : reason);
+            posting.reverse(live.getId(), live.getEntryDate(), reason.trim());
             marker.setJournalId(null);
         }
         return postFresh(marker, asOf);
@@ -479,6 +482,33 @@ public class OpeningBalanceService {
      * invariant in the suite notices. Pinning the date to the entry's own is what
      * keeps the exemption's blast radius to the one day it was meant to cover.</p>
      */
+    /**
+     * F14-25: the OB journal restates the balance sheet of every year after its
+     * date. {@code PostingService} exempts OB from the period lock so the journal can
+     * sit at books-start − 1, which setting the books start locks by itself. A lock
+     * reaching past that day, though, covers periods whose balance sheets the OB
+     * journal carries into: a post, re-post or reversal then restates locked
+     * years, so it is refused here. Lock date = OB date (the cut-over's own lock)
+     * is the one case left open.
+     */
+    private void requireNotLocked(LocalDate date, String action) {
+        LocalDate locked = fiscal.get().getBooksLockedThrough();
+        if (locked != null && date != null && locked.isAfter(date)) {
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            throw new BusinessRuleViolationException("The books are locked through " + locked.format(dmy)
+                    + ". The opening balances are dated " + date.format(dmy) + " and cannot be " + action
+                    + " while that period is locked.", "openingBalances.locked",
+                    Map.of("locked", locked.format(dmy), "date", date.format(dmy)));
+        }
+    }
+
+    private static void requireReason(String reason, String action) {
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleViolationException("Give the reason for " + action + " the opening balances",
+                    "openingBalances.reasonRequired", Map.of());
+        }
+    }
+
     @Transactional
     public JournalEntry reverse(String reason) {
         LocalDate asOf = asOf();
@@ -487,9 +517,10 @@ public class OpeningBalanceService {
         if (live == null) {
             throw new BusinessRuleViolationException("There is no posted opening-balance journal to reverse");
         }
+        requireNotLocked(live.getEntryDate(), "reversed");
+        requireReason(reason, "reversing");
         bankLock.assertOpenForEntry(live.getId(), live.getEntryDate());
-        JournalEntry mirror = posting.reverse(live.getId(), live.getEntryDate(),
-                reason == null || reason.isBlank() ? "Opening balances reversed" : reason);
+        JournalEntry mirror = posting.reverse(live.getId(), live.getEntryDate(), reason.trim());
         marker.setJournalId(null);
         marker.setPostedAt(null);
         postings.save(marker);
