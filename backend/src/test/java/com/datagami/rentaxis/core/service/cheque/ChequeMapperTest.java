@@ -193,6 +193,19 @@ class ChequeMapperTest {
         assertThat(dto.renterName()).isEqualTo("Prabhjot Singh");
     }
 
+    /** F14-52: a bounced row the ledger has settled is never overdue, however old. */
+    @Test
+    void aLedgerSettledBounceIsNotOverdue() {
+        Cheque c = fullyPopulated();
+        c.setStatus(ChequeStatus.BOUNCED);
+        c.setChequeDate(TODAY.minusDays(536));
+        assertThat(ChequeMapper.toDto(c, TODAY, 0).overdue()).isTrue();
+        ChequeDTO settled = ChequeMapper.toDto(c, TODAY, 0, true);
+        assertThat(settled.overdue()).isFalse();
+        assertThat(settled.daysOverdue()).isZero();
+        assertThat(settled.ledgerSettled()).isTrue();
+    }
+
     @Test
     void dueFlagsAreComputedAgainstTheSuppliedDateAndGrace() {
         Cheque c = fullyPopulated();
