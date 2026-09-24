@@ -88,6 +88,7 @@ export default function MvpSidebar() {
     // navigation stayed English inside an RTL layout.
     const tNav = useTranslations("Navigation");
     const tReports = useTranslations("PropertyReports");
+    const tPayables = useTranslations("Payables");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -225,10 +226,20 @@ export default function MvpSidebar() {
     // Finance → Reports (finance-ops spec §1). PropertyReportController admits
     // PROPERTY_MANAGER read-only, narrowed to assigned properties server-side,
     // so this is its own group rather than part of the canAccessFinance ledger set.
-    const reportItems = hasPermission(userRole, 'canViewPropertyReports') ? [
-        { name: tReports("propertyPl"), href: "/dashboard/finance/reports/property-pl", icon: PieChart, tourId: 'sidebar-property-pl' },
-        { name: tReports("propertyStatement"), href: "/dashboard/finance/reports/property-statement", icon: FileSpreadsheet, tourId: 'sidebar-property-statement' },
-    ] : [];
+    const reportItems = [
+        ...(hasPermission(userRole, 'canViewPropertyReports') ? [
+            { name: tReports("propertyPl"), href: "/dashboard/finance/reports/property-pl", icon: PieChart, tourId: 'sidebar-property-pl' },
+            { name: tReports("propertyStatement"), href: "/dashboard/finance/reports/property-statement", icon: FileSpreadsheet, tourId: 'sidebar-property-statement' },
+        ] : []),
+        // Finance → Payables (finance-ops spec §2). Aging admits a property
+        // manager (property-filtered, server-side); opening items do not.
+        ...(hasPermission(userRole, 'canViewPayablesAging') ? [
+            { name: tPayables("aging"), href: "/dashboard/finance/payables/aging", icon: PieChart, tourId: 'sidebar-payables-aging' },
+        ] : []),
+        ...(hasPermission(userRole, 'canManagePayables') ? [
+            { name: tPayables("openingItems"), href: "/dashboard/finance/payables/opening-items", icon: FileSpreadsheet, tourId: 'sidebar-payables-opening' },
+        ] : []),
+    ];
 
     // StaffController is hasAnyRole('SUPER_ADMIN','TENANT_ADMIN') — same gate.
     const hrItems = hasPermission(userRole, 'canAccessFinanceOps') ? [

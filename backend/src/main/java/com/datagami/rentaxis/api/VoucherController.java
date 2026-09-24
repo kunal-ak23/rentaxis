@@ -1,6 +1,11 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.payables.AdvanceDTO;
+import com.datagami.rentaxis.api.dto.payables.OpenItemDTO;
 import com.datagami.rentaxis.api.dto.voucher.*;
+import com.datagami.rentaxis.core.service.payables.PayablesService;
+import com.datagami.rentaxis.core.service.voucher.VoucherAllocationService;
+import com.datagami.rentaxis.domain.entity.VoucherAllocation;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.voucher.VoucherAttachmentService;
 import com.datagami.rentaxis.core.service.voucher.VoucherService;
@@ -26,6 +31,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -63,6 +69,8 @@ public class VoucherController {
 
     private final VoucherService vouchers;
     private final VoucherAttachmentService attachments;
+    private final VoucherAllocationService allocationService;
+    private final PayablesService payables;
 
     @GetMapping
     public ResponseEntity<Page<VoucherDTO>> list(
@@ -105,17 +113,59 @@ public class VoucherController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Body optional: a BPV may name the invoices it settles (finance-ops spec §2). */
     @PostMapping("/{id}/post")
-    public ResponseEntity<VoucherDetailDTO> post(@PathVariable UUID id) {
+    public ResponseEntity<VoucherDetailDTO> post(@PathVariable UUID id,
+                                                 @Valid @RequestBody(required = false) PostVoucherDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(detail(vouchers.post(id)));
+        return ResponseEntity.ok(detail(vouchers.post(id, allocations(body == null ? null : body.allocations()))));
     }
 
     @PostMapping("/{id}/amend")
     public ResponseEntity<VoucherDetailDTO> amend(@PathVariable UUID id, @Valid @RequestBody AmendVoucherDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(detail(
-                vouchers.amend(id, body.reversalDate(), body.reason(), toInput(body.replacement()))));
+        return ResponseEntity.ok(detail(vouchers.amend(id, body.reversalDate(), body.reason(),
+                toInput(body.replacement()),
+                // Absent: the replacement payment carries the original's allocations.
+                body.allocations() == null ? null : allocations(body.allocations()))));
+    }
+
+    /** Spec §2: PISRs and opening items with what is still owed on them, now. */
+    @GetMapping("/open-items")
+    public ResponseEntity<List<OpenItemDTO>> openItems(
+            @RequestParam(required = false) UUID vendorId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore,
+            @RequestParam(required = false) UUID propertyId,
+            @RequestParam(defaultValue = "true") boolean includePartPaid) {
+        requireTenantSelected();
+        return ResponseEntity.ok(payables.openItemsNow(vendorId, dueBefore, propertyId, includePartPaid));
+    }
+
+    /** Posted payments with an unallocated part (advances), now. */
+    @GetMapping("/advances")
+    public ResponseEntity<List<AdvanceDTO>> advances(@RequestParam(required = false) UUID vendorId) {
+        requireTenantSelected();
+        return ResponseEntity.ok(payables.advancesNow(vendorId));
+    }
+
+    /** The posted voucher an invoice number would duplicate for this vendor, if any (the form's inline check). */
+    @GetMapping("/duplicate-check")
+    public ResponseEntity<Map<String, String>> duplicateCheck(@RequestParam UUID vendorId,
+                                                              @RequestParam String invoiceNumber,
+                                                              @RequestParam(required = false) UUID excludeId) {
+        requireTenantSelected();
+        String existing = vouchers.postedDuplicateOf(vendorId, invoiceNumber, excludeId);
+        Map<String, String> out = new java.util.HashMap<>();
+        out.put("duplicateOf", existing);
+        return ResponseEntity.ok(out);
+    }
+
+    /** Allocations on either side of this voucher, live and released. */
+    @GetMapping("/{id}/allocations")
+    public ResponseEntity<List<AllocationDTO>> allocationsOf(@PathVariable UUID id) {
+        requireTenantSelected();
+        vouchers.get(id);   // 404 for an id outside the tenant
+        return ResponseEntity.ok(allocationDtos(allocationService.ofVoucher(id)));
     }
 
     @PostMapping(path = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -175,7 +225,38 @@ public class VoucherController {
     }
 
     private VoucherDetailDTO detail(Voucher v) {
-        return VoucherDetailDTO.of(v, attachments.list(v.getId()));
+        return VoucherDetailDTO.of(v, attachments.list(v.getId()), settlement(v));
+    }
+
+    /** Derived from live allocations; null on a draft. */
+    private VoucherDetailDTO.Settlement settlement(Voucher v) {
+        if (v.getStatus() == VoucherStatus.DRAFT) return null;
+        return switch (v.getDocType()) {
+            case PISR -> VoucherDetailDTO.Settlement.ofInvoice(
+                    allocationService.grossOf(v.getId(), null), allocationService.liveOnInvoice(v.getId(), null));
+            case BPV -> VoucherDetailDTO.Settlement.ofPayment(
+                    allocationService.payableAmount(v.getId()), allocationService.liveOnPayment(v.getId()));
+            default -> null;
+        };
+    }
+
+    private List<AllocationDTO> allocationDtos(List<VoucherAllocation> rows) {
+        java.util.Map<UUID, Voucher> cache = new java.util.HashMap<>();
+        java.util.function.Function<UUID, Voucher> load = id -> id == null ? null
+                : cache.computeIfAbsent(id, k -> vouchers.get(k));
+        return rows.stream().map(a -> {
+            Voucher pay = load.apply(a.getPaymentVoucherId());
+            Voucher inv = load.apply(a.getInvoiceVoucherId());
+            String invoiceNumber = inv != null ? inv.getInvoiceNumber() : payables.openingItemNumber(a.getOpeningItemId());
+            return AllocationDTO.of(a, pay == null ? null : pay.getVoucherNumber(), invoiceNumber,
+                    inv == null ? null : inv.getVoucherNumber());
+        }).toList();
+    }
+
+    private static List<VoucherAllocationService.AllocationInput> allocations(List<AllocationInputDTO> in) {
+        if (in == null) return List.of();
+        return in.stream().map(a -> new VoucherAllocationService.AllocationInput(a.invoiceId(), a.openingItemId(),
+                a.amount())).toList();
     }
 
     private VoucherService.VoucherInput toInput(VoucherInputDTO d) {
@@ -183,7 +264,8 @@ public class VoucherController {
                 d.narration(), d.propertyId(), d.unitId(), d.paymentAccountId(), d.chequeNumber(), d.chequeDate(),
                 d.lines().stream().map(l -> new VoucherService.VoucherLineInput(
                         l.accountId(), l.description(), l.amount(), l.vatRate(), l.propertyId(), l.unitId(),
-                        Boolean.TRUE.equals(l.shared()))).toList());
+                        Boolean.TRUE.equals(l.shared()))).toList(),
+                d.supplierInvoiceDate(), d.dueDate(), d.paymentMethod(), d.paymentReference());
     }
 
     /** A voucher needs an organisation to belong to; see the class Javadoc. */

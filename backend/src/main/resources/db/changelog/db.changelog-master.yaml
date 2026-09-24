@@ -225,3 +225,5 @@ databaseChangeLog:
       file: db/changelog/changesets/108-vat-per-instalment.yaml
   - include:
       file: db/changelog/changesets/109-pl-report-lines.yaml
+  - include:
+      file: db/changelog/changesets/110-ap-open-items.yaml

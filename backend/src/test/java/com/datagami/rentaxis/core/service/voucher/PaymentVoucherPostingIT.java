@@ -73,6 +73,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
         defaults.save(m);
         Vendor v = new Vendor();
         v.setNameEn("Emrill Services LLC");
+        v.setTrn("100123456700003");   // a PISR with input VAT needs it (finance-ops spec §2)
         vendor = vendorService.createVendor(v);
         Vendor other = new Vendor();
         other.setNameEn("Al Shirawi FM");

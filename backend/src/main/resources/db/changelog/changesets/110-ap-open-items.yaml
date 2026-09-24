@@ -1,0 +1,150 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §2 (PR 3a): supplier AP open items.
+  #
+  #   - vendors.payment_terms_days: a PISR's due date defaults to the supplier's
+  #     invoice date plus these days;
+  #   - vouchers: supplier_invoice_date and due_date (PISR), payment_method and
+  #     payment_reference (BPV), invoice_no_norm and duplicate_grandfathered for
+  #     the duplicate-invoice guard. Existing PISRs are due on their posting date
+  #     (open question Q4's default), so they show as due until they are paid;
+  #   - ux_vouchers_pisr_invoice: a POSTED PISR is unique per vendor and
+  #     normalised invoice number. Duplicates already posted are grandfathered
+  #     (every one after the first in its group) so the index builds without
+  #     touching posted data;
+  #   - voucher_allocations: which invoice a payment settles. A sub-ledger index,
+  #     never a journal writer: the BPV has already moved the vendor's payable
+  #     leaf. Written only by VoucherAllocationService. Dated, and released
+  #     rather than deleted, so aging is reproducible as of any date;
+  #   - ap_opening_items: supplier invoices still open at cut-over (their
+  #     balance arrived as an OB line), allocatable like a PISR.
+  #
+  # vouchers.payment_run_id (and allocations' run id) arrive with payment runs
+  # in changeset 111. FKs point child → parent only, so LandlordOrgService's
+  # multi-pass purge clears these tables.
+  - changeSet:
+      id: 110-ap-open-items
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: vendors
+            columns:
+              - column:
+                  name: payment_terms_days
+                  type: int
+                  defaultValueNumeric: 30
+                  constraints: { nullable: false }
+        - sql:
+            comment: Terms are whole days, at most a year
+            sql: ALTER TABLE vendors ADD CONSTRAINT ck_vendors_payment_terms CHECK (payment_terms_days BETWEEN 0 AND 365)
+
+        - addColumn:
+            tableName: vouchers
+            columns:
+              - column: { name: supplier_invoice_date, type: date }
+              - column: { name: due_date, type: date }
+              - column: { name: payment_method, type: varchar(10) }
+              - column: { name: payment_reference, type: varchar(60) }
+              - column: { name: invoice_no_norm, type: varchar(60) }
+              - column:
+                  name: duplicate_grandfathered
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints: { nullable: false }
+        - sql:
+            comment: Payment method is a closed set
+            sql: ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_payment_method CHECK (payment_method IS NULL OR payment_method IN ('TRANSFER','CHEQUE','CASH'))
+        - sql:
+            comment: Existing PISRs - the supplier's date is the posting date, and they are due on it (Q4)
+            sql: |
+              UPDATE vouchers SET supplier_invoice_date = doc_date, due_date = doc_date
+              WHERE doc_type = 'PISR' AND supplier_invoice_date IS NULL
+        - sql:
+            comment: Existing BPVs - a cheque number means a cheque, a cash leaf means cash, anything else a transfer
+            sql: |
+              UPDATE vouchers v SET payment_method = CASE
+                  WHEN v.cheque_number IS NOT NULL AND btrim(v.cheque_number) <> '' THEN 'CHEQUE'
+                  WHEN a.account_sub_type = 'CASH' THEN 'CASH'
+                  ELSE 'TRANSFER' END
+              FROM accounts a
+              WHERE v.doc_type = 'BPV' AND v.payment_method IS NULL AND a.id = v.payment_account_id
+        - sql:
+            comment: A BPV with no payment account yet (a draft) is a transfer unless it names a cheque
+            sql: |
+              UPDATE vouchers SET payment_method = CASE
+                  WHEN cheque_number IS NOT NULL AND btrim(cheque_number) <> '' THEN 'CHEQUE' ELSE 'TRANSFER' END
+              WHERE doc_type = 'BPV' AND payment_method IS NULL
+        - sql:
+            comment: >-
+              Normalised invoice number - trimmed, upper-cased, inner whitespace and hyphens removed.
+              VoucherService.normaliseInvoiceNumber is the same rule in Java.
+            sql: |
+              UPDATE vouchers
+              SET invoice_no_norm = NULLIF(regexp_replace(upper(invoice_number), '[[:space:]-]', '', 'g'), '')
+              WHERE invoice_number IS NOT NULL
+        - sql:
+            comment: Grandfather every POSTED PISR after the first in an existing duplicate group
+            sql: |
+              UPDATE vouchers SET duplicate_grandfathered = TRUE
+              WHERE id IN (
+                SELECT id FROM (
+                  SELECT id, row_number() OVER (
+                           PARTITION BY tenant_id, vendor_id, invoice_no_norm
+                           ORDER BY posted_at NULLS LAST, created_at, id) AS rn
+                  FROM vouchers
+                  WHERE doc_type = 'PISR' AND status = 'POSTED' AND invoice_no_norm IS NOT NULL
+                ) g WHERE g.rn > 1)
+        - sql:
+            comment: The duplicate-invoice guard
+            sql: |
+              CREATE UNIQUE INDEX ux_vouchers_pisr_invoice ON vouchers (tenant_id, vendor_id, invoice_no_norm)
+              WHERE doc_type = 'PISR' AND status = 'POSTED' AND NOT duplicate_grandfathered
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_vendor_type_status, columns: [ { column: { name: vendor_id } }, { column: { name: doc_type } }, { column: { name: status } } ] }
+
+        - createTable:
+            tableName: ap_opening_items
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ap_opening_items_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: vendor_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ap_opening_items_vendor, referencedTableName: vendors, referencedColumnNames: id } }
+              - column: { name: invoice_number, type: varchar(60), constraints: { nullable: false } }
+              - column: { name: invoice_date, type: date, constraints: { nullable: false } }
+              - column: { name: due_date, type: date, constraints: { nullable: false } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz }
+        - sql:
+            comment: An open item is a positive amount due on or after its invoice date
+            sql: |
+              ALTER TABLE ap_opening_items
+                ADD CONSTRAINT ck_ap_opening_items_amount CHECK (amount > 0),
+                ADD CONSTRAINT ck_ap_opening_items_due CHECK (due_date >= invoice_date)
+        - createIndex: { tableName: ap_opening_items, indexName: idx_ap_opening_items_vendor, columns: [ { column: { name: tenant_id } }, { column: { name: vendor_id } } ] }
+
+        - createTable:
+            tableName: voucher_allocations
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_voucher_allocations_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: vendor_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_voucher_allocations_vendor, referencedTableName: vendors, referencedColumnNames: id } }
+              - column: { name: payment_voucher_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_voucher_allocations_payment, referencedTableName: vouchers, referencedColumnNames: id } }
+              - column: { name: invoice_voucher_id, type: uuid, constraints: { foreignKeyName: fk_voucher_allocations_invoice, referencedTableName: vouchers, referencedColumnNames: id } }
+              - column: { name: opening_item_id, type: uuid, constraints: { foreignKeyName: fk_voucher_allocations_opening_item, referencedTableName: ap_opening_items, referencedColumnNames: id } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: allocated_on, type: date, constraints: { nullable: false } }
+              - column: { name: released_on, type: date }
+              - column: { name: release_reason, type: text }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: released_by, type: uuid }
+        - sql:
+            comment: A positive amount against exactly one invoice or opening item
+            sql: |
+              ALTER TABLE voucher_allocations
+                ADD CONSTRAINT ck_voucher_allocations_amount CHECK (amount > 0),
+                ADD CONSTRAINT ck_voucher_allocations_target CHECK ((invoice_voucher_id IS NULL) <> (opening_item_id IS NULL))
+        - createIndex: { tableName: voucher_allocations, indexName: idx_voucher_allocations_payment, columns: [ { column: { name: payment_voucher_id } } ] }
+        - createIndex: { tableName: voucher_allocations, indexName: idx_voucher_allocations_invoice, columns: [ { column: { name: invoice_voucher_id } } ] }
+        - createIndex: { tableName: voucher_allocations, indexName: idx_voucher_allocations_opening_item, columns: [ { column: { name: opening_item_id } } ] }
+        - createIndex: { tableName: voucher_allocations, indexName: idx_voucher_allocations_vendor, columns: [ { column: { name: tenant_id } }, { column: { name: vendor_id } } ] }

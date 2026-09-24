@@ -13,9 +13,10 @@ import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type Account } from "@/lib/api/ledger";
 import {
     grossTotalOf, netTotalOf, vatOf, vatTotalOf, voucherApi,
-    type EditableVoucherType, type VoucherAttachment, type VoucherDetail,
-    type VoucherInput, type VoucherLineInput, type VoucherStatus,
+    type EditableVoucherType, type PaymentMethod, type Settlement, type VoucherAttachment, type VoucherDetail,
+    type VoucherAllocationInput, type VoucherInput, type VoucherLineInput, type VoucherStatus,
 } from "@/lib/api/vouchers";
+import { autoAllocate, dueDateFrom, payablesApi, type Allocation, type OpenItem } from "@/lib/api/payables";
 import {
     ALLOWED_VAT_RATES, ATTACHMENT_ACCEPT, attachmentRefusal, canAmendVoucher,
     canEditVoucher, canManageAttachments, draftRefusal, isDateLocked, lineAccountTypes,
@@ -89,7 +90,27 @@ type VendorRow = {
     nameEn: string;
     nameAr: string | null;
     active: boolean;
+    /** Finance-ops spec §2: a PISR with input VAT needs it. */
+    trn?: string | null;
+    /** Days from the supplier's invoice date to the due date. */
+    paymentTermsDays?: number | null;
     payableAccount: { id: string; code: string; name: string } | null;
+};
+
+/** Allocate-panel key for one open item: a PISR by voucher id, an opening item by its own. */
+const itemKey = (i: Pick<OpenItem, "kind" | "id">) => `${i.kind}:${i.id}`;
+
+/** Spelled out so the i18n dead-key test can see every label this renders. */
+const SETTLEMENT_LABEL = {
+    OPEN: "settlement.OPEN",
+    PART_PAID: "settlement.PART_PAID",
+    PAID: "settlement.PAID",
+} as const;
+
+const SETTLEMENT_CLASS: Record<string, string> = {
+    OPEN: "bg-warning/10 text-warning border-warning/30",
+    PART_PAID: "bg-primary/10 text-primary border-primary/30",
+    PAID: "bg-success/10 text-success border-success/30",
 };
 
 type UnitRow = { id: string; unitNumber: string; property: { id: string } | null };
@@ -168,6 +189,34 @@ export default function VoucherForm({
     const [paymentAccountId, setPaymentAccountId] = useState<string | null>(null);
     const [chequeNumber, setChequeNumber] = useState("");
     const [chequeDate, setChequeDate] = useState("");
+    /** PISR (spec §2): the supplier's own date, and the due date it defaults from. */
+    const [supplierInvoiceDate, setSupplierInvoiceDate] = useState("");
+    /** Typed by hand: the supplier date then stops following the posting date (review P1-1). */
+    const [supplierTouched, setSupplierTouched] = useState(false);
+    /**
+     * Chosen by hand. Until then a purchase invoice's header property is derived
+     * from its lines — the one property they all name, or none — as the server
+     * derives it, and re-derived whenever the lines change (review P3-6).
+     */
+    const [headerTouched, setHeaderTouched] = useState(false);
+    const [dueDate, setDueDate] = useState("");
+    /** Typed by hand: the due date then stops following the supplier date and terms. */
+    const [dueTouched, setDueTouched] = useState(false);
+    /** BPV (spec §2, S14). */
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("TRANSFER");
+    const [paymentReference, setPaymentReference] = useState("");
+    const [settlement, setSettlement] = useState<Settlement | null>(null);
+    /** The posted voucher this invoice number would duplicate, from the inline check. */
+    const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+    /** BPV Allocate panel: the vendor's invoices and what this payment puts on each, as typed. */
+    const [openItems, setOpenItems] = useState<OpenItem[]>([]);
+    const [allocate, setAllocate] = useState<Record<string, string>>({});
+    /** Live allocations of the loaded (posted) voucher: the amend warning and the panel's add-back. */
+    const [ownAllocations, setOwnAllocations] = useState<Allocation[]>([]);
+    /** Bumped after a manual release, to re-read the allocations and the settlement. */
+    const [allocationsVersion, setAllocationsVersion] = useState(0);
+    /** The allocation being released and the reason being typed for it. */
+    const [releasing, setReleasing] = useState<{ id: string; reason: string } | null>(null);
     const [lines, setLines] = useState<DraftLine[]>(() => [newLine()]);
     const [attachments, setAttachments] = useState<VoucherAttachment[]>([]);
 
@@ -249,6 +298,22 @@ export default function VoucherForm({
         setPaymentAccountId(v.paymentAccountId);
         setChequeNumber(v.chequeNumber ?? "");
         setChequeDate(v.chequeDate ?? "");
+        setSupplierInvoiceDate(v.supplierInvoiceDate ?? v.docDate);
+        setSupplierTouched(!!v.supplierInvoiceDate && v.supplierInvoiceDate !== v.docDate);
+        {
+            const props = v.lines.map(l => l.propertyId ?? "");
+            const common = props.length > 0 && props.every(x => x && x === props[0]) ? props[0] : "";
+            // A header equal to what the lines derive is the derived one, not a choice.
+            setHeaderTouched(!(v.docType === "PISR" && (v.propertyId ?? "") === common));
+        }
+        setDueDate(v.dueDate ?? "");
+        // A saved due date, or any posted document, keeps its own: only a fresh
+        // draft follows the supplier date and the vendor's terms.
+        setDueTouched(!!v.dueDate || v.status !== "DRAFT");
+        setPaymentMethod(v.paymentMethod ?? (v.chequeNumber ? "CHEQUE" : "TRANSFER"));
+        setPaymentReference(v.paymentReference ?? "");
+        setSettlement(v.settlement ?? null);
+        setAllocate({});
         setAttachments(v.attachments ?? []);
         setStatus(v.status);
         setVoucherNumber(v.voucherNumber);
@@ -319,9 +384,56 @@ export default function VoucherForm({
         [vendors, vendorId],
     );
 
+    const vendor = useMemo(() => vendors.find(v => v.id === vendorId) ?? null, [vendors, vendorId]);
+    /** Unknown until the vendor list has loaded; only a known "no TRN" disables VAT. */
+    const vendorHasTrn = vendor ? !!vendor.trn?.trim() : undefined;
+    const vatBlocked = type === "PISR" && vendorHasTrn === false;
+
     const numericLines = useMemo(
         () => lines.map(l => ({ amount: num(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
         [lines, withVat],
+    );
+
+    /** BPV: what this voucher pays the vendor — Σ of its lines on the vendor's payable leaf. */
+    const payableTotal = useMemo(
+        () => lines.reduce((s, l, i) => (l.accountId && l.accountId === vendorPayableAccountId
+            ? s + numericLines[i].amount : s), 0),
+        [lines, numericLines, vendorPayableAccountId],
+    );
+    const allocationInputs: VoucherAllocationInput[] = useMemo(
+        () => openItems.flatMap(i => {
+            const a = num(allocate[itemKey(i)] ?? "");
+            if (!(a > 0)) return [];
+            return [i.kind === "PISR" ? { invoiceId: i.id, amount: a } : { openingItemId: i.id, amount: a }];
+        }),
+        [openItems, allocate],
+    );
+    /** What the loaded payment settles today, by panel key, in fils. */
+    const ownByKey = useMemo(() => {
+        const out: Record<string, number> = {};
+        for (const a of ownAllocations) {
+            const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+            out[key] = (out[key] ?? 0) + Math.round(a.amount * 100);
+        }
+        return out;
+    }, [ownAllocations]);
+    /** Invoices the amendment would leave less settled than today — the ones the warning names. */
+    const reopened = useMemo(
+        () => [...new Set(ownAllocations
+            .filter(a => {
+                const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+                return Math.round(num(allocate[key] ?? "") * 100) < (ownByKey[key] ?? 0);
+            })
+            .map(a => a.invoiceNumber ?? ""))].filter(Boolean),
+        [ownAllocations, ownByKey, allocate],
+    );
+    const allocationsChanged = useMemo(() => {
+        const keys = new Set([...Object.keys(ownByKey), ...Object.keys(allocate)]);
+        return [...keys].some(k => Math.round(num(allocate[k] ?? "") * 100) !== (ownByKey[k] ?? 0));
+    }, [ownByKey, allocate]);
+    const allocationTotal = useMemo(
+        () => Math.round(allocationInputs.reduce((s, a) => s + a.amount * 100, 0)) / 100,
+        [allocationInputs],
     );
 
     const totals = useMemo(
@@ -340,6 +452,112 @@ export default function VoucherForm({
     const locked = isDateLocked(docDate, booksLockedThrough);
     const amendDateLocked = isDateLocked(amendDate, booksLockedThrough);
 
+    // ---- supplier AP (finance-ops spec §2) ----
+
+    // The supplier's date follows the posting date until it is set apart from it.
+    useEffect(() => {
+        if (type === "PISR" && editable && !supplierTouched && supplierInvoiceDate !== docDate) {
+            setSupplierInvoiceDate(docDate);
+        }
+    }, [type, editable, docDate, supplierInvoiceDate, supplierTouched]);
+
+    // The header property follows the lines until chosen by hand. Lines that
+    // still inherit the header ("same as header") leave it where it is.
+    useEffect(() => {
+        if (type !== "PISR" || !editable || headerTouched) return;
+        const props = lines.map(l => (l.shared ? "__shared__" : l.propertyId));
+        if (props.some(p => !p)) return;
+        const derived = props.every(p => p === props[0]) && props[0] !== "__shared__" ? props[0] : "";
+        if (derived !== propertyId) setPropertyId(derived);
+    }, [type, editable, headerTouched, lines, propertyId]);
+
+    // Due date = supplier date + the vendor's terms, until typed by hand.
+    useEffect(() => {
+        if (type !== "PISR" || !editable || dueTouched) return;
+        setDueDate(dueDateFrom(supplierInvoiceDate || docDate, vendor?.paymentTermsDays));
+    }, [type, editable, dueTouched, supplierInvoiceDate, docDate, vendor?.paymentTermsDays]);
+
+    // No TRN, no input VAT: the rates drop to 0 and the column is disabled.
+    useEffect(() => {
+        if (!vatBlocked || !editable) return;
+        setLines(ls => (ls.some(l => num(l.vatRate) !== 0) ? ls.map(l => ({ ...l, vatRate: "0" })) : ls));
+    }, [vatBlocked, editable]);
+
+    // Inline duplicate check: the server refuses the same number from the same vendor.
+    useEffect(() => {
+        if (type !== "PISR" || !editable || !vendorId || !invoiceNumber.trim()) {
+            setDuplicateOf(null);
+            return;
+        }
+        let alive = true;
+        const timer = setTimeout(() => {
+            payablesApi
+                .duplicateOf(vendorId, invoiceNumber, savedId)
+                .then(r => alive && setDuplicateOf(r.duplicateOf))
+                .catch(() => alive && setDuplicateOf(null));
+        }, 300);
+        return () => {
+            alive = false;
+            clearTimeout(timer);
+        };
+    }, [type, editable, vendorId, invoiceNumber, savedId]);
+
+    // The loaded voucher's own allocations (a posted one): the amend warning, and
+    // the amounts its invoices get back while it is being amended.
+    useEffect(() => {
+        if (!savedId || status === "DRAFT") {
+            setOwnAllocations([]);
+            return;
+        }
+        let alive = true;
+        payablesApi
+            .allocationsOf(savedId)
+            .then(rows => alive && setOwnAllocations(rows.filter(a => a.live)))
+            .catch(() => alive && setOwnAllocations([]));
+        return () => {
+            alive = false;
+        };
+    }, [savedId, status, allocationsVersion]);
+
+    /** Manual release (spec §2): refused by the server inside the lock, so not offered there either. */
+    const releaseAllocation = () =>
+        run(async () => {
+            if (!releasing || !savedId) return;
+            await payablesApi.release(releasing.id, releasing.reason.trim());
+            setReleasing(null);
+            const fresh = await voucherApi.get(savedId);
+            setSettlement(fresh.settlement ?? null);
+            setAllocationsVersion(n => n + 1);
+        });
+
+    // BPV Allocate panel: the vendor's invoices with something left on them.
+    useEffect(() => {
+        if (type !== "BPV" || !editable || !vendorId) {
+            setOpenItems([]);
+            return;
+        }
+        let alive = true;
+        payablesApi
+            .vendorItems(vendorId)
+            .then(rows => {
+                if (!alive) return;
+                // While amending, what this payment settles today is released by the
+                // amendment, so it counts as open again.
+                const back: Record<string, number> = {};
+                for (const a of ownAllocations) {
+                    const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+                    back[key] = (back[key] ?? 0) + a.amount;
+                }
+                setOpenItems(rows
+                    .map(r => ({ ...r, open: Math.round((r.open + (amending ? back[itemKey(r)] ?? 0 : 0)) * 100) / 100 }))
+                    .filter(r => r.open > 0));
+            })
+            .catch(() => alive && setOpenItems([]));
+        return () => {
+            alive = false;
+        };
+    }, [type, editable, vendorId, amending, ownAllocations]);
+
     const refusal: DraftRefusalResult | null = useMemo(
         () =>
             draftRefusal({
@@ -357,9 +575,16 @@ export default function VoucherForm({
                 payableAccountIds: vendors.length ? payableAccountIds : undefined,
                 vendorPayableAccountId,
                 accounts: Object.keys(accounts).length ? accounts : undefined,
+                invoiceNumber: type === "PISR" ? invoiceNumber : undefined,
+                vendorHasTrn: type === "PISR" ? vendorHasTrn : undefined,
+                paymentMethod: type === "BPV" ? paymentMethod : undefined,
+                chequeNumber,
+                allocationTotal: type === "BPV" ? allocationTotal : undefined,
+                payableTotal: type === "BPV" ? payableTotal : undefined,
             }),
         [type, vendorId, paymentAccountId, lines, numericLines, payableAccountIds,
-         vendorPayableAccountId, vendors.length, accounts, propertyId],
+         vendorPayableAccountId, vendors.length, accounts, propertyId, invoiceNumber, vendorHasTrn,
+         paymentMethod, chequeNumber, allocationTotal, payableTotal],
     );
 
     // ---- requests ----
@@ -375,8 +600,12 @@ export default function VoucherForm({
             narration: narration || null,
             propertyId: propertyId || null,
             paymentAccountId: type === "BPV" ? paymentAccountId : null,
-            chequeNumber: type === "BPV" ? chequeNumber || null : null,
-            chequeDate: type === "BPV" ? chequeDate || null : null,
+            chequeNumber: type === "BPV" && paymentMethod === "CHEQUE" ? chequeNumber || null : null,
+            chequeDate: type === "BPV" && paymentMethod === "CHEQUE" ? chequeDate || null : null,
+            supplierInvoiceDate: type === "PISR" ? supplierInvoiceDate || null : null,
+            dueDate: type === "PISR" ? dueDate || null : null,
+            paymentMethod: type === "BPV" ? paymentMethod : null,
+            paymentReference: type === "BPV" && paymentMethod === "TRANSFER" ? paymentReference || null : null,
             lines: lines.map<VoucherLineInput>((l, i) => ({
                 accountId: l.accountId as string,
                 description: l.description || null,
@@ -393,7 +622,8 @@ export default function VoucherForm({
             })),
         }),
         [type, docDate, vendorId, invoiceNumber, narration, propertyId, paymentAccountId,
-         chequeNumber, chequeDate, lines, numericLines, withVat],
+         chequeNumber, chequeDate, lines, numericLines, withVat, supplierInvoiceDate, dueDate,
+         paymentMethod, paymentReference],
     );
 
     /**
@@ -412,8 +642,13 @@ export default function VoucherForm({
             narration: posted.narration ?? null,
             propertyId: posted.propertyId ?? null,
             paymentAccountId: type === "BPV" ? posted.paymentAccountId : null,
-            chequeNumber: type === "BPV" ? posted.chequeNumber ?? null : null,
-            chequeDate: type === "BPV" ? posted.chequeDate ?? null : null,
+            chequeNumber: type === "BPV" && (posted.paymentMethod ?? "CHEQUE") === "CHEQUE" ? posted.chequeNumber ?? null : null,
+            chequeDate: type === "BPV" && (posted.paymentMethod ?? "CHEQUE") === "CHEQUE" ? posted.chequeDate ?? null : null,
+            supplierInvoiceDate: type === "PISR" ? posted.supplierInvoiceDate ?? posted.docDate : null,
+            dueDate: type === "PISR" ? posted.dueDate ?? null : null,
+            paymentMethod: type === "BPV" ? posted.paymentMethod ?? (posted.chequeNumber ? "CHEQUE" : "TRANSFER") : null,
+            paymentReference: type === "BPV" && (posted.paymentMethod ?? "TRANSFER") === "TRANSFER"
+                ? posted.paymentReference ?? null : null,
             lines: posted.lines.map<VoucherLineInput>(l => ({
                 accountId: l.accountId,
                 description: l.description || null,
@@ -424,8 +659,8 @@ export default function VoucherForm({
                 ...(!l.propertyId ? { shared: true } : {}),
             })),
         };
-        return JSON.stringify(current) !== JSON.stringify(original);
-    }, [posted, body, type, withVat]);
+        return JSON.stringify(current) !== JSON.stringify(original) || (type === "BPV" && allocationsChanged);
+    }, [posted, body, type, withVat, allocationsChanged]);
 
     /**
      * The single sentence under the buttons naming what the server would refuse.
@@ -435,7 +670,9 @@ export default function VoucherForm({
      */
     const blocker = refusal
         ? t(refusal.key, { line: refusal.line ?? 1 })
-        : locked
+        : duplicateOf && editable
+          ? t("duplicateInvoice", { invoice: invoiceNumber.trim(), vendor: vendor?.nameEn ?? "", number: duplicateOf })
+          : locked
           ? t("periodLocked", { date: booksLockedThrough ?? "" })
           : amending && !dirty
             ? t("amendNoChanges")
@@ -470,7 +707,9 @@ export default function VoucherForm({
     const postVoucher = () =>
         run(async () => {
             const saved = await persist();
-            const posted = await voucherApi.post(saved.id);
+            const posted = type === "BPV" && allocationInputs.length
+                ? await voucherApi.post(saved.id, allocationInputs)
+                : await voucherApi.post(saved.id);
             applyDetail(posted);
             setPostedNumber(posted.voucherNumber);
             setConfirm(null);
@@ -486,6 +725,16 @@ export default function VoucherForm({
 
     /** Enter amend mode. The fields re-open; nothing is sent until Post amendment. */
     const startAmend = () => {
+        // A payment's amendment settles what it settled unless told otherwise
+        // (review P3-3): the panel starts from its live allocations.
+        if (type === "BPV") {
+            const pre: Record<string, string> = {};
+            for (const a of ownAllocations) {
+                const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+                pre[key] = (Number(pre[key] ?? 0) + a.amount).toFixed(2);
+            }
+            setAllocate(pre);
+        }
         setAmendDate(todayIso());
         setAmendReason("");
         setFormError(null);
@@ -510,6 +759,9 @@ export default function VoucherForm({
                 reversalDate: amendDate,
                 reason: amendReason,
                 replacement: body(),
+                // The panel is the whole answer for a payment: what it lists is settled,
+                // an empty panel leaves the replacement as an advance.
+                ...(type === "BPV" ? { allocations: allocationInputs } : {}),
             });
             setAmending(false);
             applyDetail(fresh);
@@ -598,6 +850,23 @@ export default function VoucherForm({
                     >
                         {status === "DRAFT" ? t("draft") : status === "POSTED" ? tLedger("posted") : tLedger("reversed")}
                     </span>
+                    {status === "POSTED" && settlement?.status && (
+                        <span
+                            data-testid="settlement-status"
+                            data-status={settlement.status}
+                            className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${SETTLEMENT_CLASS[settlement.status]}`}
+                        >
+                            {t(SETTLEMENT_LABEL[settlement.status])}
+                            {settlement.status === "PART_PAID" && (
+                                <> · <bdi dir="ltr">{fmtAmount(settlement.open)}</bdi> {t("settlementOpen")}</>
+                            )}
+                        </span>
+                    )}
+                    {status === "POSTED" && type === "BPV" && settlement && settlement.open > 0 && (
+                        <span data-testid="settlement-advance" className="text-[10px] text-muted">
+                            {t("unallocatedAdvance")}: <bdi dir="ltr">{fmtAmount(settlement.open)}</bdi>
+                        </span>
+                    )}
                     {voucherNumber ? (
                         <span className="text-xs font-mono font-bold text-foreground" data-testid="voucher-number">
                             {voucherNumber}
@@ -665,9 +934,16 @@ export default function VoucherForm({
                                 data-testid="invoice-number"
                                 className={field}
                                 disabled={!editable}
+                                required
+                                aria-invalid={!!duplicateOf}
                                 value={invoiceNumber}
                                 onChange={e => setInvoiceNumber(e.target.value)}
                             />
+                            {duplicateOf && editable && (
+                                <p role="alert" data-testid="duplicate-invoice" className="text-[10px] font-semibold text-error mt-1">
+                                    {t("duplicateInvoice", { invoice: invoiceNumber.trim(), vendor: vendor?.nameEn ?? "", number: duplicateOf })}
+                                </p>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -689,31 +965,112 @@ export default function VoucherForm({
                                 />
                             </div>
                             <div>
-                                <label className={fieldLabel} htmlFor="voucher-cheque-number">
-                                    {t("chequeNumber")}
+                                <label className={fieldLabel} htmlFor="voucher-payment-method">
+                                    {t("paymentMethod")}
                                 </label>
-                                <input
-                                    id="voucher-cheque-number"
-                                    data-testid="cheque-number"
+                                <select
+                                    id="voucher-payment-method"
+                                    data-testid="payment-method"
                                     className={field}
                                     disabled={!editable}
-                                    value={chequeNumber}
-                                    onChange={e => setChequeNumber(e.target.value)}
-                                />
+                                    value={paymentMethod}
+                                    onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
+                                >
+                                    <option value="TRANSFER">{t("method.TRANSFER")}</option>
+                                    <option value="CHEQUE">{t("method.CHEQUE")}</option>
+                                    <option value="CASH">{t("method.CASH")}</option>
+                                </select>
                             </div>
+                            {paymentMethod === "TRANSFER" && (
+                                <div>
+                                    <label className={fieldLabel} htmlFor="voucher-payment-reference">
+                                        {t("paymentReference")}
+                                    </label>
+                                    <input
+                                        id="voucher-payment-reference"
+                                        data-testid="payment-reference"
+                                        className={field}
+                                        maxLength={60}
+                                        disabled={!editable}
+                                        value={paymentReference}
+                                        onChange={e => setPaymentReference(e.target.value)}
+                                    />
+                                </div>
+                            )}
+                            {paymentMethod === "CHEQUE" && (
+                                <>
+                                    <div>
+                                        <label className={fieldLabel} htmlFor="voucher-cheque-number">
+                                            {t("chequeNumber")}
+                                        </label>
+                                        <input
+                                            id="voucher-cheque-number"
+                                            data-testid="cheque-number"
+                                            className={field}
+                                            disabled={!editable}
+                                            value={chequeNumber}
+                                            onChange={e => setChequeNumber(e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className={fieldLabel} htmlFor="voucher-cheque-date">
+                                            {t("chequeDate")}
+                                        </label>
+                                        <input
+                                            id="voucher-cheque-date"
+                                            data-testid="cheque-date"
+                                            type="date"
+                                            className={field}
+                                            disabled={!editable}
+                                            value={chequeDate}
+                                            onChange={e => setChequeDate(e.target.value)}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </>
+                    )}
+
+                    {type === "PISR" && (
+                        <>
                             <div>
-                                <label className={fieldLabel} htmlFor="voucher-cheque-date">
-                                    {t("chequeDate")}
+                                <label className={fieldLabel} htmlFor="voucher-supplier-date">
+                                    {t("supplierInvoiceDate")}
                                 </label>
                                 <input
-                                    id="voucher-cheque-date"
-                                    data-testid="cheque-date"
+                                    id="voucher-supplier-date"
+                                    data-testid="supplier-invoice-date"
                                     type="date"
                                     className={field}
                                     disabled={!editable}
-                                    value={chequeDate}
-                                    onChange={e => setChequeDate(e.target.value)}
+                                    value={supplierInvoiceDate}
+                                    onChange={e => {
+                                        setSupplierTouched(true);
+                                        setSupplierInvoiceDate(e.target.value);
+                                    }}
                                 />
+                            </div>
+                            <div>
+                                <label className={fieldLabel} htmlFor="voucher-due-date">
+                                    {t("dueDate")}
+                                </label>
+                                <input
+                                    id="voucher-due-date"
+                                    data-testid="due-date"
+                                    type="date"
+                                    className={field}
+                                    disabled={!editable}
+                                    value={dueDate}
+                                    onChange={e => {
+                                        setDueTouched(true);
+                                        setDueDate(e.target.value);
+                                    }}
+                                />
+                                {vendor && (
+                                    <p className="text-[10px] text-muted mt-1" data-testid="vendor-terms">
+                                        {t("vendorTerms", { days: vendor.paymentTermsDays ?? 30 })}
+                                    </p>
+                                )}
                             </div>
                         </>
                     )}
@@ -728,7 +1085,10 @@ export default function VoucherForm({
                             className={field}
                             disabled={!editable}
                             value={propertyId}
-                            onChange={e => setPropertyId(e.target.value)}
+                            onChange={e => {
+                                setHeaderTouched(true);
+                                setPropertyId(e.target.value);
+                            }}
                         >
                             <option value="">{t("allProperties")}</option>
                             {properties.options.map(p => (
@@ -862,7 +1222,8 @@ export default function VoucherForm({
                                                     data-testid={`line-vat-rate-${i}`}
                                                     aria-label={t("vatRate")}
                                                     className={`${field} w-20`}
-                                                    disabled={!editable}
+                                                    disabled={!editable || vatBlocked}
+                                                    aria-describedby={vatBlocked ? "voucher-vat-blocked" : undefined}
                                                     value={l.vatRate}
                                                     onChange={e => setLine(i, { vatRate: e.target.value })}
                                                 >
@@ -951,6 +1312,161 @@ export default function VoucherForm({
                     </div>
                 )}
             </div>
+
+            {vatBlocked && editable && (
+                <p id="voucher-vat-blocked" data-testid="vat-blocked" className="text-xs text-warning -mt-3">
+                    {t("vatNeedsTrnHint", { vendor: vendor?.nameEn ?? "" })}
+                </p>
+            )}
+
+            {/* Allocate (BPV, spec §2): which of the vendor's invoices this payment settles. */}
+            {type === "BPV" && editable && vendorId && (
+                <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="allocate-panel">
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-border">
+                        <h3 className="text-xs font-bold text-foreground">{t("allocateTitle")}</h3>
+                        <div className="flex items-center gap-3 text-xs">
+                            <button
+                                type="button"
+                                data-testid="auto-allocate"
+                                disabled={openItems.length === 0 || !(payableTotal > 0)}
+                                onClick={() => {
+                                    const fill = autoAllocate(openItems.map(i => ({ ...i, id: itemKey(i) })), payableTotal);
+                                    setAllocate(Object.fromEntries(Object.entries(fill).map(([k, v]) => [k, v.toFixed(2)])));
+                                }}
+                                className="font-semibold text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                {t("autoAllocate")}
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="leave-as-advance"
+                                onClick={() => setAllocate({})}
+                                className="font-semibold text-muted cursor-pointer"
+                            >
+                                {t("leaveAsAdvance")}
+                            </button>
+                        </div>
+                    </div>
+                    {openItems.length === 0 ? (
+                        <p className="px-5 py-4 text-xs text-muted" data-testid="allocate-empty">{t("noOpenItems")}</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-input/60">
+                                    <tr>
+                                        <th className={th}>{t("invoiceNumber")}</th>
+                                        <th className={th}>{t("voucherNumber")}</th>
+                                        <th className={th}>{t("dueDate")}</th>
+                                        <th className={`${th} text-end`}>{t("openAmount")}</th>
+                                        <th className={`${th} text-end`}>{t("allocateAmount")}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                    {openItems.map(i => (
+                                        <tr key={itemKey(i)} data-testid={`allocate-row-${i.invoiceNumber ?? i.id}`}>
+                                            <td className={td}>{i.invoiceNumber}</td>
+                                            <td className={`${td} font-mono`}>{i.docNumber ?? t("openingItem")}</td>
+                                            <td className={td}>
+                                                <bdi dir="ltr">{i.dueDate}</bdi>
+                                                {i.daysOverdue > 0 && (
+                                                    <span className="ms-2 text-[10px] text-error">{t("daysOverdue", { days: i.daysOverdue })}</span>
+                                                )}
+                                            </td>
+                                            <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(i.open)}</bdi></td>
+                                            <td className={`${td} text-end`}>
+                                                <input
+                                                    aria-label={t("allocateAmount")}
+                                                    data-testid={`allocate-amount-${i.invoiceNumber ?? i.id}`}
+                                                    inputMode="decimal"
+                                                    className={`${field} w-32 text-end tabular-nums`}
+                                                    value={allocate[itemKey(i)] ?? ""}
+                                                    onChange={e => setAllocate(a => ({ ...a, [itemKey(i)]: e.target.value }))}
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    <div className="flex flex-wrap justify-end gap-6 px-5 py-3 border-t border-border text-xs" data-testid="allocate-summary">
+                        <span>{t("allocatedTotal")}: <bdi dir="ltr" className="font-semibold tabular-nums">{fmtAmount(allocationTotal)}</bdi></span>
+                        <span>{t("remainsAdvance")}: <bdi dir="ltr" className="font-semibold tabular-nums">{fmtAmount(Math.max(payableTotal - allocationTotal, 0))}</bdi></span>
+                    </div>
+                </div>
+            )}
+
+            {/* What this posted document settles, or is settled by, with a manual release. */}
+            {status === "POSTED" && !amending && ownAllocations.length > 0 && (
+                <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="settlements-panel">
+                    <h3 className="px-5 py-3 text-xs font-bold text-foreground border-b border-border">
+                        {type === "BPV" ? t("settlesTitle") : t("settledByTitle")}
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-input/60">
+                                <tr>
+                                    <th className={th}>{type === "BPV" ? t("invoiceNumber") : t("voucherNumber")}</th>
+                                    <th className={th}>{t("allocatedOn")}</th>
+                                    <th className={`${th} text-end`}>{t("amount")}</th>
+                                    <th className={th} />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {ownAllocations.map(a => {
+                                    const lockedIn = isDateLocked(a.allocatedOn, booksLockedThrough);
+                                    return (
+                                        <tr key={a.id} data-testid={`settlement-${a.id}`}>
+                                            <td className={`${td} font-mono`}>
+                                                {type === "BPV" ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
+                                            </td>
+                                            <td className={td}><bdi dir="ltr">{a.allocatedOn}</bdi></td>
+                                            <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(a.amount)}</bdi></td>
+                                            <td className={`${td} text-end`}>
+                                                {releasing?.id === a.id ? (
+                                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                                        <input
+                                                            aria-label={t("releaseReason")}
+                                                            data-testid="release-reason"
+                                                            placeholder={t("releaseReason")}
+                                                            className={`${field} w-48`}
+                                                            value={releasing.reason}
+                                                            onChange={e => setReleasing({ id: a.id, reason: e.target.value })}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            data-testid="release-confirm"
+                                                            disabled={busy || !releasing.reason.trim()}
+                                                            onClick={releaseAllocation}
+                                                            className="text-xs font-bold text-error cursor-pointer disabled:opacity-40"
+                                                        >
+                                                            {t("release")}
+                                                        </button>
+                                                        <button type="button" onClick={() => setReleasing(null)} className="text-xs text-muted cursor-pointer">
+                                                            {tLedger("cancel")}
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        data-testid={`release-${a.id}`}
+                                                        disabled={busy || lockedIn}
+                                                        title={lockedIn ? t("releaseLocked", { date: booksLockedThrough ?? "" }) : undefined}
+                                                        onClick={() => setReleasing({ id: a.id, reason: "" })}
+                                                        className="text-xs font-semibold text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        {t("release")}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Attachments */}
             <div className="bg-surface border border-border rounded-xl shadow-sm p-5" data-testid="attachments-panel">
@@ -1176,6 +1692,11 @@ export default function VoucherForm({
                 confirmDisabled={amendDateLocked}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
+                {type === "BPV" && reopened.length > 0 && (
+                    <p role="alert" data-testid="amend-releases" className="text-xs font-semibold text-warning">
+                        {t("amendReleases", { invoices: reopened.join(", ") })}
+                    </p>
+                )}
                 <div>
                     <label className={fieldLabel} htmlFor="voucher-amend-date">
                         {tLedger("reverseDate")}

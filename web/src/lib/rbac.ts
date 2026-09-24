@@ -227,6 +227,14 @@ export const PERMISSIONS = {
     // controllers are still SA/TA only, and widening it would have shown an
     // accountant two links that still 403 on arrival.
     canManageVendors: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+
+    // Finance → Payables (finance-ops spec §2). Allocations, opening items, a
+    // vendor's open items and statement: PayablesController's class-level
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
+    canManagePayables: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Payables aging: PayablesReportController also admits PROPERTY_MANAGER,
+    // read-only, narrowed server-side to an assigned property it must name.
+    canViewPayablesAging: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

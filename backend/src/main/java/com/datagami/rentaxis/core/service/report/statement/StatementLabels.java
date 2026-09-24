@@ -66,6 +66,9 @@ public final class StatementLabels {
         put("figure.closing", "Closing balance", "الرصيد الختامي");
         put("figure.net", "Net", "الصافي");
         put("figure.paid", "Paid", "المدفوع");
+        put("figure.allocatedPaid", "Paid against this property's invoices", "المدفوع مقابل فواتير هذا العقار");
+        put("figure.directPaid", "Paid directly to expenses", "المدفوع مباشرة للمصروفات");
+        put("figure.unallocatedPayments", "Supplier payments not yet allocated (not included)", "دفعات موردين غير مخصصة بعد (غير مشمولة)");
         put("figure.outputVat", "Output VAT", "ضريبة المخرجات");
         put("figure.inputVat", "Input VAT", "ضريبة المدخلات");
         put("figure.expensesPaid", "Less: expenses paid", "ناقص: المصروفات المدفوعة");
@@ -94,6 +97,11 @@ public final class StatementLabels {
         put("column.vat", "VAT", "الضريبة");
         put("column.emirate", "Emirate", "الإمارة");
         put("column.outputVat", "Output VAT", "ضريبة المخرجات");
+        put("column.basis", "Basis", "الأساس");
+
+        put("basis.ALLOCATED", "Allocated", "مخصص");
+        put("basis.RELEASED", "Released", "ملغى التخصيص");
+        put("basis.DIRECT", "Direct", "مباشر");
 
         put("note.register", "Operational figures from the cheque register; not a ledger balance.",
                 "أرقام تشغيلية من سجل الشيكات، وليست رصيداً دفترياً.");
@@ -101,6 +109,10 @@ public final class StatementLabels {
                 "يختلف السجل عن دفتر الأستاذ عن قصد: العقد يفوتر الإيجار مقدماً.");
         put("note.directPaymentsOnly", "Only payment vouchers that debit an expense directly are shown until supplier allocation lands.",
                 "تظهر فقط سندات الصرف التي تقيد المصروف مباشرة إلى أن يتوفر تخصيص الموردين.");
+        put("note.paidBySubledger", "Supplier payments count when allocated to an invoice of this property, at the property's share of the invoice; a released allocation comes back off.",
+                "تُحتسب دفعات الموردين عند تخصيصها لفاتورة تخص هذا العقار، بحصة العقار من الفاتورة؛ ويُخصم التخصيص الملغى.");
+        put("note.unallocatedNotAttributable", "Payments below are not allocated to an invoice yet, so they are not attributable to a property and are not included above.",
+                "الدفعات أدناه غير مخصصة لفاتورة بعد، لذا لا تُنسب إلى عقار ولا تدخل في الأرقام أعلاه.");
         put("note.inputVatHeaderProperty", "Input VAT on a voucher with no header property is under Unassigned.",
                 "ضريبة المدخلات على سند بلا عقار في رأسه تظهر ضمن غير المخصص.");
         put("note.notCashAtBank", "Net property cash movement, not cash at bank: a bank account can serve several properties.",

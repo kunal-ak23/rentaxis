@@ -46,6 +46,7 @@ final class StatementFormat {
         if (v instanceof BigDecimal b) return money(b);
         if (column.equals("mode")) return StatementLabels.of("mode." + v, lang);
         if (column.equals("type")) return StatementLabels.of("type." + v, lang);
+        if (column.equals("basis")) return StatementLabels.of("basis." + v, lang);
         return String.valueOf(v);
     }
 

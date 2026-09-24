@@ -133,7 +133,7 @@ public final class ReportCsv {
         return v == null ? "" : v.toPlainString();
     }
 
-    static byte[] encode(List<List<String>> rows) {
+    public static byte[] encode(List<List<String>> rows) {
         StringBuilder b = new StringBuilder("﻿");
         for (List<String> row : rows) {
             for (int i = 0; i < row.size(); i++) {

@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { accountName } from "@/lib/api/ledger";
-import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen, ListChecks } from "lucide-react";
+import { fmtAmount } from "@/lib/api/ledger";
+import { overdueOf, payablesApi, type AgingFigures } from "@/lib/api/payables";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -34,6 +36,8 @@ type Vendor = {
     payableAccount: Account | null;
     notes: string;
     active: boolean;
+    /** Finance-ops spec §2: a PISR's due date defaults to its supplier date plus these days. */
+    paymentTermsDays?: number | null;
 };
 
 const emptyForm = {
@@ -50,6 +54,7 @@ const emptyForm = {
     iban: "",
     notes: "",
     active: true,
+    paymentTermsDays: "30",
 };
 
 export default function VendorsPage() {
@@ -75,9 +80,15 @@ export default function VendorsPage() {
     } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [errorBanner, setErrorBanner] = useState<string | null>(null);
+    /** Open, overdue and advance per vendor, from payables aging as of today (spec §2). */
+    const [ap, setAp] = useState<Record<string, AgingFigures>>({});
 
     useEffect(() => {
         fetchVendors();
+        payablesApi
+            .aging({})
+            .then(r => setAp(Object.fromEntries(r.rows.map(row => [row.vendorId, row.figures]))))
+            .catch(() => {});
     }, []);
 
     const fetchVendors = async () => {
@@ -122,6 +133,7 @@ export default function VendorsPage() {
             iban: vendor.iban || "",
             notes: vendor.notes || "",
             active: vendor.active,
+            paymentTermsDays: String(vendor.paymentTermsDays ?? 30),
         });
         setFormError(null);
         setShowModal(true);
@@ -146,6 +158,7 @@ export default function VendorsPage() {
                 iban: formData.iban,
                 notes: formData.notes,
                 active: formData.active,
+                paymentTermsDays: formData.paymentTermsDays === "" ? null : Number(formData.paymentTermsDays),
             };
 
             const url = editingVendor
@@ -299,6 +312,15 @@ export default function VendorsPage() {
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("payableAccount")}
                                     </th>
+                                    <th className="text-end px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("open")}
+                                    </th>
+                                    <th className="text-end px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("overdue")}
+                                    </th>
+                                    <th className="text-end px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("advance")}
+                                    </th>
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("status")}
                                     </th>
@@ -330,6 +352,15 @@ export default function VendorsPage() {
                                                 ? `${vendor.payableAccount.code} - ${accountName(vendor.payableAccount, locale)}`
                                                 : "\u2014"}
                                         </td>
+                                        <td className="px-5 py-3 text-xs text-end tabular-nums" data-testid={`vendor-open-${vendor.id}`}>
+                                            {ap[vendor.id]?.openTotal ? <bdi dir="ltr">{fmtAmount(ap[vendor.id].openTotal)}</bdi> : "\u2014"}
+                                        </td>
+                                        <td className="px-5 py-3 text-xs text-end tabular-nums text-error">
+                                            {ap[vendor.id] && overdueOf(ap[vendor.id]) > 0 ? <bdi dir="ltr">{fmtAmount(overdueOf(ap[vendor.id]))}</bdi> : "\u2014"}
+                                        </td>
+                                        <td className="px-5 py-3 text-xs text-end tabular-nums">
+                                            {ap[vendor.id]?.advances ? <bdi dir="ltr">{fmtAmount(ap[vendor.id].advances ?? 0)}</bdi> : "\u2014"}
+                                        </td>
                                         <td className="px-5 py-3">
                                             {vendor.active ? (
                                                 <span className="bg-success/10 text-success border border-success/20 px-2.5 py-1 rounded-lg text-[10px] font-bold">
@@ -343,6 +374,15 @@ export default function VendorsPage() {
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-2">
+                                                <Link
+                                                    href={`/dashboard/finance/vendors/${vendor.id}`}
+                                                    className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
+                                                    aria-label={t("openItems")}
+                                                    title={t("openItems")}
+                                                    data-testid={`vendor-account-${vendor.id}`}
+                                                >
+                                                    <ListChecks size={14} />
+                                                </Link>
                                                 <Link
                                                     href={`/dashboard/finance/general-ledger?vendorId=${vendor.id}`}
                                                     className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
@@ -454,8 +494,29 @@ export default function VendorsPage() {
                                 <input
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.trn}
+                                    inputMode="numeric"
+                                    dir="ltr"
+                                    data-testid="vendor-trn"
+                                    aria-describedby="vendor-trn-hint"
                                     onChange={(ev) =>
                                         setFormData({ ...formData, trn: ev.target.value })
+                                    }
+                                />
+                                <p id="vendor-trn-hint" className="text-[10px] text-muted mt-1 ms-1">{t("trnHint")}</p>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                    {t("paymentTerms")}
+                                </label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={365}
+                                    data-testid="vendor-terms"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                    value={formData.paymentTermsDays}
+                                    onChange={(ev) =>
+                                        setFormData({ ...formData, paymentTermsDays: ev.target.value })
                                     }
                                 />
                             </div>

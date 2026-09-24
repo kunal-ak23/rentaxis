@@ -83,6 +83,7 @@ final class PropertyPnlFixture {
         p2 = property("Palm Residence");
         Vendor v = new Vendor();
         v.setNameEn("Emrill Services LLC");
+        v.setTrn("100123456700003");   // a PISR with input VAT needs it (finance-ops spec §2)
         vendor = vendorService.createVendor(v);
         bankCharges = accounts.getAccountByCode("D-02-003");
         bankInterest = accounts.createLeaf("Bank Interest", accounts.getAccountByCode("C-02"), null);

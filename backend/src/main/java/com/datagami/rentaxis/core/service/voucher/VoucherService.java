@@ -11,7 +11,9 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
+import com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.VoucherStatus;
 import com.datagami.rentaxis.domain.entity.enums.VoucherType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
@@ -22,6 +24,7 @@ import jakarta.persistence.LockModeType;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PessimisticLockException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -51,6 +54,7 @@ public class VoucherService {
     private final PostingService posting;
     private final TenantFiscalSettingsService fiscal;
     private final EntityManager entityManager;
+    private final VoucherAllocationService allocationService;
 
     /** UAE standard rate is 5%; zero-rated and exempt supplies are 0. Nothing else is legal today. */
     private static final Set<BigDecimal> ALLOWED_VAT_RATES =
@@ -85,9 +89,66 @@ public class VoucherService {
     static final String LINE_PROPERTY_REFUSAL =
             "needs a property, or tick Shared / head office for a cost that belongs to no single property";
 
+    /**
+     * Finance-ops spec §2 (S8): input VAT is recoverable only on a tax invoice, and
+     * a tax invoice carries the supplier's TRN. Checked at draft save and at post.
+     */
+    static String trnRefusal(Vendor vendor) {
+        return "Input VAT needs the supplier's TRN from their tax invoice. Add the TRN to "
+                + vendor.getNameEn() + " or post the invoice without VAT.";
+    }
+
+    /**
+     * {@code supplierInvoiceDate}/{@code dueDate}: PISR only; null takes the posting
+     * date and the supplier date plus the vendor's terms. {@code paymentMethod} /
+     * {@code paymentReference}: BPV only; a null method is inferred (a cheque
+     * number means CHEQUE, a cash leaf CASH, otherwise TRANSFER).
+     */
     public record VoucherInput(VoucherType docType, LocalDate docDate, UUID vendorId, String invoiceNumber,
                                String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
-                               String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines) {}
+                               String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines,
+                               LocalDate supplierInvoiceDate, LocalDate dueDate,
+                               VoucherPaymentMethod paymentMethod, String paymentReference) {
+        public VoucherInput(VoucherType docType, LocalDate docDate, UUID vendorId, String invoiceNumber,
+                            String narration, UUID propertyId, UUID unitId, UUID paymentAccountId,
+                            String chequeNumber, LocalDate chequeDate, List<VoucherLineInput> lines) {
+            this(docType, docDate, vendorId, invoiceNumber, narration, propertyId, unitId, paymentAccountId,
+                    chequeNumber, chequeDate, lines, null, null, null, null);
+        }
+    }
+
+    /**
+     * The duplicate-invoice key (spec §2): trimmed, upper-cased, inner whitespace
+     * and hyphens removed — "inv-7781 " and "INV 7781" are the same invoice.
+     * Changeset 110 backfills with the same rule in SQL. Null when nothing is left.
+     */
+    public static String normaliseInvoiceNumber(String invoiceNumber) {
+        if (invoiceNumber == null) return null;
+        // Character by character, not String.toUpperCase: that one expands "ß" to
+        // "SS", which Postgres upper() does not, and the backfill must agree.
+        StringBuilder b = new StringBuilder(invoiceNumber.length());
+        invoiceNumber.trim().codePoints()
+                .filter(c -> c != '-' && !Character.isWhitespace(c))
+                .map(Character::toUpperCase)
+                .forEach(b::appendCodePoint);
+        return b.isEmpty() ? null : b.toString();
+    }
+
+    /**
+     * PR #351 review P2-1: an invoice cannot be booked before it exists. Aging
+     * counts an item from its supplier date, the ledger from the posting date, and
+     * allocations from the posting date, so a later supplier date would leave the
+     * credit on the ledger with no item to tie it to.
+     */
+    static final String SUPPLIER_DATE_AFTER_POSTING =
+            "The supplier's invoice date cannot be after the posting date";
+
+    /** A PISR's due date when none is given: the supplier's date plus the vendor's terms. */
+    static LocalDate defaultDueDate(LocalDate supplierInvoiceDate, Vendor vendor) {
+        if (supplierInvoiceDate == null) return null;
+        int terms = vendor == null || vendor.getPaymentTermsDays() == null ? 30 : vendor.getPaymentTermsDays();
+        return supplierInvoiceDate.plusDays(terms);
+    }
 
     @Transactional(readOnly = true)
     public Voucher get(UUID voucherId) {
@@ -117,7 +178,7 @@ public class VoucherService {
 
     @Transactional
     public Voucher createDraft(VoucherInput in) {
-        validate(in);
+        validate(in, null);
         Voucher v = new Voucher();
         apply(v, in);
         v.setStatus(VoucherStatus.DRAFT);
@@ -128,7 +189,7 @@ public class VoucherService {
     public Voucher updateDraft(UUID voucherId, VoucherInput in) {
         Voucher v = get(voucherId);
         requireDraft(v);
-        validate(in);
+        validate(in, v.getId());
         // Clear the old lines and flush the deletes BEFORE inserting the replacements.
         // Hibernate's action queue runs every INSERT in a flush before any orphan-removal
         // DELETE from the same flush, and the replacement lines reuse line_no starting at 1
@@ -163,9 +224,25 @@ public class VoucherService {
      */
     @Transactional
     public Voucher post(UUID voucherId) {
+        return post(voucherId, List.of());
+    }
+
+    /**
+     * As {@link #post(UUID)}, and for a BPV the invoices it settles
+     * ({@code allocations}), written in the same transaction by
+     * {@link VoucherAllocationService}. What is left unallocated is an advance.
+     */
+    @Transactional
+    public Voucher post(UUID voucherId, List<VoucherAllocationService.AllocationInput> allocations) {
         Voucher v = lockForWrite(voucherId);
         requireDraft(v);
         requirePostable(v);
+        boolean allocating = allocations != null && !allocations.isEmpty();
+        if (allocating && v.getDocType() != VoucherType.BPV) {
+            throw new BusinessRuleViolationException("Only a payment voucher settles invoices");
+        }
+        // Before the journal: this row, then the invoices, then the sequence (lockForWrite).
+        if (allocating) allocationService.lockTargets(allocations);
 
         BigDecimal net = VoucherMath.netTotal(v.getLines());
         BigDecimal vat = VoucherMath.vatTotal(v.getLines());
@@ -229,7 +306,19 @@ public class VoucherService {
         v.setPostedAt(entry.getPostedAt() == null ? Instant.now() : entry.getPostedAt());
         v.setPostedBy(entry.getPostedBy());
         v.setUpdatedAt(Instant.now());
-        return vouchers.save(v);
+        try {
+            // Flushed here so the duplicate-invoice index answers inside this call
+            // (a race past requireNoPostedDuplicate), not at commit as a bare 500.
+            v = vouchers.saveAndFlush(v);
+        } catch (DataIntegrityViolationException e) {
+            if (String.valueOf(e.getMostSpecificCause().getMessage()).contains("ux_vouchers_pisr_invoice")) {
+                throw new BusinessRuleViolationException("Invoice " + v.getInvoiceNumber() + " from "
+                        + v.getVendor().getNameEn() + " is already posted");
+            }
+            throw e;
+        }
+        if (allocating) allocationService.allocateOnPost(v.getId(), allocations);
+        return v;
     }
 
     /**
@@ -247,6 +336,26 @@ public class VoucherService {
      */
     @Transactional
     public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement) {
+        return amend(voucherId, reversalDate, reason, replacement, null);
+    }
+
+    /**
+     * As above; {@code allocations} are the invoices a replacement BPV settles.
+     *
+     * <p>Allocation hooks (spec §2): a PISR's live allocations carry to the
+     * replacement, capped at its gross, the excess becoming an advance on the
+     * payment. A BPV's are released on the reversal date; the replacement then
+     * settles {@code allocations} when given (an empty list: nothing, an advance),
+     * or — {@code null} — carries the original's, trimmed to what it now pays.</p>
+     *
+     * <p>Flush order: the original is REVERSED and flushed before the replacement
+     * is inserted or posted, so {@code ux_vouchers_pisr_invoice} never sees two
+     * POSTED rows for an invoice amended under its own number
+     * ({@code VoucherAmendIT}).</p>
+     */
+    @Transactional
+    public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement,
+                         List<VoucherAllocationService.AllocationInput> allocations) {
         Voucher original = lockForWrite(voucherId);
         if (original.getStatus() != VoucherStatus.POSTED) {
             throw new BusinessRuleViolationException(
@@ -256,11 +365,31 @@ public class VoucherService {
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
+        // A grandfathered duplicate (changeset 110) shares its number with a POSTED
+        // invoice the guard protects, so it can only be corrected to a new number.
+        if (original.getDocType() == VoucherType.PISR && original.isDuplicateGrandfathered()
+                && original.getInvoiceNoNorm() != null
+                && original.getInvoiceNoNorm().equals(normaliseInvoiceNumber(replacement.invoiceNumber()))) {
+            String first = vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
+                    .map(Voucher::getVoucherNumber).findFirst().orElse("another invoice");
+            throw new BusinessRuleViolationException(original.getVoucherNumber() + " is a grandfathered duplicate of "
+                    + first + " (both carry " + original.getInvoiceNumber()
+                    + "); amend it to a corrected invoice number");
+        }
+
+        // Every row the allocation hooks will touch, locked before the journal is
+        // (voucher rows, then opening items, then the sequence): the original's
+        // counterparts and whatever the replacement will settle.
+        allocationService.lockCounterparts(original.getId(), allocations);
 
         posting.reverse(original.getJournalId(), reversalDate, reason);
         original.setStatus(VoucherStatus.REVERSED);
         original.setUpdatedAt(Instant.now());
-        vouchers.save(original);
+        vouchers.saveAndFlush(original);
+        List<VoucherAllocation> released = original.getDocType() == VoucherType.BPV
+                ? allocationService.releaseAllOfPayment(original.getId(), reversalDate,
+                        "Payment " + original.getVoucherNumber() + " amended")
+                : List.of();
 
         Voucher fresh = createDraft(replacement);
         fresh.setAmendedFromId(original.getId());
@@ -270,7 +399,21 @@ public class VoucherService {
         // amendedFromId. (Same shape as the flush updateDraft needs, for the same
         // reason: this class hands rows to Hibernate and then re-reads them.)
         vouchers.saveAndFlush(fresh);
-        return post(fresh.getId());
+        Voucher posted = post(fresh.getId(), List.of());
+        if (original.getDocType() == VoucherType.PISR) {
+            allocationService.carryToReplacement(original.getId(), posted.getId(), reversalDate);
+        } else if (posted.getDocType() == VoucherType.BPV) {
+            // A replacement payment settles what it is told to, or — told nothing —
+            // what the original settled, trimmed to what it now pays (spec §2 hooks,
+            // PR #351 review P3-3). Dated no earlier than the reversal, so the
+            // original keeps settling those invoices until it is reversed (P3-2).
+            if (allocations == null) {
+                allocationService.carryPaymentToReplacement(released, posted.getId(), reversalDate);
+            } else {
+                allocationService.allocateOnPost(posted.getId(), allocations, reversalDate);
+            }
+        }
+        return posted;
     }
 
     // ---- internals shared with post() in Tasks 3 and 4 ----
@@ -309,9 +452,16 @@ public class VoucherService {
      * voucher row while already holding the sequence — but {@code fresh} was
      * inserted by that same transaction, so no rival can hold it or block on it.
      * There is therefore no transaction holding the sequence and waiting on a
-     * voucher row held by a sequence-waiter, and a blocking lock here cannot
-     * deadlock. Anyone adding a "lock a voucher row after posting" path is the one
-     * who would break that.</p>
+     * voucher row held by a sequence-waiter.</p>
+     *
+     * <p><b>It can still deadlock with an allocation.</b> Supplier AP (spec §2)
+     * locks voucher rows in id order ({@code VoucherAllocationService}), while
+     * {@code post} and {@code amend} take this row first and the invoices it
+     * settles after it. An allocation whose invoice id sorts before this payment's
+     * id, running against an amend of the same payment, waits in the opposite
+     * order: Postgres breaks the cycle (40P01), one side rolls back, and
+     * {@code GlobalExceptionHandler.handleConcurrency} answers it 409 "try again".
+     * Nothing is half-written. {@code VoucherAllocationDeadlockIT} pins that.</p>
      */
     private Voucher lockForWrite(UUID voucherId) {
         Voucher v = entityManager.find(Voucher.class, voucherId);
@@ -385,6 +535,20 @@ public class VoucherService {
                             + " has no payable account. Re-save the vendor to create one.");
                 }
                 requirePostableLeaf(vendor.getPayableAccount(), "Vendor payable account");
+                if (v.getInvoiceNoNorm() == null) {
+                    throw new BusinessRuleViolationException("A purchase invoice needs the supplier's invoice number");
+                }
+                if (VoucherMath.vatTotal(v.getLines()).signum() > 0 && isBlank(vendor.getTrn())) {
+                    throw new BusinessRuleViolationException(trnRefusal(vendor));
+                }
+                if (v.getSupplierInvoiceDate() != null && v.getSupplierInvoiceDate().isAfter(v.getDocDate())) {
+                    throw new BusinessRuleViolationException(SUPPLIER_DATE_AFTER_POSTING);
+                }
+                if (v.getDueDate() != null && v.getSupplierInvoiceDate() != null
+                        && v.getDueDate().isBefore(v.getSupplierInvoiceDate())) {
+                    throw new BusinessRuleViolationException("The due date cannot be before the supplier's invoice date");
+                }
+                requireNoPostedDuplicate(vendor, v.getInvoiceNumber(), v.getInvoiceNoNorm(), v.getId());
             }
             // A BPV line may be any leaf — a vendor payable being settled, an expense
             // paid without an invoice, a salary — so only the payment account is narrowed.
@@ -400,6 +564,7 @@ public class VoucherService {
                 }
                 requirePayableLinesMatchTheVendor(v.getVendor() == null ? null : v.getVendor().getId(),
                         v.getLines().stream().map(l -> l.getAccount().getId()).toList());
+                requireMethodMatchesAccount(v.getPaymentMethod(), pay, v.getChequeNumber());
             }
             case RCP -> throw new BusinessRuleViolationException(
                     "Cash Receipt Vouchers are posted from the lease receipt screen");
@@ -427,7 +592,7 @@ public class VoucherService {
         }
     }
 
-    private void validate(VoucherInput in) {
+    private void validate(VoucherInput in, UUID selfId) {
         if (in.docType() == null) throw new BusinessRuleViolationException("Document type is required");
         if (in.docType() == VoucherType.RCP) {
             throw new BusinessRuleViolationException(
@@ -459,6 +624,11 @@ public class VoucherService {
             if (!ChequeService.isSettlementAccount(pay)) {
                 throw new BusinessRuleViolationException("Payment account " + pay.getCode() + " " + pay.getName()
                         + " must be a bank or cash account");
+            }
+            requireMethodMatchesAccount(in.paymentMethod() == null ? inferMethod(in.chequeNumber(), pay) : in.paymentMethod(),
+                    pay, in.chequeNumber());
+            if (in.paymentReference() != null && in.paymentReference().trim().length() > 60) {
+                throw new BusinessRuleViolationException("The payment reference is at most 60 characters");
             }
         }
         for (VoucherLineInput l : in.lines()) {
@@ -496,6 +666,37 @@ public class VoucherService {
             requirePayableLinesMatchTheVendor(in.vendorId(),
                     in.lines().stream().map(VoucherLineInput::accountId).toList());
         }
+        if (in.docType() == VoucherType.PISR) requireSupplierInvoiceRules(in, selfId);
+    }
+
+    /**
+     * Finance-ops spec §2, at draft save (and again, from the stored row, at post):
+     * the supplier's invoice number is required and not already posted for this
+     * vendor; input VAT needs the vendor's TRN; the due date is not before the
+     * supplier's date. After the line checks, so a bad line is reported first.
+     */
+    private void requireSupplierInvoiceRules(VoucherInput in, UUID selfId) {
+        Vendor vendor = vendors.findById(in.vendorId()).orElseThrow(() -> new NotFoundException("Vendor not found"));
+        String norm = normaliseInvoiceNumber(in.invoiceNumber());
+        if (norm == null) {
+            throw new BusinessRuleViolationException("A purchase invoice needs the supplier's invoice number");
+        }
+        if (in.invoiceNumber().trim().length() > 60) {
+            throw new BusinessRuleViolationException("The invoice number is at most 60 characters");
+        }
+        boolean anyVat = in.lines() != null && in.lines().stream()
+                .anyMatch(l -> l.vatRate() != null && l.vatRate().signum() > 0);
+        if (anyVat && isBlank(vendor.getTrn())) {
+            throw new BusinessRuleViolationException(trnRefusal(vendor));
+        }
+        LocalDate supplierDate = in.supplierInvoiceDate() == null ? in.docDate() : in.supplierInvoiceDate();
+        if (supplierDate != null && in.docDate() != null && supplierDate.isAfter(in.docDate())) {
+            throw new BusinessRuleViolationException(SUPPLIER_DATE_AFTER_POSTING);
+        }
+        if (in.dueDate() != null && supplierDate != null && in.dueDate().isBefore(supplierDate)) {
+            throw new BusinessRuleViolationException("The due date cannot be before the supplier's invoice date");
+        }
+        requireNoPostedDuplicate(vendor, in.invoiceNumber(), norm, selfId);
     }
 
     /**
@@ -548,6 +749,58 @@ public class VoucherService {
         }
     }
 
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
+
+    /** A cheque number means a cheque, a cash leaf means cash, anything else a bank transfer. */
+    static VoucherPaymentMethod inferMethod(String chequeNumber, Account pay) {
+        if (!isBlank(chequeNumber)) return VoucherPaymentMethod.CHEQUE;
+        if (pay != null && pay.getAccountSubType() == AccountSubType.CASH) return VoucherPaymentMethod.CASH;
+        return VoucherPaymentMethod.TRANSFER;
+    }
+
+    /** Spec §2: CASH pays from a cash leaf; TRANSFER and CHEQUE from a bank leaf. A cheque has a number. */
+    private static void requireMethodMatchesAccount(VoucherPaymentMethod method, Account pay, String chequeNumber) {
+        if (method == null || pay == null) return;
+        boolean cash = pay.getAccountSubType() == AccountSubType.CASH;
+        if (method == VoucherPaymentMethod.CASH && !cash) {
+            throw new BusinessRuleViolationException("A cash payment is paid from a cash account; "
+                    + pay.getCode() + " " + pay.getName() + " is not one");
+        }
+        if (method != VoucherPaymentMethod.CASH && pay.getAccountSubType() != AccountSubType.BANK) {
+            throw new BusinessRuleViolationException("A " + (method == VoucherPaymentMethod.CHEQUE ? "cheque" : "transfer")
+                    + " is paid from a bank account; " + pay.getCode() + " " + pay.getName() + " is not one");
+        }
+        if (method == VoucherPaymentMethod.CHEQUE && isBlank(chequeNumber)) {
+            throw new BusinessRuleViolationException("A cheque payment needs the cheque number");
+        }
+    }
+
+    /**
+     * Spec §2 duplicate guard: one POSTED PISR per vendor and normalised invoice
+     * number ({@code ux_vouchers_pisr_invoice} enforces it; this names the
+     * existing voucher). The same number from another vendor is a different invoice.
+     */
+    private void requireNoPostedDuplicate(Vendor vendor, String invoiceNumber, String norm, UUID selfId) {
+        if (norm == null) return;
+        vouchers.findPostedDuplicate(vendor.getId(), norm).stream()
+                .filter(d -> selfId == null || !selfId.equals(d.getId()))
+                .findFirst()
+                .ifPresent(d -> {
+                    throw new BusinessRuleViolationException(invoiceNumber.trim() + " from " + vendor.getNameEn()
+                            + " is already posted as " + d.getVoucherNumber());
+                });
+    }
+
+    /** Draft-time duplicate check for the form (spec §2 Web UI): the voucher number it would clash with, or null. */
+    @Transactional(readOnly = true)
+    public String postedDuplicateOf(UUID vendorId, String invoiceNumber, UUID excludeId) {
+        String norm = normaliseInvoiceNumber(invoiceNumber);
+        if (vendorId == null || norm == null) return null;
+        return vouchers.findPostedDuplicate(vendorId, norm).stream()
+                .filter(d -> excludeId == null || !excludeId.equals(d.getId()))
+                .map(Voucher::getVoucherNumber).findFirst().orElse(null);
+    }
+
     private Account requireLeaf(UUID accountId, String label) {
         Account a = accounts.findById(accountId)
                 .orElseThrow(() -> new NotFoundException(label + " not found: " + accountId));
@@ -574,6 +827,22 @@ public class VoucherService {
                 .orElseThrow(() -> new NotFoundException("Payment account not found")));
         v.setChequeNumber(in.chequeNumber());
         v.setChequeDate(in.chequeDate());
+        if (in.docType() == VoucherType.PISR) {
+            v.setInvoiceNumber(in.invoiceNumber() == null ? null : in.invoiceNumber().trim());
+            v.setInvoiceNoNorm(normaliseInvoiceNumber(in.invoiceNumber()));
+            LocalDate supplierDate = in.supplierInvoiceDate() == null ? in.docDate() : in.supplierInvoiceDate();
+            v.setSupplierInvoiceDate(supplierDate);
+            v.setDueDate(in.dueDate() == null ? defaultDueDate(supplierDate, v.getVendor()) : in.dueDate());
+            v.setPaymentMethod(null);
+            v.setPaymentReference(null);
+        } else {
+            v.setInvoiceNoNorm(null);
+            v.setSupplierInvoiceDate(null);
+            v.setDueDate(null);
+            v.setPaymentMethod(in.paymentMethod() == null ? inferMethod(in.chequeNumber(), v.getPaymentAccount())
+                    : in.paymentMethod());
+            v.setPaymentReference(isBlank(in.paymentReference()) ? null : in.paymentReference().trim());
+        }
 
         List<VoucherLine> newLines = new ArrayList<>();
         for (VoucherLineInput li : in.lines()) {
@@ -593,5 +862,14 @@ public class VoucherService {
             newLines.add(l);
         }
         v.replaceLines(newLines);
+        // Spec §2: the header property follows the lines. When every line of a
+        // PISR names the same property and the header names none, the header takes
+        // it, so the INPUT_VAT line and the vendor credit carry it too (§1 section 8).
+        if (in.docType() == VoucherType.PISR && v.getPropertyId() == null && !newLines.isEmpty()) {
+            UUID first = newLines.get(0).getPropertyId();
+            if (first != null && newLines.stream().allMatch(l -> first.equals(l.getPropertyId()))) {
+                v.setPropertyId(first);
+            }
+        }
     }
 }

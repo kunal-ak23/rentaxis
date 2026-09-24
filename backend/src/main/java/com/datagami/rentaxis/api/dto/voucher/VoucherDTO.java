@@ -15,7 +15,9 @@ public record VoucherDTO(UUID id, VoucherType docType, LocalDate docDate, UUID v
                          String invoiceNumber, String narration, UUID propertyId, UUID unitId,
                          UUID paymentAccountId, String paymentAccountName, String chequeNumber, LocalDate chequeDate,
                          VoucherStatus status, UUID journalId, String voucherNumber, UUID amendedFromId,
-                         BigDecimal netTotal, BigDecimal vatTotal, BigDecimal grossTotal, Instant postedAt) {
+                         BigDecimal netTotal, BigDecimal vatTotal, BigDecimal grossTotal, Instant postedAt,
+                         LocalDate supplierInvoiceDate, LocalDate dueDate,
+                         com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod, String paymentReference) {
 
     public static VoucherDTO of(Voucher v) {
         return new VoucherDTO(v.getId(), v.getDocType(), v.getDocDate(),
@@ -27,6 +29,7 @@ public record VoucherDTO(UUID id, VoucherType docType, LocalDate docDate, UUID v
                 v.getChequeNumber(), v.getChequeDate(), v.getStatus(), v.getJournalId(),
                 v.getVoucherNumber(), v.getAmendedFromId(),
                 VoucherMath.netTotal(v.getLines()), VoucherMath.vatTotal(v.getLines()),
-                VoucherMath.grossTotal(v.getLines()), v.getPostedAt());
+                VoucherMath.grossTotal(v.getLines()), v.getPostedAt(),
+                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference());
     }
 }

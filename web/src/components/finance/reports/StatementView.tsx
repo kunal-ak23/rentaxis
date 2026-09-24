@@ -32,6 +32,7 @@ export default function StatementView({ data, locale }: { data: PropertyStatemen
         if (typeof v === "number") return fmtAmount(v);
         if (column === "mode") return t(`mode.${v}`);
         if (column === "type") return t(`type.${v}`);
+        if (column === "basis") return t(`basis.${v}`);
         return String(v);
     };
 

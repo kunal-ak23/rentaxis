@@ -89,6 +89,7 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
 
         Vendor v = new Vendor();
         v.setNameEn("Emrill Services LLC");
+        v.setTrn("100123456700003");   // a PISR with input VAT needs it (finance-ops spec §2)
         vendor = vendorService.createVendor(v);
 
         fiscal.setBooksStartDate(LocalDate.of(2026, 10, 1));
@@ -200,7 +201,7 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
     @Test
     void aZeroRatedInvoiceHasNoInputVatLine() {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), null, "Zero rated",
+                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), "EMR-4480", "Zero rated",
                 propertyId, null, null, null, null,
                 List.of(new VoucherService.VoucherLineInput(lifeguard.getId(), null,
                         new BigDecimal("1500.00"), BigDecimal.ZERO, propertyId, null))));
@@ -261,7 +262,7 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
     @Test
     void postingIntoALockedPeriodIsRejected() {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.PISR, LocalDate.of(2026, 9, 15), vendor.getId(), null, "Before cut-over",
+                VoucherType.PISR, LocalDate.of(2026, 9, 15), vendor.getId(), "EMR-4481", "Before cut-over",
                 propertyId, null, null, null, null,
                 List.of(new VoucherService.VoucherLineInput(pestControl.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, propertyId, null))));
@@ -345,7 +346,7 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
     void aPisrLineOnAnIncomeAccountIsRefusedAtPost() {
         Account income = accounts.createLeaf("Other Income - Ocean", accounts.getAccountByCode("C-01-02"), null);
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), null, "Wrong account",
+                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), "EMR-4482", "Wrong account",
                 propertyId, null, null, null, null,
                 List.of(new VoucherService.VoucherLineInput(pestControl.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
