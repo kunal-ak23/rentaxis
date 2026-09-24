@@ -645,6 +645,7 @@
     "property": "Linked Property",
     "coaAccount": "COA Account",
     "isDefault": "Default Account",
+    "defaultHint": "The first bank account is the default, and only one can be. Each property’s own bank ledger account is attached to the default bank account (else the oldest active one); a new bank account also takes any property ledger account no bank account holds yet.",
     "noBankAccounts": "No Bank Accounts",
     "addBankAccountDesc": "Add bank accounts to track deposits and reconcile payments.",
     "active": "Active",

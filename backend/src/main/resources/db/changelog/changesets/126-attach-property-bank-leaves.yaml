@@ -1,0 +1,56 @@
+# PR #356 R2 ruling: every property has its own BANK leaf and every BANK leaf is
+# owned by a bank account. For existing organisations:
+#   1. one default bank account: where none is default, the oldest active one
+#      becomes it; where several are, the oldest of them stays default;
+#   2. every property's own active BANK leaf no bank account owns is attached to
+#      the tenant's default bank account (else the only one, else the oldest
+#      active). A leaf with postings on or before that bank account's
+#      reconciled-through date is left alone (attaching it would change a
+#      signed-off reconciliation). Tenants with no bank account are skipped.
+# Idempotent: each statement only fills what is missing; ON CONFLICT DO NOTHING
+# absorbs both bank_account_ledgers unique constraints.
+databaseChangeLog:
+  - changeSet:
+      id: 126-attach-property-bank-leaves
+      author: claude
+      runOnChange: false
+      changes:
+        - sql:
+            comment: One default bank account per tenant
+            splitStatements: false
+            sql: |
+              UPDATE bank_accounts b SET is_default = TRUE
+               WHERE b.id IN (SELECT DISTINCT ON (x.tenant_id) x.id FROM bank_accounts x
+                               WHERE x.is_active
+                                 AND NOT EXISTS (SELECT 1 FROM bank_accounts d
+                                                  WHERE d.tenant_id = x.tenant_id AND d.is_default)
+                               ORDER BY x.tenant_id, x.created_at ASC, x.id);
+              UPDATE bank_accounts b SET is_default = FALSE
+               WHERE b.is_default
+                 AND b.id NOT IN (SELECT DISTINCT ON (x.tenant_id) x.id FROM bank_accounts x
+                                   WHERE x.is_default
+                                   ORDER BY x.tenant_id, x.is_active DESC, x.created_at ASC, x.id);
+        - sql:
+            comment: Attach unowned property BANK leaves to the tenant's operating bank account
+            splitStatements: false
+            sql: |
+              INSERT INTO bank_account_ledgers (tenant_id, bank_account_id, account_id, created_at)
+              SELECT a.tenant_id, op.id, a.id, CURRENT_TIMESTAMP
+                FROM accounts a
+                JOIN (SELECT DISTINCT ON (b.tenant_id) b.tenant_id, b.id, b.reconciled_through
+                        FROM bank_accounts b
+                       WHERE b.is_active
+                       ORDER BY b.tenant_id, b.is_default DESC, b.created_at ASC, b.id) op
+                  ON op.tenant_id = a.tenant_id
+               WHERE a.account_sub_type = 'BANK' AND NOT a.is_group AND a.is_active
+                 AND a.property_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM bank_account_ledgers l
+                                  WHERE l.tenant_id = a.tenant_id AND l.account_id = a.id)
+                 AND (op.reconciled_through IS NULL
+                      OR NOT EXISTS (SELECT 1 FROM journal_lines jl
+                                       JOIN journal_entries je ON je.id = jl.journal_entry_id
+                                      WHERE jl.account_id = a.id AND je.entry_date <= op.reconciled_through))
+              ON CONFLICT DO NOTHING;
+      rollback:
+        - sql:
+            sql: SELECT 1

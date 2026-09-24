@@ -557,12 +557,15 @@ public class BankLineActionService {
      * (tenant-wide or its own) — another property's leaf is refused by name.
      */
     private UUID leafFor(Set<UUID> leaves, UUID propertyId, UUID picked) {
+        // R2 N1: one tenant-scoped query for the whole set.
         Set<UUID> usable = new java.util.LinkedHashSet<>();
-        for (UUID l : leaves) {
-            List<UUID> scoped = jdbc.queryForList("select property_id from accounts where id = :a",
-                    new MapSqlParameterSource("a", l), UUID.class);
-            UUID p = scoped.isEmpty() ? null : scoped.get(0);
-            if (p == null || p.equals(propertyId)) usable.add(l);
+        if (!leaves.isEmpty()) {
+            Set<UUID> ok = new java.util.HashSet<>(jdbc.queryForList("""
+                    select a.id from accounts a where a.tenant_id = :t and a.id in (:ids)
+                      and (a.property_id is null or a.property_id = :p)""",
+                    new MapSqlParameterSource("t", BankAccountLedgerService.requireTenant()).addValue("ids", leaves)
+                            .addValue("p", propertyId), UUID.class));
+            for (UUID l : leaves) if (ok.contains(l)) usable.add(l);
         }
         if (usable.isEmpty()) {
             throw BankRecRefusal.refuse("noBankForProperty", "No bank account is set up for this property: none of"

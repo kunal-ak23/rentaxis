@@ -257,3 +257,5 @@ databaseChangeLog:
       file: db/changelog/changesets/124-renter-refund-payable.yaml
   - include:
       file: db/changelog/changesets/125-supplier-credit-note.yaml
+  - include:
+      file: db/changelog/changesets/126-attach-property-bank-leaves.yaml

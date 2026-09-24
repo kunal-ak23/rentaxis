@@ -198,24 +198,24 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         bankAccount(false, tenantBankLeaf());
         bankAccount(false, tenantBankLeaf());
         Property third = fixtures.createProperty("NOBANK");
-        assertThat(accountRepo.findAll())
-                .noneMatch(a -> a.getName() != null && a.getName().contains(third.getNameEn())
-                        && a.getName().startsWith("Emirates Islamic"));
+        UUID leaf = bankLeafOf(third);
+        boolean isOwned = ownedBankLeaf.isOwned(leaf);
+        assertThat(isOwned).as("F14-44 + R2: generated and owned").isTrue();
     }
 
     @Test
-    void aNewPropertyIsMappedToTheOwnedLeafInsteadOfAnOrphan() {
+    void aNewPropertyGetsItsOwnLeafAttachedToTheBankAccount() {
         UUID owned = tenantBankLeaf();
         bankAccountOwning(owned);
-        long leavesBefore = accountRepo.count();
 
         Property third = fixtures.createProperty("NEW");
 
-        assertThat(bankLeafOf(third)).as("receipts for the new property land in the owned leaf").isEqualTo(owned);
-        assertThat(accountRepo.findAll()).as("no orphan bank leaf was generated")
-                .noneMatch(a -> a.getName() != null && a.getName().contains(third.getNameEn())
-                        && a.getName().startsWith("Emirates Islamic"));
-        assertThat(accountRepo.count()).isGreaterThan(leavesBefore); // the other template leaves still exist
+        // R2 ruling: its own leaf, not the shared one — and owned, so it reconciles.
+        UUID leaf = bankLeafOf(third);
+        assertThat(leaf).isNotEqualTo(owned);
+        assertThat(accountRepo.findById(leaf).orElseThrow().getPropertyId()).isEqualTo(third.getId());
+        boolean isOwned = ownedBankLeaf.isOwned(leaf);
+        assertThat(isOwned).isTrue();
     }
 
     @Test

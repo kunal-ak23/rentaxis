@@ -211,11 +211,14 @@ class StatementCoverIT extends AbstractPostgresIT {
     @Test
     void aStatementLineReceiptForAPropertyWithoutItsOwnLeafIsRefused() {
         Property palm = fx.createProperty("PALM");
-        // Palm's BANK role points at Marina's leaf (the one the bank account owns): the
-        // posting accepts it, but a receipt for Palm must never land in it.
-        jdbc.update("insert into property_account_mappings (id, tenant_id, property_id, role, account_id)"
-                + " values (gen_random_uuid(), ?, ?, 'BANK', ?) on conflict do nothing",
-                fx.tenantId(), palm.getId(), marinaBank.getId());
+        // Palm got its own leaf, attached to the bank account (R2). Take it off again
+        // and point Palm's BANK role at Marina's leaf: the posting accepts it, but a
+        // receipt for Palm must never land in Marina's leaf.
+        UUID palmLeaf = jdbc.queryForObject("select account_id from property_account_mappings where property_id = ?"
+                + " and role = 'BANK'", UUID.class, palm.getId());
+        jdbc.update("delete from bank_account_ledgers where account_id = ?", palmLeaf);
+        jdbc.update("update property_account_mappings set account_id = ? where property_id = ? and role = 'BANK'",
+                marinaBank.getId(), palm.getId());
         Unit u = fx.createUnit(palm, "P-1");
         Renter r = fx.createRenter("Palm Renter");
         var lease = fx.postedLease(u, r, AUG_1, AUG_1, LocalDate.of(2027, 7, 31), List.of(line("RENT", "50000")), 1, "000801");

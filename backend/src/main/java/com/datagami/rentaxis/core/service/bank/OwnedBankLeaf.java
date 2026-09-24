@@ -60,6 +60,61 @@ public class OwnedBankLeaf {
         return n != null && n > 0;
     }
 
+    /** A bank account the tenant operates: its id and bank name. */
+    public record Operating(UUID id, String bankName) { }
+
+    /**
+     * R2 ruling: the bank account a new property's own bank leaf is attached to —
+     * the default bank account; else the only active one; else the oldest active one
+     * (created first). Empty when the tenant has no active bank account.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Operating> operatingBankAccount() {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null) return Optional.empty();
+        return jdbc.query("""
+                select b.id, b.bank_name from bank_accounts b
+                where b.tenant_id = :t and b.is_active
+                order by b.is_default desc, b.created_at asc, b.id
+                limit 1""", new MapSqlParameterSource("t", t),
+                (rs, i) -> new Operating(rs.getObject("id", UUID.class), rs.getString("bank_name"))).stream().findFirst();
+    }
+
+    /** Attaches {@code accountId} to the bank account, unless some bank account already owns it. */
+    @Transactional
+    public void attach(UUID bankAccountId, UUID accountId) {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null || bankAccountId == null || accountId == null) return;
+        jdbc.update("""
+                insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
+                select :t, :b, :a
+                where exists (select 1 from bank_accounts where id = :b and tenant_id = :t)
+                  and exists (select 1 from accounts where id = :a and tenant_id = :t and account_sub_type = 'BANK'
+                              and not is_group)
+                on conflict do nothing""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountId));
+    }
+
+    /**
+     * R2 ruling (b): a new bank account takes every property's own bank leaf no
+     * bank account owns yet — the leaves properties created before it generated.
+     * @return how many leaves it took
+     */
+    @Transactional
+    public int attachUnownedPropertyLeaves(UUID bankAccountId) {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null || bankAccountId == null) return 0;
+        return jdbc.update("""
+                insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
+                select a.tenant_id, :b, a.id from accounts a
+                where a.tenant_id = :t and a.account_sub_type = 'BANK' and not a.is_group and a.is_active
+                  and a.property_id is not null
+                  and exists (select 1 from bank_accounts b where b.id = :b and b.tenant_id = :t)
+                  and not exists (select 1 from bank_account_ledgers l where l.tenant_id = a.tenant_id and l.account_id = a.id)
+                on conflict do nothing""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId));
+    }
+
     /** Whether this tenant has any bank account with a ledger leaf. */
     @Transactional(readOnly = true)
     public boolean anyOwned() {
