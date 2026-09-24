@@ -38,6 +38,10 @@ export type LineRow = {
     creditAccountId: string | null;
     creditAccountCode?: string | null;
     creditAccountName?: string | null;
+    /** The persisted line's own charge/account names (server-resolved at save time), for the read-only view. Arabic names fall back to the English one when the catalogue has none. */
+    chargeTypeName?: string;
+    chargeTypeNameAr?: string | null;
+    creditAccountNameAr?: string | null;
     /**
      * The window a persisted line covers — an addendum's or an extension's rent
      * runs over its own dates, not the lease's. Not editable in the grid; carried
@@ -86,6 +90,9 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         creditAccountId: line.creditAccountId,
         creditAccountCode: line.creditAccountCode,
         creditAccountName: line.creditAccountName,
+        chargeTypeName: line.chargeTypeName,
+        chargeTypeNameAr: line.chargeTypeNameAr ?? null,
+        creditAccountNameAr: line.creditAccountNameAr ?? null,
         periodStart: line.periodStart ?? null,
         periodEnd: line.periodEnd ?? null,
         addendumId: line.addendumId ?? null,

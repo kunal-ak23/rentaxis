@@ -163,10 +163,14 @@ export type LeaseLine = {
   chargeTypeId: string;
   chargeTypeCode: string;
   chargeTypeName: string;
+  /** The charge type's Arabic name, when the catalogue has one; null on older data. */
+  chargeTypeNameAr?: string | null;
   behaviour: ChargeBehaviour;
   creditAccountId: string | null;
   creditAccountCode: string | null;
   creditAccountName: string | null;
+  /** The credit account's Arabic name, when the chart has one; null on older data. */
+  creditAccountNameAr?: string | null;
   grossAmount: number;
   discountAmount: number;
   netAmount: number;
@@ -419,7 +423,7 @@ export type Cheque = {
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----
 
-export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT";
+export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT" | "CONTRACT";
 export type VatTaxPointStatus = "PLANNED" | "POSTED" | "CANCELLED";
 export type TaxInvoiceKind = "TAX_INVOICE" | "CREDIT_NOTE";
 

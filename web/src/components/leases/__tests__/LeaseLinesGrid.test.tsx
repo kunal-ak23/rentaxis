@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
+import ar from "../../../../messages/ar.json";
 import LeaseLinesGrid from "../LeaseLinesGrid";
 import { blankLine, type LineRow } from "../leaseMath";
 import type { ChargeType } from "@/lib/api/leasing";
@@ -54,6 +55,14 @@ function Harness({ initial, errors, rentVat }: { initial: LineRow[]; errors?: st
 function renderReadOnly(lines: LineRow[]) {
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
+            <LeaseLinesGrid lines={lines} chargeTypes={CHARGE_TYPES} editable={false} />
+        </NextIntlClientProvider>,
+    );
+}
+
+function renderReadOnlyAr(lines: LineRow[]) {
+    return render(
+        <NextIntlClientProvider locale="ar" messages={ar}>
             <LeaseLinesGrid lines={lines} chargeTypes={CHARGE_TYPES} editable={false} />
         </NextIntlClientProvider>,
     );
@@ -217,5 +226,66 @@ describe("LeaseLinesGrid", () => {
         cleanup();
         renderReadOnly([row({ key: 0, chargeTypeId: "ct-rent" })]);
         expect(screen.queryByTestId("lease-lines-add")).not.toBeInTheDocument();
+    });
+
+    /**
+     * F14-15: /ar lease detail showed "Rent", "Parking Fee" etc. in English —
+     * the grid read the catalogue's `nameEn` alone. The read-only view now
+     * prefers the persisted line's own `chargeTypeNameAr` /
+     * `creditAccountNameAr` on Arabic, and falls back sensibly when a line
+     * predates those fields.
+     */
+    describe("Arabic charge and account names (F14-15)", () => {
+        it("shows the line's own Arabic charge and account names on /ar", () => {
+            renderReadOnlyAr([
+                row({
+                    key: 0, chargeTypeId: "ct-rent", grossAmount: 60000,
+                    chargeTypeName: "Rent", chargeTypeNameAr: "الإيجار",
+                    creditAccountId: "acc-1", creditAccountCode: "410100",
+                    creditAccountName: "Rent Income", creditAccountNameAr: "إيرادات الإيجار",
+                }),
+            ]);
+            const row0 = screen.getByTestId("lease-line-row-0");
+            expect(row0).toHaveTextContent("الإيجار");
+            expect(row0).not.toHaveTextContent("Rent");
+            expect(row0).toHaveTextContent("إيرادات الإيجار");
+            expect(row0).not.toHaveTextContent("Rent Income");
+        });
+
+        it("falls back to the English name when a line has no Arabic name yet", () => {
+            renderReadOnlyAr([
+                row({
+                    key: 0, chargeTypeId: "ct-fee", grossAmount: 1500,
+                    chargeTypeName: "Admin Fee", chargeTypeNameAr: null,
+                    creditAccountId: "acc-2", creditAccountCode: "400200",
+                    creditAccountName: "Admin Income", creditAccountNameAr: null,
+                }),
+            ]);
+            const row0 = screen.getByTestId("lease-line-row-0");
+            expect(row0).toHaveTextContent("Admin Fee");
+            expect(row0).toHaveTextContent("Admin Income");
+        });
+
+        it("shows the English name on /en even when an Arabic name is present", () => {
+            renderReadOnly([
+                row({
+                    key: 0, chargeTypeId: "ct-rent", grossAmount: 60000,
+                    chargeTypeName: "Rent", chargeTypeNameAr: "الإيجار",
+                }),
+            ]);
+            const row0 = screen.getByTestId("lease-line-row-0");
+            expect(row0).toHaveTextContent("Rent");
+            expect(row0).not.toHaveTextContent("الإيجار");
+        });
+
+        it("wraps the table so every column, including VAT, stays reachable rather than clipped", () => {
+            renderReadOnlyAr([row({ key: 0, chargeTypeId: "ct-rent", grossAmount: 60000 })]);
+            const wrapper = screen.getByTestId("lease-lines-grid");
+            const scroller = wrapper.querySelector(":scope > .overflow-x-auto");
+            expect(scroller).not.toBeNull();
+            expect(scroller?.querySelector("table")).not.toBeNull();
+            // No fixed negative margin or left-anchored positioning hiding a column.
+            expect(wrapper.className).not.toMatch(/-ml-|left-\d/);
+        });
     });
 });

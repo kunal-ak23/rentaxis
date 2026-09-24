@@ -123,6 +123,29 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         };
     }, [action, cheque]);
 
+    // Receiving a CASH instalment used to post straight to the bank leaf the
+    // row was generated with, whatever the accountant actually did with the
+    // note — the deposit slip and the cash box never met the ledger. A CASH
+    // row now defaults to the tenant's CASH role account (finance/default-accounts);
+    // a chart with none configured falls back to the row's own debit account,
+    // same as a TRANSFER row, which always keeps its current account as the
+    // starting point. Either way the picker below lets the operator override it.
+    useEffect(() => {
+        if (action !== "receive" || !cheque || cheque.mode !== "CASH") return;
+        let live = true;
+        ledgerApi.defaults
+            .get()
+            .then(mappings => {
+                if (!live) return;
+                const cash = mappings.find(m => m.role === "CASH" && m.accountId);
+                if (cash?.accountId) setDebitAccountId(cash.accountId);
+            })
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
+    }, [action, cheque]);
+
     if (!action || !cheque) return null;
 
     /**
@@ -150,7 +173,14 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     await chequeApi.clear(cheque.id, { date, notes: notes || null });
                     break;
                 case "receive":
-                    await chequeApi.receive(cheque.id, { date, notes: notes || null });
+                    // The row's own account is not sent back: the server then settles into it,
+                    // or — when it is a bank leaf no bank account owns — into the property's
+                    // reconcilable leaf (F14-16). Only a different choice is an override.
+                    await chequeApi.receive(cheque.id, {
+                        date,
+                        notes: notes || null,
+                        debitAccountId: debitAccountId && debitAccountId !== cheque.debitAccountId ? debitAccountId : null,
+                    });
                     break;
                 case "bounce":
                     await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason });
@@ -317,6 +347,21 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             propertyId={propertyId}
                             placeholder={tl("debitAccount")}
                         />
+                    </div>
+                )}
+
+                {action === "receive" && (
+                    <div>
+                        <label className={label} htmlFor="cheque-receive-account">{t("receivedInto")}</label>
+                        <SettlementAccountPicker
+                            value={debitAccountId}
+                            onChange={setDebitAccountId}
+                            propertyId={propertyId}
+                            placeholder={t("receivedInto")}
+                        />
+                        <p className="text-[11px] text-muted mt-1" data-testid="cheque-received-into-hint">
+                            {t("receivedIntoHint")}
+                        </p>
                     </div>
                 )}
 

@@ -729,8 +729,8 @@ export default function LeaseDetailPage() {
                             />
                         )}
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="space-y-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
+                            <div className="space-y-6 min-w-0">
                                 <Card title={t("contractNumber")} icon={<FileText size={13} />}>
                                     <Detail label={t("contractDate")} value={fmtIsoDate(lease.contractDate, locale)} />
                                     <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
@@ -757,7 +757,7 @@ export default function LeaseDetailPage() {
                                 )}
                             </div>
 
-                            <div className="lg:col-span-2 space-y-6">
+                            <div className="lg:col-span-2 space-y-6 min-w-0">
                                 <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
 
                                 <div className="space-y-2">
