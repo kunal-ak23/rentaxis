@@ -210,7 +210,9 @@ class VoucherControllerIT extends AbstractPostgresIT {
                         "accountId", accountId.toString(),
                         "description", "Guards",
                         "amount", new BigDecimal(amount),
-                        "vatRate", new BigDecimal(vatRate)))));
+                        "vatRate", new BigDecimal(vatRate),
+                        // A tenant-level leaf: the line says it is shared (finance-ops spec §1).
+                        "shared", true))));
     }
 
     private String bpvBody(UUID paymentAccountId, UUID lineAccountId, String amount) throws Exception {
@@ -223,7 +225,8 @@ class VoucherControllerIT extends AbstractPostgresIT {
                         "accountId", lineAccountId.toString(),
                         "description", "Payment",
                         "amount", new BigDecimal(amount),
-                        "vatRate", BigDecimal.ZERO))));
+                        "vatRate", BigDecimal.ZERO,
+                        "shared", true))));
     }
 
     private JsonNode createPisr(User caller) throws Exception {

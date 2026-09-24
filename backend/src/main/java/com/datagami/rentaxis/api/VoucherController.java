@@ -182,7 +182,8 @@ public class VoucherController {
         return new VoucherService.VoucherInput(d.docType(), d.docDate(), d.vendorId(), d.invoiceNumber(),
                 d.narration(), d.propertyId(), d.unitId(), d.paymentAccountId(), d.chequeNumber(), d.chequeDate(),
                 d.lines().stream().map(l -> new VoucherService.VoucherLineInput(
-                        l.accountId(), l.description(), l.amount(), l.vatRate(), l.propertyId(), l.unitId())).toList());
+                        l.accountId(), l.description(), l.amount(), l.vatRate(), l.propertyId(), l.unitId(),
+                        Boolean.TRUE.equals(l.shared()))).toList());
     }
 
     /** A voucher needs an organisation to belong to; see the class Javadoc. */
