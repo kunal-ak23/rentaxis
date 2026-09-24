@@ -2601,7 +2601,13 @@
     "daysOverdue": "{days} days overdue",
     "allocatedTotal": "Allocated",
     "remainsAdvance": "Left as advance",
-    "amendReleases": "This payment settles {invoices}. They will show as unpaid."
+    "amendReleases": "This payment settles {invoices}. They will show as unpaid.",
+    "settlesTitle": "Invoices this payment settles",
+    "settledByTitle": "Payments settling this invoice",
+    "allocatedOn": "Allocated on",
+    "release": "Release",
+    "releaseReason": "Reason for releasing",
+    "releaseLocked": "Allocated inside the locked period (books locked through {date}); it cannot be released."
   },
   "Cutover": {
     "importBatches": "Import Batches",

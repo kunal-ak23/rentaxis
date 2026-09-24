@@ -2601,7 +2601,13 @@
     "daysOverdue": "متأخرة {days} يوماً",
     "allocatedTotal": "المخصص",
     "remainsAdvance": "يبقى دفعة مقدمة",
-    "amendReleases": "هذه الدفعة تسدد {invoices}. ستظهر غير مدفوعة."
+    "amendReleases": "هذه الدفعة تسدد {invoices}. ستظهر غير مدفوعة.",
+    "settlesTitle": "الفواتير التي تسددها هذه الدفعة",
+    "settledByTitle": "الدفعات التي تسدد هذه الفاتورة",
+    "allocatedOn": "تاريخ التخصيص",
+    "release": "إلغاء التخصيص",
+    "releaseReason": "سبب إلغاء التخصيص",
+    "releaseLocked": "خُصصت داخل الفترة المقفلة (الدفاتر مقفلة حتى {date})؛ لا يمكن إلغاؤها."
   },
   "Cutover": {
     "importBatches": "دفعات الاستيراد",

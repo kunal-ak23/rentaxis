@@ -1132,7 +1132,7 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
             expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(en.Vouchers.allocationsExceedPayment));
     });
 
-    it("warns that amending a payment re-opens the invoices it settles", async () => {
+    it("starts a payment's amendment from what it settles and sends that by default", async () => {
         allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450 },
             { id: "a2", live: true, invoiceNumber: "INV-7790", invoiceVoucherId: "inv-90", amount: 600 }];
         api.get.mockResolvedValue(detail({
@@ -1142,13 +1142,103 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
                 description: null, amount: 2050, vatRate: 0, vatAmount: 0, propertyId: null, unitId: null }],
             settlement: { amount: 2050, allocated: 2050, open: 0, status: null },
         }));
+        api.amend.mockResolvedValue(detail({ id: "v2", docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/56" }));
         renderForm("BPV", { voucherId: "v1" });
+        await waitFor(() => expect(screen.queryByTestId("settlements-panel")).toBeInTheDocument());
         fireEvent.click(await screen.findByTestId("amend-voucher"));
-        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2000" } });
+        // The panel starts from what the payment settles today (review P3-3).
+        expect(await screen.findByTestId("allocate-amount-INV-7781")).toHaveValue("1450.00");
+        expect(screen.getByTestId("allocate-amount-INV-7790")).toHaveValue("600.00");
+        // A reference-only amend is not "no change"… but nothing is re-opened.
+        fireEvent.change(screen.getByTestId("payment-reference"), { target: { value: "TRF-7781B" } });
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        await screen.findByTestId("amend-date");
+        expect(screen.queryByTestId("amend-releases")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("confirm-amend"));
+        await waitFor(() => expect(api.amend).toHaveBeenCalled());
+        expect(api.amend.mock.calls.at(-1)![1].allocations).toEqual([
+            { invoiceId: "inv-90", amount: 600 }, { invoiceId: "inv-81", amount: 1450 }]);
+    });
+
+    it("names only the invoices an amended payment would leave less settled", async () => {
+        allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450 },
+            { id: "a2", live: true, invoiceNumber: "INV-7790", invoiceVoucherId: "inv-90", amount: 600 }];
+        api.get.mockResolvedValue(detail({
+            docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/55", paymentAccountId: "bank-1",
+            paymentMethod: "TRANSFER", paymentReference: "TRF-7781",
+            lines: [{ lineNo: 1, accountId: "pay-1", accountCode: "210101", accountName: "Emirates Facilities",
+                description: null, amount: 2050, vatRate: 0, vatAmount: 0, propertyId: null, unitId: null }],
+        }));
+        renderForm("BPV", { voucherId: "v1" });
+        await waitFor(() => expect(screen.queryByTestId("settlements-panel")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("amend-voucher"));
+        fireEvent.change(await screen.findByTestId("allocate-amount-INV-7790"), { target: { value: "" } });
         await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
         fireEvent.click(screen.getByTestId("post-amendment"));
         expect(await screen.findByTestId("amend-releases"))
-            .toHaveTextContent("This payment settles INV-7781, INV-7790. They will show as unpaid.");
+            .toHaveTextContent("This payment settles INV-7790. They will show as unpaid.");
+    });
+
+    it("releases an allocation with a reason, and not one inside the lock", async () => {
+        api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-08-31" });
+        allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450, allocatedOn: "2026-09-10" },
+            { id: "a2", live: true, invoiceNumber: "INV-7702", invoiceVoucherId: "inv-02", amount: 500, allocatedOn: "2026-08-15" }];
+        const bpv = detail({
+            docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/55", paymentAccountId: "bank-1",
+            lines: [{ lineNo: 1, accountId: "pay-1", accountCode: "210101", accountName: "Emirates Facilities",
+                description: null, amount: 1950, vatRate: 0, vatAmount: 0, propertyId: null, unitId: null }],
+        });
+        api.get.mockResolvedValue(bpv);
+        const release = vi.fn(async (_url: string, _init?: RequestInit) =>
+            new Response(JSON.stringify({ id: "a1", live: false }), { status: 200 }));
+        const base = global.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+        vi.stubGlobal("fetch", vi.fn(async (u: string, init?: RequestInit) =>
+            init?.method === "DELETE" ? release(u, init) : base(u, init)));
+        renderForm("BPV", { voucherId: "v1" });
+        expect(await screen.findByTestId("release-a2")).toBeDisabled();
+        fireEvent.click(screen.getByTestId("release-a1"));
+        expect(screen.getByTestId("release-confirm")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("release-reason"), { target: { value: "wrong invoice" } });
+        fireEvent.click(screen.getByTestId("release-confirm"));
+        await waitFor(() => expect(release).toHaveBeenCalled());
+        const [url, init] = release.mock.calls[0];
+        expect(url).toContain("/finance/voucher-allocations/a1");
+        expect(JSON.parse(String(init?.body))).toEqual({ reason: "wrong invoice" });
+    });
+
+    it("keeps the supplier date on the posting date until it is typed, and dates the due date from it", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });   // 30 days
+        fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2026-08-05" } });
+        await waitFor(() => expect(screen.getByTestId("supplier-invoice-date")).toHaveValue("2026-08-05"));
+        await waitFor(() => expect(screen.getByTestId("due-date")).toHaveValue("2026-09-04"));
+        fillInvoiceNumber("AUG-1");
+        fillLine(0, "1000", "5");
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        expect(api.create.mock.calls.at(-1)![0]).toMatchObject({
+            docDate: "2026-08-05", supplierInvoiceDate: "2026-08-05", dueDate: "2026-09-04" });
+    });
+
+    it("re-derives the header property from the lines until it is chosen by hand", async () => {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        await waitFor(() => expect(screen.getAllByRole("option", { name: "L'Olivier" }).length).toBeGreaterThan(0));
+        fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-1" } });
+        await waitFor(() => expect(screen.getByTestId("property")).toHaveValue("prop-1"));
+        fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-2" } });
+        await waitFor(() => expect(screen.getByTestId("property")).toHaveValue("prop-2"));
+        fireEvent.click(screen.getByTestId("add-line"));
+        fireEvent.change(screen.getByTestId("line-property-1"), { target: { value: "prop-1" } });
+        // Two properties: no single header property.
+        await waitFor(() => expect(screen.getByTestId("property")).toHaveValue(""));
+        // Chosen by hand, it stays.
+        fireEvent.change(screen.getByTestId("property"), { target: { value: "prop-1" } });
+        fireEvent.change(screen.getByTestId("line-property-1"), { target: { value: "prop-2" } });
+        await new Promise(r => setTimeout(r, 50));
+        expect(screen.getByTestId("property")).toHaveValue("prop-1");
     });
 
     it("shows a posted invoice's settlement status", async () => {

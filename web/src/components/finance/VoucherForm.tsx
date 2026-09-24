@@ -191,6 +191,14 @@ export default function VoucherForm({
     const [chequeDate, setChequeDate] = useState("");
     /** PISR (spec §2): the supplier's own date, and the due date it defaults from. */
     const [supplierInvoiceDate, setSupplierInvoiceDate] = useState("");
+    /** Typed by hand: the supplier date then stops following the posting date (review P1-1). */
+    const [supplierTouched, setSupplierTouched] = useState(false);
+    /**
+     * Chosen by hand. Until then a purchase invoice's header property is derived
+     * from its lines — the one property they all name, or none — as the server
+     * derives it, and re-derived whenever the lines change (review P3-6).
+     */
+    const [headerTouched, setHeaderTouched] = useState(false);
     const [dueDate, setDueDate] = useState("");
     /** Typed by hand: the due date then stops following the supplier date and terms. */
     const [dueTouched, setDueTouched] = useState(false);
@@ -205,6 +213,10 @@ export default function VoucherForm({
     const [allocate, setAllocate] = useState<Record<string, string>>({});
     /** Live allocations of the loaded (posted) voucher: the amend warning and the panel's add-back. */
     const [ownAllocations, setOwnAllocations] = useState<Allocation[]>([]);
+    /** Bumped after a manual release, to re-read the allocations and the settlement. */
+    const [allocationsVersion, setAllocationsVersion] = useState(0);
+    /** The allocation being released and the reason being typed for it. */
+    const [releasing, setReleasing] = useState<{ id: string; reason: string } | null>(null);
     const [lines, setLines] = useState<DraftLine[]>(() => [newLine()]);
     const [attachments, setAttachments] = useState<VoucherAttachment[]>([]);
 
@@ -287,6 +299,13 @@ export default function VoucherForm({
         setChequeNumber(v.chequeNumber ?? "");
         setChequeDate(v.chequeDate ?? "");
         setSupplierInvoiceDate(v.supplierInvoiceDate ?? v.docDate);
+        setSupplierTouched(!!v.supplierInvoiceDate && v.supplierInvoiceDate !== v.docDate);
+        {
+            const props = v.lines.map(l => l.propertyId ?? "");
+            const common = props.length > 0 && props.every(x => x && x === props[0]) ? props[0] : "";
+            // A header equal to what the lines derive is the derived one, not a choice.
+            setHeaderTouched(!(v.docType === "PISR" && (v.propertyId ?? "") === common));
+        }
         setDueDate(v.dueDate ?? "");
         // A saved due date, or any posted document, keeps its own: only a fresh
         // draft follows the supplier date and the vendor's terms.
@@ -389,6 +408,29 @@ export default function VoucherForm({
         }),
         [openItems, allocate],
     );
+    /** What the loaded payment settles today, by panel key, in fils. */
+    const ownByKey = useMemo(() => {
+        const out: Record<string, number> = {};
+        for (const a of ownAllocations) {
+            const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+            out[key] = (out[key] ?? 0) + Math.round(a.amount * 100);
+        }
+        return out;
+    }, [ownAllocations]);
+    /** Invoices the amendment would leave less settled than today — the ones the warning names. */
+    const reopened = useMemo(
+        () => [...new Set(ownAllocations
+            .filter(a => {
+                const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+                return Math.round(num(allocate[key] ?? "") * 100) < (ownByKey[key] ?? 0);
+            })
+            .map(a => a.invoiceNumber ?? ""))].filter(Boolean),
+        [ownAllocations, ownByKey, allocate],
+    );
+    const allocationsChanged = useMemo(() => {
+        const keys = new Set([...Object.keys(ownByKey), ...Object.keys(allocate)]);
+        return [...keys].some(k => Math.round(num(allocate[k] ?? "") * 100) !== (ownByKey[k] ?? 0));
+    }, [ownByKey, allocate]);
     const allocationTotal = useMemo(
         () => Math.round(allocationInputs.reduce((s, a) => s + a.amount * 100, 0)) / 100,
         [allocationInputs],
@@ -414,8 +456,20 @@ export default function VoucherForm({
 
     // The supplier's date follows the posting date until it is set apart from it.
     useEffect(() => {
-        if (type === "PISR" && editable && !supplierInvoiceDate) setSupplierInvoiceDate(docDate);
-    }, [type, editable, docDate, supplierInvoiceDate]);
+        if (type === "PISR" && editable && !supplierTouched && supplierInvoiceDate !== docDate) {
+            setSupplierInvoiceDate(docDate);
+        }
+    }, [type, editable, docDate, supplierInvoiceDate, supplierTouched]);
+
+    // The header property follows the lines until chosen by hand. Lines that
+    // still inherit the header ("same as header") leave it where it is.
+    useEffect(() => {
+        if (type !== "PISR" || !editable || headerTouched) return;
+        const props = lines.map(l => (l.shared ? "__shared__" : l.propertyId));
+        if (props.some(p => !p)) return;
+        const derived = props.every(p => p === props[0]) && props[0] !== "__shared__" ? props[0] : "";
+        if (derived !== propertyId) setPropertyId(derived);
+    }, [type, editable, headerTouched, lines, propertyId]);
 
     // Due date = supplier date + the vendor's terms, until typed by hand.
     useEffect(() => {
@@ -463,7 +517,18 @@ export default function VoucherForm({
         return () => {
             alive = false;
         };
-    }, [savedId, status]);
+    }, [savedId, status, allocationsVersion]);
+
+    /** Manual release (spec §2): refused by the server inside the lock, so not offered there either. */
+    const releaseAllocation = () =>
+        run(async () => {
+            if (!releasing || !savedId) return;
+            await payablesApi.release(releasing.id, releasing.reason.trim());
+            setReleasing(null);
+            const fresh = await voucherApi.get(savedId);
+            setSettlement(fresh.settlement ?? null);
+            setAllocationsVersion(n => n + 1);
+        });
 
     // BPV Allocate panel: the vendor's invoices with something left on them.
     useEffect(() => {
@@ -594,8 +659,8 @@ export default function VoucherForm({
                 ...(!l.propertyId ? { shared: true } : {}),
             })),
         };
-        return JSON.stringify(current) !== JSON.stringify(original) || allocationInputs.length > 0;
-    }, [posted, body, type, withVat, allocationInputs.length]);
+        return JSON.stringify(current) !== JSON.stringify(original) || (type === "BPV" && allocationsChanged);
+    }, [posted, body, type, withVat, allocationsChanged]);
 
     /**
      * The single sentence under the buttons naming what the server would refuse.
@@ -660,6 +725,16 @@ export default function VoucherForm({
 
     /** Enter amend mode. The fields re-open; nothing is sent until Post amendment. */
     const startAmend = () => {
+        // A payment's amendment settles what it settled unless told otherwise
+        // (review P3-3): the panel starts from its live allocations.
+        if (type === "BPV") {
+            const pre: Record<string, string> = {};
+            for (const a of ownAllocations) {
+                const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
+                pre[key] = (Number(pre[key] ?? 0) + a.amount).toFixed(2);
+            }
+            setAllocate(pre);
+        }
         setAmendDate(todayIso());
         setAmendReason("");
         setFormError(null);
@@ -684,7 +759,9 @@ export default function VoucherForm({
                 reversalDate: amendDate,
                 reason: amendReason,
                 replacement: body(),
-                ...(type === "BPV" && allocationInputs.length ? { allocations: allocationInputs } : {}),
+                // The panel is the whole answer for a payment: what it lists is settled,
+                // an empty panel leaves the replacement as an advance.
+                ...(type === "BPV" ? { allocations: allocationInputs } : {}),
             });
             setAmending(false);
             applyDetail(fresh);
@@ -967,7 +1044,10 @@ export default function VoucherForm({
                                     className={field}
                                     disabled={!editable}
                                     value={supplierInvoiceDate}
-                                    onChange={e => setSupplierInvoiceDate(e.target.value)}
+                                    onChange={e => {
+                                        setSupplierTouched(true);
+                                        setSupplierInvoiceDate(e.target.value);
+                                    }}
                                 />
                             </div>
                             <div>
@@ -1005,7 +1085,10 @@ export default function VoucherForm({
                             className={field}
                             disabled={!editable}
                             value={propertyId}
-                            onChange={e => setPropertyId(e.target.value)}
+                            onChange={e => {
+                                setHeaderTouched(true);
+                                setPropertyId(e.target.value);
+                            }}
                         >
                             <option value="">{t("allProperties")}</option>
                             {properties.options.map(p => (
@@ -1313,6 +1396,78 @@ export default function VoucherForm({
                 </div>
             )}
 
+            {/* What this posted document settles, or is settled by, with a manual release. */}
+            {status === "POSTED" && !amending && ownAllocations.length > 0 && (
+                <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden" data-testid="settlements-panel">
+                    <h3 className="px-5 py-3 text-xs font-bold text-foreground border-b border-border">
+                        {type === "BPV" ? t("settlesTitle") : t("settledByTitle")}
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-input/60">
+                                <tr>
+                                    <th className={th}>{type === "BPV" ? t("invoiceNumber") : t("voucherNumber")}</th>
+                                    <th className={th}>{t("allocatedOn")}</th>
+                                    <th className={`${th} text-end`}>{t("amount")}</th>
+                                    <th className={th} />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {ownAllocations.map(a => {
+                                    const lockedIn = isDateLocked(a.allocatedOn, booksLockedThrough);
+                                    return (
+                                        <tr key={a.id} data-testid={`settlement-${a.id}`}>
+                                            <td className={`${td} font-mono`}>
+                                                {type === "BPV" ? a.invoiceNumber ?? t("openingItem") : a.paymentNumber}
+                                            </td>
+                                            <td className={td}><bdi dir="ltr">{a.allocatedOn}</bdi></td>
+                                            <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(a.amount)}</bdi></td>
+                                            <td className={`${td} text-end`}>
+                                                {releasing?.id === a.id ? (
+                                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                                        <input
+                                                            aria-label={t("releaseReason")}
+                                                            data-testid="release-reason"
+                                                            placeholder={t("releaseReason")}
+                                                            className={`${field} w-48`}
+                                                            value={releasing.reason}
+                                                            onChange={e => setReleasing({ id: a.id, reason: e.target.value })}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            data-testid="release-confirm"
+                                                            disabled={busy || !releasing.reason.trim()}
+                                                            onClick={releaseAllocation}
+                                                            className="text-xs font-bold text-error cursor-pointer disabled:opacity-40"
+                                                        >
+                                                            {t("release")}
+                                                        </button>
+                                                        <button type="button" onClick={() => setReleasing(null)} className="text-xs text-muted cursor-pointer">
+                                                            {tLedger("cancel")}
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        data-testid={`release-${a.id}`}
+                                                        disabled={busy || lockedIn}
+                                                        title={lockedIn ? t("releaseLocked", { date: booksLockedThrough ?? "" }) : undefined}
+                                                        onClick={() => setReleasing({ id: a.id, reason: "" })}
+                                                        className="text-xs font-semibold text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        {t("release")}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             {/* Attachments */}
             <div className="bg-surface border border-border rounded-xl shadow-sm p-5" data-testid="attachments-panel">
                 <div className="flex items-center justify-between gap-3 mb-3">
@@ -1537,11 +1692,9 @@ export default function VoucherForm({
                 confirmDisabled={amendDateLocked}
             >
                 <p className="text-xs text-muted">{t("amendHint")}</p>
-                {type === "BPV" && ownAllocations.length > 0 && (
+                {type === "BPV" && reopened.length > 0 && (
                     <p role="alert" data-testid="amend-releases" className="text-xs font-semibold text-warning">
-                        {t("amendReleases", {
-                            invoices: [...new Set(ownAllocations.map(a => a.invoiceNumber ?? ""))].filter(Boolean).join(", "),
-                        })}
+                        {t("amendReleases", { invoices: reopened.join(", ") })}
                     </p>
                 )}
                 <div>
