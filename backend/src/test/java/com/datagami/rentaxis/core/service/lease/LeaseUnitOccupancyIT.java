@@ -60,6 +60,7 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired TransactionTemplate tx;
     @Autowired LeaseRenewalService renewal;
+    @Autowired LeaseTerminationService termination;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
@@ -204,5 +205,71 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining(refusal);
         assertThat(statusOf(current)).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /** R1 P2-1: an extension may not run into the next renter's back-to-back lease. */
+    @Test
+    void anExtensionIntoABackToBackLeaseIsRefused() {
+        Unit unit = fixtures.unit();
+        UUID current = posted(unit, fixtures.renter(), CUR_START, CUR_END);
+        posted(unit, fixtures.createRenter("Next Renter"), CUR_END.plusDays(1), CUR_END.plusYears(1));
+
+        assertThatThrownBy(() -> renewal.extend(current, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(
+                CUR_END.plusDays(60), TODAY, List.of(line("RENT", "6000")),
+                List.of(LeaseTestFixtures.chequeRow("6000", CUR_END.plusDays(1))))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This unit already has an active lease for these dates");
+        LocalDate end = tx.execute(s -> leaseRepo.findById(current).orElseThrow().getEndDate());
+        assertThat(end).isEqualTo(CUR_END);
+    }
+
+    /** R1 P2-4: a termination dated ahead holds the unit through that date. */
+    @Test
+    void aLeaseTerminatedWithADateAheadStillHoldsTheUnit() {
+        Unit unit = fixtures.createUnit(fixtures.property(), "TN-" + UUID.randomUUID().toString().substring(0, 4));
+        UUID leaving = posted(unit, fixtures.createRenter("Leaving Renter"), CUR_START, CUR_END);
+        LocalDate t = TODAY.plusDays(10);
+        termination.terminate(leaving, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(t, null, null, null), null);
+        assertThat(statusOf(leaving)).isEqualTo(LeaseStatus.TERMINATED);
+
+        assertThatThrownBy(() -> fixtures.draftLease(unit, fixtures.createRenter("Too Early"), TODAY, t, t.plusYears(1),
+                List.of(line("RENT", "36000"))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("overlapping dates");
+        fixtures.draftLease(unit, fixtures.createRenter("On Time"), TODAY, t.plusDays(1), t.plusYears(1),
+                List.of(line("RENT", "36000")));
+
+        fixtures.asTenantAdmin();
+        assertThat(unitService.getUnitsByProperty(fixtures.property().getId()))
+                .filteredOn(u -> u.getId().equals(unit.getId()))
+                .extracting(Unit::getOccupancy).containsExactly("OCCUPIED");
+    }
+
+    /** R1 P2-5: a renewal posted ahead takes over the unit's rent on its start date. */
+    @Test
+    void aRenewalTakesOverTheUnitsRentOnItsStartDate() {
+        Unit unit = fixtures.createUnit(fixtures.property(), "RN-" + UUID.randomUUID().toString().substring(0, 4));
+        UUID current = posted(unit, fixtures.renter(), CUR_START, CUR_END);
+        UUID next = renewal.renew(current, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(
+                CUR_START, CUR_END.plusDays(1), CUR_END.plusYears(1), List.of(line("RENT", "48000")), false)).getId();
+        fixtures.generateGrid(next, 2, CUR_END.plusDays(1));
+        posting.post(next);
+
+        java.math.BigDecimal oldRent = tx.execute(s -> leaseRepo.findById(current).orElseThrow().getRentAmount());
+        java.math.BigDecimal newRent = tx.execute(s -> leaseRepo.findById(next).orElseThrow().getRentAmount());
+        assertThat(newRent).isNotEqualByComparingTo(oldRent);
+        assertThat(rentOf(unit))
+                .as("the current lease still runs").isEqualByComparingTo(oldRent);
+
+        leaseService.syncUnitHolders(CUR_END);
+        assertThat(rentOf(unit))
+                .isEqualByComparingTo(oldRent);
+        leaseService.syncUnitHolders(CUR_END.plusDays(1));
+        assertThat(rentOf(unit))
+                .as("the renewal's start date").isEqualByComparingTo(newRent);
+    }
+
+    private java.math.BigDecimal rentOf(Unit unit) {
+        return tx.execute(s -> unitRepo.findById(unit.getId()).orElseThrow().getActualRent());
     }
 }

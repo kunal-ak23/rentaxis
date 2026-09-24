@@ -52,7 +52,9 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
         select distinct l.unit.id from Lease l
         where l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
                            com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
-                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED)
+          and (l.status <> com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED or l.terminatedOn is not null)
           and l.unit is not null
           and (l.startDate is null or l.startDate <= :today)
           and coalesce(l.terminatedOn, l.endDate) >= :today
@@ -78,13 +80,28 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                            @Param("unrestricted") boolean unrestricted,
                                            @Param("propertyIds") Collection<UUID> propertyIds);
 
+    /** P2-5: posted leases covering {@code day} (a terminated one through its termination date). */
+    @Query("""
+        select l from Lease l join fetch l.unit left join fetch l.renter
+        where l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED)
+          and (l.status <> com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED or l.terminatedOn is not null)
+          and (l.startDate is null or l.startDate <= :day)
+          and coalesce(l.terminatedOn, l.endDate) >= :day
+        """)
+    List<Lease> coveringOn(@Param("day") LocalDate day);
+
     /** F14-01: the posted leases on these units that cover today or start later (unit lists). */
     @Query("""
         select l from Lease l join fetch l.renter
         where l.unit.id in :unitIds
           and l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
                            com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
-                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED)
+          and (l.status <> com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED or l.terminatedOn is not null)
           and coalesce(l.terminatedOn, l.endDate) >= :today
         """)
     List<Lease> currentOrUpcomingOnUnits(@Param("unitIds") Collection<UUID> unitIds, @Param("today") LocalDate today);
