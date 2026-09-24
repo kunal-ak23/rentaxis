@@ -87,11 +87,20 @@ public class VendorService {
     @Transactional
     public Vendor updateVendor(UUID id, Vendor updates) {
         Vendor existing = getVendorById(id);
+        String oldName = normaliseName(existing.getNameEn());
+        String oldTrn = existing.getTrn();
         existing.setNameEn(updates.getNameEn());
         existing.setNameAr(updates.getNameAr());
         existing.setTradeLicenseNumber(updates.getTradeLicenseNumber());
         existing.setTrn(normaliseTrn(updates.getTrn()));
-        requireNoDuplicate(existing, existing.getId());
+        // R1 P3-6: only when the name or TRN changes, so a legacy duplicate pair can
+        // still be edited (a phone number) without being renamed first.
+        if (!oldName.equals(normaliseName(updates.getNameEn())) || !java.util.Objects.equals(oldTrn, existing.getTrn())) {
+            Vendor probe = new Vendor();
+            probe.setNameEn(updates.getNameEn());
+            probe.setTrn(existing.getTrn());
+            requireNoDuplicate(probe, existing.getId());
+        }
         // Left out of the body: keep the stored terms rather than resetting them.
         if (updates.getPaymentTermsDays() != null) {
             existing.setPaymentTermsDays(requireTerms(updates.getPaymentTermsDays()));
@@ -137,17 +146,12 @@ public class VendorService {
                     java.util.Map.of("vendor", String.valueOf(vendor.getNameEn())));
         }
         repository.delete(vendor);
-        repository.flush();
-        // F14-43: its payable leaf goes with it; nothing was ever posted to it. A
-        // leaf still referenced elsewhere (a mapping, a draft) is deactivated instead.
+        // F14-43: its payable leaf leaves the chart with it. Deactivated rather than
+        // deleted (R1 P3-5): a leaf a draft voucher still names would fail the delete
+        // and poison the transaction; an inactive leaf is out of every picker.
         if (payable != null && !payable.isSystem()) {
-            try {
-                accountRepository.delete(payable);
-                accountRepository.flush();
-            } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                payable.setActive(false);
-                accountRepository.save(payable);
-            }
+            payable.setActive(false);
+            accountRepository.save(payable);
         }
     }
 

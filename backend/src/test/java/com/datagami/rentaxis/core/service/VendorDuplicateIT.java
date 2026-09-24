@@ -60,6 +60,20 @@ class VendorDuplicateIT extends AbstractPostgresIT {
                 .isEqualTo(first.getId());
     }
 
+    @Autowired com.datagami.rentaxis.domain.repository.VendorRepository vendorRepo;
+
+    /** R1 P3-6: a legacy duplicate pair can still be edited without renaming. */
+    @Test
+    void aLegacyDuplicateCanStillBeEdited() {
+        Vendor a = vendors.createVendor(vendor("Legacy Twin", null));
+        Vendor b = vendor("Legacy Twin", null);
+        b = vendorRepo.save(b);   // written before the rule existed
+        Vendor edit = vendor("Legacy Twin", null);
+        edit.setPhone("+971500000000");
+        assertThat(vendors.updateVendor(b.getId(), edit).getPhone()).isEqualTo("+971500000000");
+        assertThat(a.getId()).isNotEqualTo(b.getId());
+    }
+
     @Test
     void deletingAnUnusedVendorRemovesItsPayableLeaf() {
         Vendor v = vendors.createVendor(vendor("Temp Vendor", null));

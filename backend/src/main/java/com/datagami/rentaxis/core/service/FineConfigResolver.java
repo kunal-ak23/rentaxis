@@ -35,8 +35,6 @@ public class FineConfigResolver {
                 rcs.getFineBounceAmount() != null
              || rcs.getFineSignatureMismatchAmount() != null
              || rcs.getFineAccountClosedAmount() != null
-             || rcs.getFineGraceDays() != null
-             || rcs.getFinePerDayRate() != null
              || rcs.getBouncesBeforePenalty() != null);
 
         // The auto-propose flags are org-wide on purpose: "does this landlord let

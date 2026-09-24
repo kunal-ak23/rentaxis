@@ -114,7 +114,7 @@ public class RevenueRecognitionJob {
      */
     @Scheduled(initialDelayString = "${rentaxis.recognition.job.catch-up-initial-delay-ms:300000}",
             fixedDelayString = "${rentaxis.recognition.job.catch-up-interval-ms:3600000}")
-    @SchedulerLock(name = "revenue-recognition", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
+    @SchedulerLock(name = "revenue-recognition", lockAtMostFor = "PT30M", lockAtLeastFor = "PT0S")
     public void catchUp() {
         if (!enabled || !catchUpEnabled) return;
         java.time.ZonedDateTime now = java.time.ZonedDateTime.now(clock);
