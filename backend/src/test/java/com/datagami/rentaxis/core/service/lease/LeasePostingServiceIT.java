@@ -892,6 +892,18 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
             renewal.setRenewedFromLeaseId(firstLeaseId);
             leaseRepo.save(renewal);
         });
+        // F14-35: the two drafts share a term, and a renewal must start after the
+        // lease it renews ends.
+        assertThatThrownBy(() -> posting.post(renewalId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("A renewal must start after the lease it renews ends");
+        tx.executeWithoutResult(s -> {
+            Lease first = leaseRepo.findById(firstLeaseId).orElseThrow();
+            Lease renewal = leaseRepo.findById(renewalId).orElseThrow();
+            renewal.setStartDate(first.getEndDate().plusDays(1));
+            renewal.setEndDate(first.getEndDate().plusYears(1));
+            leaseRepo.save(renewal);
+        });
 
         posting.post(renewalId);
 
