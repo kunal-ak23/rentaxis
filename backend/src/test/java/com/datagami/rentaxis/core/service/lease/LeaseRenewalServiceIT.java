@@ -417,7 +417,15 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
                 .filter(e -> e.getDocType() == JournalDocType.JV)
                 .findFirst().orElseThrow());
         assertThat(jv.getEntryDate()).isEqualTo(RENEWAL_CONTRACT_DATE);
-        assertThat(jv.getNarration()).startsWith("Security deposit carried forward from ");
+        // #86: names the predecessor by unit and term, never by its UUID.
+        String expected = tx.execute(s -> {
+            Lease first = leaseRepo.findById(firstId).orElseThrow();
+            java.time.format.DateTimeFormatter d = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            return "Security deposit carried forward from " + first.getUnit().getUnitNumber() + " \u00b7 "
+                    + d.format(first.getStartDate()) + "\u2013" + d.format(first.getEndDate());
+        });
+        assertThat(jv.getNarration()).startsWith(expected);
+        assertThat(jv.getNarration()).doesNotContain(firstId.toString());
 
         List<JournalLine> jvLines = linesOf(jv.getId());
         assertThat(jvLines).hasSize(2);

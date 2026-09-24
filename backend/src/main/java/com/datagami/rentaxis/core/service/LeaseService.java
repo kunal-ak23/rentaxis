@@ -1535,7 +1535,7 @@ public class LeaseService {
      * code is nullable and the number is null until a contract is generated, so
      * both absences have to survive this.
      */
-    static String displayContractNumber(String propertyCode, Long contractNumber) {
+    public static String displayContractNumber(String propertyCode, Long contractNumber) {
         if (contractNumber == null) {
             return null;
         }
