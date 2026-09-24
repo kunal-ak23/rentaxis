@@ -11,6 +11,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, type Account } from "@/lib/api/ledger";
 import {
+    approvedFrom,
     paymentRunsApi,
     type PaymentMethod,
     type PaymentRun,
@@ -74,14 +75,20 @@ export function ProblemLine({ p }: { p: RunProblem }) {
  * at once; then post, all or nothing. Nothing is posted before the preview.
  * With {@code run} it edits that DRAFT.
  */
-export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
+export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted?: () => void }) {
     const t = useTranslations("PaymentRuns");
     const tCommon = useTranslations("Common");
     const router = useRouter();
     const properties = useNameLookup("properties");
 
     const [step, setStep] = useState<"select" | "preview">("select");
-    const [dueBefore, setDueBefore] = useState(defaultDueBefore);
+    // Editing a draft: the due filter starts late enough to list every item it
+    // already holds (review P3-4), so nothing is sent that cannot be seen.
+    const [dueBefore, setDueBefore] = useState(() => {
+        const latest = (run?.items ?? []).map(i => i.dueDate ?? "").reduce((a, b) => (b > a ? b : a), "");
+        const d = defaultDueBefore();
+        return latest > d ? latest : d;
+    });
     const [propertyId, setPropertyId] = useState("");
     const [vendorId, setVendorId] = useState("");
     const [includePartPaid, setIncludePartPaid] = useState(true);
@@ -143,10 +150,11 @@ export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
         };
     }, []);
 
+    // The vendor filter narrows the list, but never hides a row that is selected.
     const items = useMemo(() => {
         const rows = candidates?.items ?? [];
-        return vendorId ? rows.filter(c => c.item.vendorId === vendorId) : rows;
-    }, [candidates, vendorId]);
+        return vendorId ? rows.filter(c => c.item.vendorId === vendorId || itemKey(c.item) in selected) : rows;
+    }, [candidates, vendorId, selected]);
     const vendorOptions = useMemo(() => {
         const m = new Map<string, string>();
         for (const c of candidates?.items ?? []) m.set(c.item.vendorId, c.item.vendorName ?? "");
@@ -163,6 +171,8 @@ export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
 
     const selectedRows = useMemo(() => Object.entries(selected).map(([k, v]) => ({ key: k, amount: num(v), item: openOf[k] })),
         [selected, openOf]);
+    /** Selected items the open list no longer has (paid elsewhere, or outside the filters): shown, never sent silently. */
+    const missing = useMemo(() => (candidates ? selectedRows.filter(r => !r.item) : []), [candidates, selectedRows]);
     const selectedTotal = useMemo(
         () => Math.round(selectedRows.reduce((s, r) => s + (Number.isFinite(r.amount) ? r.amount * 100 : 0), 0)) / 100,
         [selectedRows]);
@@ -174,6 +184,7 @@ export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
     const account = payAccounts.find(a => a.id === paymentAccountId) ?? null;
     const blocker =
         selectedRows.length === 0 ? t("selectSomething")
+        : missing.length > 0 ? t("missingSelected", { count: missing.length })
         : selectedRows.some(r => !(r.amount > 0)) ? t("amountRequired")
         : Object.keys(selected).some(tooHigh) ? t("amountTooHigh")
         : !paymentAccountId ? t("chooseAccount")
@@ -229,12 +240,17 @@ export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
         setBusy(true);
         setFormError(null);
         try {
-            await paymentRunsApi.post(runId);
+            if (!preview) return;
+            // What the preview showed: the server refuses (409) if the run would now post anything else.
+            await paymentRunsApi.post(runId, approvedFrom(preview));
             setConfirmPost(false);
-            router.push(`/dashboard/finance/payables/payment-runs/${runId}`);
+            if (onPosted) onPosted();
+            else router.push(`/dashboard/finance/payables/payment-runs/${runId}`);
         } catch (err) {
             setConfirmPost(false);
-            setFormError(err instanceof ApiError ? err.message : t("actionFailed"));
+            setFormError(err instanceof ApiError
+                ? (err.status === 409 ? `${t("runChanged")} ${err.message}` : err.message)
+                : t("actionFailed"));
             // The world may have moved (an invoice paid elsewhere): show the fresh preview.
             try { setPreview(await paymentRunsApi.preview(runId)); } catch { /* keep the old one */ }
         } finally {
@@ -355,6 +371,16 @@ export function PaymentRunWizard({ run }: { run?: PaymentRun }) {
                             </tbody>
                         </table>
                     </div>
+
+                    {missing.length > 0 && (
+                        <div role="alert" data-testid="run-missing" className="mb-5 text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 flex flex-wrap items-center gap-3">
+                            <span>{t("missingSelected", { count: missing.length })}</span>
+                            <button type="button" className={button} data-testid="run-drop-missing"
+                                    onClick={() => setSelected(s => Object.fromEntries(Object.entries(s).filter(([k]) => openOf[k])))}>
+                                {t("dropMissing")}
+                            </button>
+                        </div>
+                    )}
 
                     {vendorsInSelection.some(([id]) => (advanceOf[id] ?? 0) > 0) && (
                         <div className="mb-5 space-y-1">

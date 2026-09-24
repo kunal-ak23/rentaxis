@@ -109,9 +109,14 @@ export default function PaymentRunPage() {
                 {run?.status === "POSTED" && (
                     <div className="flex gap-2">
                         {run.method === "TRANSFER" && (
-                            <a className={button} href={paymentRunsApi.bankFileUrl(run.id)} data-testid="run-bank-file">
-                                <Download size={13} />{t("bankFile")}
-                            </a>
+                            <>
+                                <a className={button} href={paymentRunsApi.bankFileUrl(run.id)} data-testid="run-bank-file">
+                                    <Download size={13} />{t("bankFile")}
+                                </a>
+                                <a className={button} href={paymentRunsApi.bankFileUrl(run.id, true)} data-testid="run-bank-file-excel">
+                                    <Download size={13} />{t("bankFileExcel")}
+                                </a>
+                            </>
                         )}
                         {run.method === "CHEQUE" && (
                             <button type="button" className={button} onClick={() => window.print()} data-testid="run-print-cheques">
@@ -124,11 +129,18 @@ export default function PaymentRunPage() {
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={load} />}
 
-            {run?.status === "DRAFT" && <PaymentRunWizard key={run.id} run={run} />}
+            {/* Posting from here reloads the run, which then shows as POSTED (review P3-3). */}
+            {run?.status === "DRAFT" && <PaymentRunWizard key={run.id} run={run} onPosted={load} />}
 
             {run && run.status !== "DRAFT" && (
                 <>
                     {run.status === "POSTED" && <p className="text-xs text-muted mb-3 print:hidden">{t("afterPostNote")}</p>}
+                    {run.status === "POSTED" && run.method === "TRANSFER" && (run.referenceWarnings ?? []).length > 0 && (
+                        <div role="status" data-testid="run-reference-warnings" className="mb-3 text-xs text-warning print:hidden">
+                            <p className="font-semibold">{t("referenceCut")}</p>
+                            <ul className="list-disc ps-5">{run.referenceWarnings.map(w => <li key={w}><bdi dir="ltr">{w}</bdi></li>)}</ul>
+                        </div>
+                    )}
                     <div className="bg-surface rounded-xl border border-border overflow-x-auto">
                         <table className="w-full" data-testid="run-items">
                             <thead className="bg-background border-b border-border">

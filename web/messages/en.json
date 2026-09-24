@@ -3294,6 +3294,11 @@
     "issuedCheques": "Issued cheques"
   },
   "PaymentRuns": {
+    "missingSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} not in the open list any more (paid elsewhere, or outside the filters).",
+    "dropMissing": "Drop them",
+    "bankFileExcel": "Copy for Excel",
+    "referenceCut": "The bank takes references of up to 35 characters. These were shortened in the file:",
+    "runChanged": "The run changed since the preview. Review the new preview before posting.",
     "loading": "Loading…",
     "close": "Close",
     "actionFailed": "That did not go through. Try again.",

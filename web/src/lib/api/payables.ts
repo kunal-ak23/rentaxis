@@ -242,6 +242,14 @@ export type PaymentRun = {
         /** The vendor's voucher total (the net payment), repeated on each of its items. */
         bpvAmount: number | null;
     }[];
+    /** Bank-file references the default 35-character limit cuts (posted runs). */
+    referenceWarnings: string[];
+};
+
+/** `PostRunRequestDTO`: what the preview showed, which the post must still match (else 409). */
+export type PostRunRequest = {
+    vendors: { vendorId: string; netPayment: number; advanceApplied: number; chequeNumber: string | null;
+        items: { itemId: string; paid: number }[] }[];
 };
 
 /** `PaymentRunPreviewDTO`: one payment per vendor, and every problem at once. */
@@ -342,8 +350,9 @@ export const paymentRunsApi = {
     remove: (id: string) => apiSend<void>("DELETE", `/finance/payment-runs/${id}`),
     cancel: (id: string) => apiSend<PaymentRun>("POST", `/finance/payment-runs/${id}/cancel`),
     preview: (id: string) => apiGet<RunPreview>(`/finance/payment-runs/${id}/preview`),
-    post: (id: string) => apiSend<PaymentRun>("POST", `/finance/payment-runs/${id}/post`),
-    bankFileUrl: (id: string) => `${PROXY}/finance/payment-runs/${id}/bank-file.csv`,
+    post: (id: string, approved: PostRunRequest) => apiSend<PaymentRun>("POST", `/finance/payment-runs/${id}/post`, approved),
+    /** `bom`: with a byte-order mark, for opening in Excel; bank portals take the file without. */
+    bankFileUrl: (id: string, bom = false) => `${PROXY}/finance/payment-runs/${id}/bank-file.csv${bom ? "?bom=true" : ""}`,
 };
 
 export const issuedChequesApi = {
@@ -359,6 +368,16 @@ export const issuedChequesApi = {
         apiSend<IssuedCheque>("POST", "/finance/issued-cheques/opening", body),
     removeOpening: (id: string) => apiSend<void>("DELETE", `/finance/issued-cheques/${id}`),
 };
+
+/** Exactly what a preview showed, as the post expects it. */
+export function approvedFrom(p: RunPreview): PostRunRequest {
+    return {
+        vendors: p.vendors.map(v => ({
+            vendorId: v.vendorId, netPayment: v.netPayment, advanceApplied: v.advanceApplied, chequeNumber: v.chequeNumber,
+            items: v.items.map(i => ({ itemId: i.itemId, paid: i.paid })),
+        })),
+    };
+}
 
 /** Rows grouped by vendor, in first-seen order. */
 export function groupByVendor<T extends { vendorId: string }>(rows: T[]): Map<string, T[]> {

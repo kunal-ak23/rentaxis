@@ -48,6 +48,7 @@ const CANDIDATES = {
 };
 
 const RUN = {
+    referenceWarnings: [] as string[],
     id: "run-1", runNumber: "PR-26/4", paymentDate: "2026-09-10", paymentAccountId: "bank-1",
     paymentAccountCode: "A-02-02-001", paymentAccountName: "Emirates Islamic - Marina Tower", method: "TRANSFER",
     chequeDate: null, firstChequeNumber: null, narration: null, status: "DRAFT", createdAt: "2026-09-10T08:00:00Z",
@@ -157,7 +158,46 @@ describe("payment-run wizard", () => {
         fireEvent.click(screen.getByTestId("run-post"));
         fireEvent.click(await screen.findByTestId("run-confirm-post"));
         await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/dashboard/finance/payables/payment-runs/run-1"));
-        expect(calls.filter(c => c.method === "POST" && c.url.endsWith("/payment-runs/run-1/post"))).toHaveLength(1);
+        const post = calls.filter(c => c.method === "POST" && c.url.endsWith("/payment-runs/run-1/post"));
+        expect(post).toHaveLength(1);
+        // It sends what the preview showed, for the server to hold it to (review P2-1).
+        expect(post[0].body).toEqual({ vendors: [{ vendorId: "gulf", netPayment: 2050, advanceApplied: 0, chequeNumber: null,
+            items: [{ itemId: "it1", paid: 1450 }, { itemId: "it2", paid: 600 }] }] });
+    });
+
+    it("on a 409 says the run changed, shows the server's diff and the fresh preview, and posts nothing", async () => {
+        let previews = 0;
+        stubFetch([
+            { match: "/payment-runs/candidates", body: CANDIDATES },
+            { method: "POST", match: "/payment-runs/run-1/post", status: 409,
+              body: { error: true, message: "The run changed since the preview; review it again. Gulf AC Services: net payment 2,050.00 → 2,550.00", status: 409 } },
+            { method: "POST", match: "/payment-runs", body: RUN },
+            { match: "/properties", body: [] },
+        ]);
+        const base = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).getMockImplementation() as
+            (url: string, init?: RequestInit) => Promise<Response>;
+        vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes("/preview")) {
+                previews++;
+                calls.push({ method: "GET", url: String(url), body: undefined });
+                const body = previews === 1 ? PREVIEW : { ...PREVIEW, netPayment: 2550,
+                    vendors: [{ ...PREVIEW.vendors[0], netPayment: 2550 }] };
+                return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            return base(url, init);
+        }));
+        renderIn("en", <PaymentRunWizard />);
+        fireEvent.click(await screen.findByTestId("run-pick-INV-7781"));
+        await waitFor(() => expect(screen.getByTestId("run-account").querySelectorAll("option").length).toBe(2));
+        fireEvent.change(screen.getByTestId("run-account"), { target: { value: "bank-1" } });
+        fireEvent.click(screen.getByTestId("run-save-preview"));
+        await screen.findByTestId("run-preview");
+        fireEvent.click(screen.getByTestId("run-post"));
+        fireEvent.click(await screen.findByTestId("run-confirm-post"));
+        expect(await screen.findByTestId("run-error")).toHaveTextContent(en.PaymentRuns.runChanged);
+        expect(screen.getByTestId("run-error")).toHaveTextContent("net payment 2,050.00 → 2,550.00");
+        await waitFor(() => expect(screen.getByTestId("run-net-total")).toHaveTextContent("2,550.00"));
+        expect(nav.push).not.toHaveBeenCalled();
     });
 
     it("refuses an amount above what the invoice has open", async () => {
@@ -300,5 +340,61 @@ describe("issued cheques", () => {
         renderIn("ar", <IssuedChequesPage />);
         expect(await screen.findByText(ar.IssuedCheques.title)).toBeInTheDocument();
         expect(await screen.findByTestId("present-000031")).toHaveTextContent(ar.IssuedCheques.present);
+    });
+});
+
+describe("editing and posting a draft from its page (review P3-3, P3-4)", () => {
+    it("lists a held item due after the default filter, and shows the run as posted after posting", async () => {
+        const late = { ...RUN, items: [{ ...RUN.items[0], invoiceId: "late", invoiceNumber: "INV-LATE", dueDate: "2099-01-31" }] };
+        let posted = false;
+        stubFetch([]);
+        vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+            const u = String(url);
+            const method = init?.method ?? "GET";
+            calls.push({ method, url: u, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+            const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
+            if (u.includes("/candidates")) {
+                // The draft's item is listed only when the due filter reaches it.
+                const due = new URL(u, "http://x").searchParams.get("dueBefore") ?? "";
+                return json({ items: due >= "2099-01-31" ? [{ item: item("late", "INV-LATE", 1450, "2099-01-31"), draftRuns: [] }] : [], advances: [] });
+            }
+            if (u.includes("/preview")) return json(PREVIEW);
+            if (u.endsWith("/post")) { posted = true; return json({ ...late, status: "POSTED" }); }
+            if (method === "PUT") return json(late);
+            if (u.includes("/payment-runs/run-1")) return json(posted ? { ...late, status: "POSTED",
+                items: late.items.map(i => ({ ...i, bpvId: "b1", bpvNumber: "BPV-26/60", bpvStatus: "POSTED", bpvAmount: 1450 })) } : late);
+            return json([]);
+        }));
+        renderIn("en", <PaymentRunPage />);
+        expect(await screen.findByTestId("run-amount-INV-LATE")).toHaveValue("1450.00");
+        expect(screen.queryByTestId("run-missing")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("run-save-preview"));
+        await screen.findByTestId("run-preview");
+        fireEvent.click(screen.getByTestId("run-post"));
+        fireEvent.click(await screen.findByTestId("run-confirm-post"));
+        expect(await screen.findByRole("link", { name: "BPV-26/60" })).toBeInTheDocument();
+        expect(screen.queryByTestId("run-post")).not.toBeInTheDocument();
+    });
+
+    it("says when a selected item is no longer open, and blocks until it is dropped", async () => {
+        stubFetch([
+            { match: "/payment-runs/candidates", body: { items: [], advances: [] } },
+            { match: "/properties", body: [] },
+        ]);
+        renderIn("en", <PaymentRunWizard run={RUN as never} />);
+        expect(await screen.findByTestId("run-missing")).toHaveTextContent("2 selected invoices are not in the open list");
+        expect(screen.getByTestId("run-save-preview")).toBeDisabled();
+        fireEvent.click(screen.getByTestId("run-drop-missing"));
+        expect(screen.queryByTestId("run-missing")).not.toBeInTheDocument();
+        expect(screen.getByTestId("run-blocker")).toHaveTextContent(en.PaymentRuns.selectSomething);
+    });
+
+    it("lists the bank references the file shortens, and offers a copy for Excel", async () => {
+        stubFetch([{ match: "/payment-runs/run-1", body: { ...RUN, status: "POSTED",
+            referenceWarnings: ["PR-26/4/BPV-26/55-VERY-LONG-REFERENCE-X → PR-26/4/BPV-26/55-VERY-LONG-REFERE"] } }]);
+        renderIn("en", <PaymentRunPage />);
+        expect(await screen.findByTestId("run-reference-warnings")).toHaveTextContent("up to 35 characters");
+        expect(screen.getByTestId("run-bank-file-excel")).toHaveAttribute("href",
+            "/api/proxy/v1/finance/payment-runs/run-1/bank-file.csv?bom=true");
     });
 });
