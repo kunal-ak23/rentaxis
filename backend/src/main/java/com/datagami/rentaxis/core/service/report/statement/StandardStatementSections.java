@@ -18,6 +18,9 @@ import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository.ExpenseEntryRow;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository.MovementRow;
 import com.datagami.rentaxis.domain.repository.VoucherRepository;
+import com.datagami.rentaxis.core.service.payables.PayablesService;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -361,27 +364,131 @@ public final class StandardStatementSections {
     }
 
     /**
-     * 7. Expenses paid. Supplier AP (spec §2) will allocate vendor payments to the
-     * invoices whose lines carry this property; until it lands only payment
-     * vouchers that debit an expense leaf directly are attributable.
+     * 7. Expenses paid (spec §1, from the supplier sub-ledger of §2).
+     *
+     * <ul>
+     *   <li><b>Allocated:</b> payments allocated in the period to invoices whose
+     *       lines carry this property, at the property's gross share of each
+     *       invoice (an opening item: its header property). An allocation counts in
+     *       the period it is dated in, while it is still live at {@code to}; one
+     *       dated earlier and released in the period comes back off. So a payment
+     *       is counted once across consecutive periods, whatever happens to it
+     *       later.</li>
+     *   <li><b>Direct:</b> payment vouchers that debit an expense leaf of the
+     *       property directly, as before.</li>
+     *   <li><b>Not attributable yet:</b> payments dated in the period with an
+     *       unallocated part at {@code to}, whose header names this property or
+     *       none — listed, not added.</li>
+     * </ul>
      */
     @Component
     public static class ExpensesPaid implements StatementSection {
         private final ExpenseEntries entries;
+        private final NamedParameterJdbcTemplate jdbc;
 
-        public ExpensesPaid(ExpenseEntries entries) { this.entries = entries; }
+        public ExpensesPaid(ExpenseEntries entries, NamedParameterJdbcTemplate jdbc) {
+            this.entries = entries;
+            this.jdbc = jdbc;
+        }
 
         @Override public int order() { return 7; }
 
+        /** Allocations touching the property's invoices that moved in the period, with the invoice's gross and the property's share of it. */
+        static final String ALLOCATED_SQL = """
+            select a.allocated_on, a.released_on, a.amount, pv.voucher_number as payment_number,
+                   d.name_en as vendor, coalesce(iv.invoice_number, o.invoice_number) as invoice_number,
+                   g.gross, g.property_gross,
+                   (a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to)) as counted
+            from voucher_allocations a
+            join vouchers pv on pv.id = a.payment_voucher_id
+            join vendors d on d.id = a.vendor_id
+            left join vouchers iv on iv.id = a.invoice_voucher_id
+            left join ap_opening_items o on o.id = a.opening_item_id
+            cross join lateral (
+                select coalesce(sum(l.amount + l.vat_amount), 0) as gross,
+                       coalesce(sum(case when coalesce(l.property_id, la.property_id) = :p then l.amount + l.vat_amount else 0 end), 0) as property_gross
+                from voucher_lines l join accounts la on la.id = l.account_id
+                where l.voucher_id = a.invoice_voucher_id
+                union all
+                select o.amount, case when o.property_id = :p then o.amount else 0 end
+                where a.opening_item_id is not null) g
+            where a.tenant_id = :t and g.property_gross > 0
+              and ((a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to))
+                   or (a.allocated_on < :from and a.released_on between :from and :to))
+            order by coalesce(case when a.allocated_on >= :from then a.allocated_on end, a.released_on), pv.voucher_number
+            """;
+
+        /** Payments dated in the period, with what is still unallocated at {@code to}. */
+        static final String UNALLOCATED_SQL = """
+            select v.doc_date, v.voucher_number, d.name_en as vendor, p.paid,
+                   coalesce((select sum(a.amount) from voucher_allocations a
+                             where a.tenant_id = v.tenant_id and a.payment_voucher_id = v.id
+                               and a.allocated_on <= :to and (a.released_on is null or a.released_on > :to)), 0) as allocated
+            from vouchers v
+            join vendors d on d.id = v.vendor_id
+            join journal_entries e on e.id = v.journal_id
+            left join journal_entries r on r.id = e.reversed_by_id
+            cross join lateral (select coalesce(sum(l.amount), 0) as paid from voucher_lines l
+                                where l.voucher_id = v.id and l.account_id = d.payable_account_id) p
+            where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED')
+              and v.doc_date between :from and :to and (r.id is null or r.entry_date > :to)
+              and (v.property_id is null or v.property_id = :p) and p.paid > 0
+            order by v.doc_date, v.voucher_number
+            """;
+
         @Override
         public Section build(StatementContext ctx) {
+            MapSqlParameterSource params = new MapSqlParameterSource("t", ctx.tenantId())
+                    .addValue("p", ctx.propertyId()).addValue("from", ctx.from()).addValue("to", ctx.to());
+            List<List<Object>> rows = new ArrayList<>();
+            BigDecimal[] allocated = {BigDecimal.ZERO};
+            jdbc.query(ALLOCATED_SQL, params, rs -> {
+                BigDecimal share = PayablesService.share(rs.getBigDecimal("amount"), rs.getBigDecimal("property_gross"),
+                        rs.getBigDecimal("gross"));
+                boolean counted = rs.getBoolean("counted");
+                BigDecimal signed = counted ? share : share.negate();
+                allocated[0] = allocated[0].add(signed);
+                rows.add(List.of(
+                        (counted ? rs.getDate("allocated_on") : rs.getDate("released_on")).toLocalDate().toString(),
+                        counted ? "ALLOCATED" : "RELEASED",
+                        Objects.toString(rs.getString("payment_number"), ""),
+                        Objects.toString(rs.getString("vendor"), ""),
+                        Objects.toString(rs.getString("invoice_number"), ""),
+                        money(signed)));
+            });
             List<ExpenseEntries.Entry> direct = entries.of(ctx).stream().filter(e -> "BPV".equals(e.row().getDocType())).toList();
-            BigDecimal paid = direct.stream().map(e -> e.row().getExpense()).reduce(BigDecimal.ZERO, BigDecimal::add);
-            return new Section("expensesPaid", 7, "SUBLEDGER", List.of(Figure.of("paid", money(paid))),
-                    List.of(new Table("payments",
-                            List.of("entryNumber", "date", "docType", "voucherNumber", "vendor", "invoiceNumber", "amount"),
-                            direct.stream().map(e -> ExpenseEntries.row(e, false)).toList())),
-                    List.of("directPaymentsOnly"));
+            BigDecimal directPaid = BigDecimal.ZERO;
+            for (ExpenseEntries.Entry e : direct) {
+                directPaid = directPaid.add(e.row().getExpense());
+                Voucher v = e.voucher();
+                rows.add(List.of(e.row().getEntryDate().toString(), "DIRECT",
+                        v == null ? Objects.toString(e.row().getEntryNumber(), "") : Objects.toString(v.getVoucherNumber(), ""),
+                        v == null || v.getVendor() == null ? "" : Objects.toString(v.getVendor().getNameEn(), ""),
+                        "", money(e.row().getExpense())));
+            }
+
+            List<List<Object>> unallocated = new ArrayList<>();
+            BigDecimal[] notAttributable = {BigDecimal.ZERO};
+            jdbc.query(UNALLOCATED_SQL, params, rs -> {
+                BigDecimal left = rs.getBigDecimal("paid").subtract(rs.getBigDecimal("allocated"));
+                if (left.signum() <= 0) return;
+                notAttributable[0] = notAttributable[0].add(left);
+                unallocated.add(List.of(rs.getDate("doc_date").toLocalDate().toString(),
+                        Objects.toString(rs.getString("voucher_number"), ""),
+                        Objects.toString(rs.getString("vendor"), ""), money(left)));
+            });
+
+            BigDecimal paid = allocated[0].add(directPaid);
+            List<String> notes = new ArrayList<>(List.of("paidBySubledger"));
+            if (!unallocated.isEmpty()) notes.add("unallocatedNotAttributable");
+            return new Section("expensesPaid", 7, "SUBLEDGER", List.of(
+                    Figure.of("allocatedPaid", money(allocated[0])),
+                    Figure.of("directPaid", money(directPaid)),
+                    Figure.of("paid", money(paid)),
+                    Figure.of("unallocatedPayments", money(notAttributable[0]))),
+                    List.of(new Table("payments", List.of("date", "basis", "voucherNumber", "vendor", "invoiceNumber", "amount"), rows),
+                            new Table("unallocated", List.of("date", "voucherNumber", "vendor", "amount"), unallocated)),
+                    notes);
         }
     }
 

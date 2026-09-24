@@ -48,6 +48,7 @@ class VoucherDraftIT extends AbstractPostgresIT {
         cleaningExpense = accounts.createLeaf("Cleaning Expense", groupAccount, null);
         Vendor v = new Vendor();
         v.setNameEn("Emrill Services");
+        v.setTrn("100123456700003");   // a PISR with input VAT needs it (finance-ops spec §2)
         vendor = vendorService.createVendor(v);                      // Plan 1 creates payableAccount silently
     }
 

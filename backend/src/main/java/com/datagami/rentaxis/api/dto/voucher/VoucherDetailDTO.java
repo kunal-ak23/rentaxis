@@ -22,9 +22,34 @@ public record VoucherDetailDTO(UUID id, VoucherType docType, LocalDate docDate,
                                String chequeNumber, LocalDate chequeDate, VoucherStatus status,
                                UUID journalId, String voucherNumber, UUID amendedFromId,
                                BigDecimal netTotal, BigDecimal vatTotal, BigDecimal grossTotal, Instant postedAt,
-                               List<VoucherLineDTO> lines, List<VoucherAttachmentDTO> attachments) {
+                               List<VoucherLineDTO> lines, List<VoucherAttachmentDTO> attachments,
+                               LocalDate supplierInvoiceDate, LocalDate dueDate,
+                               com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod,
+                               String paymentReference, Settlement settlement) {
+
+    /**
+     * Spec §2, derived from live allocations, never stored. PISR: {@code amount} is
+     * the gross, {@code open} what is left, status OPEN / PART_PAID / PAID. BPV:
+     * {@code amount} is what it paid the vendor and {@code open} the unallocated
+     * advance; status is null. Null on a draft.
+     */
+    public record Settlement(BigDecimal amount, BigDecimal allocated, BigDecimal open, String status) {
+        public static Settlement ofInvoice(BigDecimal gross, BigDecimal allocated) {
+            BigDecimal open = gross.subtract(allocated);
+            String status = open.signum() <= 0 ? "PAID" : allocated.signum() > 0 ? "PART_PAID" : "OPEN";
+            return new Settlement(gross, allocated, open, status);
+        }
+
+        public static Settlement ofPayment(BigDecimal paid, BigDecimal allocated) {
+            return new Settlement(paid, allocated, paid.subtract(allocated), null);
+        }
+    }
 
     public static VoucherDetailDTO of(Voucher v, List<VoucherAttachmentDTO> attachments) {
+        return of(v, attachments, null);
+    }
+
+    public static VoucherDetailDTO of(Voucher v, List<VoucherAttachmentDTO> attachments, Settlement settlement) {
         return new VoucherDetailDTO(v.getId(), v.getDocType(), v.getDocDate(),
                 v.getVendor() == null ? null : v.getVendor().getId(),
                 v.getVendor() == null ? null : v.getVendor().getNameEn(),
@@ -35,6 +60,7 @@ public record VoucherDetailDTO(UUID id, VoucherType docType, LocalDate docDate,
                 v.getVoucherNumber(), v.getAmendedFromId(),
                 VoucherMath.netTotal(v.getLines()), VoucherMath.vatTotal(v.getLines()),
                 VoucherMath.grossTotal(v.getLines()), v.getPostedAt(),
-                v.getLines().stream().map(VoucherLineDTO::of).toList(), attachments);
+                v.getLines().stream().map(VoucherLineDTO::of).toList(), attachments,
+                v.getSupplierInvoiceDate(), v.getDueDate(), v.getPaymentMethod(), v.getPaymentReference(), settlement);
     }
 }

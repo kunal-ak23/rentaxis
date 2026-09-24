@@ -35,8 +35,34 @@ public class VendorService {
                 .orElseThrow(() -> new NotFoundException("Vendor not found"));
     }
 
+    /**
+     * Finance-ops spec §2: a UAE TRN is 15 digits. Spaces a clerk typed between
+     * the groups are dropped; anything else that is not exactly 15 digits is
+     * refused. Blank means "no TRN" and is stored as null — the voucher's input-VAT
+     * rule reads null and blank the same way, but one spelling is easier to query.
+     */
+    public static String normaliseTrn(String trn) {
+        if (trn == null) return null;
+        String digits = trn.replaceAll("\\s", "");
+        if (digits.isEmpty()) return null;
+        if (!digits.matches("\\d{15}")) {
+            throw new BusinessRuleViolationException("TRN must be 15 digits (UAE format), got \"" + trn.trim() + "\"");
+        }
+        return digits;
+    }
+
+    private static int requireTerms(Integer days) {
+        if (days == null) return 30;
+        if (days < 0 || days > 365) {
+            throw new BusinessRuleViolationException("Payment terms must be between 0 and 365 days");
+        }
+        return days;
+    }
+
     @Transactional
     public Vendor createVendor(Vendor vendor) {
+        vendor.setTrn(normaliseTrn(vendor.getTrn()));
+        vendor.setPaymentTermsDays(requireTerms(vendor.getPaymentTermsDays()));
         if (vendor.getPayableAccount() == null) {
             try {
                 Account vendorsGroup = accountService.getAccountByCode("B-01-04");
@@ -54,7 +80,11 @@ public class VendorService {
         existing.setNameEn(updates.getNameEn());
         existing.setNameAr(updates.getNameAr());
         existing.setTradeLicenseNumber(updates.getTradeLicenseNumber());
-        existing.setTrn(updates.getTrn());
+        existing.setTrn(normaliseTrn(updates.getTrn()));
+        // Left out of the body: keep the stored terms rather than resetting them.
+        if (updates.getPaymentTermsDays() != null) {
+            existing.setPaymentTermsDays(requireTerms(updates.getPaymentTermsDays()));
+        }
         existing.setEmail(updates.getEmail());
         existing.setPhone(updates.getPhone());
         existing.setContactPerson(updates.getContactPerson());

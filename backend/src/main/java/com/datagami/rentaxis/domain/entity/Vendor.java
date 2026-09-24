@@ -37,8 +37,29 @@ public class Vendor extends BaseTenantEntity {
     @Column(name = "trade_license_number", length = 50)
     private String tradeLicenseNumber;
 
+    /**
+     * UAE Tax Registration Number: 15 digits when present (finance-ops spec §2),
+     * checked by {@code VendorService.normaliseTrn}. A PISR carrying input VAT
+     * needs it — VoucherService refuses one without.
+     */
     @Column(name = "trn", length = 20)
     private String trn;
+
+    /**
+     * Days from the supplier's invoice date to its due date; a PISR's due date
+     * defaults from it. Boxed so an update that leaves it out keeps the stored
+     * value rather than resetting it to 30 (VendorService).
+     */
+    @jakarta.validation.constraints.Min(value = 0, message = "Payment terms cannot be negative")
+    @jakarta.validation.constraints.Max(value = 365, message = "Payment terms are at most 365 days")
+    @Column(name = "payment_terms_days", nullable = false)
+    private Integer paymentTermsDays;
+
+    /** 30 days unless the vendor was created with terms of its own. */
+    @PrePersist
+    void defaultPaymentTerms() {
+        if (paymentTermsDays == null) paymentTermsDays = 30;
+    }
 
     @Email(message = "Email must be a valid address")
     @Column(length = 100)

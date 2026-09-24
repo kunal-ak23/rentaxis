@@ -39,4 +39,18 @@ public interface VoucherRepository extends JpaRepository<Voucher, UUID> {
         """)
     Page<Voucher> search(VoucherType docType, VoucherStatus status, UUID vendorId, UUID propertyId,
                          LocalDate from, LocalDate to, Pageable pageable);
+
+    /**
+     * The POSTED, non-grandfathered PISR holding this vendor's normalised invoice
+     * number — the rows {@code ux_vouchers_pisr_invoice} covers (changeset 110).
+     */
+    @Query("""
+        select v from Voucher v
+        where v.docType = com.datagami.rentaxis.domain.entity.enums.VoucherType.PISR
+          and v.status = com.datagami.rentaxis.domain.entity.enums.VoucherStatus.POSTED
+          and v.duplicateGrandfathered = false
+          and v.vendor.id = :vendorId and v.invoiceNoNorm = :norm
+        """)
+    List<Voucher> findPostedDuplicate(@org.springframework.data.repository.query.Param("vendorId") UUID vendorId,
+                                      @org.springframework.data.repository.query.Param("norm") String norm);
 }

@@ -71,6 +71,7 @@ class VoucherAmendIT extends AbstractPostgresIT {
         defaults.save(m);
         Vendor v = new Vendor();
         v.setNameEn("Al Shirawi FM");
+        v.setTrn("100765432100003");   // a PISR with input VAT needs it (finance-ops spec §2)
         vendor = vendorService.createVendor(v);
         fiscal.setBooksStartDate(LocalDate.of(2026, 10, 1));
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));

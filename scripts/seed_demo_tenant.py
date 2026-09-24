@@ -920,18 +920,25 @@ def main():
         if isinstance(v, dict)
     }
 
-    def make_vendor(name_en, name_ar, contact, phone):
-        if name_en in existing_vendors:
-            return existing_vendors[name_en]
-        return api.post("/api/v1/vendors", json={
+    def make_vendor(name_en, name_ar, contact, phone, trn):
+        """A PISR with input VAT needs the supplier's TRN (finance-ops spec §2),
+        so a vendor from an earlier run without one is given it."""
+        body = {
             "nameEn": name_en, "nameAr": name_ar,
             "contactPerson": contact, "phone": phone,
-        })
+            "trn": trn, "paymentTermsDays": 30, "active": True,
+        }
+        existing = existing_vendors.get(name_en)
+        if existing is None:
+            return api.post("/api/v1/vendors", json=body)
+        if not existing.get("trn"):
+            return api.put(f"/api/v1/vendors/{existing['id']}", json=body)
+        return existing
 
     fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
-                            "Imran Shaikh", "+97143330001")
+                            "Imran Shaikh", "+97143330001", "100300400500003")
     cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
-                                  "Maria Santos", "+97143330002")
+                                  "Maria Santos", "+97143330002", "100300400600003")
     for v in (fm_vendor, cleaning_vendor):
         log(f"vendor ready: {v.get('nameEn')}")
 
@@ -988,17 +995,18 @@ def main():
         if isinstance(v, dict) and v.get("narration")
     }
 
-    def make_voucher(narration, body):
+    def make_voucher(narration, body, allocations=None):
         """Create-and-post a voucher, keyed on its narration so a re-run is a
         no-op. A draft left behind by a half-finished run is posted, not
-        duplicated."""
+        duplicated. ``allocations``: the invoices a BPV settles (spec §2)."""
         voucher = existing_vouchers.get(narration)
         if voucher is None:
             voucher = api.post("/api/v1/finance/vouchers",
                                json={**body, "narration": narration})
         elif voucher.get("status") != "DRAFT":
             return voucher
-        posted = api.post(f"/api/v1/finance/vouchers/{voucher['id']}/post")
+        posted = api.post(f"/api/v1/finance/vouchers/{voucher['id']}/post",
+                          json={"allocations": allocations} if allocations else None)
         existing_vouchers[narration] = posted
         log(f"voucher posted: {posted.get('voucherNumber')} — {narration}")
         return posted
@@ -1012,6 +1020,8 @@ def main():
             "docDate": iso(dt.date(TODAY.year, 2, 10)),
             "vendorId": fm_vendor["id"],
             "invoiceNumber": f"EFM-{TODAY.year}-0114",
+            # The date on the supplier's paper; due 30 days later (vendor terms).
+            "supplierInvoiceDate": iso(dt.date(TODAY.year, 2, 10)),
             "propertyId": tower["id"],
             # The per-line VAT amount is derived on the server from vatRate.
             "lines": [{
@@ -1035,14 +1045,16 @@ def main():
             "vendorId": fm_vendor["id"],
             "propertyId": tower["id"],
             "paymentAccountId": out["accounts"]["tower"]["BANK"],
-            "chequeNumber": "700001",
-            "chequeDate": iso(dt.date(TODAY.year, 3, 5)),
+            "paymentMethod": "TRANSFER",
+            "paymentReference": f"TRF-EFM-{TODAY.year}-0114",
             "lines": [{
                 "accountId": vendor_payable_id(fm_vendor),
                 "description": "Fire safety AMC — invoice settled in full",
                 "amount": 9450.0,
             }],
         },
+        # Settles the invoice in full, so it shows as Paid and aging is clean.
+        allocations=[{"invoiceId": invoice["id"], "amount": 9450.0}],
     )
     out["vouchers"] = {
         "purchaseInvoice": invoice["id"],

@@ -57,6 +57,33 @@ public class Voucher extends BaseTenantEntity {
     @Column(name = "cheque_number", length = 50) private String chequeNumber;
     @Column(name = "cheque_date") private LocalDate chequeDate;
 
+    /** PISR: the date printed on the supplier's invoice. {@code docDate} stays the posting date. */
+    @Column(name = "supplier_invoice_date") private LocalDate supplierInvoiceDate;
+
+    /** PISR: when the supplier expects payment; defaults to the supplier's date plus the vendor's terms. */
+    @Column(name = "due_date") private LocalDate dueDate;
+
+    /** BPV: transfer, cheque or cash (spec §2). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", length = 10)
+    private com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod paymentMethod;
+
+    /** BPV: the bank transfer reference. */
+    @Column(name = "payment_reference", length = 60) private String paymentReference;
+
+    /**
+     * PISR: {@code invoiceNumber} trimmed, upper-cased, with inner whitespace and
+     * hyphens removed — the key of the duplicate-invoice guard
+     * ({@code ux_vouchers_pisr_invoice}). Written by VoucherService only.
+     */
+    @Column(name = "invoice_no_norm", length = 60) private String invoiceNoNorm;
+
+    /**
+     * A duplicate that was already posted before the guard existed (changeset
+     * 110). Kept out of the unique index; never set by the application.
+     */
+    @Column(name = "duplicate_grandfathered", nullable = false) private boolean duplicateGrandfathered;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private VoucherStatus status = VoucherStatus.DRAFT;
