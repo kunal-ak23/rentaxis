@@ -8,6 +8,7 @@ import ChequeRowsEditor, { blankChequeRow, chequeTotalOf, stripKey, type ChequeD
 import { blankLine, linesAreValid, round2, splitLineErrors, toInputs, todayIso, totalsOf, type LineRow } from "./leaseMath";
 import { chequeRowsAreValid } from "@/components/cheques/chequeRowRules";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail, type PostLeaseResponse } from "@/lib/api/leasing";
+import { formatDate } from "@/lib/format";
 
 /**
  * Push the end date out and charge for the extra months.
@@ -53,6 +54,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
     const matches = Math.abs(round2(chequeTotalOf(cheques) - totals.inclVat)) < 0.005;
     const chequeRows = cheques.map(stripKey);
     const { rest } = splitLineErrors(errors);
+    const endDateNotAfterCurrent = !!newEndDate && newEndDate <= lease.endDate;
 
     const submit = async () => {
         setBusy(true);
@@ -95,7 +97,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
                         <label className={label} htmlFor="extend-current-end">{t("currentEndDate")}</label>
-                        <input id="extend-current-end" readOnly className={`${field} opacity-70`} value={lease.endDate} />
+                        <input id="extend-current-end" readOnly className={`${field} opacity-70`} value={formatDate(lease.endDate)} />
                     </div>
                     <div>
                         <label className={label} htmlFor="extend-new-end">{t("newEndDate")}</label>
@@ -108,6 +110,11 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                             value={newEndDate}
                             onChange={e => setNewEndDate(e.target.value)}
                         />
+                        {endDateNotAfterCurrent && (
+                            <p className="mt-1 text-[11px] text-error" data-testid="extend-new-end-date-error">
+                                {t("extendEndDateNotAfterCurrent")}
+                            </p>
+                        )}
                     </div>
                     <div>
                         <label className={label} htmlFor="extend-contract-date">{t("contractDate")}</label>

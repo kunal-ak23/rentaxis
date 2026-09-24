@@ -93,3 +93,29 @@ describe("ExtendLeaseDialog cheque rows", () => {
         expect(modes).toEqual(["PDC", "CASH", "TRANSFER"]);
     });
 });
+
+describe("ExtendLeaseDialog current end date (F14-34)", () => {
+    it("shows the current end date formatted as dd/mm/yyyy, not raw ISO", () => {
+        renderDialog();
+        const current = screen.getByLabelText("Current End Date") as HTMLInputElement;
+        expect(current.value).toBe("31/12/2026");
+    });
+
+    it("shows a validation message when the new end date is not after the current one", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2026-12-31" } });
+        expect(screen.getByTestId("extend-new-end-date-error")).toHaveTextContent(
+            "The new end date must be after the current one",
+        );
+        expect(screen.getByTestId("extend-lease-confirm")).toBeDisabled();
+    });
+
+    it("clears the validation message once the new end date is after the current one", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2026-12-31" } });
+        expect(screen.getByTestId("extend-new-end-date-error")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2027-06-30" } });
+        expect(screen.queryByTestId("extend-new-end-date-error")).not.toBeInTheDocument();
+    });
+});

@@ -1957,6 +1957,7 @@
     "carryDepositForward": "Carry deposit forward",
     "extend": "Extend",
     "newEndDate": "New End Date",
+    "extendEndDateNotAfterCurrent": "The new end date must be after the current one",
     "extensionLines": "Extension Charges",
     "recognitionSchedule": "Recognition Schedule",
     "journalsTab": "Journals",

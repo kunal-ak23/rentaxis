@@ -1957,6 +1957,7 @@
     "carryDepositForward": "ترحيل التأمين إلى العقد الجديد",
     "extend": "تمديد",
     "newEndDate": "تاريخ الانتهاء الجديد",
+    "extendEndDateNotAfterCurrent": "يجب أن يكون تاريخ الانتهاء الجديد بعد التاريخ الحالي",
     "extensionLines": "بنود التمديد",
     "recognitionSchedule": "جدول الاستحقاق",
     "journalsTab": "القيود اليومية",
