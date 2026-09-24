@@ -103,7 +103,7 @@ public class VatController {
      * {@code dryRun=true} writes nothing and says what would post.
      */
     @PostMapping("/finance/vat/tax-points/run")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN', 'ACCOUNTANT')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<VatTaxPointRunResult> run(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "false") boolean dryRun) {

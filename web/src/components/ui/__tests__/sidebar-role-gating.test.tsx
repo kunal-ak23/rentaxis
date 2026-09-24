@@ -10,11 +10,16 @@ import en from "../../../../messages/en.json";
  * <p>The finance group used to be one gate — `canAccessFinance`, which admits
  * ACCOUNTANT. But Vendors, Bank Accounts and Staff sit behind
  * VendorController / BankAccountController / StaffController, none of which
- * grant ACCOUNTANT. An accountant was therefore shown links that 403 on
- * arrival. The ledger pages (chart of accounts, journals, general ledger,
- * tenant ledger, trial balance) are the ones that actually admit the role,
- * and they stay on `canAccessFinance`; Vendors/Bank Accounts/Staff moved to
+ * granted ACCOUNTANT, so an accountant was shown links that 403'd on arrival.
+ * The ledger pages (chart of accounts, journals, general ledger, tenant
+ * ledger, trial balance) are the ones that actually admit the role, and they
+ * stay on `canAccessFinance`; Bank Accounts/Staff moved to
  * `canAccessFinanceOps`.
+ *
+ * <p>Finance-ops audit S1 (P0): VendorController now admits ACCOUNTANT too
+ * (an accountant enters the PISR/BPV vouchers that reference vendors), so
+ * Vendors moved to its own gate, `canManageVendors`, rather than either of the
+ * two above — Bank Accounts and Staff still refuse the role.
  *
  * <p>The cheque register replaced Payments and moved to its own gate,
  * `canManageCheques` — `ChequeController`'s STAFF group admits SA/TA/
@@ -110,6 +115,8 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/cheques/post-dated",
             "/dashboard/settings/account-template",
             "/dashboard/settings/fiscal",
+            // VendorController is SA/TA/ACCOUNTANT too (finance-ops audit S1).
+            "/dashboard/finance/vendors",
         ]));
     });
 
@@ -118,7 +125,6 @@ describe("sidebar finance gating", () => {
         const links = hrefs(container);
 
         for (const href of [
-            "/dashboard/finance/vendors",
             "/dashboard/finance/bank-accounts",
             "/dashboard/staff",
             "/dashboard/settings/gateway",

@@ -67,10 +67,15 @@ public final class CrossTenantHttp {
     }
 
     public User admin(UUID tenantId) {
+        return user(tenantId, UserRole.TENANT_ADMIN);
+    }
+
+    /** A user of the given role in the given tenant, for role-gating tests. */
+    public User user(UUID tenantId, UserRole role) {
         User u = new User();
-        u.setEmail("xt-admin-" + UUID.randomUUID() + "@t.io");
-        u.setName("Admin");
-        u.setRole(UserRole.TENANT_ADMIN);
+        u.setEmail("xt-" + role.name().toLowerCase() + "-" + UUID.randomUUID() + "@t.io");
+        u.setName(role.name());
+        u.setRole(role);
         u.setStatus(UserStatus.ACTIVE);
         u.setPasswordHash("x");
         u.setTenantId(tenantId);
@@ -94,6 +99,16 @@ public final class CrossTenantHttp {
             spec = spec.contentType(MediaType.APPLICATION_JSON).body(body);
         }
         return spec.retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(Map.class);
+    }
+
+    /**
+     * The status code alone, for role-gating checks against an endpoint whose
+     * body is not a JSON object (a bare array, for instance) — {@link #call}
+     * decodes into {@code Map} and throws on anything else.
+     */
+    public int status(User caller, HttpMethod method, String path) {
+        return request(caller, method, path).retrieve().onStatus(s -> true, (req, res) -> { })
+                .toBodilessEntity().getStatusCode().value();
     }
 
     public static Map<String, Object> ref(UUID id) {

@@ -153,8 +153,9 @@ export default function MvpSidebar() {
     // register's own controller (ChequeController's STAFF group) admits
     // ACCOUNTANT *and* PROPERTY_MANAGER, unlike the old Payments link, which sat
     // behind canAccessFinanceOps (SA/TA only) because PaymentScheduleController
-    // refused an accountant. The remaining operational pages (vendors, bank
-    // accounts) still do not admit either role — their controllers stop at
+    // refused an accountant. Vendors now has its own gate (canManageVendors,
+    // finance-ops audit S1) because VendorController admits ACCOUNTANT; Bank
+    // Accounts stays behind canAccessFinanceOps — its controller still stops at
     // TENANT_ADMIN.
     const financeItems = [
         ...(hasPermission(userRole, 'canAccessFinance') ? [
@@ -210,8 +211,10 @@ export default function MvpSidebar() {
         ...(hasPermission(userRole, 'canProposePenalties') ? [
             { name: tCheques("penalties"), href: "/dashboard/finance/penalties", icon: AlertTriangle, tourId: 'sidebar-penalties' },
         ] : []),
-        ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
+        ...(hasPermission(userRole, 'canManageVendors') ? [
             { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
+        ] : []),
+        ...(hasPermission(userRole, 'canAccessFinanceOps') ? [
             { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
         ] : []),
     ];

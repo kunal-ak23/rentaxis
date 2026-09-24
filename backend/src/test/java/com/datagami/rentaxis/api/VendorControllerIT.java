@@ -6,6 +6,7 @@ import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
@@ -125,5 +126,42 @@ class VendorControllerIT extends AbstractPostgresIT {
                 .isEqualTo(leaf);
         assertThat(jdbc.queryForObject("select name from accounts where id = ?::uuid", String.class, leaf))
                 .isEqualTo("Acme Renamed");
+    }
+
+    /**
+     * Finance-ops audit S1 (P0): {@code VendorController} used to be
+     * {@code @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')")} at the
+     * class level, so an ACCOUNTANT's {@code GET /v1/vendors} 403'd and the
+     * Purchase/Service Invoice and Payment Voucher forms rendered an empty,
+     * unexplained vendor dropdown. The class now admits ACCOUNTANT.
+     */
+    @Test
+    void anAccountantCanListVendors() {
+        User accountant = http.user(tenantA, UserRole.ACCOUNTANT);
+        assertThat(http.status(accountant, HttpMethod.GET, "/api/v1/vendors")).isEqualTo(200);
+    }
+
+    @Test
+    void aRenterIsStillRefused() {
+        User renter = http.user(tenantA, UserRole.RENTER);
+        assertThat(http.status(renter, HttpMethod.GET, "/api/v1/vendors")).isEqualTo(403);
+    }
+
+    @Test
+    void aTenantUserIsStillRefused() {
+        User tenantUser = http.user(tenantA, UserRole.TENANT_USER);
+        assertThat(http.status(tenantUser, HttpMethod.GET, "/api/v1/vendors")).isEqualTo(403);
+    }
+
+    /**
+     * Unchanged by this fix: PROPERTY_MANAGER was never granted vendor access
+     * and stays that way (finance-ops audit; web/src/lib/rbac.ts
+     * canAccessFinanceOps stays SA/TA-only for Bank Accounts/Staff, and the new
+     * canManageVendors key deliberately does not include PROPERTY_MANAGER).
+     */
+    @Test
+    void aPropertyManagerIsStillRefused() {
+        User pm = http.user(tenantA, UserRole.PROPERTY_MANAGER);
+        assertThat(http.status(pm, HttpMethod.GET, "/api/v1/vendors")).isEqualTo(403);
     }
 }

@@ -202,10 +202,19 @@ export default function VoucherForm({
         let alive = true;
         // Vendors carry their payable account, which the payable-line rules need;
         // the vendors page reads the same unpaginated list.
+        //
+        // A failed load used to be swallowed into `[]` here (`r.ok ? r.json() :
+        // []`), which is indistinguishable from "this tenant has no vendors" — an
+        // ACCOUNTANT hitting the S1 403 (VendorController used to be SA/TA only)
+        // saw an empty, unexplained dropdown and could not tell whether to type a
+        // vendor name or give up. Surface it like every other load on this form.
         fetch("/api/proxy/v1/vendors")
-            .then(r => (r.ok ? r.json() : []))
+            .then(r => {
+                if (!r.ok) throw new ApiError(r.status, tCommon("loadFailed"));
+                return r.json();
+            })
             .then((rows: VendorRow[]) => alive && setVendors(Array.isArray(rows) ? rows : []))
-            .catch(() => {});
+            .catch(e => alive && setLoadError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
         // One unpaginated GET, kept with its property so a line's unit list can be
         // filtered without a request per row (UnitController#getAllUnits).
         fetch("/api/proxy/v1/units")
