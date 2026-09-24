@@ -38,7 +38,6 @@ public class RecognitionRunLog {
                         .addValue("f", errs.size()).addValue("e", errs.isEmpty() ? null : String.join("\n", errs)));
     }
 
-    /** The earliest "last run" across organisations that have one: a pass that missed any of them is behind. */
     /**
      * F14-63: whether any organisation has no pass recorded for {@code today} — its
      * last one is for an earlier day, or it has none at all (the first night after a
@@ -52,6 +51,7 @@ public class RecognitionRunLog {
                 new MapSqlParameterSource("d", today), Boolean.class));
     }
 
+    /** The earliest "last run" across organisations that have one (for the catch-up's log line). */
     public LocalDate oldestLastRunFor() {
         return jdbc.getJdbcTemplate().queryForObject("select min(run_for) from recognition_runs", LocalDate.class);
     }

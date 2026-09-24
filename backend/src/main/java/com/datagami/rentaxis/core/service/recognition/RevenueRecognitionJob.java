@@ -88,9 +88,16 @@ public class RevenueRecognitionJob {
     /** The nightly slot, matching {@link #run()}'s cron. */
     static final java.time.LocalTime NIGHTLY_AT = java.time.LocalTime.of(0, 30);
 
-    /** F14-63: how long after {@link #NIGHTLY_AT} the catch-up waits for the nightly pass before running it. */
-    @Value("${rentaxis.recognition.job.catch-up-grace-minutes:30}")
-    private long catchUpGraceMinutes = 30;
+    /** The nightly pass's ShedLock {@code lockAtMostFor}, in minutes (see {@link #run()}). */
+    static final long NIGHTLY_LOCK_MINUTES = 30;
+
+    /**
+     * F14-63: how long after {@link #NIGHTLY_AT} the catch-up waits for the nightly pass
+     * before running it. PR #357 R1: 35, so the gate (01:05) opens strictly after the
+     * nightly lock can expire (01:00) and a long nightly pass is never overlapped.
+     */
+    @Value("${rentaxis.recognition.job.catch-up-grace-minutes:35}")
+    private long catchUpGraceMinutes = 35;
 
     /** Off in the test suite (src/test/resources), whose shared database must not be closed behind a test's back. */
     @Value("${rentaxis.recognition.job.catch-up-enabled:true}")
@@ -119,7 +126,7 @@ public class RevenueRecognitionJob {
      *
      * <p>F14-63: an organisation with <em>no</em> pass recorded is behind too, so
      * the first night after a deploy is caught up like any other: once 00:30 plus
-     * {@code rentaxis.recognition.job.catch-up-grace-minutes} (default 30) has
+     * {@code rentaxis.recognition.job.catch-up-grace-minutes} (default 35, i.e. 01:05) has
      * passed and some organisation has no pass recorded for today, today's pass
      * runs.</p>
      */

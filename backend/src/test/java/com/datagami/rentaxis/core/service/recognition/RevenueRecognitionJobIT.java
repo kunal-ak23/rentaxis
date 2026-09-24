@@ -327,7 +327,7 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
             org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpGraceMinutes", 180L);
             freeLockAndCatchUp();   // the clock reads 03:00, inside 00:30 + 3 h
             assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
-            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpGraceMinutes", 30L);
+            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpGraceMinutes", 35L);
             freeLockAndCatchUp();
             assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isZero();
             assertThat(runLog.last(alpha.tenantId())).hasValueSatisfying(r -> {
@@ -359,6 +359,15 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
         } finally {
             org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", false);
         }
+    }
+
+    /** PR #357 R1: the catch-up gate opens strictly after the nightly lock can expire. */
+    @Test
+    void theCatchUpOpensAfterTheNightlyLockExpires() {
+        Object grace = org.springframework.test.util.ReflectionTestUtils.getField(job, "catchUpGraceMinutes");
+        assertThat(grace).isEqualTo(35L);
+        assertThat(RevenueRecognitionJob.NIGHTLY_AT.plusMinutes((Long) grace))
+                .isAfter(RevenueRecognitionJob.NIGHTLY_AT.plusMinutes(RevenueRecognitionJob.NIGHTLY_LOCK_MINUTES));
     }
 
     /** A second pass on the same night finds nothing left to do and writes nothing. */
