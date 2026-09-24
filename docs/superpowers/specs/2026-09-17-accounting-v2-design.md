@@ -1,8 +1,10 @@
 # Accounting v2 — Design
 
+> **Names in this document are placeholders.** Tenant, renter, building and contract-reference names were replaced with synthetic equivalents (issue #304); the figures, dates and document sequences are from the client's own exports.
+
 **Date:** 2026-09-17
 **Status:** approved in review, pending written sign-off
-**Client driver:** Al Ashram Real Estate (PACT RevenU migration). Sources: call walkthrough (33 screenshots), PACT General Ledger exports for two tenants, PACT chart of accounts (826 rows), property↔ledger mapping sheet, WhatsApp follow-ups and voice note from Anil (accountant), 2026-09-17.
+**Client driver:** Miftah Demo Properties (PACT RevenU migration). Sources: call walkthrough (33 screenshots), PACT General Ledger exports for two tenants, PACT chart of accounts (826 rows), property↔ledger mapping sheet, WhatsApp follow-ups and voice note from Anil (accountant), 2026-09-17.
 
 ## 1. Why
 
@@ -59,7 +61,7 @@ Rework of `accounts`, not a new table.
 | `account_type` | `ASSET / LIABILITY / INCOME / EXPENSE / EQUITY` (existing enum) |
 | `parent_id` | FK to `accounts`; replaces the string `parent_code`. Groups form the tree `A → A-02 → A-02-01 → leaf` |
 | `is_group`, `is_active`, `is_system` | groups cannot carry lines; system leaves (vendor, bank, template-generated) are not deletable from the CoA screen |
-| `property_id` | nullable FK. Set on template-generated leaves and on any leaf the user assigns to a property (expense leaves such as `PEST CONTROL AMC OCEAN RESIDENCIA`). First-class filter for ledgers and tower-wise grouping. **Not** used for resolution |
+| `property_id` | nullable FK. Set on template-generated leaves and on any leaf the user assigns to a property (expense leaves such as `PEST CONTROL AMC SAMPLE OASIS`). First-class filter for ledgers and tower-wise grouping. **Not** used for resolution |
 
 No stored balance. Balances are sums over `journal_lines`.
 
@@ -68,7 +70,7 @@ No stored balance. Balances are sums over `journal_lines`.
 ```
 journal_entries
   id, tenant_id
-  entry_number       TEXT      -- "TCO-26/1629": <doc_type>-<fy2>/<seq>, seq per tenant per doc_type per FY
+  entry_number       TEXT      -- "SAMPLE-26/001": <doc_type>-<fy2>/<seq>, seq per tenant per doc_type per FY
   doc_type           ENUM      -- see §3
   entry_date         DATE
   narration          TEXT
@@ -151,7 +153,7 @@ property_account_mappings (tenant_id, property_id, role, account_id)   UNIQUE (p
 tenant_default_account_mappings (tenant_id, role, account_id)           UNIQUE (tenant_id, role)
 ```
 
-Tenant defaults serve tenant-wide roles (`CASH`, `ROUNDING_OFF`, `OUTPUT_VAT`, `INPUT_VAT`, `DISCOUNT_ALLOWED`, `OPENING_BALANCE_DIFFERENCE`) and properties that deliberately share generic accounts (PACT's Galah 2 → `Rent Receivable 105590`, `Advance Rent 125620`, `Rental Income A/c 145661`).
+Tenant defaults serve tenant-wide roles (`CASH`, `ROUNDING_OFF`, `OUTPUT_VAT`, `INPUT_VAT`, `DISCOUNT_ALLOWED`, `OPENING_BALANCE_DIFFERENCE`) and properties that deliberately share generic accounts (PACT's Sample Residences 2 → `Rent Receivable 105590`, `Advance Rent 125620`, `Rental Income A/c 145661`).
 
 Remapping is always allowed. Posted lines hold `account_id`; history is untouched, only future postings move. The UI warns when a role with posted history is remapped.
 
@@ -209,7 +211,7 @@ Seeded: Rent (RENT→ADVANCE_RENT), Security Deposit (DEPOSIT→SECURITY_DEPOSIT
 
 ### 6.3 Lease header changes
 
-Added: `contract_date` (document date; may differ from `start_date`), `total_days` (derived), `grace_period_days` (payment grace for overdue calculation), `contract_number` (per-property prefix + sequence, e.g. `GLA_B1/681`), `renewed_from_lease_id`, `chain_id` (root lease of the renewal chain — PACT's tracking number), `receivable_account_id` and `income_account_id` overrides (default from property mapping), `posting_journal_id`, `posted_at`, `posted_by`.
+Added: `contract_date` (document date; may differ from `start_date`), `total_days` (derived), `grace_period_days` (payment grace for overdue calculation), `contract_number` (per-property prefix + sequence, e.g. `SMP_B1/001`), `renewed_from_lease_id`, `chain_id` (root lease of the renewal chain — PACT's tracking number), `receivable_account_id` and `income_account_id` overrides (default from property mapping), `posting_journal_id`, `posted_at`, `posted_by`.
 Kept, but derived: `rent_amount` and `deposit_amount` stay on the lease as read-only mirrors of the RENT and DEPOSIT-behaviour lines, recomputed by `LeaseService.syncDerivedTotals` whenever the lines change and never accepted from a request body. Too much already reads them — reports, the unit's `actual_rent`, the renter portal — for removing them to be worth it, and as a mirror they cannot drift from the lines.
 Removed: `monthly_rent` (a second source of truth for the same money; a monthly figure is derived where it is displayed), and the `payment_terms`-driven schedule fields that live on the cheque grid now; `installment_distribution` moves to the generator input.
 
@@ -435,7 +437,7 @@ Table-first, paginated, AR/EN, per the project UI standard. Mobile apps are not 
 
 - **Unit:** proration engine (day rate, month slicing, remainder, leap year; §8.2 table as fixture); cheque rounding; resolver (property → default → hard fail); balanced-journal check; period lock; entry numbering.
 - **Service / integration (Testcontainers Postgres):** one test class per document — lease post/amend/renew/extend/terminate; every cheque transition asserts the exact journal; recognition catch-up and re-planning; settlement; PISR/BPV; OB; import batch reverse. Invariants asserted after every scenario: trial balance balances; a posted lease's tenant ledger nets to zero; Σ recognition = rent; no line on a group account.
-- **Golden ledger tests:** replay the client's two GL exports (ISLAM MAMANOV / LE BOULEVARD, ANUM ISHTIAQ / GALAH 2) through the API and diff our ledger against PACT's line by line; `CIL` amounts are expected to differ by the per-day rule only and are asserted against the per-day fixture instead.
+- **Golden ledger tests:** replay the client's two GL exports (SAMPLE RENTER ONE / SAMPLE TOWER, SAMPLE RENTER TWO / SAMPLE RESIDENCES 2) through the API and diff our ledger against PACT's line by line; `CIL` amounts are expected to differ by the per-day rule only and are asserted against the per-day fixture instead.
 - **E2E:** `scripts/seed_demo_tenant.py` rewritten for v2; Playwright walkthrough extended to post a lease, deposit/clear/bounce/replace, run month-end, terminate and settle.
 
 ## 13. Build order

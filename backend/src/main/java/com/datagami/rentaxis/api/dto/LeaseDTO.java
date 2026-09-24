@@ -43,11 +43,11 @@ public class LeaseDTO {
      */
     private UUID contractDocumentId;
     private Long contractNumber;
-    /** "GLA_B1/681" when the property has a code, else the bare number. */
+    /** "SMP_B1/001" when the property has a code, else the bare number. */
     private String displayContractNumber;
     /**
      * The contract number this tenancy carried in the system it was migrated from
-     * ("TLP7/681"), null for a lease created here. Read-only: it is written by the
+     * ("SAMPLE-25/001"), null for a lease created here. Read-only: it is written by the
      * cut-over contract import and there is no request body that sets it.
      */
     private String externalContractRef;

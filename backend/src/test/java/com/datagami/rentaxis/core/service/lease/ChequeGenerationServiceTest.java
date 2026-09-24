@@ -35,7 +35,7 @@ class ChequeGenerationServiceTest {
     }
 
     @Test
-    void galahFourChequesUniformWhenDivisible() {
+    void sampleResidencesFourChequesUniformWhenDivisible() {
         var r = ChequeRoundingCalculator.distribute(bd("51000"), 4,
                 InstallmentDistribution.FIRST_LARGER, bd("10"));
         assertThat(r.amounts()).containsExactly(bd("12750"), bd("12750"), bd("12750"), bd("12750"));

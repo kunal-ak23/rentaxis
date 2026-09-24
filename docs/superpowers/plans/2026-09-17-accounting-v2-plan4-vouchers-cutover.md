@@ -1,5 +1,7 @@
 # Accounting v2 — Plan 4: Vouchers & Cut-over — Implementation Plan
 
+> **Names in this document are placeholders.** Tenant, renter, building and contract-reference names were replaced with synthetic equivalents (issue #304); the figures, dates and document sequences are from the client's own exports.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the accountant the two expense documents (Purchase/Service Invoice `PISR`, Bank/Cash Payment Voucher `BPV`) and everything needed to leave PACT on a cut-over date: an active-contract importer that posts a whole portfolio as one reversible batch, an opening-balance journal (`OB`) that closes the books balanced, and a reconciliation screen that proves our derived balances against PACT's trial balance.
@@ -1391,13 +1393,13 @@ class PurchaseInvoicePostingIT {
         accounts.seedDefaultAccounts();
 
         Property p = new Property();
-        p.setNameEn("Ocean Residencia");
+        p.setNameEn("Sample Oasis");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
         Account expenseGroup = accounts.getAccountByCode("D-01");
-        pestControl = accounts.createLeaf("PEST CONTROL AMC OCEAN RESIDENCIA", expenseGroup, propertyId);
-        lifeguard = accounts.createLeaf("LIFEGUARD EXP - OCEAN RESIDENCIA", expenseGroup, propertyId);
+        pestControl = accounts.createLeaf("PEST CONTROL AMC SAMPLE OASIS", expenseGroup, propertyId);
+        lifeguard = accounts.createLeaf("LIFEGUARD EXP - SAMPLE OASIS", expenseGroup, propertyId);
         inputVat = accounts.createLeaf("VAT Receivable", accounts.getAccountByCode("A-02"), null);
         mapDefault(AccountRole.INPUT_VAT, inputVat);
 
@@ -2804,7 +2806,7 @@ class CutoverSchemaIT {
     private UUID batch(UUID tenant, String status) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO import_batches (id, tenant_id, kind, status, label, created_at) "
-                + "VALUES (?,?,'CONTRACT_IMPORT',?,'Al Ashram cut-over',now())", id, tenant, status);
+                + "VALUES (?,?,'CONTRACT_IMPORT',?,'Miftah Demo cut-over',now())", id, tenant, status);
         return id;
     }
 
@@ -2835,7 +2837,7 @@ class CutoverSchemaIT {
     void aSnapshotRowIsUniquePerTenantAndAccountCode() {
         UUID t = tenant();
         jdbc.update("INSERT INTO opening_balance_snapshots (id, tenant_id, account_code, account_name, debit, credit, uploaded_at) "
-                + "VALUES (?,?,'166269','Rent Receivable - Tulip 7',15000.00,0,now())", UUID.randomUUID(), t);
+                + "VALUES (?,?,'166269','Rent Receivable - Sample Plaza 7',15000.00,0,now())", UUID.randomUUID(), t);
         assertThatThrownBy(() -> jdbc.update(
                 "INSERT INTO opening_balance_snapshots (id, tenant_id, account_code, account_name, debit, credit, uploaded_at) "
                         + "VALUES (?,?,'166269','dup',1,0,now())", UUID.randomUUID(), t))
@@ -3162,8 +3164,8 @@ class ImportBatchReverseIT {
         tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
-        receivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), null);
-        advanceRent = accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), null);
+        receivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), null);
+        advanceRent = accounts.createLeaf("Advance Rent - Sample Plaza 7", accounts.getAccountByCode("B-01-01"), null);
         fiscal.setBooksStartDate(LocalDate.of(2026, 10, 1));
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));
     }
@@ -3186,7 +3188,7 @@ class ImportBatchReverseIT {
      */
     @Test
     void reversingABatchReversesEveryJournalAndReturnsEveryLeaseToDraft() {
-        ImportBatch b = batches.create(null, "Al Ashram cut-over");
+        ImportBatch b = batches.create(null, "Miftah Demo cut-over");
         UUID leaseA = UUID.randomUUID(), leaseB = UUID.randomUUID();
         batches.linkLease(b.getId(), leaseA);
         batches.linkLease(b.getId(), leaseB);
@@ -3737,8 +3739,8 @@ class TrialBalanceCsvParserTest {
     void parsesCodeNameDebitCredit() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
-                145661,Rental Income Tulip 7,0.00,61000.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
+                145661,Rental Income Sample Plaza 7,0.00,61000.00
                 """);
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows()).hasSize(2);
@@ -3750,7 +3752,7 @@ class TrialBalanceCsvParserTest {
     /** PACT exports without a header when the report is saved rather than printed. */
     @Test
     void aFileWithNoHeaderRowStillParses() {
-        var r = parse("166269,Rent Receivable - Tulip 7,15000.00,0.00\n");
+        var r = parse("166269,Rent Receivable - Sample Plaza 7,15000.00,0.00\n");
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows()).singleElement().satisfies(row ->
                 assertThat(row.code()).isEqualTo("166269"));
@@ -3761,8 +3763,8 @@ class TrialBalanceCsvParserTest {
     void thousandsSeparatorsQuotesAndParenthesesAreUnderstood() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                "166269","Rent Receivable - Tulip 7","1,015,000.00","0.00"
-                "145661","Rental Income Tulip 7","0.00","(61,000.00)"
+                "166269","Rent Receivable - Sample Plaza 7","1,015,000.00","0.00"
+                "145661","Rental Income Sample Plaza 7","0.00","(61,000.00)"
                 """);
         assertThat(r.problems()).isEmpty();
         assertThat(r.rows().get(0).debit()).isEqualByComparingTo("1015000.00");
@@ -3773,7 +3775,7 @@ class TrialBalanceCsvParserTest {
     void blankLinesAndTotalRowsAreSkippedNotReportedAsErrors() {
         var r = parse("""
                 Account Code,Account Name,Debit,Credit
-                166269,Rent Receivable - Tulip 7,15000.00,0.00
+                166269,Rent Receivable - Sample Plaza 7,15000.00,0.00
 
                 ,,15000.00,15000.00
                 """);
@@ -4118,14 +4120,14 @@ class OpeningBalanceIT {
         accounts.seedDefaultAccounts();
 
         Property p = new Property();
-        p.setNameEn("Tulip Oasis 7");
+        p.setNameEn("Sample Plaza Oasis 7");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         vatPayable = accounts.createLeaf("VAT Payable", accounts.getAccountByCode("B-01"), null);
         obDifference = accounts.createLeaf("Opening Balance Difference", accounts.getAccountByCode("E"), null);
-        rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
+        rentReceivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), propertyId);
 
         mapDefault(AccountRole.OPENING_BALANCE_DIFFERENCE, obDifference);
         mapProperty(AccountRole.RENT_RECEIVABLE, rentReceivable);
@@ -4241,7 +4243,7 @@ class OpeningBalanceIT {
         upload("""
                 Account Code,Account Name,Debit,Credit
                 %s,Cash In Hand,50000.00,0.00
-                %s,Rent Receivable - Tulip 7,15000.00,0.00
+                %s,Rent Receivable - Sample Plaza 7,15000.00,0.00
                 %s,VAT Payable,0.00,12000.00
                 """.formatted(cashInHand.getCode(), rentReceivable.getCode(), vatPayable.getCode()));
         JournalEntry e = ob.post();
@@ -4666,12 +4668,12 @@ class ReconciliationIT {
         accounts.seedDefaultAccounts();
 
         Property p = new Property();
-        p.setNameEn("Tulip Oasis 7");
+        p.setNameEn("Sample Plaza Oasis 7");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
-        rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
-        advanceRent = accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), propertyId);
+        rentReceivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), propertyId);
+        advanceRent = accounts.createLeaf("Advance Rent - Sample Plaza 7", accounts.getAccountByCode("B-01-01"), propertyId);
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         obDifference = accounts.createLeaf("Opening Balance Difference", accounts.getAccountByCode("E"), null);
 
@@ -4718,8 +4720,8 @@ class ReconciliationIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode()));
 
         List<OpeningBalanceService.ReconciliationRow> rows = ob.reconcile();
@@ -4740,7 +4742,7 @@ class ReconciliationIT {
         importedContract("45000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
                 """.formatted(rentReceivable.getCode()));
         assertThat(ob.reconcile()).filteredOn(r -> r.accountId().equals(rentReceivable.getId()))
                 .singleElement()
@@ -4757,8 +4759,8 @@ class ReconciliationIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 %s,Cash In Hand,50000.00,0.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode(), cashInHand.getCode()));
 
@@ -5113,8 +5115,8 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 The client's property-mapping export (`property maping ledgers.xls`, an HTML table) has the headers `Property Code | Name | Rental Income A/c | Rental Receivable A/c | Advance Rent A/c | Bank A/c | LandLord` and rows like:
 
 ```
-Tulip 7 | Tulip Oasis 7 | Rental Income Tulip 7 | Rent Receivable - Tulip 7 | Advance Rent - Tulip 7 | Emirates Islamic - Tulip 7 | Landlord
-Olivier | L'Olivier     | Rental Income L'Olivier | Rent Receivable - L'Olivier | Advance Rent - L'Olivier | Emirates Islamic - L'Olivier | Landlord
+Sample Plaza 7 | Sample Plaza Oasis 7 | Rental Income Sample Plaza 7 | Rent Receivable - Sample Plaza 7 | Advance Rent - Sample Plaza 7 | Emirates Islamic - Sample Plaza 7 | Landlord
+Sample Heights | Sample Heights     | Rental Income Sample Heights | Rent Receivable - Sample Heights | Advance Rent - Sample Heights | Emirates Islamic - Sample Heights | Landlord
 ```
 
 Four of the six account columns come straight from that sheet (`Rental Income A/c` → `RentalIncomeAccount`, `Rental Receivable A/c` → `RentalReceivableAccount`, `Advance Rent A/c` → `AdvanceRentAccount`, `Bank A/c` → `BankAccount`); `PdcReceivableAccount` and `SecurityDepositAccount` are the two further template roles a lease needs before it can post (spec §5.4 posting guard) and are added so the accountant can supply them in the same pass. `LandLord` is ignored — landlord/owner commission is out of scope (spec §14). Names are matched **exactly** against `accounts.name` (trimmed, case-insensitive) within the tenant; an unmatched name is a **warning** naming the column and the value, never a guess (spec §10.3: "unmatched names reported, not guessed").
@@ -5150,17 +5152,17 @@ class ContractImportValidatorTest {
         row(props, 0, "PropertyName", "PropertyNameAr", "Emirate", "Address", "Type", "MakaniNumber",
                 "RentalIncomeAccount", "RentalReceivableAccount", "AdvanceRentAccount", "BankAccount",
                 "PdcReceivableAccount", "SecurityDepositAccount");
-        row(props, 1, "Tulip Oasis 7", "", "DUBAI", "", "RESIDENTIAL", "",
-                "Rental Income Tulip 7", "Rent Receivable - Tulip 7", "Advance Rent - Tulip 7",
-                "Emirates Islamic - Tulip 7", "PDC Receivable Tulip 7", "Security Deposit Tulip 7");
+        row(props, 1, "Sample Plaza Oasis 7", "", "DUBAI", "", "RESIDENTIAL", "",
+                "Rental Income Sample Plaza 7", "Rent Receivable - Sample Plaza 7", "Advance Rent - Sample Plaza 7",
+                "Emirates Islamic - Sample Plaza 7", "PDC Receivable Sample Plaza 7", "Security Deposit Sample Plaza 7");
 
         Sheet units = wb.createSheet("Units");
         row(units, 0, "PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent");
-        row(units, 1, "Tulip Oasis 7", "", "101", "BHK1", "", "");
+        row(units, 1, "Sample Plaza Oasis 7", "", "101", "BHK1", "", "");
 
         Sheet renters = wb.createSheet("Renters");
         row(renters, 0, "Name", "NameAr", "Email", "Phone");
-        row(renters, 1, "Islam Mamanov", "", "islam@example.com", "");
+        row(renters, 1, "Sample Renter One", "", "islam@example.com", "");
 
         if (!withContracts) return wb;
 
@@ -5169,19 +5171,19 @@ class ContractImportValidatorTest {
                 "RenterEmail", "ContractDate", "StartDate", "EndDate", "GracePeriodDays",
                 "LineNo", "ChargeTypeCode", "CreditAccount", "GrossAmount", "DiscountAmount",
                 "VatApplicable", "Narration");
-        row(contracts, 1, "TLP7/681", "TRK-1", "Tulip Oasis 7", "", "101", "islam@example.com",
+        row(contracts, 1, "SAMPLE-25/001", "TRK-1", "Sample Plaza Oasis 7", "", "101", "islam@example.com",
                 "2026-09-11", "2026-09-24", "2027-09-23", "5",
-                "1", "RENT", "Rental Income Tulip 7", "51000.00", "0", "false", "Annual rent");
-        row(contracts, 2, "TLP7/681", "", "", "", "", "", "", "", "", "",
+                "1", "RENT", "Rental Income Sample Plaza 7", "51000.00", "0", "false", "Annual rent");
+        row(contracts, 2, "SAMPLE-25/001", "", "", "", "", "", "", "", "", "",
                 "2", "SECURITY_DEPOSIT", "", "5000.00", "0", "false", "Security deposit");
 
         Sheet cheques = wb.createSheet("Cheques");
         row(cheques, 0, "ContractNumber", "SeqNo", "PostingDate", "ChequeNumber", "ChequeDate",
                 "PayeeBank", "DebitAccount", "Amount", "Narration", "Mode", "Status",
                 "ClearedDate", "BouncedDate");
-        row(cheques, 1, "TLP7/681", "1", "2026-09-11", "000101", "2026-09-24", "ENBD", "",
+        row(cheques, 1, "SAMPLE-25/001", "1", "2026-09-11", "000101", "2026-09-24", "ENBD", "",
                 "31000.00", "Rent - 1st Installment", "PDC", "CLEARED", "2026-09-25", "");
-        row(cheques, 2, "TLP7/681", "2", "2026-09-11", "000102", "2027-03-24", "ENBD", "",
+        row(cheques, 2, "SAMPLE-25/001", "2", "2026-09-11", "000102", "2027-03-24", "ENBD", "",
                 "25000.00", "Rent - 2nd Installment", "PDC", "REGISTERED", "", "");
         return wb;
     }
@@ -6035,10 +6037,10 @@ Add the six account columns to the Properties header array and two new sheet bui
         createHeaderRow(sheet, headers, headerStyle);
         // One row per LINE; rows sharing a ContractNumber are one contract and only the
         // first carries the header fields.
-        addRow(sheet, 1, "TLP7/681", "TRK-1", "Tulip Oasis 7", "", "101", "islam@example.com",
+        addRow(sheet, 1, "SAMPLE-25/001", "TRK-1", "Sample Plaza Oasis 7", "", "101", "islam@example.com",
                 "2026-09-11", "2026-09-24", "2027-09-23", "5",
-                "1", "RENT", "Rental Income Tulip 7", "51000.00", "0", "false", "Annual rent");
-        addRow(sheet, 2, "TLP7/681", "", "", "", "", "", "", "", "", "",
+                "1", "RENT", "Rental Income Sample Plaza 7", "51000.00", "0", "false", "Annual rent");
+        addRow(sheet, 2, "SAMPLE-25/001", "", "", "", "", "", "", "", "", "",
                 "2", "SECURITY_DEPOSIT", "", "5000.00", "0", "false", "Security deposit");
         autoSizeColumns(sheet, headers.length);
     }
@@ -6052,9 +6054,9 @@ Add the six account columns to the Properties header array and two new sheet bui
         createHeaderRow(sheet, headers, headerStyle);
         addDropdown(sheet, 1, 1000, 9, 9, new String[]{"PDC", "CASH", "TRANSFER", "ONLINE"});
         addDropdown(sheet, 1, 1000, 10, 10, new String[]{"REGISTERED", "DEPOSITED", "CLEARED", "BOUNCED"});
-        addRow(sheet, 1, "TLP7/681", "1", "2026-09-11", "000101", "2026-09-24", "ENBD", "",
+        addRow(sheet, 1, "SAMPLE-25/001", "1", "2026-09-11", "000101", "2026-09-24", "ENBD", "",
                 "31000.00", "Rent - 1st Installment", "PDC", "CLEARED", "2026-09-25", "");
-        addRow(sheet, 2, "TLP7/681", "2", "2026-09-11", "000102", "2027-03-24", "ENBD", "",
+        addRow(sheet, 2, "SAMPLE-25/001", "2", "2026-09-11", "000102", "2027-03-24", "ENBD", "",
                 "25000.00", "Rent - 2nd Installment", "PDC", "REGISTERED", "", "");
         autoSizeColumns(sheet, headers.length);
     }
@@ -6155,7 +6157,7 @@ and in `PortfolioImportController`:
     }
 ```
 
-Seed the six account names the template's sample row references in `@BeforeEach` (`Rental Income Tulip 7`, `Rent Receivable - Tulip 7`, `Advance Rent - Tulip 7`, `Emirates Islamic - Tulip 7`, `PDC Receivable Tulip 7`, `Security Deposit Tulip 7`) with `accounts.createLeaf(name, accounts.getAccountByCode(<matching group>), null)`, and seed the `RENT` and `SECURITY_DEPOSIT` charge types through Plan 2's seeder.
+Seed the six account names the template's sample row references in `@BeforeEach` (`Rental Income Sample Plaza 7`, `Rent Receivable - Sample Plaza 7`, `Advance Rent - Sample Plaza 7`, `Emirates Islamic - Sample Plaza 7`, `PDC Receivable Sample Plaza 7`, `Security Deposit Sample Plaza 7`) with `accounts.createLeaf(name, accounts.getAccountByCode(<matching group>), null)`, and seed the `RENT` and `SECURITY_DEPOSIT` charge types through Plan 2's seeder.
 
 - [ ] **Step 9: Run everything in the package**
 

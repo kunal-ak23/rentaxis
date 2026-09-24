@@ -73,12 +73,12 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
         TenantContextHolder.setTenantId(tenantId);
 
         Property p = new Property();
-        p.setNameEn("L'Olivier");
+        p.setNameEn("Sample Heights");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
         Renter r = new Renter();
-        r.setNameEn("Prabhjot Singh");
+        r.setNameEn("Sample Renter One");
         renterId = renterRepo.save(r).getId();
 
         Unit u = new Unit();
@@ -344,7 +344,7 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
         // The caller passes an already-lowercased, already-wildcarded term; all three
         // of the lease's search axes hit the same three cheques.
         assertThat(search(propertyId, null, null, null, null, "%304%")).hasSize(3);
-        assertThat(search(propertyId, null, null, null, null, "%prabhjot%")).hasSize(3);
+        assertThat(search(propertyId, null, null, null, null, "%sample renter one%")).hasSize(3);
         assertThat(search(propertyId, null, null, null, null, "%000002%"))
                 .extracting(Cheque::getChequeNumber).containsExactly("000002");
         assertThat(search(propertyId, null, null, null, null, "%nobody%")).isEmpty();
@@ -375,7 +375,7 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
         // simply does not match it.
         assertThat(search(null, null, null, null, null, "%000004%"))
                 .extracting(Cheque::getChequeNumber).containsExactly("000004");
-        assertThat(search(null, null, null, null, null, "%prabhjot%")).hasSize(4);
+        assertThat(search(null, null, null, null, null, "%sample renter one%")).hasSize(4);
         assertThat(search(null, null, null, null, null, "%304%")).hasSize(3);
     }
 

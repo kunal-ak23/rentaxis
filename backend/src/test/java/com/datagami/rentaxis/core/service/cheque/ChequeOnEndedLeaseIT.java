@@ -90,7 +90,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * against a row that already captured, which must go on answering idempotently
  * however long Razorpay keeps trying.</p>
  *
- * <p><b>The fixture</b> is {@code SettlementServiceIT}'s Galah lease — 51,000 of
+ * <p><b>The fixture</b> is {@code SettlementServiceIT}'s Sample Residences lease — 51,000 of
  * rent over 24 Sep 2026 → 23 Sep 2027, a 2,000 admin fee and a 3,000 security
  * deposit, paid by six instruments — with one deliberate difference: the
  * <b>2 Jan 2027 rent cheque is left uncleared</b>. It is dated before the 15 Feb
@@ -184,7 +184,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      * deposit and the October rent clear on their own cheque dates — so nothing is
      * ever late — and the January rent is left in the drawer.
      */
-    private UUID galahWithOneChequeStillInTheDrawer() {
+    private UUID sampleResidencesWithOneChequeStillInTheDrawer() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -204,7 +204,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
 
     /** …recognised to 31 Jan, terminated on 15 Feb, recognised again to 15 Feb. */
     private UUID terminatedWithAKeptCheque() {
-        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
         recognition.runTo(T, false);
@@ -213,7 +213,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
 
     /** The same lease with every instrument resolved — the four cleared, the two dated after T handed back. */
     private UUID terminatedWithNothingOutstanding() {
-        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
         clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
@@ -499,7 +499,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      */
     @Test
     void reversingAPenaltyCancelsItsCollectionRowAndClosesTheLease() {
-        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
         clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
         // Approved while the contract is still running — the penalty module refuses
         // to charge a lease that has ended — and dated before T so §9.1's default
@@ -839,7 +839,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      */
     @Test
     void aCloseIsNotSkippedBecauseTheLeaseWasLoadedBeforeItEnded() throws Exception {
-        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
         UUID kept = chequeOn(leaseId, RENT_2).getId();
         UUID tenantId = fixtures.tenantId();
         UUID bank = leaf(AccountRole.BANK).getId();
@@ -981,7 +981,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
     /** …and the same is true of a tenancy that simply ran out (review I2). */
     @Test
     void anExpiredLeaseTakesNoNewGridRowsEither() {
-        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
         leaseService.markExpired(leaseId, END.plusDays(1));
         assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.EXPIRED);
 

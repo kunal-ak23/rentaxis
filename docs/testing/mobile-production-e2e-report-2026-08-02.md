@@ -160,11 +160,11 @@ Evidence: [guard board](mobile-production-2026-08-02/security/01-guard-board.png
 
 ## Persistent production test data
 
-Testing used the existing isolated production tenant **Al Ashram Demo Account** (`5432aca2-cd9c-4431-a131-22e67a5b72b0`). The seed process refreshed its demo properties, units, renters, leases, payments/cheques, tickets, listings, meetings, vendors, finance transactions, and notifications. The following new records remain intentionally for repeatable mobile testing:
+Testing used the existing isolated production tenant **Miftah Demo Account** (`5432aca2-cd9c-4431-a131-22e67a5b72b0`). The seed process refreshed its demo properties, units, renters, leases, payments/cheques, tickets, listings, meetings, vendors, finance transactions, and notifications. The following new records remain intentionally for repeatable mobile testing:
 
 | Record | Identifier | Final state |
 | --- | --- | --- |
-| Security guard `guard@alashramdemo.com` | `f59ea258-d0fb-4462-8977-ed885f42c069` | ACTIVE; assigned to two properties |
+| Security guard `guard@miftahdemo.example` | `f59ea258-d0fb-4462-8977-ed885f42c069` | ACTIVE; assigned to two properties |
 | Recurring pass for `TEST Mobile Production Visitor` | `c59bd945-70ed-4287-868e-4afaaf291b53` | ACTIVE; Manager-approved and scan-allowed |
 | UI-tested walk-in `TEST Walk-In Production Visitor` | `870645a8-3c28-43d9-823a-2c1ab37e9c22` | EXPIRED after resident approval; guard UI admit was blocked |
 | API fallback walk-in `TEST Walk-In API Fallback` | `5fea1a19-3c36-4ad9-9b2a-d55537ec006a` | USED |

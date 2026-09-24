@@ -444,7 +444,7 @@ public class ContractImportPersistService {
         lease.setRenter(renter);
         lease.setStatus(LeaseStatus.DRAFT);
         // PACT's own reference, in its own column. leases.contract_number is a Long
-        // fed by our sequence and is not the place for "TLP7/681"; this is what the
+        // fed by our sequence and is not the place for "SAMPLE-25/001"; this is what the
         // accountant searches by and what a re-import after a reverse finds.
         lease.setExternalContractRef(number);
         lease.setEjariNumber(blankToNull(SheetCells.cell(row, hi, "EjariNumber")));

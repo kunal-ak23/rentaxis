@@ -47,7 +47,7 @@ class ChequeMapperTest {
     private Cheque fullyPopulated() {
         Property property = new Property();
         property.setId(propertyId);
-        property.setNameEn("L'Olivier");
+        property.setNameEn("Sample Heights");
 
         Unit unit = new Unit();
         unit.setId(unitId);
@@ -55,7 +55,7 @@ class ChequeMapperTest {
 
         Renter renter = new Renter();
         renter.setId(renterId);
-        renter.setNameEn("Prabhjot Singh");
+        renter.setNameEn("Sample Renter One");
 
         Lease lease = new Lease();
         lease.setId(leaseId);
@@ -82,7 +82,7 @@ class ChequeMapperTest {
         c.setChequeNumber("000123");
         c.setChequeDate(LocalDate.of(2026, 9, 10));
         c.setPayeeBank("Emirates NBD");
-        c.setPayerName("Prabhjot Singh");
+        c.setPayerName("Sample Renter One");
         c.setAmount(new BigDecimal("13700.00"));
         c.setNarration("Instalment 3 of 4");
         c.setMode(ChequeMode.PDC);
@@ -117,16 +117,16 @@ class ChequeMapperTest {
         assertThat(dto.renterId()).isEqualTo(renterId);
 
         // The three labels are all Strings in a row — a transposition would compile.
-        assertThat(dto.propertyName()).isEqualTo("L'Olivier");
+        assertThat(dto.propertyName()).isEqualTo("Sample Heights");
         assertThat(dto.unitIdentifier()).isEqualTo("304");
-        assertThat(dto.renterName()).isEqualTo("Prabhjot Singh");
+        assertThat(dto.renterName()).isEqualTo("Sample Renter One");
 
         assertThat(dto.seqNo()).isEqualTo(3);
         assertThat(dto.postingDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(dto.chequeNumber()).isEqualTo("000123");
         assertThat(dto.chequeDate()).isEqualTo(LocalDate.of(2026, 9, 10));
         assertThat(dto.payeeBank()).isEqualTo("Emirates NBD");
-        assertThat(dto.payerName()).isEqualTo("Prabhjot Singh");
+        assertThat(dto.payerName()).isEqualTo("Sample Renter One");
         assertThat(dto.debitAccountId()).isEqualTo(debitAccountId);
         assertThat(dto.debitAccountName()).isEqualTo("Emirates NBD - Current");
         assertThat(dto.amount()).isEqualByComparingTo("13700.00");
@@ -189,8 +189,8 @@ class ChequeMapperTest {
         assertThat(dto.replacedById()).isNull();
         assertThat(dto.leaseStatus()).as("still the lease's").isEqualTo(LeaseStatus.TERMINATED);
         // The rest of the row still maps.
-        assertThat(dto.propertyName()).isEqualTo("L'Olivier");
-        assertThat(dto.renterName()).isEqualTo("Prabhjot Singh");
+        assertThat(dto.propertyName()).isEqualTo("Sample Heights");
+        assertThat(dto.renterName()).isEqualTo("Sample Renter One");
     }
 
     @Test

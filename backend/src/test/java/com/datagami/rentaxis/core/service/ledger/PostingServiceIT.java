@@ -56,11 +56,11 @@ class PostingServiceIT extends AbstractPostgresIT {
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
         propertyAccounts.seedDefaultTemplateAndDefaults();
-        Property p = new Property(); p.setNameEn("L'Olivier"); p.setEmirate(Emirate.DUBAI);
+        Property p = new Property(); p.setNameEn("Sample Heights"); p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
-        rentRecvLeaf = accounts.createLeaf("Rent Receivable - L'Olivier", accounts.getAccountByCode("A-02-01"), propertyId);
-        advanceRentLeaf = accounts.createLeaf("Advance Rent - L'Olivier", accounts.getAccountByCode("B-01-01"), propertyId);
-        bankLeaf = accounts.createLeaf("Emirates Islamic - L'Olivier", accounts.getAccountByCode("A-02-02"), propertyId);
+        rentRecvLeaf = accounts.createLeaf("Rent Receivable - Sample Heights", accounts.getAccountByCode("A-02-01"), propertyId);
+        advanceRentLeaf = accounts.createLeaf("Advance Rent - Sample Heights", accounts.getAccountByCode("B-01-01"), propertyId);
+        bankLeaf = accounts.createLeaf("Emirates Islamic - Sample Heights", accounts.getAccountByCode("A-02-02"), propertyId);
         map(propertyId, AccountRole.RENT_RECEIVABLE, rentRecvLeaf);
         map(propertyId, AccountRole.ADVANCE_RENT, advanceRentLeaf);
         map(propertyId, AccountRole.BANK, bankLeaf);
@@ -78,7 +78,7 @@ class PostingServiceIT extends AbstractPostgresIT {
     }
 
     private PostingRequest contract(BigDecimal amount) {
-        return new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract L'Olivier OLV-324",
+        return new PostingRequest(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract Sample Heights SMH-324",
                 Dimensions.ofProperty(propertyId), JournalSourceType.LEASE, UUID.randomUUID(), null,
                 List.of(dr(AccountRole.RENT_RECEIVABLE, amount), cr(AccountRole.ADVANCE_RENT, amount)));
     }
@@ -342,11 +342,11 @@ class PostingServiceIT extends AbstractPostgresIT {
      * raised against rather than inheriting all three.
      */
     private PostingRequest splitContract() {
-        Account depositLeaf = accounts.createLeaf("Security Deposit L'Olivier", accounts.getAccountByCode("B-01-02"), propertyId);
-        Account adminFeeLeaf = accounts.createLeaf("Admin Fee - L'Olivier", accounts.getAccountByCode("C-01-01"), propertyId);
+        Account depositLeaf = accounts.createLeaf("Security Deposit Sample Heights", accounts.getAccountByCode("B-01-02"), propertyId);
+        Account adminFeeLeaf = accounts.createLeaf("Admin Fee - Sample Heights", accounts.getAccountByCode("C-01-01"), propertyId);
         map(propertyId, AccountRole.SECURITY_DEPOSIT, depositLeaf);
         map(propertyId, AccountRole.ADMIN_FEE, adminFeeLeaf);
-        return PostingRequest.ofPairs(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract L'Olivier OLV-324",
+        return PostingRequest.ofPairs(JournalDocType.TCO, LocalDate.of(2026, 9, 11), "Contract Sample Heights SMH-324",
                 Dimensions.ofProperty(propertyId), JournalSourceType.LEASE, UUID.randomUUID(), null,
                 List.of(
                         pair(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("61000.00")), cr(AccountRole.ADVANCE_RENT, new BigDecimal("61000.00"))),

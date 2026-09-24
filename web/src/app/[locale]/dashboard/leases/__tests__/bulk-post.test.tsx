@@ -42,11 +42,11 @@ import LeasesPage from "../page";
 
 function lease(over: Partial<LeaseDetail> & { id: string }): LeaseDetail {
     return {
-        unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Sample Renter One",
         startDate: "2026-01-01", endDate: "2026-12-31", status: "DRAFT",
         rentAmount: null, depositAmount: null, ejariNumber: null, paymentTerms: 4,
         installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+        paymentReferenceNumber: null, propertyId: "p1", propertyName: "Sample Heights", propertyCode: "SMH",
         hasContract: false, contractNumber: null, displayContractNumber: null,
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,

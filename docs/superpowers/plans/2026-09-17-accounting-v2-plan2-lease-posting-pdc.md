@@ -1,5 +1,7 @@
 # Accounting v2 — Plan 2: Lease Posting & PDC Register — Implementation Plan
 
+> **Names in this document are placeholders.** Tenant, renter, building and contract-reference names were replaced with synthetic equivalents (issue #304); the figures, dates and document sequences are from the client's own exports.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the lease a posting document (charge-type lines with per-line credit accounts, DRAFT → **Post** → `TCO` + one `PDR` per cheque, reversal to amend, renew chain, additive extend) and replace `payment_schedules` with a real `Cheque` register whose every status transition posts exactly one journal; penalties become proposed → approved assessments; receipts (cash, transfer, online) all clear a register row.
@@ -338,7 +340,7 @@ long countByLease_IdAndBouncedAtIsNotNull(UUID leaseId);
 - `record LeaseLineInput(UUID chargeTypeId, String chargeTypeCode, BigDecimal grossAmount, BigDecimal discountAmount, String narration, Boolean vatApplicable, UUID creditAccountId, LocalDate periodStart, LocalDate periodEnd)` — `chargeTypeId` **or** `chargeTypeCode` (import/seed convenience).
 - `record LeaseLineDTO(UUID id, int seqNo, UUID chargeTypeId, String chargeTypeCode, String chargeTypeName, String behaviour, UUID creditAccountId, String creditAccountCode, String creditAccountName, BigDecimal grossAmount, BigDecimal discountAmount, BigDecimal netAmount, String narration, boolean vatApplicable, LocalDate periodStart, LocalDate periodEnd)`.
 - `CreateLeaseDTO` gains `contractDate`, `gracePeriodDays`, `firstDueDate`, `List<LeaseLineInput> lines` (replaces `charges`, `rentAmount`, `monthlyRent`, `depositAmount`, `bookingDeposit`); keeps `unitId, renterId, startDate, endDate, paymentTerms, installmentDistribution, paymentMethod, depositPaymentMethod, ejariNumber, agreementDate, rentVatApplicable`.
-- `LeaseDTO` gains `contractDate, totalDays, gracePeriodDays, firstDueDate, renewedFromLeaseId, chainId, receivableAccountId, incomeAccountId, postingJournalId, postedAt, contractValue, lines (List<LeaseLineDTO>), propertyCode, displayContractNumber` ("GLA_B1/681" when property has a code, else the number).
+- `LeaseDTO` gains `contractDate, totalDays, gracePeriodDays, firstDueDate, renewedFromLeaseId, chainId, receivableAccountId, incomeAccountId, postingJournalId, postedAt, contractValue, lines (List<LeaseLineDTO>), propertyCode, displayContractNumber` ("SMP_B1/001" when property has a code, else the number).
 - `LeaseService`: `createDraftLease`, `updateDraftLease` take lines; `applyLines(Lease, List<LeaseLineInput>)` (delete-then-insert, resolves default credit account via `AccountResolver.resolve(chargeType.role, propertyId)` when `creditAccountId` is null and a mapping exists — leaves null otherwise so the guard at post time reports it), `syncDerivedTotals(Lease)` sets `rentAmount = Σ RENT net`, `depositAmount = Σ DEPOSIT net`, `totalDays = days inclusive`, `contractValue()` helper; `getLines(leaseId)`.
 
 - [ ] **Step 1: Failing IT**
@@ -418,7 +420,7 @@ class ChequeGenerationServiceTest {
         var r = ChequeRoundingCalculator.distribute(new BigDecimal("61000"), 6, InstallmentDistribution.FIRST_LARGER, new BigDecimal("10"));
         assertThat(r.amounts()).containsExactly(bd("10200"), bd("10160"), bd("10160"), bd("10160"), bd("10160"), bd("10160"));
     }
-    @Test void galahFourChequesUniformWhenDivisible() {
+    @Test void sampleResidencesFourChequesUniformWhenDivisible() {
         var r = ChequeRoundingCalculator.distribute(new BigDecimal("51000"), 4, InstallmentDistribution.FIRST_LARGER, new BigDecimal("10"));
         assertThat(r.amounts()).containsExactly(bd("12750"), bd("12750"), bd("12750"), bd("12750"));
     }
@@ -473,10 +475,10 @@ Posting rules (spec §6.4) — `entryDate = lease.contractDate`, header dims `(p
 - `TCO`: for each line in `seqNo` order: `pair(dr(RENT_RECEIVABLE, net).withNarration(chargeType.nameEn), cr(ById(line.creditAccountId), net))`; if `line.vatApplicable`: additional `pair(dr(RENT_RECEIVABLE, vat), cr(OUTPUT_VAT, vat))` with `vat = net × 0.05` HALF_UP 2dp, narration `"VAT on " + chargeType.nameEn`. Rent-receivable role resolved once; if `lease.receivableAccountId` is set use `ById(receivableAccountId)` instead of the role.
 - `PDR` per cheque row (all modes): `pair(dr(PDC_RECEIVABLE, amount), cr(RENT_RECEIVABLE, amount))`, `entryDate = row.postingDate`, dims + `chequeId`, narration = row narration, `sourceType = CHEQUE, sourceId = cheque.id`; row → `REGISTERED`, `pdrJournalId` set.
 - Validation before any posting: status ∈ {DRAFT, PENDING_SIGNATURE}; ≥ 1 line; every line has `creditAccountId` (else list them: "Line 2 (Admin Fee) has no credit account"); `resolveAll(requiredRoles, propertyId)` (throws `UnmappedAccountRoleException` listing all); Σ cheque amounts == contract value (else `"Cheque grid totals 53,000.00 but contract value is 56,000.00"`); every PDC row has `chequeDate`; `contractDate` not null.
-- After posting: `lease.postingJournalId/postedAt/postedBy`, status `ACTIVE`, `claimUnitForLease`, `recordEvent(prev, ACTIVE, "Lease posted TCO-26/1629")`, publish `LEASE_ACTIVATED` email event (existing) and `LeasePostedEvent`. If `renewedFromLeaseId != null` → predecessor status `RENEWED` (+ event), unit stays occupied (do **not** vacate).
+- After posting: `lease.postingJournalId/postedAt/postedBy`, status `ACTIVE`, `claimUnitForLease`, `recordEvent(prev, ACTIVE, "Lease posted SAMPLE-26/001")`, publish `LEASE_ACTIVATED` email event (existing) and `LeasePostedEvent`. If `renewedFromLeaseId != null` → predecessor status `RENEWED` (+ event), unit stays occupied (do **not** vacate).
 - `amendLines`: lease must be ACTIVE (or RENEWED? no — ACTIVE only); every cheque must be in `REGISTERED` (else "Cheque 100041 is DEPOSITED; amend is only possible while all cheques are REGISTERED"); reverse the current `TCO` (`PostingService.reverse(postingJournalId, today, reason)` → TCR), replace lines (`LeaseService.applyLines` + `syncDerivedTotals`), post a fresh `TCO`, update `postingJournalId`; cheques untouched (Σ cheques must still equal the new contract value, else reject **before** reversing); publish `LeaseAmendedEvent`.
 
-- [ ] **Step 1: Failing IT** (uses `LeaseTestFixtures`; Galah 2 numbers)
+- [ ] **Step 1: Failing IT** (uses `LeaseTestFixtures`; Sample Residences 2 numbers)
 
 ```java
 @Test void postWritesTcoWithOnePairPerLineAndOnePdrPerCheque() {

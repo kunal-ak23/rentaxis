@@ -29,11 +29,11 @@ vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-
 vi.mock("@/components/leases/LeaseInteractionsPanel", () => ({ default: () => null }));
 
 const DRAFT: LeaseDetail = {
-    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Sample Renter One",
     startDate: "2026-01-01", endDate: "2026-12-31", status: "DRAFT",
     rentAmount: null, depositAmount: null, ejariNumber: null, paymentTerms: 4,
     installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-    paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+    paymentReferenceNumber: null, propertyId: "p1", propertyName: "Sample Heights", propertyCode: "SMH",
     hasContract: false, contractNumber: null, displayContractNumber: "TCO-26/15",
     agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
     gracePeriodDays: 5, firstDueDate: "2026-01-01", renterAcceptedAt: null,
@@ -51,7 +51,7 @@ const DRAFT: LeaseDetail = {
 function draftCheque(over: Partial<Cheque>): Cheque {
     return {
         id: "c1", leaseId: "lease-1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "A-101", renterName: "Sample Renter One",
         seqNo: 1, postingDate: "2026-01-01", chequeNumber: "000101", chequeDate: "2026-01-01",
         payeeBank: "ENBD", payerName: null, debitAccountId: "acc-1", debitAccountName: "Bank",
         amount: 63000, narration: null, mode: "PDC", status: "DRAFT",

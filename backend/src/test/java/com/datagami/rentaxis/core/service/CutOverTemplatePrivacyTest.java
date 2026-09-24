@@ -32,17 +32,43 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CutOverTemplatePrivacyTest {
 
     /**
-     * Names, properties and institutions taken from the client's real exports.
-     * Lower-cased; matched as substrings against every string in the workbook.
+     * Names, properties, identifiers and institutions taken from the client's real
+     * exports. Lower-cased; matched as substrings against every string in the
+     * workbook.
+     *
+     * <p>{@link RepositoryPrivacyTest} matches {@link #NAMES} — this list without
+     * the two banks — against the repository's own sources, so a name deleted here
+     * stops being guarded in both places at once.</p>
      */
-    private static final List<String> DENIED = List.of(
+    static final List<String> NAMES = List.of(
             // real renters
-            "mamanov", "ishtiaq", "prabhjot", "anum",
+            "mamanov", "ishtiaq", "prabhjot",
             // real properties / towers
             "tulip", "olivier", "boulevard", "freej", "warsan", "belle vue", "galah",
             "ocean residencia", "constance", "valencia", "grand residence", "l'horizon",
-            // the real landlord and its bank
-            "ashram", "emirates islamic", "enbd");
+            // the rest of the same portfolio, distinctive enough to grep for
+            // ("mir 1", "nas 1", "pine" and "victoria" are not, and are only scrubbed)
+            "ost-10", "tara 2", "liwan", "rivington", "impz", "js towers", "jvc mir",
+            // the real landlord — "ashram" also catches "alashram"
+            "ashram", "tarek mohammed",
+            // real PACT identifiers: contract references and a building code
+            "tlp7/681", "tco-25/251", "tco-26/1629", "gla_b1");
+
+    /**
+     * What the template is held to: the real names, plus a bare first name and the
+     * client's banks. Those three are too short or too common to grep the whole
+     * repository for, and a bank is not private anyway — but a bank name in a
+     * workbook every landlord downloads is still the client's banking
+     * relationship, so the template names none. Ordinary fixtures may.
+     */
+    private static final List<String> DENIED =
+            concat(NAMES, List.of("anum", "emirates islamic", "enbd"));
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new ArrayList<>(a);
+        out.addAll(b);
+        return List.copyOf(out);
+    }
 
     @Test
     void theCutOverTemplateContainsNoRealClientData() throws Exception {
@@ -62,12 +88,17 @@ class CutOverTemplatePrivacyTest {
                         .noneMatch(denied -> s.toLowerCase(Locale.ROOT).contains(denied)));
     }
 
-    /** Proof the check can fail: the denylist really is matched against cell text. */
+    /**
+     * Proof the check can fail: the denylist really is matched against cell text.
+     *
+     * <p>The reintroduced cell is built out of the denylist rather than typed, so
+     * this file spells out no more of a real name than the list already has to.</p>
+     */
     @Test
     void theCheckWouldCatchARealNameIfOneCameBack() throws Exception {
         List<String> cells = stringsIn(new PortfolioTemplateService().generateCutOverTemplate());
         List<String> withAReintroducedName = new ArrayList<>(cells);
-        withAReintroducedName.add("Islam Mamanov");
+        withAReintroducedName.add("Renter " + DENIED.get(0));
 
         assertThat(withAReintroducedName)
                 .anySatisfy(s -> assertThat(DENIED)

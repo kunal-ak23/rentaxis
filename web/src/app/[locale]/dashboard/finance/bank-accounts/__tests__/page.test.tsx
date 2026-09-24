@@ -17,7 +17,7 @@ const sampleAccounts = [
         iban: "AE070331234567890123456",
         branchName: "Deira",
         currency: "AED",
-        property: { id: "p1", nameEn: "Belle Vue", nameAr: "بيل فيو" },
+        property: { id: "p1", nameEn: "Sample Vista", nameAr: "سامبل فيستا" },
         coaAccount: null,
         // The backend's @JsonProperty("isDefault") accessors emit this key —
         // not the `default` Lombok/Jackson would otherwise derive.

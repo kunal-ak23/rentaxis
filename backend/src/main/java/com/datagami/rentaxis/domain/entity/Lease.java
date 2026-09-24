@@ -91,7 +91,7 @@ public class Lease extends BaseTenantEntity {
 
     /**
      * The contract number the tenancy carried in the system this tenant migrated
-     * from — PACT's "TLP7/681" (changeset 88, spec §10.3).
+     * from — PACT's "SAMPLE-25/001" (changeset 88, spec §10.3).
      *
      * <p>Deliberately not {@code contractNumber}: that is a {@code Long}, our own
      * per-tenant sequence, and the column the next contract number is generated

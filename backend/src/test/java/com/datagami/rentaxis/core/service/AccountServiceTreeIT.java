@@ -77,7 +77,7 @@ class AccountServiceTreeIT extends AbstractPostgresIT {
         Account parent = service.getAccountByCode("A-02-01");
         Account imported = new Account();
         imported.setCode("166269");
-        imported.setName("Rent Receivable - L'Olivier");
+        imported.setName("Rent Receivable - Sample Heights");
         imported.setAccountType(AccountType.ASSET);
         imported.setParent(parent);
         service.createAccount(imported, null);
@@ -88,7 +88,7 @@ class AccountServiceTreeIT extends AbstractPostgresIT {
     void createLeafUnderParentInheritsTypeAndGetsSequentialCode() {
         service.seedDefaultAccounts();
         Account parent = service.getAccountByCode("A-02-01");
-        Account leaf = service.createLeaf("Rent Receivable - Tulip 7", parent, null);
+        Account leaf = service.createLeaf("Rent Receivable - Sample Plaza 7", parent, null);
         assertThat(leaf.getCode()).isEqualTo("100001");
         assertThat(leaf.getAccountType()).isEqualTo(AccountType.ASSET);
         assertThat(leaf.getParentId()).isEqualTo(parent.getId());
@@ -135,9 +135,9 @@ class AccountServiceTreeIT extends AbstractPostgresIT {
     void createLeafTagsTheLeafWithARealProperty() {
         service.seedDefaultAccounts();
         Account parent = service.getAccountByCode("A-02-01");
-        Property building = property("Tulip 7");
+        Property building = property("Sample Plaza 7");
 
-        Account leaf = service.createLeaf("Rent Receivable - Tulip 7", parent, building.getId());
+        Account leaf = service.createLeaf("Rent Receivable - Sample Plaza 7", parent, building.getId());
 
         assertThat(leaf.getPropertyId()).isEqualTo(building.getId());
     }
@@ -182,7 +182,7 @@ class AccountServiceTreeIT extends AbstractPostgresIT {
         a.setAccountType(AccountType.EXPENSE);
         a = service.createAccount(a, null);
         a.setDisplayOrder(5);
-        Property building = property("Olivier");
+        Property building = property("Sample Heights");
 
         Account tagged = service.updateAccount(a.getId(), new AccountService.AccountUpdate(
                 "Editable", null, null, null, null, null, null, null, building.getId()));

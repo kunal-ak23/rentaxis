@@ -75,7 +75,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Nothing here can be usefully mocked. Every assertion is about what is in the
  * ledger afterwards — which accounts, which counter-accounts, which date, which
  * dimensions — and about all-or-nothing behaviour that only a real transaction
- * exhibits. The figures are PACT's Galah 2 shape: 51,000 of rent over four
+ * exhibits. The figures are PACT's Sample Residences 2 shape: 51,000 of rent over four
  * cheques of 12,750 plus a 2,000 admin fee, numbered 100040 upwards.</p>
  *
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant

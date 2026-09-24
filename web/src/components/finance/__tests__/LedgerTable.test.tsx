@@ -18,11 +18,11 @@ vi.mock("@/i18n/routing", () => ({
 }));
 
 const ledgers: AccountLedger[] = [{
-  accountId: "a", accountCode: "166269", accountName: "Rent Receivable - L'Olivier", accountType: "ASSET",
+  accountId: "a", accountCode: "166269", accountName: "Rent Receivable - Sample Heights", accountType: "ASSET",
   openingBalance: 0, totalDebit: 64500, totalCredit: 13700, closingBalance: 50800, truncated: false,
   rows: [
-    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - L'Olivier / Security Deposit L'Olivier", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
-    { entryId: "e2", entryNumber: "PDR-26/75", entryDate: "2026-09-11", docType: "PDR", particular: "PDC Receivable L'Olivier", narration: "Rent - 1st Installment", debit: 0, credit: 13700, balance: 50800, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
+    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - Sample Heights / Security Deposit Sample Heights", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
+    { entryId: "e2", entryNumber: "PDR-26/75", entryDate: "2026-09-11", docType: "PDR", particular: "PDC Receivable Sample Heights", narration: "Rent - 1st Installment", debit: 0, credit: 13700, balance: 50800, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
   ],
 }];
 
@@ -34,7 +34,7 @@ describe("LedgerTable", () => {
   it("renders account band, rows, sub total and report total in PACT layout", () => {
     render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
     expect(screen.getByText(/Account Code :: 166269/)).toBeInTheDocument();
-    expect(screen.getByText(/Name :: Rent Receivable - L'Olivier/)).toBeInTheDocument();
+    expect(screen.getByText(/Name :: Rent Receivable - Sample Heights/)).toBeInTheDocument();
     expect(screen.getByText("TCO-26/15")).toHaveAttribute("href", expect.stringContaining("/dashboard/finance/journals/e1"));
     // Debit cell of row 1, the sub total's debit and the report total's debit.
     expect(screen.getAllByText("64,500.00")).toHaveLength(3);
@@ -72,11 +72,11 @@ describe("LedgerTable", () => {
   it("names the tenant in the sub-band with PACT's literal 'Tenant Name : ' label", () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <LedgerTable ledgers={ledgers} subBand="Prabhjot Singh" />
+        <LedgerTable ledgers={ledgers} subBand="Sample Renter One" />
       </NextIntlClientProvider>,
     );
     // "Tenant : …" would read as the column header; PACT prints the full label.
-    expect(screen.getByText("Tenant Name : Prabhjot Singh")).toBeInTheDocument();
+    expect(screen.getByText("Tenant Name : Sample Renter One")).toBeInTheDocument();
   });
 
   it("omits the sub-band when no name is passed", () => {

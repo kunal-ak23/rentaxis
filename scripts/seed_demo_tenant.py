@@ -48,9 +48,9 @@ from pathlib import Path
 import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Al Ashram Demo Account")
-DEMO_BRAND = os.environ.get("DEMO_BRAND", "Al Ashram")
-DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "alashramdemo.com")
+TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Miftah Demo Account")
+DEMO_BRAND = os.environ.get("DEMO_BRAND", "Miftah Demo")
+DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "miftahdemo.example")
 # One easy password everywhere — this is throwaway demo data.
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@1234")
 ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")

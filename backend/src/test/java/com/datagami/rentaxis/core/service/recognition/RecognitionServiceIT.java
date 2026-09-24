@@ -135,7 +135,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
     // ------------------------------------------------------------------
 
     /** 51,000 of rent over the client's 365-day term plus a 2,000 admin fee, on the books. */
-    private UUID galah() {
+    private UUID sampleResidences() {
         return fixtures.postedLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")), 4, null)
                 .lease().getId();
@@ -267,7 +267,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void postingBuildsOneSegmentAndThirteenPlannedEntries() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
 
         List<RentSegment> segs = segmentsOf(leaseId);
         assertThat(segs).hasSize(1);
@@ -323,7 +323,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void runToPostsOnlyEntriesEndingOnOrBeforeTheDate() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
 
         RecognitionService.RecognitionRunResult result = recognition.runTo(LocalDate.of(2026, 11, 30), false);
 
@@ -389,7 +389,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void previewPostsNothing() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
 
         RecognitionService.RecognitionRunResult preview = recognition.runTo(LocalDate.of(2026, 11, 30), true);
 
@@ -417,7 +417,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void lockedPeriodEntriesAreSkippedNotFailed() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         fiscal.lockThrough(LocalDate.of(2026, 10, 31));
 
         RecognitionService.RecognitionRunResult result = recognition.runTo(LocalDate.of(2026, 11, 30), false);
@@ -457,7 +457,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void amendRebuildsScheduleAndReversesPostedEntries() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         recognition.runTo(LocalDate.of(2026, 10, 31), false);   // Sep + Oct
 
         List<UUID> postedJournals = schedule(leaseId).stream()
@@ -525,7 +525,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aRowPostedMidAmendIsReversedNotCancelled() throws Exception {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         setChequeTotalTo(leaseId, "62000");
         UUID september = rowStarting(leaseId, START).id();
         UUID tenantId = fixtures.tenantId();
@@ -590,7 +590,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void amendIsSafeWithTheSegmentAlreadyInThePersistenceContext() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         recognition.runTo(LocalDate.of(2026, 10, 31), false);
         UUID originalLineId = segmentsOf(leaseId).get(0).getLeaseLineId();
 
@@ -633,7 +633,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void extensionAppendsASecondSegment() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         List<UUID> originalRowIds = schedule(leaseId).stream().map(RecognitionEntryDTO::id).toList();
 
         LocalDate newEnd = LocalDate.of(2027, 12, 31);
@@ -684,7 +684,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void amendAfterExtensionRebuildsEverySegment() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         LocalDate newEnd = LocalDate.of(2027, 12, 31);
         LocalDate windowStart = END.plusDays(1);
         renewal.extend(leaseId, new ExtendLeaseRequest(newEnd, LocalDate.of(2027, 9, 1),
@@ -720,7 +720,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
     /** The lease may name the income account the release credits (spec §8.3). */
     @Test
     void incomeAccountOverrideIsHonoured() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         Account other = leaf(AccountRole.OTHER_INCOME);
         tx.executeWithoutResult(s -> {
             Lease lease = leaseRepo.findById(leaseId).orElseThrow();
@@ -793,7 +793,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void oneUnpostableEntryDoesNotStopTheRest() {
-        UUID good = galah();
+        UUID good = sampleResidences();
 
         // A second lease on its own unit, pointed at an income account that is then
         // retired. PostingService refuses an inactive account by name, so the
@@ -841,7 +841,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void concurrentRunsPostEachEntryExactlyOnce() throws Exception {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID tenantId = fixtures.tenantId();
         LocalDate to = LocalDate.of(2027, 12, 31);   // every one of the 13 rows
 
@@ -897,7 +897,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anotherTenantSeesAndPostsNothingOfThisOne() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID tenantA = fixtures.tenantId();
         assertThat(recognition.pending(LocalDate.of(2027, 12, 31))).hasSize(13);
 
@@ -926,7 +926,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anotherTenantCannotPostThisOnesRecognitionRow() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID tenantA = fixtures.tenantId();
         UUID september = rowStarting(leaseId, START).id();
 
@@ -950,7 +950,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
      */
     @Test
     void postingWithNoTenantInContextIsRefused() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID tenantA = fixtures.tenantId();
         UUID september = rowStarting(leaseId, START).id();
 

@@ -92,7 +92,7 @@ function discardResult(over: Record<string, unknown> = {}) {
     return {
         batchId: "b-draft", status: "DISCARDED",
         leasesDeleted: 12, unitsDeleted: 40, buildingsDeleted: 1, rentersDeleted: 11, propertiesDeleted: 2,
-        kept: [{ type: "PROPERTY", id: "p1", name: "L'Olivier", reason: "It has contracts from another batch" }],
+        kept: [{ type: "PROPERTY", id: "p1", name: "Sample Heights", reason: "It has contracts from another batch" }],
         ...over,
     };
 }
@@ -127,7 +127,7 @@ function batch(over: Partial<ImportBatch> & { id: string }): ImportBatch {
 const ROWS: ImportBatch[] = [
     batch({ id: "b-draft" }),
     batch({
-        id: "b-posted", status: "POSTED", label: "L'Olivier contracts",
+        id: "b-posted", status: "POSTED", label: "Sample Heights contracts",
         journalsPosted: 36, postedAt: "2026-09-12T09:00:00Z",
     }),
     batch({
@@ -161,7 +161,7 @@ describe("import batches list", () => {
     it("renders one row per batch with its counts and status", async () => {
         renderPage();
         const posted = await screen.findByTestId("batch-row-b-posted");
-        expect(posted).toHaveTextContent("L'Olivier contracts");
+        expect(posted).toHaveTextContent("Sample Heights contracts");
         expect(posted).toHaveTextContent("36");
         expect(within(posted).getByTestId("batch-status-b-posted")).toHaveAttribute("data-status", "POSTED");
     });
@@ -702,7 +702,7 @@ describe("discard", () => {
         expect(summary).toHaveTextContent("40");
 
         const kept = screen.getByTestId("discard-kept-table");
-        expect(within(kept).getByTestId("discard-kept-0")).toHaveTextContent("L'Olivier");
+        expect(within(kept).getByTestId("discard-kept-0")).toHaveTextContent("Sample Heights");
         expect(within(kept).getByTestId("discard-kept-0")).toHaveTextContent("another batch");
         await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(1));
     });

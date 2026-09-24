@@ -93,7 +93,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>The assertions that matter are about the ledger afterwards, and about
  * all-or-nothing behaviour only a real transaction exhibits — which is why none
- * of this is mocked. The figures are the register's own Galah 2 shape: 51,000 of
+ * of this is mocked. The figures are the register's own Sample Residences 2 shape: 51,000 of
  * rent over four cheques of 12,750 plus a 2,000 admin fee, numbered 100040 up.</p>
  *
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant

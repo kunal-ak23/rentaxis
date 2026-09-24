@@ -152,13 +152,13 @@ const VENDORS = [
 
 /** `GET /v1/properties` returns portfolio-summary rows that wrap the property. */
 const PROPERTIES = [
-    { property: { id: "prop-1", nameEn: "L'Olivier", nameAr: "لوليفييه" } },
+    { property: { id: "prop-1", nameEn: "Sample Heights", nameAr: "سامبل هايتس" } },
     { property: { id: "prop-2", nameEn: "Marina Heights", nameAr: "مرسى هايتس" } },
 ];
 
 const UNITS = [
-    { id: "unit-a1", unitNumber: "A-101", property: { id: "prop-1", nameEn: "L'Olivier" } },
-    { id: "unit-a2", unitNumber: "A-102", property: { id: "prop-1", nameEn: "L'Olivier" } },
+    { id: "unit-a1", unitNumber: "A-101", property: { id: "prop-1", nameEn: "Sample Heights" } },
+    { id: "unit-a2", unitNumber: "A-102", property: { id: "prop-1", nameEn: "Sample Heights" } },
     { id: "unit-b1", unitNumber: "B-201", property: { id: "prop-2", nameEn: "Marina Heights" } },
 ];
 

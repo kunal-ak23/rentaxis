@@ -49,7 +49,7 @@ const activeLease = {
     unitId: "unit-1",
     unitIdentifier: "A-204",
     propertyId: "prop-1",
-    propertyName: "Belle Vue",
+    propertyName: "Sample Vista",
     status: "ACTIVE",
 };
 
@@ -85,7 +85,7 @@ function facilitiesWithSpot(held: boolean): MyFacilitiesDTO {
             {
                 id: "spot-1",
                 propertyId: "prop-1",
-                propertyName: "Belle Vue",
+                propertyName: "Sample Vista",
                 spotNumber: "P-101",
                 level: null,
                 covered: false,
