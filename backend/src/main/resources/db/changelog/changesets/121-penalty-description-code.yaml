@@ -1,0 +1,15 @@
+# F14-31: a system-proposed penalty keeps its description as a code and arguments,
+# so the screen renders it in the reader's language; description stays the
+# English fallback. F14-28: the amount originally proposed, kept when a proposal is
+# reduced (partial waiver).
+databaseChangeLog:
+  - changeSet:
+      id: 121-penalty-description-code
+      author: claude
+      changes:
+        - addColumn:
+            tableName: penalty_assessments
+            columns:
+              - column: { name: description_code, type: varchar(64) }
+              - column: { name: description_args, type: jsonb }
+              - column: { name: proposed_amount, type: "numeric(14,2)" }

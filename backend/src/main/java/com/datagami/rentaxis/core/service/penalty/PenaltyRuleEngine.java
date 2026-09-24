@@ -124,10 +124,16 @@ public class PenaltyRuleEngine {
             return;
         }
 
+        java.util.Map<String, String> args = new java.util.LinkedHashMap<>();
+        args.put("cheque", label(cheque));
+        args.put("failureReason", failure != null ? failure.name() : "BOUNCE");
+        args.put("bounces", String.valueOf(bounces));
         assessmentService.proposeBySystem(lease, cheque, PenaltyReason.CHEQUE_RETURN, amount,
                 "Cheque " + label(cheque) + " returned"
                         + (failure != null ? " (" + failure + ")" : "")
-                        + ", bounce #" + bounces + " on this lease");
+                        + ", bounce #" + bounces + " on this lease",
+                // F14-23: the incident is the bounce, not the day finance saw it.
+                cheque.getBouncedAt(), "chequeReturned", args);
     }
 
     // ------------------------------------------------------------------
@@ -195,9 +201,17 @@ public class PenaltyRuleEngine {
             return;
         }
 
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        java.util.Map<String, String> args = new java.util.LinkedHashMap<>();
+        args.put("cheque", label(cheque));
+        args.put("days", String.valueOf(daysLate));
+        args.put("due", effectiveDue.format(dmy));
+        args.put("cleared", clearedOn.format(dmy));
         assessmentService.proposeBySystem(lease, cheque, PenaltyReason.LATE_PAYMENT, amount,
                 "Cheque " + label(cheque) + " cleared " + daysLate + " day" + (daysLate == 1 ? "" : "s")
-                        + " after its grace period (due " + effectiveDue + ", cleared " + clearedOn + ")");
+                        + " after its grace period (due " + effectiveDue.format(dmy) + ", cleared "
+                        + clearedOn.format(dmy) + ")",
+                clearedOn, "clearedLate", args);
     }
 
     /**

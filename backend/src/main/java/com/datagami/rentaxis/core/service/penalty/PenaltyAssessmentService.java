@@ -188,7 +188,27 @@ public class PenaltyAssessmentService {
     @Transactional
     public PenaltyAssessment proposeBySystem(Lease lease, Cheque cheque, PenaltyReason reason,
                                              BigDecimal amount, String description) {
-        return save(lease, cheque, reason, amount, description, LocalDate.now(), null);
+        return proposeBySystem(lease, cheque, reason, amount, description, LocalDate.now(), null, null);
+    }
+
+    /**
+     * As above. F14-23: {@code incidentDate} is the day the thing happened (the
+     * bounce, the late clearing), not the day the proposal was written. F14-31:
+     * {@code descriptionCode}/{@code args} let the screen render the description
+     * in the reader's language; {@code description} is the English fallback.
+     */
+    @Transactional
+    public PenaltyAssessment proposeBySystem(Lease lease, Cheque cheque, PenaltyReason reason,
+                                             BigDecimal amount, String description, LocalDate incidentDate,
+                                             String descriptionCode, java.util.Map<String, String> args) {
+        PenaltyAssessment a = save(lease, cheque, reason, amount, description,
+                incidentDate != null ? incidentDate : LocalDate.now(), null);
+        if (descriptionCode != null) {
+            a.setDescriptionCode(descriptionCode);
+            a.setDescriptionArgs(args);
+            a = repository.save(a);
+        }
+        return a;
     }
 
     private PenaltyAssessment save(Lease lease, Cheque cheque, PenaltyReason reason,
@@ -338,6 +358,33 @@ public class PenaltyAssessmentService {
         return dto(repository.save(a));
     }
 
+    /**
+     * F14-28: a partial waiver. The proposal stays PROPOSED at the lower amount,
+     * the amount first proposed is kept, and the reason is recorded — one
+     * decision on one assessment rather than a waiver plus an unlinked new
+     * proposal.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO reduce(UUID id, BigDecimal newAmount, String note) {
+        PenaltyAssessment a = lock(id);
+        leaseAccessPolicy.requireManageable(a.getLease());
+        requireStatus(a, "reduce", PenaltyAssessmentStatus.PROPOSED);
+        if (note == null || note.isBlank()) {
+            throw new BusinessRuleViolationException("A reduction needs a reason");
+        }
+        if (newAmount == null || newAmount.signum() <= 0 || newAmount.compareTo(a.getAmount()) >= 0) {
+            throw new BusinessRuleViolationException("The reduced amount must be more than zero and less than "
+                    + a.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                    + "; to charge nothing, waive the penalty");
+        }
+        if (a.getProposedAmount() == null) a.setProposedAmount(a.getAmount());
+        String line = "Reduced from " + a.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                + " to " + newAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + ": " + note.trim();
+        a.setAmount(newAmount.setScale(2, java.math.RoundingMode.HALF_UP));
+        a.setResolutionNote(a.getResolutionNote() == null ? line : a.getResolutionNote() + "\n" + line);
+        return dto(repository.save(a));
+    }
+
     // ------------------------------------------------------------------
     // APPROVED -> REVERSED  (mirror journal, collection row cancelled)
     // ------------------------------------------------------------------
@@ -368,8 +415,12 @@ public class PenaltyAssessmentService {
                     "Penalty was already collected; issue a refund/credit instead");
         }
 
+        // F14-28: every decision on a charged amount carries a reason, as a waiver does.
+        if (note == null || note.isBlank()) {
+            throw new BusinessRuleViolationException("A reversal needs a reason");
+        }
         LocalDate on = date != null ? date : LocalDate.now();
-        String reason = note == null || note.isBlank() ? "Penalty reversed" : note.trim();
+        String reason = note.trim();
         postingService.reverse(a.getJournalId(), on, reason);
 
         // Only from REGISTERED: a row that was cancelled or returned already had its
@@ -540,6 +591,9 @@ public class PenaltyAssessmentService {
                 a.getJournalId(),
                 collection != null ? collection.getId() : null,
                 collection != null ? collection.getStatus() : null,
-                a.getResolutionNote());
+                a.getResolutionNote(),
+                a.getDescriptionCode(),
+                a.getDescriptionArgs(),
+                a.getProposedAmount());
     }
 }

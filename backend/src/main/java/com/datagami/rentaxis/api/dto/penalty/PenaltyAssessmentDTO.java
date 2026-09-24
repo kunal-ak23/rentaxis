@@ -35,5 +35,10 @@ public record PenaltyAssessmentDTO(UUID id,
                                    UUID journalId,
                                    UUID collectionChequeId,
                                    ChequeStatus collectionStatus,
-                                   String resolutionNote) {
+                                   String resolutionNote,
+                                   /* F14-31: the description as a code + args, for the reader's language. */
+                                   String descriptionCode,
+                                   java.util.Map<String, String> descriptionArgs,
+                                   /* F14-28: the amount first proposed, when it was reduced. */
+                                   BigDecimal proposedAmount) {
 }
