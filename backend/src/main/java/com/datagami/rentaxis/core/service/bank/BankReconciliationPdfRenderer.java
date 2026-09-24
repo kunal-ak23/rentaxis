@@ -46,6 +46,19 @@ public class BankReconciliationPdfRenderer {
         put("title", "Bank reconciliation statement", "كشف التسوية البنكية");
         put("bank", "Bank account", "الحساب البنكي");
         put("iban", "IBAN", "رقم الآيبان");
+        put("accountNo", "Account number", "رقم الحساب");
+        // F14-48: the CSV export's own labels.
+        put("csvFigure", "Figure", "البند");
+        put("csvStatementBalance", "Balance per bank statement", "الرصيد حسب كشف البنك");
+        put("csvBooks", "Balance per books", "الرصيد حسب الدفاتر");
+        put("csvBookedAfter", "Booked after the period", "مسجلة بعد الفترة");
+        put("csvUnrecorded", "Unrecorded statement items", "بنود الكشف غير المسجلة");
+        put("csvSection", "Section", "القسم");
+        put("csvWithoutEvidence", "Cleared without statement evidence", "مقاصة بلا دليل من الكشف");
+        put("csvDit", "Deposit in transit", "إيداع في الطريق");
+        put("csvUnpresented", "Unpresented payment", "دفعة لم تقدم بعد");
+        put("csvUnrecordedItem", "Unrecorded statement item", "بند كشف غير مسجل");
+        put("yes", "yes", "نعم");
         put("leaves", "Ledger accounts", "حسابات الأستاذ");
         put("period", "Period", "الفترة");
         put("status", "Status", "الحالة");
@@ -88,7 +101,7 @@ public class BankReconciliationPdfRenderer {
         put("CONTRA", "Contra", "قيد عكسي");
     }
 
-    static String label(String key, boolean ar) {
+    public static String label(String key, boolean ar) {
         String[] l = L.get(key);
         return l == null ? key : ar ? l[1] : l[0];
     }
@@ -111,11 +124,14 @@ public class BankReconciliationPdfRenderer {
                 .append("table { width: 100%; border-collapse: collapse; margin-top: 1.5mm; } th, td { padding: 1.2mm 1.5mm; border-bottom: 0.5px solid #ddd; text-align: " + start + "; }")
                 .append("th { background: #f4f4f4; font-size: 8pt; } td.num, th.num { text-align: " + end + "; } .num span, .ltr { direction: ltr; unicode-bidi: embed; }")
                 .append("tr.total td { font-weight: bold; border-top: 1px solid #999; } .note { color: #666; font-size: 8pt; margin-top: 1mm; }")
-                .append(".footer { margin-top: 6mm; font-size: 8pt; color: #555; }")
+                .append(".footer { margin-top: 4mm; font-size: 8pt; color: #555; page-break-before: avoid; page-break-inside: avoid; }")
+                .append("table.meta { width: auto; margin: 0 0 1mm 0; } table.meta td { border: none; padding: 0.3mm 1.5mm 0.3mm 0; color: #555; }")
                 .append("</style></head><body>");
         b.append("<h1>").append(esc(label("title", ar))).append("</h1>");
         meta(b, label("bank", ar), esc(r.bankLabel()));
-        meta(b, label("iban", ar), "<span class=\"ltr\">" + esc(r.ibanMasked()) + "</span>");
+        // F14-48: an account with no IBAN shows its account number, labelled as one.
+        boolean iban = r.ibanMasked() != null && r.ibanMasked().matches("^[A-Za-z]{2}.*");
+        meta(b, label(iban ? "iban" : "accountNo", ar), "<span class=\"ltr\">" + esc(r.ibanMasked()) + "</span>");
         meta(b, label("leaves", ar), esc(r.leaves().stream().map(l -> l.code() + " " + l.name()).collect(Collectors.joining(", "))));
         meta(b, label("period", ar), "<span class=\"ltr\">" + DAY.format(r.periodFrom()) + " – " + DAY.format(r.periodTo()) + "</span>");
         meta(b, label("status", ar), esc(label(r.status(), ar)));
@@ -165,8 +181,13 @@ public class BankReconciliationPdfRenderer {
         return b.toString();
     }
 
+    /**
+     * F14-48: label and value in cells of their own, so in Arabic an LTR value
+     * ("PROBE-A 0001") cannot run into the RTL label.
+     */
     private static void meta(StringBuilder b, String key, String valueHtml) {
-        b.append("<div class=\"meta\">").append(esc(key)).append(": <b>").append(valueHtml).append("</b></div>");
+        b.append("<table class=\"meta\"><tr><td>").append(esc(key)).append(":</td><td><b>").append(valueHtml)
+                .append("</b></td></tr></table>");
     }
 
     private static void row(StringBuilder b, String labelHtml, BigDecimal v, boolean total) {

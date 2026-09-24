@@ -637,11 +637,15 @@ public class BankReconciliationService {
 
     /** The IBAN (else the account number) with everything but the last four characters masked. */
     static String maskIban(String iban, String accountNumber) {
-        String v = iban != null && !iban.isBlank() ? iban : accountNumber;
+        boolean isIban = iban != null && !iban.isBlank();
+        String v = isIban ? iban : accountNumber;
         if (v == null) return "";
         String s = v.replaceAll("\\s", "");
         if (s.length() <= 4) return s;
-        return "•".repeat(Math.min(s.length() - 4, 8)) + s.substring(s.length() - 4);
+        String masked = "•".repeat(Math.min(s.length() - 4, 8)) + s.substring(s.length() - 4);
+        // F14-48: an IBAN keeps its country code, which is what tells a reader (and the
+        // PDF's label) that it is an IBAN rather than an account number.
+        return isIban && s.length() > 6 && Character.isLetter(s.charAt(0)) ? s.substring(0, 2).toUpperCase() + masked : masked;
     }
 
     String userName(UUID userId) {

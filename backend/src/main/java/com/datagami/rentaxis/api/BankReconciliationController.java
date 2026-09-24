@@ -354,42 +354,49 @@ public class BankReconciliationController {
 
     /** The statement as CSV. Every cell goes through {@link ReportCsv#encode}'s formula-injection escaping. */
     @GetMapping(value = "/reconciliations/{id}.csv", produces = "text/csv")
-    public ResponseEntity<byte[]> reconciliationCsv(@PathVariable UUID id) {
+    public ResponseEntity<byte[]> reconciliationCsv(@PathVariable UUID id,
+                                                    @RequestParam(required = false, defaultValue = "en") String lang) {
         requireTenantSelected();
         BankRecDTOs.Reconciliation r = recs.get(id);
+        // F14-48: in the viewer's language (?lang=ar), amounts always with two decimals.
+        boolean ar = "ar".equalsIgnoreCase(lang);
+        java.util.function.Function<String, String> l = k -> com.datagami.rentaxis.core.service.bank.BankReconciliationPdfRenderer.label(k, ar);
         List<List<String>> rows = new ArrayList<>();
-        rows.add(List.of("Bank reconciliation statement", r.bankLabel(), dmy(r.periodFrom()) + " - " + dmy(r.periodTo()), r.status()));
-        rows.add(List.of("Figure", "Amount"));
-        rows.add(List.of("Balance per bank statement", plain(r.statementClosing())));
-        rows.add(List.of("Deposits in transit", plain(r.depositsInTransit())));
-        rows.add(List.of("Unpresented payments", plain(r.unpresentedPayments())));
-        rows.add(List.of("Booked after the period", plain(r.bookedAfterPeriod())));
-        rows.add(List.of("Adjusted bank balance", plain(r.adjustedBank())));
-        rows.add(List.of("Balance per books", plain(r.bookBalance())));
-        rows.add(List.of("Unrecorded statement items", plain(r.unrecordedCredits().subtract(r.unrecordedDebits()))));
-        rows.add(List.of("Adjusted book balance", plain(r.adjustedBook())));
-        rows.add(List.of("Difference", plain(r.difference())));
+        rows.add(List.of(l.apply("title"), r.bankLabel(), dmy(r.periodFrom()) + " - " + dmy(r.periodTo()),
+                l.apply(r.status())));
+        rows.add(List.of(l.apply("csvFigure"), l.apply("amount")));
+        rows.add(List.of(l.apply("csvStatementBalance"), plain(r.statementClosing())));
+        rows.add(List.of(l.apply("ditList"), plain(r.depositsInTransit())));
+        rows.add(List.of(l.apply("unpresentedList"), plain(r.unpresentedPayments())));
+        rows.add(List.of(l.apply("csvBookedAfter"), plain(r.bookedAfterPeriod())));
+        rows.add(List.of(l.apply("adjustedBank"), plain(r.adjustedBank())));
+        rows.add(List.of(l.apply("csvBooks"), plain(r.bookBalance())));
+        rows.add(List.of(l.apply("csvUnrecorded"), plain(r.unrecordedCredits().subtract(r.unrecordedDebits()))));
+        rows.add(List.of(l.apply("adjustedBook"), plain(r.adjustedBook())));
+        rows.add(List.of(l.apply("difference"), plain(r.difference())));
         rows.add(List.of());
-        rows.add(List.of("Section", "Date", "Document", "Details", "Cheque no", "Amount", "Cleared without statement evidence"));
-        csvItems(rows, "Deposit in transit", r.depositsInTransitItems());
-        csvItems(rows, "Unpresented payment", r.unpresentedItems());
-        csvItems(rows, "Booked after the period", r.bookedAfterItems());
-        csvItems(rows, "Unrecorded statement item", r.unrecordedItems());
+        rows.add(List.of(l.apply("csvSection"), l.apply("date"), l.apply("document"), l.apply("narration"),
+                l.apply("cheque"), l.apply("amount"), l.apply("csvWithoutEvidence")));
+        String yes = l.apply("yes");
+        csvItems(rows, l.apply("csvDit"), r.depositsInTransitItems(), yes);
+        csvItems(rows, l.apply("csvUnpresented"), r.unpresentedItems(), yes);
+        csvItems(rows, l.apply("csvBookedAfter"), r.bookedAfterItems(), yes);
+        csvItems(rows, l.apply("csvUnrecordedItem"), r.unrecordedItems(), yes);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"bank-reconciliation-" + r.periodTo() + ".csv\"")
                 .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
                 .body(ReportCsv.encode(rows, false));
     }
 
-    private static void csvItems(List<List<String>> rows, String section, List<BankRecDTOs.RecItem> items) {
+    private static void csvItems(List<List<String>> rows, String section, List<BankRecDTOs.RecItem> items, String yes) {
         for (BankRecDTOs.RecItem i : items) {
             rows.add(List.of(section, dmy(i.date()), Objects.toString(i.document(), ""), Objects.toString(i.narration(), ""),
-                    Objects.toString(i.chequeNo(), ""), plain(i.amount()), i.withoutEvidence() ? "yes" : ""));
+                    Objects.toString(i.chequeNo(), ""), plain(i.amount()), i.withoutEvidence() ? yes : ""));
         }
     }
 
     private static String plain(java.math.BigDecimal v) {
-        return v == null ? "" : v.toPlainString();
+        return v == null ? "" : v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     @GetMapping("/bank-accounts/{id}/opening-items")

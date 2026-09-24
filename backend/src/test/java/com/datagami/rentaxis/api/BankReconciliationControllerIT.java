@@ -208,6 +208,11 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
         String text = new String(csv.getBody(), StandardCharsets.UTF_8);
         assertThat(text).contains("\"'=HYPERLINK(\"\"http://x\"\")\"").doesNotContain(",=HYPERLINK");
         assertThat(text).contains("Unrecorded statement item");
+        // F14-48: amounts with two decimals; ?lang=ar gives Arabic labels.
+        assertThat(text).contains("Booked after the period,0.00");
+        String arText = new String(spec(HttpMethod.GET, BASE + "/reconciliations/" + id + ".csv?lang=ar", accountant)
+                .retrieve().toEntity(byte[].class).getBody(), StandardCharsets.UTF_8);
+        assertThat(arText).contains("بند كشف غير مسجل").contains("كشف التسوية البنكية");
 
         JsonNode ws = json(call(HttpMethod.GET, BASE + "/bank-accounts/" + ei.getId() + "/workspace", superAdmin, null));
         for (JsonNode l : ws.get("statementLines")) {
