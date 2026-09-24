@@ -26,7 +26,13 @@ public class LeaseDTO {
     private BigDecimal rentAmount;
     /** Derived from the DEPOSIT lines — see {@code Lease}. */
     private BigDecimal depositAmount;
+    /** The original contract's Ejari registration. Never overwritten by an addendum. */
     private String ejariNumber;
+    /**
+     * F14-33: the Ejari in force now — the latest registered addendum's number,
+     * else {@link #ejariNumber}. Computed on read.
+     */
+    private String currentEjari;
     private Integer paymentTerms;
     private InstallmentDistribution installmentDistribution;
     private PaymentMethod paymentMethod;

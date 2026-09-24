@@ -76,3 +76,19 @@ describe("Lease page — renter acceptance badge", () => {
         expect(screen.queryByTestId("lease-renter-accepted")).toBeNull();
     });
 });
+
+describe("Lease page — current Ejari (F14-33)", () => {
+    it("shows the latest addendum's Ejari, with the contract's own beside it", async () => {
+        api.get.mockImplementation(async () => ({ ...LEASE, ejariNumber: "EJ-2026-0001", currentEjari: "EJ-2026-0445871" }));
+        renderPage();
+        expect(await screen.findByText("EJ-2026-0445871")).toBeInTheDocument();
+        expect(screen.getByTestId("lease-ejari-original")).toHaveTextContent("Contract Ejari EJ-2026-0001");
+    });
+
+    it("shows only the contract's Ejari when no addendum is registered", async () => {
+        api.get.mockImplementation(async () => ({ ...LEASE, ejariNumber: "EJ-2026-0001", currentEjari: "EJ-2026-0001" }));
+        renderPage();
+        await screen.findByTestId("lease-status");
+        expect(screen.queryByTestId("lease-ejari-original")).toBeNull();
+    });
+});

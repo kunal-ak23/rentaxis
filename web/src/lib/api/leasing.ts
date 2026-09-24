@@ -229,7 +229,10 @@ export type LeaseDetail = {
   status: LeaseStatus;
   rentAmount: number | null;
   depositAmount: number | null;
+  /** The original contract's Ejari. Never overwritten by an addendum. */
   ejariNumber: string | null;
+  /** F14-33: the Ejari in force — the latest registered addendum's, else `ejariNumber`. */
+  currentEjari?: string | null;
   paymentTerms: number | null;
   installmentDistribution: InstallmentDistribution | null;
   paymentMethod: PaymentMethod | null;

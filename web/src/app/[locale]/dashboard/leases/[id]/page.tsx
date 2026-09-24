@@ -744,7 +744,14 @@ export default function LeaseDetailPage() {
                                     />
                                     <Detail label={t("firstDueDate")} value={fmtIsoDate(lease.firstDueDate, locale)} />
                                     <Detail label={t("paymentMethod")} value={lease.paymentMethod ?? "—"} />
-                                    <Detail label={t("ejariNumber")} value={lease.ejariNumber || "—"} />
+                                    {/* F14-33: the Ejari in force (latest registered addendum), with the
+                                        contract's own registration beside it when they differ. */}
+                                    <Detail label={t("ejariNumber")} value={lease.currentEjari || lease.ejariNumber || "—"} />
+                                    {lease.ejariNumber && lease.currentEjari && lease.currentEjari !== lease.ejariNumber && (
+                                        <p className="text-[11px] text-muted text-end" data-testid="lease-ejari-original">
+                                            {t("ejariOriginal", { number: lease.ejariNumber })}
+                                        </p>
+                                    )}
                                 </Card>
 
                                 {renter && (

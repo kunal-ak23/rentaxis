@@ -1747,6 +1747,9 @@ public class LeaseService {
         dto.setRentAmount(lease.getRentAmount());
         dto.setDepositAmount(lease.getDepositAmount());
         dto.setEjariNumber(lease.getEjariNumber());
+        // F14-33: the latest registered addendum's Ejari, else the contract's own.
+        List<String> addendumEjari = leaseAddendumRepository.findRegisteredEjariLatestFirst(lease.getId());
+        dto.setCurrentEjari(addendumEjari.isEmpty() ? lease.getEjariNumber() : addendumEjari.get(0));
         dto.setPaymentTerms(lease.getPaymentTerms());
         dto.setInstallmentDistribution(lease.getInstallmentDistribution());
         dto.setPaymentMethod(lease.getPaymentMethod());

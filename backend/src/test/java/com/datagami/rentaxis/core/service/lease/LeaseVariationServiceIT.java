@@ -468,40 +468,41 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(recorded.ejariNumber()).isEqualTo("EJ-2027-00042");
         assertThat(recorded.ejariPending()).isFalse();
         assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::ejariPending).containsExactly(false, true);
-        // F14-33: with the later addendum not yet registered, the first one's Ejari is the latest.
-        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00042");
+        // F14-33: with the later addendum not yet registered, the first one's Ejari is current.
+        String original = jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId);
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00042");
 
-        // F14-33: the latest addendum's Ejari is the lease's; a corrected number replaces it.
+        // The latest registered addendum's Ejari is current; a corrected number replaces it.
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00050");
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00051");
-        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
-        // Correcting an earlier addendum's number leaves the latest one on the header.
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        // Correcting an earlier addendum's number leaves the latest one current.
         variations.recordEjari(leaseId, first.addendum().id(), "EJ-2027-00043");
-        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
-
-        // Changeset 127 backfills a header an older build left behind, and is idempotent.
-        jdbc.update("update leases set ejari_number = null where id = ?", leaseId);
-        String backfill = changeset127Sql();
-        assertThat(jdbc.update(backfill)).isGreaterThanOrEqualTo(1);
-        assertThat(headerEjari(leaseId)).isEqualTo("EJ-2027-00051");
-        assertThat(jdbc.update(backfill)).isZero();
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        // R1 ruling: the contract's own Ejari is never overwritten.
+        assertThat(jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId))
+                .isEqualTo(original);
+        assertThat(tx.execute(s -> leaseService.getLeaseById(leaseId)).getEjariNumber()).isEqualTo(original);
     }
 
-    private String headerEjari(UUID leaseId) {
-        return tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getEjariNumber());
+    /** F14-33 (R1 P2-2): an addendum created with its Ejari already set is current at once. */
+    @Test
+    void anAddendumCreatedWithItsEjariIsTheCurrentEjari() {
+        UUID leaseId = postedWithFee();
+        String original = jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId);
+        assertThat(currentEjari(leaseId)).isEqualTo(original);
+
+        AddChargeRequest p = parking("6000", "6000");
+        variations.addCharge(leaseId, new AddChargeRequest(p.effectiveFrom(), p.contractDate(), "EJ-2027-00777",
+                p.reason(), p.lines(), p.cheques()));
+
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00777");
+        assertThat(jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId))
+                .isEqualTo(original);
     }
 
-    /** The UPDATE of changeset 127, as Liquibase runs it. */
-    private static String changeset127Sql() {
-        try (var in = LeaseVariationServiceIT.class.getResourceAsStream(
-                "/db/changelog/changesets/127-lease-ejari-from-latest-addendum.yaml")) {
-            String yaml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            String body = yaml.substring(yaml.indexOf("sql: |") + "sql: |".length(), yaml.indexOf("      rollback:"));
-            return body.lines().map(String::strip).filter(l -> !l.isEmpty())
-                    .collect(java.util.stream.Collectors.joining("\n"));
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException(e);
-        }
+    private String currentEjari(UUID leaseId) {
+        return tx.execute(s -> leaseService.getLeaseById(leaseId)).getCurrentEjari();
     }
 
     // ------------------------------------------------------------------

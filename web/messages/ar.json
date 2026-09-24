@@ -2054,6 +2054,7 @@
     "paymentMethod": "طريقة الدفع",
     "depositPaymentMethod": "طريقة دفع التأمين",
     "ejariNumber": "رقم إيجاري",
+    "ejariOriginal": "إيجاري العقد الأصلي {number}",
     "paymentReference": "رقم مرجع الدفع",
     "rentVat": "الإيجار خاضع للضريبة",
     "unit": "الوحدة",

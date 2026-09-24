@@ -2054,6 +2054,7 @@
     "paymentMethod": "Payment Method",
     "depositPaymentMethod": "Deposit Payment Method",
     "ejariNumber": "Ejari #",
+    "ejariOriginal": "Contract Ejari {number}",
     "paymentReference": "Payment Reference #",
     "rentVat": "Rent carries VAT",
     "unit": "Unit",
