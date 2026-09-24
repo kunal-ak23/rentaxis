@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCheck, Download, Link2, Lock, MoreHorizontal, RotateCcw, Sparkles, Undo2 } from "lucide-react";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api/bankRec";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { LineActionDialog, actionsFor } from "./LineActionDialog";
+import { Modal } from "./Modal";
 import { ReconciliationPanel } from "./ReconciliationPanel";
 import { Money } from "./Money";
 import { serverText } from "./serverText";
@@ -204,7 +206,9 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                 </div>
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="panes">
+            {/* F14-05: side by side only from a 1700-px window; below it the two panes stack, so the
+                statement pane gets the full width instead of ~560 px at a 1568-px window. */}
+            <div className="grid grid-cols-1 min-[1700px]:grid-cols-2 gap-4" data-testid="panes">
                 <section className="bg-surface border border-border rounded-xl overflow-x-auto" data-testid="pane-statement">
                     <h2 className="px-3 pt-3 text-sm font-bold">{t("statement")}</h2>
                     {/* F14-05: compact cells, long text cut (full text on hover), the value date only when it
@@ -213,9 +217,11 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                     <table className="w-full table-fixed">
                         <thead><tr>
                             <th className={`${thS} w-6`} /><th className={`${thS} w-20`}>{t("date")}</th>
-                            <th className={thS}>{t("description")}</th><th className={`${thS} w-16`}>{t("reference")}</th>
-                            <th className={`${thS} w-12`}>{t("chequeNo")}</th><th className={`${thS} w-20 text-end`}>{t("amount")}</th>
-                            <th className={`${thS} w-16 ${stickyEnd}`}><span className="sr-only">{t("actions")}</span></th>
+                            <th className={thS}>{t("description")}</th>
+                            <th className={`${thS} w-24`}><span className="block truncate" title={t("reference")}>{t("reference")}</span></th>
+                            <th className={`${thS} w-24`}><span className="block truncate" title={t("chequeNo")}>{t("chequeNo")}</span></th>
+                            <th className={`${thS} w-24 text-end`}>{t("amount")}</th>
+                            <th className={`${thS} w-10 ${stickyEnd}`}><span className="sr-only">{t("actions")}</span></th>
                         </tr></thead>
                         <tbody className="divide-y divide-border">
                             {lines.map(l => (
@@ -239,17 +245,14 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                                     <td className={tdS}><span className="block truncate" title={l.chequeNo ?? undefined}>{l.chequeNo ?? ""}</span></td>
                                     <td className={`${tdS} text-end whitespace-nowrap`}><Money v={l.amount} /></td>
                                     <td className={`${tdS} text-end whitespace-nowrap ${stickyEnd}`} data-testid={`sl-actions-${l.id}`}>
-                                        {l.matchStatus === "CONFIRMED" && (
-                                            <UndoButton m={matchById.get(l.matchId!)} busy={busy}
-                                                onUndo={(reverse, on) => act(async () => {
-                                                    await bankRecApi.undo(l.matchId!, reverse ? { reverseCreated: true, reverseOn: on } : {});
-                                                    return null;
-                                                })} />
-                                        )}
-                                        {lineActions(l) && (
-                                            <button type="button" className={small} aria-label={t("actions")} data-testid={`act-${l.description}`}
-                                                    onClick={() => setActing(lineActions(l))}><MoreHorizontal size={12} /></button>
-                                        )}
+                                        {/* F14-05: one menu button per row, whatever the row offers. */}
+                                        <RowMenu lineId={l.id} description={l.description} busy={busy}
+                                            m={l.matchStatus === "CONFIRMED" ? matchById.get(l.matchId!) : undefined}
+                                            onActions={lineActions(l) ? () => setActing(lineActions(l)) : null}
+                                            onUndo={(reverse, on) => act(async () => {
+                                                await bankRecApi.undo(l.matchId!, reverse ? { reverseCreated: true, reverseOn: on } : {});
+                                                return null;
+                                            })} />
                                     </td>
                                 </tr>
                             ))}
@@ -351,34 +354,95 @@ function SuggestionRow({ m, n, busy, onConfirm, onReject }: {
 }
 
 /**
- * Undo, and — only where the server can do it (a BNK or a BPC; PR #353 review) —
- * undo and reverse, after a confirmation that shows and lets the user change the
- * reversal date (the entry's own date while its period is open, else today).
+ * F14-05: a statement row's actions behind one button — undo, undo and reverse
+ * (only where the server can do it: a BNK or a BPC; PR #353 review), and the
+ * create/record actions. The menu is positioned against the viewport so the
+ * pane's sideways scroller can never clip it; undo-and-reverse asks for the
+ * reversal date first (the entry's own date while its period is open, else today).
  */
-function UndoButton({ m, busy, onUndo }: { m: Match | undefined; busy: boolean; onUndo: (reverse: boolean, on?: string) => void }) {
+function RowMenu({ lineId, description, m, busy, onActions, onUndo }: {
+    lineId: string; description: string; m: Match | undefined; busy: boolean;
+    onActions: (() => void) | null; onUndo: (reverse: boolean, on?: string) => void;
+}) {
     const t = useTranslations("BankRec");
+    const [pos, setPos] = useState<{ top: number; start: number } | null>(null);
     const [asking, setAsking] = useState(false);
     const [on, setOn] = useState(m?.reverseOnDefault ?? "");
-    if (!m) return null;
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const rtl = typeof document !== "undefined" && document.documentElement.dir === "rtl";
+
+    useEffect(() => {
+        if (!pos) return;
+        const close = (e: Event) => {
+            if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+            if (e.type === "mousedown" && (menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) return;
+            setPos(null);
+        };
+        document.addEventListener("mousedown", close);
+        document.addEventListener("keydown", close);
+        window.addEventListener("scroll", close, true);
+        window.addEventListener("resize", close);
+        return () => {
+            document.removeEventListener("mousedown", close);
+            document.removeEventListener("keydown", close);
+            window.removeEventListener("scroll", close, true);
+            window.removeEventListener("resize", close);
+        };
+    }, [pos]);
+
+    if (!m && !onActions) return null;
+    const open = () => {
+        const r = buttonRef.current?.getBoundingClientRect();
+        // The menu's inline end lines up with the button's.
+        setPos(r ? { top: r.bottom + 4, start: rtl ? r.left : window.innerWidth - r.right } : { top: 0, start: 0 });
+    };
+    const item = "w-full flex items-center gap-2 px-3 py-2 text-xs text-start hover:bg-input cursor-pointer disabled:opacity-50";
     return (
-        <span className="inline-flex gap-1 me-1 items-center">
-            <button type="button" className={small} disabled={busy} onClick={() => onUndo(false)} title={t("undo")} aria-label={t("undo")}
-                    data-testid={`undo-${m.id}`}>
-                <Undo2 size={12} />
+        <>
+            <button ref={buttonRef} type="button" className={small} aria-label={t("actions")} aria-haspopup="menu"
+                    aria-expanded={!!pos} data-testid={`row-menu-${lineId}`} onClick={() => (pos ? setPos(null) : open())}>
+                <MoreHorizontal size={12} />
             </button>
-            {m.reverseOnDefault && !asking && (
-                <button type="button" className={small} disabled={busy} onClick={() => { setOn(m.reverseOnDefault ?? ""); setAsking(true); }}
-                        title={t("undoReverse")} aria-label={t("undoReverse")} data-testid={`undo-reverse-${m.id}`}><RotateCcw size={12} /></button>
+            {/* Portalled: inside the sticky cell the menu would be caught in the cell's own
+                stacking context and painted under the next row's sticky cell. */}
+            {pos && createPortal(
+                <div ref={menuRef} role="menu" data-testid={`row-menu-list-${lineId}`}
+                     className="fixed z-50 min-w-48 max-w-80 whitespace-normal bg-surface border border-border rounded-lg shadow-lg py-1"
+                     style={rtl ? { top: pos.top, left: pos.start } : { top: pos.top, right: pos.start }}>
+                    {m && (
+                        <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`undo-${m.id}`}
+                                onClick={() => { setPos(null); onUndo(false); }}>
+                            <Undo2 size={12} />{t("undo")}
+                        </button>
+                    )}
+                    {m?.reverseOnDefault && (
+                        <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`undo-reverse-${m.id}`}
+                                title={t("undoReverse")}
+                                onClick={() => { setPos(null); setOn(m.reverseOnDefault ?? ""); setAsking(true); }}>
+                            <RotateCcw size={12} />{t("undoReverse")}
+                        </button>
+                    )}
+                    {onActions && (
+                        <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`act-${description}`}
+                                onClick={() => { setPos(null); onActions(); }}>
+                            <MoreHorizontal size={12} />{t("lineActions")}
+                        </button>
+                    )}
+                </div>,
+                document.body,
             )}
-            {asking && (
-                <span className="inline-flex items-center gap-1 text-[11px]" data-testid={`reverse-confirm-${m.id}`}>
-                    {t("reverseOn")}
-                    <input type="date" className={`${field} py-1`} value={on} onChange={e => setOn(e.target.value)} data-testid="reverse-on" />
-                    <button type="button" className={small} disabled={busy || !on} data-testid="reverse-go"
-                            onClick={() => { setAsking(false); onUndo(true, on); }}>{t("reverseConfirm")}</button>
-                    <button type="button" className={small} onClick={() => setAsking(false)}>{t("cancel")}</button>
-                </span>
+            {asking && m && (
+                <Modal title={t("undoReverse")} onClose={() => setAsking(false)} testId={`reverse-confirm-${m.id}`}>
+                    <div className="flex flex-wrap items-end gap-2 text-xs whitespace-normal text-start">
+                        <label><span className={`${label} block mb-1`}>{t("reverseOn")}</span>
+                            <input type="date" className={field} value={on} onChange={e => setOn(e.target.value)} data-testid="reverse-on" /></label>
+                        <button type="button" className={primary} disabled={busy || !on} data-testid="reverse-go"
+                                onClick={() => { setAsking(false); onUndo(true, on); }}>{t("reverseConfirm")}</button>
+                        <button type="button" className={button} onClick={() => setAsking(false)}>{t("cancel")}</button>
+                    </div>
+                </Modal>
             )}
-        </span>
+        </>
     );
 }

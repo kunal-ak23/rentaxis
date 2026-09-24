@@ -3651,6 +3651,7 @@
     "reject": "Reject",
     "undo": "Undo",
     "undoReverse": "Undo and reverse the entry",
+    "lineActions": "Record from this line…",
     "suggested": "Suggested",
     "matched": "Matched",
     "confidence_HIGH": "High",

@@ -289,8 +289,16 @@ describe("F14-05 the statement pane fits its half of the workspace", () => {
         expect(cell.className).toMatch(/\bsticky\b/);
         expect(cell.className).toMatch(/\bend-0\b/);
         expect(cell.className).not.toMatch(/\bright-0\b/);
+        // F14-05 (still failing at 1568px after eb03863b): every action sits behind one
+        // menu button, so the column is one button wide whatever the row offers.
+        expect(cell.querySelectorAll("button")).toHaveLength(1);
+        fireEvent.click(screen.getByTestId("row-menu-a"));
         expect(screen.getByTestId("undo-m1")).toBeInTheDocument();
         expect(screen.getByTestId("undo-reverse-m1")).toHaveAttribute("title", ar.BankRec.undoReverse);
+        expect(screen.getByTestId("row-menu-list-a")).not.toBeNull();
+        // The panes stack below a 1700-px window instead of splitting a 1568-px one in two.
+        expect(screen.getByTestId("panes").className).toContain("min-[1700px]:grid-cols-2");
+        expect(screen.getByTestId("panes").className).not.toMatch(/\bxl:grid-cols-2\b/);
         expect(screen.getByTitle(long)).toHaveClass("truncate");
         // The value date shows only where it differs from the date.
         expect(screen.getByTestId("vd-b")).toHaveTextContent("11/09/2026");
