@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -365,67 +365,115 @@ function RowMenu({ lineId, description, m, busy, onActions, onUndo }: {
     onActions: (() => void) | null; onUndo: (reverse: boolean, on?: string) => void;
 }) {
     const t = useTranslations("BankRec");
-    const [pos, setPos] = useState<{ top: number; start: number } | null>(null);
+    const [pos, setPos] = useState<{ top: number; bottom: number; start: number; up: boolean } | null>(null);
     const [asking, setAsking] = useState(false);
     const [on, setOn] = useState(m?.reverseOnDefault ?? "");
     const buttonRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const rtl = typeof document !== "undefined" && document.documentElement.dir === "rtl";
 
+    const isOpen = !!pos;
+    const items = () => Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+
+    /** Closes the menu; `refocus` returns focus to the trigger (keyboard close, or an item chosen). */
+    const close = useCallback((refocus: boolean) => {
+        setPos(null);
+        if (refocus) buttonRef.current?.focus();
+    }, []);
+
+    // PR #357 R1 P2-4: focus moves into the menu when it opens, and it flips upward
+    // when there is no room below the trigger (the last rows of a tall pane).
+    useLayoutEffect(() => {
+        if (!isOpen) return;
+        const menu = menuRef.current;
+        if (menu && pos && !pos.up && pos.top + menu.offsetHeight > window.innerHeight) {
+            setPos({ ...pos, up: true });
+            return;
+        }
+        items()[0]?.focus();
+        // Only when it opens, not on every re-position.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, pos?.up]);
+
     useEffect(() => {
-        if (!pos) return;
-        const close = (e: Event) => {
-            if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-            if (e.type === "mousedown" && (menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) return;
-            setPos(null);
+        if (!isOpen) return;
+        const onMouseDown = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+            close(false);
         };
-        document.addEventListener("mousedown", close);
-        document.addEventListener("keydown", close);
-        window.addEventListener("scroll", close, true);
-        window.addEventListener("resize", close);
+        // A scroll inside the menu is the user reading it; only the page or pane moving closes it.
+        const onScroll = (e: Event) => {
+            if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+            close(false);
+        };
+        const onResize = () => close(false);
+        document.addEventListener("mousedown", onMouseDown);
+        window.addEventListener("scroll", onScroll, true);
+        window.addEventListener("resize", onResize);
         return () => {
-            document.removeEventListener("mousedown", close);
-            document.removeEventListener("keydown", close);
-            window.removeEventListener("scroll", close, true);
-            window.removeEventListener("resize", close);
+            document.removeEventListener("mousedown", onMouseDown);
+            window.removeEventListener("scroll", onScroll, true);
+            window.removeEventListener("resize", onResize);
         };
-    }, [pos]);
+    }, [isOpen, close]);
+
+    const onMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const list = items();
+        const at = list.indexOf(document.activeElement as HTMLButtonElement);
+        switch (e.key) {
+            case "ArrowDown": e.preventDefault(); list[(at + 1) % list.length]?.focus(); break;
+            case "ArrowUp": e.preventDefault(); list[(at - 1 + list.length) % list.length]?.focus(); break;
+            case "Home": e.preventDefault(); list[0]?.focus(); break;
+            case "End": e.preventDefault(); list[list.length - 1]?.focus(); break;
+            case "Escape": e.preventDefault(); close(true); break;
+            // Tab leaves the menu from its trigger: focus goes back there and the browser's
+            // own Tab then moves on to the next control in the row, as it did before.
+            case "Tab": close(true); break;
+        }
+    };
 
     if (!m && !onActions) return null;
     const open = () => {
         const r = buttonRef.current?.getBoundingClientRect();
-        // The menu's inline end lines up with the button's.
-        setPos(r ? { top: r.bottom + 4, start: rtl ? r.left : window.innerWidth - r.right } : { top: 0, start: 0 });
+        // The menu's inline end lines up with the button's (its left edge in Arabic).
+        setPos(r ? { top: r.bottom + 4, bottom: window.innerHeight - r.top + 4, start: rtl ? r.left : window.innerWidth - r.right, up: false }
+                 : { top: 0, bottom: 0, start: 0, up: false });
     };
+    const choose = (fn: () => void) => { close(true); fn(); };
     const item = "w-full flex items-center gap-2 px-3 py-2 text-xs text-start hover:bg-input cursor-pointer disabled:opacity-50";
     return (
         <>
             <button ref={buttonRef} type="button" className={small} aria-label={t("actions")} aria-haspopup="menu"
-                    aria-expanded={!!pos} data-testid={`row-menu-${lineId}`} onClick={() => (pos ? setPos(null) : open())}>
+                    aria-expanded={isOpen} aria-controls={isOpen ? `row-menu-list-${lineId}` : undefined}
+                    data-testid={`row-menu-${lineId}`} onClick={() => (pos ? close(false) : open())}
+                    onKeyDown={e => { if (e.key === "ArrowDown" && !pos) { e.preventDefault(); open(); } }}>
                 <MoreHorizontal size={12} />
             </button>
             {/* Portalled: inside the sticky cell the menu would be caught in the cell's own
-                stacking context and painted under the next row's sticky cell. */}
+                stacking context and painted under the next row's sticky cell. Focus is managed
+                instead (R1 P2-4): it moves in on open, arrows move within, Escape/Tab return it. */}
             {pos && createPortal(
-                <div ref={menuRef} role="menu" data-testid={`row-menu-list-${lineId}`}
+                <div ref={menuRef} role="menu" id={`row-menu-list-${lineId}`} data-testid={`row-menu-list-${lineId}`}
+                     aria-label={t("actions")} onKeyDown={onMenuKeyDown}
                      className="fixed z-50 min-w-48 max-w-80 whitespace-normal bg-surface border border-border rounded-lg shadow-lg py-1"
-                     style={rtl ? { top: pos.top, left: pos.start } : { top: pos.top, right: pos.start }}>
+                     style={{ ...(pos.up ? { bottom: pos.bottom } : { top: pos.top }), ...(rtl ? { left: pos.start } : { right: pos.start }) }}>
                     {m && (
                         <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`undo-${m.id}`}
-                                onClick={() => { setPos(null); onUndo(false); }}>
+                                tabIndex={-1} onClick={() => choose(() => onUndo(false))}>
                             <Undo2 size={12} />{t("undo")}
                         </button>
                     )}
                     {m?.reverseOnDefault && (
                         <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`undo-reverse-${m.id}`}
                                 title={t("undoReverse")}
-                                onClick={() => { setPos(null); setOn(m.reverseOnDefault ?? ""); setAsking(true); }}>
+                                tabIndex={-1} onClick={() => choose(() => { setOn(m.reverseOnDefault ?? ""); setAsking(true); })}>
                             <RotateCcw size={12} />{t("undoReverse")}
                         </button>
                     )}
                     {onActions && (
                         <button type="button" role="menuitem" className={item} disabled={busy} data-testid={`act-${description}`}
-                                onClick={() => { setPos(null); onActions(); }}>
+                                tabIndex={-1} onClick={() => choose(onActions)}>
                             <MoreHorizontal size={12} />{t("lineActions")}
                         </button>
                     )}
