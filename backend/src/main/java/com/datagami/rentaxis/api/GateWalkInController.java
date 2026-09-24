@@ -105,7 +105,7 @@ public class GateWalkInController {
     }
 
     @GetMapping("/walk-in/{id}/photo")
-    @PreAuthorize("hasAnyRole('RENTER','SECURITY_GUARD','TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('RENTER','SECURITY_GUARD','SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public ResponseEntity<byte[]> photo(@PathVariable UUID id) {
         GatePass pass = requireWalkIn(id);
         if (hasRole("RENTER") && !residentUnitIds().contains(pass.getUnitId())) {
@@ -182,7 +182,7 @@ public class GateWalkInController {
     }
 
     @GetMapping("/policies/effective")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public PolicyResponse effectivePolicy(@RequestParam UUID propertyId,
                                           @RequestParam(required = false) UUID buildingId) {
         requirePropertyAndBuilding(propertyId, buildingId);
@@ -191,7 +191,7 @@ public class GateWalkInController {
     }
 
     @PutMapping("/policies")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     @Transactional
     public PolicyResponse setPolicy(@RequestParam UUID propertyId,
                                     @RequestParam(required = false) UUID buildingId,
@@ -217,7 +217,7 @@ public class GateWalkInController {
     }
 
     @PutMapping("/visitors/{profileId}/registration")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public void registerVisitor(@PathVariable UUID profileId,
                                 @RequestBody RegistrationRequest request) {
         Unit unit = unitRepository.findById(request.unitId())
@@ -229,7 +229,7 @@ public class GateWalkInController {
     }
 
     @PostMapping("/visitors/registration")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public VisitorLookupResponse createRegistration(
             @RequestBody ManagedRegistrationRequest request) {
         if (!propertyRepository.existsByIdAndTenantId(request.propertyId(), tenantId())) {

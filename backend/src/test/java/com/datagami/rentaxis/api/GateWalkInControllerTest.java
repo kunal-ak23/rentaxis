@@ -411,7 +411,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
 
     @ParameterizedTest
     @EnumSource(value = UserRole.class,
-            names = {"RENTER", "SECURITY_GUARD", "TENANT_ADMIN", "PROPERTY_MANAGER"})
+            names = {"RENTER", "SECURITY_GUARD", "SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void visitorPhotoIsOpenToEveryGateRole(UserRole role) {
         Fixture f = makeFixture();
         User caller = makeUser(f.org(), role);
@@ -849,7 +849,8 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
     // -------------------------------------------------------------- policies
 
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void managerWritesAndReadsBackThePropertyWidePolicy(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property property = makeProperty(org);

@@ -51,16 +51,14 @@ export const PERMISSIONS = {
     canDownloadContracts: ['SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER'] as UserRole[],
     canManageMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER'] as UserRole[],
-    // Deliberately excludes SUPER_ADMIN, unlike its neighbours. This mirrors
-    // GatePassController#report's @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
-    // exactly — the gate-pass module scopes every read to a tenant, so a SUPER_ADMIN
-    // hitting it gets a 403, and offering the nav item would only surface that as a
-    // broken page. Widen this only alongside the annotation.
-    canViewGatePassReport: ['TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors GatePassController#report's
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')").
+    // SUPER_ADMIN was added with #88: acting in an organisation it is tenant-wide
+    // like a tenant admin (the controller still needs the organisation selected).
+    // Change this only alongside the annotation.
+    canViewGatePassReport: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     // Mirrors the amenities/parking/bookings controllers' @PreAuthorize
-    // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER'). Unlike
-    // canViewGatePassReport, SUPER_ADMIN is deliberately included here because
-    // the backend admits it.
+    // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER').
     canManageFacilities: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     // Mirrors PromotionAdminController's @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')").
     // Promotions are tenant-wide (not scoped to a single property), so

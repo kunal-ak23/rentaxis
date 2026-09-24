@@ -854,7 +854,8 @@ class GatePassControllerTest extends AbstractPostgresIT {
      * nothing else pins. Dropping it from the annotation must fail a test.
      */
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void approvalsAreScopedForGuardsAndManagersButTenantWideForAdmins(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property assigned = makeProperty(org);
@@ -898,7 +899,8 @@ class GatePassControllerTest extends AbstractPostgresIT {
     }
 
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void managerApprovesRecurringPass(UserRole managerRole) {
         Fixture f = makeFixture();
         UUID id = UUID.fromString(createPass(f, "Guest Kappa", "RECURRING").get("id").asText());
@@ -920,7 +922,8 @@ class GatePassControllerTest extends AbstractPostgresIT {
      * dropped from either would otherwise go unnoticed.
      */
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void approvalsExcludeWalkInsAwaitingTheResident(UserRole managerRole) {
         Fixture f = makeFixture();
         User guard = makeGuard(f.org(), f.property());
@@ -1002,7 +1005,8 @@ class GatePassControllerTest extends AbstractPostgresIT {
     // ---------------------------------------------------------------- report
 
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void reportReturnsScansJoinedToPasses(UserRole managerRole) {
         Fixture f = makeFixture();
         User guard = makeGuard(f.org(), f.property());
@@ -1152,7 +1156,8 @@ class GatePassControllerTest extends AbstractPostgresIT {
 
     /** Covers the PROPERTY_MANAGER arm of both the PUT and the GET on this path. */
     @ParameterizedTest
-    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    // SUPER_ADMIN acting in an organisation is tenant-wide, like a tenant admin (#88).
+    @EnumSource(value = UserRole.class, names = {"SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"})
     void managerReplacesGuardPropertyAssignments(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property p1 = makeProperty(org);
