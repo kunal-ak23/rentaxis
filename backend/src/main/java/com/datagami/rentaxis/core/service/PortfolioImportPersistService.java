@@ -324,6 +324,9 @@ public class PortfolioImportPersistService {
             // has no column for it.
             lease.setContractDate(lease.getAgreementDate() != null ? lease.getAgreementDate() : startDate);
             lease.setFirstDueDate(startDate);
+            // The sheet has no grace column: every imported lease takes its
+            // property's default and is marked as inheriting it (gap #65).
+            leaseService.applyGracePeriod(lease, null, unit);
 
             Lease savedLease = leaseRepository.save(lease);
             if (savedLease.getChainId() == null) {

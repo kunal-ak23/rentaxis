@@ -1,0 +1,72 @@
+databaseChangeLog:
+  # Gap #65: a lease's grace either came from its property's rent-collection
+  # policy or was typed on the lease. grace_period_days alone cannot say which,
+  # so a renewal could not tell "the building's 5 days" from "5 days agreed with
+  # this renter" and always copied the number.
+  #
+  # Existing rows are TRUE: their grace is the snapshot the renter agreed to,
+  # and a renewal of one keeps it. LeaseService.applyGracePeriod writes FALSE on
+  # new rows whose grace was inherited. The second changeset below re-marks the
+  # zeros the wizard bug wrote.
+  - changeSet:
+      id: 107-lease-grace-override
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: grace_period_overridden
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: leases
+            columnName: grace_period_overridden
+
+  # The web wizard and draft editor started grace at 0 and always sent it, so
+  # a lease drafted on the web before this change has grace_period_days = 0
+  # because of that bug, not because anyone agreed a zero window. Where the
+  # lease's property has a positive default, mark those zeros as inherited:
+  # the lease keeps its own snapshot (0), but a renewal re-reads the property's
+  # current default instead of copying the bug-forced 0 forever, and the lease
+  # page stops calling it "set on this lease".
+  #
+  # rent_collection_settings is keyed by property (unique property_id) and
+  # carries tenant_id; the join matches tenant as well as property so no row
+  # is ever judged by another organisation's settings. A property with no
+  # settings row, or a default of 0, leaves its leases as they are.
+  # A separate changeset from the column so databases that already ran it
+  # pick this up without a checksum change.
+  - changeSet:
+      id: 107-lease-grace-override-wizard-zeros
+      author: rentaxis-system
+      changes:
+        - sql:
+            sql: >
+              UPDATE leases l
+                 SET grace_period_overridden = FALSE
+                FROM units u
+                JOIN rent_collection_settings rcs
+                  ON rcs.property_id = u.property_id
+                 AND rcs.tenant_id = u.tenant_id
+               WHERE u.id = l.unit_id
+                 AND u.tenant_id = l.tenant_id
+                 AND COALESCE(l.grace_period_days, 0) = 0
+                 AND rcs.grace_period_days > 0
+      rollback:
+        - sql:
+            sql: >
+              UPDATE leases l
+                 SET grace_period_overridden = TRUE
+                FROM units u
+                JOIN rent_collection_settings rcs
+                  ON rcs.property_id = u.property_id
+                 AND rcs.tenant_id = u.tenant_id
+               WHERE u.id = l.unit_id
+                 AND u.tenant_id = l.tenant_id
+                 AND COALESCE(l.grace_period_days, 0) = 0
+                 AND rcs.grace_period_days > 0
+                 AND l.grace_period_overridden = FALSE

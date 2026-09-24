@@ -263,8 +263,130 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
         assertThat(summary.getOverdueAmount()).isEqualByComparingTo("0");
         assertThat(summary.getReceivedThisMonth()).isEqualByComparingTo("0");
         assertThat(summary.getPendingThisMonthAmount()).isEqualByComparingTo("0");
+        assertThat(summary.getDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getCollectedArrears()).isEqualByComparingTo("0");
+        assertThat(summary.getCollectedAdvance()).isEqualByComparingTo("0");
         assertThat(summary.getRecentActivity()).isEmpty();
         assertThat(expectedTotal(dashboard.getMonthlyCollections())).isEqualByComparingTo("0");
+    }
+
+    /**
+     * The collection tile's identity (gap #59): what was banked this month is
+     * exactly this month's dues collected, plus arrears, plus advance — and the
+     * headline is on one basis, so a catch-up banking run of old cheques reads as
+     * arrears instead of as 3,800% of the month.
+     */
+    @Test
+    void receivedThisMonthIsAgainstDuePlusArrearsPlusAdvance() {
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate start = monthStart.minusMonths(3);
+        Unit unit = fixtures.createUnit(fixtures.property(), "103");
+        UUID leaseId = fixtures.postedLease(unit, fixtures.createRenter("Monthly Renter"),
+                start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "12000")), 12, "300010").lease().getId();
+
+        List<Cheque> rows = register(leaseId);
+        Cheque twoMonthsAgo = byDate(rows, monthStart.minusMonths(2));
+        Cheque lastMonth = byDate(rows, monthStart.minusMonths(1));
+        Cheque thisMonth = byDate(rows, monthStart);
+        Cheque nextMonth = byDate(rows, monthStart.plusMonths(1));
+
+        // Arrears: an old cheque banked today.
+        chequeService.deposit(twoMonthsAgo.getId(), ChequeActionRequest.on(twoMonthsAgo.getChequeDate()));
+        chequeService.clear(twoMonthsAgo.getId(), ChequeActionRequest.on(today));
+        // Last month's cheque cleared last month: not this month's money at all.
+        chequeService.deposit(lastMonth.getId(), ChequeActionRequest.on(lastMonth.getChequeDate()));
+        chequeService.clear(lastMonth.getId(), ChequeActionRequest.on(monthStart.minusDays(1)));
+        // This month's due, collected.
+        chequeService.deposit(thisMonth.getId(), ChequeActionRequest.on(thisMonth.getChequeDate()));
+        chequeService.clear(thisMonth.getId(), ChequeActionRequest.on(today));
+        // Advance: a post-dated cheque cannot be banked early, so the row is marked
+        // collected directly — the shape an early cash payment leaves.
+        tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findById(nextMonth.getId()).orElseThrow();
+            c.setStatus(com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED);
+            c.setClearedAt(today);
+            chequeRepo.save(c);
+        });
+
+        asPropertyManagerFor(fixtures.property().getId());
+        DashboardSummaryDTO summary = dashboard.getSummary();
+
+        assertThat(summary.getCollectedArrears()).isEqualByComparingTo(twoMonthsAgo.getAmount());
+        assertThat(summary.getCollectedAgainstDueThisMonth()).isEqualByComparingTo(thisMonth.getAmount());
+        assertThat(summary.getCollectedAdvance()).isEqualByComparingTo(nextMonth.getAmount());
+        assertThat(summary.getReceivedThisMonth()).isEqualByComparingTo(
+                summary.getCollectedAgainstDueThisMonth()
+                        .add(summary.getCollectedArrears())
+                        .add(summary.getCollectedAdvance()));
+        // Due this month is every live row dated in the month, in this building:
+        // the monthly lease's row plus whatever the quarterly lease has dated here.
+        BigDecimal quarterlyDue = register(mineLeaseId).stream()
+                .filter(c -> !c.getChequeDate().isBefore(monthStart)
+                        && c.getChequeDate().isBefore(monthStart.plusMonths(1)))
+                .map(Cheque::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(summary.getDueThisMonth()).isEqualByComparingTo(thisMonth.getAmount().add(quarterlyDue));
+        // Nothing dated this month was paid ahead here, so the headline and the
+        // against-due part agree.
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo(thisMonth.getAmount());
+
+        // The other building's manager sees none of it.
+        asPropertyManagerFor(theirProperty.getId());
+        DashboardSummaryDTO theirs = dashboard.getSummary();
+        assertThat(theirs.getCollectedArrears()).isEqualByComparingTo("0");
+        assertThat(theirs.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(theirs.getCollectedAdvance()).isEqualByComparingTo("0");
+        assertThat(theirs.getCollectedForThisMonth()).isEqualByComparingTo("0");
+        assertThat(theirs.getReceivedThisMonth()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Review P2-1: an instalment dated this month that was paid last month is
+     * this month's money in the bank. The headline (collectedForThisMonth) counts
+     * it whenever it cleared; the against-due part of the identity, which only
+     * counts what cleared this month, does not, and last month's tile had it as
+     * advance.
+     */
+    @Test
+    void aRowDatedThisMonthPaidLastMonthCountsInTheHeadline() {
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate start = monthStart.minusMonths(3);
+        Unit unit = fixtures.createUnit(fixtures.property(), "104");
+        UUID leaseId = fixtures.postedLease(unit, fixtures.createRenter("Early Payer"),
+                start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "12000")), 12, "300020").lease().getId();
+
+        Cheque thisMonth = byDate(register(leaseId), monthStart);
+        // Paid ahead on the last day of last month (cash or transfer), so it
+        // cleared before its own date.
+        tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findById(thisMonth.getId()).orElseThrow();
+            c.setStatus(com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED);
+            c.setClearedAt(monthStart.minusDays(1));
+            chequeRepo.save(c);
+        });
+
+        asPropertyManagerFor(fixtures.property().getId());
+        DashboardSummaryDTO summary = dashboard.getSummary();
+
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo(thisMonth.getAmount());
+        assertThat(summary.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getDueThisMonth()).isGreaterThanOrEqualTo(thisMonth.getAmount());
+        // The identity still holds: nothing cleared this month.
+        assertThat(summary.getReceivedThisMonth()).isEqualByComparingTo(
+                summary.getCollectedAgainstDueThisMonth()
+                        .add(summary.getCollectedArrears())
+                        .add(summary.getCollectedAdvance()));
+    }
+
+    private static Cheque byDate(List<Cheque> rows, LocalDate date) {
+        return rows.stream().filter(c -> date.equals(c.getChequeDate())).findFirst()
+                .orElseThrow(() -> new AssertionError("no row dated " + date + " in " + rows.stream()
+                        .map(Cheque::getChequeDate).toList()));
     }
 
     private static BigDecimal expectedTotal(List<MonthlyCollectionDTO> series) {

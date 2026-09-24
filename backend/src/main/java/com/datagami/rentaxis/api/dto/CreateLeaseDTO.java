@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api.dto;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -45,8 +46,13 @@ public class CreateLeaseDTO {
     /** The date the contract is dated. Defaults to {@code agreementDate}, else today. */
     private LocalDate contractDate;
 
-    /** Days after a due date before a late-payment penalty may be assessed. */
-    @Min(0)
+    /**
+     * Days after a due date before a late-payment penalty may be assessed. Null
+     * inherits the property's default. 0..90, the same range as the screens'
+     * spinner: typing past it used to be stored as sent.
+     */
+    @Min(value = 0, message = "grace period must be between 0 and 90 days")
+    @Max(value = 90, message = "grace period must be between 0 and 90 days")
     private Integer gracePeriodDays;
 
     /** First instalment due date. Defaults to {@code startDate}. */

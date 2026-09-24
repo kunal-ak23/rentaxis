@@ -921,7 +921,17 @@ public class LeaseService {
                 : (lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now());
         lease.setContractDate(contractDate);
         lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
-        lease.setGracePeriodDays(gracePeriodFor(dto, unit));
+        applyGracePeriod(lease, dto.getGracePeriodDays(), unit);
+    }
+
+    /**
+     * Writes a lease's grace and whether it was named or inherited — the one
+     * place that decides both, used by the draft screens and by both importers
+     * (gap #65). {@code requested} null means "the property's default".
+     */
+    public void applyGracePeriod(Lease lease, Integer requested, Unit unit) {
+        lease.setGracePeriodDays(gracePeriodFor(requested, unit));
+        lease.setGracePeriodOverridden(requested != null);
     }
 
     /**
@@ -942,10 +952,15 @@ public class LeaseService {
      *
      * <p>Zero is still the floor — a setting of null, or a negative number somebody
      * typed, means no grace rather than a nonsense one.</p>
+     *
+     * <p>An explicit value — zero included — is the lease's own and is marked
+     * overridden by {@link #applyGracePeriod}. The screens used to send 0 by
+     * default, so the property's policy never reached a lease drafted on them
+     * (gap #65); they now send null unless the operator types a number.</p>
      */
-    private int gracePeriodFor(CreateLeaseDTO dto, Unit unit) {
-        if (dto.getGracePeriodDays() != null) {
-            return Math.max(0, dto.getGracePeriodDays());
+    private int gracePeriodFor(Integer requested, Unit unit) {
+        if (requested != null) {
+            return Math.max(0, requested);
         }
         UUID propertyId = unit != null && unit.getProperty() != null ? unit.getProperty().getId() : null;
         if (propertyId == null) {
@@ -1537,6 +1552,7 @@ public class LeaseService {
         dto.setContractDate(lease.getContractDate());
         dto.setTotalDays(lease.getTotalDays());
         dto.setGracePeriodDays(lease.getGracePeriodDays());
+        dto.setGracePeriodOverridden(lease.isGracePeriodOverridden());
         dto.setFirstDueDate(lease.getFirstDueDate());
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());

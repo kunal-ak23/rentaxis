@@ -173,8 +173,9 @@ public class LeaseRenewalService {
     /**
      * The successor's header: the request's dates, everything else inherited.
      *
-     * <p>Payment terms, instalment distribution, payment methods, the grace period
-     * and the VAT flag carry over because they describe <em>how this landlord
+     * <p>Payment terms, instalment distribution, payment methods, a grace period
+     * set on the lease (an inherited one is re-read from the property) and the VAT
+     * flag carry over because they describe <em>how this landlord
      * bills this renter</em> and have not changed just because the year has. The
      * Ejari number deliberately does not: a renewal is registered afresh, and
      * copying last year's would put a stale registration on a live contract.</p>
@@ -193,7 +194,12 @@ public class LeaseRenewalService {
                 ? predecessor.getPaymentMethod().name() : null);
         dto.setDepositPaymentMethod(predecessor.getDepositPaymentMethod() != null
                 ? predecessor.getDepositPaymentMethod().name() : null);
-        dto.setGracePeriodDays(predecessor.getGracePeriodDays());
+        // A grace the predecessor inherited is the building's policy, and the
+        // successor takes the policy as it stands now; one set on the lease was
+        // agreed with this renter and carries over (gap #65). Either way the new
+        // lease snapshots its number when it is drafted.
+        dto.setGracePeriodDays(predecessor.isGracePeriodOverridden()
+                ? predecessor.getGracePeriodDays() : null);
         dto.setRentVatApplicable(predecessor.isRentVatApplicable());
         return dto;
     }

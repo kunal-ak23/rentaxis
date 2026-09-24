@@ -452,8 +452,9 @@ public class ContractImportPersistService {
         lease.setStartDate(date(row, hi, "StartDate"));
         lease.setEndDate(date(row, hi, "EndDate"));
         lease.setFirstDueDate(lease.getStartDate());
+        // A blank cell is the property's default, not zero (gap #65).
         String grace = SheetCells.cell(row, hi, "GracePeriodDays");
-        lease.setGracePeriodDays(grace.isBlank() ? 0 : Integer.parseInt(grace.trim()));
+        leaseService.applyGracePeriod(lease, grace.isBlank() ? null : Integer.parseInt(grace.trim()), unit);
 
         Lease saved = leaseRepository.save(lease);
         // chain_id cannot be set before the insert: it mirrors an id that does not

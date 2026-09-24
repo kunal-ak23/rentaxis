@@ -206,6 +206,8 @@ class ContractImportIT extends AbstractPostgresIT {
                 assertThat(lease.getStartDate()).isEqualTo(LocalDate.of(2026, 9, 24));
                 assertThat(lease.getEndDate()).isEqualTo(LocalDate.of(2027, 9, 23));
                 assertThat(lease.getGracePeriodDays()).isEqualTo(5);
+                // Typed on the sheet, so it is this lease's own (gap #65).
+                assertThat(lease.isGracePeriodOverridden()).isTrue();
                 // The grid is the instalment plan, so the lease's payment terms are
                 // what the sheet actually listed rather than a number nobody typed.
                 assertThat(lease.getPaymentTerms()).isEqualTo(2);
@@ -220,6 +222,15 @@ class ContractImportIT extends AbstractPostgresIT {
                             assertThat(l.getNetAmount()).isEqualByComparingTo("51000.00");
                             assertThat(l.getCreditAccount().getName()).isEqualTo("Advance Rent - ST1");
                         });
+            });
+
+            // SAMPLE-0002's grace cell is blank: the property's default (none is set
+            // on a property the import has just created), marked as inherited so a
+            // renewal re-reads the policy rather than copying a zero (gap #65).
+            tx.executeWithoutResult(s -> {
+                Lease inherited = leaseOf("SAMPLE-0002");
+                assertThat(inherited.getGracePeriodDays()).isZero();
+                assertThat(inherited.isGracePeriodOverridden()).isFalse();
             });
 
             // The unit stays VACANT: a DRAFT lease reserves nothing, and the batch

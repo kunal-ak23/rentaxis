@@ -142,6 +142,17 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "grace_period_days", nullable = false)
     private int gracePeriodDays = 0;
 
+    /**
+     * Whether {@link #gracePeriodDays} was named on this lease (TRUE) or taken
+     * from the property's rent-collection policy when it was drafted (FALSE).
+     * Either way the number is a snapshot; this only decides what a renewal does
+     * with it (gap #65). TRUE by default, like the column, so a lease built
+     * without going through {@code LeaseService.gracePeriodFor} claims its number
+     * as its own rather than silently re-inheriting on renewal.
+     */
+    @Column(name = "grace_period_overridden", nullable = false)
+    private boolean gracePeriodOverridden = true;
+
     /** When the first instalment falls due; defaults to the tenancy start. */
     @Column(name = "first_due_date")
     private LocalDate firstDueDate;

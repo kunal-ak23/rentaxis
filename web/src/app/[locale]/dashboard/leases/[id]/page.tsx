@@ -731,7 +731,14 @@ export default function LeaseDetailPage() {
                                 <Card title={t("contractNumber")} icon={<FileText size={13} />}>
                                     <Detail label={t("contractDate")} value={fmtIsoDate(lease.contractDate, locale)} />
                                     <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
-                                    <Detail label={t("gracePeriodDays")} value={String(lease.gracePeriodDays ?? 0)} />
+                                    <Detail
+                                        label={t("gracePeriodDays")}
+                                        value={lease.gracePeriodOverridden === false
+                                            ? t("graceFromProperty", { days: lease.gracePeriodDays ?? 0 })
+                                            : lease.gracePeriodOverridden === true
+                                                ? t("graceSetOnLease", { days: lease.gracePeriodDays ?? 0 })
+                                                : String(lease.gracePeriodDays ?? 0)}
+                                    />
                                     <Detail label={t("firstDueDate")} value={fmtIsoDate(lease.firstDueDate, locale)} />
                                     <Detail label={t("paymentMethod")} value={lease.paymentMethod ?? "—"} />
                                     <Detail label={t("ejariNumber")} value={lease.ejariNumber || "—"} />

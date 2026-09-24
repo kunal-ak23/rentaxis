@@ -27,6 +27,16 @@ public class DashboardSummaryDTO {
     private BigDecimal receivedThisMonth; // cash received this month (collect/deposit/clear)
     private BigDecimal receivedLastMonth; // cash received the previous month
 
+    // Collection tile (gap #59): one basis, the due date. receivedThisMonth is
+    // exactly collectedAgainstDueThisMonth + collectedArrears + collectedAdvance.
+    // The headline is collectedForThisMonth of dueThisMonth: it also counts
+    // rows dated this month that cleared earlier (paid ahead).
+    private BigDecimal dueThisMonth; // live rows with a cheque date in the month
+    private BigDecimal collectedForThisMonth; // of those, CLEARED whenever it cleared (the headline)
+    private BigDecimal collectedAgainstDueThisMonth; // of those, cleared this month
+    private BigDecimal collectedArrears; // cleared this month, dated before the month
+    private BigDecimal collectedAdvance; // cleared this month, dated after the month
+
     // Recent Activity
     private List<RecentActivityItem> recentActivity;
 
