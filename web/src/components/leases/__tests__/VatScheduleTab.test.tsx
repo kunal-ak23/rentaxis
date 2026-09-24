@@ -79,4 +79,16 @@ describe("VatScheduleTab", () => {
         await waitFor(() => expect(screen.getByText("تسوية الإنهاء")).toBeInTheDocument());
         expect(screen.getByText("إشعار دائن ضريبي")).toBeInTheDocument();
     });
+
+    it("counts a CONTRACT-timed tax point into the live total (F14-54)", async () => {
+        api.schedule.mockResolvedValue([
+            point({ id: "c1", kind: "CONTRACT", vatAmount: 6000, status: "POSTED" }),
+        ]);
+        api.leaseInvoices.mockResolvedValue([]);
+        renderTab();
+        await waitFor(() => expect(screen.getByTestId("vat-schedule-total")).toHaveTextContent("6,000.00"));
+        // Matches the contract's VAT exactly — not a 6,000.00 difference, which is
+        // what it showed while CONTRACT points were excluded from the sum.
+        expect(screen.getByTestId("vat-schedule-check")).toHaveTextContent("Matches the contract's VAT of 6,000.00");
+    });
 });
