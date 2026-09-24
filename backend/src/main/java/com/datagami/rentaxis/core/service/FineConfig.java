@@ -32,7 +32,8 @@ public record FineConfig(
 
     public BigDecimal amountFor(ChequeFailureReason reason) {
         return switch (reason) {
-            case BOUNCE             -> bounceAmount;
+            // F14-22: a stopped payment and a technical return carry the generic fee.
+            case BOUNCE, STOPPED_PAYMENT, TECHNICAL_RETURN -> bounceAmount;
             case SIGNATURE_MISMATCH -> signatureMismatchAmount;
             case ACCOUNT_CLOSED     -> accountClosedAmount;
         };

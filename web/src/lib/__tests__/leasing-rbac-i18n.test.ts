@@ -154,7 +154,7 @@ describe("accounting i18n parity", () => {
     });
 
     it("carries every ChequeFailureReason value under Cheques.failureReasons", () => {
-        for (const r of ["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED"]) {
+        for (const r of ["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"]) {
             expect(en.Cheques.failureReasons).toHaveProperty(r);
             expect(ar.Cheques.failureReasons).toHaveProperty(r);
         }

@@ -47,7 +47,7 @@ export type ChequeStatus =
   | "RETURNED"
   | "ONLINE_PENDING";
 
-export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED";
+export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED" | "STOPPED_PAYMENT" | "TECHNICAL_RETURN";
 
 export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER";
 
@@ -808,6 +808,12 @@ export type ChequeActionInput = {
   notes?: string | null;
   failureReason?: ChequeFailureReason | null;
   debitAccountId?: string | null;
+  /**
+   * F14-20: a bank statement already covers this date on the row's account —
+   * `bank.statementCovers` refuses the action unless the user confirms the
+   * entry is genuinely not on that statement.
+   */
+  notOnStatement?: boolean;
 };
 
 /** DepositBatchRequest — the day's deposit run. */
@@ -824,6 +830,8 @@ export type ClearBatchInput = {
   chequeIds: string[];
   clearingDate?: string | null;
   narration?: string | null;
+  /** F14-20: see {@link ChequeActionInput.notOnStatement}. */
+  notOnStatement?: boolean;
 };
 
 /** ReplaceChequeRequest — what the renter handed over after a bounce. */
