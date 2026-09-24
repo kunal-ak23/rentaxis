@@ -166,11 +166,23 @@ class PaymentRunControllerIT extends AbstractPostgresIT {
         assertThat(preview.get("postable").asBoolean()).isTrue();
         assertThat(preview.get("netPayment").decimalValue()).isEqualByComparingTo("1450.00");
 
-        ResponseEntity<String> posted = call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant, null);
+        // Without the preview's figures: refused.
+        assertThat(call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant, null).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        // Figures that differ from the plan: 409 naming the vendor.
+        com.fasterxml.jackson.databind.node.ObjectNode staleNode = preview.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) staleNode.get("vendors").get(0)).put("netPayment", new BigDecimal("1400.00"));
+        String stale = staleNode.toString();
+        ResponseEntity<String> changed = call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant, stale);
+        assertThat(changed.getStatusCode()).as(changed.getBody()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(changed.getBody()).contains("Gulf AC Services LLC: net payment 1,400.00 → 1,450.00");
+        ResponseEntity<String> posted = call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant,
+                preview.toString());
         assertThat(posted.getStatusCode()).as(posted.getBody()).isEqualTo(HttpStatus.OK);
         assertThat(json(posted).get("status").asText()).isEqualTo("POSTED");
         // A second submission answers the same, and posts nothing more.
-        ResponseEntity<String> again = call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant, null);
+        ResponseEntity<String> again = call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", accountant,
+                preview.toString());
         assertThat(again.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(json(again).get("items").get(0).get("bpvId").asText())
                 .isEqualTo(json(posted).get("items").get(0).get("bpvId").asText());
@@ -191,7 +203,8 @@ class PaymentRunControllerIT extends AbstractPostgresIT {
                 runBody("CHEQUE", "2026-09-20", "000031"));
         assertThat(created.getStatusCode()).as(created.getBody()).isEqualTo(HttpStatus.CREATED);
         String id = json(created).get("id").asText();
-        assertThat(call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", superAdmin, null).getStatusCode())
+        String preview = call(HttpMethod.GET, "/api/v1/finance/payment-runs/" + id + "/preview", superAdmin, null).getBody();
+        assertThat(call(HttpMethod.POST, "/api/v1/finance/payment-runs/" + id + "/post", superAdmin, preview).getStatusCode())
                 .isEqualTo(HttpStatus.OK);
 
         JsonNode register = json(call(HttpMethod.GET, "/api/v1/finance/issued-cheques?status=ISSUED", tenantAdmin, null));

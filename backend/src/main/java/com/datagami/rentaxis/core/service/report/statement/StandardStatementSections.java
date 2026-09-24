@@ -379,7 +379,8 @@ public final class StandardStatementSections {
      *       section 7 is the sub-ledger, so a supplier PDC counts when its payment
      *       is allocated (the BPV's date), not when the bank pays it. A note says
      *       so whenever a counted payment is a cheque not yet presented at
-     *       {@code to}; the bank side of that cheque is the BPC, which touches
+     *       {@code to} — read as at {@code to} from its BPC journals and cancel
+     *       date, so re-rendering a closed period gives the same note; the bank side of that cheque is the BPC, which touches
      *       neither this section nor the P&L.</li>
      *   <li><b>Direct:</b> payment vouchers that debit an expense leaf of the
      *       property directly, as before.</li>
@@ -410,7 +411,13 @@ public final class StandardStatementSections {
                    g.gross, g.property_gross,
                    (a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to)) as counted,
                    exists (select 1 from issued_cheques c where c.voucher_id = a.payment_voucher_id
-                             and c.status <> 'CANCELLED' and (c.presented_on is null or c.presented_on > :to)) as unpresented_pdc
+                             and (c.cancelled_on is null or c.cancelled_on > :to)
+                             and not exists (select 1 from journal_entries b
+                                             where b.tenant_id = c.tenant_id and b.source_type = 'ISSUED_CHEQUE'
+                                               and b.source_id = c.id and b.doc_type = 'BPC' and b.entry_date <= :to
+                                               and not exists (select 1 from journal_entries r
+                                                               where r.reversal_of_id = b.id and r.entry_date <= :to))
+                   ) as unpresented_pdc
             from voucher_allocations a
             join vouchers pv on pv.id = a.payment_voucher_id
             join vendors d on d.id = a.vendor_id

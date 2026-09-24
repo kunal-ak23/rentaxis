@@ -71,11 +71,13 @@ public class IssuedChequeService {
     private final NamedParameterJdbcTemplate jdbc;
     private final EntityManager entityManager;
     private final java.time.Clock clock;
+    private final ApOpeningItemRepository openingItems;
 
     public IssuedChequeService(IssuedChequeRepository cheques, VoucherService vouchers, VoucherRepository voucherRepo,
                                PostingService posting, VendorRepository vendors, AccountRepository accounts,
                                JournalEntryRepository entries, TenantDefaultAccountMappingRepository defaults,
-                               NamedParameterJdbcTemplate jdbc, EntityManager entityManager, java.time.Clock clock) {
+                               NamedParameterJdbcTemplate jdbc, EntityManager entityManager, java.time.Clock clock,
+                               ApOpeningItemRepository openingItems) {
         this.cheques = cheques;
         this.vouchers = vouchers;
         this.voucherRepo = voucherRepo;
@@ -87,6 +89,12 @@ public class IssuedChequeService {
         this.jdbc = jdbc;
         this.entityManager = entityManager;
         this.clock = clock;
+        this.openingItems = openingItems;
+    }
+
+    /** The AP open item a cancelled cut-over cheque leaves on its vendor (PR #352 review P3-7). */
+    public static String cancelledChequeItemNumber(String chequeNumber) {
+        return "Cancelled cheque " + chequeNumber;
     }
 
     // ------------------------------------------------------------------ reads
@@ -198,6 +206,7 @@ public class IssuedChequeService {
         }
         requireReason(reason);
         if (date == null) throw new BusinessRuleViolationException("Give the date the bank returned the cheque");
+        requireNotFuture(date, "returned");
         if (date.isBefore(c.getPresentedOn())) {
             throw new BusinessRuleViolationException("The cheque was presented on " + c.getPresentedOn().format(DMY)
                     + "; it cannot be returned before that");
@@ -221,6 +230,7 @@ public class IssuedChequeService {
         IssuedCheque c = find(id);
         requireReason(reason);
         if (date == null) throw new BusinessRuleViolationException("Give the date the cheque was cancelled");
+        requireNotFuture(date, "cancelled");
         if (c.getVoucherId() != null) {
             requireCancellable(c);
             // The voucher's lock, then this row's (inside reversePayment), then the journal.
@@ -244,6 +254,16 @@ public class IssuedChequeService {
         c.setCancelReason(reason.trim());
         c.setCancelJournalId(jv.getId());
         c.setUpdatedAt(Instant.now());
+        // The vendor is owed the amount again: an open item for it, so aging lists
+        // it, payments can settle it, and the tie-out to the vendor's leaf holds.
+        ApOpeningItem item = new ApOpeningItem();
+        item.setVendorId(vendor.getId());
+        item.setInvoiceNumber(cancelledChequeItemNumber(c.getChequeNumber()));
+        item.setInvoiceDate(date);
+        item.setDueDate(date);
+        item.setAmount(c.getAmount());
+        item.setCreatedBy(currentUserId());
+        openingItems.save(item);
         return dtos(List.of(cheques.saveAndFlush(c))).get(0);
     }
 
@@ -265,6 +285,7 @@ public class IssuedChequeService {
         }
         String no = in.chequeNumber().trim();
         if (no.length() > 50) throw new BusinessRuleViolationException("The cheque number is at most 50 characters");
+        vouchers.lockChequeNumbers(bank.getId());
         if (vouchers.chequeNumberTaken(bank.getId(), no, null)) {
             throw new BusinessRuleViolationException("Cheque " + no + " on " + bank.getName() + " is already issued");
         }
@@ -295,6 +316,14 @@ public class IssuedChequeService {
             throw new BusinessRuleViolationException("Cheque " + c.getChequeNumber() + " is " + c.getStatus()
                     + "; only an ISSUED cut-over cheque can be deleted");
         }
+        // Presented and then unpresented: its BPC and the reversal still name it.
+        Long journals = jdbc.queryForObject("""
+                select count(*) from journal_entries where tenant_id = :t and source_type = 'ISSUED_CHEQUE'
+                  and source_id = :id""", new MapSqlParameterSource("t", requireTenant()).addValue("id", id), Long.class);
+        if (journals != null && journals > 0) {
+            throw new BusinessRuleViolationException("Cheque " + c.getChequeNumber()
+                    + " has journals (it was presented); it is kept for its history. Cancel it instead.");
+        }
         cheques.delete(c);
     }
 
@@ -307,6 +336,14 @@ public class IssuedChequeService {
         }
         if (c.getStatus() == IssuedCheque.Status.CANCELLED) {
             throw new BusinessRuleViolationException("Cheque " + c.getChequeNumber() + " is already cancelled");
+        }
+    }
+
+    /** PR #352 review P3-8: like presentation, a return or a cancellation has happened, so it is not in the future. */
+    private void requireNotFuture(LocalDate date, String what) {
+        if (date.isAfter(today())) {
+            throw new BusinessRuleViolationException("A cheque cannot be " + what + " in the future ("
+                    + date.format(DMY) + ")");
         }
     }
 

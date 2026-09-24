@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.payables;
 import com.datagami.rentaxis.api.dto.payables.*;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.RunChangedException;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.ledger.EntryNumberService;
 import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
@@ -213,13 +214,23 @@ public class PaymentRunService {
         return plan(run, items.findByRunId(id)).toDto(run);
     }
 
+    /**
+     * Post what the preview showed. {@code approved} is the preview's per-vendor
+     * net, cheque number and item payments (PR #352 review P2-1); the plan is
+     * recomputed under the locks and any difference — an advance applied
+     * elsewhere, a new advance, shifted cheque numbers — refuses the whole run
+     * with 409 and a per-vendor diff, so nothing is paid that was not approved.
+     */
     @Transactional
-    public PaymentRunDTO post(UUID id) {
+    public PaymentRunDTO post(UUID id, PostRunRequestDTO approved) {
         requireTenant();
         PaymentRun run = lockRun(id);
         // A double submission waited on the lock above and finds the work done.
         if (run.getStatus() == PaymentRun.Status.POSTED) return dto(run);
         requireDraft(run);
+        if (approved == null || approved.vendors() == null) {
+            throw new BusinessRuleViolationException("Preview the run and post what the preview shows");
+        }
         List<PaymentRunItem> its = items.findByRunId(id);
         if (its.isEmpty()) throw new BusinessRuleViolationException("Payment run " + run.getRunNumber() + " has no items");
 
@@ -243,6 +254,7 @@ public class PaymentRunService {
             throw new BusinessRuleViolationException("Payment run " + run.getRunNumber() + " cannot be posted: "
                     + errors.stream().map(PaymentRunPreviewDTO.Problem::message).collect(Collectors.joining("; ")));
         }
+        requireAsPreviewed(plan, approved);
 
         for (VendorPlan vp : plan.vendors()) {
             for (AdvanceUse use : vp.uses()) {
@@ -273,35 +285,60 @@ public class PaymentRunService {
         return dto(runs.saveAndFlush(run));
     }
 
+    /** Most UAE bank upload templates cap the payment reference at 35 characters (SWIFT narrative line). */
+    public static final int DEFAULT_REFERENCE_LIMIT = 35;
+
+    /** A bank file and what it had to shorten. */
+    public record BankFile(byte[] body, List<String> warnings) { }
+
     /**
-     * The bank upload CSV (spec §2 step 5): one row per vendor payment still
-     * POSTED. Vendor names, banks and references are user-typed, so every cell
-     * goes through {@link ReportCsv#encode}'s formula-injection escaping.
+     * The bank upload CSV (spec §2 step 5): one row per payment the run still
+     * pays — the run's vouchers that are POSTED, including the replacement of an
+     * amended one (PR #352 review P3-11). The reference is
+     * {@code <run number>/<voucher number>}, cut to {@code referenceLimit}
+     * characters with a warning. Vendor names, banks and references are
+     * user-typed, so every cell goes through {@link ReportCsv#encode}'s
+     * formula-injection escaping; {@code bom} false leaves out the byte-order mark.
      */
     @Transactional(readOnly = true)
-    public byte[] bankFile(UUID id) {
+    public BankFile bankFile(UUID id, boolean bom, int referenceLimit) {
         requireTenant();
         PaymentRun run = find(id);
         if (run.getStatus() != PaymentRun.Status.POSTED) {
             throw new BusinessRuleViolationException("The bank file is ready once the run is posted");
         }
+        int limit = referenceLimit <= 0 ? DEFAULT_REFERENCE_LIMIT : referenceLimit;
         List<List<String>> rows = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         rows.add(List.of("Vendor", "IBAN", "Bank", "Account number", "Amount", "Reference", "Voucher", "Cheque number"));
-        List<UUID> bpvIds = items.findByRunId(id).stream().map(PaymentRunItem::getBpvId).filter(Objects::nonNull)
-                .distinct().toList();
-        List<Voucher> paid = voucherRepo.findAllById(bpvIds).stream()
-                .filter(v -> v.getStatus() == VoucherStatus.POSTED)
-                .sorted(Comparator.comparing(v -> v.getVendor().getNameEn(), String.CASE_INSENSITIVE_ORDER))
-                .toList();
-        for (Voucher v : paid) {
-            v.getLines().size();
+        for (Voucher v : paidBy(run)) {
             Vendor d = v.getVendor();
             BigDecimal amount = v.getLines().stream().map(VoucherLine::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            String reference = reference(run, v);
+            if (reference.length() > limit) {
+                warnings.add("Reference " + reference + " is longer than " + limit + " characters; the file has "
+                        + reference.substring(0, limit));
+                reference = reference.substring(0, limit);
+            }
             rows.add(List.of(nz(d.getNameEn()), nz(d.getIban()), nz(d.getBankName()), nz(d.getBankAccountNumber()),
-                    amount.setScale(2, RoundingMode.HALF_UP).toPlainString(), run.getRunNumber() + "/" + nz(d.getNameEn()),
+                    amount.setScale(2, RoundingMode.HALF_UP).toPlainString(), reference,
                     nz(v.getVoucherNumber()), nz(v.getChequeNumber())));
         }
-        return ReportCsv.encode(rows);
+        return new BankFile(ReportCsv.encode(rows, bom), warnings);
+    }
+
+    static String reference(PaymentRun run, Voucher v) {
+        return run.getRunNumber() + "/" + nz(v.getVoucherNumber());
+    }
+
+    /** The run's vouchers still POSTED — an amended one's replacement carries the run id — by vendor name. */
+    private List<Voucher> paidBy(PaymentRun run) {
+        return entityManager.createQuery("""
+                        select v from Voucher v where v.paymentRunId = :run and v.status = :posted""", Voucher.class)
+                .setParameter("run", run.getId()).setParameter("posted", VoucherStatus.POSTED).getResultList().stream()
+                .peek(v -> v.getLines().size())
+                .sorted(Comparator.comparing(v -> v.getVendor().getNameEn(), String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     // ------------------------------------------------------------------ the plan
@@ -461,6 +498,57 @@ public class PaymentRunService {
             out.add(new VendorPlan(vendor, plans, uses, itemsTotal, advance, net, cheque, postDated && cheque != null));
         }
         return new Plan(out, problems, pay, pdc);
+    }
+
+    /** P2-1: the plan under the locks must be the plan the user approved, vendor by vendor. */
+    static void requireAsPreviewed(Plan plan, PostRunRequestDTO approved) {
+        Map<UUID, PostRunRequestDTO.Vendor> seen = new HashMap<>();
+        for (PostRunRequestDTO.Vendor v : approved.vendors()) seen.put(v.vendorId(), v);
+        List<String> diffs = new ArrayList<>();
+        for (VendorPlan vp : plan.vendors()) {
+            String name = vp.vendor().getNameEn();
+            PostRunRequestDTO.Vendor was = seen.remove(vp.vendor().getId());
+            if (was == null) {
+                diffs.add(name + ": not in the preview (now pays " + money(vp.net()) + ")");
+                continue;
+            }
+            List<String> d = new ArrayList<>();
+            if (!same(was.netPayment(), vp.net())) {
+                d.add("net payment " + money(was.netPayment()) + " → " + money(vp.net()));
+            }
+            if (was.advanceApplied() != null && !same(was.advanceApplied(), vp.advance())) {
+                d.add("advance applied " + money(was.advanceApplied()) + " → " + money(vp.advance()));
+            }
+            if (!Objects.equals(blankToNull(was.chequeNumber()), vp.chequeNumber())) {
+                d.add("cheque " + Objects.toString(blankToNull(was.chequeNumber()), "none") + " → "
+                        + Objects.toString(vp.chequeNumber(), "none"));
+            }
+            Map<UUID, BigDecimal> paid = new HashMap<>();
+            for (PostRunRequestDTO.Item i : was.items()) paid.put(i.itemId(), i.paid());
+            for (ItemPlan ip : vp.items()) {
+                BigDecimal before = paid.remove(ip.item().getId());
+                if (before == null || !same(before, ip.paid())) {
+                    String label = ip.open() != null && ip.open().invoiceNumber() != null ? ip.open().invoiceNumber()
+                            : ip.item().getId().toString();
+                    d.add(label + " pays " + (before == null ? "nothing" : money(before)) + " → " + money(ip.paid()));
+                }
+            }
+            if (!paid.isEmpty()) d.add(paid.size() + " previewed item(s) no longer in the run");
+            if (!d.isEmpty()) diffs.add(name + ": " + String.join(", ", d));
+        }
+        if (!seen.isEmpty()) diffs.add(seen.size() + " previewed vendor(s) no longer in the run");
+        if (!diffs.isEmpty()) {
+            throw new RunChangedException("The run changed since the preview; review it again. "
+                    + String.join("; ", diffs));
+        }
+    }
+
+    private static boolean same(BigDecimal a, BigDecimal b) {
+        return a != null && b != null && a.compareTo(b) == 0;
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     // ------------------------------------------------------------------ internals
@@ -644,7 +732,11 @@ public class PaymentRunService {
                 pay == null ? null : pay.getCode(), pay == null ? null : pay.getName(), run.getMethod().name(),
                 run.getChequeDate(), run.getFirstChequeNumber(), run.getNarration(), run.getStatus().name(),
                 run.getCreatedAt(), run.getPostedAt(), sum(its.stream().map(PaymentRunItem::getAmount)),
-                (int) its.stream().map(PaymentRunItem::getVendorId).distinct().count(), out);
+                (int) its.stream().map(PaymentRunItem::getVendorId).distinct().count(), out,
+                run.getStatus() == PaymentRun.Status.POSTED
+                        ? paidBy(run).stream().map(v -> reference(run, v)).filter(r -> r.length() > DEFAULT_REFERENCE_LIMIT)
+                            .map(r -> r + " → " + r.substring(0, DEFAULT_REFERENCE_LIMIT)).toList()
+                        : List.of());
     }
 
     private static UUID requireTenant() {

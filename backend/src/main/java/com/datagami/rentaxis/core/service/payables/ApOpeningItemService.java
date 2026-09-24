@@ -73,7 +73,19 @@ public class ApOpeningItemService {
                 """, new MapSqlParameterSource("t", t),
                 rs -> { ob.put(rs.getObject("vendor_id", UUID.class), rs.getBigDecimal("ob")); });
 
-        Map<UUID, BigDecimal> totals = rows.stream().collect(Collectors.toMap(ApOpeningItem::getVendorId,
+        // A cancelled cut-over cheque's item (IssuedChequeService) did not come from
+        // the vendor's OB line — its money was on PDC payable — so it stays out of
+        // this check while still listed and allocatable.
+        Set<String> fromCancelledCheques = new HashSet<>(jdbc.queryForList("""
+                select vendor_id::text || '|' || cheque_number from issued_cheques
+                where tenant_id = :t and opening and status = 'CANCELLED'""", new MapSqlParameterSource("t", t), String.class));
+        Map<UUID, BigDecimal> totals = rows.stream()
+                .filter(o -> {
+                    String prefix = IssuedChequeService.cancelledChequeItemNumber("");
+                    return !(o.getInvoiceNumber().startsWith(prefix) && fromCancelledCheques.contains(
+                            o.getVendorId() + "|" + o.getInvoiceNumber().substring(prefix.length())));
+                })
+                .collect(Collectors.toMap(ApOpeningItem::getVendorId,
                 ApOpeningItem::getAmount, BigDecimal::add, LinkedHashMap::new));
         Set<UUID> ids = new LinkedHashSet<>(totals.keySet());
         ob.forEach((id, v) -> { if (v.signum() != 0 && (vendorId == null || vendorId.equals(id))) ids.add(id); });

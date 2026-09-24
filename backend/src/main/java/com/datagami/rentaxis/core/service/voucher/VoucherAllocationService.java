@@ -490,6 +490,13 @@ public class VoucherAllocationService {
         return out;
     }
 
+    /** The latest {@code released_on} among this payment's allocations, or null. */
+    LocalDate latestReleaseOfPayment(UUID paymentId) {
+        Date d = jdbc.queryForObject("select max(released_on) from voucher_allocations where tenant_id = :t"
+                + " and payment_voucher_id = :p", params(requireTenant()).addValue("p", paymentId), Date.class);
+        return d == null ? null : d.toLocalDate();
+    }
+
     /** The latest {@code released_on} among the allocations of this payment and of this invoice, or null. */
     private LocalDate latestRelease(UUID paymentId, UUID invoiceId, UUID openingItemId) {
         MapSqlParameterSource p = params(requireTenant()).addValue("p", paymentId);

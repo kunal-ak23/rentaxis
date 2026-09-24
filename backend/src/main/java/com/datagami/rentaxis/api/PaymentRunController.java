@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.payables.PaymentRunCandidatesDTO;
 import com.datagami.rentaxis.api.dto.payables.PaymentRunDTO;
 import com.datagami.rentaxis.api.dto.payables.PaymentRunInputDTO;
 import com.datagami.rentaxis.api.dto.payables.PaymentRunPreviewDTO;
+import com.datagami.rentaxis.api.dto.payables.PostRunRequestDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.payables.PaymentRunService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -91,22 +92,37 @@ public class PaymentRunController {
         return ResponseEntity.ok(runs.preview(id));
     }
 
-    /** All or nothing. A repeated submission of a run already posted returns it unchanged. */
+    /**
+     * All or nothing, and only what the preview showed: the body is the
+     * preview's per-vendor figures; a run that would now post anything else is a
+     * 409 naming each difference. A repeated submission of a run already posted
+     * returns it unchanged.
+     */
     @PostMapping("/{id}/post")
-    public ResponseEntity<PaymentRunDTO> post(@PathVariable UUID id) {
+    public ResponseEntity<PaymentRunDTO> post(@PathVariable UUID id,
+                                              @Valid @RequestBody(required = false) PostRunRequestDTO approved) {
         requireTenantSelected();
-        return ResponseEntity.ok(runs.post(id));
+        return ResponseEntity.ok(runs.post(id, approved));
     }
 
+    /**
+     * The bank upload file. {@code bom=true} adds the UTF-8 byte-order mark (for
+     * opening in Excel); the default leaves it out, as bank portals expect.
+     * References longer than {@code referenceLimit} are cut, and the count is in
+     * {@code X-Reference-Truncated} (the run page lists them).
+     */
     @GetMapping("/{id}/bank-file.csv")
-    public ResponseEntity<byte[]> bankFile(@PathVariable UUID id) {
+    public ResponseEntity<byte[]> bankFile(@PathVariable UUID id,
+                                           @RequestParam(defaultValue = "false") boolean bom,
+                                           @RequestParam(defaultValue = "35") int referenceLimit) {
         requireTenantSelected();
         PaymentRunDTO run = runs.get(id);
-        byte[] body = runs.bankFile(id);
+        PaymentRunService.BankFile file = runs.bankFile(id, bom, referenceLimit);
         return ResponseEntity.ok().contentType(CSV)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"bank-file-"
                         + run.runNumber().replaceAll("[^A-Za-z0-9-]", "-") + ".csv\"")
-                .body(body);
+                .header("X-Reference-Truncated", String.valueOf(file.warnings().size()))
+                .body(file.body());
     }
 
     private static void requireTenantSelected() {
