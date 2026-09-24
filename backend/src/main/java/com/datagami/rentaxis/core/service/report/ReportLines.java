@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service.report;
 
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 
 import java.util.Collection;
 import java.util.Comparator;
@@ -79,6 +80,25 @@ public final class ReportLines {
 
     private static void role(AccountRole r, String en, String ar) {
         LABELS.put(r.name(), new String[]{en, ar});
+    }
+
+    /**
+     * The account type a leaf must have to carry this report line: income roles on
+     * INCOME, expense categories and the two expense roles on EXPENSE, and the
+     * balance-sheet roles on their own side. A line on the wrong type would net an
+     * expense inside "Rental income" (spec review P3-2).
+     */
+    public static AccountType naturalType(String key) {
+        if (key == null) return null;
+        if (key.startsWith("EXP_")) return AccountType.EXPENSE;
+        return switch (AccountRole.valueOf(key)) {
+            case RENTAL_INCOME, ADMIN_FEE, PARKING_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES, RENT_PENALTY,
+                 CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME -> AccountType.INCOME;
+            case DISCOUNT_ALLOWED, ROUNDING_OFF -> AccountType.EXPENSE;
+            case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT -> AccountType.ASSET;
+            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED -> AccountType.LIABILITY;
+            case OPENING_BALANCE_DIFFERENCE -> AccountType.EQUITY;
+        };
     }
 
     /** Every key the Chart of Accounts picker offers, roles first. */

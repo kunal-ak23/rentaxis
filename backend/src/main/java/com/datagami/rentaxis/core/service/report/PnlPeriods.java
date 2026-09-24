@@ -11,8 +11,9 @@ import java.time.temporal.ChronoUnit;
  *       range of whole calendar months (a month, a quarter, a year) compares with
  *       the same number of whole months before it; any other range compares with
  *       the same number of days ending on {@code from − 1}.</li>
- *   <li>{@code LAST_YEAR}: the same dates one year earlier; 29 February maps to
- *       28 February.</li>
+ *   <li>{@code LAST_YEAR}: the same dates one year earlier — whole months by
+ *       twelve months to the month's end, other ranges by a year (29 February
+ *       maps to 28 February).</li>
  * </ul>
  */
 public final class PnlPeriods {
@@ -28,8 +29,22 @@ public final class PnlPeriods {
         return switch (compare) {
             case NONE -> null;
             case PREVIOUS -> previous(from, to);
-            case LAST_YEAR -> new Period(from.minusYears(1), to.minusYears(1));
+            case LAST_YEAR -> lastYear(from, to);
         };
+    }
+
+    /**
+     * The same dates a year earlier. Whole months shift by twelve months and end
+     * on the month's last day, so Feb 2025 compares with 1–29 Feb 2024 and a
+     * Mar–Feb fiscal year does not lose 29 February; other ranges shift by a year
+     * (29 February → 28 February).
+     */
+    static Period lastYear(LocalDate from, LocalDate to) {
+        if (isWholeMonths(from, to)) {
+            LocalDate end = to.minusMonths(12);
+            return new Period(from.minusMonths(12), end.withDayOfMonth(end.lengthOfMonth()));
+        }
+        return new Period(from.minusYears(1), to.minusYears(1));
     }
 
     static Period previous(LocalDate from, LocalDate to) {

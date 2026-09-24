@@ -203,16 +203,43 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
              join accounts a on a.id = l.account_id
         where l.tenant_id = :tenantId and e.entry_date between :from and :to
           and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
-          and l.account_id in (:accountIds)
+          and (:allAccounts or l.account_id in (:accountIds))
           and (:mode = 'ALL'
                or (:mode = 'UNASSIGNED' and coalesce(l.property_id, a.property_id) is null)
-               or (:mode = 'PROPERTY' and coalesce(l.property_id, a.property_id) = cast(:propertyId as uuid)))
+               or (:mode = 'PROPERTY' and coalesce(l.property_id, a.property_id) = cast(:propertyId as uuid))
+               or (:mode = 'SCOPE' and (coalesce(l.property_id, a.property_id) is null
+                                        or coalesce(l.property_id, a.property_id) in (:scopeIds))))
         order by e.entry_date, e.created_at, e.entry_number, l.line_no
         limit :limit
         """, nativeQuery = true)
     List<PnlLineRow> pnlLines(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
-                              @Param("accountIds") Collection<UUID> accountIds, @Param("mode") String mode,
-                              @Param("propertyId") UUID propertyId, @Param("limit") int limit);
+                              @Param("allAccounts") boolean allAccounts, @Param("accountIds") Collection<UUID> accountIds,
+                              @Param("mode") String mode, @Param("propertyId") UUID propertyId,
+                              @Param("scopeIds") Collection<UUID> scopeIds, @Param("limit") int limit);
+
+    /**
+     * The check row for a report narrowed to some properties: the same net
+     * movement, over those properties plus Unassigned — exactly what its Total
+     * column claims to add up. Independent of the fold that builds the columns.
+     */
+    @Query(value = """
+        select coalesce(sum(l.credit),0) - coalesce(sum(l.debit),0)
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
+          and (coalesce(l.property_id, a.property_id) is null
+               or coalesce(l.property_id, a.property_id) in (:propertyIds))
+        """, nativeQuery = true)
+    BigDecimal pnlNetMovementFor(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                                 @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /** Whether this tenant has any journal line whose effective property is this id (a deleted property's column). */
+    @Query(value = """
+        select exists (select 1 from journal_lines l join accounts a on a.id = l.account_id
+                       where l.tenant_id = :tenantId and coalesce(l.property_id, a.property_id) = :propertyId)
+        """, nativeQuery = true)
+    boolean hasLinesForProperty(@Param("tenantId") UUID tenantId, @Param("propertyId") UUID propertyId);
 
     interface MovementRow { UUID getAccountId(); String getDocType(); String getChequeMode(); BigDecimal getDebit(); BigDecimal getCredit(); }
 

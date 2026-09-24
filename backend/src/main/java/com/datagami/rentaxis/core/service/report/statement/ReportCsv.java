@@ -51,6 +51,7 @@ public final class ReportCsv {
         if (r.allocation() != null) {
             out.add(plainRow(StatementLabels.of("pnl.allocated", l), r.allocation().allocated(), r.columns(), prior));
             out.add(plainRow(StatementLabels.of("pnl.noiAfter", l), r.allocation().noiAfter(), r.columns(), prior));
+            out.add(List.of("", StatementLabels.of("pnl.allocatedOthers", l), plain(r.allocation().allocatedToOthers())));
         }
         if (r.check() != null) {
             out.add(List.of("", StatementLabels.of("pnl.check", l), plain(r.check().difference())));

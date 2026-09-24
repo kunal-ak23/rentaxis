@@ -76,12 +76,20 @@ public class AccountService {
         }
     }
 
-    /** Null for blank; the key itself when known; refused otherwise. */
-    public static String normaliseReportLine(String reportLine) {
+    /**
+     * Null for blank; the key itself when known and natural for the account type
+     * ({@link ReportLines#naturalType}); refused otherwise.
+     */
+    public static String normaliseReportLine(String reportLine, AccountType accountType) {
         if (reportLine == null || reportLine.isBlank()) return null;
         String key = reportLine.strip();
         if (!ReportLines.isKnown(key)) {
             throw new BusinessRuleViolationException("Unknown report line '" + key + "'. Use one of: " + ReportLines.knownList());
+        }
+        AccountType natural = ReportLines.naturalType(key);
+        if (accountType != null && natural != accountType) {
+            throw new BusinessRuleViolationException("Report line " + key + " belongs on an " + natural
+                    + " account, not " + accountType);
         }
         return key;
     }
@@ -159,6 +167,7 @@ public class AccountService {
         if (account.getName() == null && account.getNameEn() != null) {
             account.setName(account.getNameEn());
         }
+        account.setReportLine(normaliseReportLine(account.getReportLine(), account.getAccountType()));
         return repository.save(account);
     }
 
@@ -241,7 +250,7 @@ public class AccountService {
         }
         existing.setProperty(resolveProperty(updates.propertyId()));
         if (updates.reportLine() != null) {
-            existing.setReportLine(normaliseReportLine(updates.reportLine()));
+            existing.setReportLine(normaliseReportLine(updates.reportLine(), existing.getAccountType()));
         }
         return repository.save(existing);
     }

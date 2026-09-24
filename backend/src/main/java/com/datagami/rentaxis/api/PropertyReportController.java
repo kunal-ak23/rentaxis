@@ -17,6 +17,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,14 +59,16 @@ public class PropertyReportController {
         this.users = users;
     }
 
-    public record ReportLineOption(String key, String labelEn, String labelAr) { }
+    /** accountType: the only account type the line may be set on. */
+    public record ReportLineOption(String key, String labelEn, String labelAr, String accountType) { }
 
     /** The keys the Chart of Accounts "Report line" picker offers. */
     @GetMapping("/report-lines")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public List<ReportLineOption> reportLines() {
         return ReportLines.known().stream()
-                .map(k -> new ReportLineOption(k, ReportLines.labelEn(k), ReportLines.labelAr(k))).toList();
+                .map(k -> new ReportLineOption(k, ReportLines.labelEn(k), ReportLines.labelAr(k),
+                        ReportLines.naturalType(k).name())).toList();
     }
 
     @GetMapping("/property-pl")
@@ -89,14 +93,22 @@ public class PropertyReportController {
         return file(body, CSV, "property-pl-" + from + "-" + to + ".csv");
     }
 
-    /** The lines behind one P&L cell; column is a property id, UNASSIGNED or TOTAL. */
-    @GetMapping("/property-pl/lines")
-    public PnlLinesDTO propertyPlLines(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam String column,
-            @RequestParam List<UUID> accountIds) {
-        return pnl.lines(from, to, column, accountIds);
+    /**
+     * The figure a drill-down asks for, by key: a row ({@code rowKey}), a group
+     * subtotal ({@code groupId}) or NOI (neither), in one column (a property id,
+     * UNASSIGNED or TOTAL), over the report's selection ({@code propertyIds}).
+     */
+    public record LinesRequest(LocalDate from, LocalDate to, String column, String rowKey, UUID groupId,
+                               List<UUID> propertyIds) { }
+
+    /**
+     * The lines behind one P&L figure. POST with the figure named by key rather
+     * than a GET listing every leaf: a NOI over hundreds of leaves would overrun
+     * the request-line limit. Read-only all the same.
+     */
+    @PostMapping("/property-pl/lines")
+    public PnlLinesDTO propertyPlLines(@RequestBody LinesRequest r) {
+        return pnl.lines(r.from(), r.to(), r.column(), r.rowKey(), r.groupId(), r.propertyIds());
     }
 
     @GetMapping("/property-statement")

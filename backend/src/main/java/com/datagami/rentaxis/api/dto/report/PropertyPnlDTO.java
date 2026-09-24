@@ -46,15 +46,21 @@ public record PropertyPnlDTO(
                       Map<String, Amount> cells) { }
 
     /**
-     * Report-only spread of the Unassigned column's net cost (expenses − income)
-     * over the property columns. Nothing is posted. basisUsed differs from basis
+     * Report-only spread of the Unassigned net cost (expenses − income) over every
+     * property of the tenant by the basis; {@code allocated} holds the shares of the
+     * properties on the report and {@code allocatedToOthers} the rest, so a subset
+     * never carries the whole cost. Nothing is posted. basisUsed differs from basis
      * when the basis had no weight (no units, no rent) and the spread fell back to
      * equal shares.
      */
     public record Allocation(String basis, String basisUsed, BigDecimal unassignedCost,
-                             Map<String, BigDecimal> allocated, Map<String, BigDecimal> noiAfter) { }
+                             Map<String, BigDecimal> allocated, Map<String, BigDecimal> noiAfter,
+                             BigDecimal allocatedToOthers) { }
 
-    /** Σ every column including Unassigned against the tenant-wide ledger movement; difference is 0 unless the query is wrong. */
+    /**
+     * The displayed Total column's NOI (reportNet) against the ledger's net
+     * movement over the same scope from an independent query (ledgerNet).
+     */
     public record Check(BigDecimal ledgerNet, BigDecimal reportNet, BigDecimal difference, boolean ok) { }
 
     /** Lines whose own property differs from their account's property: they count under the line's property. */

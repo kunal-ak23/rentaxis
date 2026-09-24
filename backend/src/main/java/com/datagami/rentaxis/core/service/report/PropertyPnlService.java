@@ -160,9 +160,13 @@ public class PropertyPnlService {
         Map<String, Map<String, BigDecimal>> now = fold(current, byId, columnOf);
         Map<String, Map<String, BigDecimal>> before = fold(previous, byId, columnOf);
 
-        // Row metadata, from every account seen in either period.
+        // Row metadata, from every account seen in either period — in account-code
+        // order, so a row spanning several leaves always takes the same group.
         Map<String, RowMeta> meta = new LinkedHashMap<>();
-        for (PnlCellRow r : concat(current, previous)) {
+        List<PnlCellRow> seen = concat(current, previous);
+        seen.sort(Comparator.comparing((PnlCellRow r) -> byId.containsKey(r.getAccountId())
+                ? byId.get(r.getAccountId()).getCode() : "").thenComparing(r -> r.getAccountId().toString()));
+        for (PnlCellRow r : seen) {
             Account a = byId.get(r.getAccountId());
             if (a == null) continue;
             String key = rowKey(a);
@@ -215,10 +219,15 @@ public class PropertyPnlService {
         Map<String, BigDecimal> noiBefore = minus(incomeBefore, expenseBefore, columns);
 
         Allocation allocation = basis == Basis.NONE ? null
-                : allocate(basis, propertyKeys, noiNow, now, tenantId);
-        Check check = scoped ? null : check(tenantId, from, to, current);
+                : allocate(basis, propertyKeys, noiNow, current, byId, tenantId);
+        Check check = scoped ? null : checkOf(
+                money(Objects.requireNonNullElse(propertyIds == null || propertyIds.isEmpty()
+                        ? lines.pnlNetMovement(tenantId, from, to)
+                        : lines.pnlNetMovementFor(tenantId, from, to, propertyColumnIds), BigDecimal.ZERO)),
+                money(noiNow.getOrDefault(PropertyPnlDTO.TOTAL, BigDecimal.ZERO)));
+        // Only the lines behind the columns on the report: a subset leaves the others out.
         long mismatches = current.stream()
-                .filter(r -> !scoped || (r.getPropertyId() != null && columnSet.contains(r.getPropertyId())))
+                .filter(r -> r.getPropertyId() != null && columnSet.contains(r.getPropertyId()))
                 .mapToLong(PnlCellRow::getMismatchLines).sum();
 
         return new PropertyPnlDTO(from, to, cmp.name(),
@@ -233,31 +242,57 @@ public class PropertyPnlService {
     // ------------------------------------------------------------------ drill-down
 
     /**
-     * The journal lines behind one cell. {@code column} is a property id,
+     * The journal lines behind one figure. {@code column} is a property id,
      * {@code UNASSIGNED} or {@code TOTAL}; a property manager may name only an
-     * assigned property.
+     * assigned property. The figure is named by key, not by account ids, so a NOI
+     * or group total over hundreds of leaves stays a short request: {@code rowKey}
+     * (a report line or account id) for one row, {@code groupId} for a group
+     * subtotal, neither for NOI. {@code propertyIds} is the report's selection, so
+     * a TOTAL drill lists exactly what the Total column adds up.
      */
-    public PnlLinesDTO lines(LocalDate from, LocalDate to, String column, Collection<UUID> accountIds) {
+    public PnlLinesDTO lines(LocalDate from, LocalDate to, String column, String rowKey, UUID groupId,
+                             Collection<UUID> propertyIds) {
         UUID tenantId = requireTenant();
         requireRange(from, to);
-        if (accountIds == null || accountIds.isEmpty()) {
-            throw new BusinessRuleViolationException("accountIds is required");
-        }
         String mode;
         UUID propertyId = null;
+        List<UUID> scopeIds = List.of();
+        boolean scoped = scope.isScoped();
         if (PropertyPnlDTO.UNASSIGNED.equals(column) || PropertyPnlDTO.TOTAL.equals(column)) {
-            if (scope.isScoped()) throw new NotFoundException("Property not found");
-            mode = PropertyPnlDTO.UNASSIGNED.equals(column) ? "UNASSIGNED" : "ALL";
+            if (scoped) throw new NotFoundException("Property not found");
+            if (PropertyPnlDTO.UNASSIGNED.equals(column)) {
+                mode = "UNASSIGNED";
+            } else if (propertyIds == null || propertyIds.isEmpty()) {
+                mode = "ALL";
+            } else {
+                for (UUID id : propertyIds) requireProperty(tenantId, id);
+                mode = "SCOPE";
+                scopeIds = List.copyOf(new LinkedHashSet<>(propertyIds));
+            }
         } else {
             try {
                 propertyId = UUID.fromString(column);
             } catch (IllegalArgumentException | NullPointerException e) {
                 throw new BusinessRuleViolationException("column must be a property id, UNASSIGNED or TOTAL");
             }
-            requireProperty(tenantId, propertyId);
+            requireDrillableProperty(tenantId, propertyId, scoped);
             mode = "PROPERTY";
         }
-        List<PnlLineRow> raw = lines.pnlLines(tenantId, from, to, accountIds, mode, propertyId, MAX_DRILL_LINES + 1);
+
+        Map<UUID, Account> byId = accountsById(tenantId);
+        List<Account> pnlAccounts = byId.values().stream()
+                .filter(a -> a.getAccountType() == AccountType.INCOME || a.getAccountType() == AccountType.EXPENSE)
+                .toList();
+        boolean all = rowKey == null && groupId == null;
+        List<UUID> accountIds = all ? List.of() : pnlAccounts.stream()
+                .filter(a -> rowKey != null ? rowKey.equals(rowKey(a)) : groupId.equals(levelTwo(a, byId).getId()))
+                .map(Account::getId).toList();
+        if (!all && accountIds.isEmpty()) return new PnlLinesDTO(List.of(), BigDecimal.ZERO, BigDecimal.ZERO, false);
+
+        // An IN list cannot be empty in SQL; the placeholder never matches (the flags decide).
+        List<UUID> none = List.of(new UUID(0, 0));
+        List<PnlLineRow> raw = lines.pnlLines(tenantId, from, to, all, all ? none : accountIds, mode, propertyId,
+                scopeIds.isEmpty() ? none : scopeIds, MAX_DRILL_LINES + 1);
         boolean truncated = raw.size() > MAX_DRILL_LINES;
         if (truncated) raw = raw.subList(0, MAX_DRILL_LINES);
         BigDecimal dr = BigDecimal.ZERO, cr = BigDecimal.ZERO;
@@ -270,6 +305,18 @@ public class PropertyPnlService {
                     r.getDebit(), r.getCredit(), r.getLinePropertyId(), r.getAccountPropertyId()));
         }
         return new PnlLinesDTO(out, dr, cr, truncated);
+    }
+
+    /**
+     * As {@link #requireProperty}, except that a tenant-wide caller may drill a
+     * column whose property row is gone but whose lines are still this tenant's
+     * (the deleted-property column). A manager still needs the assignment.
+     */
+    private void requireDrillableProperty(UUID tenantId, UUID propertyId, boolean scoped) {
+        scope.requireCanAccessProperty(propertyId);
+        if (!properties.findByTenantIdAndIdIn(tenantId, List.of(propertyId)).isEmpty()) return;
+        if (!scoped && lines.hasLinesForProperty(tenantId, propertyId)) return;
+        throw new NotFoundException("Property not found");
     }
 
     // ------------------------------------------------------------------ scope
@@ -307,10 +354,13 @@ public class PropertyPnlService {
         return out.stream().sorted(Comparator.comparing(p -> Objects.toString(p.getNameEn(), ""), String.CASE_INSENSITIVE_ORDER)).toList();
     }
 
+    /** A column for a property whose row is gone but whose lines remain. */
     private static Property placeholder(UUID id) {
         Property p = new Property();
         p.setId(id);
-        p.setNameEn(id.toString());
+        String shortId = id.toString().substring(0, 8);
+        p.setNameEn("Deleted property " + shortId);
+        p.setNameAr("عقار محذوف " + shortId);
         return p;
     }
 
@@ -420,35 +470,69 @@ public class PropertyPnlService {
 
     // ------------------------------------------------------------------ allocation, check
 
-    private Allocation allocate(Basis basis, List<String> propertyKeys, Map<String, BigDecimal> noiNow,
-                                Map<String, Map<String, BigDecimal>> now, UUID tenantId) {
-        BigDecimal unassignedCost = money(noiNow.getOrDefault(PropertyPnlDTO.UNASSIGNED, BigDecimal.ZERO).negate());
+    /**
+     * Spreads the tenant's whole Unassigned net cost over EVERY property by the
+     * basis, then reports the shares of the properties on the report; whatever
+     * falls to the others is {@code allocatedToOthers}. Spreading over the shown
+     * columns only would load one selected building with the whole head office.
+     */
+    private Allocation allocate(Basis basis, List<String> shownKeys, Map<String, BigDecimal> noiNow,
+                                List<PnlCellRow> current, Map<UUID, Account> byId, UUID tenantId) {
+        BigDecimal unassignedNet = current.stream().filter(r -> r.getPropertyId() == null)
+                .map(r -> r.getCredit().subtract(r.getDebit())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal unassignedCost = money(unassignedNet.negate());
+
+        Set<String> everyProperty = new LinkedHashSet<>();
+        properties.findByTenantIdOrderByNameEnAsc(tenantId).forEach(p -> everyProperty.add(p.getId().toString()));
+        current.stream().filter(r -> r.getPropertyId() != null).forEach(r -> everyProperty.add(r.getPropertyId().toString()));
+        everyProperty.addAll(shownKeys);
+
+        Map<String, BigDecimal> rent = new HashMap<>();
+        if (basis == Basis.RENT) {
+            for (PnlCellRow r : current) {
+                Account a = byId.get(r.getAccountId());
+                if (r.getPropertyId() == null || a == null || !AccountRole.RENTAL_INCOME.name().equals(a.getReportLine())) continue;
+                rent.merge(r.getPropertyId().toString(), r.getCredit().subtract(r.getDebit()), BigDecimal::add);
+            }
+        }
+        Map<String, BigDecimal> unitCounts = new HashMap<>();
+        if (basis == Basis.UNITS) {
+            for (Object[] row : units.countByProperty(tenantId)) {
+                unitCounts.put(row[0].toString(), BigDecimal.valueOf(((Number) row[1]).longValue()));
+            }
+        }
         Map<String, BigDecimal> weights = new LinkedHashMap<>();
-        for (String k : propertyKeys) {
+        for (String k : everyProperty) {
             weights.put(k, switch (basis) {
-                case UNITS -> BigDecimal.valueOf(units.findByPropertyIdUnordered(UUID.fromString(k)).stream()
-                        .filter(u -> tenantId.equals(u.getTenantId())).count());
-                case RENT -> now.getOrDefault(AccountRole.RENTAL_INCOME.name(), Map.of()).getOrDefault(k, BigDecimal.ZERO);
+                case UNITS -> unitCounts.getOrDefault(k, BigDecimal.ZERO);
+                case RENT -> rent.getOrDefault(k, BigDecimal.ZERO);
                 case EQUAL, NONE -> BigDecimal.ONE;
             });
         }
         boolean anyWeight = weights.values().stream().anyMatch(w -> w.signum() > 0);
         Basis used = anyWeight ? basis : Basis.EQUAL;
-        Map<String, BigDecimal> allocated = PnlAllocation.largestRemainder(unassignedCost, weights);
+        Map<String, BigDecimal> everyShare = PnlAllocation.largestRemainder(unassignedCost, weights);
+        Map<String, BigDecimal> allocated = new LinkedHashMap<>();
         Map<String, BigDecimal> after = new LinkedHashMap<>();
-        for (String k : propertyKeys) {
-            after.put(k, money(noiNow.getOrDefault(k, BigDecimal.ZERO)).subtract(allocated.getOrDefault(k, BigDecimal.ZERO)));
+        for (String k : shownKeys) {
+            BigDecimal share = everyShare.getOrDefault(k, BigDecimal.ZERO.setScale(2));
+            allocated.put(k, share);
+            after.put(k, money(noiNow.getOrDefault(k, BigDecimal.ZERO)).subtract(share));
         }
-        return new Allocation(basis.name(), used.name(), unassignedCost, allocated, after);
+        BigDecimal shown = allocated.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new Allocation(basis.name(), used.name(), unassignedCost, allocated, after,
+                unassignedCost.subtract(shown));
     }
 
-    /** Σ every cell, every property and Unassigned, against the tenant-wide movement from an independent query. */
-    private Check check(UUID tenantId, LocalDate from, LocalDate to, List<PnlCellRow> current) {
-        BigDecimal ledger = money(Objects.requireNonNullElse(lines.pnlNetMovement(tenantId, from, to), BigDecimal.ZERO));
-        BigDecimal report = money(current.stream().map(r -> r.getCredit().subtract(r.getDebit()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        BigDecimal diff = ledger.subtract(report);
-        return new Check(ledger, report, diff, diff.signum() == 0);
+    /**
+     * The displayed Total's NOI against the ledger's own net movement over the
+     * same scope (every property, or the selected ones plus Unassigned), computed
+     * by a separate query. A fold, sign or bucketing error in the columns shows
+     * as a difference here.
+     */
+    static Check checkOf(BigDecimal ledgerNet, BigDecimal displayedTotal) {
+        BigDecimal diff = ledgerNet.subtract(displayedTotal);
+        return new Check(ledgerNet, displayedTotal, diff, diff.signum() == 0);
     }
 
     // ------------------------------------------------------------------ chart helpers

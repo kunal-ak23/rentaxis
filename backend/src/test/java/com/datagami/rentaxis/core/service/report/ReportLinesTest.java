@@ -40,4 +40,17 @@ class ReportLinesTest {
         }
         assertThat(ReportLines.isKnown("NOPE")).isFalse();
     }
+
+    @Test
+    void eachLineHasTheAccountTypeItMayBeSetOn() {
+        assertThat(ReportLines.naturalType("RENTAL_INCOME")).isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.INCOME);
+        assertThat(ReportLines.naturalType("EXP_CLEANING")).isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE);
+        assertThat(ReportLines.naturalType("BANK")).isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.ASSET);
+        for (String k : ReportLines.known()) assertThat(ReportLines.naturalType(k)).as(k).isNotNull();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> com.datagami.rentaxis.core.service.AccountService
+                        .normaliseReportLine("RENTAL_INCOME", com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE))
+                .hasMessageContaining("INCOME");
+        assertThat(com.datagami.rentaxis.core.service.AccountService
+                .normaliseReportLine("EXP_CLEANING", com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE)).isEqualTo("EXP_CLEANING");
+    }
 }

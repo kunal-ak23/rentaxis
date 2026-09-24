@@ -96,6 +96,17 @@ class PropertyReportControllerIT extends AbstractPostgresIT {
                 JournalSourceType.MANUAL, null, null, List.of(dr(AccountRole.ADVANCE_RENT, a), cr(AccountRole.RENTAL_INCOME, a))));
     }
 
+    /** POST /property-pl/lines for September, one column, a row key or (null) NOI. */
+    @SuppressWarnings("rawtypes")
+    private ResponseEntity<Map> lines(User caller, String column, String rowKey) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("from", "2026-09-01");
+        body.put("to", "2026-09-30");
+        body.put("column", column);
+        if (rowKey != null) body.put("rowKey", rowKey);
+        return http.call(caller, HttpMethod.POST, "/api/v1/finance/reports/property-pl/lines", body);
+    }
+
     @SuppressWarnings("unchecked")
     private static List<String> columnKeys(ResponseEntity<Map> res) {
         return ((List<Map<String, Object>>) res.getBody().get("columns")).stream().map(c -> (String) c.get("key")).toList();
@@ -138,16 +149,11 @@ class PropertyReportControllerIT extends AbstractPostgresIT {
         assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-pl.csv?" + RANGE + "&propertyId=" + palmId)).isEqualTo(404);
         assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-statement?" + RANGE + "&propertyId=" + palmId)).isEqualTo(404);
         assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-statement.pdf?" + RANGE + "&propertyId=" + palmId)).isEqualTo(404);
-        String anyAccount = bankCharges.toString();
-        assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-pl/lines?" + RANGE
-                + "&column=" + palmId + "&accountIds=" + anyAccount)).isEqualTo(404);
-        assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-pl/lines?" + RANGE
-                + "&column=UNASSIGNED&accountIds=" + anyAccount)).isEqualTo(404);
-        assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-pl/lines?" + RANGE
-                + "&column=TOTAL&accountIds=" + anyAccount)).isEqualTo(404);
+        assertThat(lines(pm, palmId, null).getStatusCode().value()).isEqualTo(404);
+        assertThat(lines(pm, "UNASSIGNED", null).getStatusCode().value()).isEqualTo(404);
+        assertThat(lines(pm, "TOTAL", null).getStatusCode().value()).isEqualTo(404);
         // Its own property still works, including the drill-down and the statement.
-        assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-pl/lines?" + RANGE
-                + "&column=" + marina.getId() + "&accountIds=" + anyAccount)).isEqualTo(200);
+        assertThat(lines(pm, marina.getId().toString(), "RENTAL_INCOME").getStatusCode().value()).isEqualTo(200);
         assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/property-statement?" + RANGE + "&propertyId=" + marina.getId())).isEqualTo(200);
         // The CoA picker's list is not a manager's.
         assertThat(http.status(pm, HttpMethod.GET, "/api/v1/finance/reports/report-lines")).isEqualTo(403);
@@ -192,5 +198,32 @@ class PropertyReportControllerIT extends AbstractPostgresIT {
                 "/api/v1/finance/reports/property-pl.csv?" + RANGE + "&compare=PREVIOUS").retrieve().toEntity(byte[].class);
         String text = new String(plCsv.getBody(), StandardCharsets.UTF_8);
         assertThat(text).contains("Rental income").contains("Unassigned").contains("1650.00");
+    }
+
+    /**
+     * A NOI drill over a chart with hundreds of P&L leaves: the figure is named by
+     * key in a POST body, so the request stays small whatever the chart holds.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aNoiDrillOverHundredsOfLeavesIsOneSmallRequest() {
+        TenantContextHolder.setTenantId(tenant);
+        com.datagami.rentaxis.domain.entity.Account group = accountService.getAccountByCode("D-02");
+        java.util.List<UUID> leaves = new java.util.ArrayList<>();
+        for (int i = 0; i < 210; i++) leaves.add(accountService.createLeaf("Overhead " + i, group, null).getId());
+        posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 30), "overheads", Dimensions.none(),
+                JournalSourceType.MANUAL, null, null, List.of(
+                dr(leaves.get(0), new BigDecimal("10.00")), dr(leaves.get(209), new BigDecimal("15.00")),
+                cr(AccountRole.CASH, new BigDecimal("25.00")))));
+        TenantContextHolder.clear();
+
+        User admin = http.user(tenant, UserRole.TENANT_ADMIN);
+        ResponseEntity<Map> res = lines(admin, "TOTAL", null);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        // Marina's and Palm's rent, the 50.00 bank charge, and the two overhead lines.
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) res.getBody().get("lines");
+        assertThat(rows).hasSize(5);
+        ResponseEntity<Map> unassigned = lines(admin, "UNASSIGNED", null);
+        assertThat((List<Object>) unassigned.getBody().get("lines")).hasSize(3);
     }
 }

@@ -125,7 +125,7 @@ public class AccountController {
         a.setAccountSubType(r.accountSubType());
         a.setDescription(r.description());
         a.setGroup(Boolean.TRUE.equals(r.group()));
-        a.setReportLine(AccountService.normaliseReportLine(r.reportLine()));
+        a.setReportLine(r.reportLine());   // validated against the (possibly inherited) type in createAccount
         if (r.parentId() != null) {
             Account p = new Account();
             p.setId(r.parentId());

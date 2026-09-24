@@ -167,7 +167,7 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
                 JournalSourceType.MANUAL, null, null, List.of(dr(cleaning.getFirst(), new BigDecimal("10.00")),
                 cr(AccountRole.CASH, new BigDecimal("10.00")))));
 
-        PnlLinesDTO lines = service.lines(SEP_1, SEP_30, fx.p1.getId().toString(), cleaning);
+        PnlLinesDTO lines = service.lines(SEP_1, SEP_30, fx.p1.getId().toString(), "EXP_CLEANING", null, null);
         assertThat(lines.lines()).hasSize(2);
         assertThat(lines.totalDebit().subtract(lines.totalCredit())).isEqualByComparingTo("3010.00");
 
@@ -180,10 +180,15 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         assertThat(wide.totalDebit()).isEqualByComparingTo("3010.00");
         assertThat(ledger.generalLedger(List.of(), effective)).extracting(AccountLedgerDTO::accountId).contains(cleaning.getFirst());
 
-        PnlLinesDTO unassigned = service.lines(SEP_1, SEP_30, "UNASSIGNED",
-                List.of(fx.bankCharges.getId(), fx.bankInterest.getId()));
+        // NOI of Unassigned (no key): the two shared bank items.
+        PnlLinesDTO unassigned = service.lines(SEP_1, SEP_30, "UNASSIGNED", null, null, null);
         assertThat(unassigned.lines()).hasSize(2);
-        assertThat(service.lines(SEP_1, SEP_30, "TOTAL", cleaning).lines()).hasSize(2);
+        assertThat(service.lines(SEP_1, SEP_30, "TOTAL", "EXP_CLEANING", null, null).lines()).hasSize(2);
+        // A group subtotal, by group id: Direct Expense in September is AN-311, DEWA and the 10.00.
+        PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
+        UUID directExpense = r.groups().stream().filter(g -> g.code().equals("D-01")).findFirst().orElseThrow().groupId();
+        PnlLinesDTO group = service.lines(SEP_1, SEP_30, fx.p1.getId().toString(), null, directExpense, null);
+        assertThat(group.totalDebit().subtract(group.totalCredit())).isEqualByComparingTo("7210.00");
     }
 
     @Test
@@ -199,6 +204,7 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         Map<String, BigDecimal> alloc = r.allocation().allocated();
         assertThat(alloc.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("30.00");
         assertThat(alloc.get(p3.toString())).isEqualByComparingTo("10.00");
+        assertThat(r.allocation().allocatedToOthers()).isEqualByComparingTo("0.00");
         assertThat(r.allocation().noiAfter().get(fx.p1.getId().toString())).isEqualByComparingTo("78981.78");
 
         // By rent: only Marina earns rent, so Marina takes all of it.
@@ -212,6 +218,59 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         // Nothing was posted: the P&L and its check are unchanged by the toggle.
         assertThat(r.noi().get("TOTAL").amount()).isEqualByComparingTo(
                 service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE).noi().get("TOTAL").amount());
+    }
+
+    @Test
+    void aSubsetCarriesOnlyItsOwnShareOfTheSharedCosts() {
+        fx.property("Creek View");
+        posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 30), "Audit fee", Dimensions.none(),
+                JournalSourceType.MANUAL, null, null, List.of(dr(fx.bankCharges.getId(), new BigDecimal("100.00")),
+                cr(AccountRole.CASH, new BigDecimal("100.00")))));
+        String p1 = fx.p1.getId().toString();
+        // Equal over all three properties: Marina's third of 30.00, the rest to the others.
+        PropertyPnlDTO one = service.pnl(SEP_1, SEP_30, List.of(fx.p1.getId()), Compare.NONE, Basis.EQUAL);
+        assertThat(one.allocation().allocated()).containsOnlyKeys(p1);
+        assertThat(one.allocation().allocated().get(p1)).isEqualByComparingTo("10.00");
+        assertThat(one.allocation().allocatedToOthers()).isEqualByComparingTo("20.00");
+        // By rent, Palm (no rent) shown alone takes nothing; Marina elsewhere takes it all.
+        PropertyPnlDTO palm = service.pnl(SEP_1, SEP_30, List.of(fx.p2.getId()), Compare.NONE, Basis.RENT);
+        assertThat(palm.allocation().allocated().get(fx.p2.getId().toString())).isEqualByComparingTo("0.00");
+        assertThat(palm.allocation().allocatedToOthers()).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void theCheckRowComparesTheDisplayedTotalWithTheLedgerForTheSameScope() {
+        fx.role(JournalDocType.CIL, SEP_30, Dimensions.ofProperty(fx.p2.getId()),
+                AccountRole.ADVANCE_RENT, AccountRole.RENTAL_INCOME, "1000.00");
+        PropertyPnlDTO all = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
+        assertThat(all.noi().get("TOTAL").amount()).isEqualByComparingTo("80061.78");
+        assertThat(all.check().ok()).isTrue();
+        // Marina alone: Total = Marina + Unassigned, and the ledger side is scoped the same way.
+        PropertyPnlDTO one = service.pnl(SEP_1, SEP_30, List.of(fx.p1.getId()), Compare.NONE, Basis.NONE);
+        assertThat(one.noi().get("TOTAL").amount()).isEqualByComparingTo("79061.78");
+        assertThat(one.check().ledgerNet()).isEqualByComparingTo("79061.78");
+        assertThat(one.check().ok()).isTrue();
+        // A total that does not tie is flagged with its difference.
+        PropertyPnlDTO.Check broken = PropertyPnlService.checkOf(new BigDecimal("79061.78"), new BigDecimal("80061.78"));
+        assertThat(broken.ok()).isFalse();
+        assertThat(broken.difference()).isEqualByComparingTo("-1000.00");
+    }
+
+    @Test
+    void aSharedLineStaysOffTheHeadersProperty() {
+        VoucherService.VoucherLineInput shared = new VoucherService.VoucherLineInput(
+                fx.bankCharges.getId(), "audit fee", new BigDecimal("40.00"), BigDecimal.ZERO, null, null, true);
+        VoucherService.VoucherLineInput own = new VoucherService.VoucherLineInput(
+                fx.leaf(fx.p1, "EXP_SECURITY"), "guards", new BigDecimal("60.00"), BigDecimal.ZERO, null, null, false);
+        UUID id = vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PISR, SEP_30, fx.vendor.getId(),
+                "SH-1", "shared", fx.p1.getId(), null, null, null, null, List.of(shared, own))).getId();
+        vouchers.post(id);
+        assertThat(vouchers.get(id).getLines()).extracting(com.datagami.rentaxis.domain.entity.VoucherLine::getPropertyId)
+                .containsExactly(null, fx.p1.getId());
+        PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
+        assertThat(row(r, fx.bankCharges.getId().toString(), "UNASSIGNED").amount()).isEqualByComparingTo("90.00");
+        assertThat(row(r, fx.bankCharges.getId().toString(), fx.p1.getId().toString()).amount()).isEqualByComparingTo("0.00");
+        assertThat(row(r, "EXP_SECURITY", fx.p1.getId().toString()).amount()).isEqualByComparingTo("60.00");
     }
 
     @Test
@@ -233,7 +292,7 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         // Naming the other tenant's property is a 404, not an empty column.
         assertThatThrownBy(() -> service.pnl(SEP_1, SEP_30, List.of(b.p1.getId()), Compare.NONE, Basis.NONE))
                 .isInstanceOf(NotFoundException.class);
-        assertThatThrownBy(() -> service.lines(SEP_1, SEP_30, b.p1.getId().toString(), List.of(fx.bankCharges.getId())))
+        assertThatThrownBy(() -> service.lines(SEP_1, SEP_30, b.p1.getId().toString(), null, null, null))
                 .isInstanceOf(NotFoundException.class);
     }
 
