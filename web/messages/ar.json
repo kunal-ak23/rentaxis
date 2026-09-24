@@ -2330,14 +2330,20 @@
       },
       "voucher": {
         "cashNegative": "يحتفظ {account} برصيد {balance} بتاريخ {date}؛ دفع {amount} سيجعل الرصيد {after}.",
+        "refundAlreadyPaid": "تم دفع مبلغ الاسترداد لهذه التسوية عند اعتمادها، فلا يوجد ما يدفع.",
+        "refundOutsideSettlement": "يدفع استرداد التأمين من التسوية: افتح تسوية العقد واستخدم دفع الاسترداد.",
         "refundExceedsOwed": "هذه التسوية مستحق عليها {owed}؛ {amount} أكبر من ذلك.",
         "reverseBeforeDocument": "لا يمكن أن يكون تاريخ العكس قبل {voucher} ({docDate})",
         "reasonRequired": "السبب مطلوب.",
         "voidSettledInvoice": "{voucher} مُسدّد بواسطة دفعة؛ حرّر ذلك التخصيص أو عدّل الدفعة قبل إلغاء هذا السند"
       },
       "cheque": {
+        "noBankForProperty": "لا يوجد حساب بنكي مُعد لهذا العقار. اربط أحد حساباته بحساب بنكي، أو استلم نقدًا.",
         "clearBeforeDeposit": "تم إيداع {row} بتاريخ {deposited}؛ لا يمكن تحصيله بتاريخ {date}",
         "clearBeforeChequeDate": "{row} مؤرخ بـ {chequeDate}؛ لا يمكن تحصيله بتاريخ {date}"
+      },
+      "penalty": {
+        "reverseBeforeCharge": "لا يمكن أن يسبق تاريخ العكس تاريخ فرض الغرامة ({charged})."
       },
       "openingBalances": {
         "locked": "الدفاتر مقفلة حتى {locked}. الأرصدة الافتتاحية مؤرخة بـ {date} ولا يمكن تغييرها أثناء إقفال تلك الفترة.",
@@ -3779,6 +3785,9 @@
         "issuedChequeOtherBank": "الشيك {cheque} مسحوب على حساب بنكي آخر",
         "lineNamesOtherCheque": "البند يذكر الشيك {lineCheque} وليس {cheque}",
         "unknownPostingKind": "نوع قيد غير معروف: {kind}",
+        "noBankForProperty": "لا يوجد حساب بنكي مُعد لهذا العقار: لا ينتمي أي من حسابات هذا البنك إلى العقار ولا هو مشترك.",
+        "leafOfOtherProperty": "هذا الحساب يخص عقارًا آخر.",
+        "reverseBeforeEntry": "لا يمكن أن يسبق تاريخ العكس تاريخ القيد المعكوس.",
         "leafNotInSet": "هذا الحساب ليس ضمن حسابات هذا الحساب البنكي",
         "chooseLeaf": "لهذا الحساب البنكي عدة حسابات في دفتر الأستاذ؛ اختر الحساب المراد الترحيل إليه",
         "mappingRequired": "يلزم تعيين الأعمدة",
@@ -3809,6 +3818,7 @@
       },
       "cheque": {
         "receiveBeforeBooked": "أُدرج {row} في الدفاتر بتاريخ {booked}؛ ولا يمكن استلامه أو تحصيله بتاريخ {date} السابق لذلك. استلمه بتاريخ {booked} أو بعده.",
+        "noBankForProperty": "لا يوجد حساب بنكي مُعد لهذا العقار. اربط أحد حساباته بحساب بنكي، أو استلم نقدًا.",
         "bankLeafNotOwned": "الحساب {account} غير مرتبط بحساب بنكي، فلا يمكن تسوية المبالغ المقيدة فيه أبداً. اربطه بحسابه البنكي أو اختر حساباً آخر."
       },
       "issuedCheque": {

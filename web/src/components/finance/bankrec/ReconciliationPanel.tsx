@@ -57,6 +57,7 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
     const [busy, setBusy] = useState(false);
     const [list, setList] = useState<{ title: string; items: RecItem[] } | null>(null);
     const [confirmingFinalize, setConfirmingFinalize] = useState(false);
+    const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -135,7 +136,7 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                         <DraftEdit rec={rec} busy={busy}
                                    onSave={body => run(() => bankRecApi.updateReconciliation(rec.id, body))} />
                         <button type="button" className={small} disabled={busy} data-testid="rec-discard"
-                                onClick={() => { if (window.confirm(t("discardConfirm"))) run(() => bankRecApi.discardReconciliation(rec.id)); }}>
+                                onClick={() => setConfirmingDiscard(true)}>
                             <Trash2 size={12} />{t("discard")}
                         </button>
                         <Downloads id={rec.id} />
@@ -164,6 +165,20 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                     confirmText={t("finalize")}
                     cancelText={t("cancel")}
                     confirmTestId="rec-finalize-confirm"
+                />
+            )}
+            {rec && (
+                <ConfirmDialog
+                    isOpen={confirmingDiscard}
+                    onClose={() => setConfirmingDiscard(false)}
+                    onConfirm={() => { setConfirmingDiscard(false); run(() => bankRecApi.discardReconciliation(rec.id)); }}
+                    isLoading={busy}
+                    isDestructive
+                    title={t("discard")}
+                    description={t("discardConfirm")}
+                    confirmText={t("discard")}
+                    cancelText={t("cancel")}
+                    confirmTestId="rec-discard-confirm"
                 />
             )}
         </section>

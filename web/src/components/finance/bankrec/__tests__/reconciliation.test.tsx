@@ -118,6 +118,19 @@ describe("the reconciliation statement", () => {
         await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.endsWith("/reconciliations/rec-9/finalize"))).toBe(true));
     });
 
+    it("discards a draft only after the app's confirm dialog (R1 web P3)", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS }, { match: "/reconciliations/rec-9", body: BLOCKED }]);
+        const confirmSpy = vi.spyOn(window, "confirm");
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        fireEvent.click(await screen.findByTestId("rec-discard"));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(screen.getByText("Discard this draft reconciliation? Matches stay as they are.")).toBeInTheDocument();
+        expect(calls.some(c => c.method === "DELETE")).toBe(false);
+        fireEvent.click(screen.getByTestId("rec-discard-confirm"));
+        await waitFor(() => expect(calls.some(c => c.method === "DELETE" && c.url.includes("/reconciliations/rec-9"))).toBe(true));
+        confirmSpy.mockRestore();
+    });
+
     it("blocks Finalize while a check fails and lists the failing ones in its tooltip", async () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS }, { match: "/reconciliations/rec-9", body: BLOCKED }]);
         renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);

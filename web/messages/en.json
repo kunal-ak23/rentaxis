@@ -2330,14 +2330,20 @@
       },
       "voucher": {
         "cashNegative": "{account} holds {balance} on {date}; paying {amount} would leave it at {after}.",
+        "refundAlreadyPaid": "This settlement's refund was paid when it was finalized, so there is nothing left to pay.",
+        "refundOutsideSettlement": "A deposit refund is paid from its settlement: open the lease's settlement and use Pay refund.",
         "refundExceedsOwed": "This settlement owes {owed}; {amount} is more than that.",
         "reverseBeforeDocument": "A reversal cannot be dated before {voucher} ({docDate})",
         "reasonRequired": "A reason is required.",
         "voidSettledInvoice": "{voucher} is settled by a payment; release that allocation or amend the payment before voiding it"
       },
       "cheque": {
+        "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
         "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}"
+      },
+      "penalty": {
+        "reverseBeforeCharge": "A reversal cannot be dated before the penalty was charged ({charged})."
       },
       "openingBalances": {
         "locked": "The books are locked through {locked}. The opening balances are dated {date} and cannot change while that period is locked.",
@@ -3779,6 +3785,9 @@
         "issuedChequeOtherBank": "Cheque {cheque} is drawn on another bank account",
         "lineNamesOtherCheque": "The line names cheque {lineCheque}, not {cheque}",
         "unknownPostingKind": "Unknown posting kind {kind}",
+        "noBankForProperty": "No bank account is set up for this property: none of this bank account's ledger accounts is the property's own or shared.",
+        "leafOfOtherProperty": "That ledger account belongs to another property.",
+        "reverseBeforeEntry": "The reversal cannot be dated before the entry it reverses.",
         "leafNotInSet": "That ledger account is not in this bank account's set",
         "chooseLeaf": "This bank account has several ledger accounts; choose the one to post to",
         "mappingRequired": "A column mapping is required",
@@ -3809,6 +3818,7 @@
       },
       "cheque": {
         "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}.",
+        "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "bankLeafNotOwned": "Ledger account {account} is not attached to a bank account, so money put there could never be reconciled. Attach it to its bank account or choose another."
       },
       "issuedCheque": {
