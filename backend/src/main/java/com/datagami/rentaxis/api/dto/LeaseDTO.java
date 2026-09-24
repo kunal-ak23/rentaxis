@@ -36,6 +36,12 @@ public class LeaseDTO {
     private String propertyName;
     private String propertyCode;
     private boolean hasContract;
+    /**
+     * The contract document the renter is being asked to accept — it changes every
+     * time the contract is regenerated. Accept sends it back so a stale page cannot
+     * accept a version the renter never opened (#79, PR #344 review M5).
+     */
+    private UUID contractDocumentId;
     private Long contractNumber;
     /** "GLA_B1/681" when the property has a code, else the bare number. */
     private String displayContractNumber;

@@ -21,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -1383,6 +1384,18 @@ public class LeaseService {
      */
     @Transactional
     public LeaseDTO acceptLease(UUID leaseId, UUID userId) {
+        return acceptLease(leaseId, userId, null);
+    }
+
+    /**
+     * Accept, bound to the contract document the renter was shown (PR #344 review
+     * M5). Regenerating the contract replaces its document, so a page opened
+     * before that sends the old id and is refused rather than accepting a version
+     * the renter never saw. {@code null} is the pre-binding client (the mobile
+     * apps), which accepts whatever is current.
+     */
+    @Transactional
+    public LeaseDTO acceptLease(UUID leaseId, UUID userId, UUID contractDocumentId) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
@@ -1399,6 +1412,11 @@ public class LeaseService {
             // Accepting twice would move the date the landlord relies on (#79).
             throw new BusinessRuleViolationException("You accepted this contract on "
                     + acceptedOn(lease) + "; it is waiting for your landlord.");
+        }
+        if (contractDocumentId != null && !contractDocumentId.equals(
+                currentContractDocumentId(leaseDocumentRepository.findByLeaseId(leaseId)))) {
+            throw new BusinessRuleViolationException("Your landlord has issued a new version of this contract"
+                    + " since you opened it. Review the current contract, then accept it.");
         }
 
         lease.setRenterAcceptedAt(Instant.now());
@@ -1443,6 +1461,14 @@ public class LeaseService {
         recordEvent(savedLease, previousStatus, LeaseStatus.DRAFT, "Lease rejected by renter");
 
         return mapToDTO(savedLease);
+    }
+
+    /** The current CONTRACT document's id, or null when none has been issued. */
+    private static UUID currentContractDocumentId(List<LeaseDocument> documents) {
+        return documents.stream()
+                .filter(d -> d.getType() == DocumentType.CONTRACT)
+                .map(LeaseDocument::getId)
+                .findFirst().orElse(null);
     }
 
     /** The acceptance day as the landlord's calendar reads it (UAE). */
@@ -1499,7 +1525,9 @@ public class LeaseService {
         dto.setPropertyId(property.getId());
         dto.setPropertyName(property.getNameEn());
         dto.setPropertyCode(property.getCode());
-        dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
+        List<LeaseDocument> documents = leaseDocumentRepository.findByLeaseId(lease.getId());
+        dto.setHasContract(!documents.isEmpty());
+        dto.setContractDocumentId(currentContractDocumentId(documents));
         dto.setContractNumber(lease.getContractNumber());
         dto.setDisplayContractNumber(displayContractNumber(property.getCode(), lease.getContractNumber()));
         dto.setExternalContractRef(lease.getExternalContractRef());

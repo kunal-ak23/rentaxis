@@ -11,6 +11,7 @@
   },
   "MasterData": {
     "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
+    "acceptFailed": "The contract could not be accepted. It may have been updated since you opened it — review the current contract and try again.",
     "acceptLease": "Accept Lease",
     "actions": "Actions",
     "activate": "Activate",

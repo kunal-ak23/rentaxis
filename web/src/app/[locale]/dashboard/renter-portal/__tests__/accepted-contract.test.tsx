@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../messages/en.json";
@@ -28,10 +28,15 @@ const base = {
     startDate: "2026-10-01", endDate: "2027-09-30", status: "PENDING_SIGNATURE", hasContract: true,
 };
 let leases: Array<Record<string, unknown>>;
+let acceptOk = true;
 
 beforeEach(() => {
+    acceptOk = true;
     global.fetch = vi.fn(async (url: RequestInfo | URL) => {
         const href = String(url);
+        if (href.includes("/accept")) {
+            return { ok: acceptOk, status: acceptOk ? 200 : 422, json: async () => ({}) };
+        }
         const body = href.includes("/leases/my-leases")
             ? leases
             : href.includes("/meetings/my")
@@ -76,5 +81,27 @@ describe("Renter portal — accepted contract", () => {
         const note = await screen.findByTestId("lease-accepted");
         expect(note.textContent).toContain("تم القبول في");
         expect(note.textContent).toContain("بانتظار المالك");
+    });
+
+    // PR #344 review M5: accept names the contract version on screen, so a page
+    // opened before the landlord regenerated the contract cannot accept it.
+    it("accepts the contract version it is showing", async () => {
+        leases = [{ ...base, renterAcceptedAt: null, contractDocumentId: "doc-7" }];
+        renderPage();
+        fireEvent.click(await screen.findByText(en.MasterData.acceptLease));
+        const confirm = await screen.findAllByText(en.RenterHome.acceptTitle);
+        fireEvent.click(confirm[confirm.length - 1]);
+        await waitFor(() => expect(vi.mocked(global.fetch)).toHaveBeenCalledWith(
+            "/api/proxy/v1/leases/l1/accept?documentId=doc-7", { method: "PUT" }));
+    });
+
+    it("says so when the server refuses a stale version", async () => {
+        acceptOk = false;
+        leases = [{ ...base, renterAcceptedAt: null, contractDocumentId: "doc-old" }];
+        renderPage();
+        fireEvent.click(await screen.findByText(en.MasterData.acceptLease));
+        const confirm = await screen.findAllByText(en.RenterHome.acceptTitle);
+        fireEvent.click(confirm[confirm.length - 1]);
+        expect((await screen.findByRole("alert")).textContent).toBe(en.MasterData.acceptFailed);
     });
 });

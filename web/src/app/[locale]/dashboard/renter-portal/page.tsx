@@ -29,6 +29,12 @@ type Lease = {
     paymentTerms: number;
     propertyName: string;
     hasContract: boolean;
+    /**
+     * The contract document on screen. Accept sends it back, so a page opened
+     * before the landlord regenerated the contract cannot accept a version the
+     * renter never saw (PR #344 review M5).
+     */
+    contractDocumentId?: string | null;
     /** When the renter accepted the contract; null until then (#79). */
     renterAcceptedAt?: string | null;
 };
@@ -217,7 +223,7 @@ export default function RenterPortalPage() {
         }
     };
 
-    const handleAccept = (id: string) => {
+    const handleAccept = (id: string, contractDocumentId?: string | null) => {
         setConfirmDialog({
             title: tHome("acceptTitle"),
             description: tHome("acceptDescription"),
@@ -225,11 +231,20 @@ export default function RenterPortalPage() {
             isDestructive: false,
             onConfirm: async () => {
                 setConfirmDialog(null);
+                setContractError(null);
                 try {
-                    const res = await fetch(`/api/proxy/v1/leases/${id}/accept`, { method: "PUT" });
-                    if (res.ok) fetchMyLeases();
+                    const query = contractDocumentId
+                        ? `?documentId=${encodeURIComponent(contractDocumentId)}` : "";
+                    const res = await fetch(`/api/proxy/v1/leases/${id}/accept${query}`, { method: "PUT" });
+                    if (!res.ok) {
+                        // A stale version is refused; reload so the card shows
+                        // the contract that is current now.
+                        setContractError(t("acceptFailed"));
+                    }
+                    fetchMyLeases();
                 } catch (err) {
                     console.error(err);
+                    setContractError(t("acceptFailed"));
                 }
             },
         });
@@ -514,7 +529,7 @@ export default function RenterPortalPage() {
                             </div>
                         ) : (<>
                         <button
-                            onClick={() => handleAccept(lease.id)}
+                            onClick={() => handleAccept(lease.id, lease.contractDocumentId)}
                             className="flex items-center gap-2 bg-success/10 text-success hover:bg-success/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-success/30"
                         >
                             <CheckCircle size={14} />
