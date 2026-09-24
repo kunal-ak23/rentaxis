@@ -447,9 +447,10 @@ public final class StandardStatementSections {
             join vendors d on d.id = v.vendor_id
             join journal_entries e on e.id = v.journal_id
             left join journal_entries r on r.id = e.reversed_by_id
-            cross join lateral (select coalesce(sum(l.amount), 0) as paid from voucher_lines l
-                                where l.voucher_id = v.id and l.account_id = d.payable_account_id) p
-            where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED', 'VOID')
+            cross join lateral (select coalesce(sum(case when v.doc_type = 'PCN' then l.amount + l.vat_amount
+                                                         when l.account_id = d.payable_account_id then l.amount else 0 end), 0) as paid
+                                from voucher_lines l where l.voucher_id = v.id) p
+            where v.tenant_id = :t and v.doc_type in ('BPV', 'PCN') and v.status in ('POSTED', 'REVERSED', 'VOID')
               and v.doc_date between :from and :to and (r.id is null or r.entry_date > :to)
               and (v.property_id is null or v.property_id = :p) and p.paid > 0
               and (not :scoped or v.property_id = :p

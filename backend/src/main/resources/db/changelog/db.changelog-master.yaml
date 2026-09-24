@@ -255,3 +255,5 @@ databaseChangeLog:
       file: db/changelog/changesets/123-vtp-kind-settlement.yaml
   - include:
       file: db/changelog/changesets/124-renter-refund-payable.yaml
+  - include:
+      file: db/changelog/changesets/125-supplier-credit-note.yaml

@@ -205,6 +205,38 @@ class SupplierApIT extends AbstractPostgresIT {
 
     // ------------------------------------------------------------------ worked example
 
+    /**
+     * F14-40: a supplier credit note reduces the invoice it is allocated to and its
+     * input VAT; unallocated, it is a credit like an advance. Aging agrees with the ledger.
+     */
+    @Test
+    void aSupplierCreditNoteReducesTheInvoiceAndItsInputVat() {
+        Voucher inv = pisr(gulf, "GC-R14-0905", SEP_5, line(rmP1, "4000.00", "5", p1));
+        VoucherService.VoucherInput cn = new VoucherService.VoucherInput(VoucherType.PCN, SEP_10, gulf.getId(),
+                "CN-210", "Credit note CN-210", null, null, null, null, null,
+                List.of(line(rmP1, "200.00", "5", p1)));
+        Voucher pcn = vouchers.post(vouchers.createDraft(cn).getId(), List.of(to(inv, "210.00")));
+
+        assertThat(pcn.getVoucherNumber()).startsWith("PCN-");
+        assertThat(journal(pcn)).extracting(Row::accountId, Row::debit, Row::credit).containsExactlyInAnyOrder(
+                org.assertj.core.api.Assertions.tuple(rmP1.getId(), new BigDecimal("0.00"), new BigDecimal("200.00")),
+                org.assertj.core.api.Assertions.tuple(inputVat.getId(), new BigDecimal("0.00"), new BigDecimal("10.00")),
+                org.assertj.core.api.Assertions.tuple(gulf.getPayableAccount().getId(), new BigDecimal("210.00"), new BigDecimal("0.00")));
+        OpenItemDTO open = item(payables.vendorItems(gulf.getId()), "GC-R14-0905");
+        assertThat(open.open()).isEqualByComparingTo("3990.00");
+        PayablesAgingDTO.Figures f = row(payables.aging(SEP_10, gulf.getId(), null), gulf).figures();
+        assertThat(f.ledgerBalance()).isEqualByComparingTo("3990.00");
+        assertThat(f.delta()).isEqualByComparingTo("0.00");
+
+        // Unallocated, a credit note is a credit on the vendor, like an advance.
+        Voucher loose = vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PCN, SEP_10,
+                gulf.getId(), "CN-211", "Credit note CN-211", null, null, null, null, null,
+                List.of(line(rmP1, "100.00", "0", p1)))).getId(), List.of());
+        assertThat(payables.advancesNow(gulf.getId())).anyMatch(a -> a.paymentId().equals(loose.getId())
+                && a.unallocated().compareTo(new BigDecimal("100.00")) == 0);
+        assertThat(row(payables.aging(SEP_10, gulf.getId(), null), gulf).figures().delta()).isEqualByComparingTo("0.00");
+    }
+
     @Test
     void theWorkedExampleEndToEnd() {
         Example x = workedExample();
@@ -588,8 +620,9 @@ class SupplierApIT extends AbstractPostgresIT {
                 .hasMessageContaining("15 digits");
         Vendor spaced = new Vendor();
         spaced.setNameEn("Spaced TRN");
-        spaced.setTrn("100 1234 5670 0003");
-        assertThat(vendorService.createVendor(spaced).getTrn()).isEqualTo("100123456700003");
+        // A TRN no other vendor of this tenant carries (F14-43 refuses a duplicate).
+        spaced.setTrn("100 1234 5670 0099");
+        assertThat(vendorService.createVendor(spaced).getTrn()).isEqualTo("100123456700099");
     }
 
     // ------------------------------------------------------------------ payment method

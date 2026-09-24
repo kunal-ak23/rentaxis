@@ -303,8 +303,8 @@ public class VoucherService {
         requireDraft(v);
         requirePostable(v);
         boolean allocating = allocations != null && !allocations.isEmpty();
-        if (allocating && v.getDocType() != VoucherType.BPV) {
-            throw new BusinessRuleViolationException("Only a payment voucher settles invoices");
+        if (allocating && !isVendorDebit(v.getDocType())) {
+            throw new BusinessRuleViolationException("Only a payment voucher or a supplier credit note settles invoices");
         }
         // Before the journal: this row, then the invoices, then the sequence (lockForWrite).
         if (allocating) allocationService.lockTargets(allocations);
@@ -366,8 +366,12 @@ public class VoucherService {
         }
 
         List<PostingRequest.Line> journalLines = new ArrayList<>();
+        // F14-40: a supplier credit note takes back what an invoice charged, so its
+        // lines are credits (the expense and, below, the input VAT) and the vendor is debited.
+        boolean creditNote = v.getDocType() == VoucherType.PCN;
         for (VoucherLine l : v.getLines()) {
-            PostingRequest.Line jl = PostingRequest.dr(l.getAccount().getId(), l.getAmount())
+            PostingRequest.Line jl = (creditNote ? PostingRequest.cr(l.getAccount().getId(), l.getAmount())
+                    : PostingRequest.dr(l.getAccount().getId(), l.getAmount()))
                     .withDims(new PostingRequest.Dimensions(l.getPropertyId(), l.getUnitId(), null, null, null))
                     .withNarration(l.getDescription());
             // apply() already copied the header's property onto every line that did
@@ -417,6 +421,18 @@ public class VoucherService {
             // VoucherType, and an RCP that ever did arrive should say where it belongs.
             case RCP -> throw new BusinessRuleViolationException(
                     "Cash Receipt Vouchers are posted from the lease receipt screen");
+            case PCN -> {
+                if (vat.signum() > 0) {
+                    journalLines.add(PostingRequest.cr(AccountRole.INPUT_VAT, vat)
+                            .withDims(headerDims)
+                            .withNarration("Input VAT reversed"));
+                }
+                journalLines.add(PostingRequest.dr(v.getVendor().getPayableAccount().getId(), gross)
+                        .withDims(headerDims)
+                        .withNarration(v.getInvoiceNumber() == null
+                                ? v.getVendor().getNameEn() + " — credit note"
+                                : v.getVendor().getNameEn() + " — credit note " + v.getInvoiceNumber()));
+            }
         }
 
         String baseNarration = v.getNarration();
@@ -573,6 +589,11 @@ public class VoucherService {
      * cancel a document that did not exist yet, and could move its VAT into an
      * earlier return.
      */
+    /** F14-40: documents that debit the vendor's payable and so settle its invoices: payments and credit notes. */
+    static boolean isVendorDebit(VoucherType type) {
+        return type == VoucherType.BPV || type == VoucherType.PCN;
+    }
+
     static void requireReversible(Voucher original, LocalDate date, String reason) {
         if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
         if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
@@ -682,7 +703,7 @@ public class VoucherService {
                     + " is settled by a payment; release that allocation or amend the payment before voiding it",
                     "voucher.voidSettledInvoice", Map.of("voucher", String.valueOf(original.getVoucherNumber())));
         }
-        if (original.getDocType() == VoucherType.BPV) {
+        if (isVendorDebit(original.getDocType())) {
             requireNotBeforeARelease(original, date);
             cancelIssuedChequeOf(original, date, reason.trim());
         }
@@ -690,8 +711,8 @@ public class VoucherService {
         original.setStatus(VoucherStatus.VOID);
         original.setUpdatedAt(Instant.now());
         vouchers.saveAndFlush(original);
-        if (original.getDocType() == VoucherType.BPV) {
-            allocationService.releaseAllOfPayment(original.getId(), date, "Payment " + original.getVoucherNumber() + " voided");
+        if (isVendorDebit(original.getDocType())) {
+            allocationService.releaseAllOfPayment(original.getId(), date, original.getVoucherNumber() + " voided");
         }
         return original;
     }
@@ -778,7 +799,7 @@ public class VoucherService {
         // sequence), so two accountants could deadlock. The leaves are locked here,
         // in a stable order; the call inside post(fresh) is then re-entrant.
         lockChequeLeavesForAmend(original, replacement);
-        if (original.getDocType() == VoucherType.BPV) requireNotBeforeARelease(original, reversalDate);
+        if (isVendorDebit(original.getDocType())) requireNotBeforeARelease(original, reversalDate);
         // Before the replacement is written, so it may re-use the cheque number.
         cancelIssuedChequeOf(original, reversalDate, reason.trim());
 
@@ -786,7 +807,7 @@ public class VoucherService {
         original.setStatus(VoucherStatus.REVERSED);
         original.setUpdatedAt(Instant.now());
         vouchers.saveAndFlush(original);
-        List<VoucherAllocation> released = original.getDocType() == VoucherType.BPV
+        List<VoucherAllocation> released = isVendorDebit(original.getDocType())
                 ? allocationService.releaseAllOfPayment(original.getId(), reversalDate,
                         "Payment " + original.getVoucherNumber() + " amended")
                 : List.of();
@@ -812,7 +833,7 @@ public class VoucherService {
         Voucher posted = post(fresh.getId(), List.of(), null, sameMovement ? opts.exemptFromStatement() : opts);
         if (original.getDocType() == VoucherType.PISR) {
             allocationService.carryToReplacement(original.getId(), posted.getId(), reversalDate);
-        } else if (posted.getDocType() == VoucherType.BPV) {
+        } else if (isVendorDebit(posted.getDocType())) {
             // A replacement payment settles what it is told to, or — told nothing —
             // what the original settled, trimmed to what it now pays (spec §2 hooks,
             // PR #351 review P3-3). Dated no earlier than the reversal, so the
@@ -908,7 +929,7 @@ public class VoucherService {
             if (l.getAmount() == null || l.getAmount().signum() <= 0) {
                 throw new BusinessRuleViolationException("Every line needs an amount greater than zero");
             }
-            if (v.getDocType() == VoucherType.PISR
+            if ((v.getDocType() == VoucherType.PISR || v.getDocType() == VoucherType.PCN)
                     && a.getAccountType() != AccountType.EXPENSE && a.getAccountType() != AccountType.ASSET) {
                 throw new BusinessRuleViolationException("Line account " + a.getCode() + " " + a.getName()
                         + " is " + a.getAccountType() + "; a purchase invoice line must be an expense or asset account");
@@ -959,6 +980,19 @@ public class VoucherService {
                     throw new BusinessRuleViolationException("The due date cannot be before the supplier's invoice date");
                 }
                 requireNoPostedDuplicate(vendor, v.getInvoiceNumber(), v.getInvoiceNoNorm(), v.getId());
+            }
+            // F14-40: a supplier credit note — the vendor must be live and have its payable leaf.
+            case PCN -> {
+                Vendor vendor = v.getVendor();
+                if (vendor == null) throw new BusinessRuleViolationException("A supplier credit note needs a vendor");
+                if (vendor.getPayableAccount() == null) {
+                    throw new BusinessRuleViolationException("Vendor " + vendor.getNameEn()
+                            + " has no payable account. Re-save the vendor to create one.");
+                }
+                requirePostableLeaf(vendor.getPayableAccount(), "Vendor payable account");
+                if (VoucherMath.vatTotal(v.getLines()).signum() > 0 && isBlank(vendor.getTrn())) {
+                    throw new BusinessRuleViolationException(trnRefusal(vendor));
+                }
             }
             // A BPV line may be any leaf — a vendor payable being settled, an expense
             // paid without an invoice, a salary — so only the payment account is narrowed.
@@ -1017,8 +1051,9 @@ public class VoucherService {
         if (in.lines() == null || in.lines().isEmpty()) {
             throw new BusinessRuleViolationException("A voucher needs at least one line");
         }
-        if (in.docType() == VoucherType.PISR) {
-            if (in.vendorId() == null) throw new BusinessRuleViolationException("A purchase invoice needs a vendor");
+        if (in.docType() == VoucherType.PISR || in.docType() == VoucherType.PCN) {
+            if (in.vendorId() == null) throw new BusinessRuleViolationException(in.docType() == VoucherType.PCN
+                    ? "A supplier credit note needs a vendor" : "A purchase invoice needs a vendor");
             Vendor vendor = vendors.findById(in.vendorId())
                     .orElseThrow(() -> new NotFoundException("Vendor not found"));
             if (vendor.getPayableAccount() == null) {
@@ -1062,7 +1097,8 @@ public class VoucherService {
             // Controller ruling (Task 5): moved from post()'s requirePostable — a
             // purchase invoice buys an expense or an asset, never income; re-checked
             // at post below for the same reason as the payment-account rule above.
-            if (in.docType() == VoucherType.PISR && lineAccount.getAccountType() != AccountType.EXPENSE
+            if ((in.docType() == VoucherType.PISR || in.docType() == VoucherType.PCN)
+                    && lineAccount.getAccountType() != AccountType.EXPENSE
                     && lineAccount.getAccountType() != AccountType.ASSET) {
                 throw new BusinessRuleViolationException("Line account " + lineAccount.getCode() + " "
                         + lineAccount.getName() + " is " + lineAccount.getAccountType()
@@ -1333,6 +1369,16 @@ public class VoucherService {
             LocalDate supplierDate = in.supplierInvoiceDate() == null ? in.docDate() : in.supplierInvoiceDate();
             v.setSupplierInvoiceDate(supplierDate);
             v.setDueDate(in.dueDate() == null ? defaultDueDate(supplierDate, v.getVendor()) : in.dueDate());
+            v.setPaymentMethod(null);
+            v.setPaymentReference(null);
+        } else if (in.docType() == VoucherType.PCN) {
+            // F14-40: the supplier's credit note number is kept, but it is not an
+            // invoice: no invoice key, no due date, no payment account or method.
+            v.setInvoiceNumber(in.invoiceNumber() == null ? null : in.invoiceNumber().trim());
+            v.setInvoiceNoNorm(null);
+            v.setSupplierInvoiceDate(null);
+            v.setDueDate(null);
+            v.setPaymentAccount(null);
             v.setPaymentMethod(null);
             v.setPaymentReference(null);
         } else {
