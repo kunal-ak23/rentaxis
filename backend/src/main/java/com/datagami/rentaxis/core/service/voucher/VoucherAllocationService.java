@@ -147,7 +147,10 @@ public class VoucherAllocationService {
         if (invoiceId != null) ids.add(invoiceId);
         Map<UUID, Doc> locked = lockVouchers(ids);
         Doc target = invoiceId != null ? locked.get(invoiceId) : lockOpeningItem(openingItemId);
-        return write(locked.get(paymentId), target, amount, allocatedOn, lockedThroughShared());
+        if (allocatedOn != null && allocatedOn.isAfter(today())) {
+            throw new BusinessRuleViolationException("An allocation cannot be dated in the future (" + allocatedOn + ")");
+        }
+        return write(locked.get(paymentId), target, amount, allocatedOn, lockedThroughShared(), null);
     }
 
     /**
@@ -169,10 +172,42 @@ public class VoucherAllocationService {
     }
 
     /**
+     * Before an amend writes its journal: every voucher row and opening item the
+     * hooks will touch — the original's live counterparts and the replacement's
+     * targets — voucher rows first (in id order), then opening items (in id order).
+     */
+    void lockCounterparts(UUID voucherId, List<AllocationInput> replacementTargets) {
+        Set<UUID> voucherIds = new TreeSet<>();
+        Set<UUID> openingIds = new TreeSet<>();
+        for (VoucherAllocation a : allocations.findTouching(voucherId)) {
+            if (!a.isLive()) continue;
+            if (voucherId.equals(a.getPaymentVoucherId())) {
+                if (a.getInvoiceVoucherId() != null) voucherIds.add(a.getInvoiceVoucherId());
+                if (a.getOpeningItemId() != null) openingIds.add(a.getOpeningItemId());
+            } else {
+                voucherIds.add(a.getPaymentVoucherId());
+            }
+        }
+        if (replacementTargets != null) {
+            for (AllocationInput in : replacementTargets) {
+                if (in.invoiceId() != null) voucherIds.add(in.invoiceId());
+                if (in.openingItemId() != null) openingIds.add(in.openingItemId());
+            }
+        }
+        if (!voucherIds.isEmpty()) lockVouchers(voucherIds);
+        openingIds.forEach(this::lockOpeningItem);
+    }
+
+    /**
      * The allocations a BPV was posted with, written in the post's own
      * transaction and dated the later of the payment and the invoice.
      */
     void allocateOnPost(UUID paymentId, List<AllocationInput> inputs) {
+        allocateOnPost(paymentId, inputs, null);
+    }
+
+    /** As above, dated no earlier than {@code notBefore} (an amend's reversal date). */
+    void allocateOnPost(UUID paymentId, List<AllocationInput> inputs, LocalDate notBefore) {
         if (inputs == null || inputs.isEmpty()) return;
         requireTenant();
         Set<String> seen = new HashSet<>();
@@ -187,7 +222,7 @@ public class VoucherAllocationService {
             if (in.invoiceId() != null) ids.add(in.invoiceId());
             Map<UUID, Doc> locked = lockVouchers(ids);
             Doc target = in.invoiceId() != null ? locked.get(in.invoiceId()) : lockOpeningItem(in.openingItemId());
-            write(locked.get(paymentId), target, in.amount(), null, lock);
+            write(locked.get(paymentId), target, in.amount(), null, lock, notBefore);
         }
     }
 
@@ -212,7 +247,7 @@ public class VoucherAllocationService {
             throw new BusinessRuleViolationException("This allocation is dated " + a.getAllocatedOn()
                     + ", inside the locked period (books locked through " + lock + "); it cannot be released");
         }
-        LocalDate today = LocalDate.now();
+        LocalDate today = today();
         a.setReleasedOn(today.isBefore(a.getAllocatedOn()) ? a.getAllocatedOn() : today);
         a.setReleaseReason(reason.trim());
         a.setReleasedBy(currentUserId());
@@ -223,9 +258,42 @@ public class VoucherAllocationService {
      * Lifecycle hook: a payment voucher was reversed (amend). Every live
      * allocation is released on the reversal date and its invoice re-opens.
      */
-    void releaseAllOfPayment(UUID paymentId, LocalDate on, String reason) {
-        for (VoucherAllocation a : allocations.findByPaymentVoucherIdAndReleasedOnIsNull(paymentId)) {
-            releaseOn(a, on, reason);
+    List<VoucherAllocation> releaseAllOfPayment(UUID paymentId, LocalDate on, String reason) {
+        List<VoucherAllocation> live = allocations.findByPaymentVoucherIdAndReleasedOnIsNull(paymentId).stream()
+                .sorted(Comparator.comparing(VoucherAllocation::getAllocatedOn).thenComparing(VoucherAllocation::getCreatedAt))
+                .toList();
+        for (VoucherAllocation a : live) releaseOn(a, on, reason);
+        allocations.flush();
+        return live;
+    }
+
+    /**
+     * Lifecycle hook: a payment voucher was amended and the replacement was given
+     * no allocations of its own. What the original settled carries to the
+     * replacement, oldest first, trimmed to what the replacement pays the vendor
+     * and to what each invoice still has open — the same capping rule as an
+     * amended invoice's carry. Dated no earlier than the reversal date, so as of
+     * any earlier day the original still settles them and nothing looks paid twice.
+     */
+    void carryPaymentToReplacement(List<VoucherAllocation> released, UUID replacementId, LocalDate reversalDate) {
+        if (released.isEmpty()) return;
+        Doc payment = lockVouchers(List.of(replacementId)).get(replacementId);
+        if (!"BPV".equals(payment.docType()) || !"POSTED".equals(payment.status())) return;
+        BigDecimal left = payableAmount(replacementId).subtract(allocations.liveTotalForPayment(replacementId));
+        LocalDate lock = lockedThroughShared();
+        for (VoucherAllocation a : released) {
+            if (left.signum() <= 0) break;
+            if (!Objects.equals(a.getVendorId(), payment.vendorId())) continue;
+            Doc target = a.getInvoiceVoucherId() != null
+                    ? lockVouchers(List.of(a.getInvoiceVoucherId())).get(a.getInvoiceVoucherId())
+                    : lockOpeningItem(a.getOpeningItemId());
+            if ("VOUCHER".equals(target.kind()) && !"POSTED".equals(target.status())) continue;
+            BigDecimal open = grossOf(a.getInvoiceVoucherId(), a.getOpeningItemId())
+                    .subtract(liveOnInvoice(a.getInvoiceVoucherId(), a.getOpeningItemId()));
+            BigDecimal carry = a.getAmount().min(left).min(open);
+            if (carry.signum() <= 0) continue;
+            write(payment, target, carry, null, lock, reversalDate);
+            left = left.subtract(carry);
         }
     }
 
@@ -265,20 +333,6 @@ public class VoucherAllocationService {
         allocations.flush();
     }
 
-    /** The invoice ids and payment ids a voucher's live allocations touch — for pre-locking in amend. */
-    List<UUID> liveCounterparts(UUID voucherId) {
-        List<UUID> out = new ArrayList<>();
-        for (VoucherAllocation a : allocations.findTouching(voucherId)) {
-            if (!a.isLive()) continue;
-            if (voucherId.equals(a.getPaymentVoucherId())) {
-                if (a.getInvoiceVoucherId() != null) out.add(a.getInvoiceVoucherId());
-            } else {
-                out.add(a.getPaymentVoucherId());
-            }
-        }
-        return out;
-    }
-
     // ------------------------------------------------------------------ internals
 
     private void releaseOn(VoucherAllocation a, LocalDate on, String reason) {
@@ -288,7 +342,8 @@ public class VoucherAllocationService {
         allocations.save(a);
     }
 
-    private VoucherAllocation write(Doc payment, Doc target, BigDecimal rawAmount, LocalDate requestedOn, LocalDate lock) {
+    private VoucherAllocation write(Doc payment, Doc target, BigDecimal rawAmount, LocalDate requestedOn, LocalDate lock,
+                                    LocalDate notBefore) {
         if (rawAmount == null || rawAmount.signum() <= 0) {
             throw new BusinessRuleViolationException("An allocation needs an amount greater than zero");
         }
@@ -318,7 +373,8 @@ public class VoucherAllocationService {
                     + " belong to different vendors");
         }
         // Rule 4.
-        LocalDate earliest = latest(payment.date(), target.date());
+        LocalDate earliest = notBefore == null ? latest(payment.date(), target.date())
+                : latest(payment.date(), target.date(), notBefore);
         LocalDate on = requestedOn != null ? requestedOn
                 : lock != null && !earliest.isAfter(lock) ? lock.plusDays(1) : earliest;
         if (lock != null && !on.isAfter(lock)) {
@@ -413,6 +469,11 @@ public class VoucherAllocationService {
         if ((invoiceId == null) == (openingItemId == null)) {
             throw new BusinessRuleViolationException("Name exactly one of an invoice or an opening item");
         }
+    }
+
+    /** Today in the business's time zone, not the server's. */
+    static LocalDate today() {
+        return LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
     }
 
     private static LocalDate latest(LocalDate... dates) {

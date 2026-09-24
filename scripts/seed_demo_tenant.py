@@ -1056,6 +1056,21 @@ def main():
         # Settles the invoice in full, so it shows as Paid and aging is clean.
         allocations=[{"invoiceId": invoice["id"], "amount": 9450.0}],
     )
+    # A payment posted by an earlier run (before allocations existed) settles
+    # nothing yet: allocate it now, once. Idempotent — skipped when the payment
+    # already has a live allocation or the invoice has nothing left open.
+    live = [a for a in (api.get(f"/api/v1/finance/vouchers/{payment['id']}/allocations") or [])
+            if isinstance(a, dict) and a.get("live")]
+    if not live:
+        inv = api.get(f"/api/v1/finance/vouchers/{invoice['id']}") or {}
+        still_open = ((inv.get("settlement") or {}).get("open")) or 0
+        if still_open > 0:
+            api.post("/api/v1/finance/voucher-allocations", json={
+                "paymentId": payment["id"], "invoiceId": invoice["id"],
+                "amount": min(float(still_open), 9450.0),
+            })
+            log(f"allocated {payment.get('voucherNumber')} to {invoice.get('voucherNumber')}")
+
     out["vouchers"] = {
         "purchaseInvoice": invoice["id"],
         "purchaseInvoiceNumber": invoice.get("voucherNumber"),

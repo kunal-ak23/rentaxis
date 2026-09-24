@@ -307,6 +307,23 @@ public class PayablesService {
                 payments(t, asOf, vendorId, names).stream().filter(a -> a.unallocated().signum() != 0).toList());
     }
 
+    /**
+     * The vendor's payable leaf balance at the end of {@code asOf}, debit-positive
+     * like the ledger — never truncated, unlike a listing of its rows.
+     */
+    public BigDecimal ledgerBalance(UUID vendorId, LocalDate asOf) {
+        UUID t = requireTenant();
+        requireVendor(vendorId);
+        return jdbc.queryForObject("""
+                select coalesce(sum(l.debit - l.credit), 0)
+                from vendors d
+                join journal_lines l on l.account_id = d.payable_account_id and l.tenant_id = d.tenant_id
+                join journal_entries e on e.id = l.journal_entry_id
+                where d.tenant_id = :t and d.id = :v and e.entry_date <= :asOf
+                """, new MapSqlParameterSource("t", t).addValue("v", vendorId).addValue("asOf", asOf, Types.DATE),
+                BigDecimal.class);
+    }
+
     /** An opening item's invoice number, for naming an allocation; null for a missing or foreign id. */
     public String openingItemNumber(UUID openingItemId) {
         if (openingItemId == null) return null;

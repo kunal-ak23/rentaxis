@@ -79,6 +79,8 @@ class SupplierApRulesTest {
     void aTrnIsFifteenDigitsWithSpacesDropped() {
         assertThat(VendorService.normaliseTrn(" 100 1234 5670 0003 ")).isEqualTo("100123456700003");
         assertThat(VendorService.normaliseTrn("")).isNull();
+        assertThat(VendorService.normaliseTrn("100-1234-5670-0003")).isEqualTo("100123456700003");
+        assertThat(VendorService.normaliseTrn("١٠٠١٢٣٤٥٦٧٠٠٠٠٣")).isEqualTo("100123456700003");
         assertThat(VendorService.normaliseTrn(null)).isNull();
         assertThatThrownBy(() -> VendorService.normaliseTrn("10012345670000")).isInstanceOf(BusinessRuleViolationException.class);
         assertThatThrownBy(() -> VendorService.normaliseTrn("1001234567000030")).isInstanceOf(BusinessRuleViolationException.class);

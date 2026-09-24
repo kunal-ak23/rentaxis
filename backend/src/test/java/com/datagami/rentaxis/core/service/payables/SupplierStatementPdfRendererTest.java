@@ -60,4 +60,21 @@ class SupplierStatementPdfRendererTest {
         byte[] pdf = renderer.render(statement(), "ar");
         assertThat(new String(pdf, 0, 5)).isEqualTo("%PDF-");
     }
+
+    @Test
+    void aTruncatedLedgerPrintsThePeriodsRealClosingAndNamesTheGapToOpenItems() {
+        SupplierStatementPdfRenderer.Statement base = statement();
+        AccountLedgerDTO g = base.ledger();
+        AccountLedgerDTO truncated = new AccountLedgerDTO(g.accountId(), g.accountCode(), g.accountName(), g.accountType(),
+                g.openingBalance(), g.rows(), g.totalDebit(), g.totalCredit(), g.closingBalance(), true);
+        SupplierStatementPdfRenderer.Statement s = new SupplierStatementPdfRenderer.Statement(base.vendorName(),
+                base.vendorNameAr(), base.vendorTrn(), base.from(), base.to(), truncated, new BigDecimal("-1250.00"),
+                base.openItems(), base.advances(), base.generatedAt(), base.generatedBy());
+        String html = renderer.html(s, "en");
+        // The closing row is the balance read on its own, not the last running balance (1,500 Cr).
+        assertThat(html).contains("<span>1,250.00 Cr</span>", "the closing balance is the whole period");
+        // Owed per the ledger 1,250; net of open items and advances 1,000; the 250 gap is named.
+        assertThat(html).contains("Owed per the ledger (closing balance)", "<span>1,250.00</span>", "<span>250.00</span>",
+                "journal voucher");
+    }
 }

@@ -137,7 +137,7 @@ public class PayablesController {
         PayablesService.VendorPosition position = payables.vendorPosition(vendorId, to);
         SupplierStatementPdfRenderer.Statement s = new SupplierStatementPdfRenderer.Statement(
                 v.getNameEn(), v.getNameAr(), v.getTrn(), from, to, ledger.vendorLedger(vendorId, from, to),
-                position.items(), position.advances(), Instant.now(), callerName());
+                payables.ledgerBalance(vendorId, to), position.items(), position.advances(), Instant.now(), callerName());
         String l = "ar".equals(lang) ? "ar" : "en";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,

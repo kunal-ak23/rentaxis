@@ -43,7 +43,16 @@ public class VendorService {
      */
     public static String normaliseTrn(String trn) {
         if (trn == null) return null;
-        String digits = trn.replaceAll("\\s", "");
+        // Spaces and hyphens a clerk typed between the groups, and Arabic-Indic or
+        // Persian digits, are normalised away before the 15-digit check.
+        StringBuilder b = new StringBuilder();
+        trn.codePoints().forEach(c -> {
+            if (Character.isWhitespace(c) || c == '-' || c == '\u2010' || c == '\u2011' || c == '\u2013') return;
+            if (c >= '\u0660' && c <= '\u0669') c = '0' + (c - '\u0660');
+            else if (c >= '\u06F0' && c <= '\u06F9') c = '0' + (c - '\u06F0');
+            b.appendCodePoint(c);
+        });
+        String digits = b.toString();
         if (digits.isEmpty()) return null;
         if (!digits.matches("\\d{15}")) {
             throw new BusinessRuleViolationException("TRN must be 15 digits (UAE format), got \"" + trn.trim() + "\"");

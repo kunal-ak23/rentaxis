@@ -73,6 +73,8 @@ class SupplierApIT extends AbstractPostgresIT {
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
     @Autowired com.datagami.rentaxis.core.service.LandlordOrgService orgService;
+    @Autowired UserRepository userRepo;
+    @Autowired UserPropertyAssignmentRepository assignmentRepo;
 
     static final LocalDate AUG_1 = LocalDate.of(2026, 8, 1);
     static final LocalDate AUG_15 = LocalDate.of(2026, 8, 15);
@@ -549,6 +551,8 @@ class SupplierApIT extends AbstractPostgresIT {
     @Test
     void theChangesetNormalisationMatchesJava() {
         for (String raw : List.of("INV-7781", " inv 7781 ", "Inv\t77-81", "a-b c", "---", "  ", "فاتورة-12")) {
+            // Not "ß": Postgres upper() gives "ẞ" under ICU, Java keeps "ß". Harmless for
+            // real invoice numbers (PR #351 review P3-10), so it is left out on purpose.
             String sql = jdbc.queryForObject("select NULLIF(regexp_replace(upper(?), '[[:space:]-]', '', 'g'), '')",
                     String.class, raw);
             assertThat(VoucherService.normaliseInvoiceNumber(raw)).as(raw).isEqualTo(sql);
@@ -698,6 +702,196 @@ class SupplierApIT extends AbstractPostgresIT {
         for (String table : List.of("voucher_allocations", "ap_opening_items", "vouchers", "vendors")) {
             assertThat(jdbc.queryForObject("select count(*) from " + table + " where tenant_id = ?", Long.class, tenantId))
                     .as("rows surviving in %s", table).isZero();
+        }
+    }
+
+    // ------------------------------------------------------------------ PR #351 review fixes
+
+    @Test
+    void aSupplierDateAfterThePostingDateIsRefusedAtDraftAndAtPost() {
+        VoucherService.VoucherInput late = new VoucherService.VoucherInput(VoucherType.PISR, SEP_30, gulf.getId(), "INV-L",
+                "x", null, null, null, null, null, List.of(line(rmP1, "1000.00", "5", p1)),
+                LocalDate.of(2026, 10, 2), null, null, null);
+        assertThatThrownBy(() -> vouchers.createDraft(late))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The supplier's invoice date cannot be after the posting date");
+        // A draft that reached the table another way is refused at post as well.
+        Voucher draft = vouchers.createDraft(pisrInput(gulf, "INV-L2", SEP_30, line(rmP1, "1000.00", "5", p1)));
+        jdbc.update("update vouchers set supplier_invoice_date = '2026-10-02' where id = ?", draft.getId());
+        assertThatThrownBy(() -> vouchers.post(draft.getId()))
+                .hasMessage("The supplier's invoice date cannot be after the posting date");
+        // On or before the posting date is fine; the due date follows it.
+        Voucher ok = vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PISR, SEP_30,
+                gulf.getId(), "INV-L3", "x", null, null, null, null, null, List.of(line(rmP1, "10.00", "0", p1)),
+                SEP_5, null, null, null)).getId());
+        assertThat(ok.getDueDate()).isEqualTo(LocalDate.of(2026, 10, 5));
+    }
+
+    @Test
+    void amendingAPaymentCarriesItsAllocationsTrimmedToTheNewAmount() {
+        Voucher inv1 = pisr(gulf, "INV-7781", AUG_1, line(rmP1, "1450.00", "0", p1));
+        Voucher inv2 = pisr(gulf, "INV-7790", AUG_20, line(securityP2, "2100.00", "0", p2));
+        Voucher pay = bpv(gulf, SEP_1, "2050.00", "TRF-1", to(inv1, "1450.00"), to(inv2, "600.00"));
+
+        // No allocations given: they carry, oldest first, trimmed to the 1,800 now paid.
+        Voucher r = vouchers.amend(pay.getId(), SEP_10, "bank charged less",
+                bpvInput(gulf, SEP_1, "1800.00", "TRF-1"));
+        assertThat(allocations.liveOnPayment(r.getId())).isEqualByComparingTo("1800.00");
+        assertThat(allocations.liveOnInvoice(inv1.getId(), null)).isEqualByComparingTo("1450.00");
+        assertThat(allocations.liveOnInvoice(inv2.getId(), null)).isEqualByComparingTo("350.00");
+        assertThat(allocationRepo.findByPaymentVoucherIdAndReleasedOnIsNull(r.getId()))
+                .allSatisfy(a -> assertThat(a.getAllocatedOn()).isEqualTo(SEP_10));
+        assertThat(row(payables.aging(SEP_30, null, null), gulf).figures().delta()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void pastDateAgingAfterAPaymentAmendDoesNotShowAnInvoicePaidTwice() {
+        Voucher inv = pisr(gulf, "INV-1000", AUG_1, line(rmP1, "1000.00", "0", p1));
+        Voucher pay = bpv(gulf, AUG_15, "1000.00", "TRF-A", to(inv, "1000.00"));
+        // Amended on 20/09 with a replacement dated back to 15/08 that settles the same invoice.
+        vouchers.amend(pay.getId(), LocalDate.of(2026, 9, 20), "reference typo",
+                bpvInput(gulf, AUG_15, "1000.00", "TRF-B"), List.of(to(inv, "1000.00")));
+        // As of 31/08 the original still settles it; the replacement is an advance until 20/09.
+        PayablesAgingDTO aug = payables.aging(AUG_31, null, null);
+        assertThat(row(aug, gulf).items()).isEmpty();
+        assertThat(row(aug, gulf).figures().advances()).isEqualByComparingTo("1000.00");
+        assertThat(row(aug, gulf).figures().delta()).isEqualByComparingTo("0.00");
+        // August's section 7 pays it once; September's does not pay it again.
+        assertThat(paid(p1, AUG_1, AUG_31, "allocatedPaid")).isEqualByComparingTo("1000.00");
+        assertThat(paid(p1, SEP_1, SEP_30, "allocatedPaid")).isEqualByComparingTo("0.00");
+        // By 30/09 nothing is owed and nothing is advanced: the vendor has no row.
+        assertThat(payables.aging(SEP_30, null, null).rows()).isEmpty();
+    }
+
+    @Test
+    void aGrandfatheredDuplicateIsAmendedOnlyToANewNumber() {
+        Voucher first = pisr(gulf, "INV-G", AUG_1, line(rmP1, "100.00", "0", p1));
+        Voucher second = pisr(gulf, "INV-G2", AUG_1, line(rmP1, "100.00", "0", p1));
+        jdbc.update("update vouchers set invoice_number = 'INV-G', invoice_no_norm = 'INVG', duplicate_grandfathered = true"
+                + " where id = ?", second.getId());
+        assertThatThrownBy(() -> vouchers.amend(second.getId(), AUG_15, "fix",
+                pisrInput(gulf, "INV-G", AUG_1, line(rmP1, "90.00", "0", p1))))
+                .hasMessageContaining("grandfathered duplicate of " + first.getVoucherNumber())
+                .hasMessageContaining("amend it to a corrected invoice number");
+        assertThat(vouchers.amend(second.getId(), AUG_15, "fix",
+                pisrInput(gulf, "INV-G-B", AUG_1, line(rmP1, "90.00", "0", p1))).getStatus()).isEqualTo(VoucherStatus.POSTED);
+    }
+
+    @Test
+    void anAllocationCannotBeDatedInTheFuture() {
+        Voucher inv = pisr(gulf, "INV-F", AUG_1, line(rmP1, "100.00", "0", p1));
+        Voucher pay = bpv(gulf, AUG_15, "100.00", "TRF-F");
+        LocalDate future = VoucherAllocationService.today().plusDays(5);
+        assertThatThrownBy(() -> allocations.allocate(pay.getId(), inv.getId(), null, new BigDecimal("10"), future))
+                .hasMessageContaining("in the future");
+    }
+
+    @Test
+    void anOpeningItemEditWaitsForARacingAllocationAndThenSeesIt() throws Exception {
+        ApOpeningItemDTO o = openingItems.create(new ApOpeningItemInputDTO(gulf.getId(), "OLD-R",
+                LocalDate.of(2026, 7, 1), null, new BigDecimal("1000.00"), null));
+        Voucher pay = bpv(gulf, AUG_15, "800.00", "TRF-R");
+        CountDownLatch allocated = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> t1 = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    tx.executeWithoutResult(st -> {
+                        allocations.allocate(pay.getId(), null, o.id(), new BigDecimal("800.00"), null);
+                        allocated.countDown();
+                        try { release.await(20, TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+                return null;
+            });
+            assertThat(allocated.await(20, TimeUnit.SECONDS)).isTrue();
+            Future<String> t2 = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-R",
+                            LocalDate.of(2026, 7, 1), null, new BigDecimal("300.00"), null));
+                    return "updated";
+                } catch (BusinessRuleViolationException e) {
+                    return "refused: " + e.getMessage();
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            // The edit is blocked on the item's row lock while the allocation is open.
+            Thread.sleep(500);
+            assertThat(t2.isDone()).isFalse();
+            release.countDown();
+            t1.get(30, TimeUnit.SECONDS);
+            assertThat(t2.get(30, TimeUnit.SECONDS)).startsWith("refused: Payments of 800.00");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("select amount from ap_opening_items where id = ?", BigDecimal.class, o.id()))
+                .isEqualByComparingTo("1000.00");
+    }
+
+    @Test
+    void anOpeningItemKeepsItsDatesOnceSettledAndFreezesInsideTheLock() {
+        ApOpeningItemDTO o = openingItems.create(new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
+                LocalDate.of(2026, 7, 1), null, new BigDecimal("500.00"), null));
+        Voucher pay = bpv(gulf, AUG_15, "200.00", "TRF-D", new AllocationInput(null, o.id(), new BigDecimal("200.00")));
+        assertThatThrownBy(() -> openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
+                LocalDate.of(2026, 8, 20), null, new BigDecimal("500.00"), null)))
+                .hasMessageContaining("cannot be later than that");
+        fiscal.lockThrough(AUG_31);
+        assertThatThrownBy(() -> openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
+                LocalDate.of(2026, 7, 1), null, new BigDecimal("450.00"), null)))
+                .hasMessageContaining("locked period");
+        // A change that moves no figure (the property) is still allowed.
+        assertThat(openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
+                LocalDate.of(2026, 7, 1), o.dueDate(), new BigDecimal("500.00"), p1.getId())).propertyId())
+                .isEqualTo(p1.getId());
+        assertThat(pay.getStatus()).isEqualTo(VoucherStatus.POSTED);
+    }
+
+    @Test
+    void aPropertyManagerSeesOnlyUnallocatedPaymentsThatNameTheirProperty() {
+        // One advance names P1 on its line, one names nothing.
+        Voucher named = vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.BPV, SEP_5,
+                gulf.getId(), null, "P1 advance", null, null, bank.getId(), null, null,
+                List.of(new VoucherService.VoucherLineInput(gulf.getPayableAccount().getId(), "adv",
+                        new BigDecimal("300.00"), BigDecimal.ZERO, p1.getId(), null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-P1")).getId());
+        bpv(alNoor, SEP_10, "500.00", "TRF-ANY");
+
+        // An admin sees both.
+        assertThat(figure(statements.statement(p1.getId(), SEP_1, SEP_30, null), "expensesPaid", "unallocatedPayments"))
+                .isEqualByComparingTo("800.00");
+        // A manager assigned to P1 sees only the one that names P1.
+        User pm = new User();
+        pm.setEmail("pm-" + UUID.randomUUID() + "@t.io");
+        pm.setName("PM");
+        pm.setRole(UserRole.PROPERTY_MANAGER);
+        pm.setStatus(UserStatus.ACTIVE);
+        pm.setPasswordHash("x");
+        pm.setTenantId(tenantId);
+        pm = userRepo.save(pm);
+        UserPropertyAssignment assignment = new UserPropertyAssignment();
+        assignment.setUserId(pm.getId());
+        assignment.setPropertyId(p1.getId());
+        assignmentRepo.save(assignment);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        pm.getId().toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+        try {
+            PropertyStatementDTO s = statements.statement(p1.getId(), SEP_1, SEP_30, null);
+            assertThat(figure(s, "expensesPaid", "unallocatedPayments")).isEqualByComparingTo("300.00");
+            List<List<Object>> rows = s.sections().stream().filter(x -> x.key().equals("expensesPaid")).findFirst()
+                    .orElseThrow().tables().stream().filter(t -> t.key().equals("unallocated")).findFirst().orElseThrow().rows();
+            assertThat(rows).singleElement().satisfies(r -> assertThat(r.get(1)).isEqualTo(named.getVoucherNumber()));
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
         }
     }
 }

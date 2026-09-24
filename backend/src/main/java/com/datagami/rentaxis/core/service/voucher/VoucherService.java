@@ -124,9 +124,24 @@ public class VoucherService {
      */
     public static String normaliseInvoiceNumber(String invoiceNumber) {
         if (invoiceNumber == null) return null;
-        String n = invoiceNumber.trim().toUpperCase(java.util.Locale.ROOT).replaceAll("[\\s-]", "");
-        return n.isEmpty() ? null : n;
+        // Character by character, not String.toUpperCase: that one expands "ß" to
+        // "SS", which Postgres upper() does not, and the backfill must agree.
+        StringBuilder b = new StringBuilder(invoiceNumber.length());
+        invoiceNumber.trim().codePoints()
+                .filter(c -> c != '-' && !Character.isWhitespace(c))
+                .map(Character::toUpperCase)
+                .forEach(b::appendCodePoint);
+        return b.isEmpty() ? null : b.toString();
     }
+
+    /**
+     * PR #351 review P2-1: an invoice cannot be booked before it exists. Aging
+     * counts an item from its supplier date, the ledger from the posting date, and
+     * allocations from the posting date, so a later supplier date would leave the
+     * credit on the ledger with no item to tie it to.
+     */
+    static final String SUPPLIER_DATE_AFTER_POSTING =
+            "The supplier's invoice date cannot be after the posting date";
 
     /** A PISR's due date when none is given: the supplier's date plus the vendor's terms. */
     static LocalDate defaultDueDate(LocalDate supplierInvoiceDate, Vendor vendor) {
@@ -321,15 +336,17 @@ public class VoucherService {
      */
     @Transactional
     public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement) {
-        return amend(voucherId, reversalDate, reason, replacement, List.of());
+        return amend(voucherId, reversalDate, reason, replacement, null);
     }
 
     /**
      * As above; {@code allocations} are the invoices a replacement BPV settles.
      *
-     * <p>Allocation hooks (spec §2): a BPV's live allocations are released on the
-     * reversal date and its invoices re-open; a PISR's carry to the replacement,
-     * capped at its gross, the excess becoming an advance on the payment.</p>
+     * <p>Allocation hooks (spec §2): a PISR's live allocations carry to the
+     * replacement, capped at its gross, the excess becoming an advance on the
+     * payment. A BPV's are released on the reversal date; the replacement then
+     * settles {@code allocations} when given (an empty list: nothing, an advance),
+     * or — {@code null} — carries the original's, trimmed to what it now pays.</p>
      *
      * <p>Flush order: the original is REVERSED and flushed before the replacement
      * is inserted or posted, so {@code ux_vouchers_pisr_invoice} never sees two
@@ -348,25 +365,31 @@ public class VoucherService {
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
+        // A grandfathered duplicate (changeset 110) shares its number with a POSTED
+        // invoice the guard protects, so it can only be corrected to a new number.
+        if (original.getDocType() == VoucherType.PISR && original.isDuplicateGrandfathered()
+                && original.getInvoiceNoNorm() != null
+                && original.getInvoiceNoNorm().equals(normaliseInvoiceNumber(replacement.invoiceNumber()))) {
+            String first = vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
+                    .map(Voucher::getVoucherNumber).findFirst().orElse("another invoice");
+            throw new BusinessRuleViolationException(original.getVoucherNumber() + " is a grandfathered duplicate of "
+                    + first + " (both carry " + original.getInvoiceNumber()
+                    + "); amend it to a corrected invoice number");
+        }
 
         // Every row the allocation hooks will touch, locked before the journal is
-        // (voucher rows, then the sequence): the original's counterparts and the
-        // invoices the replacement will settle.
-        List<UUID> toLock = new ArrayList<>(allocationService.liveCounterparts(original.getId()));
-        if (allocations != null) {
-            allocations.stream().map(VoucherAllocationService.AllocationInput::invoiceId)
-                    .filter(java.util.Objects::nonNull).forEach(toLock::add);
-        }
-        allocationService.lockVoucherRows(toLock);
+        // (voucher rows, then opening items, then the sequence): the original's
+        // counterparts and whatever the replacement will settle.
+        allocationService.lockCounterparts(original.getId(), allocations);
 
         posting.reverse(original.getJournalId(), reversalDate, reason);
         original.setStatus(VoucherStatus.REVERSED);
         original.setUpdatedAt(Instant.now());
         vouchers.saveAndFlush(original);
-        if (original.getDocType() == VoucherType.BPV) {
-            allocationService.releaseAllOfPayment(original.getId(), reversalDate,
-                    "Payment " + original.getVoucherNumber() + " amended");
-        }
+        List<VoucherAllocation> released = original.getDocType() == VoucherType.BPV
+                ? allocationService.releaseAllOfPayment(original.getId(), reversalDate,
+                        "Payment " + original.getVoucherNumber() + " amended")
+                : List.of();
 
         Voucher fresh = createDraft(replacement);
         fresh.setAmendedFromId(original.getId());
@@ -376,9 +399,19 @@ public class VoucherService {
         // amendedFromId. (Same shape as the flush updateDraft needs, for the same
         // reason: this class hands rows to Hibernate and then re-reads them.)
         vouchers.saveAndFlush(fresh);
-        Voucher posted = post(fresh.getId(), allocations);
+        Voucher posted = post(fresh.getId(), List.of());
         if (original.getDocType() == VoucherType.PISR) {
             allocationService.carryToReplacement(original.getId(), posted.getId(), reversalDate);
+        } else if (posted.getDocType() == VoucherType.BPV) {
+            // A replacement payment settles what it is told to, or — told nothing —
+            // what the original settled, trimmed to what it now pays (spec §2 hooks,
+            // PR #351 review P3-3). Dated no earlier than the reversal, so the
+            // original keeps settling those invoices until it is reversed (P3-2).
+            if (allocations == null) {
+                allocationService.carryPaymentToReplacement(released, posted.getId(), reversalDate);
+            } else {
+                allocationService.allocateOnPost(posted.getId(), allocations, reversalDate);
+            }
         }
         return posted;
     }
@@ -419,9 +452,16 @@ public class VoucherService {
      * voucher row while already holding the sequence — but {@code fresh} was
      * inserted by that same transaction, so no rival can hold it or block on it.
      * There is therefore no transaction holding the sequence and waiting on a
-     * voucher row held by a sequence-waiter, and a blocking lock here cannot
-     * deadlock. Anyone adding a "lock a voucher row after posting" path is the one
-     * who would break that.</p>
+     * voucher row held by a sequence-waiter.</p>
+     *
+     * <p><b>It can still deadlock with an allocation.</b> Supplier AP (spec §2)
+     * locks voucher rows in id order ({@code VoucherAllocationService}), while
+     * {@code post} and {@code amend} take this row first and the invoices it
+     * settles after it. An allocation whose invoice id sorts before this payment's
+     * id, running against an amend of the same payment, waits in the opposite
+     * order: Postgres breaks the cycle (40P01), one side rolls back, and
+     * {@code GlobalExceptionHandler.handleConcurrency} answers it 409 "try again".
+     * Nothing is half-written. {@code VoucherAllocationDeadlockIT} pins that.</p>
      */
     private Voucher lockForWrite(UUID voucherId) {
         Voucher v = entityManager.find(Voucher.class, voucherId);
@@ -500,6 +540,9 @@ public class VoucherService {
                 }
                 if (VoucherMath.vatTotal(v.getLines()).signum() > 0 && isBlank(vendor.getTrn())) {
                     throw new BusinessRuleViolationException(trnRefusal(vendor));
+                }
+                if (v.getSupplierInvoiceDate() != null && v.getSupplierInvoiceDate().isAfter(v.getDocDate())) {
+                    throw new BusinessRuleViolationException(SUPPLIER_DATE_AFTER_POSTING);
                 }
                 if (v.getDueDate() != null && v.getSupplierInvoiceDate() != null
                         && v.getDueDate().isBefore(v.getSupplierInvoiceDate())) {
@@ -647,6 +690,9 @@ public class VoucherService {
             throw new BusinessRuleViolationException(trnRefusal(vendor));
         }
         LocalDate supplierDate = in.supplierInvoiceDate() == null ? in.docDate() : in.supplierInvoiceDate();
+        if (supplierDate != null && in.docDate() != null && supplierDate.isAfter(in.docDate())) {
+            throw new BusinessRuleViolationException(SUPPLIER_DATE_AFTER_POSTING);
+        }
         if (in.dueDate() != null && supplierDate != null && in.dueDate().isBefore(supplierDate)) {
             throw new BusinessRuleViolationException("The due date cannot be before the supplier's invoice date");
         }

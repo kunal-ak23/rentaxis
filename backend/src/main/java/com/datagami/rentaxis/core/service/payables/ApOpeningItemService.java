@@ -98,9 +98,10 @@ public class ApOpeningItemService {
 
     @Transactional
     public ApOpeningItemDTO update(UUID id, ApOpeningItemInputDTO in) {
-        requireTenant();
+        lockRow(id);
         ApOpeningItem o = items.findById(id).orElseThrow(() -> new NotFoundException("Opening item not found"));
         Vendor vendor = vendor(in.vendorId());
+        requireEditableAgainstAllocations(o, in);
         boolean hasAllocations = allocations.existsByOpeningItemId(o.getId());
         if (hasAllocations && !o.getVendorId().equals(vendor.getId())) {
             throw new BusinessRuleViolationException("Payments are allocated to this item; its vendor cannot change");
@@ -117,13 +118,54 @@ public class ApOpeningItemService {
 
     @Transactional
     public void delete(UUID id) {
-        requireTenant();
+        lockRow(id);
         ApOpeningItem o = items.findById(id).orElseThrow(() -> new NotFoundException("Opening item not found"));
         if (allocations.existsByOpeningItemId(o.getId())) {
             throw new BusinessRuleViolationException("Payments have been allocated to this item; release them first. "
                     + "An item with allocation history is kept.");
         }
         items.delete(o);
+    }
+
+    /**
+     * PR #351 review P2-2: the row, {@code FOR UPDATE}, before the allocation sums
+     * are read — the same lock {@code VoucherAllocationService} takes to allocate
+     * to it, so a racing allocation and a shrinking edit cannot pass each other.
+     * Tenant-checked: native SQL is outside the Hibernate filter. Missing → 404.
+     */
+    private void lockRow(UUID id) {
+        UUID t = requireTenant();
+        List<UUID> r = jdbc.queryForList("select id from ap_opening_items where id = :id and tenant_id = :t for update",
+                new MapSqlParameterSource("t", t).addValue("id", id), UUID.class);
+        if (r.isEmpty()) throw new NotFoundException("Opening item not found");
+    }
+
+    /**
+     * An item already settled keeps what its allocations rely on: its invoice date
+     * cannot move past the earliest allocation (rule 4), and nothing that changes
+     * a figure is allowed while an allocation to it sits in a locked period —
+     * closed-period aging must stay reproducible.
+     */
+    private void requireEditableAgainstAllocations(ApOpeningItem o, ApOpeningItemInputDTO in) {
+        UUID t = requireTenant();
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("id", o.getId());
+        java.sql.Date earliest = jdbc.queryForObject(
+                "select min(allocated_on) from voucher_allocations where tenant_id = :t and opening_item_id = :id and released_on is null",
+                p, java.sql.Date.class);
+        if (earliest == null) return;
+        if (in.invoiceDate() != null && in.invoiceDate().isAfter(earliest.toLocalDate())) {
+            throw new BusinessRuleViolationException("A payment was allocated to this item on " + earliest.toLocalDate()
+                    + "; its invoice date cannot be later than that");
+        }
+        List<java.sql.Date> lock = jdbc.queryForList(
+                "select books_locked_through from tenant_fiscal_settings where tenant_id = :t", p, java.sql.Date.class);
+        boolean changesFigures = in.amount() == null || in.amount().setScale(2, RoundingMode.HALF_UP).compareTo(o.getAmount()) != 0
+                || !Objects.equals(in.invoiceDate(), o.getInvoiceDate())
+                || (in.dueDate() != null && !in.dueDate().equals(o.getDueDate()));
+        if (changesFigures && !lock.isEmpty() && lock.get(0) != null && !earliest.toLocalDate().isAfter(lock.get(0).toLocalDate())) {
+            throw new BusinessRuleViolationException("A payment allocated to this item is dated in the locked period "
+                    + "(books locked through " + lock.get(0).toLocalDate() + "); its amount and dates cannot change");
+        }
     }
 
     private void apply(ApOpeningItem o, ApOpeningItemInputDTO in, Vendor vendor) {

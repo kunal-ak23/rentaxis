@@ -40,10 +40,23 @@ import java.util.Map;
 @Component
 public class SupplierStatementPdfRenderer {
 
-    /** What one statement shows. {@code ledger} balances are debit-positive, as the ledger returns them. */
+    /**
+     * What one statement shows. {@code ledger} balances are debit-positive, as the
+     * ledger returns them. {@code closingBalance} is the leaf's balance at the end
+     * of {@code to}, read on its own: when the ledger's rows are truncated the last
+     * running balance is not the period's closing.
+     */
     public record Statement(String vendorName, String vendorNameAr, String vendorTrn, LocalDate from, LocalDate to,
-                            AccountLedgerDTO ledger, List<OpenItemDTO> openItems, List<AdvanceDTO> advances,
-                            Instant generatedAt, String generatedBy) { }
+                            AccountLedgerDTO ledger, BigDecimal closingBalance, List<OpenItemDTO> openItems,
+                            List<AdvanceDTO> advances, Instant generatedAt, String generatedBy) {
+        /** Without a separate closing: the ledger's own (tests, and a ledger that is never truncated). */
+        public Statement(String vendorName, String vendorNameAr, String vendorTrn, LocalDate from, LocalDate to,
+                         AccountLedgerDTO ledger, List<OpenItemDTO> openItems, List<AdvanceDTO> advances,
+                         Instant generatedAt, String generatedBy) {
+            this(vendorName, vendorNameAr, vendorTrn, from, to, ledger, ledger.closingBalance(), openItems, advances,
+                    generatedAt, generatedBy);
+        }
+    }
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.ENGLISH)
@@ -84,7 +97,13 @@ public class SupplierStatementPdfRenderer {
         put("unallocated", "Unallocated", "غير مخصص");
         put("net", "Net owed", "صافي المستحق");
         put("none", "None", "لا يوجد");
-        put("truncated", "Only the first rows of the period are shown.", "تظهر الصفوف الأولى من الفترة فقط.");
+        put("truncated", "Only the first rows of the period are listed; the closing balance is the whole period's.",
+                "تظهر الصفوف الأولى من الفترة فقط؛ والرصيد الختامي يشمل الفترة كاملة.");
+        put("reconcile", "Ledger balance and open items", "رصيد الدفتر والبنود المفتوحة");
+        put("ledgerOwed", "Owed per the ledger (closing balance)", "المستحق حسب الدفتر (الرصيد الختامي)");
+        put("difference", "Difference", "الفرق");
+        put("differenceNote", "Something other than an invoice, a payment or an opening item moved this account — a journal voucher, a credit note or an opening balance without open items. The ledger balance is the one that counts.",
+                "حرّك هذا الحساب قيدٌ غير الفواتير والدفعات والبنود الافتتاحية — قيد يومية أو إشعار دائن أو رصيد افتتاحي بلا بنود مفتوحة. رصيد الدفتر هو المعتمد.");
         put("generated", "Generated", "تاريخ الإنشاء");
         put("by", "by", "بواسطة");
     }
@@ -143,7 +162,7 @@ public class SupplierStatementPdfRenderer {
         }
         b.append("<tr class=\"total\"><td colspan=\"4\">").append(esc(label("closing", ar))).append("</td>")
                 .append(num(amount(g.totalDebit()))).append(num(amount(g.totalCredit())))
-                .append(num(balance(g.closingBalance(), ar))).append("</tr></table>");
+                .append(num(balance(s.closingBalance(), ar))).append("</tr></table>");
         if (g.truncated()) b.append("<div class=\"note\">").append(esc(label("truncated", ar))).append("</div>");
 
         // Open items as of `to`.
@@ -183,8 +202,20 @@ public class SupplierStatementPdfRenderer {
             }
             b.append("</table>");
         }
-        b.append("<table><tr class=\"total\"><td>").append(esc(label("net", ar))).append("</td>")
-                .append(num(amount(totalOpen.subtract(totalAdvance)))).append("</tr></table>");
+        // The two balances side by side, with the gap between them named (review P3-7).
+        BigDecimal net = totalOpen.subtract(totalAdvance);
+        BigDecimal ledgerOwed = (s.closingBalance() == null ? BigDecimal.ZERO : s.closingBalance()).negate();
+        BigDecimal diff = ledgerOwed.subtract(net);
+        b.append("<h2>").append(esc(label("reconcile", ar))).append("</h2><table>")
+                .append("<tr><td>").append(esc(label("net", ar))).append("</td>").append(num(signed(net))).append("</tr>")
+                .append("<tr><td>").append(esc(label("ledgerOwed", ar))).append("</td>").append(num(signed(ledgerOwed))).append("</tr>");
+        if (diff.signum() != 0) {
+            b.append("<tr class=\"total\"><td>").append(esc(label("difference", ar))).append("</td>")
+                    .append(num(signed(diff))).append("</tr></table>")
+                    .append("<div class=\"note\">").append(esc(label("differenceNote", ar))).append("</div>");
+        } else {
+            b.append("</table>");
+        }
 
         b.append("<div class=\"footer\">").append(esc(label("generated", ar))).append(": <span class=\"ltr\">")
                 .append(STAMP.format(s.generatedAt())).append("</span>");
@@ -205,6 +236,10 @@ public class SupplierStatementPdfRenderer {
 
     private static String amount(BigDecimal v) {
         if (v == null || v.signum() == 0) return "";
+        return new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.US)).format(v);
+    }
+
+    private static String signed(BigDecimal v) {
         return new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.US)).format(v);
     }
 

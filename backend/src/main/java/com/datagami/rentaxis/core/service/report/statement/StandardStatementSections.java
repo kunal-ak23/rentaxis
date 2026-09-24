@@ -18,6 +18,7 @@ import com.datagami.rentaxis.domain.repository.JournalLineRepository;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository.ExpenseEntryRow;
 import com.datagami.rentaxis.domain.repository.JournalLineRepository.MovementRow;
 import com.datagami.rentaxis.domain.repository.VoucherRepository;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.payables.PayablesService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -378,17 +379,20 @@ public final class StandardStatementSections {
      *       property directly, as before.</li>
      *   <li><b>Not attributable yet:</b> payments dated in the period with an
      *       unallocated part at {@code to}, whose header names this property or
-     *       none — listed, not added.</li>
+     *       none — listed, not added. For a property manager only those whose
+     *       header or a line names this property.</li>
      * </ul>
      */
     @Component
     public static class ExpensesPaid implements StatementSection {
         private final ExpenseEntries entries;
         private final NamedParameterJdbcTemplate jdbc;
+        private final PropertyScope propertyScope;
 
-        public ExpensesPaid(ExpenseEntries entries, NamedParameterJdbcTemplate jdbc) {
+        public ExpensesPaid(ExpenseEntries entries, NamedParameterJdbcTemplate jdbc, PropertyScope propertyScope) {
             this.entries = entries;
             this.jdbc = jdbc;
+            this.propertyScope = propertyScope;
         }
 
         @Override public int order() { return 7; }
@@ -433,13 +437,19 @@ public final class StandardStatementSections {
             where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED')
               and v.doc_date between :from and :to and (r.id is null or r.entry_date > :to)
               and (v.property_id is null or v.property_id = :p) and p.paid > 0
+              and (not :scoped or v.property_id = :p
+                   or exists (select 1 from voucher_lines l where l.voucher_id = v.id and l.property_id = :p))
             order by v.doc_date, v.voucher_number
             """;
 
         @Override
         public Section build(StatementContext ctx) {
             MapSqlParameterSource params = new MapSqlParameterSource("t", ctx.tenantId())
-                    .addValue("p", ctx.propertyId()).addValue("from", ctx.from()).addValue("to", ctx.to());
+                    .addValue("p", ctx.propertyId()).addValue("from", ctx.from()).addValue("to", ctx.to())
+                    // PR #351 review P2-3: a property manager sees only the unallocated
+                    // payments that name this property on the header or a line — never
+                    // the tenant's other advances. Tenant-wide roles keep the wider list.
+                    .addValue("scoped", propertyScope.isScoped());
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal[] allocated = {BigDecimal.ZERO};
             jdbc.query(ALLOCATED_SQL, params, rs -> {

@@ -125,7 +125,9 @@ public class VoucherController {
     public ResponseEntity<VoucherDetailDTO> amend(@PathVariable UUID id, @Valid @RequestBody AmendVoucherDTO body) {
         requireTenantSelected();
         return ResponseEntity.ok(detail(vouchers.amend(id, body.reversalDate(), body.reason(),
-                toInput(body.replacement()), allocations(body.allocations()))));
+                toInput(body.replacement()),
+                // Absent: the replacement payment carries the original's allocations.
+                body.allocations() == null ? null : allocations(body.allocations()))));
     }
 
     /** Spec §2: PISRs and opening items with what is still owed on them, now. */
