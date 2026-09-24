@@ -74,6 +74,9 @@ public final class ReportLines {
         role(AccountRole.OPENING_BALANCE_DIFFERENCE, "Opening balance difference", "فرق الأرصدة الافتتاحية");
         role(AccountRole.OUTPUT_VAT_DEFERRED, "Output VAT – not yet due", "ضريبة المخرجات غير المستحقة بعد");
         role(AccountRole.PDC_PAYABLE, "PDC payable – issued cheques", "شيكات مؤجلة صادرة");
+        role(AccountRole.BANK_CHARGES, "Bank charges", "رسوم بنكية");
+        role(AccountRole.BANK_INTEREST_INCOME, "Bank interest", "فوائد بنكية");
+        role(AccountRole.BANK_SUSPENSE, "Unidentified bank receipts", "مقبوضات بنكية غير محددة");
         for (ExpenseCategory c : DIRECT_EXPENSE_CATEGORIES) {
             LABELS.put(c.reportLine(), new String[]{c.nameEn(), c.nameAr()});
         }
@@ -94,10 +97,11 @@ public final class ReportLines {
         if (key.startsWith("EXP_")) return AccountType.EXPENSE;
         return switch (AccountRole.valueOf(key)) {
             case RENTAL_INCOME, ADMIN_FEE, PARKING_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES, RENT_PENALTY,
-                 CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME -> AccountType.INCOME;
-            case DISCOUNT_ALLOWED, ROUNDING_OFF -> AccountType.EXPENSE;
+                 CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME, BANK_INTEREST_INCOME -> AccountType.INCOME;
+            case DISCOUNT_ALLOWED, ROUNDING_OFF, BANK_CHARGES -> AccountType.EXPENSE;
             case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT -> AccountType.ASSET;
-            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED, PDC_PAYABLE -> AccountType.LIABILITY;
+            case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
+                 BANK_SUSPENSE -> AccountType.LIABILITY;
             case OPENING_BALANCE_DIFFERENCE -> AccountType.EQUITY;
         };
     }

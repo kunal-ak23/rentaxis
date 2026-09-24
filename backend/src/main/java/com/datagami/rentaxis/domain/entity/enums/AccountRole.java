@@ -10,13 +10,20 @@ public enum AccountRole {
     /** "Output VAT – not yet due" (spec 2026-09-24 §1): VAT charged on a contract whose instalment has not reached its tax point. */
     OUTPUT_VAT_DEFERRED,
     /** Finance-ops spec §2: post-dated cheques we issued and the bank has not paid yet (B-02-001). */
-    PDC_PAYABLE;
+    PDC_PAYABLE,
+    /** Finance-ops spec §3: bank charges booked from a statement line (D-02-003). */
+    BANK_CHARGES,
+    /** Finance-ops spec §3: interest the bank credits (C-02-001). */
+    BANK_INTEREST_INCOME,
+    /** Finance-ops spec §3: receipts on a statement nobody has identified yet (B-01-06). */
+    BANK_SUSPENSE;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
         return switch (this) {
             case DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT, OPENING_BALANCE_DIFFERENCE,
-                 OUTPUT_VAT_DEFERRED, PDC_PAYABLE -> false;
+                 OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
+                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE -> false;
             default -> true;
         };
     }

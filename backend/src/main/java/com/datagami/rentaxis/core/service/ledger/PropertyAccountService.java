@@ -160,6 +160,9 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.FORFEITED_INCOME, "C-01-02-001");
         defaultIfMissing(AccountRole.OPENING_BALANCE_DIFFERENCE, "F-02");
         defaultIfMissing(AccountRole.PDC_PAYABLE, "B-02-001");
+        defaultIfMissing(AccountRole.BANK_CHARGES, "D-02-003");
+        defaultIfMissing(AccountRole.BANK_INTEREST_INCOME, "C-02-001");
+        defaultIfMissing(AccountRole.BANK_SUSPENSE, "B-01-06");
     }
 
     /**

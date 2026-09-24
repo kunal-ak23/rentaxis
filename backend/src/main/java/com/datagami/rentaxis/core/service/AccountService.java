@@ -324,6 +324,9 @@ public class AccountService {
         // seeded before it existed.
         seed(byCode, "B-01-03-002", "Output VAT – not yet due", "ضريبة المخرجات غير المستحقة بعد", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01-03", null, false);
         seed(byCode, "B-01-04", "Vendors", "الموردون", AccountType.LIABILITY, AccountSubType.PAYABLE, "B-01", "One leaf per vendor, created with the vendor", true);
+        // Finance-ops spec §3: receipts on a bank statement nobody has identified yet
+        // (role BANK_SUSPENSE). B-01-05 stays free for the owner layer. Changeset 114.
+        seed(byCode, "B-01-06", "Unidentified bank receipts", "مقبوضات بنكية غير محددة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
         // Finance-ops spec §2: post-dated cheques we issued, until the bank pays them
         // (role PDC_PAYABLE). Changeset 112 adds it to charts seeded before it existed.
@@ -335,6 +338,8 @@ public class AccountService {
         seed(byCode, "C-01-02", "Other Income", "إيرادات أخرى", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C-01", "Penalties, maintenance charges, forfeitures", true);
         seed(byCode, "C-01-02-001", "Amount Forfeited", "مبالغ مصادرة", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C-01-02", null, false);
         seed(byCode, "C-02", "Indirect Income", "إيرادات غير مباشرة", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C", null, true);
+        // Finance-ops spec §3: interest the bank credits (role BANK_INTEREST_INCOME). Changeset 114.
+        seed(byCode, "C-02-001", "Bank Interest", "فوائد بنكية", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C-02", null, false);
 
         seed(byCode, "D", "Expense", "المصروفات", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, null, "All expenses", true);
         seed(byCode, "D-01", "Direct Expense", "المصروفات المباشرة", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D", "Building running costs, one leaf per property per category", true);

@@ -1,0 +1,229 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §3 (PR 4): bank statement import and matching.
+  # The spec calls this changeset 113; 113 went to the PR #352 re-review link
+  # (113-ap-opening-cheque-link), so this is 114 and §4's becomes 115.
+  #
+  #   - bank_account_ledgers: the ledger leaves one real bank account owns. A
+  #     leaf belongs to at most one bank account. Backfill: each bank account
+  #     gets its coa_account_id; where several share a leaf, the default one
+  #     keeps it, else the oldest;
+  #   - bank_accounts.bank_trn: the bank's TRN, needed before a bank charge is
+  #     booked with input VAT;
+  #   - bank_statement_profiles / imports / lines: the column mapping per bank
+  #     account, each import, and the imported lines (de-duplicated by
+  #     line_hash per bank account);
+  #   - bank_matches (+ statement-line and book-item children): suggested and
+  #     confirmed matches. A child is "live" until released, and a statement
+  #     line or journal line is in at most one live match;
+  #   - C-02-001 Bank Interest and B-01-06 Unidentified bank receipts, and the
+  #     BANK_CHARGES (D-02-003), BANK_INTEREST_INCOME and BANK_SUSPENSE tenant
+  #     default mappings, for every tenant whose chart has the parent.
+  - changeSet:
+      id: 114-bank-statements
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: bank_accounts
+            columns:
+              - column: { name: bank_trn, type: varchar(20) }
+
+        - createTable:
+            tableName: bank_account_ledgers
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_account_ledgers_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_account_ledgers_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_account_ledgers_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addPrimaryKey: { tableName: bank_account_ledgers, columnNames: "bank_account_id, account_id", constraintName: pk_bank_account_ledgers }
+        - addUniqueConstraint: { tableName: bank_account_ledgers, columnNames: "tenant_id, account_id", constraintName: ux_bank_account_ledgers_leaf }
+        - sql:
+            comment: Backfill each bank account's own leaf; a shared leaf goes to the default account, else the oldest
+            sql: |
+              INSERT INTO bank_account_ledgers (tenant_id, bank_account_id, account_id, created_at)
+              SELECT r.tenant_id, r.id, r.coa_account_id, CURRENT_TIMESTAMP
+                FROM (SELECT b.tenant_id, b.id, b.coa_account_id,
+                             row_number() OVER (PARTITION BY b.tenant_id, b.coa_account_id
+                                                ORDER BY b.is_default DESC, b.created_at ASC, b.id) AS rn
+                        FROM bank_accounts b
+                        JOIN accounts a ON a.id = b.coa_account_id AND a.tenant_id = b.tenant_id
+                       WHERE a.account_sub_type = 'BANK' AND NOT a.is_group) r
+               WHERE r.rn = 1;
+
+        - createTable:
+            tableName: bank_statement_profiles
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_profiles_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, unique: true, uniqueConstraintName: ux_bank_statement_profiles_account, foreignKeyName: fk_bank_statement_profiles_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: file_kind, type: varchar(8), constraints: { nullable: false } }
+              - column: { name: sheet_name, type: varchar(100) }
+              - column: { name: header_row, type: int, defaultValueNumeric: 1, constraints: { nullable: false } }
+              - column: { name: first_data_row, type: int, defaultValueNumeric: 2, constraints: { nullable: false } }
+              - column: { name: csv_delimiter, type: varchar(4), defaultValue: ",", constraints: { nullable: false } }
+              - column: { name: date_formats, type: "text[]", defaultValueComputed: "'{dd/MM/yyyy,dd-MMM-yyyy,dd/MM/yy}'::text[]", constraints: { nullable: false } }
+              - column: { name: columns, type: jsonb, constraints: { nullable: false } }
+              - column: { name: amount_mode, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: cheque_no_pattern, type: varchar(100), defaultValue: '\b\d{6}\b', constraints: { nullable: false } }
+              - column: { name: match_window_days, type: int, defaultValueNumeric: 3, constraints: { nullable: false } }
+              - column: { name: updated_by, type: uuid }
+              - column: { name: updated_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            comment: Closed value sets on the profile
+            sql: |
+              ALTER TABLE bank_statement_profiles
+                ADD CONSTRAINT ck_bank_statement_profiles_kind CHECK (file_kind IN ('CSV', 'XLSX')),
+                ADD CONSTRAINT ck_bank_statement_profiles_mode CHECK (amount_mode IN ('SPLIT', 'SIGNED', 'DRCR_FLAG')),
+                ADD CONSTRAINT ck_bank_statement_profiles_rows CHECK (header_row >= 1 AND first_data_row > header_row),
+                ADD CONSTRAINT ck_bank_statement_profiles_window CHECK (match_window_days BETWEEN 0 AND 31);
+
+        - createTable:
+            tableName: bank_statement_imports
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_imports_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_imports_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: file_name, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: blob_path, type: varchar(500) }
+              - column: { name: file_sha256, type: varchar(64), constraints: { nullable: false } }
+              - column: { name: lines_read, type: int, constraints: { nullable: false } }
+              - column: { name: lines_new, type: int, constraints: { nullable: false } }
+              - column: { name: lines_duplicate, type: int, constraints: { nullable: false } }
+              - column: { name: first_date, type: date }
+              - column: { name: last_date, type: date }
+              - column: { name: opening_balance, type: "numeric(14,2)" }
+              - column: { name: closing_balance, type: "numeric(14,2)" }
+              - column: { name: warnings, type: jsonb }
+              - column: { name: imported_by, type: uuid }
+              - column: { name: imported_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex: { tableName: bank_statement_imports, indexName: idx_bank_statement_imports_account, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } } ] }
+
+        - createTable:
+            tableName: bank_statement_lines
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_lines_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_lines_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: import_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_lines_import, referencedTableName: bank_statement_imports, referencedColumnNames: id } }
+              - column: { name: seq, type: bigint, constraints: { nullable: false } }
+              - column: { name: txn_date, type: date, constraints: { nullable: false } }
+              - column: { name: value_date, type: date }
+              - column: { name: description, type: text, constraints: { nullable: false } }
+              - column: { name: reference, type: varchar(200) }
+              - column: { name: cheque_no, type: varchar(50) }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: running_balance, type: "numeric(14,2)" }
+              - column: { name: line_hash, type: varchar(64), constraints: { nullable: false } }
+              - column: { name: file_row, type: int }
+        - addUniqueConstraint: { tableName: bank_statement_lines, columnNames: "bank_account_id, line_hash", constraintName: ux_bank_statement_lines_hash }
+        - createIndex: { tableName: bank_statement_lines, indexName: idx_bank_statement_lines_date, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } }, { column: { name: txn_date } } ] }
+        - createIndex: { tableName: bank_statement_lines, indexName: idx_bank_statement_lines_import, columns: [ { column: { name: import_id } } ] }
+        - sql:
+            comment: A statement line moves money
+            sql: ALTER TABLE bank_statement_lines ADD CONSTRAINT ck_bank_statement_lines_amount CHECK (amount <> 0);
+
+        - createTable:
+            tableName: bank_matches
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_matches_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_matches_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: method, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: status, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: confidence, type: varchar(6) }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: confirmed_by, type: uuid }
+              - column: { name: confirmed_at, type: timestamptz }
+              - column: { name: undone_by, type: uuid }
+              - column: { name: undone_at, type: timestamptz }
+              - column: { name: undo_reason, type: text }
+        - sql:
+            comment: Closed value sets on a match
+            sql: |
+              ALTER TABLE bank_matches
+                ADD CONSTRAINT ck_bank_matches_method CHECK (method IN ('AUTO_CHEQUE', 'AUTO_REFERENCE', 'AUTO_AMOUNT_DATE',
+                                                                         'AUTO_GROUP', 'MANUAL', 'CREATED', 'CONTRA')),
+                ADD CONSTRAINT ck_bank_matches_status CHECK (status IN ('SUGGESTED', 'CONFIRMED', 'UNDONE')),
+                ADD CONSTRAINT ck_bank_matches_confidence CHECK (confidence IS NULL OR confidence IN ('HIGH', 'MEDIUM'));
+        - createIndex: { tableName: bank_matches, indexName: idx_bank_matches_account, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } }, { column: { name: status } } ] }
+
+        - createTable:
+            tableName: bank_match_statement_lines
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_match_lines_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: match_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_match_lines_match, referencedTableName: bank_matches, referencedColumnNames: id } }
+              - column: { name: statement_line_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_match_lines_line, referencedTableName: bank_statement_lines, referencedColumnNames: id } }
+              - column: { name: released, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addPrimaryKey: { tableName: bank_match_statement_lines, columnNames: "match_id, statement_line_id", constraintName: pk_bank_match_statement_lines }
+
+        - createTable:
+            tableName: bank_match_book_items
+            columns:
+              - column: { name: id, type: uuid, defaultValueComputed: gen_random_uuid(), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_match_items_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: match_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_match_items_match, referencedTableName: bank_matches, referencedColumnNames: id } }
+              # Journal lines are never deleted except by a whole-tenant purge (LandlordOrgService
+              # deletes the ledger before the pass loop), so the match item goes with its line.
+              - column: { name: journal_line_id, type: uuid, constraints: { foreignKeyName: fk_bank_match_items_journal_line, referencedTableName: journal_lines, referencedColumnNames: id, deleteCascade: true } }
+              # §4's bank_rec_opening_items; its FK comes with that table.
+              - column: { name: opening_item_id, type: uuid }
+              - column: { name: released, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - sql:
+            comment: One book item per row; a statement line and a book item are in at most one live match
+            sql: |
+              ALTER TABLE bank_match_book_items
+                ADD CONSTRAINT ck_bank_match_items_one CHECK ((journal_line_id IS NULL) <> (opening_item_id IS NULL));
+              CREATE UNIQUE INDEX ux_bank_match_lines_live ON bank_match_statement_lines (statement_line_id) WHERE NOT released;
+              CREATE UNIQUE INDEX ux_bank_match_items_journal_live ON bank_match_book_items (journal_line_id)
+                WHERE NOT released AND journal_line_id IS NOT NULL;
+              CREATE UNIQUE INDEX ux_bank_match_items_opening_live ON bank_match_book_items (opening_item_id)
+                WHERE NOT released AND opening_item_id IS NOT NULL;
+              CREATE INDEX idx_bank_match_items_match ON bank_match_book_items (match_id);
+
+        - sql:
+            comment: C-02-001 Bank Interest, for every tenant whose chart has the C-02 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'C-02-001', 'Bank Interest', 'Bank Interest', 'فوائد بنكية',
+                     'INCOME', 'OTHER_INCOME', g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'C-02'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'C-02-001');
+        - sql:
+            comment: B-01-06 Unidentified bank receipts, for every tenant whose chart has the B-01 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'B-01-06', 'Unidentified bank receipts', 'Unidentified bank receipts',
+                     'مقبوضات بنكية غير محددة', 'LIABILITY', 'OTHER_LIABILITY', g.id, TRUE, FALSE, TRUE, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'B-01'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'B-01-06');
+        - sql:
+            comment: BANK_CHARGES, BANK_INTEREST_INCOME and BANK_SUSPENSE tenant default mappings
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, r.role, a.id
+                FROM accounts a
+                JOIN (VALUES ('D-02-003', 'BANK_CHARGES'), ('C-02-001', 'BANK_INTEREST_INCOME'),
+                             ('B-01-06', 'BANK_SUSPENSE')) AS r(code, role) ON r.code = a.code
+               WHERE NOT a.is_group
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = r.role);
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role IN ('BANK_CHARGES', 'BANK_INTEREST_INCOME', 'BANK_SUSPENSE');
+              DELETE FROM accounts a WHERE a.code IN ('C-02-001', 'B-01-06')
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS bank_match_book_items;
+              DROP TABLE IF EXISTS bank_match_statement_lines;
+              DROP TABLE IF EXISTS bank_matches;
+              DROP TABLE IF EXISTS bank_statement_lines;
+              DROP TABLE IF EXISTS bank_statement_imports;
+              DROP TABLE IF EXISTS bank_statement_profiles;
+              DROP TABLE IF EXISTS bank_account_ledgers;
+              ALTER TABLE bank_accounts DROP COLUMN IF EXISTS bank_trn;

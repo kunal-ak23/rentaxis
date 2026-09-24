@@ -79,6 +79,8 @@ public class ChequeController {
     private final RentReceiptService rentReceiptService;
     /** Only for {@link #releaseOnline}: the gateway session is that service's to end. */
     private final OnlinePaymentService onlinePaymentService;
+    /** The register's Bank column (finance-ops spec §3). */
+    private final com.datagami.rentaxis.core.service.bank.BankMatchService bankMatches;
 
     // ------------------------------------------------------------------
     // reads
@@ -94,6 +96,19 @@ public class ChequeController {
                                   @RequestParam(required = false) String search,
                                   Pageable pageable) {
         return queryService.search(propertyId, status, mode, from, to, search, pageable);
+    }
+
+    /**
+     * The register's Bank column (finance-ops spec §3), for the cleared rows on a
+     * page: CONFIRMED with the statement date, NOT_ON_STATEMENT, CASH or SUSPENSE.
+     * Evidence only: clearing by hand stays open to every role that clears.
+     */
+    @GetMapping("/bank-evidence")
+    @PreAuthorize(STAFF)
+    public List<com.datagami.rentaxis.api.dto.bank.BankRecDTOs.ChequeEvidence> bankEvidence(
+            @RequestParam(name = "ids") List<UUID> ids) {
+        if (ids.size() > 500) throw new BusinessRuleViolationException("At most 500 rows at a time");
+        return bankMatches.evidence(ids);
     }
 
     @GetMapping("/due")

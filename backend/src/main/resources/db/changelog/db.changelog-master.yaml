@@ -233,3 +233,5 @@ databaseChangeLog:
       file: db/changelog/changesets/112-pdc-payable.yaml
   - include:
       file: db/changelog/changesets/113-ap-opening-cheque-link.yaml
+  - include:
+      file: db/changelog/changesets/114-bank-statements.yaml
