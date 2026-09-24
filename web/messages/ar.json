@@ -2237,6 +2237,7 @@
     "overdue": "متأخر",
     "daysOverdue": "متأخر {n} يومًا",
     "ledgerSettled": "مُسدّد",
+    "receiptNumber": "إيصال {number}",
     "maturity": "تاريخ الاستحقاق",
     "receipt": "الإيصال",
     "penalties": "الغرامات",

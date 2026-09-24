@@ -2237,6 +2237,7 @@
     "overdue": "Overdue",
     "daysOverdue": "{n} days overdue",
     "ledgerSettled": "Settled",
+    "receiptNumber": "Receipt {number}",
     "maturity": "Maturity",
     "receipt": "Receipt",
     "penalties": "Penalties",

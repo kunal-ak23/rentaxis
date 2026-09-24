@@ -417,6 +417,8 @@ export type Cheque = {
    * "Replace" action and overdue badge to withhold too.
    */
   ledgerSettled: boolean;
+  /** F14-24/F14-62: RR-yy/n, given when the money landed; null before that or on rows cleared before the series. */
+  receiptNumber?: string | null;
   /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved

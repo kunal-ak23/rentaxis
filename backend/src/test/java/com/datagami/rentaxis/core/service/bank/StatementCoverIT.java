@@ -183,6 +183,8 @@ class StatementCoverIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForList("select receipt_number from cheques where id in (?, ?, ?) order by receipt_number",
                 String.class, before.id(), inside.id(), after.id()))
                 .containsExactly("RR-26/1", "RR-26/2", "RR-26/3");
+        // F14-62: the number is on the cheque DTO the register reads.
+        assertThat(cleared.receiptNumber()).isEqualTo("RR-26/1");
 
         BankRecDTOs.Reconciliation draft = recs.create(ei.getId(),
                 new BankRecDTOs.ReconciliationInput(SEP_3, SEP_10, null, null));

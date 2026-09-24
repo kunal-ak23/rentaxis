@@ -78,6 +78,25 @@ public class RentReceiptService {
      */
     @Transactional(readOnly = true)
     public byte[] generateReceipt(UUID chequeId) {
+        return receipt(chequeId).pdf();
+    }
+
+    /** F14-62: the PDF and the name to download it under. */
+    public record Receipt(byte[] pdf, String fileName) {}
+
+    /**
+     * F14-62: {@code receipt-RR-26-7.pdf} for a receipt numbered from the RR series;
+     * a row cleared before the series existed keeps the old {@code receipt-<id8>.pdf}.
+     */
+    static String receiptFileName(Cheque cheque) {
+        return cheque.getReceiptNumber() != null
+                ? "receipt-" + cheque.getReceiptNumber().replaceAll("[^A-Za-z0-9-]", "-") + ".pdf"
+                : "receipt-" + cheque.getId().toString().substring(0, 8) + ".pdf";
+    }
+
+    /** The PDF of {@link #generateReceipt} and its download name. */
+    @Transactional(readOnly = true)
+    public Receipt receipt(UUID chequeId) {
         Cheque cheque = chequeRepository.findById(chequeId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
@@ -148,7 +167,7 @@ public class RentReceiptService {
         // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
         // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
         // and update RentReceiptPayload accordingly.
-        String receiptFileName = "receipt-" + receiptNumber.replace("/", "-") + ".pdf";
+        String receiptFileName = receiptFileName(cheque);
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.RENT_RECEIPT_AVAILABLE,
                 tenantId,
@@ -156,7 +175,7 @@ public class RentReceiptService {
                         Base64.getEncoder().encodeToString(pdfBytes), receiptFileName),
                 "RENT_RECEIPT_AVAILABLE:" + chequeId));
 
-        return pdfBytes;
+        return new Receipt(pdfBytes, receiptFileName);
     }
 
     private static String propertyAddress(Property property) {
