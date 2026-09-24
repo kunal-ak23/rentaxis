@@ -5,10 +5,12 @@ import { useParams } from "next/navigation";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { formatNumber } from "@/lib/format";
 import {
     ArrowLeft, Loader2, Calendar, Clock, User, Building2, Home,
     FileText, CheckCircle, X, AlertTriangle, Hash,
@@ -59,14 +61,6 @@ const STATUS_COLORS: Record<string, string> = {
     NO_SHOW: "bg-error/10 text-error border-error/20",
 };
 
-const TYPE_LABELS: Record<string, string> = {
-    OFFICE_VISIT: "Office Visit",
-    PROPERTY_VISIT: "Property Visit",
-    CHEQUE_REPLACEMENT: "Cheque Replacement",
-    LEASE_RENEWAL: "Lease Renewal",
-    PROPERTY_VIEWING: "Property Viewing",
-    OTHER: "Other",
-};
 
 // ── Page Component ─────────────────────────────────────────────────────────
 
@@ -76,6 +70,11 @@ export default function MeetingDetailPage() {
     const { data: session } = useSession();
     const t = useTranslations("Meetings");
     const tCommon = useTranslations("Common");
+    const locale = useLocale();
+    const dateLocale = locale === "ar" ? "ar-AE" : "en-GB";
+    // Enum codes to labels; an unknown code falls back to its readable form.
+    const label = (group: "status" | "typeLabel" | "purposeLabel", code: string) =>
+        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
 
@@ -124,7 +123,7 @@ export default function MeetingDetailPage() {
             await throwIfNotOk(res);
             await fetchMeeting();
         } catch (err) {
-            setActionError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+            setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
         } finally {
             setActionLoading(null);
         }
@@ -166,10 +165,10 @@ export default function MeetingDetailPage() {
     const durationMs = slotEnd.getTime() - slotStart.getTime();
     const durationMin = Math.round(durationMs / 60000);
 
-    const formattedDate = slotStart.toLocaleDateString(undefined, {
+    const formattedDate = slotStart.toLocaleDateString(dateLocale, {
         weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
-    const formattedTime = `${slotStart.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${slotEnd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const formattedTime = `${slotStart.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" })} – ${slotEnd.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" })}`;
 
     // ── Action button visibility ─────────────────────────────────────────
 
@@ -192,7 +191,7 @@ export default function MeetingDetailPage() {
                 href="/dashboard/meetings"
                 className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"
             >
-                <ArrowLeft size={14} />
+                <ArrowLeft size={14} className="rtl:rotate-180" />
                 {t("backToMeetings")}
             </Link>
 
@@ -201,23 +200,23 @@ export default function MeetingDetailPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <h1 className="text-base font-bold text-foreground truncate">
-                            {meeting.title || meeting.purpose}
+                            {meeting.title || label("purposeLabel", meeting.purpose)}
                         </h1>
                         <p className="text-xs text-muted mt-0.5">
-                            {meeting.title && meeting.title !== meeting.purpose ? meeting.purpose : ""}
+                            {meeting.title && meeting.title !== meeting.purpose ? label("purposeLabel", meeting.purpose) : ""}
                         </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {/* Type badge */}
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                            {TYPE_LABELS[meeting.type] ?? meeting.type.replace(/_/g, " ")}
+                            {label("typeLabel", meeting.type)}
                         </span>
                         {/* Status badge */}
                         <span className={cn(
                             "px-2 py-0.5 rounded-md text-[10px] font-semibold border",
                             STATUS_COLORS[meeting.status] ?? "bg-input text-muted border-border",
                         )}>
-                            {meeting.status.replace(/_/g, " ")}
+                            {label("status", meeting.status)}
                         </span>
                     </div>
                 </div>
@@ -286,13 +285,13 @@ export default function MeetingDetailPage() {
 
             {/* Details card */}
             <div className="bg-surface rounded-xl border border-border p-5">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Meeting Details</h2>
+                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">{t("meetingDetails")}</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Date */}
                     <div className="flex items-start gap-2.5">
                         <Calendar size={14} className="text-muted mt-0.5 flex-shrink-0" />
                         <div>
-                            <p className="text-[10px] text-muted uppercase tracking-wider">Date</p>
+                            <p className="text-[10px] text-muted uppercase tracking-wider">{t("date")}</p>
                             <p className="text-xs font-medium text-foreground">{formattedDate}</p>
                         </div>
                     </div>
@@ -300,16 +299,16 @@ export default function MeetingDetailPage() {
                     <div className="flex items-start gap-2.5">
                         <Clock size={14} className="text-muted mt-0.5 flex-shrink-0" />
                         <div>
-                            <p className="text-[10px] text-muted uppercase tracking-wider">Time</p>
+                            <p className="text-[10px] text-muted uppercase tracking-wider">{t("time")}</p>
                             <p className="text-xs font-medium text-foreground">{formattedTime}</p>
-                            <p className="text-[10px] text-muted">{durationMin} min</p>
+                            <p className="text-[10px] text-muted">{t("durationMin", { count: durationMin })}</p>
                         </div>
                     </div>
                     {/* Host */}
                     <div className="flex items-start gap-2.5">
                         <User size={14} className="text-muted mt-0.5 flex-shrink-0" />
                         <div>
-                            <p className="text-[10px] text-muted uppercase tracking-wider">Host</p>
+                            <p className="text-[10px] text-muted uppercase tracking-wider">{t("host")}</p>
                             <p className="text-xs font-medium text-foreground">{meeting.hostName || "—"}</p>
                         </div>
                     </div>
@@ -317,7 +316,7 @@ export default function MeetingDetailPage() {
                     <div className="flex items-start gap-2.5">
                         <User size={14} className="text-muted mt-0.5 flex-shrink-0" />
                         <div>
-                            <p className="text-[10px] text-muted uppercase tracking-wider">Requested By</p>
+                            <p className="text-[10px] text-muted uppercase tracking-wider">{t("requestedBy")}</p>
                             <p className="text-xs font-medium text-foreground">{meeting.requesterName || "—"}</p>
                         </div>
                     </div>
@@ -327,13 +326,13 @@ export default function MeetingDetailPage() {
             {/* Linked entity card */}
             {(meeting.leaseId || meeting.propertyId || meeting.unitId) && (
                 <div className="bg-surface rounded-xl border border-border p-5">
-                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Linked To</h2>
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">{t("linkedTo")}</h2>
                     <div className="space-y-3">
                         {meeting.leaseId && (
                             <div className="flex items-center gap-2.5">
                                 <FileText size={14} className="text-muted flex-shrink-0" />
                                 <div>
-                                    <p className="text-[10px] text-muted uppercase tracking-wider">Lease</p>
+                                    <p className="text-[10px] text-muted uppercase tracking-wider">{t("lease")}</p>
                                     <Link
                                         href={`/dashboard/leases/${meeting.leaseId}`}
                                         className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
@@ -347,7 +346,7 @@ export default function MeetingDetailPage() {
                             <div className="flex items-center gap-2.5">
                                 <Building2 size={14} className="text-muted flex-shrink-0" />
                                 <div>
-                                    <p className="text-[10px] text-muted uppercase tracking-wider">Property</p>
+                                    <p className="text-[10px] text-muted uppercase tracking-wider">{t("property")}</p>
                                     <Link
                                         href={`/dashboard/properties/${meeting.propertyId}`}
                                         className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
@@ -361,9 +360,9 @@ export default function MeetingDetailPage() {
                             <div className="flex items-center gap-2.5">
                                 <Home size={14} className="text-muted flex-shrink-0" />
                                 <div>
-                                    <p className="text-[10px] text-muted uppercase tracking-wider">Unit</p>
+                                    <p className="text-[10px] text-muted uppercase tracking-wider">{t("unit")}</p>
                                     <p className="text-xs font-medium text-foreground">
-                                        {meeting.unitNumber ? `Unit ${meeting.unitNumber}` : meeting.unitId}
+                                        {meeting.unitNumber ? t("unitInline", { unit: meeting.unitNumber }) : meeting.unitId}
                                     </p>
                                 </div>
                             </div>
@@ -377,10 +376,10 @@ export default function MeetingDetailPage() {
                 <div className="bg-surface rounded-xl border border-border p-5">
                     <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">
                         {meeting.details.detailType === "CHEQUE_REPLACEMENT"
-                            ? "Cheque Replacement Details"
+                            ? t("chequeReplacementDetails")
                             : meeting.details.detailType === "LEASE_RENEWAL"
-                                ? "Lease Renewal Proposal"
-                                : "Additional Details"}
+                                ? t("leaseRenewalProposal")
+                                : t("additionalDetails")}
                     </h2>
 
                     {meeting.details.detailType === "CHEQUE_REPLACEMENT" && (
@@ -389,11 +388,7 @@ export default function MeetingDetailPage() {
                                 <div className="flex items-center gap-2.5">
                                     <Hash size={14} className="text-muted flex-shrink-0" />
                                     <p className="text-xs text-foreground">
-                                        <span className="font-semibold">
-                                            {meeting.details.paymentScheduleIds!.length}
-                                        </span>{" "}
-                                        {meeting.details.paymentScheduleIds!.length === 1 ? "cheque" : "cheques"}{" "}
-                                        to be replaced
+                                        {t("chequesToReplace", { count: meeting.details.paymentScheduleIds!.length })}
                                     </p>
                                 </div>
                             )}
@@ -405,9 +400,9 @@ export default function MeetingDetailPage() {
                             <tbody>
                                 {meeting.details.proposedStartDate && (
                                     <tr className="border-b border-border">
-                                        <td className="py-2 text-muted w-1/2">Renewal Start</td>
+                                        <td className="py-2 text-muted w-1/2">{t("create.reviewRenewalStart")}</td>
                                         <td className="py-2 font-medium text-foreground text-end">
-                                            {new Date(meeting.details.proposedStartDate).toLocaleDateString()}
+                                            {fmtIsoDate(meeting.details.proposedStartDate, locale)}
                                         </td>
                                     </tr>
                                 )}
@@ -417,18 +412,18 @@ export default function MeetingDetailPage() {
                                     const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
                                     return months > 0 ? (
                                         <tr className="border-b border-border">
-                                            <td className="py-2 text-muted">Duration</td>
+                                            <td className="py-2 text-muted">{t("create.reviewDuration")}</td>
                                             <td className="py-2 font-medium text-foreground text-end">
-                                                {months} month{months === 1 ? "" : "s"}
+                                                {t("create.durationMonths", { n: months })}
                                             </td>
                                         </tr>
                                     ) : null;
                                 })()}
                                 {meeting.details.proposedRentAmount != null && (
                                     <tr>
-                                        <td className="py-2 text-muted">Proposed Rent</td>
+                                        <td className="py-2 text-muted">{t("create.reviewProposedRent")}</td>
                                         <td className="py-2 font-medium text-foreground text-end">
-                                            AED {Number(meeting.details.proposedRentAmount).toLocaleString()}
+                                            {t("create.rentAmount", { amount: formatNumber(Number(meeting.details.proposedRentAmount)) })}
                                         </td>
                                     </tr>
                                 )}
@@ -447,7 +442,7 @@ export default function MeetingDetailPage() {
             {/* Notes */}
             {meeting.notes && (
                 <div className="bg-surface rounded-xl border border-border p-5">
-                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Notes</h2>
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t("notes")}</h2>
                     <p className="text-xs text-foreground whitespace-pre-wrap">{meeting.notes}</p>
                 </div>
             )}

@@ -96,7 +96,10 @@ class GatePassScanServiceTest {
 
         verify(notificationService).notifyInApp(eq(tenantId), eq(createdBy), eq("GATE_PASS_ARRIVAL"),
                 eq("Your guest has arrived"), eq("Guest Name was scanned in at the gate"),
-                eq("GATE_PASS"), eq(passId));
+                eq("GATE_PASS"), eq(passId),
+                // #81: the guest's name as a value, so the sentence can be localized around it.
+                eq(com.datagami.rentaxis.core.notification.NotificationMessage.of(
+                        "GATE_PASS_ARRIVAL", "guestName", "Guest Name")));
     }
 
     @Test
@@ -141,7 +144,7 @@ class GatePassScanServiceTest {
             assertThat(scan.getDirection()).isEqualTo(ScanDirection.ENTRY);
         });
         verify(notificationService, times(2)).notifyInApp(any(), any(), eq("GATE_PASS_ARRIVAL"),
-                any(), any(), any(), any());
+                any(), any(), any(), any(), any());
     }
 
     @Test

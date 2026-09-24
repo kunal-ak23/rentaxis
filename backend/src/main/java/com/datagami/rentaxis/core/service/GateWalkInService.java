@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -205,7 +206,10 @@ public class GateWalkInService {
                     approvalRequired ? "Visitor waiting at the gate" : "Registered vendor checked in",
                     pass.getGuestName() + " is visiting unit " + unitNumber
                             + (approvalRequired ? ". Approve or reject the entry request." : "."),
-                    "GATE_PASS", pass.getId());
+                    "GATE_PASS", pass.getId(),
+                    NotificationMessage.of(
+                            approvalRequired ? "GATE_VISITOR_APPROVAL_REQUIRED" : "GATE_REGISTERED_VENDOR_ARRIVED",
+                            "guestName", pass.getGuestName(), "unit", unitNumber));
         }
     }
 

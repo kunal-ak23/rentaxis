@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Loader2, ArrowLeft, BarChart3, Clock, Star, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,9 @@ const CATEGORY_COLORS: Record<string, string> = {
 // ── Page Component ─────────────────────────────────────────────────────────
 
 export default function TicketReportsPage() {
+    const t = useTranslations("Tickets");
+    const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
+        !code ? "" : t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
     const [report, setReport] = useState<TicketReport | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -63,10 +67,10 @@ export default function TicketReportsPage() {
                 if (res.ok) {
                     setReport(await res.json());
                 } else {
-                    setError("Failed to load report data");
+                    setError("load");
                 }
             } catch {
-                setError("Failed to load report data");
+                setError("load");
             } finally {
                 setLoading(false);
             }
@@ -84,9 +88,9 @@ export default function TicketReportsPage() {
     if (error || !report) {
         return (
             <div className="text-center py-24">
-                <p className="text-sm text-muted">{error || "No data available"}</p>
+                <p className="text-sm text-muted">{error ? t("reportLoadFailed") : t("noDataAvailable")}</p>
                 <Link href="/dashboard/tickets" className="text-xs text-primary mt-2 inline-block hover:underline">
-                    Back to Tickets
+                    {t("backToTickets")}
                 </Link>
             </div>
         );
@@ -104,11 +108,11 @@ export default function TicketReportsPage() {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <Link href="/dashboard/tickets" className="flex items-center gap-1 text-xs text-muted hover:text-foreground mb-2">
-                        <ArrowLeft size={12} /> Back to Tickets
+                        <ArrowLeft size={12} className="rtl:rotate-180" /> {t("backToTickets")}
                     </Link>
-                    <h1 className="text-lg font-bold text-foreground">Ticket Reports</h1>
+                    <h1 className="text-lg font-bold text-foreground">{t("reportsTitle")}</h1>
                     <p className="text-xs text-muted mt-0.5">
-                        Overview of maintenance ticket metrics and breakdowns
+                        {t("reportsSubtitle")}
                     </p>
                 </div>
             </div>
@@ -120,7 +124,7 @@ export default function TicketReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                             <BarChart3 size={16} className="text-primary" />
                         </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Total Tickets</span>
+                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t("totalTickets")}</span>
                     </div>
                     <p className="text-2xl font-bold text-foreground">{report.totalTickets}</p>
                 </div>
@@ -130,12 +134,12 @@ export default function TicketReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center">
                             <AlertTriangle size={16} className="text-warning" />
                         </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Open</span>
+                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{enumLabel("status", "OPEN")}</span>
                     </div>
                     <p className="text-2xl font-bold text-foreground">{report.openCount}</p>
                     {report.overdueCount > 0 && (
                         <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-error/10 text-error">
-                            {report.overdueCount} overdue
+                            {t("overdueCount", { count: report.overdueCount })}
                         </span>
                     )}
                 </div>
@@ -145,10 +149,10 @@ export default function TicketReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-info/10 flex items-center justify-center">
                             <Clock size={16} className="text-info" />
                         </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Avg Resolution</span>
+                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t("avgResolution")}</span>
                     </div>
                     <p className="text-2xl font-bold text-foreground">
-                        {report.avgResolutionHours > 0 ? `${report.avgResolutionHours.toFixed(1)}h` : "--"}
+                        {report.avgResolutionHours > 0 ? t("avgResolutionValue", { hours: report.avgResolutionHours.toFixed(1) }) : "--"}
                     </p>
                 </div>
 
@@ -157,10 +161,10 @@ export default function TicketReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center">
                             <Star size={16} className="text-success" />
                         </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Avg Satisfaction</span>
+                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t("avgSatisfaction")}</span>
                     </div>
                     <p className="text-2xl font-bold text-foreground">
-                        {report.avgSatisfaction > 0 ? `${report.avgSatisfaction.toFixed(1)} / 5` : "--"}
+                        {report.avgSatisfaction > 0 ? t("satisfactionValue", { value: report.avgSatisfaction.toFixed(1) }) : "--"}
                     </p>
                 </div>
             </div>
@@ -170,13 +174,13 @@ export default function TicketReportsPage() {
                 {/* Status Breakdown */}
                 <div className="bg-surface rounded-xl border border-border overflow-hidden">
                     <div className="px-4 py-3 border-b border-border">
-                        <h3 className="text-xs font-bold text-foreground">By Status</h3>
+                        <h3 className="text-xs font-bold text-foreground">{t("byStatus")}</h3>
                     </div>
                     <table className="w-full">
                         <thead>
                             <tr className="bg-input/50">
-                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
-                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Count</th>
+                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colStatus")}</th>
+                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("count")}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -187,7 +191,7 @@ export default function TicketReportsPage() {
                                             "px-2 py-0.5 rounded-md text-[9px] font-semibold",
                                             STATUS_COLORS[status] || "bg-input text-muted",
                                         )}>
-                                            {status.replace(/_/g, " ")}
+                                            {enumLabel("status", status)}
                                         </span>
                                     </td>
                                     <td className="px-4 py-2.5 text-xs text-foreground font-semibold text-end tabular-nums">{count}</td>
@@ -200,13 +204,13 @@ export default function TicketReportsPage() {
                 {/* By Category */}
                 <div className="bg-surface rounded-xl border border-border overflow-hidden">
                     <div className="px-4 py-3 border-b border-border">
-                        <h3 className="text-xs font-bold text-foreground">By Category</h3>
+                        <h3 className="text-xs font-bold text-foreground">{t("byCategory")}</h3>
                     </div>
                     <table className="w-full">
                         <thead>
                             <tr className="bg-input/50">
-                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Category</th>
-                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Count</th>
+                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("categoryLabel")}</th>
+                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("count")}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -217,14 +221,14 @@ export default function TicketReportsPage() {
                                             "px-2 py-0.5 rounded-md text-[9px] font-semibold",
                                             CATEGORY_COLORS[category] || "bg-input text-muted",
                                         )}>
-                                            {category.replace(/_/g, " ")}
+                                            {enumLabel("category", category)}
                                         </span>
                                     </td>
                                     <td className="px-4 py-2.5 text-xs text-foreground font-semibold text-end tabular-nums">{count}</td>
                                 </tr>
                             ))}
                             {Object.keys(report.ticketsByCategory).length === 0 && (
-                                <tr><td colSpan={2} className="px-4 py-4 text-xs text-muted text-center">No data</td></tr>
+                                <tr><td colSpan={2} className="px-4 py-4 text-xs text-muted text-center">{t("noData")}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -233,13 +237,13 @@ export default function TicketReportsPage() {
                 {/* By Priority */}
                 <div className="bg-surface rounded-xl border border-border overflow-hidden">
                     <div className="px-4 py-3 border-b border-border">
-                        <h3 className="text-xs font-bold text-foreground">By Priority</h3>
+                        <h3 className="text-xs font-bold text-foreground">{t("byPriority")}</h3>
                     </div>
                     <table className="w-full">
                         <thead>
                             <tr className="bg-input/50">
-                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Priority</th>
-                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Count</th>
+                                <th className="px-4 py-2 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colPriority")}</th>
+                                <th className="px-4 py-2 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("count")}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -250,14 +254,14 @@ export default function TicketReportsPage() {
                                             "px-2 py-0.5 rounded-md text-[9px] font-semibold",
                                             PRIORITY_COLORS[priority] || "bg-input text-muted",
                                         )}>
-                                            {priority}
+                                            {enumLabel("priority", priority)}
                                         </span>
                                     </td>
                                     <td className="px-4 py-2.5 text-xs text-foreground font-semibold text-end tabular-nums">{count}</td>
                                 </tr>
                             ))}
                             {Object.keys(report.ticketsByPriority).length === 0 && (
-                                <tr><td colSpan={2} className="px-4 py-4 text-xs text-muted text-center">No data</td></tr>
+                                <tr><td colSpan={2} className="px-4 py-4 text-xs text-muted text-center">{t("noData")}</td></tr>
                             )}
                         </tbody>
                     </table>

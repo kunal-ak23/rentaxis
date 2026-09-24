@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.GatePass;
@@ -110,7 +111,9 @@ public class GatePassService {
                 approved ? "GATE_PASS_APPROVED" : "GATE_PASS_REJECTED",
                 approved ? "Gate pass approved" : "Gate pass rejected",
                 "Pass for " + pass.getGuestName(),
-                "GATE_PASS", pass.getId());
+                "GATE_PASS", pass.getId(),
+                NotificationMessage.of(approved ? "GATE_PASS_APPROVED" : "GATE_PASS_REJECTED",
+                        "guestName", pass.getGuestName()));
 
         return gatePassRepository.save(pass);
     }

@@ -179,9 +179,9 @@ export default function VendorsPage() {
 
     const handleDelete = (vendor: Vendor) => {
         setConfirmDialog({
-            title: "Delete Vendor",
-            description: "Are you sure you want to delete this vendor?",
-            confirmText: "Delete",
+            title: t("deleteVendor"),
+            description: t("confirmDelete"),
+            confirmText: t("delete"),
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
@@ -234,13 +234,13 @@ export default function VendorsPage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={t("search")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
                     <button
@@ -284,26 +284,26 @@ export default function VendorsPage() {
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-input/50">
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {locale === "ar" ? t("nameAr") : t("nameEn")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("trn")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("contactPerson")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("phone")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("payableAccount")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                        Status
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("status")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
-                                        Actions
+                                    <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                        {t("actions")}
                                     </th>
                                 </tr>
                             </thead>
@@ -393,8 +393,8 @@ export default function VendorsPage() {
                                 setShowModal(false);
                                 setEditingVendor(null);
                             }}
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
-                            aria-label="Close"
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
+                            aria-label={t("close")}
                         >
                             <X size={18} />
                         </button>
@@ -407,7 +407,7 @@ export default function VendorsPage() {
 
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("nameEn")}
                                 </label>
                                 <input
@@ -420,7 +420,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("nameAr")}
                                 </label>
                                 <input
@@ -433,7 +433,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("tradeLicense")}
                                 </label>
                                 <input
@@ -448,7 +448,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("trn")}
                                 </label>
                                 <input
@@ -460,7 +460,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("email")}
                                 </label>
                                 <input
@@ -473,7 +473,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("phone")}
                                 </label>
                                 <input
@@ -485,7 +485,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("contactPerson")}
                                 </label>
                                 <input
@@ -500,7 +500,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("bankName")}
                                 </label>
                                 <input
@@ -512,7 +512,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("address")}
                                 </label>
                                 <textarea
@@ -524,7 +524,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("accountNumber")}
                                 </label>
                                 <input
@@ -539,7 +539,7 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("iban")}
                                 </label>
                                 <input
@@ -555,7 +555,7 @@ export default function VendorsPage() {
                                 repointing a vendor's payable mid-life orphans its posted
                                 entries. */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("payableAccount")}
                                 </label>
                                 <p className="w-full border border-border rounded-lg bg-input p-3 text-xs text-muted">
@@ -583,7 +583,7 @@ export default function VendorsPage() {
                                 </label>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("notes")}
                                 </label>
                                 <textarea
@@ -609,7 +609,7 @@ export default function VendorsPage() {
                                     }}
                                     className="bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer"
                                 >
-                                    Cancel
+                                    {t("cancel")}
                                 </button>
                                 <button
                                     type="submit"

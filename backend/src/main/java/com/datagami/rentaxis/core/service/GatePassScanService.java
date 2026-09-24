@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.GatePassScan;
 import com.datagami.rentaxis.domain.entity.GuardPropertyAssignment;
@@ -211,7 +212,8 @@ public class GatePassScanService {
         if (pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN) {
             notificationService.notifyInApp(tenantId, pass.getCreatedByUserId(), "GATE_PASS_ARRIVAL",
                     "Your guest has arrived", pass.getGuestName() + " was scanned in at the gate",
-                    "GATE_PASS", pass.getId());
+                    "GATE_PASS", pass.getId(),
+                    NotificationMessage.of("GATE_PASS_ARRIVAL", "guestName", pass.getGuestName()));
         }
 
         return new ScanOutcome(ScanResult.ALLOWED, null, pass);

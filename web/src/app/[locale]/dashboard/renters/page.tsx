@@ -29,6 +29,8 @@ export default function RentersPage() {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
     const tInv = useTranslations("Invites");
+    const languageLabel = (code: string | null | undefined) =>
+        code && t.has(`language${code}`) ? t(`language${code}`) : (code ?? "—");
     const locale = useLocale();
     const [renters, setRenters] = useState<Renter[]>([]);
     const [loading, setLoading] = useState(true);
@@ -119,7 +121,7 @@ export default function RentersPage() {
             });
         } catch (err) {
             console.error(err);
-            setFormError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+            setFormError(err instanceof ApiError ? err.message : t("genericError"));
         }
     };
 
@@ -197,13 +199,13 @@ export default function RentersPage() {
                 </div>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={t("search")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
                     <div className="flex items-center gap-3">
@@ -215,7 +217,7 @@ export default function RentersPage() {
                                     viewMode === "table" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                                 )}
                             >
-                                <List size={13} /> Table
+                                <List size={13} /> {t("table")}
                             </button>
                             <button
                                 onClick={() => setViewMode("cards")}
@@ -224,7 +226,7 @@ export default function RentersPage() {
                                     viewMode === "cards" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                                 )}
                             >
-                                <LayoutGrid size={13} /> Cards
+                                <LayoutGrid size={13} /> {t("cards")}
                             </button>
                         </div>
                         {canManageRenters && (
@@ -243,31 +245,31 @@ export default function RentersPage() {
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
-                        <button onClick={() => setShowForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <button onClick={() => setShowForm(false)} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addRenter")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">{t("createRenterProfile")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameEn")}</label>
                                 <input required placeholder="John Doe" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.nameEn} onChange={ev => setFormData({ ...formData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
-                                <input placeholder="جون دو" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.nameAr} onChange={ev => setFormData({ ...formData, nameAr: ev.target.value })} />
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameAr")}</label>
+                                <input dir="rtl" placeholder="جون دو" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.nameAr} onChange={ev => setFormData({ ...formData, nameAr: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("email")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
                                 <input type="email" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => setFormData({ ...formData, email: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("phone")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("phone")}</label>
                                 <input placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => setFormData({ ...formData, phone: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("preferredLanguage")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("preferredLanguage")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.primaryLanguage} onChange={ev => setFormData({ ...formData, primaryLanguage: ev.target.value })}>
-                                    <option value="EN">English</option>
-                                    <option value="AR">Arabic</option>
+                                    <option value="EN">{t("languageEN")}</option>
+                                    <option value="AR">{t("languageAR")}</option>
                                 </select>
                             </div>
                             <div className="col-span-1 flex items-end">
@@ -303,11 +305,11 @@ export default function RentersPage() {
                                 <table className="w-full">
                                     <thead>
                                         <tr className="bg-input/50">
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Name</th>
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Email</th>
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Phone</th>
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Language</th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("name")}</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("email")}</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("phone")}</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("language")}</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -322,7 +324,7 @@ export default function RentersPage() {
                                                 <td className="px-5 py-3.5 text-sm text-foreground">{r.phone || t("noPhoneProvided")}</td>
                                                 <td className="px-5 py-3.5">
                                                     <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[9px] font-bold bg-input text-muted border border-border tracking-wider">
-                                                        {r.primaryLanguage}
+                                                        {languageLabel(r.primaryLanguage)}
                                                     </span>
                                                 </td>
                                                 <td className="px-5 py-3.5 text-end">
@@ -356,7 +358,7 @@ export default function RentersPage() {
                                             {r.nameAr && locale !== 'ar' && <p className="text-[10px] text-muted font-bold mb-1">{r.nameAr}</p>}
                                             {r.nameEn && locale === 'ar' && <p className="text-[10px] text-muted font-bold mb-1">{r.nameEn}</p>}
                                             <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[9px] font-bold bg-input text-muted border border-border tracking-wider">
-                                                {r.primaryLanguage}
+                                                {languageLabel(r.primaryLanguage)}
                                             </span>
                                         </div>
                                     </div>

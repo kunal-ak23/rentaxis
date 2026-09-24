@@ -1,0 +1,19 @@
+databaseChangeLog:
+  # In-app notifications carry their text in structured form (#81): the key of
+  # the sentence and the values that go into it, so the web can render it in
+  # the viewer's language. title/message stay as the English copy for push,
+  # email and every row written before this. Both nullable: old rows have
+  # neither, and the reader falls back to title/message for them.
+  - changeSet:
+      id: 106-notification-message-params
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: notifications
+            columns:
+              - column:
+                  name: message_key
+                  type: varchar(60)
+              - column:
+                  name: params
+                  type: jsonb

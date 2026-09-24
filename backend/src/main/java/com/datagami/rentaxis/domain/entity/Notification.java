@@ -3,8 +3,11 @@ package com.datagami.rentaxis.domain.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -36,6 +39,19 @@ public class Notification extends BaseTenantEntity {
 
     @Column(columnDefinition = "text")
     private String message;
+
+    /**
+     * The sentence this row says, for rendering it in the reader's language
+     * ({@code Notifications.messages.<key>} on the web). Null on rows written
+     * before #81, which the reader shows as {@link #title}/{@link #message}.
+     */
+    @Column(name = "message_key", length = 60)
+    private String messageKey;
+
+    /** The raw values that go into {@link #messageKey}'s sentence. */
+    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private Map<String, String> params;
 
     @Column(name = "reference_type", length = 30)
     private String referenceType;

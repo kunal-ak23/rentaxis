@@ -384,9 +384,11 @@ class GateWalkInServiceTest {
         verify(notificationService).notifyInApp(eq(tenantId), eq(residentA),
                 eq("GATE_VISITOR_APPROVAL_REQUIRED"), eq("Visitor waiting at the gate"),
                 eq("Ramesh is visiting unit 1204. Approve or reject the entry request."),
-                eq("GATE_PASS"), eq(passId));
+                eq("GATE_PASS"), eq(passId),
+                eq(com.datagami.rentaxis.core.notification.NotificationMessage.of(
+                        "GATE_VISITOR_APPROVAL_REQUIRED", "guestName", "Ramesh", "unit", "1204")));
         verify(notificationService).notifyInApp(eq(tenantId), eq(residentB),
-                eq("GATE_VISITOR_APPROVAL_REQUIRED"), any(), any(), eq("GATE_PASS"), eq(passId));
+                eq("GATE_VISITOR_APPROVAL_REQUIRED"), any(), any(), eq("GATE_PASS"), eq(passId), any());
     }
 
     @Test
@@ -405,7 +407,7 @@ class GateWalkInServiceTest {
         service.create(tenantId, guardId, unit, "Ramesh", "+971501234567",
                 GateVisitorType.GUEST, null, null, null);
 
-        verify(notificationService, times(1)).notifyInApp(any(), any(), any(), any(), any(), any(), any());
+        verify(notificationService, times(1)).notifyInApp(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -536,7 +538,7 @@ class GateWalkInServiceTest {
 
         verify(notificationService).notifyInApp(eq(tenantId), eq(resident),
                 eq("GATE_REGISTERED_VENDOR_ARRIVED"), eq("Registered vendor checked in"),
-                eq("Ramesh is visiting unit 1204."), eq("GATE_PASS"), eq(passId));
+                eq("Ramesh is visiting unit 1204."), eq("GATE_PASS"), eq(passId), any());
     }
 
     @Test

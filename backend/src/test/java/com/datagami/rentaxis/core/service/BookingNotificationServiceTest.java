@@ -106,17 +106,17 @@ class BookingNotificationServiceTest {
         service.onBookingRequested(new BookingRequestedEvent(b.getId(), tenantId));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(admin.getId()), eq("BOOKING_REQUESTED"),
-                anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(pm.getId()), eq("BOOKING_REQUESTED"),
-                anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
         verify(notificationService, never()).notifyInAppInNewTx(eq(tenantId), eq(renter.getId()), anyString(),
-                anyString(), anyString(), anyString(), any());
+                anyString(), anyString(), anyString(), any(), any());
         verify(notificationService, never()).notifyInAppInNewTx(eq(tenantId), eq(tenantUser.getId()), anyString(),
-                anyString(), anyString(), anyString(), any());
+                anyString(), anyString(), anyString(), any(), any());
         verify(notificationService, never()).notifyInAppInNewTx(eq(tenantId), eq(guard.getId()), anyString(),
-                anyString(), anyString(), anyString(), any());
+                anyString(), anyString(), anyString(), any(), any());
         verify(notificationService, never()).notifyInAppInNewTx(eq(tenantId), eq(superAdmin.getId()), anyString(),
-                anyString(), anyString(), anyString(), any());
+                anyString(), anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -126,12 +126,12 @@ class BookingNotificationServiceTest {
         User admin2 = user(UserRole.TENANT_ADMIN);
         when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(admin1, admin2));
         doThrow(new RuntimeException("boom")).when(notificationService).notifyInAppInNewTx(
-                eq(tenantId), eq(admin1.getId()), anyString(), anyString(), anyString(), anyString(), any());
+                eq(tenantId), eq(admin1.getId()), anyString(), anyString(), anyString(), anyString(), any(), any());
 
         service.onBookingRequested(new BookingRequestedEvent(b.getId(), tenantId));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(admin2.getId()), eq("BOOKING_REQUESTED"),
-                anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
     }
 
     @Test
@@ -152,7 +152,7 @@ class BookingNotificationServiceTest {
                 b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.APPROVED));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()),
-                eq("BOOKING_APPROVED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                eq("BOOKING_APPROVED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
     }
 
     @Test
@@ -163,7 +163,7 @@ class BookingNotificationServiceTest {
                 b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.REJECTED));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()),
-                eq("BOOKING_REJECTED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                eq("BOOKING_REJECTED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
     }
 
     @Test
@@ -174,7 +174,7 @@ class BookingNotificationServiceTest {
                 b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.RELEASED));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()),
-                eq("BOOKING_RELEASED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()));
+                eq("BOOKING_RELEASED"), anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
     }
 
     @Test
@@ -198,7 +198,7 @@ class BookingNotificationServiceTest {
                 bookingId, tenantId, renterUserId, BookingRequestStatus.APPROVED));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(renterUserId), eq("BOOKING_APPROVED"),
-                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(bookingId));
+                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(bookingId), any());
         assertThat(messageCaptor.getValue()).contains("your booking");
     }
 
@@ -211,7 +211,10 @@ class BookingNotificationServiceTest {
                 b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.APPROVED));
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()), eq("BOOKING_APPROVED"),
-                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(b.getId()));
+                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(b.getId()),
+                // #81: the spot as values, so "parking spot" is worded in the reader's language.
+                eq(com.datagami.rentaxis.core.notification.NotificationMessage.of("BOOKING_APPROVED",
+                        "resourceType", "PARKING", "resourceName", "P1")));
         assertThat(messageCaptor.getValue()).contains("parking spot P1");
     }
 }

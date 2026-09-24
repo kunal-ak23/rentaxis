@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -107,7 +108,10 @@ public class NotificationScheduler {
                                 "Installment #" + cheque.getSeqNo() + " of "
                                         + cheque.getAmount() + " is due in " + daysBefore + " day(s).",
                                 "CHEQUE",
-                                cheque.getId());
+                                cheque.getId(),
+                                NotificationMessage.of("PAYMENT_DUE", "seq", cheque.getSeqNo(),
+                                        "amount", cheque.getAmount(), "days", daysBefore,
+                                        "chequeNo", cheque.getChequeNumber()));
                     }
                 } catch (Exception e) {
                     log.warn("Failed to send payment reminder for cheque {}", cheque.getId(), e);
@@ -220,7 +224,10 @@ public class NotificationScheduler {
                             "Installment #" + cheque.getSeqNo() + " of "
                                     + cheque.getAmount() + " is " + daysOverdue + " day(s) overdue.",
                             "CHEQUE",
-                            cheque.getId());
+                            cheque.getId(),
+                            NotificationMessage.of("PAYMENT_OVERDUE", "seq", cheque.getSeqNo(),
+                                    "amount", cheque.getAmount(), "days", daysOverdue,
+                                    "chequeNo", cheque.getChequeNumber()));
                     sent++;
                 }
             } catch (Exception e) {
@@ -256,7 +263,9 @@ public class NotificationScheduler {
                                 "Lease Expiring Soon",
                                 "Your lease expires in " + daysBefore + " days on " + lease.getEndDate() + ".",
                                 "LEASE",
-                                lease.getId());
+                                lease.getId(),
+                                NotificationMessage.of("LEASE_EXPIRING", "days", daysBefore,
+                                        "date", lease.getEndDate()));
                     }
                 } catch (Exception e) {
                     log.warn("Failed to send lease expiry notification for lease {}", lease.getId(), e);

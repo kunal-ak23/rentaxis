@@ -5,8 +5,9 @@ import dynamic from "next/dynamic";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import arLocale from "@fullcalendar/core/locales/ar";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
@@ -61,7 +62,13 @@ export default function MeetingsPage() {
     const { data: session } = useSession();
     const t = useTranslations("Meetings");
     const tCommon = useTranslations("Common");
+    const locale = useLocale();
+    const isAr = locale === "ar";
+    const dateLocale = isAr ? "ar-AE" : "en-GB";
     const router = useRouter();
+    // Enum codes to labels; an unknown code falls back to its readable form.
+    const label = (group: "status" | "typeLabel" | "purposeLabel", code: string) =>
+        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
     const userRole = session?.user?.role as UserRole | undefined;
     const isRenter = userRole === "RENTER";
 
@@ -135,7 +142,7 @@ export default function MeetingsPage() {
 
     const calendarEvents = filtered.map((m) => ({
         id: m.id,
-        title: m.title || m.purpose,
+        title: m.title || label("purposeLabel", m.purpose),
         start: m.slotStart,
         end: m.slotEnd,
         backgroundColor: CALENDAR_COLORS[m.status] ?? "#6B7280",
@@ -217,7 +224,7 @@ export default function MeetingsPage() {
                         onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
-                        <option value="ALL">All Statuses</option>
+                        <option value="ALL">{t("allStatuses")}</option>
                         <option value="REQUESTED">{t("status.REQUESTED")}</option>
                         <option value="APPROVED">{t("status.APPROVED")}</option>
                         <option value="COMPLETED">{t("status.COMPLETED")}</option>
@@ -231,7 +238,7 @@ export default function MeetingsPage() {
                         onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
-                        <option value="ALL">All Types</option>
+                        <option value="ALL">{t("allTypes")}</option>
                         <option value="OFFICE_VISIT">{t("officeVisit")}</option>
                         <option value="PROPERTY_VISIT">{t("propertyVisit")}</option>
                     </select>
@@ -242,7 +249,7 @@ export default function MeetingsPage() {
                         onChange={(e) => { setPurposeFilter(e.target.value); setCurrentPage(1); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
-                        <option value="ALL">All Purposes</option>
+                        <option value="ALL">{t("allPurposes")}</option>
                         <option value="CHEQUE_REPLACEMENT">{t("chequeReplacement")}</option>
                         <option value="LEASE_RENEWAL">{t("leaseRenewal")}</option>
                         <option value="PROPERTY_VIEWING">{t("propertyViewing")}</option>
@@ -258,10 +265,24 @@ export default function MeetingsPage() {
                         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                         initialView="dayGridMonth"
                         headerToolbar={{
-                            left: "prev,next today",
+                            // start/end (not left/right) so the toolbar mirrors under direction rtl.
+                            start: "prev,next today",
                             center: "title",
-                            right: "dayGridMonth,timeGridWeek,timeGridDay",
+                            end: "dayGridMonth,timeGridWeek,timeGridDay",
                         }}
+                        // Arabic month and day names, RTL grid, translated buttons.
+                        locales={[arLocale]}
+                        locale={isAr ? "ar" : "en"}
+                        direction={isAr ? "rtl" : "ltr"}
+                        buttonText={{
+                            today: t("calendarToday"),
+                            month: t("calendarMonth"),
+                            week: t("calendarWeek"),
+                            day: t("calendarDay"),
+                        }}
+                        allDayText={t("calendarAllDay")}
+                        moreLinkText={(n: number) => t("calendarMore", { count: n })}
+                        noEventsText={t("calendarNoEvents")}
                         events={calendarEvents}
                         eventClick={(info: { event: { id: string } }) => {
                             router.push(`/dashboard/meetings/${info.event.id}`);
@@ -278,12 +299,12 @@ export default function MeetingsPage() {
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-input/50">
-                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Date / Time</th>
-                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Type</th>
-                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Purpose</th>
+                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colDateTime")}</th>
+                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colType")}</th>
+                                    <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colPurpose")}</th>
                                     <th className="px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">{t("host")}</th>
-                                    <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
-                                    <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                    <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colStatus")}</th>
+                                    <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-muted uppercase tracking-wider">{t("colActions")}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -291,25 +312,25 @@ export default function MeetingsPage() {
                                     <tr key={meeting.id} className="border-b border-border hover:bg-input/30 transition-colors">
                                         <td className="px-4 py-2.5 text-xs tabular-nums">
                                             <div className="font-medium text-foreground">
-                                                {new Date(meeting.slotStart).toLocaleDateString()}
+                                                {new Date(meeting.slotStart).toLocaleDateString(dateLocale)}
                                             </div>
                                             <div className="text-muted text-[10px]">
-                                                {new Date(meeting.slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {new Date(meeting.slotStart).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" })}
                                                 {" – "}
-                                                {new Date(meeting.slotEnd).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {new Date(meeting.slotEnd).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" })}
                                             </div>
                                         </td>
                                         <td className="px-4 py-2.5 text-xs text-muted">
-                                            {meeting.type.replace(/_/g, " ")}
+                                            {label("typeLabel", meeting.type)}
                                         </td>
                                         <td className="px-4 py-2.5 max-w-[200px]">
                                             <div className="text-xs font-medium text-foreground truncate">
-                                                {meeting.title || meeting.purpose}
+                                                {meeting.title || label("purposeLabel", meeting.purpose)}
                                             </div>
                                             {meeting.propertyName && (
                                                 <div className="text-[10px] text-muted truncate">
                                                     {meeting.propertyName}
-                                                    {meeting.unitNumber && ` — Unit ${meeting.unitNumber}`}
+                                                    {meeting.unitNumber && ` — ${t("unitInline", { unit: meeting.unitNumber })}`}
                                                 </div>
                                             )}
                                         </td>
@@ -321,7 +342,7 @@ export default function MeetingsPage() {
                                                 "px-2 py-0.5 rounded-md text-[9px] font-semibold",
                                                 STATUS_COLORS[meeting.status] || "bg-input text-muted",
                                             )}>
-                                                {meeting.status.replace(/_/g, " ")}
+                                                {label("status", meeting.status)}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2.5 text-center">
@@ -329,7 +350,7 @@ export default function MeetingsPage() {
                                                 href={`/dashboard/meetings/${meeting.id}`}
                                                 className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:text-primary/80"
                                             >
-                                                <Eye size={12} /> View
+                                                <Eye size={12} /> {t("view")}
                                             </Link>
                                         </td>
                                     </tr>
@@ -341,7 +362,7 @@ export default function MeetingsPage() {
                                 <CalendarDays size={28} className="mx-auto mb-3 opacity-40" />
                                 <p className="text-xs">{t("noMeetings")}</p>
                                 <p className="text-[10px] mt-1 text-muted/60">
-                                    Create a new meeting to get started.
+                                    {t("noMeetingsHint")}
                                 </p>
                             </div>
                         )}

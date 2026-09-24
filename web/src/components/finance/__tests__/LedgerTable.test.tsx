@@ -2,6 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
+import ar from "../../../../messages/ar.json";
+import { leftoverLatinWords, visibleText } from "@/test/latinText";
 import LedgerTable from "../LedgerTable";
 import type { AccountLedger } from "@/lib/api/ledger";
 
@@ -33,8 +35,10 @@ afterEach(cleanup);
 describe("LedgerTable", () => {
   it("renders account band, rows, sub total and report total in PACT layout", () => {
     render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
-    expect(screen.getByText(/Account Code :: 166269/)).toBeInTheDocument();
-    expect(screen.getByText(/Name :: Rent Receivable - L'Olivier/)).toBeInTheDocument();
+    // The band isolates the code and the name, so it is read as one cell.
+    const band = screen.getByText("166269").closest("td")!;
+    expect(band.textContent).toMatch(/Account Code :: 166269/);
+    expect(band.textContent).toMatch(/Name :: Rent Receivable - L'Olivier/);
     expect(screen.getByText("TCO-26/15")).toHaveAttribute("href", expect.stringContaining("/dashboard/finance/journals/e1"));
     // Debit cell of row 1, the sub total's debit and the report total's debit.
     expect(screen.getAllByText("64,500.00")).toHaveLength(3);
@@ -88,5 +92,18 @@ describe("LedgerTable", () => {
     const truncated = [{ ...ledgers[0], truncated: true }];
     render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={truncated} /></NextIntlClientProvider>);
     expect(screen.getByText(/Showing the first 2 rows/)).toBeInTheDocument();
+  });
+
+  it("labels the account band in Arabic, the code and name isolated", () => {
+    const { container } = render(<NextIntlClientProvider locale="ar" messages={ar}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
+    const band = screen.getByText("166269").closest("td")!;
+    expect(band.textContent).toContain(`${ar.Ledger.accountCodeLabel} :: 166269`);
+    expect(band.textContent).toContain(`${ar.Ledger.accountNameLabel} :: `);
+    expect(screen.getByText("166269").tagName).toBe("BDI");
+    // The narration is journal data (#81): stored English stays as written.
+    const data = ledgers.flatMap(l => [l.accountName, ...l.rows.flatMap(r =>
+      [r.particular, r.narration, r.entryNumber, r.unitId ?? "", r.renterId ?? ""])]);
+    // "Dr"/"Cr" are the balance suffix fmtBalance appends in both locales.
+    expect(leftoverLatinWords(visibleText(container), [...data, "Dr", "Cr"])).toEqual([]);
   });
 });

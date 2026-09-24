@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef} from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Pagination } from "@/components/ui/Pagination";
 import { cn } from "@/lib/utils";
+import { notificationText, timeAgo } from "@/lib/notificationText";
 import {
     Bell, CheckCheck, Loader2,
     Ticket, FileText, CreditCard, Info,
@@ -17,6 +18,9 @@ type Notification = {
     id: string;
     title: string;
     message: string;
+    /** #81: the sentence's key and raw values; absent on older rows. */
+    messageKey?: string | null;
+    params?: Record<string, string> | null;
     type: string;
     referenceType: string | null;
     referenceId: string | null;
@@ -25,20 +29,6 @@ type Notification = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function timeAgo(dateStr: string): string {
-    const now = new Date();
-    const date = new Date(dateStr);
-    const diffMs = now.getTime() - date.getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(diffMs / 3600000);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(diffMs / 86400000);
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString();
-}
 
 function getNotificationIcon(referenceType: string | null) {
     switch (referenceType) {
@@ -59,6 +49,8 @@ export default function NotificationsPage() {
     const { data: session } = useSession();
     const router = useRouter();
     const locale = useLocale();
+    const t = useTranslations("Notifications");
+    const tMeetings = useTranslations("Meetings");
 
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
@@ -199,9 +191,9 @@ export default function NotificationsPage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-lg font-bold text-foreground">Notifications</h1>
+                    <h1 className="text-lg font-bold text-foreground">{t("title")}</h1>
                     <p className="text-xs text-muted mt-0.5">
-                        Stay up to date with activity across your properties
+                        {t("subtitle")}
                     </p>
                 </div>
                 {unreadCount > 0 && (
@@ -215,7 +207,7 @@ export default function NotificationsPage() {
                         ) : (
                             <CheckCheck size={14} />
                         )}
-                        Mark All as Read
+                        {t("markAllRead")}
                     </button>
                 )}
             </div>
@@ -231,7 +223,7 @@ export default function NotificationsPage() {
                             : "bg-surface border border-border text-muted hover:text-foreground hover:bg-input"
                     )}
                 >
-                    All
+                    {t("filterAll")}
                 </button>
                 <button
                     onClick={() => { setFilter("UNREAD"); setCurrentPage(1); }}
@@ -242,14 +234,16 @@ export default function NotificationsPage() {
                             : "bg-surface border border-border text-muted hover:text-foreground hover:bg-input"
                     )}
                 >
-                    Unread
+                    {t("filterUnread")}
                 </button>
             </div>
 
             {/* Notification List */}
             <div className="bg-surface rounded-xl border border-border overflow-hidden">
                 <div className="divide-y divide-border">
-                    {notifications.map((n) => (
+                    {notifications.map((n) => {
+                        const text = notificationText(n, t, locale, tMeetings);
+                        return (
                         <div
                             key={n.id}
                             onClick={() => handleClick(n)}
@@ -271,12 +265,12 @@ export default function NotificationsPage() {
                                             "text-sm text-foreground",
                                             !n.isRead ? "font-semibold" : "font-medium"
                                         )}>
-                                            {n.title}
+                                            {text.title}
                                         </p>
-                                        <p className="text-xs text-muted mt-0.5">{n.message}</p>
+                                        <p className="text-xs text-muted mt-0.5">{text.body}</p>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[10px] text-muted whitespace-nowrap">{timeAgo(n.createdAt)}</span>
+                                        <span className="text-[10px] text-muted whitespace-nowrap">{timeAgo(n.createdAt, t, locale)}</span>
                                         {!n.isRead && (
                                             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                                         )}
@@ -284,22 +278,23 @@ export default function NotificationsPage() {
                                 </div>
                                 {n.referenceType && (
                                     <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-input text-muted">
-                                        {n.referenceType}
+                                        {t.has(`referenceType.${n.referenceType}`) ? t(`referenceType.${n.referenceType}`) : n.referenceType.replace(/_/g, " ")}
                                     </span>
                                 )}
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {notifications.length === 0 && (
                     <div className="text-center py-16 text-muted">
                         <Bell size={28} className="mx-auto mb-3 opacity-40" />
-                        <p className="text-sm font-medium">No notifications</p>
+                        <p className="text-sm font-medium">{t("empty")}</p>
                         <p className="text-xs mt-1 text-muted/60">
                             {filter === "UNREAD"
-                                ? "You're all caught up!"
-                                : "Notifications will appear here when there's activity."}
+                                ? t("emptyUnread")
+                                : t("emptyAll")}
                         </p>
                     </div>
                 )}

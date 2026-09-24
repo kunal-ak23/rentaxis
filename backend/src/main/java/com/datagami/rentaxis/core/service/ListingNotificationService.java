@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.core.event.InterestReceivedEvent;
 import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
@@ -91,6 +92,8 @@ public class ListingNotificationService {
         Optional<UnitListing> listingOpt = listingRepository.findById(event.listingId());
         String listingTitle = listingOpt.map(l -> l.getTitleEn() != null ? l.getTitleEn() : "A listing you wishlisted")
                 .orElse("A listing you wishlisted");
+        // Null when the listing has no English title: the reader then says "a listing".
+        String titleParam = listingOpt.map(UnitListing::getTitleEn).orElse(null);
 
         int notified = 0;
         for (UnitListingInterest interest : activeInterests) {
@@ -108,7 +111,8 @@ public class ListingNotificationService {
                         "Listing now available",
                         listingTitle + " is now available for rent.",
                         "LISTING",
-                        event.listingId()
+                        event.listingId(),
+                        NotificationMessage.of("LISTING_AVAILABLE", "listingTitle", titleParam)
                 );
             } catch (Exception ex) {
                 log.error("Failed to notify renter {} for listing {} — {}",
@@ -139,6 +143,7 @@ public class ListingNotificationService {
         Optional<UnitListing> listingOpt = listingRepository.findById(event.listingId());
         String listingTitle = listingOpt.map(l -> l.getTitleEn() != null ? l.getTitleEn() : "your listing")
                 .orElse("your listing");
+        String titleParam = listingOpt.map(UnitListing::getTitleEn).orElse(null);
 
         Set<UserRole> notifyRoles = Set.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
         List<User> tenantAdmins = userRepository.findByTenantId(event.tenantId())
@@ -155,7 +160,8 @@ public class ListingNotificationService {
                         "New wishlist on your listing",
                         "Someone has wishlisted " + listingTitle + ".",
                         "LISTING",
-                        event.listingId()
+                        event.listingId(),
+                        NotificationMessage.of("LISTING_INTEREST_RECEIVED", "listingTitle", titleParam)
                 );
             } catch (Exception ex) {
                 log.error("Failed to notify admin {} for interest on listing {} — {}",

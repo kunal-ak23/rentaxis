@@ -2,25 +2,22 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The shared Pagination footer this page renders translates its own labels, so
- * the mock has to answer useTranslations. These two strings are mirrored from
- * the `Common` namespace in messages/en.json and interpolated the way next-intl
- * would, so the assertions below keep checking the text a user actually sees.
+ * The real English catalog, one stable translator per namespace like the real
+ * hook, so the assertions below check the text a user actually sees (the
+ * page's own labels and the shared Pagination footer's).
  */
-const MESSAGES = vi.hoisted(() => ({
-    paginationShowing: "Showing {start}-{end} of {total}",
-    paginationPerPage: "{count} per page",
-} as Record<string, string>));
-
-vi.mock("next-intl", () => ({
-    useLocale: () => "en",
-    useTranslations: () => (key: string, values?: Record<string, unknown>) => {
-        const template = MESSAGES[key] ?? key;
-        return values
-            ? template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""))
-            : template;
-    },
-}));
+vi.mock("next-intl", async () => {
+    const { createTranslator } = await vi.importActual<typeof import("next-intl")>("next-intl");
+    const messages = (await import("../../../../../../messages/en.json")).default;
+    const cache = new Map<string, ReturnType<typeof createTranslator>>();
+    return {
+        useLocale: () => "en",
+        useTranslations: (namespace: string) => {
+            if (!cache.has(namespace)) cache.set(namespace, createTranslator({ locale: "en", messages, namespace: namespace as never }));
+            return cache.get(namespace)!;
+        },
+    };
+});
 
 // Stable object: the page's fetch effect depends on `session?.user`, so a
 // fresh object per render would refire it forever.

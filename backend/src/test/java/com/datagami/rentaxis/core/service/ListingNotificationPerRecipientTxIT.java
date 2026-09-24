@@ -66,6 +66,7 @@ class ListingNotificationPerRecipientTxIT extends AbstractPostgresIT {
     @Autowired UnitListingInterestRepository interestRepository;
     @Autowired UserRepository userRepository;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired NotificationService notificationService;
 
     private UUID tenantId;
     private UUID listingId;
@@ -164,6 +165,30 @@ class ListingNotificationPerRecipientTxIT extends AbstractPostgresIT {
         assertThat(failedInterest.get("notified_at")).isNull();
         assertThat(interestRow(ok1.getId()).get("status")).isEqualTo("NOTIFIED");
         assertThat(interestRow(ok2.getId()).get("status")).isEqualTo("NOTIFIED");
+    }
+
+    /**
+     * #81: the structured text survives the jsonb round trip, so the web can
+     * render the sentence in the reader's language.
+     */
+    @Test
+    void theStructuredTextIsStoredAndReadBack() {
+        UnitListingInterest interest = activeInterest(UUID.randomUUID());
+
+        listingNotificationService.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT message_key, params::text AS params FROM notifications WHERE user_id = ?",
+                interest.getRenterUserId());
+        assertThat(row.get("message_key")).isEqualTo("LISTING_AVAILABLE");
+        assertThat((String) row.get("params")).contains("\"listingTitle\"").contains("\"IT Listing\"");
+
+        var dtos = notificationService.getNotifications(interest.getRenterUserId(), 0, 10, false);
+        assertThat(dtos).hasSize(1);
+        assertThat(dtos.get(0).getMessageKey()).isEqualTo("LISTING_AVAILABLE");
+        assertThat(dtos.get(0).getParams()).containsExactly(Map.entry("listingTitle", "IT Listing"));
+        // The English copy is still there for push, email and older readers.
+        assertThat(dtos.get(0).getMessage()).isEqualTo("IT Listing is now available for rent.");
     }
 
     @Test

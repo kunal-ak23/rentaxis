@@ -28,10 +28,7 @@ vi.mock("@/i18n/routing", () => ({
     ),
     useRouter: () => ({ push: vi.fn() }),
 }));
-vi.mock("next-intl", () => ({
-    useTranslations: () => Object.assign((key: string) => key, { has: () => false }),
-    useLocale: () => "en",
-}));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("../GlobalSearch", () => ({ default: () => <div /> }));
 
 import { TopHeader } from "../TopHeader";

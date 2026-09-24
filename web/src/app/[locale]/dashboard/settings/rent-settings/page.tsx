@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import {
     Settings,
@@ -78,6 +78,7 @@ const ORG_FINE_DEFAULTS: FineConfig = {
 export default function RentSettingsPage() {
     const t = useTranslations("OnlinePayments");
     const tFines = useTranslations("Fines");
+    const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -152,11 +153,11 @@ export default function RentSettingsPage() {
                 });
             } else {
                 setSettings(null);
-                setError("Failed to load rent settings.");
+                setError(t("loadSettingsFailed"));
             }
         } catch {
             setSettings(null);
-            setError("Failed to load rent settings.");
+            setError(t("loadSettingsFailed"));
         } finally {
             setLoading(false);
         }
@@ -191,10 +192,10 @@ export default function RentSettingsPage() {
                 setTimeout(() => setSaveSuccess(false), 4000);
             } else {
                 const data = await res.json().catch(() => ({}));
-                setError((data as { message?: string }).message || "Failed to save settings.");
+                setError((data as { message?: string }).message || t("saveSettingsFailed"));
             }
         } catch {
-            setError("Network error. Please try again.");
+            setError(t("networkError"));
         } finally {
             setSaving(false);
         }
@@ -234,8 +235,8 @@ export default function RentSettingsPage() {
             <div className="max-w-4xl">
                 <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
                     <ShieldCheck size={48} className="mx-auto text-muted mb-4" />
-                    <h2 className="text-lg font-bold text-foreground mb-2">Access Denied</h2>
-                    <p className="text-sm text-muted">You do not have permission to configure rent settings.</p>
+                    <h2 className="text-lg font-bold text-foreground mb-2">{t("accessDeniedTitle")}</h2>
+                    <p className="text-sm text-muted">{t("rentSettingsAccessDenied")}</p>
                 </div>
             </div>
         );
@@ -276,7 +277,7 @@ export default function RentSettingsPage() {
                     {t("rentSettings")}
                 </h1>
                 <p className="text-sm text-muted mt-1">
-                    Configure rent due dates, grace periods, and late penalties per property.
+                    {t("rentSettingsDesc")}
                 </p>
             </div>
 
@@ -300,17 +301,17 @@ export default function RentSettingsPage() {
             <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 mb-6">
                 <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
                     <Building2 size={14} className="text-primary/60" />
-                    Select Property
+                    {t("selectPropertyHeading")}
                 </h2>
                 <select
                     value={selectedPropertyId}
                     onChange={e => setSelectedPropertyId(e.target.value)}
                     className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                 >
-                    <option value="">-- Select a property --</option>
+                    <option value="">{t("selectPropertyPlaceholder")}</option>
                     {properties.map(p => (
                         <option key={p.id} value={p.id}>
-                            {p.nameEn}
+                            {locale === "ar" && p.nameAr ? p.nameAr : p.nameEn}
                         </option>
                     ))}
                 </select>
@@ -320,7 +321,7 @@ export default function RentSettingsPage() {
             {loading && (
                 <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
                     <Loader2 size={24} className="mx-auto animate-spin text-primary mb-3" />
-                    <p className="text-sm text-muted font-medium">Loading settings...</p>
+                    <p className="text-sm text-muted font-medium">{t("loadingSettings")}</p>
                 </div>
             )}
 
@@ -346,7 +347,7 @@ export default function RentSettingsPage() {
                                 onChange={(v) => updateField("dueDayOfMonth", Math.min(28, Math.max(1, v)))}
                                 className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
-                            <p className="text-[10px] text-muted mt-1">Day of month when rent is due (1-28)</p>
+                            <p className="text-[10px] text-muted mt-1">{t("dueDayHint")}</p>
                         </div>
 
                         {/* Grace Period */}
@@ -362,7 +363,7 @@ export default function RentSettingsPage() {
                                 onChange={(v) => updateField("gracePeriodDays", Math.min(30, Math.max(0, v)))}
                                 className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
-                            <p className="text-[10px] text-muted mt-1">Days after due date before penalty applies (0-30)</p>
+                            <p className="text-[10px] text-muted mt-1">{t("gracePeriodHint")}</p>
                         </div>
 
                         {/* Penalty Type */}
@@ -405,9 +406,10 @@ export default function RentSettingsPage() {
                             <div>
                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                                     {t("penaltyAmount")}
+                                    {" — "}
                                     {settings.penaltyType === "FIXED_PER_DAY"
-                                        ? " — Amount per day (AED)"
-                                        : " — Percentage per day (%)"}
+                                        ? t("penaltyAmountPerDay")
+                                        : t("penaltyPercentPerDay")}
                                 </label>
                                 <NumberInput showZero
                                     min={0}
@@ -428,15 +430,15 @@ export default function RentSettingsPage() {
                                 </p>
                                 <p className="text-[11px] text-muted mt-0.5">
                                     {settings.onlinePaymentEnabled
-                                        ? "Renters can pay rent online through the portal."
-                                        : "Online payments are disabled for this property."}
+                                        ? t("onlineEnabledHint")
+                                        : t("onlineDisabledHint")}
                                 </p>
                             </div>
                             <button
                                 type="button"
                                 role="switch"
                                 aria-checked={settings.onlinePaymentEnabled}
-                                aria-label="Toggle online payment"
+                                aria-label={t("toggleOnlinePayment")}
                                 onClick={() => updateField("onlinePaymentEnabled", !settings.onlinePaymentEnabled)}
                                 className={cn(
                                     "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none",
@@ -446,7 +448,7 @@ export default function RentSettingsPage() {
                                 <span
                                     className={cn(
                                         "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200",
-                                        settings.onlinePaymentEnabled ? "translate-x-5" : "translate-x-0"
+                                        settings.onlinePaymentEnabled ? "translate-x-5 rtl:-translate-x-5" : "translate-x-0"
                                     )}
                                 />
                             </button>
@@ -472,15 +474,15 @@ export default function RentSettingsPage() {
                                             settings.finePerDayRate,
                                         ].filter(v => v !== null && v !== undefined).length;
                                         return count > 0 ? (
-                                            <span className="ml-1 text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                                                {count} override{count > 1 ? "s" : ""} active
+                                            <span className="ms-1 text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                                {t("overridesActive", { count })}
                                             </span>
                                         ) : null;
                                     })()}
                                 </span>
                                 {finesExpanded
                                     ? <ChevronDown size={14} className="text-muted" />
-                                    : <ChevronRight size={14} className="text-muted" />
+                                    : <ChevronRight size={14} className="text-muted rtl:rotate-180" />
                                 }
                             </button>
 
@@ -492,11 +494,11 @@ export default function RentSettingsPage() {
 
                                     {/* Fine Override Field helper */}
                                     {([
-                                        { field: "fineBounceAmount" as const, label: tFines("bounceAmount"), orgVal: orgFines.bounceAmount, unit: "AED" },
-                                        { field: "fineSignatureMismatchAmount" as const, label: tFines("signatureMismatchAmount"), orgVal: orgFines.signatureMismatchAmount, unit: "AED" },
-                                        { field: "fineAccountClosedAmount" as const, label: tFines("accountClosedAmount"), orgVal: orgFines.accountClosedAmount, unit: "AED" },
-                                        { field: "fineGraceDays" as const, label: tFines("graceDays"), orgVal: orgFines.graceDays, unit: "days" },
-                                        { field: "finePerDayRate" as const, label: tFines("perDayRate"), orgVal: orgFines.perDayRate, unit: "AED/day" },
+                                        { field: "fineBounceAmount" as const, label: tFines("bounceAmount"), orgVal: orgFines.bounceAmount, unit: t("unitAed") },
+                                        { field: "fineSignatureMismatchAmount" as const, label: tFines("signatureMismatchAmount"), orgVal: orgFines.signatureMismatchAmount, unit: t("unitAed") },
+                                        { field: "fineAccountClosedAmount" as const, label: tFines("accountClosedAmount"), orgVal: orgFines.accountClosedAmount, unit: t("unitAed") },
+                                        { field: "fineGraceDays" as const, label: tFines("graceDays"), orgVal: orgFines.graceDays, unit: t("unitDays") },
+                                        { field: "finePerDayRate" as const, label: tFines("perDayRate"), orgVal: orgFines.perDayRate, unit: t("unitAedPerDay") },
                                     ] as const).map(({ field, label, orgVal, unit }) => {
                                         const overridden = isOverridden(field);
                                         return (

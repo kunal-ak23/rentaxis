@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cheque;
 
+import com.datagami.rentaxis.core.notification.NotificationMessage;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.cheque.ClearBatchRequest;
@@ -673,7 +674,10 @@ public class ChequeService {
         notifyRenter(cheque, "PAYMENT_BOUNCED", "Cheque Failed",
                 "Instalment #" + cheque.getSeqNo() + " of " + money(amount)
                         + " AED was returned" + (r.failureReason() != null ? " (" + r.failureReason() + ")" : "")
-                        + ". Please arrange a replacement.");
+                        + ". Please arrange a replacement.",
+                NotificationMessage.of(r.failureReason() != null ? "CHEQUE_RETURNED_REASON" : "CHEQUE_RETURNED",
+                        "seq", cheque.getSeqNo(), "amount", amount, "reason", r.failureReason(),
+                        "chequeNo", cheque.getChequeNumber()));
         // The threshold count and the fine itself are the penalty module's. Called
         // after the save so the bounce this call is recording is inside the count,
         // and inside this transaction so a rule that cannot write its proposal rolls
@@ -1820,12 +1824,13 @@ public class ChequeService {
      * so a failed notification row cannot mark the transition's transaction
      * rollback-only from inside the catch block.
      */
-    private void notifyRenter(Cheque cheque, String type, String title, String message) {
+    private void notifyRenter(Cheque cheque, String type, String title, String message,
+                              NotificationMessage structured) {
         try {
             UUID renterUserId = cheque.getRenter() != null ? cheque.getRenter().getUserId() : null;
             if (renterUserId != null) {
                 notificationService.notifyInAppInNewTx(cheque.getTenantId(), renterUserId,
-                        type, title, message, "CHEQUE", cheque.getId());
+                        type, title, message, "CHEQUE", cheque.getId(), structured);
             }
         } catch (Exception e) {
             log.warn("Failed to send {} notification for cheque {}: {}", type, cheque.getId(), e.getMessage());

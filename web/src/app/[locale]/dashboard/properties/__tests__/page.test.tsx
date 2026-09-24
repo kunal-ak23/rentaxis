@@ -6,10 +6,19 @@ vi.mock("@/i18n/routing", () => ({
         <a href={href} {...rest}>{children}</a>
     ),
 }));
-vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
-    useLocale: () => "en",
-}));
+vi.mock("next-intl", async () => {
+    // The real English catalog, one stable translator per namespace.
+    const { createTranslator } = await vi.importActual<typeof import("next-intl")>("next-intl");
+    const messages = (await import("../../../../../../messages/en.json")).default;
+    const cache = new Map<string, ReturnType<typeof createTranslator>>();
+    return {
+        useTranslations: (namespace: string) => {
+            if (!cache.has(namespace)) cache.set(namespace, createTranslator({ locale: "en", messages, namespace: namespace as never }));
+            return cache.get(namespace)!;
+        },
+        useLocale: () => "en",
+    };
+});
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }),
 }));
@@ -18,6 +27,7 @@ vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => null }));
 vi.mock("@/components/ui/confirm-dialog", () => ({ ConfirmDialog: () => null }));
 
 import PropertiesPage from "../page";
+import en from "../../../../../../messages/en.json";
 
 const SAMPLE_STATS = [
     {
@@ -159,20 +169,22 @@ describe("PropertiesPage import result", () => {
 describe("PropertiesPage enum options", () => {
     it("offers only valid PropertyType values in the Add Project form", async () => {
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: "addProject" }));
+        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProject }));
 
-        expect(screen.getByRole("option", { name: "Residential" })).toBeTruthy();
-        expect(screen.getByRole("option", { name: "Commercial" })).toBeTruthy();
-        expect(screen.getByRole("option", { name: "Mixed" })).toBeTruthy();
+        // Labelled options, valued with the backend's enum names.
+        expect((screen.getByRole("option", { name: "Residential" }) as HTMLOptionElement).value).toBe("RESIDENTIAL");
+        expect((screen.getByRole("option", { name: "Commercial" }) as HTMLOptionElement).value).toBe("COMMERCIAL");
+        expect((screen.getByRole("option", { name: "Mixed use" }) as HTMLOptionElement).value).toBe("MIXED");
         expect(screen.queryByRole("option", { name: "Industrial" })).toBeNull();
     });
 
     it("offers only valid UnitType values in the Add Property form", async () => {
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: "addProperty" }));
+        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProperty }));
 
-        for (const valid of ["STUDIO", "BHK 1", "BHK 2", "BHK 3", "PENTHOUSE", "RETAIL", "OFFICE"]) {
-            expect(screen.getByRole("option", { name: valid })).toBeTruthy();
+        for (const valid of ["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"] as const) {
+            const option = screen.getByRole("option", { name: en.MasterData[`unitType${valid}`] }) as HTMLOptionElement;
+            expect(option.value).toBe(valid);
         }
         for (const invalid of ["BHK 4", "SHOP", "WAREHOUSE"]) {
             expect(screen.queryByRole("option", { name: invalid })).toBeNull();
@@ -257,11 +269,11 @@ describe("PropertiesPage create project errors", () => {
         });
 
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: "addProject" }));
+        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProject }));
         fireEvent.change(screen.getByPlaceholderText("Project Name (EN)"), {
             target: { value: "Marina Tower" },
         });
-        fireEvent.click(screen.getByRole("button", { name: "create" }));
+        fireEvent.click(screen.getByRole("button", { name: en.MasterData.create }));
 
         expect(await screen.findByText("A property named 'Marina Tower' already exists")).toBeTruthy();
     });
