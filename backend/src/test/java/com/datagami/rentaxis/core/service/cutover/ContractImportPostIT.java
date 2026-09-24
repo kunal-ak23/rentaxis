@@ -296,6 +296,40 @@ class ContractImportPostIT extends AbstractPostgresIT {
     }
 
     /**
+     * R1 P2-6: PACT's history is authoritative. A receipt PACT recorded before the
+     * row's posting date (advance cash taken before PACT booked it) replays as it
+     * is; the "not before it was booked" rule guards live actions only.
+     */
+    @Test
+    void aReceiptPactRecordedBeforeTheRowWasBookedStillReplays() throws Exception {
+        UUID batchId;
+        try (org.apache.poi.ss.usermodel.Workbook wb = fixture.template()) {
+            var sheet = wb.getSheet("Cheques");
+            var header = sheet.getRow(0);
+            int posting = -1;
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                if ("PostingDate".equals(header.getCell(c).getStringCellValue().trim())) posting = c;
+            }
+            assertThat(posting).as("the PostingDate column").isNotNegative();
+            var row = sheet.getRow(3);
+            assertThat(row.getCell(0).getStringCellValue()).isEqualTo("SAMPLE-0002");
+            row.getCell(posting, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK)
+                    .setCellValue("2026-09-20");
+            row.getCell(4).setCellValue("2026-10-01");
+            row.getCell(10).setCellValue("CLEARED");
+            row.getCell(11, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue("2026-09-15");
+            row.getCell(12, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue("2026-09-15");
+            batchId = contractPersist.persist(wb, fixture.newJob()).batchId();
+        }
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from journal_entries je join cheques c on c.crt_journal_id = je.id
+                where c.lease_id = ? and je.entry_date = date '2026-09-15'""", Long.class, leaseId))
+                .as("the clearance replayed on PACT's date").isEqualTo(1L);
+    }
+
+    /**
      * A draft written before changeset 108 was defaulted to INSTALMENT; the bulk post
      * puts it on the CONTRACT model all the same, because the rule is about where the
      * contract came from, not about what its draft says.

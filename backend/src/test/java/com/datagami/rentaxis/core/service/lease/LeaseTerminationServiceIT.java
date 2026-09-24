@@ -658,6 +658,13 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThat(after).hasSize(2);
         assertThat(after.get(1).kind()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind.CREDIT_NOTE);
         assertThat(after.get(1).vatAmount()).isEqualByComparingTo("1536.99");
+
+        // R1 P3-4b: the backfill refuses a terminated lease rather than issue an
+        // invoice without the credit note that goes with it.
+        assertThatThrownBy(() -> vatTaxPointService.issueContractInvoice(leaseId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("This lease was terminated");
+        assertThat(taxInvoices.forLease(leaseId)).hasSize(2);
     }
 
     @Test

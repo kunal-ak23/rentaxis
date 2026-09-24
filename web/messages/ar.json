@@ -2202,6 +2202,11 @@
     "receive": "استلام",
     "receivedInto": "استُلم في",
     "receivedIntoHint": "نقد يُحصى في الخزينة أو يُودع في حساب بنكي.",
+    "settlementTargetFailed": "تعذّر تحميل الحساب الذي سيُرحَّل إليه هذا الاستلام.",
+    "receivedIntoDefault": "حساب التسوية الافتراضي",
+    "clearedInto": "مُحصَّل في: {account}",
+    "cashInHand": "النقد في الصندوق",
+    "bankAccountKind": "بنك",
     "bounce": "ارتداد",
     "failureReason": "سبب الارتداد",
     "failureReasons": {

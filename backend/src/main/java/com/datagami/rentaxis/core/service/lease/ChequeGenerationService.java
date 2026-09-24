@@ -407,7 +407,7 @@ public class ChequeGenerationService {
             c.setNarration(row.narration());
             c.setMode(mode);
             c.setPayeeBank(r.payeeBank());
-            c.setDebitAccount(debitAccount);
+            c.setDebitAccount(r.debitAccountId() != null ? debitAccount : defaultFor(mode, lease, debitAccount));
             saved.add(c);
         }
         return toDtos(chequeRepository.saveAll(saved), lease);
@@ -641,7 +641,7 @@ public class ChequeGenerationService {
                     fallbackDebit = debitAccount(null, lease);
                     fallbackResolved = true;
                 }
-                c.setDebitAccount(fallbackDebit);
+                c.setDebitAccount(defaultFor(c.getMode(), lease, fallbackDebit));
             }
             if (row.vatAmount() != null) {
                 if (row.vatAmount().signum() < 0 || (row.amount() != null && row.vatAmount().compareTo(row.amount()) > 0)) {
@@ -730,7 +730,7 @@ public class ChequeGenerationService {
                     fallbackDebit = debitAccount(null, lease);
                     fallbackResolved = true;
                 }
-                c.setDebitAccount(fallbackDebit);
+                c.setDebitAccount(defaultFor(c.getMode(), lease, fallbackDebit));
             }
             if (row.vatAmount() != null && lease.getVatTiming() == VatTiming.INSTALMENT) {
                 // The grid's own rule (saveRows), on this door too (review P3-2).
@@ -791,6 +791,18 @@ public class ChequeGenerationService {
      * runs. An unmapped BANK role leaves the column null and the posting guard
      * names it.
      */
+    /**
+     * R1 P2-2: a CASH row nobody gave an account to is counted into the till — the
+     * property's cash-in-hand leaf (or the tenant's) when the chart has one — not
+     * into the bank the other rows default to.
+     */
+    private Account defaultFor(ChequeMode mode, Lease lease, Account bankDefault) {
+        if (mode != ChequeMode.CASH) return bankDefault;
+        Unit unit = lease.getUnit();
+        UUID propertyId = unit != null && unit.getProperty() != null ? unit.getProperty().getId() : null;
+        return ownedBankLeaf.cashInHand(propertyId).flatMap(accountRepository::findById).orElse(bankDefault);
+    }
+
     private Account debitAccount(UUID requested, Lease lease) {
         if (requested != null) return account(requested);
         Unit unit = lease.getUnit();

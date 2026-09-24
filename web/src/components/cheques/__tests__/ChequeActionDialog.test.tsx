@@ -5,6 +5,7 @@ import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import type { VatTaxPoint } from "@/lib/api/leasing";
 import type { Cheque } from "@/lib/api/leasing";
+import { ApiError } from "@/lib/api/leasing";
 import type { ChequeAction } from "../ChequeActionDialog";
 
 /**
@@ -25,7 +26,7 @@ vi.mock("@/components/finance/AccountPicker", () => ({
 
 const api = vi.hoisted(() => ({
     replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), receive: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
-    fiscal: vi.fn(), defaultsGet: vi.fn(),
+    fiscal: vi.fn(), defaultsGet: vi.fn(), settlementTarget: vi.fn(),
 }));
 
 vi.mock("@/lib/api/ledger", async orig => {
@@ -44,7 +45,7 @@ vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
         ...m,
-        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel, receive: api.receive },
+        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel, receive: api.receive, settlementTarget: api.settlementTarget },
         vatApi: { ...m.vatApi, schedule: api.schedule },
         leaseApi: { ...m.leaseApi, cheques: api.leaseCheques },
     };
@@ -87,6 +88,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+    api.settlementTarget.mockResolvedValue({ target: null, options: [] });
     api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
     api.defaultsGet.mockResolvedValue([]);
 });
@@ -154,62 +156,53 @@ describe("ChequeActionDialog — release online", () => {
 });
 
 /**
- * F14-17: a Receive on a CASH instalment used to post straight to the bank
- * leaf the row was generated with, whatever the accountant actually did with
- * the cash. It now offers a "Received into" picker, defaulting a CASH row to
- * the tenant's CASH role account and sending whatever the field ends up with.
+ * F14-17 + R1 P2-2/P2-3: "Received into" is the server's settlement target (what a
+ * post with no override lands in) and the options any staff role may pick; the
+ * account shown is the account sent, and a failed lookup is shown, not swallowed.
  */
 describe("ChequeActionDialog — receive account (F14-17)", () => {
-    it("defaults a CASH row to the tenant's CASH default account and sends it", async () => {
-        api.defaultsGet.mockResolvedValue([
-            { role: "CASH", accountId: "acc-cash", accountCode: "410300", accountName: "Cash in hand", inherited: false },
-        ]);
+    const CASH = { id: "acc-cash", code: "A-02-05-001", name: "Cash in hand", nameAr: null, kind: "CASH" as const, bankAccount: null };
+    const BANK = { id: "acc-bank", code: "A-02-02-001", name: "Emirates Islamic", nameAr: null, kind: "BANK" as const, bankAccount: "Emirates Islamic 0012" };
+
+    it("shows the server's target for a CASH row and sends it", async () => {
+        api.settlementTarget.mockResolvedValue({ target: CASH, options: [CASH, BANK] });
         api.receive.mockResolvedValue({});
         renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
 
-        await waitFor(() => expect(api.defaultsGet).toHaveBeenCalled());
-        await waitFor(() => expect((screen.getByTestId("account-picker") as HTMLInputElement).value).toBe("acc-cash"));
-
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-cash"));
         fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
         await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
         expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-cash" }));
     });
 
-    it("sends whatever account the operator picks instead of the default", async () => {
-        api.defaultsGet.mockResolvedValue([{ role: "CASH", accountId: "acc-cash", accountCode: "410300", accountName: "Cash in hand", inherited: false }]);
+    it("sends the account the operator picks instead", async () => {
+        api.settlementTarget.mockResolvedValue({ target: CASH, options: [CASH, BANK] });
         api.receive.mockResolvedValue({});
         renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
 
-        await waitFor(() => expect((screen.getByTestId("account-picker") as HTMLInputElement).value).toBe("acc-cash"));
-        fireEvent.change(screen.getByTestId("account-picker"), { target: { value: "acc-manual" } });
-
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-cash"));
+        fireEvent.change(screen.getByTestId("cheque-receive-account"), { target: { value: "acc-bank" } });
         fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
         await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
-        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-manual" }));
+        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-bank" }));
     });
 
-    it("falls back to the row's own debit account when the chart has no CASH default", async () => {
-        api.defaultsGet.mockResolvedValue([]);
+    it("shows a transfer row's resolved bank leaf, not the row's stamped one", async () => {
+        api.settlementTarget.mockResolvedValue({ target: BANK, options: [CASH, BANK] });
         api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "TRANSFER", debitAccountId: "acc-orphan" });
+
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-account") as HTMLSelectElement).value).toBe("acc-bank"));
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
+        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: "acc-bank" }));
+    });
+
+    it("shows a failed lookup instead of swallowing it", async () => {
+        api.settlementTarget.mockRejectedValue(new ApiError(403, "Access denied"));
         renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
 
-        await waitFor(() => expect(api.defaultsGet).toHaveBeenCalled());
-        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
-        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
-        // The row's own account is left to the server (F14-16 may move an orphan bank leaf).
-        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: null }));
-    });
-
-    it("defaults a TRANSFER row to its own current debit account, not the CASH default", async () => {
-        api.receive.mockResolvedValue({});
-        renderDialog("receive", { mode: "TRANSFER", debitAccountId: "acc-bank-7" });
-
-        expect((screen.getByTestId("account-picker") as HTMLInputElement).value).toBe("acc-bank-7");
-        expect(api.defaultsGet).not.toHaveBeenCalled();
-
-        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
-        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(1));
-        expect(api.receive).toHaveBeenCalledWith("c1", expect.objectContaining({ debitAccountId: null }));
+        expect((await screen.findByTestId("cheque-settlement-error")).textContent).toContain("Access denied");
     });
 });
 

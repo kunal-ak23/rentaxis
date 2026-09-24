@@ -1231,7 +1231,11 @@ public class ChequeService {
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay, boolean receiptSource) {
-        requireNotBeforeBooked(cheque, bookedOn(cheque), date);
+        // Live actions only (R1 P2-6): a cut-over replay records what PACT did, and
+        // PACT's history is authoritative even when cash came in before it was booked.
+        if (replay == null) {
+            requireNotBeforeBooked(cheque, bookedOn(cheque), date);
+        }
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         // Checked on the way in whichever door it came through: an override the
@@ -1296,11 +1300,52 @@ public class ChequeService {
      * no account still settles to the CASH role.
      */
     private Account reconcilableLeaf(Account stamped, Cheque cheque) {
-        if (stamped == null && cheque.getMode() == ChequeMode.CASH) return null;
+        UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        if (cheque.getMode() == ChequeMode.CASH) {
+            // R1 P2-2: cash is counted into the till unless somebody chose otherwise.
+            // A CASH row carrying a bank leaf got it as the grid's default, not as a
+            // decision; its money goes to cash in hand when the chart has one.
+            if (stamped != null && stamped.getAccountSubType() == AccountSubType.CASH) return stamped;
+            java.util.Optional<UUID> cash = ownedBankLeaf.cashInHand(property);
+            if (cash.isPresent()) return account(cash.get());
+            if (stamped == null) return null;
+        }
         if (stamped != null && stamped.getAccountSubType() != AccountSubType.BANK) return stamped;
         if (stamped != null && ownedBankLeaf.isOwned(stamped.getId())) return stamped;
         UUID propertyId = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
         return ownedBankLeaf.forProperty(propertyId).map(this::account).orElse(stamped);
+    }
+
+    /**
+     * R1 P2-2/P2-3: where a receipt or clearing of this row lands when the caller
+     * names no account — the same resolution {@link #applyClearing} uses — and the
+     * accounts the caller may choose instead. The dialog shows the first and offers
+     * the second, so what it displays is what posts.
+     */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO settlementTarget(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId).orElseThrow(() -> new NotFoundException("Cheque not found"));
+        if (cheque.getLease() == null) throw new NotFoundException("Lease not found");
+        leaseAccessPolicy.requireManageable(cheque.getLease());
+        Account stamped = cheque.getDebitAccount() != null && isSettlementAccount(cheque.getDebitAccount())
+                ? cheque.getDebitAccount() : null;
+        Account target = reconcilableLeaf(stamped, cheque);
+        UUID property = cheque.getProperty() != null ? cheque.getProperty().getId() : null;
+        List<com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option> options = new ArrayList<>();
+        for (OwnedBankLeaf.Option o : ownedBankLeaf.optionsFor(property)) {
+            options.add(new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option(
+                    o.id(), o.code(), o.name(), o.nameAr(), o.kind(), o.bankAccount()));
+        }
+        if (target != null && options.stream().noneMatch(o -> o.id().equals(target.getId()))) {
+            options.add(option(target));
+        }
+        return new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO(
+                target == null ? null : option(target), options);
+    }
+
+    private static com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option option(Account a) {
+        return new com.datagami.rentaxis.api.dto.cheque.SettlementTargetDTO.Option(a.getId(), a.getCode(), a.getName(),
+                a.getNameAr(), a.getAccountSubType() == AccountSubType.CASH ? "CASH" : "BANK", null);
     }
 
     /**

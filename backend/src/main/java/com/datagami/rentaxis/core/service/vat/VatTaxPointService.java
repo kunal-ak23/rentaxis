@@ -544,7 +544,15 @@ public class VatTaxPointService {
     @Transactional
     public List<com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO> issueContractInvoice(UUID leaseId) {
         Lease lease = lease(leaseId);
-        leaseAccessPolicy.requireReadable(lease);
+        leaseAccessPolicy.requireManageable(lease);
+        // R1 P3-4b: a terminated contract handed part of its VAT back on the TCR. The
+        // backfill would have to issue the invoice and a credit note rebuilt from
+        // that entry, whose taxable split it cannot know for certain — so it refuses,
+        // and the accountant issues the pair by hand.
+        if (lease.getTerminationJournalId() != null) {
+            throw new BusinessRuleViolationException("This lease was terminated, and the VAT its termination handed"
+                    + " back needs a credit note beside the contract invoice; issue both by hand rather than here.");
+        }
         if (lease.getVatTiming() != com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT) {
             throw new BusinessRuleViolationException("Only a lease that declares its VAT on the contract date has a"
                     + " contract tax invoice; this one issues one per instalment.");

@@ -89,6 +89,15 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         return tx.execute(s -> resolver.resolve(AccountRole.BANK, p.getId()).getId());
     }
 
+    /** A tenant-wide bank leaf, beside the property ones. */
+    private UUID tenantBankLeaf() {
+        return tx.execute(s -> {
+            var parent = resolver.resolve(AccountRole.BANK, fixtures.property().getId()).getParent();
+            return accountService.createLeaf("Emirates Islamic - Main " + UUID.randomUUID().toString().substring(0, 4),
+                    parent, null).getId();
+        });
+    }
+
     /** A bank account owning {@code leaf}, the tenant's only one. */
     private void bankAccountOwning(UUID leaf) {
         UUID id = tx.execute(s -> {
@@ -103,8 +112,7 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
 
     @Test
     void aNewPropertyIsMappedToTheOwnedLeafInsteadOfAnOrphan() {
-        Property second = fixtures.createProperty("OWN");
-        UUID owned = bankLeafOf(second);
+        UUID owned = tenantBankLeaf();
         bankAccountOwning(owned);
         long leavesBefore = accountRepo.count();
 
@@ -124,12 +132,58 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         ChequeDTO row = r.cheques().stream().filter(c -> c.mode() == ChequeMode.PDC).findFirst().orElseThrow();
         assertThat(row.debitAccountId()).as("generated before any bank account existed").isEqualTo(orphan);
 
-        UUID owned = bankLeafOf(fixtures.createProperty("OWN"));
+        UUID owned = tenantBankLeaf();
         bankAccountOwning(owned);
 
         cheques.deposit(row.id(), ChequeActionRequest.on(row.chequeDate()));
         ChequeDTO cleared = cheques.clear(row.id(), ChequeActionRequest.on(row.chequeDate()));
 
         assertThat(cleared.debitAccountId()).isEqualTo(owned);
+    }
+
+    private UUID cashLeaf() {
+        return tx.execute(s -> resolver.resolve(AccountRole.CASH, fixtures.property().getId()).getId());
+    }
+
+    /** R1 P2-2: a CASH row the grid generates defaults to cash in hand, not the bank. */
+    @Test
+    void aGeneratedCashRowDefaultsToCashInHand() {
+        UUID lease = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "36000")));
+        List<ChequeDTO> rows = chequeGeneration.saveRows(lease, List.of(
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, CONTRACT_DATE, null, START,
+                        null, null, null, new java.math.BigDecimal("18000"), "Rent", ChequeMode.CASH),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, CONTRACT_DATE, "900001",
+                        START.plusMonths(6), "Emirates NBD", null, null, new java.math.BigDecimal("18000"), "Rent",
+                        ChequeMode.PDC)));
+        assertThat(rows).filteredOn(r -> r.mode() == ChequeMode.CASH).extracting(ChequeDTO::debitAccountId)
+                .containsExactly(cashLeaf());
+        assertThat(rows).filteredOn(r -> r.mode() == ChequeMode.PDC).extracting(ChequeDTO::debitAccountId)
+                .containsExactly(bankLeafOf(fixtures.property()));
+    }
+
+    /**
+     * R1 P2-2/P2-3: what the Receive dialog shows is what posts. A CASH row stamped
+     * with a bank leaf (the old grid default) resolves to cash in hand, the settlement
+     * target says so, and a receive with no account lands there.
+     */
+    @Test
+    void theSettlementTargetIsWhereTheReceiptPosts() {
+        UUID orphan = bankLeafOf(fixtures.property());
+        PostLeaseResponse r = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(line("RENT", "36000")), 2, null);
+        ChequeDTO cash = cheques.addRowToPostedLease(r.lease().getId(),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, START, null, START, null, null,
+                        orphan, new java.math.BigDecimal("1500"), "Cash", ChequeMode.CASH));
+        assertThat(cash.debitAccountId()).isEqualTo(orphan);
+        UUID owned = tenantBankLeaf();
+        bankAccountOwning(owned);
+
+        var target = cheques.settlementTarget(cash.id());
+        assertThat(target.target().id()).isEqualTo(cashLeaf());
+        assertThat(target.options()).extracting(o -> o.id()).contains(cashLeaf(), owned).doesNotContain(orphan);
+        assertThat(cheques.receive(cash.id(), ChequeActionRequest.on(START)).debitAccountId()).isEqualTo(cashLeaf());
+
+        ChequeDTO pdc = r.cheques().stream().filter(c -> c.mode() == ChequeMode.PDC).findFirst().orElseThrow();
+        assertThat(cheques.settlementTarget(pdc.id()).target().id()).as("an orphan bank leaf resolves to the owned one")
+                .isEqualTo(owned);
     }
 }

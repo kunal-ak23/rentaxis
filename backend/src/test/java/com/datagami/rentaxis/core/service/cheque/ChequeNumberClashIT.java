@@ -60,6 +60,7 @@ class ChequeNumberClashIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
 
@@ -126,5 +127,35 @@ class ChequeNumberClashIT extends AbstractPostgresIT {
         UUID other = draftWithNumbers(fixtures.createRenter("Other Drawer"), book);
         assertThat(posting.dryRun(other).errors()).isEmpty();
         posting.post(other);
+    }
+
+    /** R1 P3-3: spaces are not part of a cheque number, on either side of the comparison. */
+    @Test
+    void spacesDoNotHideTheSameCheque() {
+        String book = LeaseTestFixtures.nextChequeBook();
+        UUID first = draftWithNumbers(fixtures.renter(), book);
+        // Every numbered row of the first lease stored with spaces in it.
+        int spaced = jdbc.update("update cheques set cheque_number = ' ' || substr(cheque_number, 1, 3) || ' '"
+                + " || substr(cheque_number, 4) || ' ' where lease_id = ? and cheque_number is not null", first);
+        assertThat(spaced).isPositive();
+        posting.post(first);
+
+        UUID second = draftWithNumbers(fixtures.renter(), book);
+        assertThat(posting.dryRun(second).errors())
+                .anyMatch(e -> e.contains("is already registered for this renter on another lease"));
+    }
+
+    /** R1 P3-3: a cheque handed back to the renter is no longer held, so it may be registered again. */
+    @Test
+    void aReturnedChequeMayBeRegisteredAgain() {
+        String book = LeaseTestFixtures.nextChequeBook();
+        UUID first = draftWithNumbers(fixtures.renter(), book);
+        var posted = posting.post(first);
+        for (var c : posted.cheques()) {
+            if (c.chequeNumber() != null) cheques.returnToTenant(c.id(), CONTRACT_DATE, "Unit transfer");
+        }
+
+        UUID second = draftWithNumbers(fixtures.renter(), book);
+        assertThat(posting.dryRun(second).errors()).noneMatch(e -> e.contains("already registered"));
     }
 }

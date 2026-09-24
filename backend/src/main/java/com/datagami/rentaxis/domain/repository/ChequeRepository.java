@@ -534,16 +534,18 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
 
     /**
      * F14-19: numbered cheques of this renter on <em>other</em> leases that are still
-     * instruments (not a draft, not replaced, not cancelled) — the candidates a new
+     * instruments (not a draft, replaced, cancelled or handed back) — the candidates a new
      * row with the same drawer bank and number would duplicate.
      */
     @Query("""
         select c from Cheque c join fetch c.lease l left join fetch l.unit
-        where c.renter.id = :renterId and c.chequeNumber in :numbers and l.id <> :leaseId
+        where c.renter.id = :renterId and replace(c.chequeNumber, ' ', '') in :numbers and l.id <> :leaseId
           and c.status not in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT,
                                com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED,
-                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED)
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.RETURNED)
         """)
+    /** {@code numbers} with every space removed; stored numbers are compared the same way. */
     List<Cheque> findLiveNumberedOnOtherLeases(@org.springframework.data.repository.query.Param("renterId") UUID renterId,
                                                @org.springframework.data.repository.query.Param("numbers") java.util.Collection<String> numbers,
                                                @org.springframework.data.repository.query.Param("leaseId") UUID leaseId);

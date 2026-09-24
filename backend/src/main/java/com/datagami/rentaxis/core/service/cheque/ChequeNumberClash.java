@@ -22,8 +22,9 @@ import java.util.stream.Collectors;
  * bank it is drawn on, its number and the account it is drawn from — the renter's —
  * so the same (drawer bank, number, renter) on two leases is the same paper
  * registered twice. Uniqueness within one lease is {@link ChequeRowRules}' job; this
- * looks across the tenant's other leases, ignoring rows that are drafts, replaced or
- * cancelled. Bank names are compared trimmed and case-insensitively.
+ * looks across the tenant's other leases, ignoring rows that are drafts, replaced,
+ * cancelled or returned (handed back: the paper is no longer held, and a unit
+ * transfer re-registers it on the new lease). Bank names are compared trimmed and case-insensitively.
  */
 @Component
 public class ChequeNumberClash {
@@ -42,13 +43,13 @@ public class ChequeNumberClash {
                 .filter(c -> c.getMode() == ChequeMode.PDC && ChequeRowRules.blankToNull(c.getChequeNumber()) != null)
                 .toList();
         if (numbered.isEmpty() || lease == null || lease.getRenter() == null) return List.of();
-        Set<String> numbers = numbered.stream().map(c -> c.getChequeNumber().trim()).collect(Collectors.toSet());
+        Set<String> numbers = numbered.stream().map(c -> number(c.getChequeNumber())).collect(Collectors.toSet());
         List<Cheque> elsewhere = cheques.findLiveNumberedOnOtherLeases(lease.getRenter().getId(), numbers,
                 lease.getId() == null ? new UUID(0, 0) : lease.getId());
         List<String> out = new ArrayList<>();
         for (Cheque row : numbered) {
             elsewhere.stream()
-                    .filter(o -> o.getChequeNumber().trim().equals(row.getChequeNumber().trim()))
+                    .filter(o -> number(o.getChequeNumber()).equals(number(row.getChequeNumber())))
                     .filter(o -> Objects.equals(bank(o.getPayeeBank()), bank(row.getPayeeBank())))
                     .findFirst()
                     .ifPresent(o -> out.add("Cheque " + row.getChequeNumber().trim()
@@ -63,6 +64,11 @@ public class ChequeNumberClash {
     public void requireUnique(Lease lease, Cheque row) {
         List<String> found = clashes(lease, List.of(row));
         if (!found.isEmpty()) throw new BusinessRuleViolationException(found.get(0));
+    }
+
+    /** "154 101" and "154101" are the same cheque: whitespace is not part of the number. */
+    static String number(String n) {
+        return n == null ? "" : n.replaceAll("\\s+", "");
     }
 
     private static String bank(String name) {

@@ -2202,6 +2202,11 @@
     "receive": "Receive",
     "receivedInto": "Received into",
     "receivedIntoHint": "Cash counted into the till or deposited to a bank account.",
+    "settlementTargetFailed": "Could not load where this receipt will be posted.",
+    "receivedIntoDefault": "The default settlement account",
+    "clearedInto": "Cleared into: {account}",
+    "cashInHand": "Cash in hand",
+    "bankAccountKind": "Bank",
     "bounce": "Bounce",
     "failureReason": "Failure Reason",
     "failureReasons": {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
@@ -14,6 +14,8 @@ import {
     vatApi,
     type Cheque,
     type ChequeFailureReason,
+    type SettlementOption,
+    type SettlementTarget,
 } from "@/lib/api/leasing";
 import { vatMoveFor, type VatMove } from "./vatMove";
 import type { RegisterAction } from "./registerActions";
@@ -63,6 +65,12 @@ type Props = {
 export default function ChequeActionDialog({ action, cheque, propertyId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const locale = useLocale();
+    const accountLabel = (o: SettlementOption) => {
+        const name = locale === "ar" && o.nameAr ? o.nameAr : o.name;
+        const kind = o.kind === "CASH" ? t("cashInHand") : o.bankAccount ?? t("bankAccountKind");
+        return `${o.code ? o.code + " " : ""}${name} · ${kind}`;
+    };
 
     const [date, setDate] = useState(todayIso());
     const [notes, setNotes] = useState("");
@@ -123,28 +131,33 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         };
     }, [action, cheque]);
 
-    // Receiving a CASH instalment used to post straight to the bank leaf the
-    // row was generated with, whatever the accountant actually did with the
-    // note — the deposit slip and the cash box never met the ledger. A CASH
-    // row now defaults to the tenant's CASH role account (finance/default-accounts);
-    // a chart with none configured falls back to the row's own debit account,
-    // same as a TRANSFER row, which always keeps its current account as the
-    // starting point. Either way the picker below lets the operator override it.
+    // Where a receipt (or clearing) posts, asked of the server (R1 P2-2/P2-3):
+    // `target` is exactly the account a post with no override lands in — cash in
+    // hand for a CASH row, the reconcilable bank leaf otherwise — and `options`
+    // are the cash and bank-account leaves any staff role may choose. The dialog
+    // shows the target and always sends the account shown, so what it displays is
+    // what posts. A failed lookup is shown, never swallowed.
+    const [settlement, setSettlement] = useState<SettlementTarget | null>(null);
+    const [settlementError, setSettlementError] = useState<string | null>(null);
     useEffect(() => {
-        if (action !== "receive" || !cheque || cheque.mode !== "CASH") return;
+        if ((action !== "receive" && action !== "clear") || !cheque) return;
         let live = true;
-        ledgerApi.defaults
-            .get()
-            .then(mappings => {
+        setSettlement(null);
+        setSettlementError(null);
+        chequeApi
+            .settlementTarget(cheque.id)
+            .then(res => {
                 if (!live) return;
-                const cash = mappings.find(m => m.role === "CASH" && m.accountId);
-                if (cash?.accountId) setDebitAccountId(cash.accountId);
+                setSettlement(res);
+                if (action === "receive") setDebitAccountId(res.target?.id ?? null);
             })
-            .catch(() => {});
+            .catch(e => {
+                if (live) setSettlementError(e instanceof ApiError ? e.message : t("settlementTargetFailed"));
+            });
         return () => {
             live = false;
         };
-    }, [action, cheque]);
+    }, [action, cheque, t]);
 
     if (!action || !cheque) return null;
 
@@ -173,14 +186,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     await chequeApi.clear(cheque.id, { date, notes: notes || null });
                     break;
                 case "receive":
-                    // The row's own account is not sent back: the server then settles into it,
-                    // or — when it is a bank leaf no bank account owns — into the property's
-                    // reconcilable leaf (F14-16). Only a different choice is an override.
-                    await chequeApi.receive(cheque.id, {
-                        date,
-                        notes: notes || null,
-                        debitAccountId: debitAccountId && debitAccountId !== cheque.debitAccountId ? debitAccountId : null,
-                    });
+                    // The account shown is the account sent: the server's own target
+                    // unless the user picked another (R1 P2-3).
+                    await chequeApi.receive(cheque.id, { date, notes: notes || null, debitAccountId });
                     break;
                 case "bounce":
                     await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason });
@@ -353,16 +361,37 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                 {action === "receive" && (
                     <div>
                         <label className={label} htmlFor="cheque-receive-account">{t("receivedInto")}</label>
-                        <SettlementAccountPicker
-                            value={debitAccountId}
-                            onChange={setDebitAccountId}
-                            propertyId={propertyId}
-                            placeholder={t("receivedInto")}
-                        />
+                        <select
+                            id="cheque-receive-account"
+                            data-testid="cheque-receive-account"
+                            className={field}
+                            value={debitAccountId ?? ""}
+                            disabled={!settlement}
+                            onChange={e => setDebitAccountId(e.target.value || null)}
+                        >
+                            {!settlement?.target && <option value="">{t("receivedIntoDefault")}</option>}
+                            {(settlement?.options ?? []).map(o => (
+                                <option key={o.id} value={o.id}>
+                                    {accountLabel(o)}
+                                </option>
+                            ))}
+                        </select>
                         <p className="text-[11px] text-muted mt-1" data-testid="cheque-received-into-hint">
                             {t("receivedIntoHint")}
                         </p>
                     </div>
+                )}
+
+                {action === "clear" && settlement?.target && (
+                    <p className="text-xs text-muted" data-testid="cheque-cleared-into">
+                        {t("clearedInto", { account: accountLabel(settlement.target) })}
+                    </p>
+                )}
+
+                {settlementError && (action === "receive" || action === "clear") && (
+                    <p className="text-xs text-danger" role="alert" data-testid="cheque-settlement-error">
+                        {settlementError}
+                    </p>
                 )}
 
                 {(action === "details" || action === "replace") && (
