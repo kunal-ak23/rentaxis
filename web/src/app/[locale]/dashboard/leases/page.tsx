@@ -128,6 +128,20 @@ export default function LeasesPage() {
         fetchRenters();
     }, []);
 
+    // The dashboard's "New lease" arrives as ?new=1: there is no /leases/new
+    // page (drafting is this list's wizard modal), so open the wizard here and
+    // drop the flag so a reload or Back doesn't reopen it (#91).
+    useEffect(() => {
+        if (!canManageLeases) return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("new") !== "1") return;
+        setEditingLeaseId(null);
+        setWizardOpen(true);
+        params.delete("new");
+        const qs = params.toString();
+        window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }, [canManageLeases]);
+
     useEffect(() => {
         const timer = setTimeout(() => {
             setDebouncedSearchQuery(searchQuery.trim());
