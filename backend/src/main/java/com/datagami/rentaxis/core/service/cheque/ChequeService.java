@@ -1182,7 +1182,7 @@ public class ChequeService {
         if (settlementAccountId != null) {
             cheque.setDebitAccount(requireSettlementAccount(account(settlementAccountId)));
         }
-        applyClearing(lease, cheque, on, null, null);
+        applyClearing(lease, cheque, on, null, null, null, false, settlementAccountId != null);
         chequeRepository.save(cheque);
         penaltyRules.onLateClear(cheque, on);
         publishCleared(cheque);
@@ -1231,6 +1231,16 @@ public class ChequeService {
      */
     private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
                                Replay replay, boolean receiptSource) {
+        applyClearing(lease, cheque, date, debitAccountId, notes, replay, receiptSource, false);
+    }
+
+    /**
+     * {@code accountChosen}: the row's account was set for this very clearing (the
+     * gateway's settlement account on an online capture), so it is used as it is —
+     * never re-resolved to cash in hand or another bank leaf.
+     */
+    private void applyClearing(Lease lease, Cheque cheque, LocalDate date, UUID debitAccountId, String notes,
+                               Replay replay, boolean receiptSource, boolean accountChosen) {
         // Live actions only (R1 P2-6): a cut-over replay records what PACT did, and
         // PACT's history is authoritative even when cash came in before it was booked.
         if (replay == null) {
@@ -1247,7 +1257,7 @@ public class ChequeService {
                         ? account(debitAccountId)
                         : settlementAccount(debitAccountId, cheque.getProperty()))
                 : requireSettlementAccount(cheque.getDebitAccount());
-        if (debitAccountId == null && replay == null) {
+        if (debitAccountId == null && replay == null && !accountChosen) {
             debit = reconcilableLeaf(debit, cheque);
         }
         // No resolveOrNull fallback and no try/catch: when the row names no account
