@@ -9,6 +9,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -228,6 +229,8 @@ export default function FiscalSettingsPage() {
                     </div>
                 </div>
             )}
+
+            <BankLocksCard />
 
             <ConfirmDialog
                 isOpen={confirmOpen}

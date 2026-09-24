@@ -27,6 +27,11 @@ export type BankAccountRow = {
     lastLineDate: string | null;
     unmatchedLines: number;
     hasProfile: boolean;
+    /** The lock (spec §4): postings on the leaves up to this day are refused. */
+    reconciledThrough: string | null;
+    recStartDate: string | null;
+    draftReconciliationId: string | null;
+    latestFinalizedReconciliationId: string | null;
 };
 
 export const STATEMENT_FIELDS = ["txnDate", "valueDate", "description", "reference", "debit", "credit", "amount",
@@ -149,6 +154,8 @@ export type Match = {
     createdDocTypes: string[];
     /** The date "undo and reverse" defaults to; null when this match's entries are not reversed from here. */
     reverseOnDefault: string | null;
+    /** Opening items (spec §4) on the book side of this match. */
+    openingItemIds?: string[];
 };
 
 export type Workspace = {
@@ -158,7 +165,116 @@ export type Workspace = {
     statementLines: StatementLine[];
     bookItems: BookItem[];
     matches: Match[];
+    /** The first reconciliation's outstanding items, matchable like book items. */
+    openingItems?: OpeningItem[];
+    reconciledThrough?: string | null;
 };
+
+// ---------------------------------------------------------------- §4 reconciliation
+
+/** Signed book-side: + a deposit in transit, − an unpresented payment. */
+export type OpeningItem = {
+    id: string;
+    bankAccountId: string;
+    itemDate: string;
+    description: string;
+    reference: string | null;
+    chequeNo: string | null;
+    amount: number;
+    matchId: string | null;
+    matchStatus: MatchStatus | null;
+};
+
+export type OpeningItemInput = { itemDate: string; description: string; reference?: string | null; chequeNo?: string | null; amount: number };
+
+export type RecStatus = "DRAFT" | "FINALIZED" | "REOPENED";
+
+export type ReconciliationRow = {
+    id: string;
+    periodFrom: string;
+    periodTo: string;
+    status: RecStatus;
+    statementClosing: number | null;
+    bookBalance: number | null;
+    difference: number | null;
+    createdAt: string;
+    finalizedAt: string | null;
+    finalizedByName: string | null;
+    reopenedAt: string | null;
+    reopenedByName: string | null;
+    reopenReason: string | null;
+};
+
+export type RecItem = {
+    kind: "JOURNAL" | "OPENING" | "STATEMENT";
+    id: string;
+    date: string | null;
+    document: string | null;
+    narration: string | null;
+    chequeNo: string | null;
+    amount: number;
+    /** A cheque cleared by hand that no statement line shows yet. */
+    withoutEvidence: boolean;
+};
+
+export type RecCheckCode = "CONTINUITY" | "UNRECORDED" | "DIFFERENCE" | "SUGGESTED" | "NOT_FUTURE" | "OPENING_ITEMS" | "CHAIN";
+export type RecCheck = { code: RecCheckCode; ok: boolean; message: string };
+
+/** BankRecDTOs.Reconciliation: live while DRAFT, the finalize snapshot afterwards. */
+export type Reconciliation = {
+    id: string;
+    bankAccountId: string;
+    bankLabel: string;
+    bankName: string;
+    ibanMasked: string;
+    leaves: Leaf[];
+    periodFrom: string;
+    periodTo: string;
+    status: RecStatus;
+    first: boolean;
+    statementOpening: number | null;
+    statementClosing: number | null;
+    closingTyped: boolean;
+    statementMovement: number;
+    bookBalance: number;
+    bookBalanceAtStart: number | null;
+    openingItemsTotal: number;
+    depositsInTransit: number;
+    unpresentedPayments: number;
+    bookedAfterPeriod: number;
+    unrecordedCredits: number;
+    unrecordedDebits: number;
+    adjustedBank: number | null;
+    adjustedBook: number;
+    difference: number | null;
+    depositsInTransitItems: RecItem[];
+    unpresentedItems: RecItem[];
+    bookedAfterItems: RecItem[];
+    unrecordedItems: RecItem[];
+    withoutEvidenceCount: number;
+    matchedByMethod: Record<string, number>;
+    checks: RecCheck[];
+    canFinalize: boolean;
+    preparedAt: string | null;
+    preparedByName: string | null;
+    finalizedAt: string | null;
+    finalizedByName: string | null;
+    reopenedAt: string | null;
+    reopenedByName: string | null;
+    reopenReason: string | null;
+};
+
+export type ReconciliationInput = {
+    periodFrom?: string | null;
+    periodTo: string;
+    statementOpening?: number | null;
+    statementClosing?: number | null;
+};
+
+/** The failing finalize preconditions, in the server's order: what the Finalize button's tooltip lists. */
+export function failingChecks(r: Pick<Reconciliation, "checks">): RecCheck[] {
+    return r.checks.filter(c => !c.ok);
+}
 
 export type Candidate = {
     id: string;
@@ -220,7 +336,8 @@ export const bankRecApi = {
     linesCsvUrl: (id: string, q: { from?: string; to?: string }) => `${BASE}${ROOT}/bank-accounts/${id}/lines.csv${qs(q)}`,
     autoMatch: (id: string, q: { from?: string; to?: string }) =>
         apiSend<{ proposed: number; byMethod: Record<string, number> }>("POST", `${ROOT}/bank-accounts/${id}/auto-match${qs(q)}`),
-    match: (body: { statementLineIds: string[]; journalLineIds: string[] }) => apiSend<Match>("POST", `${ROOT}/matches`, body),
+    match: (body: { statementLineIds: string[]; journalLineIds: string[]; openingItemIds?: string[] }) =>
+        apiSend<Match>("POST", `${ROOT}/matches`, body),
     confirm: (matchId: string) => apiSend<Match>("POST", `${ROOT}/matches/${matchId}/confirm`),
     confirmAll: (bankAccountId: string, q: { from?: string; to?: string }) =>
         apiSend<{ confirmed: number }>("POST", `${ROOT}/matches/confirm${qs({ bankAccountId, confidence: "HIGH", ...q })}`),
@@ -239,6 +356,21 @@ export const bankRecApi = {
                    propertyId?: string | null; bankLeafId?: string | null; shared?: boolean; narration?: string | null;
                    net?: number | null; vat?: number | null }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/post`, body),
+    reconciliations: (id: string) => apiGet<ReconciliationRow[]>(`${ROOT}/bank-accounts/${id}/reconciliations`),
+    createReconciliation: (id: string, body: ReconciliationInput) =>
+        apiSend<Reconciliation>("POST", `${ROOT}/bank-accounts/${id}/reconciliations`, body),
+    reconciliation: (recId: string) => apiGet<Reconciliation>(`${ROOT}/reconciliations/${recId}`),
+    updateReconciliation: (recId: string, body: ReconciliationInput) =>
+        apiSend<Reconciliation>("PUT", `${ROOT}/reconciliations/${recId}`, body),
+    discardReconciliation: (recId: string) => apiSend<void>("DELETE", `${ROOT}/reconciliations/${recId}`),
+    finalizeReconciliation: (recId: string) => apiSend<Reconciliation>("POST", `${ROOT}/reconciliations/${recId}/finalize`),
+    reopenReconciliation: (recId: string, reason: string) =>
+        apiSend<Reconciliation>("POST", `${ROOT}/reconciliations/${recId}/reopen`, { reason }),
+    reconciliationPdfUrl: (recId: string, lang: "en" | "ar") => `${BASE}${ROOT}/reconciliations/${recId}.pdf${qs({ lang })}`,
+    reconciliationCsvUrl: (recId: string) => `${BASE}${ROOT}/reconciliations/${recId}.csv`,
+    openingItems: (id: string) => apiGet<OpeningItem[]>(`${ROOT}/bank-accounts/${id}/opening-items`),
+    addOpeningItem: (id: string, body: OpeningItemInput) => apiSend<OpeningItem>("POST", `${ROOT}/bank-accounts/${id}/opening-items`, body),
+    deleteOpeningItem: (id: string, itemId: string) => apiSend<void>("DELETE", `${ROOT}/bank-accounts/${id}/opening-items/${itemId}`),
     chequeEvidence: (ids: string[]) =>
         ids.length === 0 ? Promise.resolve([] as ChequeEvidence[]) : apiGet<ChequeEvidence[]>(`/cheques/bank-evidence${qs({ ids })}`),
 };
