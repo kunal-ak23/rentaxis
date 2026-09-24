@@ -581,8 +581,9 @@ class SupplierApIT extends AbstractPostgresIT {
                 .isInstanceOf(DataIntegrityViolationException.class);
         // A grandfathered duplicate (changeset 110's backfill) is outside it.
         jdbc.update("update vouchers set invoice_no_norm = 'INV60', duplicate_grandfathered = true where id = ?", b.getId());
-        assertThat(jdbc.queryForObject("select count(*) from vouchers where invoice_no_norm = 'INV60' and status = 'POSTED'",
-                Long.class)).isEqualTo(2);
+        // Scoped to this tenant: the suite shares one database, and another class's INV60 must not count.
+        assertThat(jdbc.queryForObject("select count(*) from vouchers where tenant_id = ? and invoice_no_norm = 'INV60' and status = 'POSTED'",
+                Long.class, tenantId)).isEqualTo(2);
         assertThat(a.isDuplicateGrandfathered()).isFalse();
     }
 
