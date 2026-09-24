@@ -173,7 +173,8 @@ class LeaseControllerRenewExtendEndpointsIT extends AbstractPostgresIT {
                 "newEndDate", NEW_END.toString(),
                 "contractDate", "2027-09-20",
                 "lines", List.of(Map.of("chargeTypeCode", "RENT", "grossAmount", 12000)),
-                "cheques", List.of(Map.of("amount", 12000, "chequeDate", "2027-10-02")));
+                // Numbered: an extension PDC needs its number like any other (#80, PR #344 review I4).
+                "cheques", List.of(Map.of("amount", 12000, "chequeDate", "2027-10-02", "chequeNumber", "EXT-000901")));
     }
 
     private LeaseStatus currentStatus() {

@@ -197,15 +197,19 @@ describe("GatePassReportPage", () => {
     });
 
     it("denies roles the report's @PreAuthorize excludes, without calling the API", async () => {
-        // SUPER_ADMIN passes canViewProperties but is NOT in the report's
-        // hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER') — it would 403.
-        for (const role of ["SUPER_ADMIN", "RENTER", undefined]) {
+        for (const role of ["ACCOUNTANT", "RENTER", undefined]) {
             sessionRole.current = role;
             render(<GatePassReportPage />);
             await waitFor(() => expect(screen.getByText("noAccess")).toBeTruthy());
             expect(reportUrls).toEqual([]);
             cleanup();
         }
+    });
+
+    it("allows SUPER_ADMIN acting in an organisation (#88)", async () => {
+        sessionRole.current = "SUPER_ADMIN";
+        render(<GatePassReportPage />);
+        await waitFor(() => expect(screen.getByText("Khan, Ahmed")).toBeTruthy());
     });
 
     it("allows PROPERTY_MANAGER", async () => {

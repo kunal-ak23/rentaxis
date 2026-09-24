@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service.lease;
 
+import com.datagami.rentaxis.core.service.LeaseService;
+
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
@@ -184,9 +186,36 @@ public class DepositCarryForward {
     }
 
     /** How the narration names the contract left behind: its number, else its id. */
-    private static String contractLabel(Lease lease) {
-        return lease.getContractNumber() != null
-                ? String.valueOf(lease.getContractNumber())
-                : String.valueOf(lease.getId());
+    /**
+     * The predecessor as a person reading the tenant ledger knows it (#86): its unit
+     * and term, and its contract number when it has one — "A-101 · 01/10/2025–
+     * 30/09/2026 (contract OLV/12)". It used to print the lease's UUID. The narration
+     * is written into the journal, so this only improves carry-forwards posted from
+     * now on; posted lines are immutable.
+     */
+    static String contractLabel(Lease lease) {
+        StringBuilder label = new StringBuilder();
+        if (lease.getUnit() != null && lease.getUnit().getUnitNumber() != null) {
+            label.append(lease.getUnit().getUnitNumber());
+        }
+        if (lease.getStartDate() != null && lease.getEndDate() != null) {
+            if (!label.isEmpty()) label.append(" \u00b7 ");
+            label.append(LABEL_DATE.format(lease.getStartDate())).append('\u2013')
+                    .append(LABEL_DATE.format(lease.getEndDate()));
+        }
+        String number = LeaseService.displayContractNumber(
+                lease.getUnit() != null && lease.getUnit().getProperty() != null
+                        ? lease.getUnit().getProperty().getCode() : null,
+                lease.getContractNumber());
+        if (number == null && lease.getExternalContractRef() != null && !lease.getExternalContractRef().isBlank()) {
+            number = lease.getExternalContractRef();
+        }
+        if (number != null) {
+            label.append(label.isEmpty() ? "contract " + number : " (contract " + number + ")");
+        }
+        return label.isEmpty() ? "the previous contract" : label.toString();
     }
+
+    private static final java.time.format.DateTimeFormatter LABEL_DATE =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
 }

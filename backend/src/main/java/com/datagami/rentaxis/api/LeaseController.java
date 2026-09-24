@@ -489,9 +489,10 @@ public class LeaseController {
 
     @PutMapping("/{id}/accept")
     @PreAuthorize("hasRole('RENTER')")
-    public ResponseEntity<LeaseDTO> acceptLease(@PathVariable UUID id) {
+    public ResponseEntity<LeaseDTO> acceptLease(@PathVariable UUID id,
+                                                @RequestParam(required = false) UUID documentId) {
         UUID userId = callerId();
-        return ResponseEntity.ok(leaseService.acceptLease(id, userId));
+        return ResponseEntity.ok(leaseService.acceptLease(id, userId, documentId));
     }
 
     @PutMapping("/{id}/reject")

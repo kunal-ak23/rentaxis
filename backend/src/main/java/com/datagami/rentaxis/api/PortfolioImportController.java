@@ -60,7 +60,11 @@ public class PortfolioImportController {
             job.setCreatedBy(userId);
             ImportJob savedJob = importJobRepository.save(job);
 
-            importService.processImportAsync(fileBytes, savedJob, tenantId);
+            // The caller's own authentication rides along: the rows the sheet marks
+            // ACTIVE are posted on the executor thread, and posting runs through
+            // LeaseAccessPolicy, which fails closed for a thread with no user.
+            importService.processImportAsync(fileBytes, savedJob, tenantId,
+                    SecurityContextHolder.getContext().getAuthentication());
 
             return ResponseEntity.ok(Map.of("jobId", savedJob.getId()));
         } catch (Exception e) {
@@ -284,6 +288,7 @@ public class PortfolioImportController {
                     if (details.getBookingDepositsCreated() != null) dto.setBookingDepositsCreated(details.getBookingDepositsCreated());
                     if (details.getContractsCreated() != null) dto.setContractsCreated(details.getContractsCreated());
                     if (details.getMappingsCreated() != null) dto.setMappingsCreated(details.getMappingsCreated());
+                    if (details.getLeasesPosted() != null) dto.setLeasesPosted(details.getLeasesPosted());
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(ImportErrorDTO.file("General", "File", "Could not parse error details")));

@@ -116,6 +116,29 @@ public final class LeaseVat {
         return vatOf(portion);
     }
 
+    /**
+     * The net a line must carry for {@code net + VAT} to come to exactly
+     * {@code gross} — the inverse of {@link #vatOfNet}, for the portfolio import,
+     * whose Cheques sheet states what the renter wrote on the cheques (VAT
+     * included) and has to arrive at the rent line that posts to exactly that.
+     *
+     * <p>VAT is rounded to the fils, so not every gross has a net: 5% of the
+     * nearest nets can step over it. Then there is none and this answers null
+     * rather than a net that would post a fils off.</p>
+     *
+     * @return the net, {@code gross} itself when the line carries no VAT, or null.
+     */
+    public static BigDecimal netOfGross(BigDecimal gross, boolean vatApplicable, ChargeBehaviour behaviour) {
+        if (gross == null) return null;
+        if (!vatApplicable || behaviour == ChargeBehaviour.DEPOSIT) return gross;
+        BigDecimal guess = gross.divide(BigDecimal.ONE.add(RATE), 2, RoundingMode.HALF_UP);
+        BigDecimal fils = new BigDecimal("0.01");
+        for (BigDecimal net : new BigDecimal[]{guess, guess.subtract(fils), guess.add(fils)}) {
+            if (net.add(vatOf(net)).compareTo(gross) == 0) return net;
+        }
+        return null;
+    }
+
     /** What the line is actually collected for: net plus its own VAT. */
     static BigDecimal grossOf(LeaseLine line) {
         BigDecimal net = line == null || line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();

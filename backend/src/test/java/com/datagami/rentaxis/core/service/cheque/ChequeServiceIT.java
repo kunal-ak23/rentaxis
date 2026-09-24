@@ -765,6 +765,26 @@ class ChequeServiceIT extends AbstractPostgresIT {
                 .hasMessageContaining("cheque number 100042 is already used on this lease");
     }
 
+    /** #80 on the replacement door (PR #344 review I4): replacement paper needs its number. */
+    @Test
+    void aReplacementPdcWithoutANumberIsRefused() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+        service.bounce(chequeId, new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null));
+
+        assertThatThrownBy(() -> service.replace(chequeId, new ReplaceChequeRequest(List.of(
+                row(null, REPLACE_DATE, LocalDate.of(2026, 11, 1), "1000", ChequeMode.PDC)), REPLACE_DATE, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has no number; a post-dated cheque needs its number");
+
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.BOUNCED);
+        // A cash replacement has no number by nature and goes through.
+        assertThat(service.replace(chequeId, new ReplaceChequeRequest(List.of(
+                row(null, REPLACE_DATE, REPLACE_DATE, "1000", ChequeMode.CASH)), REPLACE_DATE, null)))
+                .singleElement().satisfies(c -> assertThat(c.status()).isEqualTo(ChequeStatus.REGISTERED));
+    }
+
     // ------------------------------------------------------------------
     // -> CANCELLED / RETURNED: the PDR is reversed
     // ------------------------------------------------------------------

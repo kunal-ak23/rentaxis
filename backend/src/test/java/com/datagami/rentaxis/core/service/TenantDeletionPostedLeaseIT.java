@@ -291,6 +291,7 @@ class TenantDeletionPostedLeaseIT extends AbstractPostgresIT {
                 CONTRACT_DATE, START, END, List.of(line("RENT", "12000")));
         generation.generate(toPostConcurrently, new GenerateChequesRequest(
                 1, START, null, "Emirates NBD", null, false, null));
+        generation.generateNumbers(toPostConcurrently, LeaseTestFixtures.nextChequeBook());
 
         TenantContextHolder.clear();
         LeaseTestFixtures.clearAuth();

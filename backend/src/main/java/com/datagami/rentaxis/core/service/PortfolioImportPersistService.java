@@ -7,8 +7,11 @@ import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cheque.ChequeRowRules;
+import com.datagami.rentaxis.core.service.cutover.ContractImportLeasePoster;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -24,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Slf4j
@@ -41,13 +43,37 @@ public class PortfolioImportPersistService {
     private final LeaseService leaseService;
     private final ChargeTypeService chargeTypeService;
     private final ChequeGenerationService chequeGenerationService;
+    private final PropertyAccountService propertyAccountService;
+    private final ContractImportLeasePoster leasePoster;
 
     private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
     private static final Set<String> VALID_BOOLS_FALSE = Set.of("false", "no", "0");
 
     @Transactional
-    public void persistWorkbook(Workbook workbook, ImportJob job) {
-        persistWorkbook(workbook, job, List.of());
+    public PersistResult persistWorkbook(Workbook workbook, ImportJob job) {
+        return persistWorkbook(workbook, job, List.of());
+    }
+
+    /**
+     * A row the sheet marked ACTIVE, now a DRAFT lease with its grid, waiting for
+     * the post phase.
+     */
+    public record PendingPost(UUID leaseId, int rowNum, String label, Set<UUID> generatedUnnumbered) {
+        public PendingPost(UUID leaseId, int rowNum, String label) {
+            this(leaseId, rowNum, label, Set.of());
+        }
+    }
+
+    /**
+     * What the persist phase leaves for the post phase: the leases to post, the
+     * ACTIVE rows that could not even be offered for posting (and why), and the job
+     * details already written, so the post phase adds to them rather than
+     * re-deriving them.
+     */
+    public record PersistResult(List<PendingPost> toPost, PortfolioImportJobDetailsDTO details) {
+        public static PersistResult none() {
+            return new PersistResult(List.of(), new PortfolioImportJobDetailsDTO());
+        }
     }
 
     /**
@@ -56,7 +82,7 @@ public class PortfolioImportPersistService {
      * wrapper persisted in {@code job.errors}, so the controller can surface them.
      */
     @Transactional
-    public void persistWorkbook(Workbook workbook, ImportJob job, List<ImportErrorDTO> warnings) {
+    public PersistResult persistWorkbook(Workbook workbook, ImportJob job, List<ImportErrorDTO> warnings) {
         Sheet propertiesSheet = workbook.getSheet("Properties");
         Sheet unitsSheet = workbook.getSheet("Units");
         Sheet rentersSheet = workbook.getSheet("Renters");
@@ -78,7 +104,15 @@ public class PortfolioImportPersistService {
             p.setType(PropertyType.valueOf(getCellString(row, 4).trim().toUpperCase().replace(" ", "_")));
             p.setMakaniNumber(getCellString(row, 5).isEmpty() ? null : getCellString(row, 5));
 
-            propertyMap.put(p.getNameEn().toLowerCase(), propertyRepository.save(p));
+            Property saved = propertyRepository.save(p);
+            // The property's own ledger leaves (spec §5.3), exactly as Add Property
+            // makes them — PropertyService.createProperty calls the same method. The
+            // import skipped this, so an imported building had no Rent Receivable,
+            // no PDC Receivable and no income accounts, and none of its leases could
+            // ever post (gap #83). Before the leases, because a lease line takes its
+            // credit account from the property's mapping when it is applied.
+            propertyAccountService.generateMissing(saved.getId());
+            propertyMap.put(p.getNameEn().toLowerCase(), saved);
         }
         job.setPropertiesCreated(propertyMap.size());
 
@@ -181,6 +215,7 @@ public class PortfolioImportPersistService {
         // Rows the persist phase could not write. Errors rather than warnings: the
         // admin asked for these instruments and did not get them.
         List<ImportErrorDTO> allErrors = new ArrayList<>();
+        List<PendingPost> toPost = new ArrayList<>();
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
             Row row = leasesSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
@@ -224,9 +259,11 @@ public class PortfolioImportPersistService {
             // check (PortfolioImportService.computeTotalRentOrNull) uses the same
             // helper so cheque totals validate against the same number.
             long monthsBetween = monthsInclusive(startDate, endDate);
-            BigDecimal totalRent = monthlyRentStr.isEmpty()
-                    ? new BigDecimal(rentAmountStr)
-                    : new BigDecimal(monthlyRentStr).multiply(BigDecimal.valueOf(monthsBetween));
+            boolean commercialDefault = unit.getProperty().getType() == PropertyType.COMMERCIAL;
+            boolean rentVat = parseBoolOrDefault(cell(row, leaseHi, "RentVatApplicable"), commercialDefault);
+            List<ChequeRow> chequeRows = chequesByLeaseKey.getOrDefault(
+                    leaseKey(propertyName, unitNumber, renterEmail), List.of());
+            BigDecimal totalRent = contractRent(rentAmountStr, monthlyRentStr, monthsBetween, chequeRows, rentVat);
 
             Lease lease = new Lease();
             lease.setUnit(unit);
@@ -258,8 +295,7 @@ public class PortfolioImportPersistService {
             BigDecimal adminFee = parseDecimalOrZero(cell(row, leaseHi, "AdminFee"));
             BigDecimal parkingRemoteFee = parseDecimalOrZero(cell(row, leaseHi, "ParkingRemoteFee"));
 
-            boolean commercialDefault = unit.getProperty().getType() == PropertyType.COMMERCIAL;
-            lease.setRentVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "RentVatApplicable"), commercialDefault));
+            lease.setRentVatApplicable(rentVat);
             boolean adminFeeVat = parseBoolOrDefault(cell(row, leaseHi, "AdminFeeVatApplicable"), commercialDefault);
             boolean parkingRemoteVat = parseBoolOrDefault(cell(row, leaseHi, "ParkingRemoteVatApplicable"), commercialDefault);
 
@@ -270,17 +306,17 @@ public class PortfolioImportPersistService {
 
             String agreementStr = cell(row, leaseHi, "AgreementDate");
             if (!agreementStr.isEmpty()) {
-                try { lease.setAgreementDate(LocalDate.parse(agreementStr)); }
-                catch (DateTimeParseException ignored) { /* validator already flagged this */ }
+                lease.setAgreementDate(parseDate(agreementStr));
             }
 
             String statusStr = cell(row, leaseHi, "Status").toUpperCase();
-            LeaseStatus leaseStatus = "DRAFT".equals(statusStr) ? LeaseStatus.DRAFT : LeaseStatus.ACTIVE;
-            // The lease is born DRAFT whatever the sheet asked for, and is moved to
-            // its real status once its cheque grid exists. The grid is only editable
-            // on a DRAFT lease — deliberately, since a posted lease's rows have
-            // journals behind them — so building it first is the only order in which
-            // an imported ACTIVE lease can arrive with its instruments.
+            boolean wantsActive = !"DRAFT".equals(statusStr);
+            // Every lease is written DRAFT. Posting is the only way a lease becomes
+            // ACTIVE (accounting v2): an ACTIVE row is handed to the post phase once
+            // this transaction has committed, and becomes ACTIVE there — TCO, a PDR
+            // per cheque, the unit claimed — or stays DRAFT and is listed with the
+            // reason. This method used to set ACTIVE directly, which put tenancies on
+            // the dashboard that were not on the books (gap #83).
             lease.setStatus(LeaseStatus.DRAFT);
 
             // Contract header. contract_date is what the posting journal will be
@@ -333,23 +369,68 @@ public class PortfolioImportPersistService {
                 }
                 bookingDepositsCreated++;
                 bookingDeposit = new ChequeRowInput(null, null, lease.getContractDate(), bdNum,
-                        LocalDate.parse(bdDateStr), bdBank, null, null,
+                        parseDate(bdDateStr), bdBank, null, null,
                         parseDecimalOrZero(bdAmt), "Booking Deposit", ChequeMode.PDC);
             }
 
             // ---- the cheque grid ----
             //
-            // A Cheques sheet is a statement of the instruments the renter actually
-            // handed over, so it wins outright: the rows are written as typed,
-            // through the same ChequeRowRules every other door meets. With no sheet
-            // the grid is generated from the lease's own lines and payment terms,
-            // which is what the draft wizard would have done.
-            String chequesKey = leaseKey(propertyName, unitNumber, renterEmail);
-            List<ChequeRow> chequeRows = chequesByLeaseKey.getOrDefault(chequesKey, List.of());
-            List<ChequeRowInput> gridRows = new ArrayList<>();
+            // One grid that covers every line of the contract, because posting
+            // requires Σ cheques = contract value and an import is not finished until
+            // its leases can post:
+            //   - a Cheques sheet states the rent instalments the renter handed over,
+            //     so its rows are written as typed (UniqueId is the cheque number);
+            //     the deposit and the fees it does not mention become rows of their
+            //     own, dated the contract date, as the generator writes them;
+            //   - with no sheet the whole grid is generated from the lease's lines and
+            //     payment terms, deposit and fees folded into cheque 1 — what the
+            //     draft wizard does;
+            //   - a booking cheque is money already paid toward what is due at
+            //     signing, so it is taken off the generated rows (never off a row the
+            //     sheet stated) and stands as an instrument of its own.
+            // The sheet used to be the whole grid, so a lease with a deposit could
+            // never post: 101 held 38,000 of cheques on a 42,800 contract.
+            ChequeMode leaseMode = chequeMode(paymentMethodStr);
+            ChequeMode signingMode = depMethod.isEmpty() ? leaseMode : chequeMode(depMethod);
+            List<ChequeRowInput> sheetRows = new ArrayList<>();
             for (ChequeRow ch : chequeRows) {
-                gridRows.add(chequeInput(ch, savedLease));
+                sheetRows.add(chequeInput(ch, savedLease));
             }
+            if (!chequeRows.isEmpty()) {
+                savedLease.setPaymentTerms(chequeRows.size());
+            }
+
+            String gridProblem = null;
+            List<ChequeRowInput> generated = new ArrayList<>();
+            boolean canGenerate = !chequeRows.isEmpty()
+                    || (savedLease.getPaymentTerms() != null && savedLease.getPaymentTerms() >= 1);
+            if (canGenerate) {
+                ChequeGenerationService.Proposal proposal = chequeGenerationService.proposeForSystemImport(
+                        savedLease,
+                        new GenerateChequesRequest(savedLease.getPaymentTerms(), startDate,
+                                null, null, null, null, null),
+                        chequeRows.isEmpty());
+                if (proposal.problem() != null) {
+                    gridProblem = proposal.problem();
+                } else {
+                    // Rent instalments take the lease's method; the rows due at
+                    // signing (deposit, fees) take DepositPaymentMethod when given.
+                    for (ChequeGenerationService.Row r : proposal.rows()) {
+                        boolean atSigning = !chequeRows.isEmpty() || !r.narration().startsWith("Rent");
+                        generated.add(new ChequeRowInput(null, null, r.postingDate(), null, r.chequeDate(),
+                                null, null, null, r.amount(), r.narration(),
+                                atSigning ? signingMode : leaseMode));
+                    }
+                }
+            } else {
+                gridProblem = "the row has no PaymentTerms and no Cheques-sheet rows, so there is no grid";
+            }
+            if (bookingDeposit != null && gridProblem == null) {
+                gridProblem = takeBookingOff(generated, bookingDeposit.amount());
+            }
+
+            List<ChequeRowInput> gridRows = new ArrayList<>(sheetRows);
+            gridRows.addAll(generated);
             if (bookingDeposit != null) {
                 // Last, as the contract prints it: the booking cheque is an extra
                 // instrument alongside the instalment schedule, not part of it.
@@ -357,6 +438,7 @@ public class PortfolioImportPersistService {
             }
 
             int chequesOnThisLease = 0;
+            Set<UUID> generatedUnnumbered = new HashSet<>();
             if (!gridRows.isEmpty()) {
                 // Validated up front with the pure rules rather than by catching what
                 // saveRowsFor throws: a BusinessRuleViolationException out of a nested
@@ -367,34 +449,37 @@ public class PortfolioImportPersistService {
                 if (problem != null) {
                     allErrors.add(new ImportErrorDTO("Cheques", i + 1, "UniqueID",
                             "The cheque rows for this lease were not imported: " + problem));
+                    gridProblem = gridProblem != null ? gridProblem : "its cheque rows were refused: " + problem;
                 } else {
-                    if (!chequeRows.isEmpty()) {
-                        savedLease.setPaymentTerms(chequeRows.size());
+                    List<com.datagami.rentaxis.api.dto.cheque.ChequeDTO> saved =
+                            chequeGenerationService.saveRowsForSystemImport(savedLease, gridRows);
+                    // The rows this import generated — never the sheet's own, never
+                    // the booking cheque — are the only ones the post may register
+                    // without a number (#80, review I5). Saved in input order, so
+                    // they are the positions after the sheet rows.
+                    for (int k = sheetRows.size(); k < sheetRows.size() + generated.size() && k < saved.size(); k++) {
+                        var c = saved.get(k);
+                        if (c.mode() == ChequeMode.PDC && (c.chequeNumber() == null || c.chequeNumber().isBlank())) {
+                            generatedUnnumbered.add(c.id());
+                        }
                     }
-                    chequeGenerationService.saveRowsForSystemImport(savedLease, gridRows);
                     chequesOnThisLease = gridRows.size();
                     chequesFromSheet += chequeRows.size();
                 }
-            } else if (savedLease.getPaymentTerms() != null && savedLease.getPaymentTerms() >= 1
-                    && savedLease.getRentAmount() != null && savedLease.getRentAmount().signum() > 0) {
-                chequesOnThisLease = chequeGenerationService.generateForSystemImport(savedLease,
-                        new GenerateChequesRequest(savedLease.getPaymentTerms(), startDate,
-                                null, null, null, null, null)).size();
             }
             chequesCreated += chequesOnThisLease;
             savedLease = leaseRepository.save(savedLease);
 
-            // The lease takes the status the sheet asked for, now that its grid
-            // exists, and the unit follows.
-            savedLease.setStatus(leaseStatus);
-            savedLease = leaseRepository.save(savedLease);
-            if (leaseStatus == LeaseStatus.ACTIVE) {
-                unit.setStatus(UnitStatus.OCCUPIED);
-                unit.setCurrentTenantName(renter.getNameEn());
-                unit.setActualRent(savedLease.getRentAmount());
-                unitRepository.save(unit);
+            // The unit stays VACANT here whatever the row asked for: the post claims
+            // it, so a row that does not post never shows as occupied.
+            String label = unitNumber + " / " + renterEmail;
+            if (wantsActive) {
+                if (gridProblem == null) {
+                    toPost.add(new PendingPost(savedLease.getId(), i + 1, label, Set.copyOf(generatedUnnumbered)));
+                } else {
+                    allWarnings.add(importedAsDraft(i + 1, gridProblem));
+                }
             }
-            // DRAFT → unit stays VACANT, no further change.
         }
 
         job.setLeasesCreated(leasesCreated);
@@ -410,20 +495,165 @@ public class PortfolioImportPersistService {
         // beyond the legacy fields.
         boolean hasWarnings = !allWarnings.isEmpty();
         boolean hasErrors = !allErrors.isEmpty();
+        PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();
+        if (chequesFromSheet > 0) details.setChequesFromSheet(chequesFromSheet);
+        if (bookingDepositsCreated > 0) details.setBookingDepositsCreated(bookingDepositsCreated);
+        if (hasWarnings) details.setWarnings(allWarnings);
+        if (hasErrors) details.setErrors(allErrors);
         if (chequesFromSheet > 0 || bookingDepositsCreated > 0 || hasWarnings || hasErrors) {
-            try {
-                PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();
-                if (chequesFromSheet > 0) details.setChequesFromSheet(chequesFromSheet);
-                if (bookingDepositsCreated > 0) details.setBookingDepositsCreated(bookingDepositsCreated);
-                if (hasWarnings) details.setWarnings(allWarnings);
-                if (hasErrors) details.setErrors(allErrors);
-                job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
-            } catch (JsonProcessingException e) {
-                log.warn("Failed to serialize bulk-import counters into job.errors", e);
-            }
+            writeDetails(job, details);
         }
 
         importJobRepository.save(job);
+        return new PersistResult(List.copyOf(toPost), details);
+    }
+
+    /**
+     * The post phase: every row the sheet marked ACTIVE, posted through the same
+     * door a cut-over contract uses ({@link ContractImportLeasePoster}), one
+     * transaction per lease.
+     *
+     * <p><b>Not transactional, on purpose.</b> It runs after
+     * {@link #persistWorkbook} has committed — the poster's {@code REQUIRES_NEW}
+     * transaction could not see the leases otherwise — and each lease commits or
+     * rolls back on its own: one lease with a grid that does not add up costs that
+     * lease, which stays DRAFT and is listed as "Imported as draft: …" with the
+     * posting's own refusal, and nothing else. The caller installs the uploader's
+     * authentication first; posting is access-checked.</p>
+     */
+    public void postRequested(PersistResult persisted, ImportJob job) {
+        PortfolioImportJobDetailsDTO details = persisted.details();
+        List<ImportErrorDTO> warnings = details.getWarnings() == null
+                ? new ArrayList<>() : new ArrayList<>(details.getWarnings());
+        int posted = 0;
+        int unnumbered = 0;
+        for (PendingPost p : persisted.toPost()) {
+            try {
+                leasePoster.postPortfolioLease(p.leaseId(), p.generatedUnnumbered());
+                posted++;
+                unnumbered += p.generatedUnnumbered().size();
+            } catch (RuntimeException e) {
+                log.info("Imported lease {} (row {}) left as draft: {}", p.leaseId(), p.rowNum(), e.getMessage());
+                warnings.add(importedAsDraft(p.rowNum(), e.getMessage()));
+            }
+        }
+        details.setLeasesPosted(posted);
+        if (unnumbered > 0) {
+            // The rows the import generated went on the books without a number
+            // (review I5); say how many, so somebody goes back and types them in.
+            details.setChequesWithoutNumber(unnumbered);
+            warnings.add(ImportErrorDTO.file("Cheques", "UniqueId", unnumbered
+                    + (unnumbered == 1 ? " cheque" : " cheques")
+                    + " imported without a number — add them in Cheque details"));
+        }
+        details.setWarnings(warnings.isEmpty() ? null : warnings);
+        writeDetails(job, details);
+        importJobRepository.save(job);
+    }
+
+    /** "Imported as draft: <reason>", against the Leases row — never a silent DRAFT. */
+    private static ImportErrorDTO importedAsDraft(int rowNum, String reason) {
+        String why = reason == null || reason.isBlank() ? "it could not be posted" : reason;
+        return new ImportErrorDTO("Leases", rowNum, "Status", "Imported as draft: " + why);
+    }
+
+    private static void writeDetails(ImportJob job, PortfolioImportJobDetailsDTO details) {
+        try {
+            job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize bulk-import counters into job.errors", e);
+        }
+    }
+
+    /**
+     * Take a booking cheque off the rows the import generated, first row first; a
+     * row brought to zero is dropped.
+     *
+     * @return why it could not be placed, or null. It can only fail when the booking
+     *         cheque is worth more than everything the import generated — with a
+     *         Cheques sheet, more than the deposit and fees together.
+     */
+    static String takeBookingOff(List<ChequeRowInput> generated, BigDecimal booking) {
+        BigDecimal left = booking;
+        for (int k = 0; k < generated.size() && left.signum() > 0; k++) {
+            ChequeRowInput r = generated.get(k);
+            BigDecimal take = r.amount().min(left);
+            left = left.subtract(take);
+            BigDecimal rest = r.amount().subtract(take);
+            generated.set(k, new ChequeRowInput(r.id(), r.seqNo(), r.postingDate(), r.chequeNumber(),
+                    r.chequeDate(), r.payeeBank(), r.payerName(), r.debitAccountId(), rest, r.narration(), r.mode()));
+        }
+        generated.removeIf(r -> r.amount().signum() == 0);
+        if (left.signum() > 0) {
+            return "the booking deposit (" + booking.toPlainString() + ") is more than the rows it pays toward";
+        }
+        return null;
+    }
+
+    /**
+     * The contract's rent (net of VAT) for one Leases row.
+     *
+     * <p><b>The rule (PR #344 review I2).</b> When the Cheques sheet states this
+     * lease's rent instalments, the rent is <em>what those cheques add up to</em>:
+     * the renter has written them, posting requires Σ cheques = contract value to
+     * the fils, and a rent computed any other way would leave a lease that can
+     * never post (12 × 8,166.67 = 98,000.04 of cheques against 98,000.00 of rent).
+     * The sheet states what the renter pays, VAT included, so with VAT on rent the
+     * net is the one whose rent + 5% comes to exactly that sum
+     * ({@link LeaseVat#netOfGross}, the posting's own rule — review I1). The
+     * validator has already checked that sum against RentAmount exactly, or
+     * against MonthlyRent × months to the fils per month.</p>
+     *
+     * <p>Without a sheet, RentAmount as typed, or MonthlyRent through
+     * {@link #rentFromMonthly}'s whole-dirham rounding.</p>
+     */
+    static BigDecimal contractRent(String rentAmount, String monthlyRent, long months,
+                                   List<ChequeRow> sheetRows, boolean rentVat) {
+        if (!sheetRows.isEmpty()) {
+            BigDecimal net = rentFromSheet(
+                    sheetRows.stream().map(ChequeRow::amount).reduce(BigDecimal.ZERO, BigDecimal::add), rentVat);
+            if (net != null) return net;
+            // No net posts to exactly this sum (the validator refuses it). Fall back to
+            // the typed figure; the post then refuses the grid and says so.
+        }
+        return monthlyRent.isEmpty()
+                ? new BigDecimal(rentAmount)
+                : rentFromMonthly(new BigDecimal(monthlyRent), months);
+    }
+
+    /** The rent a Cheques-sheet total pays for: itself, or its net of 5% VAT on rent; null when none fits. */
+    static BigDecimal rentFromSheet(BigDecimal sheetTotal, boolean rentVat) {
+        BigDecimal net = LeaseVat.netOfGross(sheetTotal, rentVat, ChargeBehaviour.RENT);
+        return net == null ? null : net.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Term rent from a MonthlyRent cell, without the rounding leak.
+     *
+     * <p>A monthly figure in a sheet is usually an annual rent divided by twelve and
+     * rounded to the fils: 98,000 / 12 is typed as 8,166.67, and 8,166.67 × 12 =
+     * 98,000.04 — four fils of rent nobody agreed to (gap #83). The rule: when some
+     * <b>whole-dirham</b> term rent has a monthly share that rounds to exactly the
+     * typed figure, the term rent is that one (the roundest, trying thousands,
+     * hundreds, tens, then units); otherwise it is MonthlyRent × months exactly.
+     * 8,166.67 × 12 → 98,000.00; 5,000 × 12 → 60,000.00; 1,000.01 × 12 → 12,000.12
+     * (no whole dirham divides back to 1,000.01, so the fils were meant).</p>
+     */
+    static BigDecimal rentFromMonthly(BigDecimal monthly, long months) {
+        BigDecimal n = BigDecimal.valueOf(months);
+        BigDecimal product = monthly.multiply(n).setScale(2, RoundingMode.HALF_UP);
+        if (monthly.stripTrailingZeros().scale() > 2) {
+            // Typed with more than two decimals: the typist was not rounding to the
+            // fils, so there is no rounded division to undo.
+            return product;
+        }
+        for (int scale = -3; scale <= 0; scale++) {
+            BigDecimal candidate = product.setScale(scale, RoundingMode.HALF_UP).setScale(2, RoundingMode.UNNECESSARY);
+            if (candidate.divide(n, 2, RoundingMode.HALF_UP).compareTo(monthly) == 0) {
+                return candidate;
+            }
+        }
+        return product;
     }
 
     private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
@@ -445,17 +675,16 @@ public class PortfolioImportPersistService {
                 log.debug("Cheques row {} dropped: InstallmentNo not numeric (validator should have flagged)", r + 1);
                 continue;
             }
-            LocalDate dueDate;
-            try { dueDate = LocalDate.parse(cell(row, hi, "DueDate")); }
-            catch (DateTimeParseException e) {
+            LocalDate dueDate = parseDate(cell(row, hi, "DueDate"));
+            if (dueDate == null) {
                 log.debug("Cheques row {} dropped: DueDate not ISO (validator should have flagged)", r + 1);
                 continue;
             }
             String chequeOrPaymentDateStr = cell(row, hi, "ChequeOrPaymentDate");
             LocalDate chequeOrPaymentDate = null;
             if (!chequeOrPaymentDateStr.isEmpty()) {
-                try { chequeOrPaymentDate = LocalDate.parse(chequeOrPaymentDateStr); }
-                catch (DateTimeParseException ignored) {
+                chequeOrPaymentDate = parseDate(chequeOrPaymentDateStr);
+                if (chequeOrPaymentDate == null) {
                     log.debug("Cheques row {} ChequeOrPaymentDate not ISO (validator should have flagged)", r + 1);
                 }
             }
@@ -485,7 +714,7 @@ public class PortfolioImportPersistService {
     }
 
     /** Cheques-sheet row, with the lease's PaymentMethod already substituted in when blank. */
-    private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
+    record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
                              String uniqueId, String bank, BigDecimal amount, String method) {}
 
     /**
@@ -521,7 +750,10 @@ public class PortfolioImportPersistService {
         if (method == null || method.isBlank()) return ChequeMode.PDC;
         return switch (method.trim().toUpperCase(Locale.ROOT)) {
             case "CASH" -> ChequeMode.CASH;
-            case "BANK_TRANSFER", "TRANSFER" -> ChequeMode.TRANSFER;
+            // ONLINE in the sheet is money that arrived electronically — a transfer
+            // as far as the register is concerned (an ONLINE row is the gateway's
+            // alone). As a PDC it would be paper with no number, which cannot post.
+            case "BANK_TRANSFER", "TRANSFER", "ONLINE" -> ChequeMode.TRANSFER;
             default -> ChequeMode.PDC;
         };
     }
@@ -572,8 +804,9 @@ public class PortfolioImportPersistService {
 
     // --- Helpers ---
 
-    private LocalDate parseDate(String value) {
-        return LocalDate.parse(value.trim());
+    /** The validator's rule (gap #82): ISO, DD/MM/YYYY, DD-MM-YYYY or an Excel date cell. */
+    private static LocalDate parseDate(String value) {
+        return PortfolioImportService.parseDate(value);
     }
 
     private String getCellString(Row row, int col) {

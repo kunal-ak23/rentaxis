@@ -498,6 +498,13 @@ export default function LeaseDetailPage() {
                             >
                                 {t(`leaseStatus.${lease.status}`)}
                             </span>
+                            {lease.status === "PENDING_SIGNATURE" && lease.renterAcceptedAt && (
+                                // #79: an accountant has to see the renter has signed
+                                // before posting; the status alone does not say so.
+                                <span data-testid="lease-renter-accepted" className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-success/10 text-success border border-success/20">
+                                    {t("acceptedByRenter", { date: fmtIsoDate(lease.renterAcceptedAt, locale) })}
+                                </span>
+                            )}
                             {lease.displayContractNumber && (
                                 <span data-testid="lease-contract-number" className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
                                     {t("contractNumber")} {lease.displayContractNumber}

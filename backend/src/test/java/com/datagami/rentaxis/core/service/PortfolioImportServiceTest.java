@@ -384,6 +384,67 @@ class PortfolioImportServiceTest {
         assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("RentAmount", "MonthlyRent");
     }
 
+    // ----- #82: the dates a UAE user types -----
+
+    @Test
+    void dayFirstDates_areAcceptedInEveryLeasesDateColumn() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        setCell(wb, "Leases", 1, "EndDate", "28/02/2027");
+        setCell(wb, "Leases", 1, "AgreementDate", "20-02-2026");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField)
+                .doesNotContain("StartDate", "EndDate", "AgreementDate");
+    }
+
+    @Test
+    void realExcelDateCells_areAccepted() {
+        Workbook wb = buildLegacyWorkbook();
+        org.apache.poi.ss.usermodel.CellStyle dateStyle = wb.createCellStyle();
+        dateStyle.setDataFormat(wb.getCreationHelper().createDataFormat().getFormat("dd/mm/yyyy"));
+        Row row = wb.getSheet("Leases").getRow(1);
+        Cell start = row.getCell(4);
+        start.setCellValue(java.time.LocalDate.of(2026, 3, 1));
+        start.setCellStyle(dateStyle);
+        Cell end = row.getCell(5);
+        end.setCellValue(java.time.LocalDate.of(2027, 2, 28));
+        end.setCellStyle(dateStyle);
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("StartDate", "EndDate");
+    }
+
+    /** Month-first cannot be told from day-first, so it is not guessed at: 12/31 is refused. */
+    @Test
+    void monthFirstDates_areRefusedWithTheFormatsThatWork() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "EndDate", "12/31/2026");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("EndDate");
+            assertThat(e.getMessage()).contains("YYYY-MM-DD").contains("DD/MM/YYYY");
+        });
+    }
+
+    @Test
+    void chequesSheetDates_acceptDayFirstAndRefuseGarbage() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "PaymentTerms", "1");
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "01/01/2026", "not-a-date", "C-1", "ENBD", "60000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("DueDate");
+        assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("ChequeOrPaymentDate"));
+    }
+
     // ----- Test helpers -----
 
     /** Builds the original 4-sheet, 10-column Leases workbook (no new columns, no Cheques sheet). */
@@ -466,5 +527,34 @@ class PortfolioImportServiceTest {
                 propertyName, unitNumber, renterEmail,
                 installmentNo, dueDate, chequeOrPaymentDate,
                 uniqueId, bank, amount, method);
+    }
+
+    /**
+     * PR #344 review I1/I2/I3: the Cheques-sheet total is checked exactly, against
+     * the rent including VAT when the rent carries it, and for MonthlyRent against
+     * any rent whose monthly share rounds to the typed figure.
+     */
+    @Test
+    void sheetTotalProblem_isExact_vatInclusive_andAcceptsTheMonthlyRounding() {
+        java.util.function.BiFunction<String, Boolean, PortfolioImportService.LeaseRowSummary> byAmount =
+                (rent, vat) -> new PortfolioImportService.LeaseRowSummary("CHEQUE", new java.math.BigDecimal(rent),
+                        java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 12, 31), null, 12, vat);
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("72000"), byAmount.apply("72000", false)))
+                .isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("71999.99"), byAmount.apply("72000", false)))
+                .contains("Sum of cheques (71999.99) does not match lease total rent (72000)");
+        // VAT on rent: the cheques carry it.
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("105000"), byAmount.apply("100000", true)))
+                .isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("100000"), byAmount.apply("100000", true)))
+                .contains("105000.00 incl. 5% VAT on rent");
+
+        PortfolioImportService.LeaseRowSummary monthly = new PortfolioImportService.LeaseRowSummary("CHEQUE",
+                new java.math.BigDecimal("98000.00"), java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 12, 31),
+                new java.math.BigDecimal("8166.67"), 12, false);
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.04"), monthly)).isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.00"), monthly)).isNull();
+        assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.12"), monthly))
+                .contains("MonthlyRent 8166.67 × 12 months");
     }
 }

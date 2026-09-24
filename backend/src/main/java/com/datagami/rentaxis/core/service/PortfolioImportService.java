@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cutover.ContractImportPersistService;
 import com.datagami.rentaxis.core.service.cutover.ContractImportValidator;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -14,14 +15,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -85,7 +87,8 @@ public class PortfolioImportService {
         validateRentersSheet(rentersSheet, errors, renterEmails);
 
         // Validate Leases sheet (cross-sheet refs)
-        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails, leaseIndex);
+        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails, leaseIndex,
+                commercialProperties(propertiesSheet));
 
         // Validate optional Cheques sheet against the lease index
         Sheet chequesSheet = workbook.getSheet("Cheques");
@@ -103,7 +106,28 @@ public class PortfolioImportService {
 
     /** Summary of a Leases row, captured during validation, used by the Cheques-sheet checks. */
     record LeaseRowSummary(String paymentMethod, BigDecimal totalRent,
-                           LocalDate startDate, LocalDate endDate) {}
+                           LocalDate startDate, LocalDate endDate,
+                           BigDecimal monthlyRent, long months, boolean rentVat) {
+        LeaseRowSummary(String paymentMethod, BigDecimal totalRent, LocalDate startDate, LocalDate endDate) {
+            this(paymentMethod, totalRent, startDate, endDate, null, 0, false);
+        }
+    }
+
+    /**
+     * Lower-cased names of the sheet's COMMERCIAL properties — where
+     * RentVatApplicable defaults to true, as the persist phase reads it.
+     */
+    private Set<String> commercialProperties(Sheet sheet) {
+        Set<String> out = new HashSet<>();
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+            if ("COMMERCIAL".equals(getCellString(row, 4).trim().toUpperCase().replace(" ", "_"))) {
+                out.add(getCellString(row, 0).toLowerCase());
+            }
+        }
+        return out;
+    }
 
     private void validatePropertiesSheet(Sheet sheet, List<ImportErrorDTO> errors, Set<String> propertyNames) {
         Set<String> validEmirates = Arrays.stream(Emirate.values()).map(Enum::name).collect(Collectors.toSet());
@@ -215,7 +239,8 @@ public class PortfolioImportService {
     private void validateLeasesSheet(Sheet sheet, List<ImportErrorDTO> errors,
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
                                      Set<String> renterEmails,
-                                     Map<String, LeaseRowSummary> leaseIndex) {
+                                     Map<String, LeaseRowSummary> leaseIndex,
+                                     Set<String> commercialProperties) {
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -267,15 +292,17 @@ public class PortfolioImportService {
             if (startDateStr.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", "Start date is required"));
             } else {
-                try { startDate = parseDate(startDateStr); } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", "Invalid date format. Use YYYY-MM-DD"));
+                startDate = parseDate(startDateStr);
+                if (startDate == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", DATE_HELP));
                 }
             }
             if (endDateStr.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "End date is required"));
             } else {
-                try { endDate = parseDate(endDateStr); } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "Invalid date format. Use YYYY-MM-DD"));
+                endDate = parseDate(endDateStr);
+                if (endDate == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", DATE_HELP));
                 }
             }
             if (startDate != null && endDate != null && !endDate.isAfter(startDate)) {
@@ -358,9 +385,8 @@ public class PortfolioImportService {
             // AgreementDate
             String agreementDate = cell(row, hi, "AgreementDate");
             if (!agreementDate.isEmpty()) {
-                try { LocalDate.parse(agreementDate); }
-                catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "AgreementDate", "AgreementDate must be ISO format (YYYY-MM-DD)"));
+                if (parseDate(agreementDate) == null) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "AgreementDate", "AgreementDate: " + DATE_HELP));
                 }
             }
 
@@ -388,10 +414,9 @@ public class PortfolioImportService {
                 }
             }
             if (!bdDate.isEmpty()) {
-                try { LocalDate.parse(bdDate); }
-                catch (DateTimeParseException e) {
+                if (parseDate(bdDate) == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Date",
-                            "BookingDeposit_Date must be ISO format (YYYY-MM-DD)"));
+                            "BookingDeposit_Date: " + DATE_HELP));
                 }
             }
 
@@ -403,7 +428,18 @@ public class PortfolioImportService {
                 if (totalRent != null) {
                     String key = leaseKey(propertyName, unitNumber, renterEmail);
                     String method = paymentMethod.isEmpty() ? "CHEQUE" : paymentMethod.toUpperCase();
-                    leaseIndex.put(key, new LeaseRowSummary(method, totalRent, startDate, endDate));
+                    // The persist phase's reading of RentVatApplicable: blank takes the
+                    // property's default (COMMERCIAL = VAT on rent).
+                    String vatCell = cell(row, hi, "RentVatApplicable").trim().toLowerCase(Locale.ROOT);
+                    boolean rentVat = vatCell.isEmpty()
+                            ? commercialProperties.contains(propertyName.toLowerCase())
+                            : Set.of("true", "yes", "1").contains(vatCell);
+                    BigDecimal monthly = null;
+                    if (!monthlyRentStr.isEmpty()) {
+                        try { monthly = new BigDecimal(monthlyRentStr); } catch (NumberFormatException ignored) { }
+                    }
+                    leaseIndex.put(key, new LeaseRowSummary(method, totalRent, startDate, endDate, monthly,
+                            PortfolioImportPersistService.monthsInclusive(startDate, endDate), rentVat));
                 }
             }
         }
@@ -413,11 +449,10 @@ public class PortfolioImportService {
                                                      LocalDate startDate, LocalDate endDate) {
         try {
             if (!monthlyRent.isEmpty()) {
-                BigDecimal mr = new BigDecimal(monthlyRent);
-                // Mirror PortfolioImportPersistService.monthsInclusive — end date is
-                // inclusive in our lease convention so Jan 1 → Dec 31 counts as 12.
-                long months = Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
-                return mr.multiply(BigDecimal.valueOf(months));
+                // The persist phase's rule, so the Cheques-sheet total is checked
+                // against the very figure the lease will carry.
+                return PortfolioImportPersistService.rentFromMonthly(new BigDecimal(monthlyRent),
+                        PortfolioImportPersistService.monthsInclusive(startDate, endDate));
             }
             if (!rentAmount.isEmpty()) {
                 return new BigDecimal(rentAmount);
@@ -546,31 +581,74 @@ public class PortfolioImportService {
 
             // DueDate parse + outside-lease window warning.
             if (!dueDate.isEmpty()) {
-                try {
-                    LocalDate dd = LocalDate.parse(dueDate);
-                    if (dd.isBefore(lease.startDate()) || dd.isAfter(lease.endDate())) {
-                        warnings.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
-                                "DueDate " + dd + " is outside lease period "
-                                        + lease.startDate() + ".." + lease.endDate()));
-                    }
-                } catch (DateTimeParseException e) {
-                    errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
-                            "DueDate must be ISO format (YYYY-MM-DD)"));
+                LocalDate dd = parseDate(dueDate);
+                if (dd == null) {
+                    errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate", "DueDate: " + DATE_HELP));
+                } else if (dd.isBefore(lease.startDate()) || dd.isAfter(lease.endDate())) {
+                    warnings.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
+                            "DueDate " + dd + " is outside lease period "
+                                    + lease.startDate() + ".." + lease.endDate()));
                 }
+            }
+            // Read by the persist phase as the date on the instrument; a value it
+            // cannot read used to be dropped silently in favour of DueDate.
+            if (!chequeOrPaymentDate.isEmpty() && parseDate(chequeOrPaymentDate) == null) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "ChequeOrPaymentDate",
+                        "ChequeOrPaymentDate: " + DATE_HELP));
             }
         }
 
-        // Sum-vs-totalRent check, evaluated once per lease that had cheque rows.
-        BigDecimal tolerance = new BigDecimal("1.00");
+        // Sum-vs-rent check, once per lease that had cheque rows. Exact, because the
+        // post is exact (Σ cheques = contract value to the fils): a tolerance here
+        // showed a clean validation for a row the post then left as a draft
+        // (PR #344 review I3). The sheet states what the renter pays, so it is
+        // compared with the rent INCLUDING VAT when the rent carries VAT (review
+        // I1), and the rent the lease gets is then that sum (review I2 — see
+        // PortfolioImportPersistService.contractRent).
         for (String key : chequedLeases) {
             BigDecimal sum = sumByLease.getOrDefault(key, BigDecimal.ZERO);
-            BigDecimal totalRent = leaseIndex.get(key).totalRent();
-            if (sum.subtract(totalRent).abs().compareTo(tolerance) > 0) {
-                errors.add(ImportErrorDTO.file("Cheques", "Amount",
-                        "Sum of cheques (" + sum + ") does not match lease total rent ("
-                                + totalRent + ") for " + key));
+            String problem = sheetTotalProblem(sum, leaseIndex.get(key));
+            if (problem != null) {
+                errors.add(ImportErrorDTO.file("Cheques", "Amount", problem + " for " + key));
             }
         }
+    }
+
+    /**
+     * Whether a lease's Cheques-sheet rows add up to its rent, and if not, why.
+     *
+     * <ul>
+     *   <li>RentAmount: Σ sheet = RentAmount, plus 5% VAT when the rent carries it —
+     *       exactly.</li>
+     *   <li>MonthlyRent: the rent is Σ sheet (net of VAT), so Σ sheet has to be a
+     *       rent whose monthly share rounds to the typed figure — 12 × 8,166.67 =
+     *       98,000.04 is, and so is 98,000.00. The same test as
+     *       {@link PortfolioImportPersistService#rentFromMonthly}.</li>
+     * </ul>
+     *
+     * @return the refusal, or null when the sheet matches.
+     */
+    static String sheetTotalProblem(BigDecimal sum, LeaseRowSummary lease) {
+        String incl = lease.rentVat() ? " incl. 5% VAT on rent" : "";
+        BigDecimal net = PortfolioImportPersistService.rentFromSheet(sum, lease.rentVat());
+        if (lease.monthlyRent() != null && lease.months() > 0) {
+            BigDecimal expected = gross(lease.totalRent(), lease.rentVat());
+            if (net == null || net.divide(BigDecimal.valueOf(lease.months()), 2, RoundingMode.HALF_UP)
+                    .compareTo(lease.monthlyRent()) != 0) {
+                return "Sum of cheques (" + sum + ") does not match lease total rent (" + expected + incl
+                        + ": MonthlyRent " + lease.monthlyRent() + " × " + lease.months() + " months)";
+            }
+            return null;
+        }
+        BigDecimal expected = gross(lease.totalRent(), lease.rentVat());
+        if (sum.compareTo(expected) != 0) {
+            return "Sum of cheques (" + sum + ") does not match lease total rent (" + expected + incl + ")";
+        }
+        return null;
+    }
+
+    private static BigDecimal gross(BigDecimal rent, boolean vat) {
+        return rent.add(LeaseVat.vatOfNet(rent, vat, ChargeBehaviour.RENT));
     }
 
     private void validateDbConflicts(Set<String> propertyNames, Set<String> renterEmails, List<ImportErrorDTO> errors) {
@@ -623,6 +701,22 @@ public class PortfolioImportService {
 
     @Async("importExecutor")
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
+        process(fileBytes, job, tenantId, null);
+    }
+
+    /**
+     * The same, carrying the uploader's {@code Authentication} for the post phase
+     * (gap #83): a v1 row the sheet marks ACTIVE is posted after the persist phase
+     * has committed, and posting goes through {@code LeaseAccessPolicy}, which fails
+     * closed on an executor thread with no user. Without it every such row stays
+     * DRAFT and says why. The cut-over's own post job carries its caller the same way.
+     */
+    @Async("importExecutor")
+    public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
+        process(fileBytes, job, tenantId, auth);
+    }
+
+    private void process(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
         // Set tenant context for this async thread
         TenantContextHolder.setTenantId(tenantId);
         // Through WorkbookGuard, never `new XSSFWorkbook` directly: an uploaded
@@ -652,7 +746,12 @@ public class PortfolioImportService {
             if (ContractImportValidator.isV2Workbook(workbook)) {
                 contractPersistService.persist(workbook, job, outcome.warnings());
             } else {
-                persistService.persistWorkbook(workbook, job, outcome.warnings());
+                PortfolioImportPersistService.PersistResult persisted =
+                        persistService.persistWorkbook(workbook, job, outcome.warnings());
+                // Only now, with the leases committed: each ACTIVE row posts in a
+                // transaction of its own, and a new transaction cannot see rows the
+                // persist transaction had not yet committed.
+                postRequestedLeases(persisted, job, auth);
             }
 
             job.setStatus("COMPLETED");
@@ -706,11 +805,33 @@ public class PortfolioImportService {
         }
     }
 
+    /** Runs the post phase as the uploader, and gives the thread back clean. */
+    private void postRequestedLeases(PortfolioImportPersistService.PersistResult persisted, ImportJob job,
+                                     Authentication auth) {
+        if (persisted.toPost().isEmpty()) return;
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            if (auth != null) SecurityContextHolder.getContext().setAuthentication(auth);
+            persistService.postRequested(persisted, job);
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(previous);
+        }
+    }
+
     // --- Helpers ---
 
-    private LocalDate parseDate(String value) {
-        return LocalDate.parse(value.trim());
+    /**
+     * Every date column of the v1 workbook (gap #82): ISO, the day-first forms a UAE
+     * user types (DD/MM/YYYY, DD-MM-YYYY) and a real Excel date cell, which
+     * {@link SheetCells#getCellString} has already rendered ISO. The cut-over import
+     * reads dates through the same {@link SheetCells#parseDateOrNull}, so the two
+     * importers accept exactly the same cells. Null when it is none of them.
+     */
+    static LocalDate parseDate(String value) {
+        return SheetCells.parseDateOrNull(value);
     }
+
+    static final String DATE_HELP = "Invalid date. Use YYYY-MM-DD or DD/MM/YYYY (or an Excel date cell)";
 
     // The three readers and the header index now live in SheetCells, so the
     // cut-over validator in core.service.cutover reads the identical cell the

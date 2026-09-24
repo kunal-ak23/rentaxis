@@ -417,7 +417,15 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
                 .filter(e -> e.getDocType() == JournalDocType.JV)
                 .findFirst().orElseThrow());
         assertThat(jv.getEntryDate()).isEqualTo(RENEWAL_CONTRACT_DATE);
-        assertThat(jv.getNarration()).startsWith("Security deposit carried forward from ");
+        // #86: names the predecessor by unit and term, never by its UUID.
+        String expected = tx.execute(s -> {
+            Lease first = leaseRepo.findById(firstId).orElseThrow();
+            java.time.format.DateTimeFormatter d = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            return "Security deposit carried forward from " + first.getUnit().getUnitNumber() + " \u00b7 "
+                    + d.format(first.getStartDate()) + "\u2013" + d.format(first.getEndDate());
+        });
+        assertThat(jv.getNarration()).startsWith(expected);
+        assertThat(jv.getNarration()).doesNotContain(firstId.toString());
 
         List<JournalLine> jvLines = linesOf(jv.getId());
         assertThat(jvLines).hasSize(2);
@@ -899,6 +907,25 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         Lease lease = reread(leaseId);
         assertThat(lease.getEndDate()).isEqualTo(END);
         assertThat(leaseLines(leaseId)).hasSize(2);
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
+    /** #80 on the extension door (PR #344 review I4): an unnumbered PDC refuses the extension whole. */
+    @Test
+    void extendRefusesAnUnnumberedPdc() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        ExtendLeaseRequest unnumbered = new ExtendLeaseRequest(NEW_END, EXTENSION_DATE,
+                List.of(line("RENT", "12000")),
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, null, null,
+                        LocalDate.of(2027, 10, 2), "Emirates NBD", null, null, new BigDecimal("12000"), null, null)));
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, unnumbered))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has no number; a post-dated cheque needs its number");
+
+        assertThat(reread(leaseId).getEndDate()).isEqualTo(END);
         assertThat(journalEntryRows()).isEqualTo(journalsBefore);
         assertThat(registerOf(leaseId)).hasSize(5);
     }

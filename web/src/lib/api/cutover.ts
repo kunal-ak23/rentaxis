@@ -312,6 +312,8 @@ export type ContractImportResult = {
     chequesCreated: number;
     chequesFromSheet: number;
     bookingDepositsCreated: number;
+    /** v1 import: ACTIVE rows that were posted; the rest are DRAFT and in `warnings`. */
+    leasesPosted?: number;
     importBatchId: string | null;
     contractsCreated: number;
     mappingsCreated: number;

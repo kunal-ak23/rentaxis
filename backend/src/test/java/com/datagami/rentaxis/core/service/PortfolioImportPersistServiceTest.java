@@ -51,6 +51,8 @@ class PortfolioImportPersistServiceTest {
     @Mock LeaseService leaseService;
     @Mock ChargeTypeService chargeTypeService;
     @Mock ChequeGenerationService chequeGenerationService;
+    @Mock com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccountService;
+    @Mock com.datagami.rentaxis.core.service.cutover.ContractImportLeasePoster leasePoster;
 
     PortfolioImportPersistService service;
 
@@ -59,7 +61,17 @@ class PortfolioImportPersistServiceTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, importJobRepository,
-                leaseService, chargeTypeService, chequeGenerationService);
+                leaseService, chargeTypeService, chequeGenerationService,
+                propertyAccountService, leasePoster);
+        // A generated grid is one row big enough for any booking cheque; the
+        // non-rent proposal (a Cheques-sheet lease) is empty. The real proposals are
+        // ChequeGenerationServiceIT's and PortfolioImportPostingIT's subject.
+        lenient().when(chequeGenerationService.proposeForSystemImport(any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenAnswer(inv -> new ChequeGenerationService.Proposal((Boolean) inv.getArgument(2)
+                        ? java.util.List.of(new ChequeGenerationService.Row(1, java.time.LocalDate.of(2026, 1, 1),
+                                java.time.LocalDate.of(2026, 1, 1), new java.math.BigDecimal("1000000"),
+                                "Rent - 1st Installment"))
+                        : java.util.List.of(), null));
         // The grid itself is ChequeGenerationServiceIT's subject; here the question
         // is only which rows the import hands it.
         lenient().when(chequeGenerationService.generateForSystemImport(any(), any())).thenReturn(List.of());
@@ -135,24 +147,132 @@ class PortfolioImportPersistServiceTest {
                 .isEqualTo(UnitStatus.VACANT);
     }
 
+    /**
+     * Gap #83: an ACTIVE row is written DRAFT, its unit left VACANT, and handed to
+     * the post phase — which is the only thing that may make it ACTIVE. The persist
+     * phase used to set ACTIVE and OCCUPIED itself, putting unposted tenancies on
+     * the dashboard.
+     */
     @Test
-    void persist_activeStatus_setsUnitOccupied() {
+    void persist_activeStatus_isWrittenDraftAndQueuedForPosting() {
         Workbook wb = buildWorkbookWithOneLease(b -> b.status("ACTIVE"));
 
-        service.persistWorkbook(wb, newJob());
+        PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, newJob());
 
-        Unit unit = captureLastSavedUnit();
-        assertThat(unit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        assertThat(captureSavedLease().getStatus()).isEqualTo(LeaseStatus.DRAFT);
+        assertThat(captureLastSavedUnit().getStatus()).isEqualTo(UnitStatus.VACANT);
+        assertThat(result.toPost()).singleElement()
+                .satisfies(p -> assertThat(p.rowNum()).isEqualTo(2));
+        verify(leasePoster, org.mockito.Mockito.never()).postPortfolioLease(any(), any());
     }
 
     @Test
     void persist_blankStatus_defaultsToActive() {
         Workbook wb = buildWorkbookWithOneLease(b -> b.status(""));
 
-        service.persistWorkbook(wb, newJob());
+        PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, newJob());
 
-        Lease saved = captureSavedLease();
-        assertThat(saved.getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(captureSavedLease().getStatus()).isEqualTo(LeaseStatus.DRAFT);
+        assertThat(result.toPost()).hasSize(1);
+    }
+
+    @Test
+    void persist_draftStatus_isNotQueuedForPosting() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.status("DRAFT"));
+
+        assertThat(service.persistWorkbook(wb, newJob()).toPost()).isEmpty();
+    }
+
+    /** The post phase: a refusal leaves the lease DRAFT and says so against its row. */
+    @Test
+    void postRequested_aRefusedPost_isListedAsImportedAsDraft() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.status("ACTIVE"));
+        ImportJob job = newJob();
+        PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, job);
+        org.mockito.Mockito.when(leasePoster.postPortfolioLease(any(), any())).thenThrow(
+                new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                        "Cheque grid totals 38,000.00 but contract value is 42,800.00."));
+
+        service.postRequested(result, job);
+
+        var details = new com.fasterxml.jackson.databind.ObjectMapper().readValue(job.getErrors(),
+                com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getLeasesPosted()).isZero();
+        assertThat(details.getWarnings()).singleElement().satisfies(w -> {
+            assertThat(w.getSheet()).isEqualTo("Leases");
+            assertThat(w.getRow()).isEqualTo(2);
+            assertThat(w.getMessage()).isEqualTo(
+                    "Imported as draft: Cheque grid totals 38,000.00 but contract value is 42,800.00.");
+        });
+    }
+
+    @Test
+    void postRequested_countsWhatPosted() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.status("ACTIVE"));
+        ImportJob job = newJob();
+
+        service.postRequested(service.persistWorkbook(wb, job), job);
+
+        var details = new com.fasterxml.jackson.databind.ObjectMapper().readValue(job.getErrors(),
+                com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getLeasesPosted()).isEqualTo(1);
+        assertThat(details.getWarnings()).isNullOrEmpty();
+    }
+
+    /** The rent rule: the roundest whole-dirham term rent that divides back to the typed month. */
+    @Test
+    void rentFromMonthly_undoesTheRoundedDivision_andKeepsMeantFils() {
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("8166.67"), 12))
+                .isEqualByComparingTo("98000.00");
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("5000"), 12))
+                .isEqualByComparingTo("60000.00");
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("8333.33"), 12))
+                .isEqualByComparingTo("100000.00");
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("1000.01"), 12))
+                .isEqualByComparingTo("12000.12");
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("5123.45"), 12))
+                .isEqualByComparingTo("61481.40");
+        assertThat(PortfolioImportPersistService.rentFromMonthly(new java.math.BigDecimal("4500"), 13))
+                .isEqualByComparingTo("58500.00");
+    }
+
+    /**
+     * Review I2: with a Cheques sheet the rent is what the sheet's cheques add up
+     * to (net of VAT when the rent carries it — review I1); without one, the
+     * whole-dirham MonthlyRent rule.
+     */
+    @Test
+    void contractRent_withASheetIsTheSheetsTotal_withoutOneTheMonthlyRule() {
+        java.util.function.Function<String, PortfolioImportPersistService.ChequeRow> chq = amt ->
+                new PortfolioImportPersistService.ChequeRow(1, java.time.LocalDate.of(2027, 1, 1), null, "1", "B",
+                        new java.math.BigDecimal(amt), "CHEQUE");
+        List<PortfolioImportPersistService.ChequeRow> twelve = java.util.Collections.nCopies(12, chq.apply("8166.67"));
+        assertThat(PortfolioImportPersistService.contractRent("", "8166.67", 12, twelve, false))
+                .isEqualByComparingTo("98000.04");
+        assertThat(PortfolioImportPersistService.contractRent("", "8166.67", 12, List.of(), false))
+                .isEqualByComparingTo("98000.00");
+        // 2 × 52,500 incl. 5% VAT on rent: the rent line is 100,000.
+        assertThat(PortfolioImportPersistService.contractRent("100000", "", 12,
+                List.of(chq.apply("52500"), chq.apply("52500")), true)).isEqualByComparingTo("100000.00");
+        assertThat(PortfolioImportPersistService.contractRent("100000", "", 12, List.of(), true))
+                .isEqualByComparingTo("100000");
+    }
+
+    /** A booking cheque comes off the generated rows, first first; a row it empties is dropped. */
+    @Test
+    void takeBookingOff_reducesGeneratedRowsAndRefusesWhatItCannotPlace() {
+        java.util.function.Function<String, ChequeRowInput> row = amt -> new ChequeRowInput(null, null,
+                java.time.LocalDate.of(2026, 1, 1), null, java.time.LocalDate.of(2026, 1, 1), null, null, null,
+                new java.math.BigDecimal(amt), "x", com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC);
+        List<ChequeRowInput> rows = new java.util.ArrayList<>(List.of(row.apply("3800"), row.apply("1000")));
+        assertThat(PortfolioImportPersistService.takeBookingOff(rows, new java.math.BigDecimal("4000"))).isNull();
+        assertThat(rows).extracting(ChequeRowInput::amount)
+                .usingElementComparator(java.math.BigDecimal::compareTo)
+                .containsExactly(new java.math.BigDecimal("800"));
+
+        List<ChequeRowInput> small = new java.util.ArrayList<>(List.of(row.apply("100")));
+        assertThat(PortfolioImportPersistService.takeBookingOff(small, new java.math.BigDecimal("5000")))
+                .contains("more than the rows it pays toward");
     }
 
     @Test
@@ -205,7 +325,11 @@ class PortfolioImportPersistServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ChequeRowInput>> rows = ArgumentCaptor.forClass(List.class);
         verify(chequeGenerationService).saveRowsForSystemImport(any(Lease.class), rows.capture());
-        assertThat(rows.getValue()).singleElement().satisfies(r -> {
+        // The booking cheque is its own row, last; the generated grid (one row of
+        // 1,000,000 in this mock) is reduced by what it already paid.
+        assertThat(rows.getValue()).hasSize(2);
+        assertThat(rows.getValue().get(0).amount()).isEqualByComparingTo("990000");
+        assertThat(rows.getValue().get(1)).satisfies(r -> {
             assertThat(r.chequeNumber()).isEqualTo("BD-001");
             assertThat(r.payeeBank()).isEqualTo("Emirates NBD");
             assertThat(r.chequeDate()).isEqualTo(java.time.LocalDate.of(2026, 2, 15));
@@ -217,7 +341,7 @@ class PortfolioImportPersistServiceTest {
                 .readValue(job.getErrors(),
                         com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
         assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
-        assertThat(job.getSchedulesCreated()).isEqualTo(1);
+        assertThat(job.getSchedulesCreated()).isEqualTo(2);
         // Nothing was dropped, so nothing is warned about.
         assertThat(details.getWarnings() == null ? List.<com.datagami.rentaxis.api.dto.ImportErrorDTO>of()
                 : details.getWarnings())
@@ -441,14 +565,32 @@ class PortfolioImportPersistServiceTest {
 
     @Test
     void persist_legacyTenColumnWorkbook_persistsActiveLeaseUnchanged() {
-        // Regression: verify the legacy 10-column path still produces an ACTIVE lease.
+        // Regression: the legacy 10-column path (no Status column) still asks for an
+        // ACTIVE lease — written DRAFT and queued for the post phase (gap #83).
         Workbook wb = buildLegacyOneLeaseWorkbook();
+
+        PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, newJob());
+
+        Lease saved = captureSavedLease();
+        assertThat(saved.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+        assertThat(result.toPost()).hasSize(1);
+        assertThat(saved.getEjariNumber()).isEqualTo("EJ-2026-001");
+    }
+
+    /** #82: the persist phase reads a day-first date exactly as the validator accepted it. */
+    @Test
+    void persist_dayFirstDates_landAsTheDatesTyped() {
+        Workbook wb = PortfolioImportServiceTest.buildLegacyWorkbook();
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "EndDate", "28/02/2027");
+        PortfolioImportServiceTest.setCell(wb, "Leases", 1, "AgreementDate", "20-02-2026");
 
         service.persistWorkbook(wb, newJob());
 
         Lease saved = captureSavedLease();
-        assertThat(saved.getStatus()).isEqualTo(LeaseStatus.ACTIVE);
-        assertThat(saved.getEjariNumber()).isEqualTo("EJ-2026-001");
+        assertThat(saved.getStartDate()).isEqualTo(java.time.LocalDate.of(2026, 3, 1));
+        assertThat(saved.getEndDate()).isEqualTo(java.time.LocalDate.of(2027, 2, 28));
+        assertThat(saved.getAgreementDate()).isEqualTo(java.time.LocalDate.of(2026, 2, 20));
     }
 
     // ----- Helpers -----

@@ -18,8 +18,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -61,16 +63,25 @@ public class ContractImportLeasePoster {
     private final LeasePostingService leasePosting;
     private final ChequeService chequeService;
     private final RecognitionService recognition;
+    private final Clock clock;
 
     public ContractImportLeasePoster(LeaseRepository leases, ChequeRepository cheques,
                                      LeasePostingService leasePosting, ChequeService chequeService,
-                                     RecognitionService recognition) {
+                                     RecognitionService recognition, Clock clock) {
         this.leases = leases;
         this.cheques = cheques;
         this.leasePosting = leasePosting;
         this.chequeService = chequeService;
         this.recognition = recognition;
+        this.clock = clock;
     }
+
+    /**
+     * Why a portfolio row with a cheque dated before today is left as a draft (PR
+     * #344 review C1). Shown to the landlord in the import result.
+     */
+    public static final String RUNNING_TENANCY_REFUSAL = "Running tenancy with past-dated cheques — import it"
+            + " through the cut-over import (Contracts sheet), which records each cheque's status";
 
     /** What one lease's post did, for the caller's result row. */
     public record Posted(int chequesDeposited, int chequesCleared, int chequesBounced,
@@ -87,6 +98,53 @@ public class ContractImportLeasePoster {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Posted postOne(UUID batchId, UUID leaseId, LocalDate recogniseThrough) {
+        return postAndReplay(leaseId, batchId, recogniseThrough, () -> leasePosting.post(leaseId, batchId));
+    }
+
+    /**
+     * One lease of a <b>portfolio import</b> (the v1 Properties → Import Portfolio
+     * workbook) that the sheet marked ACTIVE, put on the books (gap #83).
+     *
+     * <p>The same door and the same commit boundary as {@link #postOne}, for the
+     * same reason: the fourth lease of the workbook failing to post must cost that
+     * lease and nothing else, and it must leave no journals behind at all. What
+     * differs is only what the post is: no batch id (a portfolio import is not a
+     * reversible cut-over batch, so its journals obey the period lock like any
+     * interactive post), and no recognition catch-up — the nightly recognition run
+     * treats this lease exactly as it treats one posted by hand. The cheque replay
+     * is skipped, since a portfolio import never records an imported status.</p>
+     *
+     * <p><b>So a lease with any cheque dated before today is not posted</b> (PR #344
+     * review C1). Posting registers every row as an outstanding PDC, and the v1
+     * sheet has no column saying which of a running tenancy's cheques have already
+     * been banked: the renter would be e-mailed as overdue and offered "pay now"
+     * for rent they paid months ago, and the dashboard would count that money twice.
+     * The truth is unknown here, so the lease stays DRAFT with
+     * {@link #RUNNING_TENANCY_REFUSAL}; the cut-over import is the door that
+     * records each instrument's status. Today is the app clock's (Asia/Dubai).</p>
+     *
+     * @param importGeneratedRows the rows the import generated rather than read off
+     *        the sheet — the only ones that may be registered without a number.
+     * @return what was written, or {@code null} when the lease is not DRAFT any more.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Posted postPortfolioLease(UUID leaseId, Set<UUID> importGeneratedRows) {
+        return postAndReplay(leaseId, null, null, () -> {
+            requireNoPastDatedCheques(leaseId);
+            leasePosting.postForPortfolioImport(leaseId, importGeneratedRows);
+        });
+    }
+
+    private void requireNoPastDatedCheques(UUID leaseId) {
+        LocalDate today = LocalDate.now(clock);
+        boolean anyPast = cheques.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+                .anyMatch(c -> c.getChequeDate() != null && c.getChequeDate().isBefore(today));
+        if (anyPast) {
+            throw new BusinessRuleViolationException(RUNNING_TENANCY_REFUSAL);
+        }
+    }
+
+    private Posted postAndReplay(UUID leaseId, UUID batchId, LocalDate recogniseThrough, Runnable post) {
         Lease lease = leases.findByIdScopedToTenant(leaseId).orElse(null);
         if (lease == null) {
             // The link has no foreign key on lease_id by design (changeset 88), so a
@@ -100,13 +158,16 @@ public class ContractImportLeasePoster {
             return null;
         }
 
-        leasePosting.post(leaseId, batchId);
+        post.run();
 
-        ChequeService.Replay replay = new ChequeService.Replay(batchId);
         int deposited = 0;
         int cleared = 0;
         int bounced = 0;
-        for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+        // A portfolio import (no batch) records no imported cheque statuses: the
+        // post has registered every row and that is all its sheet said.
+        List<Cheque> toReplay = batchId == null ? List.of() : cheques.findByLease_IdOrderBySeqNoAsc(leaseId);
+        ChequeService.Replay replay = batchId == null ? null : new ChequeService.Replay(batchId);
+        for (Cheque c : toReplay) {
             switch (replayTarget(c)) {
                 case REGISTERED -> {
                     // The lease post already registered it and wrote its PDR; the
@@ -150,12 +211,12 @@ public class ContractImportLeasePoster {
             }
         }
 
-        RecognitionService.LeaseCatchUp caughtUp =
-                recognition.catchUpLease(leaseId, recogniseThrough, batchId);
+        int recognised = recogniseThrough == null ? 0
+                : recognition.catchUpLease(leaseId, recogniseThrough, batchId).posted();
 
         log.debug("Imported lease {} posted in batch {}: {} deposited, {} cleared, {} bounced, {} recognised",
-                leaseId, batchId, deposited, cleared, bounced, caughtUp.posted());
-        return new Posted(deposited, cleared, bounced, caughtUp.posted());
+                leaseId, batchId, deposited, cleared, bounced, recognised);
+        return new Posted(deposited, cleared, bounced, recognised);
     }
 
     /**

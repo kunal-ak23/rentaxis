@@ -187,12 +187,19 @@ class PortfolioImportIT extends AbstractPostgresIT {
         // how many. The import used to create none at all.
         assertThat(completed.getSchedulesCreated()).isPositive();
 
-        // They are DRAFT rows: the lease's *grid*, not its register. The import
-        // writes what the sheet said and posts nothing, so there is no PDR behind
-        // any of them — which is exactly why the register must not show them as
-        // instruments the landlord is holding.
+        // They are DRAFT rows: the lease's *grid*, not its register. This tenant has
+        // no chart of accounts and the upload carries no user, so nothing can post:
+        // every ACTIVE row stays DRAFT and is listed as such (gap #83) — the posting
+        // path itself is PortfolioImportPostingIT's subject. The sheet's four rent
+        // cheques are joined by a row for the 5,000 deposit, so the grid covers the
+        // whole contract.
+        assertThat(details.getWarnings())
+                .extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getMessage)
+                .filteredOn(m -> m.startsWith("Imported as draft: "))
+                .hasSize(4);
+        assertThat(leases).allSatisfy(l -> assertThat(l.getStatus()).isEqualTo(LeaseStatus.DRAFT));
         assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(tenant2Lease.getId()))
-                .hasSize(4)
+                .hasSize(5)
                 .allSatisfy(c -> {
                     assertThat(c.getStatus()).isEqualTo(ChequeStatus.DRAFT);
                     assertThat(c.getPdrJournalId()).isNull();
@@ -203,7 +210,7 @@ class PortfolioImportIT extends AbstractPostgresIT {
                 assertThat(chequeRepository.findByLease_IdOrderBySeqNoAsc(l.getId())).isNotEmpty());
 
         // And none of it reaches the register — not the list, not a tile, not the
-        // per-lease stats — although the imported leases are ACTIVE.
+        // per-lease stats.
         LeaseTestFixtures.authenticateAsTenantAdmin();
         assertThat(chequeQueryService.search(null, null, null, null, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 100)).getContent()).isEmpty();

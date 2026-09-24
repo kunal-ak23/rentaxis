@@ -54,6 +54,7 @@ class LeaseServiceUnitOccupancyTest {
     private LeaseInteractionRepository leaseInteractionRepository;
     private LeaseLineRepository leaseLineRepository;
     private ChequeRepository chequeRepository;
+    private LeaseDocumentRepository leaseDocumentRepository;
     private LeaseService service;
 
     @BeforeEach
@@ -62,7 +63,7 @@ class LeaseServiceUnitOccupancyTest {
         unitRepository = mock(UnitRepository.class);
         renterRepository = mock(RenterRepository.class);
         leaseInteractionRepository = mock(LeaseInteractionRepository.class);
-        LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
+        leaseDocumentRepository = mock(LeaseDocumentRepository.class);
 
         // Pass-through by default: these tests are about lease behaviour, not
         // authorization. LeaseAccessPolicyTest covers the scoping itself.
@@ -161,6 +162,82 @@ class LeaseServiceUnitOccupancyTest {
         assertThat(lease.getUnit().getStatus()).isNotEqualTo(UnitStatus.OCCUPIED);
         assertThat(lease.getUnit().getCurrentTenantName()).isNull();
         verify(unitRepository, org.mockito.Mockito.never()).save(any(Unit.class));
+    }
+
+    /** #79: once the renter has accepted, they cannot reject — the lease stays with the landlord. */
+    @Test
+    void rejectAfterAcceptance_isRefusedAndTheLeaseStaysPending() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        lease.setRenterAcceptedAt(java.time.Instant.parse("2026-09-20T21:30:00Z"));
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.rejectLease(lease.getId(), userId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                // 21:30Z is already the 21st in Dubai.
+                .hasMessageContaining("accepted this contract on 21/09/2026")
+                .hasMessageContaining("can no longer be rejected");
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.PENDING_SIGNATURE);
+        verify(leaseRepository, org.mockito.Mockito.never()).save(any(Lease.class));
+    }
+
+    @Test
+    void rejectBeforeAcceptance_stillSendsTheLeaseBackToDraft() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+        when(leaseRepository.save(any(Lease.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.rejectLease(lease.getId(), userId);
+
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * PR #344 review M5: accept is bound to the contract document the renter was
+     * shown. A page opened before the landlord regenerated the contract sends the
+     * old document's id and is refused; the current id is accepted.
+     */
+    @Test
+    void acceptingAStaleContractVersion_isRefused_theCurrentOneIsAccepted() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+        com.datagami.rentaxis.domain.entity.LeaseDocument current = new com.datagami.rentaxis.domain.entity.LeaseDocument();
+        current.setId(UUID.randomUUID());
+        current.setType(com.datagami.rentaxis.domain.entity.enums.DocumentType.CONTRACT);
+        when(leaseDocumentRepository.findByLeaseId(lease.getId())).thenReturn(List.of(current));
+
+        UUID stale = UUID.randomUUID();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.acceptLease(lease.getId(), userId, stale))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("new version of this contract");
+        assertThat(lease.getRenterAcceptedAt()).isNull();
+
+        service.acceptLease(lease.getId(), userId, current.getId());
+        assertThat(lease.getRenterAcceptedAt()).isNotNull();
+    }
+
+    @Test
+    void acceptingTwice_isRefusedAndKeepsTheFirstDate() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        java.time.Instant first = java.time.Instant.parse("2026-09-20T08:00:00Z");
+        lease.setRenterAcceptedAt(first);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.acceptLease(lease.getId(), userId))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("waiting for your landlord");
+        assertThat(lease.getRenterAcceptedAt()).isEqualTo(first);
     }
 
     @Test

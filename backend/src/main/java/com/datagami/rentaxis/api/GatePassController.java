@@ -259,7 +259,7 @@ public class GatePassController {
      * the buildings they manage (audit P1-6).
      */
     @GetMapping("/approvals")
-    @PreAuthorize("hasAnyRole('SECURITY_GUARD','TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SECURITY_GUARD','SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<GatePassSummary> approvals() {
         UUID tenantId = tenantId();
         if (!isGuard()) {
@@ -283,7 +283,7 @@ public class GatePassController {
     }
 
     @PostMapping("/{id}/approval")
-    @PreAuthorize("hasAnyRole('SECURITY_GUARD','TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SECURITY_GUARD','SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public GatePassSummary decideApproval(@PathVariable UUID id, @RequestBody ApprovalDecision decision) {
         UUID tenantId = tenantId();
         GatePass requested = gatePassRepository.findById(id)
@@ -316,7 +316,7 @@ public class GatePassController {
      * turns this into a CSV.
      */
     @GetMapping("/report")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<GatePassReportRow> report(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
@@ -370,7 +370,7 @@ public class GatePassController {
     }
 
     @GetMapping("/guards/{userId}/properties")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<UUID> guardProperties(@PathVariable UUID userId) {
         requireGuardInTenant(tenantId(), userId);
         // A property manager sees (and manages) the guard's postings at their own buildings.
@@ -388,7 +388,7 @@ public class GatePassController {
      * whenever this endpoint happens not to be called.
      */
     @PutMapping("/guards/{userId}/properties")
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     @Transactional
     public List<UUID> setGuardProperties(@PathVariable UUID userId, @RequestBody List<UUID> propertyIds) {
         UUID tenantId = tenantId();

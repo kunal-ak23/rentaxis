@@ -90,6 +90,20 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+describe("Leases list — renter acceptance (#79)", () => {
+    it("badges a PENDING_SIGNATURE lease the renter has accepted, and no other", async () => {
+        const rows = [
+            lease({ id: "p1", unitIdentifier: "A-201", status: "PENDING_SIGNATURE", renterAcceptedAt: "2026-09-20T08:00:00Z" }),
+            lease({ id: "p2", unitIdentifier: "A-202", status: "PENDING_SIGNATURE", renterAcceptedAt: null }),
+        ];
+        api.paged.mockImplementation(async () => ({ content: rows, totalElements: 2, totalPages: 1, number: 0, size: 25 }));
+        renderPage();
+        const row = await screen.findByTestId("lease-row-p1");
+        expect(row).toHaveTextContent("Accepted by renter 20/09/2026");
+        expect(screen.getByTestId("lease-row-p2")).not.toHaveTextContent("Accepted by renter");
+    });
+});
+
 describe("Leases list — bulk post", () => {
     it("posts each selected draft in turn and lists every outcome", async () => {
         api.post

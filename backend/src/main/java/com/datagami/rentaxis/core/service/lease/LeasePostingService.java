@@ -31,6 +31,7 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -258,17 +259,54 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId, UUID importBatchId) {
+        return post(leaseId, importBatchId,
+                importBatchId == null ? Preconditions.FOR_POST : Preconditions.FOR_IMPORT_POST,
+                importBatchId == null);
+    }
+
+    /**
+     * The post a <b>portfolio import</b> (Properties → Import Portfolio) makes for a
+     * row the sheet marked ACTIVE (gap #83).
+     *
+     * <p>It is the interactive post in every respect that touches the ledger — no
+     * batch id, so the period lock applies to its journals exactly as it would to
+     * the accountant clicking Post — with the one difference the cut-over also
+     * makes: nobody is e-mailed. An import is the landlord moving tenancies that
+     * already exist onto the system, and "your lease has been activated" landing in
+     * every renter's inbox would be the first thing they noticed about it.</p>
+     *
+     * <p><b>Cheque numbers (#80).</b> A post-dated cheque is registered with its
+     * number here as everywhere else, except the rows named in
+     * {@code importGeneratedRows}: the ones the import itself <em>generated</em>
+     * (deposit and fee rows, and the rent rows when the workbook had no Cheques
+     * sheet), for which no number exists yet. A row the landlord's sheet stated is
+     * not exempt — the sheet carries its number (UniqueId).</p>
+     *
+     * @param importGeneratedRows ids of the cheque rows the import generated.
+     */
+    @Transactional
+    public PostLeaseResponse postForPortfolioImport(UUID leaseId, Set<UUID> importGeneratedRows) {
+        draftImportBatchProblem(leaseId).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
+        return post(leaseId, null, Preconditions.FOR_PORTFOLIO_IMPORT, false,
+                importGeneratedRows == null ? Set.of() : Set.copyOf(importGeneratedRows));
+    }
+
+    private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce) {
+        return post(leaseId, importBatchId, checks, announce, Set.of());
+    }
+
+    private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
+                                   Set<UUID> numberExempt) {
         Lease lease = lockLease(leaseId);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
 
-        PostingPlan plan = validate(lease, lines, cheques,
-                importBatchId == null ? Preconditions.FOR_POST : Preconditions.FOR_IMPORT_POST);
+        PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt);
         plan.throwIfRefused(propertyIdOf(lease));
 
         JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
                 importBatchId);
-        registerCheques(lease, cheques, importBatchId);
+        registerCheques(lease, cheques, importBatchId, numberExempt);
 
         // The renter's deposit follows them into the new contract (spec §6.6). It
         // has to happen inside this transaction and before the predecessor is
@@ -285,7 +323,7 @@ public class LeasePostingService {
         lease.setPostedAt(Instant.now());
         lease.setPostedBy(currentUserId());
 
-        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), importBatchId == null);
+        leaseService.markActiveOnPosting(lease, "Lease posted " + tco.getEntryNumber(), announce);
         events.publishEvent(new LeasePostedEvent(lease.getTenantId(), lease.getId(), lease.getContractDate()));
 
         return response(lease, tco, cheques);
@@ -523,20 +561,46 @@ public class LeasePostingService {
      * books. One shared flag hid that, and reading {@code validate(…, false)} at the
      * call site told you nothing about which rule was being waived.</p>
      */
+    /*
+     * pdcNumbersRequired (#80): a post-dated cheque with no number cannot be
+     * matched at the bank, bounced by number or searched for, so a post refuses
+     * one. The cut-over keeps the rule too — ContractImportValidator already
+     * refuses a PDC row without its number, so a batch never reaches here with one.
+     *
+     * The PORTFOLIO import keeps the rule too, with one narrow exemption: the
+     * rows the import itself GENERATED (deposit and fee rows, and with no Cheques
+     * sheet the whole grid) — passed by id, never "every row of this door" — have
+     * no number to give, and refusing would leave a running tenancy off the books
+     * (gap #83), the worse error. The import result counts them so the numbers
+     * are typed in afterwards (ChequeDetailsService, bulk attach). A row the
+     * sheet stated carries its UniqueId and is not exempt.
+     */
     private record Preconditions(boolean leaseMustBeUnposted, boolean chequesMustBeDraft,
-                                 boolean periodLockApplies) {
-        static final Preconditions FOR_POST = new Preconditions(true, true, true);
-        static final Preconditions FOR_AMEND = new Preconditions(false, false, true);
+                                 boolean periodLockApplies, boolean pdcNumbersRequired) {
+        static final Preconditions FOR_POST = new Preconditions(true, true, true, true);
+        /** An amendment does not touch the cheques, so it has nothing to say about their numbers. */
+        static final Preconditions FOR_AMEND = new Preconditions(false, false, true, false);
         /**
          * A cut-over import: the same untouched-lease rules, and no period-lock
          * pre-check. Its journals carry the batch id and {@code PostingService}
          * exempts them, so checking the lock here would refuse a contract the
          * ledger is about to accept — see {@link #post(UUID, UUID)}.
          */
-        static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false);
+        static final Preconditions FOR_IMPORT_POST = new Preconditions(true, true, false, true);
+        /**
+         * A portfolio import's post: the interactive rules, lock included — its
+         * journals carry no batch id, so {@code PostingService} enforces the lock on
+         * them and the pre-check has to say so first.
+         */
+        static final Preconditions FOR_PORTFOLIO_IMPORT = new Preconditions(true, true, true, true);
     }
 
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks) {
+        return validate(lease, lines, cheques, checks, Set.of());
+    }
+
+    private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks,
+                                 Set<UUID> numberExempt) {
         // Errors about the accounts this posting would use — a line's credit account
         // or the lease's receivable override. They rank above the role-level
         // complaint, which is usually the same gap seen from further away.
@@ -546,7 +610,18 @@ public class LeasePostingService {
 
         if (checks.leaseMustBeUnposted()
                 && lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            otherErrors.add("Only a DRAFT or PENDING_SIGNATURE lease can be posted; this one is " + lease.getStatus() + ".");
+            if (lease.getStatus() == LeaseStatus.ACTIVE && lease.getPostingJournalId() == null) {
+                // What the pre-v2 portfolio import left behind (gap #83): ACTIVE, with
+                // no contract journal. Posting from ACTIVE would skip the DRAFT-only
+                // grid rules the whole post relies on, so it is refused — but by name,
+                // so nobody reads "this one is ACTIVE" as "it is already on the books".
+                otherErrors.add("This lease is ACTIVE but was never posted (no contract journal), so it is"
+                        + " not on the books. An ACTIVE lease cannot be posted; recreate it as a draft"
+                        + " and post that.");
+            } else {
+                otherErrors.add("Only a DRAFT or PENDING_SIGNATURE lease can be posted; this one is "
+                        + lease.getStatus() + ".");
+            }
         }
         if (lease.getContractDate() == null) {
             otherErrors.add("The lease has no contract date.");
@@ -588,6 +663,13 @@ public class LeasePostingService {
             }
             if (c.getChequeDate() == null) {
                 otherErrors.add("Cheque " + label(c) + " has no cheque date.");
+            }
+            if (checks.pdcNumbersRequired() && c.getMode() == ChequeMode.PDC
+                    && (c.getChequeNumber() == null || c.getChequeNumber().isBlank())
+                    && !numberExempt.contains(c.getId())) {
+                // Cash and transfer rows have no cheque number by nature.
+                otherErrors.add("Cheque #" + c.getSeqNo() + " has no number; a post-dated cheque needs"
+                        + " its number before the lease is posted.");
             }
             if (c.getPostingDate() == null) {
                 otherErrors.add("Cheque " + label(c) + " has no posting date.");
@@ -847,9 +929,13 @@ public class LeasePostingService {
      * dimensions, same date rule, same receivable override — and two copies of that
      * would eventually differ on exactly the detail nobody re-reads.</p>
      */
-    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId) {
+    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId, Set<UUID> numberExempt) {
         for (Cheque c : cheques) {
-            chequeRegistrar.register(lease, c, importBatchId);
+            if (numberExempt.contains(c.getId())) {
+                chequeRegistrar.registerGeneratedByImport(lease, c);
+            } else {
+                chequeRegistrar.register(lease, c, importBatchId);
+            }
         }
     }
 
