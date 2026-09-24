@@ -11,6 +11,8 @@ public interface StatementParser {
     /** The most rows a statement may have (spec §3 import step 1), plus room for headers and footers. */
     int MAX_ROWS = 20_000;
     int MAX_GRID_ROWS = MAX_ROWS + 200;
+    /** The widest statement row read (PR #353 review P1-1); a cell further right refuses the file. */
+    int MAX_COLS = 64;
 
     BankStatementProfile.FileKind kind();
 

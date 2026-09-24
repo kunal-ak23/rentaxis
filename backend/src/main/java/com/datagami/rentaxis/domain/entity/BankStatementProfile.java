@@ -53,6 +53,8 @@ public class BankStatementProfile extends BaseTenantEntity {
     @Column(name = "amount_mode", nullable = false, length = 10)
     private AmountMode amountMode = AmountMode.SPLIT;
 
+    /** "." or "," (PR #353 review): the other one, and spaces, are thousands separators. */
+    @Column(name = "decimal_separator", nullable = false, length = 1) private String decimalSeparator = ".";
     @Column(name = "cheque_no_pattern", nullable = false, length = 100) private String chequeNoPattern = "\\b\\d{6}\\b";
     @Column(name = "match_window_days", nullable = false) private int matchWindowDays = 3;
 

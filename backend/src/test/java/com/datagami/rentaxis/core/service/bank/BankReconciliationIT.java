@@ -93,6 +93,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired AccountResolver resolver;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     @Autowired com.datagami.rentaxis.core.service.LandlordOrgService orgService;
 
     static final LocalDate AUG_1 = LocalDate.of(2026, 8, 1);
@@ -149,7 +150,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
     }
 
     static BankRecDTOs.Profile enbdProfile() {
-        return new BankRecDTOs.Profile("CSV", null, 2, 3, ",", null, Map.of(
+        return new BankRecDTOs.Profile("CSV", null, 2, 3, ",", List.of("dd/MM/yyyy"), Map.of(
                 "txnDate", "Transaction Date", "valueDate", "Value Date", "description", "Narration",
                 "reference", "Reference", "debit", "Debit", "credit", "Credit", "balance", "Running Balance"),
                 "SPLIT", null, 3);
@@ -262,11 +263,19 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThat(imported.openingBalance()).isEqualByComparingTo("250000.00");
         assertThat(imported.closingBalance()).isEqualByComparingTo("328017.50");
 
-        // Re-import: nothing new.
+        // Re-import: the very same file is refused outright (P2-2)…
         BankRecDTOs.ImportResult again = importCsv("enbd-september-2026.csv", false);
+        assertThat(again.status()).isEqualTo("ALREADY_IMPORTED");
         assertThat(again.linesNew()).isZero();
         assertThat(again.linesDuplicate()).isEqualTo(7);
+        // …and the same lines in a re-saved file are all duplicates: 0 new.
+        byte[] resaved = (new String(file("enbd-september-2026.csv"), StandardCharsets.UTF_8) + "\n").getBytes(StandardCharsets.UTF_8);
+        BankRecDTOs.ImportResult resavedResult = imports.importFile(ei.getId(), "resaved.csv", resaved, null, false);
+        assertThat(resavedResult.linesNew()).isZero();
+        assertThat(resavedResult.linesDuplicate()).isEqualTo(7);
         assertThat(count("select count(*) from bank_statement_lines where bank_account_id = ?", ei.getId())).isEqualTo(7);
+        // The cheque numbers the books know were kept; the bank's reference was not taken for one.
+        assertThat(stmt(ws(), "CHQ DEP 000451").chequeNo()).isEqualTo("000451");
 
         // Auto-match: the deposit group (rule 3) and the transfer reference (rule 2), as suggestions only.
         BankRecDTOs.AutoMatchResult auto = matches.autoMatch(ei.getId(), SEP_1, SEP_30);
@@ -295,10 +304,12 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select entry_date from journal_entries where id = ?", LocalDate.class, crt)).isEqualTo(SEP_3);
         assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, b.c451().id())).isEqualTo("CLEARED");
 
-        // d1 + d2: one BNK, with input VAT because the bank's TRN is on file.
-        BankRecDTOs.ActionResult charge = actions.post(new BankRecDTOs.PostLinesInput(
-                List.of(stmt(w, "SERVICE CHARGE").id(), stmt(w, "VAT ON SERVICE CHARGE").id()), "CHARGE", false, null, null,
-                marinaBank.getId(), true, null));
+        // d1 + d2: one BNK with the split stated (P2-3), input VAT because the bank's TRN is on file.
+        List<UUID> d12 = List.of(stmt(w, "SERVICE CHARGE").id(), stmt(w, "VAT ON SERVICE CHARGE").id());
+        assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(d12, "CHARGE", false, null, null,
+                marinaBank.getId(), true, null))).hasMessageContaining("give the net charge and the VAT");
+        BankRecDTOs.ActionResult charge = actions.post(new BankRecDTOs.PostLinesInput(d12, "CHARGE", false, null, null,
+                marinaBank.getId(), true, null, new BigDecimal("50.00"), new BigDecimal("2.50")));
         UUID bnkCharge = charge.journalEntryIds().get(0);
         assertThat(docType(bnkCharge)).isEqualTo("BNK");
         assertThat(journal(bnkCharge)).containsExactly("D-02-003 50.00 0.00", "A-02-04-001 2.50 0.00",
@@ -330,8 +341,8 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThat(matches.evidence(List.of(b.c451().id(), b.c822().id())))
                 .extracting(BankRecDTOs.ChequeEvidence::state).containsOnly("CONFIRMED");
 
-        // An overlapping October export adds only what is new.
-        BankRecDTOs.ImportResult october = importCsv("enbd-overlap-october-2026.csv", false);
+        // An overlapping export adds only what is new.
+        BankRecDTOs.ImportResult october = importCsv("enbd-overlap-2026.csv", false);
         assertThat(october.linesNew()).isEqualTo(1);
         assertThat(october.linesDuplicate()).isEqualTo(1);
         assertThat(october.warnings()).isEmpty();
@@ -355,7 +366,11 @@ class BankReconciliationIT extends AbstractPostgresIT {
                 x
                 Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
                 22/09/2026,22/09/2026,CHQ DEP 000452,,,"15,000.00","15,000.00"
+                23/09/2026,23/09/2026,INWARD TRF,778899,,15.00,"15,015.00"
                 """);
+        // A six-digit bank reference is not a cheque number; a cheque the books know is.
+        assertThat(stmt(ws(), "INWARD TRF").chequeNo()).isNull();
+        assertThat(stmt(ws(), "CHQ DEP 000452").chequeNo()).isEqualTo("000452");
         BankRecDTOs.AutoMatchResult r = matches.autoMatch(ei.getId(), SEP_1, SEP_30);
         // The CRT is 2 days from the line too; rule 1 takes it first.
         assertThat(r.byMethod()).isEqualTo(Map.of("AUTO_CHEQUE", 1));
@@ -371,7 +386,8 @@ class BankReconciliationIT extends AbstractPostgresIT {
         });
         // Re-running auto-match does not touch a confirmed match.
         matches.autoMatch(ei.getId(), SEP_1, SEP_30);
-        assertThat(ws().matches()).singleElement().satisfies(x -> assertThat(x.status()).isEqualTo("CONFIRMED"));
+        assertThat(ws().matches()).filteredOn(x -> x.id().equals(m.id()))
+                .singleElement().satisfies(x -> assertThat(x.status()).isEqualTo("CONFIRMED"));
     }
 
     @Test
@@ -539,7 +555,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
 
     @Test
     void aBalanceBreakRefusesTheImportAndWritesNothing() throws Exception {
-        imports.saveProfile(ei.getId(), new BankRecDTOs.Profile("CSV", null, 1, 2, ",", null, Map.of("txnDate", "Date",
+        imports.saveProfile(ei.getId(), new BankRecDTOs.Profile("CSV", null, 1, 2, ",", List.of("dd/MM/yyyy"), Map.of("txnDate", "Date",
                 "description", "Description", "debit", "Debit", "credit", "Credit", "balance", "Balance"), "SPLIT", null, 3));
         BankRecDTOs.ImportResult r = importCsv("balance-break.csv", false);
         assertThat(r.status()).isEqualTo("INVALID");
@@ -584,9 +600,21 @@ class BankReconciliationIT extends AbstractPostgresIT {
         BankRecDTOs.Match m = ws().matches().get(0);
         matches.confirm(m.id());
         assertThatThrownBy(() -> imports.delete(r.importId())).hasMessageContaining("confirmed matches");
+        // An undone match is the audit trail: its import is kept (PR #353 review).
         matches.undo(m.id(), false, null, "test");
-        imports.delete(r.importId());
-        assertThat(count("select count(*) from bank_statement_lines where bank_account_id = ?", ei.getId())).isZero();
+        assertThatThrownBy(() -> imports.delete(r.importId())).hasMessageContaining("match history");
+        assertThat(count("select count(*) from bank_matches where id = ?", m.id())).isEqualTo(1);
+        // An import with suggestions only is deleted, suggestions and all.
+        BankRecDTOs.ImportResult r2 = importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                06/09/2026,06/09/2026,CASH AGAIN,,,800.00,"1,500.00"
+                """);
+        jv(LocalDate.of(2026, 9, 6), "800.00");
+        matches.autoMatch(ei.getId(), LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
+        assertThat(ws().matches()).anySatisfy(x -> assertThat(x.status()).isEqualTo("SUGGESTED"));
+        imports.delete(r2.importId());
+        assertThat(count("select count(*) from bank_matches where tenant_id = ? and status = 'SUGGESTED'", tenantId)).isZero();
     }
 
     // ------------------------------------------------------------------ action guards
@@ -599,6 +627,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
         deposit(SEP_1, dep, clr);
         chequeService.clear(clr.id(), ChequeActionRequest.on(SEP_3));
         Voucher p = pdc(AUG_15, "800.00", "000090", SEP_28);
+        pdc(AUG_15, "900.00", "000091", SEP_28);
         importText("""
                 x
                 Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
@@ -674,6 +703,181 @@ class BankReconciliationIT extends AbstractPostgresIT {
         // The bank line stays matched to its BNK.
         assertThat(ws().statementLines().get(0).matchStatus()).isEqualTo("CONFIRMED");
         assertThat(matches.evidence(List.of(row.id()))).extracting(BankRecDTOs.ChequeEvidence::state).containsExactly("SUSPENSE");
+    }
+
+    // ------------------------------------------------------------------ PR #353 review
+
+    @Test
+    void clearingFromALineGoesThroughTheBatchGuardsEvenForOneCheque() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        ChequeDTO c = cheque(marina, "5000", "000701");
+        deposit(LocalDate.of(2026, 9, 26), c);
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                24/09/2026,24/09/2026,CHQ DEP 000701,,,"5,000.00","5,000.00"
+                30/09/2026,01/10/2026,CHQ DEP 000701 B,,,"5,000.00","10,000.00"
+                """);
+        // Credited on 24/09, but the register says it was deposited on 26/09.
+        assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
+                List.of(stmt(ws(), "CHQ DEP 000701").id()), List.of(c.id()))))
+                .hasMessageContaining("was deposited on 2026-09-26, after the clearing date 2026-09-24");
+        // A value date after today.
+        assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
+                List.of(stmt(ws(), "CHQ DEP 000701 B").id()), List.of(c.id()))))
+                .hasMessageContaining("in the future");
+        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, c.id())).isEqualTo("DEPOSITED");
+    }
+
+    @Test
+    void aMultiLineChargeNeedsItsSplitAndVatAboveFivePercentIsRefused() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                07/09/2026,07/09/2026,SMS ALERT FEE,,25.00,,-25.00
+                07/09/2026,07/09/2026,SMS ALERT FEE,,25.00,,-50.00
+                """);
+        List<UUID> both = ws().statementLines().stream().map(BankRecDTOs.StatementLine::id).toList();
+        assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(both, "CHARGE", false, null, null,
+                marinaBank.getId(), true, null, new BigDecimal("25.00"), new BigDecimal("25.00"))))
+                .hasMessageContaining("VAT 25.00 is more than 5% of the net 25.00");
+        assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(both, "CHARGE", false, null, null,
+                marinaBank.getId(), true, null, new BigDecimal("40.00"), new BigDecimal("2.00"))))
+                .hasMessageContaining("does not make the lines' 50.00");
+        BankRecDTOs.ActionResult ok = actions.post(new BankRecDTOs.PostLinesInput(both, "CHARGE", false, null, null,
+                marinaBank.getId(), true, null, new BigDecimal("50.00"), BigDecimal.ZERO));
+        assertThat(journal(ok.journalEntryIds().get(0))).containsExactly("D-02-003 50.00 0.00", marinaBank.getCode() + " 0.00 50.00");
+        assertThat(count("select count(*) from journal_entries where tenant_id = ? and doc_type = 'BNK'", tenantId)).isEqualTo(1);
+    }
+
+    @Test
+    void aBounceFromALineNeedsItsReasonAndOtherCannotPostWithinTheSameBankAccount() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        ChequeDTO clr = cheque(marina, "6000", "000702");
+        deposit(SEP_1, clr);
+        chequeService.clear(clr.id(), ChequeActionRequest.on(SEP_3));
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                06/09/2026,06/09/2026,RTN CHQ 000702,,"6,000.00",,"-6,000.00"
+                07/09/2026,07/09/2026,SWEEP,,,100.00,"-5,900.00"
+                """);
+        assertThatThrownBy(() -> actions.bounce(new BankRecDTOs.BounceInput(stmt(ws(), "RTN CHQ 000702").id(), clr.id(), null)))
+                .hasMessageContaining("failureReason is required");
+        assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(List.of(stmt(ws(), "SWEEP").id()), "OTHER", null,
+                palmBank.getId(), null, marinaBank.getId(), true, null)))
+                .hasMessageContaining("belongs to this same bank account");
+        assertThat(count("select count(*) from bank_matches where tenant_id = ?", tenantId)).isZero();
+    }
+
+    @Test
+    void anUnidentifiedReceiptCannotBeDrawnTwiceNorUndoneOnceDrawn() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        ChequeDTO r1 = transferRow("T-1", "5000");
+        ChequeDTO r2 = transferRow("T-2", "5000");
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                12/09/2026,12/09/2026,INWARD TRF A,,,"5,000.00","5,000.00"
+                13/09/2026,13/09/2026,INWARD TRF B,,,"5,000.00","10,000.00"
+                """);
+        UUID a = stmt(ws(), "INWARD TRF A").id();
+        UUID b = stmt(ws(), "INWARD TRF B").id();
+        BankRecDTOs.ActionResult sa = actions.post(new BankRecDTOs.PostLinesInput(List.of(a), "SUSPENSE", null, null, null,
+                marinaBank.getId(), true, null));
+        actions.post(new BankRecDTOs.PostLinesInput(List.of(b), "SUSPENSE", null, null, null, marinaBank.getId(), true, null));
+        actions.receive(new BankRecDTOs.ReceiveInput(a, r1.id(), true, null));
+        // Line A has given its 5,000; the leaf still holds B's, but not for A.
+        assertThatThrownBy(() -> actions.receive(new BankRecDTOs.ReceiveInput(a, r2.id(), true, null)))
+                .hasMessageContaining("only 0.00 of this receipt is still unidentified");
+        assertThatThrownBy(() -> matches.undo(sa.matchId(), true, null, "wrong"))
+                .hasMessageContaining("can no longer be undone or reversed");
+        actions.receive(new BankRecDTOs.ReceiveInput(b, r2.id(), true, null));
+        assertThat(jdbc.queryForObject("select coalesce(sum(credit - debit), 0) from journal_lines where account_id = ?",
+                BigDecimal.class, accountService.getAccountByCode("B-01-06").getId())).isEqualByComparingTo("0");
+    }
+
+    private ChequeDTO transferRow(String unit, String amount) {
+        Unit u = fx.createUnit(marina, unit);
+        Renter r = fx.createRenter("Renter " + unit);
+        UUID leaseId = fx.draftLease(u, r, AUG_1, AUG_1, LocalDate.of(2027, 7, 31), List.of(line("RENT", amount)));
+        fx.generateGrid(leaseId, 1, AUG_1);
+        ChequeDTO row = leasePosting.post(leaseId).cheques().get(0);
+        jdbc.update("update cheques set mode = 'TRANSFER' where id = ?", row.id());
+        return row;
+    }
+
+    @Test
+    void confirmWaitsForTheBankAccountLockSoAutoMatchCannotDropIt() throws Exception {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        jv(LocalDate.of(2026, 9, 5), "700.00");
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                05/09/2026,05/09/2026,CASH,,,700.00,700.00
+                """);
+        matches.autoMatch(ei.getId(), null, null);
+        UUID m = ws().matches().get(0).id();
+        java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<?> holder = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    tx.executeWithoutResult(st -> {
+                        jdbc.queryForList("select id from bank_accounts where id = ? for update", ei.getId());
+                        held.countDown();
+                        try { release.await(20, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+                return null;
+            });
+            assertThat(held.await(20, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            java.util.concurrent.Future<BankRecDTOs.Match> confirm = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    return matches.confirm(m);
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            Thread.sleep(500);
+            assertThat(confirm.isDone()).as("confirm waits behind the bank account's lock").isFalse();
+            release.countDown();
+            holder.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(confirm.get(30, java.util.concurrent.TimeUnit.SECONDS).status()).isEqualTo("CONFIRMED");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        // A re-run of auto-match leaves the confirmed match alone.
+        matches.autoMatch(ei.getId(), null, null);
+        assertThat(jdbc.queryForObject("select status from bank_matches where id = ?", String.class, m)).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void theUndoDefaultsAreOnTheMatch() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        ChequeDTO c = cheque(marina, "5000", "000703");
+        deposit(SEP_1, c);
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                05/09/2026,05/09/2026,CHQ DEP 000703,,,"5,000.00","5,000.00"
+                29/09/2026,29/09/2026,CREDIT INTEREST,,,5.00,"5,005.00"
+                """);
+        actions.clearCheques(new BankRecDTOs.ClearChequesInput(List.of(stmt(ws(), "CHQ DEP 000703").id()), List.of(c.id())));
+        actions.post(new BankRecDTOs.PostLinesInput(List.of(stmt(ws(), "CREDIT INTEREST").id()), "INTEREST", null, null, null,
+                marinaBank.getId(), true, null));
+        Map<String, BankRecDTOs.Match> byDoc = new HashMap<>();
+        ws().matches().forEach(x -> byDoc.put(x.createdDocTypes().get(0), x));
+        assertThat(byDoc.get("CRT").reverseOnDefault()).as("a CRT is not reversed from here").isNull();
+        assertThat(byDoc.get("BNK").reverseOnDefault()).as("its own date while the period is open").isEqualTo(LocalDate.of(2026, 9, 29));
     }
 
     // ------------------------------------------------------------------ purge

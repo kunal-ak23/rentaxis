@@ -50,11 +50,14 @@ public class BankMatchService {
     private final PostingService posting;
     private final IssuedChequeService issuedCheques;
     private final Clock clock;
+    private final com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
 
     public BankMatchService(BankAccountLedgerService ledgers, NamedParameterJdbcTemplate jdbc, PostingService posting,
                             IssuedChequeService issuedCheques, Clock clock,
-                            com.datagami.rentaxis.core.security.PropertyScope propertyScope) {
+                            com.datagami.rentaxis.core.security.PropertyScope propertyScope,
+                            com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal) {
+        this.fiscal = fiscal;
         this.propertyScope = propertyScope;
         this.ledgers = ledgers;
         this.jdbc = jdbc;
@@ -197,14 +200,46 @@ public class BankMatchService {
             bl.computeIfAbsent(m, k -> new ArrayList<>()).add(rs.getObject("journal_line_id", UUID.class));
             bTotal.merge(m, rs.getBigDecimal("amount"), BigDecimal::add);
         });
+        Map<UUID, List<String>> docs = new HashMap<>();
+        Map<UUID, LocalDate> entryDate = new HashMap<>();
+        jdbc.query("""
+                select i.match_id, je.doc_type, min(je.entry_date) as d from bank_match_book_items i
+                join bank_matches m on m.id = i.match_id and m.method = 'CREATED'
+                join journal_lines jl on jl.id = i.journal_line_id
+                join journal_entries je on je.id = jl.journal_entry_id
+                where i.tenant_id = :t and i.match_id in (:m) group by i.match_id, je.doc_type""", p, rs -> {
+            UUID m = rs.getObject("match_id", UUID.class);
+            docs.computeIfAbsent(m, k -> new ArrayList<>()).add(rs.getString("doc_type"));
+            LocalDate d = rs.getObject("d", LocalDate.class);
+            entryDate.merge(m, d, (a, b) -> a.isBefore(b) ? a : b);
+        });
         return jdbc.query("select * from bank_matches where tenant_id = :t and id in (:m) order by created_at", p,
                 (rs, i) -> {
                     UUID id = rs.getObject("id", UUID.class);
+                    List<String> created = docs.getOrDefault(id, List.of());
+                    boolean reversible = !created.isEmpty() && REVERSIBLE.containsAll(created)
+                            && !"UNDONE".equals(rs.getString("status"));
                     return new BankRecDTOs.Match(id, rs.getString("method"), rs.getString("status"),
                             rs.getString("confidence"), sl.getOrDefault(id, List.of()), bl.getOrDefault(id, List.of()),
                             sTotal.getOrDefault(id, BigDecimal.ZERO), bTotal.getOrDefault(id, BigDecimal.ZERO),
-                            instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("confirmed_at")));
+                            instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("confirmed_at")), created,
+                            reversible ? reverseDate(entryDate.get(id)) : null);
                 });
+    }
+
+    /** What "undo and reverse" can reverse from here: a BNK (PostingService.reverse) and a BPC (unpresent). */
+    static final Set<String> REVERSIBLE = Set.of("BNK", "BPC");
+
+    /** The entry's own date while its period is open, else today. */
+    LocalDate reverseDate(LocalDate entryDate) {
+        LocalDate today = LocalDate.now(clock);
+        if (entryDate == null || entryDate.isAfter(today)) return today;
+        try {
+            fiscal.assertOpen(entryDate);
+            return entryDate;
+        } catch (RuntimeException closed) {
+            return today;
+        }
     }
 
     private static Instant instant(Timestamp ts) {
@@ -377,7 +412,11 @@ public class BankMatchService {
         deleteMatches(t, ids);
     }
 
-    private void deleteMatches(UUID t, List<UUID> ids) {
+    /** Suggestions only: re-read under the lock, so a match confirmed meanwhile is never deleted. */
+    private void deleteMatches(UUID t, List<UUID> candidates) {
+        if (candidates.isEmpty()) return;
+        List<UUID> ids = jdbc.queryForList("select id from bank_matches where tenant_id = :t and id in (:m) and status = 'SUGGESTED' for update",
+                new MapSqlParameterSource("t", t).addValue("m", candidates), UUID.class);
         if (ids.isEmpty()) return;
         MapSqlParameterSource mp = new MapSqlParameterSource("t", t).addValue("m", ids);
         jdbc.update("delete from bank_match_statement_lines where tenant_id = :t and match_id in (:m)", mp);
@@ -417,6 +456,7 @@ public class BankMatchService {
     /** Validates tenant, bank account, leaf set, liveness and balance, then writes the match. */
     private UUID record(UUID t, UUID bankAccountId, Method method, String status, String confidence,
                         List<UUID> ls, List<UUID> js) {
+        lockAccount(t, bankAccountId);
         Set<UUID> leaves = ledgers.requireLeafSet(bankAccountId);
         BigDecimal sTotal = BigDecimal.ZERO;
         if (!ls.isEmpty()) {
@@ -527,7 +567,19 @@ public class BankMatchService {
         return rows.get(0);
     }
 
-    private void lockAccount(UUID t, UUID bankAccountId) {
+    /**
+     * PR #353 review P2-5: every match write (auto-match, manual, created,
+     * confirm, undo, delete import) takes the bank account's row first, so an
+     * auto-match cannot drop a suggestion another user is confirming.
+     */
+    private void lockAccountOfMatch(UUID t, UUID matchId) {
+        List<UUID> b = jdbc.queryForList("select bank_account_id from bank_matches where id = :m and tenant_id = :t",
+                new MapSqlParameterSource("t", t).addValue("m", matchId), UUID.class);
+        if (b.isEmpty()) throw new NotFoundException("Match not found");
+        lockAccount(t, b.get(0));
+    }
+
+    void lockAccount(UUID t, UUID bankAccountId) {
         jdbc.queryForList("select id from bank_accounts where id = :b and tenant_id = :t for update",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class);
     }
@@ -535,6 +587,7 @@ public class BankMatchService {
     @Transactional
     public BankRecDTOs.Match confirm(UUID matchId) {
         UUID t = BankAccountLedgerService.requireTenant();
+        lockAccountOfMatch(t, matchId);
         Map<String, Object> m = lockMatch(t, matchId);
         if (!"SUGGESTED".equals(m.get("status"))) {
             throw new BusinessRuleViolationException("Only a suggested match can be confirmed; this one is " + m.get("status"));
@@ -548,6 +601,7 @@ public class BankMatchService {
     public int confirmAll(UUID bankAccountId, String confidence, LocalDate from, LocalDate to) {
         UUID t = BankAccountLedgerService.requireTenant();
         ledgers.requireBankAccount(bankAccountId);
+        lockAccount(t, bankAccountId);
         String conf = confidence == null ? "HIGH" : confidence.toUpperCase(Locale.ROOT);
         List<UUID> ids = jdbc.queryForList("""
                 select m.id from bank_matches m where m.tenant_id = :t and m.bank_account_id = :b and m.status = 'SUGGESTED'
@@ -588,20 +642,37 @@ public class BankMatchService {
     @Transactional
     public BankRecDTOs.Match undo(UUID matchId, boolean reverseCreated, LocalDate reverseOn, String reason) {
         UUID t = BankAccountLedgerService.requireTenant();
+        lockAccountOfMatch(t, matchId);
         Map<String, Object> m = lockMatch(t, matchId);
         if ("UNDONE".equals(m.get("status"))) throw new BusinessRuleViolationException("This match was already undone");
         String why = reason == null || reason.isBlank() ? "Match undone" : reason.trim();
+        // PR #353 review P2-4: an unidentified receipt that has paid register rows
+        // stays booked; undoing (or reversing) it would leave those receipts with
+        // no money behind them.
+        Integer draws = jdbc.queryForObject("""
+                select count(*) from bank_suspense_draws d join bank_match_statement_lines ml
+                  on ml.statement_line_id = d.statement_line_id and not ml.released
+                where d.tenant_id = :t and ml.match_id = :m""",
+                new MapSqlParameterSource("t", t).addValue("m", matchId), Integer.class);
+        if (draws != null && draws > 0) {
+            throw new BusinessRuleViolationException("Register rows have been received from this unidentified receipt; "
+                    + "it can no longer be undone or reversed");
+        }
         if (reverseCreated) {
             if (!"CREATED".equals(m.get("method"))) {
                 throw new BusinessRuleViolationException("Only a match created from a statement line has an entry to reverse");
             }
-            LocalDate on = reverseOn == null ? LocalDate.now(clock) : reverseOn;
+            LocalDate on = reverseOn;
             List<Map<String, Object>> entries = jdbc.queryForList("""
-                    select distinct je.id, je.doc_type, je.source_type, je.source_id from bank_match_book_items i
+                    select distinct je.id, je.doc_type, je.source_type, je.source_id, je.entry_date from bank_match_book_items i
                     join journal_lines jl on jl.id = i.journal_line_id
                     join journal_entries je on je.id = jl.journal_entry_id
                     where i.tenant_id = :t and i.match_id = :m and not i.released""",
                     new MapSqlParameterSource("t", t).addValue("m", matchId));
+            if (on == null) {
+                on = reverseDate(entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
+                        .min(Comparator.naturalOrder()).orElse(null));
+            }
             for (Map<String, Object> e : entries) {
                 String doc = (String) e.get("doc_type");
                 if ("BNK".equals(doc)) {

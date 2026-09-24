@@ -3,7 +3,10 @@ databaseChangeLog:
   # its vendor ("Cancelled cheque <no>") is linked to that cheque by id, not only
   # by its name. The OB tie-out excludes it by the link, and the item cannot be
   # edited or deleted by hand. Backfill: an existing generated item is linked to
-  # the CANCELLED opening cheque of the same vendor, number, amount and date.
+  # the CANCELLED opening cheque of the same vendor, number, amount and date; then
+  # (PR #353 review) an item edited by hand since is linked on vendor and name
+  # alone, where exactly one unlinked cancelled cheque fits. What is still
+  # unlinked is reported as a NOTICE in the migration log.
   - changeSet:
       id: 113-ap-opening-cheque-link
       author: rentaxis-system
@@ -40,3 +43,35 @@ databaseChangeLog:
                  SET issued_cheque_id = p.cheque_id
                 FROM pairs p
                WHERE p.item_id = o.id AND p.ro = 1 AND p.rc = 1;
+        - sql:
+            comment: Fallback on vendor and "Cancelled cheque <no>" alone, where exactly one pairing fits
+            sql: |
+              WITH pairs AS (
+                SELECT o.id AS item_id, c.id AS cheque_id,
+                       count(*) OVER (PARTITION BY o.id) AS no,
+                       count(*) OVER (PARTITION BY c.id) AS nc
+                  FROM ap_opening_items o
+                  JOIN issued_cheques c
+                    ON c.tenant_id = o.tenant_id
+                   AND c.opening AND c.status = 'CANCELLED'
+                   AND c.vendor_id = o.vendor_id
+                   AND o.invoice_number = 'Cancelled cheque ' || c.cheque_number
+                 WHERE o.issued_cheque_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM ap_opening_items x WHERE x.issued_cheque_id = c.id)
+              )
+              UPDATE ap_opening_items o
+                 SET issued_cheque_id = p.cheque_id
+                FROM pairs p
+               WHERE p.item_id = o.id AND p.no = 1 AND p.nc = 1;
+        - sql:
+            comment: Report the cancelled cut-over cheques whose item could not be linked
+            splitStatements: false
+            sql: |
+              DO $$
+              DECLARE n integer;
+              BEGIN
+                SELECT count(*) INTO n FROM issued_cheques c
+                 WHERE c.opening AND c.status = 'CANCELLED'
+                   AND NOT EXISTS (SELECT 1 FROM ap_opening_items o WHERE o.issued_cheque_id = c.id);
+                RAISE NOTICE '113-ap-opening-cheque-link: % cancelled cut-over cheque(s) have no linked opening item', n;
+              END $$;

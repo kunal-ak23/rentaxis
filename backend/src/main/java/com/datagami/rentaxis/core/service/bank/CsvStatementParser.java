@@ -85,6 +85,10 @@ public class CsvStatementParser implements StatementParser {
                 fieldStarted = true;
             } else if (c == d) {
                 row.add(cell(f));
+                if (row.size() >= MAX_COLS) {
+                    throw new BusinessRuleViolationException("Row " + (rows.size() + 1) + " has more than " + MAX_COLS
+                            + " columns; a statement may use at most " + MAX_COLS);
+                }
                 f.setLength(0);
                 fieldStarted = false;
             } else if (c == '\n' || c == '\r') {

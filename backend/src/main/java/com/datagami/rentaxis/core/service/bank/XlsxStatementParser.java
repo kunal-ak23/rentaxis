@@ -40,8 +40,17 @@ public class XlsxStatementParser implements StatementParser {
                 Row row = sheet.getRow(r);
                 List<Object> cells = new ArrayList<>();
                 if (row != null) {
-                    for (int c = 0; c < Math.max(row.getLastCellNum(), 0); c++) {
-                        cells.add(value(row.getCell(c), eval));
+                    // Only the cells that exist, never the row's addressable span (P1-1).
+                    for (Cell cell : row) {
+                        int c = cell.getColumnIndex();
+                        Object v = value(cell, eval);
+                        if (c >= MAX_COLS) {
+                            if (v == null) continue;
+                            throw new BusinessRuleViolationException("Row " + (r + 1) + " has a value in column "
+                                    + StatementMapper.letter(c) + "; a statement may use at most " + MAX_COLS + " columns");
+                        }
+                        while (cells.size() < c) cells.add(null);
+                        cells.add(v);
                     }
                 }
                 rows.add(cells);

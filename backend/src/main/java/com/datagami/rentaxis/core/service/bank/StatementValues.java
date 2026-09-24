@@ -29,25 +29,37 @@ public final class StatementValues {
 
     private static final Pattern NUMBER = Pattern.compile("[0-9]+(\\.[0-9]+)?|\\.[0-9]+");
 
+    /** As {@link #amount(Object, char)} with a decimal point. */
+    public static Amount amount(Object cell) {
+        return amount(cell, '.');
+    }
+
     /**
-     * {@code null} for a blank cell. Strips {@code AED}, thousands separators and
-     * spaces; {@code (1,234.50)}, a leading or a trailing {@code -} mean negative;
-     * a trailing {@code DR}/{@code CR} is returned as the flag, not applied.
+     * {@code null} for a blank cell. Strips {@code AED} and spaces;
+     * {@code (1,234.50)}, a leading or a trailing {@code -} mean negative; a
+     * trailing {@code DR}/{@code CR} is returned as the flag, not applied.
+     *
+     * <p>{@code decimal} is the profile's decimal separator; the other of
+     * {@code .}/{@code ,} may only group thousands (PR #353 review). A value that
+     * does not read unambiguously that way — {@code 1.234,50} under a decimal
+     * point, {@code 1,23} as a thousands group, three decimals — is refused rather
+     * than silently misread.</p>
      *
      * @throws NumberFormatException when the text is not an amount
      */
-    public static Amount amount(Object cell) {
+    public static Amount amount(Object cell, char decimal) {
         if (cell == null) return null;
         if (cell instanceof BigDecimal d) return new Amount(d.setScale(2, RoundingMode.HALF_UP), null);
         if (cell instanceof LocalDate) throw new NumberFormatException("a date, not an amount");
-        String s = cell.toString().trim().toUpperCase(Locale.ROOT).replace(' ', ' ').replace('−', '-');
+        String raw = cell.toString().trim();
+        String s = raw.toUpperCase(Locale.ROOT).replace('\u00A0', ' ').replace('\u2212', '-');
         if (s.isEmpty()) return null;
         String flag = null;
         if (s.endsWith("DR") || s.endsWith("CR")) {
             flag = s.substring(s.length() - 2);
             s = s.substring(0, s.length() - 2).trim();
         }
-        s = s.replace("AED", "").replace(",", "").replace(" ", "");
+        s = s.replace("AED", "").replace(" ", "");
         if (s.isEmpty() && flag != null) throw new NumberFormatException("no amount before " + flag);
         if (s.isEmpty()) return null;
         boolean negative = false;
@@ -65,9 +77,34 @@ public final class StatementValues {
         } else if (s.startsWith("+")) {
             s = s.substring(1);
         }
-        if (!NUMBER.matcher(s).matches()) throw new NumberFormatException("\"" + cell.toString().trim() + "\" is not an amount");
-        BigDecimal v = new BigDecimal(s).setScale(2, RoundingMode.HALF_UP);
+        char group = decimal == ',' ? '.' : ',';
+        String plain = normaliseNumber(s, decimal, group);
+        if (plain == null) {
+            throw new NumberFormatException("\"" + raw + "\" is not an amount with '" + decimal + "' as the decimal separator");
+        }
+        BigDecimal v = new BigDecimal(plain).setScale(2, RoundingMode.HALF_UP);
         return new Amount(negative ? v.negate() : v, flag);
+    }
+
+    /** "1,234.50" → "1234.50" for decimal '.', group ','; null when it does not read that way unambiguously. */
+    static String normaliseNumber(String s, char decimal, char group) {
+        int d = s.indexOf(decimal);
+        if (d != s.lastIndexOf(decimal)) return null;
+        String intPart = d < 0 ? s : s.substring(0, d);
+        String frac = d < 0 ? "" : s.substring(d + 1);
+        if (frac.indexOf(group) >= 0 || frac.length() > 2 || (d >= 0 && frac.isEmpty())) return null;
+        if (!frac.chars().allMatch(Character::isDigit)) return null;
+        String[] groups = intPart.split(java.util.regex.Pattern.quote(String.valueOf(group)), -1);
+        if (groups[0].isEmpty() && groups.length > 1) return null;
+        for (int i = 0; i < groups.length; i++) {
+            String g = groups[i];
+            if (!g.chars().allMatch(Character::isDigit)) return null;
+            if (i > 0 && g.length() != 3) return null;
+            if (groups.length > 1 && i == 0 && (g.isEmpty() || g.length() > 3)) return null;
+        }
+        String digits = String.join("", groups);
+        if (digits.isEmpty() && frac.isEmpty()) return null;
+        return (digits.isEmpty() ? "0" : digits) + (frac.isEmpty() ? "" : "." + frac);
     }
 
     /**
@@ -128,15 +165,18 @@ public final class StatementValues {
     }
 
     /**
-     * {@code sha256(bank account | txn date | value date | amount | description | reference | balance | occurrence)}
-     * (spec §3 step 6). {@code occurrence} tells apart identical rows in one file.
+     * {@code sha256(bank account | txn date | amount | description | occurrence)}.
+     *
+     * <p>Only what every mapping of every export yields (PR #353 review P2-2): the
+     * value date, reference and running balance are data, not identity, so mapping
+     * one of them later does not turn yesterday's lines into new ones. The amount
+     * is signed, so it carries the direction. {@code occurrence} tells apart
+     * identical lines on the same day in one file.</p>
      */
-    public static String lineHash(UUID bankAccountId, LocalDate txnDate, LocalDate valueDate, BigDecimal amount,
-                                  String description, String reference, BigDecimal balance, int occurrence) {
-        String key = bankAccountId + "|" + txnDate + "|" + (valueDate == null ? "" : valueDate) + "|"
-                + amount.setScale(2, RoundingMode.HALF_UP).toPlainString() + "|" + normalise(description) + "|"
-                + (reference == null ? "" : reference.trim()) + "|"
-                + (balance == null ? "" : balance.setScale(2, RoundingMode.HALF_UP).toPlainString()) + "|" + occurrence;
+    public static String lineHash(UUID bankAccountId, LocalDate txnDate, BigDecimal amount, String description,
+                                  int occurrence) {
+        String key = bankAccountId + "|" + txnDate + "|" + amount.setScale(2, RoundingMode.HALF_UP).toPlainString()
+                + "|" + normalise(description) + "|" + occurrence;
         return sha256(key.getBytes(StandardCharsets.UTF_8));
     }
 

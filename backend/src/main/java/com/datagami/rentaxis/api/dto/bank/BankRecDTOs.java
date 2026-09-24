@@ -29,7 +29,14 @@ public final class BankRecDTOs {
 
     public record Profile(String fileKind, String sheetName, Integer headerRow, Integer firstDataRow,
                           String csvDelimiter, List<String> dateFormats, Map<String, String> columns,
-                          String amountMode, String chequeNoPattern, Integer matchWindowDays) { }
+                          String amountMode, String chequeNoPattern, Integer matchWindowDays, String decimalSeparator) {
+        public Profile(String fileKind, String sheetName, Integer headerRow, Integer firstDataRow, String csvDelimiter,
+                       List<String> dateFormats, Map<String, String> columns, String amountMode, String chequeNoPattern,
+                       Integer matchWindowDays) {
+            this(fileKind, sheetName, headerRow, firstDataRow, csvDelimiter, dateFormats, columns, amountMode,
+                    chequeNoPattern, matchWindowDays, null);
+        }
+    }
 
     public record PreviewRow(int fileRow, LocalDate txnDate, LocalDate valueDate, String description,
                              String reference, String chequeNo, BigDecimal amount, BigDecimal balance,
@@ -60,9 +67,16 @@ public final class BankRecDTOs {
                            BigDecimal amount, String chequeNo, UUID matchId, String matchStatus,
                            UUID reversalOfId, UUID reversedById) { }
 
+    /**
+     * {@code createdDocTypes}: for a CREATED match, the documents it booked.
+     * {@code reverseOnDefault}: the date "undo and reverse" would use — the entry's
+     * own date while its period is open, else today — or null when the match's
+     * entries cannot be reversed from here (a cheque's CRT or CBR).
+     */
     public record Match(UUID id, String method, String status, String confidence, List<UUID> statementLineIds,
                         List<UUID> journalLineIds, BigDecimal statementTotal, BigDecimal bookTotal,
-                        Instant createdAt, Instant confirmedAt) { }
+                        Instant createdAt, Instant confirmedAt, List<String> createdDocTypes,
+                        LocalDate reverseOnDefault) { }
 
     public record Workspace(UUID bankAccountId, List<Leaf> leaves, boolean needsLeaf, List<StatementLine> statementLines,
                             List<BookItem> bookItems, List<Match> matches) { }
@@ -83,7 +97,13 @@ public final class BankRecDTOs {
     /** {@code kind}: CHARGE, INTEREST, SUSPENSE or OTHER. {@code bankLeafId} picks the leaf when the set has several. */
     public record PostLinesInput(@NotNull List<UUID> statementLineIds, @NotNull String kind, Boolean vatIncluded,
                                  UUID accountId, UUID propertyId, UUID bankLeafId, Boolean shared,
-                                 @Size(max = 500) String narration) { }
+                                 @Size(max = 500) String narration, BigDecimal net, BigDecimal vat) {
+        /** Without the stated split (a single line, or a kind that has none). */
+        public PostLinesInput(List<UUID> statementLineIds, String kind, Boolean vatIncluded, UUID accountId,
+                              UUID propertyId, UUID bankLeafId, Boolean shared, String narration) {
+            this(statementLineIds, kind, vatIncluded, accountId, propertyId, bankLeafId, shared, narration, null, null);
+        }
+    }
 
     public record ActionResult(UUID matchId, List<UUID> journalEntryIds, List<String> entryNumbers) { }
 

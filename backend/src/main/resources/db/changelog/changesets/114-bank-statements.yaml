@@ -63,6 +63,7 @@ databaseChangeLog:
               - column: { name: date_formats, type: "text[]", defaultValueComputed: "'{dd/MM/yyyy,dd-MMM-yyyy,dd/MM/yy}'::text[]", constraints: { nullable: false } }
               - column: { name: columns, type: jsonb, constraints: { nullable: false } }
               - column: { name: amount_mode, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: decimal_separator, type: varchar(1), defaultValue: ".", constraints: { nullable: false } }
               - column: { name: cheque_no_pattern, type: varchar(100), defaultValue: '\b\d{6}\b', constraints: { nullable: false } }
               - column: { name: match_window_days, type: int, defaultValueNumeric: 3, constraints: { nullable: false } }
               - column: { name: updated_by, type: uuid }
@@ -74,7 +75,8 @@ databaseChangeLog:
                 ADD CONSTRAINT ck_bank_statement_profiles_kind CHECK (file_kind IN ('CSV', 'XLSX')),
                 ADD CONSTRAINT ck_bank_statement_profiles_mode CHECK (amount_mode IN ('SPLIT', 'SIGNED', 'DRCR_FLAG')),
                 ADD CONSTRAINT ck_bank_statement_profiles_rows CHECK (header_row >= 1 AND first_data_row > header_row),
-                ADD CONSTRAINT ck_bank_statement_profiles_window CHECK (match_window_days BETWEEN 0 AND 31);
+                ADD CONSTRAINT ck_bank_statement_profiles_window CHECK (match_window_days BETWEEN 0 AND 31),
+                ADD CONSTRAINT ck_bank_statement_profiles_decimal CHECK (decimal_separator IN ('.', ','));
 
         - createTable:
             tableName: bank_statement_imports
@@ -180,6 +182,24 @@ databaseChangeLog:
                 WHERE NOT released AND opening_item_id IS NOT NULL;
               CREATE INDEX idx_bank_match_items_match ON bank_match_book_items (match_id);
 
+        # PR #353 review P2-4: what each unidentified receipt has paid out to register
+        # rows (receive from suspense), so a line is never drawn beyond its amount.
+        - createTable:
+            tableName: bank_suspense_draws
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_suspense_draws_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: statement_line_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_suspense_draws_line, referencedTableName: bank_statement_lines, referencedColumnNames: id } }
+              - column: { name: cheque_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_suspense_draws_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: journal_entry_id, type: uuid, constraints: { foreignKeyName: fk_bank_suspense_draws_entry, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - sql:
+            comment: A draw is positive
+            sql: ALTER TABLE bank_suspense_draws ADD CONSTRAINT ck_bank_suspense_draws_amount CHECK (amount > 0);
+        - createIndex: { tableName: bank_suspense_draws, indexName: idx_bank_suspense_draws_line, columns: [ { column: { name: statement_line_id } } ] }
+
         - sql:
             comment: C-02-001 Bank Interest, for every tenant whose chart has the C-02 group
             sql: |
@@ -219,6 +239,7 @@ databaseChangeLog:
               DELETE FROM tenant_default_account_mappings WHERE role IN ('BANK_CHARGES', 'BANK_INTEREST_INCOME', 'BANK_SUSPENSE');
               DELETE FROM accounts a WHERE a.code IN ('C-02-001', 'B-01-06')
                 AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS bank_suspense_draws;
               DROP TABLE IF EXISTS bank_match_book_items;
               DROP TABLE IF EXISTS bank_match_statement_lines;
               DROP TABLE IF EXISTS bank_matches;
@@ -227,3 +248,44 @@ databaseChangeLog:
               DROP TABLE IF EXISTS bank_statement_profiles;
               DROP TABLE IF EXISTS bank_account_ledgers;
               ALTER TABLE bank_accounts DROP COLUMN IF EXISTS bank_trn;
+
+  # PR #353 review: a cut-over "Cancelled cheque <no>" opening item edited by hand
+  # before 113 ran kept no link. Link it on vendor and name alone, where exactly
+  # one unlinked cancelled cheque fits; report what is still unlinked as a NOTICE.
+  # A separate changeset because 113 has already run in production.
+  - changeSet:
+      id: 114-ap-opening-cheque-link-fallback
+      author: rentaxis-system
+      changes:
+        - sql:
+            comment: Fallback on vendor and "Cancelled cheque <no>" alone, where exactly one pairing fits
+            sql: |
+              WITH pairs AS (
+                SELECT o.id AS item_id, c.id AS cheque_id,
+                       count(*) OVER (PARTITION BY o.id) AS no,
+                       count(*) OVER (PARTITION BY c.id) AS nc
+                  FROM ap_opening_items o
+                  JOIN issued_cheques c
+                    ON c.tenant_id = o.tenant_id
+                   AND c.opening AND c.status = 'CANCELLED'
+                   AND c.vendor_id = o.vendor_id
+                   AND o.invoice_number = 'Cancelled cheque ' || c.cheque_number
+                 WHERE o.issued_cheque_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM ap_opening_items x WHERE x.issued_cheque_id = c.id)
+              )
+              UPDATE ap_opening_items o
+                 SET issued_cheque_id = p.cheque_id
+                FROM pairs p
+               WHERE p.item_id = o.id AND p.no = 1 AND p.nc = 1;
+        - sql:
+            comment: Report the cancelled cut-over cheques whose item could not be linked
+            splitStatements: false
+            sql: |
+              DO $$
+              DECLARE n integer;
+              BEGIN
+                SELECT count(*) INTO n FROM issued_cheques c
+                 WHERE c.opening AND c.status = 'CANCELLED'
+                   AND NOT EXISTS (SELECT 1 FROM ap_opening_items o WHERE o.issued_cheque_id = c.id);
+                RAISE NOTICE '114-ap-opening-cheque-link-fallback: % cancelled cut-over cheque(s) have no linked opening item', n;
+              END $$;

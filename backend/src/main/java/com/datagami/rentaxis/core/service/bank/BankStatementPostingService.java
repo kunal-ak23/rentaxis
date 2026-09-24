@@ -49,27 +49,51 @@ public class BankStatementPostingService {
     public record ChargeSplit(BigDecimal net, BigDecimal vat, BigDecimal gross) { }
 
     /**
-     * Spec §3 "Bank charge": one debit line, or a charge line plus its VAT line.
-     * Input VAT only when the bank's TRN is on file; otherwise the whole amount
-     * is a charge. One line with {@code vatIncluded}: VAT = gross × 5/105.
+     * Spec §3 "Bank charge", as the PR #353 review (P2-3) ruled.
+     *
+     * <ul>
+     *   <li>One line: the whole amount is the charge, or with {@code vatIncluded}
+     *       VAT = gross × 5/105. A stated split is accepted too.</li>
+     *   <li>Several lines (a charge and its VAT line): the accountant states the
+     *       net and the VAT. Nothing is inferred from which line is smaller.</li>
+     *   <li>A stated split must add up to the lines, and its VAT may not exceed
+     *       5% of the net (one fils of rounding allowed).</li>
+     *   <li>Input VAT only when the bank's TRN is on file; without it, a stated VAT
+     *       is refused and the whole amount is a charge.</li>
+     * </ul>
      */
-    public static ChargeSplit chargeSplit(List<BigDecimal> debits, boolean vatIncluded, boolean bankTrnSet) {
-        if (debits.isEmpty() || debits.size() > 2) {
-            throw new BusinessRuleViolationException("A bank charge is one line, or a charge line and its VAT line");
-        }
+    public static ChargeSplit chargeSplit(List<BigDecimal> debits, boolean vatIncluded, boolean bankTrnSet,
+                                          BigDecimal statedNet, BigDecimal statedVat) {
+        if (debits.isEmpty()) throw new BusinessRuleViolationException("Select the charge line(s)");
         if (debits.stream().anyMatch(a -> a.signum() >= 0)) {
             throw new BusinessRuleViolationException("A bank charge is booked from debit lines");
         }
-        BigDecimal gross = debits.stream().map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (!bankTrnSet) return new ChargeSplit(gross, BigDecimal.ZERO.setScale(2), gross);
-        BigDecimal vat;
-        if (debits.size() == 2) {
-            vat = debits.stream().map(BigDecimal::abs).min(Comparator.naturalOrder()).orElseThrow();
-        } else if (vatIncluded) {
-            vat = gross.multiply(VAT_RATE).divide(BigDecimal.ONE.add(VAT_RATE), 2, RoundingMode.HALF_UP);
-        } else {
-            vat = BigDecimal.ZERO.setScale(2);
+        BigDecimal gross = debits.stream().map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+        boolean stated = statedNet != null || statedVat != null;
+        if (!stated && debits.size() > 1) {
+            throw new BusinessRuleViolationException("Several lines make one charge only with its split stated: "
+                    + "give the net charge and the VAT (or book each line as its own charge)");
         }
+        if (stated) {
+            BigDecimal net = (statedNet == null ? gross.subtract(statedVat) : statedNet).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal vat = (statedVat == null ? gross.subtract(net) : statedVat).setScale(2, RoundingMode.HALF_UP);
+            if (net.signum() <= 0 || vat.signum() < 0) throw new BusinessRuleViolationException("The net charge must be above zero and the VAT not below");
+            if (net.add(vat).compareTo(gross) != 0) {
+                throw new BusinessRuleViolationException("Net " + StatementValues.money(net) + " + VAT " + StatementValues.money(vat)
+                        + " does not make the lines' " + StatementValues.money(gross));
+            }
+            if (vat.signum() > 0 && !bankTrnSet) {
+                throw new BusinessRuleViolationException("No bank TRN on file, so no input VAT can be claimed; book the whole amount as the charge");
+            }
+            BigDecimal cap = net.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP).add(new BigDecimal("0.01"));
+            if (vat.compareTo(cap) > 0) {
+                throw new BusinessRuleViolationException("VAT " + StatementValues.money(vat) + " is more than 5% of the net "
+                        + StatementValues.money(net) + "; book the lines as separate charges");
+            }
+            return new ChargeSplit(net, vat, gross);
+        }
+        if (!bankTrnSet || !vatIncluded) return new ChargeSplit(gross, BigDecimal.ZERO.setScale(2), gross);
+        BigDecimal vat = gross.multiply(VAT_RATE).divide(BigDecimal.ONE.add(VAT_RATE), 2, RoundingMode.HALF_UP);
         return new ChargeSplit(gross.subtract(vat), vat, gross);
     }
 
@@ -80,7 +104,8 @@ public class BankStatementPostingService {
      */
     @Transactional
     public JournalEntry post(Kind kind, List<Line> lines, LocalDate date, UUID leafId, UUID propertyId,
-                             boolean vatIncluded, boolean bankTrnSet, UUID accountId, String narration) {
+                             boolean vatIncluded, boolean bankTrnSet, UUID accountId, String narration,
+                             BigDecimal statedNet, BigDecimal statedVat, java.util.Set<UUID> leafSet) {
         UUID t = BankAccountLedgerService.requireTenant();
         BigDecimal total = lines.stream().map(Line::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         String first = lines.get(0).description();
@@ -99,7 +124,8 @@ public class BankStatementPostingService {
         List<PostingRequest.Line> jl = new ArrayList<>();
         switch (kind) {
             case CHARGE -> {
-                ChargeSplit s = chargeSplit(lines.stream().map(Line::amount).toList(), vatIncluded, bankTrnSet);
+                ChargeSplit s = chargeSplit(lines.stream().map(Line::amount).toList(), vatIncluded, bankTrnSet,
+                        statedNet, statedVat);
                 jl.add(PostingRequest.dr(AccountRole.BANK_CHARGES, s.net()).withNarration(text));
                 if (s.vat().signum() > 0) jl.add(PostingRequest.dr(AccountRole.INPUT_VAT, s.vat()).withNarration(text));
                 jl.add(PostingRequest.cr(leafId, s.gross()).withNarration(text));
@@ -116,6 +142,11 @@ public class BankStatementPostingService {
             case OTHER -> {
                 if (total.signum() == 0) throw new BusinessRuleViolationException("The selected lines net to zero");
                 requireOtherAccount(t, accountId);
+                // PR #353 review: "Other" into the same real account moves nothing.
+                if (leafSet.contains(accountId)) {
+                    throw new BusinessRuleViolationException("That ledger account belongs to this same bank account; "
+                            + "choose the account on the other side of the movement");
+                }
                 BigDecimal a = total.abs();
                 if (total.signum() > 0) {
                     jl.add(PostingRequest.dr(leafId, a).withNarration(text));

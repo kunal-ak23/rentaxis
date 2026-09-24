@@ -19,8 +19,23 @@ public final class StatementMapper {
     private StatementMapper() { }
 
     /** A transaction row in book order (oldest first). {@code fileRow} is the spreadsheet row number. */
+    /**
+     * A transaction row in book order (oldest first). {@code fileRow} is the
+     * spreadsheet row number. {@code chequeNo} is set only from a mapped cheque
+     * column; otherwise {@code chequeCandidates} holds the pattern's hits, and the
+     * import keeps one only if it is a cheque the books know (PR #353 review).
+     */
     public record Row(int fileRow, LocalDate txnDate, LocalDate valueDate, String description, String reference,
-                      String chequeNo, BigDecimal amount, BigDecimal balance) { }
+                      String chequeNo, BigDecimal amount, BigDecimal balance, List<String> chequeCandidates) {
+        public Row(int fileRow, LocalDate txnDate, LocalDate valueDate, String description, String reference,
+                   String chequeNo, BigDecimal amount, BigDecimal balance) {
+            this(fileRow, txnDate, valueDate, description, reference, chequeNo, amount, balance, List.of());
+        }
+
+        public Row withChequeNo(String no) {
+            return new Row(fileRow, txnDate, valueDate, description, reference, no, amount, balance, chequeCandidates);
+        }
+    }
 
     public enum Order { FILE, REVERSED, DATE }
 
@@ -69,6 +84,8 @@ public final class StatementMapper {
         List<String> formats = p.getDateFormats() == null || p.getDateFormats().length == 0
                 ? List.of("dd/MM/yyyy", "dd-MMM-yyyy", "dd/MM/yy") : List.of(p.getDateFormats());
         Pattern chequePattern = Pattern.compile(p.getChequeNoPattern() == null ? "\\b\\d{6}\\b" : p.getChequeNoPattern());
+        char decimal = ",".equals(p.getDecimalSeparator()) ? ',' : '.';
+        List<int[]> textDates = new ArrayList<>();
 
         List<Row> rows = new ArrayList<>();
         BigDecimal opening = null;
@@ -83,8 +100,8 @@ public final class StatementMapper {
             BigDecimal amount;
             BigDecimal balance;
             try {
-                amount = amount(grid, r, col, p.getAmountMode(), fileRow);
-                StatementValues.Amount b = StatementValues.amount(at(grid, r, col.get("balance")));
+                amount = amount(grid, r, col, p.getAmountMode(), fileRow, decimal);
+                StatementValues.Amount b = StatementValues.amount(at(grid, r, col.get("balance")), decimal);
                 balance = b == null ? null : "DR".equals(b.flag()) ? b.value().abs().negate() : b.value();
             } catch (RowError e) {
                 errors.add(e.getMessage());
@@ -94,6 +111,13 @@ public final class StatementMapper {
                 continue;
             }
             boolean noDate = dateCell == null || StatementGrid.text(dateCell).isEmpty();
+            if (dateCell instanceof String ds) {
+                java.util.regex.Matcher dm = NUMERIC_DATE.matcher(ds.trim());
+                if (dm.find()) {
+                    int y = Integer.parseInt(dm.group(3));
+                    textDates.add(new int[]{Integer.parseInt(dm.group(1)), Integer.parseInt(dm.group(2)), y < 100 ? 2000 + y : y});
+                }
+            }
             if (amount == null) {
                 if (OPENING.matcher(description).find()) {
                     opening = balance;
@@ -123,15 +147,17 @@ public final class StatementMapper {
                 continue;
             }
             if (col.containsKey("balance") && balance == null) balanceMissing++;
+
             String reference = blankToNull(text(grid, r, col.get("reference")));
-            String chequeNo = col.containsKey("chequeNo")
-                    ? blankToNull(text(grid, r, col.get("chequeNo")))
-                    : StatementValues.chequeNo(chequePattern, reference, description);
+            String chequeNo = col.containsKey("chequeNo") ? blankToNull(text(grid, r, col.get("chequeNo"))) : null;
+            List<String> candidates = col.containsKey("chequeNo") ? List.of() : allMatches(chequePattern, reference, description);
             if (description.isEmpty()) description = reference == null ? "(no description)" : reference;
             rows.add(new Row(fileRow, txn, value, cut(description, 2000), cut(reference, 200), cut(chequeNo, 50),
-                    amount, balance));
+                    amount, balance, candidates));
         }
         if (errors.size() >= MAX_ERRORS) errors.add("… and more; fix these first");
+        // Said first: a month-first file otherwise shows up as a page of date errors.
+        ambiguousDates(textDates, formats).ifPresent(m -> errors.add(0, m));
         boolean hasBalance = col.containsKey("balance") && balanceMissing == 0 && !rows.isEmpty();
         if (col.containsKey("balance") && balanceMissing > 0) {
             warnings.add(balanceMissing + " line(s) have no balance; the running-balance check was skipped");
@@ -168,6 +194,71 @@ public final class StatementMapper {
             if (closing == null) closing = book.get(book.size() - 1).balance();
         }
         return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order);
+    }
+
+    private static final Pattern NUMERIC_DATE = Pattern.compile("^(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4}|\\d{2})\\b");
+
+    /**
+     * PR #353 review: a file whose numeric dates read the other way round. When no
+     * date has a field above 12 either way, the text alone cannot say which is the
+     * day, so the profile's format decides — unless its reading is the one that is
+     * implausible: a second field above 12 under a day-first format (a US export),
+     * or a first field above 12 under a month-first one.
+     */
+    static java.util.Optional<String> ambiguousDates(List<int[]> dates, List<String> formats) {
+        if (dates.isEmpty() || formats.isEmpty()) return java.util.Optional.empty();
+        boolean dayFirst = !formats.get(0).trim().startsWith("M");
+        boolean firstOver12 = dates.stream().anyMatch(d -> d[0] > 12);
+        boolean secondOver12 = dates.stream().anyMatch(d -> d[1] > 12);
+        if (dayFirst && secondOver12 && !firstOver12) {
+            return java.util.Optional.of("The dates look month-first (e.g. " + example(dates, 1)
+                    + "), but the mapping reads them day-first; set the date format to MM/dd/yyyy");
+        }
+        if (!dayFirst && firstOver12 && !secondOver12) {
+            return java.util.Optional.of("The dates look day-first (e.g. " + example(dates, 0)
+                    + "), but the mapping reads them month-first; set the date format to dd/MM/yyyy");
+        }
+        // Every field is 12 or under, so either reading parses. A statement covers a
+        // month or so: when the mapping's reading spreads the lines over far more
+        // time than the other reading would, the mapping is the likelier mistake.
+        if (!firstOver12 && !secondOver12 && dates.size() > 1) {
+            long as = span(dates, dayFirst);
+            long other = span(dates, !dayFirst);
+            if (as > 62 && other <= 31) {
+                return java.util.Optional.of("Read " + (dayFirst ? "day-first" : "month-first") + ", the dates spread over "
+                        + as + " days; read the other way they fit in " + other + ". Check the date format");
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private static long span(List<int[]> dates, boolean dayFirst) {
+        LocalDate min = null, max = null;
+        for (int[] d : dates) {
+            LocalDate x;
+            try {
+                x = dayFirst ? LocalDate.of(d[2], d[1], d[0]) : LocalDate.of(d[2], d[0], d[1]);
+            } catch (java.time.DateTimeException e) {
+                return Long.MAX_VALUE;
+            }
+            if (min == null || x.isBefore(min)) min = x;
+            if (max == null || x.isAfter(max)) max = x;
+        }
+        return java.time.temporal.ChronoUnit.DAYS.between(min, max);
+    }
+
+    private static String example(List<int[]> dates, int over) {
+        return dates.stream().filter(d -> d[over] > 12).findFirst().map(d -> d[0] + "/" + d[1]).orElse("");
+    }
+
+    private static List<String> allMatches(Pattern p, String... texts) {
+        List<String> out = new ArrayList<>();
+        for (String s : texts) {
+            if (s == null) continue;
+            java.util.regex.Matcher m = p.matcher(s);
+            while (m.find()) if (!out.contains(m.group())) out.add(m.group());
+        }
+        return out;
     }
 
     /** The fields each amount mode needs besides the date and description. */
@@ -214,11 +305,12 @@ public final class StatementMapper {
         RowError(String m) { super(m); }
     }
 
-    private static BigDecimal amount(StatementGrid g, int r, Map<String, Integer> col, AmountMode mode, int fileRow) {
+    private static BigDecimal amount(StatementGrid g, int r, Map<String, Integer> col, AmountMode mode, int fileRow,
+                                     char decimal) {
         switch (mode == null ? AmountMode.SPLIT : mode) {
             case SPLIT -> {
-                StatementValues.Amount dr = StatementValues.amount(at(g, r, col.get("debit")));
-                StatementValues.Amount cr = StatementValues.amount(at(g, r, col.get("credit")));
+                StatementValues.Amount dr = StatementValues.amount(at(g, r, col.get("debit")), decimal);
+                StatementValues.Amount cr = StatementValues.amount(at(g, r, col.get("credit")), decimal);
                 BigDecimal d = dr == null ? BigDecimal.ZERO : dr.value().abs();
                 BigDecimal c = cr == null ? BigDecimal.ZERO : cr.value().abs();
                 if (dr == null && cr == null) return null;
@@ -228,12 +320,12 @@ public final class StatementMapper {
                 return c.subtract(d);
             }
             case SIGNED -> {
-                StatementValues.Amount a = StatementValues.amount(at(g, r, col.get("amount")));
+                StatementValues.Amount a = StatementValues.amount(at(g, r, col.get("amount")), decimal);
                 if (a == null) return null;
                 return "DR".equals(a.flag()) ? a.value().abs().negate() : "CR".equals(a.flag()) ? a.value().abs() : a.value();
             }
             case DRCR_FLAG -> {
-                StatementValues.Amount a = StatementValues.amount(at(g, r, col.get("amount")));
+                StatementValues.Amount a = StatementValues.amount(at(g, r, col.get("amount")), decimal);
                 if (a == null) return null;
                 String flag = a.flag();
                 if (col.containsKey("amountSign")) {

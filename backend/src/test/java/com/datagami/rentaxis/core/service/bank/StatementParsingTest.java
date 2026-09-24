@@ -64,6 +64,34 @@ class StatementParsingTest {
     }
 
     @Test
+    void theDecimalSeparatorIsTheProfilesAndAnAmbiguousValueIsRefused() {
+        assertThat(StatementValues.amount("1.234,50", ',').value()).isEqualByComparingTo("1234.50");
+        assertThat(StatementValues.amount("1 234,5", ',').value()).isEqualByComparingTo("1234.50");
+        assertThat(StatementValues.amount("12,00-", ',').value()).isEqualByComparingTo("-12.00");
+        // Read with a decimal point, a decimal-comma value is refused, never shrunk to 1.23.
+        assertThatThrownBy(() -> StatementValues.amount("1.234,50", '.')).isInstanceOf(NumberFormatException.class)
+                .hasMessageContaining("'.' as the decimal separator");
+        assertThatThrownBy(() -> StatementValues.amount("1,23", '.')).isInstanceOf(NumberFormatException.class);
+        assertThatThrownBy(() -> StatementValues.amount("1.234", '.')).isInstanceOf(NumberFormatException.class);
+        assertThatThrownBy(() -> StatementValues.amount("1,234.50", ',')).isInstanceOf(NumberFormatException.class);
+        assertThat(StatementValues.amount("1,234,567.89", '.').value()).isEqualByComparingTo("1234567.89");
+    }
+
+    @Test
+    void aMonthFirstFileIsRefusedUnderADayFirstFormatAndViceVersa() {
+        List<String> dayFirst = List.of("d/M/yyyy");
+        assertThat(StatementMapper.ambiguousDates(List.of(new int[]{9, 3, 2026}, new int[]{9, 14, 2026}), dayFirst))
+                .hasValueSatisfying(m -> assertThat(m).contains("look month-first"));
+        assertThat(StatementMapper.ambiguousDates(List.of(new int[]{14, 9, 2026}), List.of("MM/dd/yyyy")))
+                .hasValueSatisfying(m -> assertThat(m).contains("look day-first"));
+        // All fields ≤ 12: read day-first they span 8 months, month-first 7 days.
+        assertThat(StatementMapper.ambiguousDates(List.of(new int[]{9, 1, 2026}, new int[]{9, 4, 2026},
+                new int[]{9, 8, 2026}), dayFirst)).hasValueSatisfying(m -> assertThat(m).contains("Check the date format"));
+        // A real day-first September.
+        assertThat(StatementMapper.ambiguousDates(List.of(new int[]{3, 9, 2026}, new int[]{30, 9, 2026}), dayFirst)).isEmpty();
+    }
+
+    @Test
     void datesAreDayFirstAndReadExcelSerialsTextAndTwoDigitYears() {
         List<String> f = List.of("dd/MM/yyyy", "dd-MMM-yyyy", "dd/MM/yy");
         // Ambiguous: always day first.
@@ -87,28 +115,27 @@ class StatementParsingTest {
     }
 
     @Test
-    void theHashIsStableAndSeesEveryField() {
+    void theHashIsStableAndSeesOnlyTheFieldsEveryMappingHas() {
         LocalDate d = LocalDate.of(2026, 9, 15);
-        String h = StatementValues.lineHash(BANK, d, d, new BigDecimal("-50"), "service  charge", null, new BigDecimal("347900"), 0);
-        // Same line, spelt differently where normalisation says it is the same.
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-50.00"), "SERVICE CHARGE ", null,
-                new BigDecimal("347900.00"), 0)).isEqualTo(h).hasSize(64);
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-50.00"), "SERVICE CHARGE", null,
-                new BigDecimal("347900.00"), 1)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-5.00"), "service charge", null,
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d.plusDays(1), d, new BigDecimal("-50"), "service charge", null,
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-50"), "service fee", null,
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(UUID.randomUUID(), d, d, new BigDecimal("-50"), "service charge", null,
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d, null, new BigDecimal("-50"), "service charge", null,
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-50"), "service charge", "R1",
-                new BigDecimal("347900"), 0)).isNotEqualTo(h);
-        assertThat(StatementValues.lineHash(BANK, d, d, new BigDecimal("-50"), "service charge", null,
-                null, 0)).isNotEqualTo(h);
+        String h = StatementValues.lineHash(BANK, d, new BigDecimal("-50"), "service  charge", 0);
+        assertThat(StatementValues.lineHash(BANK, d, new BigDecimal("-50.00"), "SERVICE CHARGE ", 0)).isEqualTo(h).hasSize(64);
+        // Each field of the identity changes it.
+        assertThat(StatementValues.lineHash(BANK, d, new BigDecimal("-50"), "service charge", 1)).isNotEqualTo(h);
+        assertThat(StatementValues.lineHash(UUID.randomUUID(), d, new BigDecimal("-50"), "service charge", 0)).isNotEqualTo(h);
+        assertThat(StatementValues.lineHash(BANK, d.plusDays(1), new BigDecimal("-50"), "service charge", 0)).isNotEqualTo(h);
+        assertThat(StatementValues.lineHash(BANK, d, new BigDecimal("-5"), "service charge", 0)).isNotEqualTo(h);
+        assertThat(StatementValues.lineHash(BANK, d, new BigDecimal("50"), "service charge", 0)).isNotEqualTo(h);
+        assertThat(StatementValues.lineHash(BANK, d, new BigDecimal("-50"), "service fee", 0)).isNotEqualTo(h);
+    }
+
+    @Test
+    void mappingTheValueDateReferenceOrBalanceLaterDoesNotMakeOldLinesNew() {
+        LocalDate d = LocalDate.of(2026, 9, 28);
+        var bare = new StatementMapper.Row(3, d, null, "CHQ 000031 PRESENTED", null, null, new BigDecimal("-20000"), null);
+        var mapped = new StatementMapper.Row(9, d, d.plusDays(1), "CHQ 000031 PRESENTED", "REF-1", "000031",
+                new BigDecimal("-20000.00"), new BigDecimal("327897.50"));
+        assertThat(BankStatementImportService.hashes(BANK, List.of(mapped)))
+                .isEqualTo(BankStatementImportService.hashes(BANK, List.of(bare)));
     }
 
     // ------------------------------------------------------------------ golden files
@@ -121,8 +148,10 @@ class StatementParsingTest {
         assertThat(r.order()).isEqualTo(StatementMapper.Order.REVERSED);
         assertThat(r.rows()).extracting(StatementMapper.Row::amount).map(BigDecimal::toPlainString)
                 .containsExactly("50000.00", "50000.00", "-2050.00", "-50.00", "-2.50", "-20000.00", "120.00");
-        assertThat(r.rows().get(0).chequeNo()).isEqualTo("000451");
-        assertThat(r.rows().get(5).chequeNo()).isEqualTo("000031");
+        // Candidates only: the import keeps one when the books know the cheque.
+        assertThat(r.rows().get(0).chequeNo()).isNull();
+        assertThat(r.rows().get(0).chequeCandidates()).containsExactly("000451");
+        assertThat(r.rows().get(5).chequeCandidates()).containsExactly("000031");
         assertThat(r.rows().get(2).reference()).isEqualTo("TRF-7781");
         assertThat(r.openingBalance()).isEqualByComparingTo("250000.00");
         assertThat(r.closingBalance()).isEqualByComparingTo("328017.50");
@@ -139,7 +168,7 @@ class StatementParsingTest {
         assertThat(r.order()).isEqualTo(StatementMapper.Order.FILE);
         assertThat(r.rows()).extracting(x -> x.amount().toPlainString()).containsExactly("1500.00", "-200.00", "-300.00");
         assertThat(r.rows().get(1).txnDate()).isEqualTo(LocalDate.of(2026, 9, 3));
-        assertThat(r.rows().get(2).chequeNo()).isEqualTo("000777");
+        assertThat(r.rows().get(2).chequeCandidates()).containsExactly("000777");
         assertThat(r.openingBalance()).isEqualByComparingTo("10000.00");
     }
 
@@ -183,6 +212,36 @@ class StatementParsingTest {
         assertThat(r.rows()).extracting(x -> x.amount().toPlainString()).containsExactly("50000.00", "-52.50", "120.00");
         assertThat(r.openingBalance()).isEqualByComparingTo("250000.00");
         assertThat(r.closingBalance()).isEqualByComparingTo("300067.50");
+    }
+
+    /** A header row, then {@code rows} rows each holding one cell at column {@code col} (0-based). */
+    static byte[] farRightWorkbook(int rows, int col) throws Exception {
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet s = wb.createSheet("Statement");
+            s.createRow(0).createCell(0).setCellValue("Date");
+            for (int r = 1; r <= rows; r++) s.createRow(r).createCell(col).setCellValue(1);
+            wb.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    @Test
+    void aSheetWithACellAtXfdOnEveryRowIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // PR #353 review P1-1: 2,000 rows × column XFD is 2,000 real cells but 32 M addressable ones.
+        byte[] bytes = farRightWorkbook(2000, 16383);
+        assertThatThrownBy(() -> new XlsxStatementParser().read(bytes, null, null))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("cells; split it into smaller workbooks");
+    }
+
+    @Test
+    void aValuePastSixtyFourColumnsIsRefusedByTheParser() throws Exception {
+        byte[] bytes = farRightWorkbook(50, 100);
+        assertThatThrownBy(() -> new XlsxStatementParser().read(bytes, null, null))
+                .hasMessage("Row 2 has a value in column CW; a statement may use at most 64 columns");
+        String wide = "a" + ",x".repeat(70) + "\n";
+        assertThatThrownBy(() -> new CsvStatementParser().read(wide.getBytes(), null, ","))
+                .hasMessageContaining("more than 64 columns");
     }
 
     /** An Emirates Islamic-style workbook: a title, a blank row, headers on row 3, date cells, opening/closing rows. */

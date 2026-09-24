@@ -62,7 +62,7 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
             02/09/2026,SERVICE CHARGE,5.00,,95.00
             """;
     static final String PROFILE = """
-            {"fileKind":"CSV","headerRow":1,"firstDataRow":2,"amountMode":"SPLIT",
+            {"fileKind":"CSV","headerRow":1,"firstDataRow":2,"amountMode":"SPLIT","dateFormats":["dd/MM/yyyy"],
              "columns":{"txnDate":"Date","description":"Description","debit":"Debit","credit":"Credit","balance":"Balance"}}""";
 
     @BeforeEach

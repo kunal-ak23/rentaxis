@@ -52,6 +52,7 @@ public class BankStatementImportService {
     private final CsvStatementParser csv;
     private final XlsxStatementParser xlsx;
     private final NamedParameterJdbcTemplate jdbc;
+    private final java.time.Clock clock;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -62,7 +63,8 @@ public class BankStatementImportService {
 
     public BankStatementImportService(BankAccountLedgerService ledgers, BankStatementProfileRepository profiles,
                                       BankStatementImportRepository imports, CsvStatementParser csv,
-                                      XlsxStatementParser xlsx, NamedParameterJdbcTemplate jdbc) {
+                                      XlsxStatementParser xlsx, NamedParameterJdbcTemplate jdbc, java.time.Clock clock) {
+        this.clock = clock;
         this.ledgers = ledgers;
         this.profiles = profiles;
         this.imports = imports;
@@ -103,7 +105,17 @@ public class BankStatementImportService {
             if (in.csvDelimiter().length() > 2) throw new BusinessRuleViolationException("The delimiter is one character");
             p.setCsvDelimiter(in.csvDelimiter());
         }
-        if (in.dateFormats() != null && !in.dateFormats().isEmpty()) {
+        // PR #353 review: the date format is the accountant's statement, never a guess.
+        if (in.dateFormats() == null || in.dateFormats().isEmpty() || in.dateFormats().stream().allMatch(f -> f == null || f.isBlank())) {
+            throw new BusinessRuleViolationException("Choose the statement's date format");
+        }
+        if (in.decimalSeparator() != null && !in.decimalSeparator().isBlank()) {
+            if (!in.decimalSeparator().equals(".") && !in.decimalSeparator().equals(",")) {
+                throw new BusinessRuleViolationException("The decimal separator is . or ,");
+            }
+            p.setDecimalSeparator(in.decimalSeparator());
+        }
+        {
             for (String f : in.dateFormats()) {
                 try {
                     StatementValues.formatter(f);
@@ -143,7 +155,7 @@ public class BankStatementImportService {
     static BankRecDTOs.Profile dto(BankStatementProfile p) {
         return new BankRecDTOs.Profile(p.getFileKind().name(), p.getSheetName(), p.getHeaderRow(), p.getFirstDataRow(),
                 p.getCsvDelimiter(), List.of(p.getDateFormats()), p.getColumns(), p.getAmountMode().name(),
-                p.getChequeNoPattern(), p.getMatchWindowDays());
+                p.getChequeNoPattern(), p.getMatchWindowDays(), p.getDecimalSeparator());
     }
 
     // ------------------------------------------------------------------ import
@@ -167,6 +179,21 @@ public class BankStatementImportService {
         String name = fileName == null || fileName.isBlank() ? "statement" : fileName.trim();
         if (name.toLowerCase(Locale.ROOT).endsWith(".xls")) {
             throw new BusinessRuleViolationException("Save the statement as .xlsx or .csv; the old .xls format is not read");
+        }
+        // P2-2: the very same file again is refused outright, whatever the mapping says now.
+        String sha = StatementValues.sha256(bytes);
+        List<Map<String, Object>> same = jdbc.queryForList("""
+                select file_name, imported_at, lines_read from bank_statement_imports
+                where tenant_id = :t and bank_account_id = :b and file_sha256 = :s order by imported_at limit 1""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("s", sha));
+        if (!same.isEmpty()) {
+            Map<String, Object> prior = same.get(0);
+            String on = ((java.sql.Timestamp) prior.get("imported_at")).toInstant().atZone(java.time.ZoneId.of("Asia/Dubai"))
+                    .toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            return new BankRecDTOs.ImportResult("ALREADY_IMPORTED", "This file was already imported on " + on
+                    + " (" + prior.get("file_name") + "); nothing was imported", List.of(), List.of(), null, null, List.of(),
+                    List.of(), List.of(), 0, 0, ((Number) prior.get("lines_read")).intValue(), null, null, null, null,
+                    null, List.of(), null);
         }
         BankStatementProfile.FileKind kind = WorkbookGuard.looksLikeXlsx(bytes)
                 ? BankStatementProfile.FileKind.XLSX : BankStatementProfile.FileKind.CSV;
@@ -211,6 +238,12 @@ public class BankStatementImportService {
                     0, 0, List.of(), null);
         }
 
+        List<String> period = periodErrors(r.rows());
+        if (!period.isEmpty()) {
+            return result("INVALID", null, grid, kind, r, period, r.warnings(), 0, 0, List.of(), null);
+        }
+        r = withKnownChequeNumbers(t, bankAccountId, r);
+
         if (!dryRun) {
             // One import per bank account at a time: the de-duplication below reads,
             // then writes.
@@ -227,6 +260,7 @@ public class BankStatementImportService {
         }
         List<String> warnings = new ArrayList<>(r.warnings());
         continuityWarning(t, bankAccountId, r).ifPresent(warnings::add);
+        driftWarning(t, bankAccountId, r.rows(), hashes, existing).ifPresent(warnings::add);
         int dup = 0;
         List<BankRecDTOs.PreviewRow> preview = new ArrayList<>();
         for (int i = 0; i < r.rows().size(); i++) {
@@ -246,7 +280,7 @@ public class BankStatementImportService {
         BankStatementImport imp = new BankStatementImport();
         imp.setBankAccountId(bankAccountId);
         imp.setFileName(name.length() > 255 ? name.substring(name.length() - 255) : name);
-        imp.setFileSha256(StatementValues.sha256(bytes));
+        imp.setFileSha256(sha);
         imp.setLinesRead(r.rows().size());
         imp.setLinesNew(fresh);
         imp.setLinesDuplicate(dup);
@@ -283,16 +317,66 @@ public class BankStatementImportService {
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId());
     }
 
-    /** One hash per row; {@code occurrence} counts identical rows earlier in the same file. */
+    /**
+     * PR #353 review: a line dated in the future, or a file spread over more than a
+     * statement year, is a misread date format (or the wrong file), not a statement.
+     */
+    private List<String> periodErrors(List<StatementMapper.Row> rows) {
+        LocalDate today = LocalDate.now(clock);
+        List<String> out = new ArrayList<>();
+        rows.stream().filter(x -> x.txnDate().isAfter(today)).findFirst().ifPresent(x -> out.add("Row " + x.fileRow()
+                + ": " + dmy(x.txnDate()) + " is in the future; check the date format"));
+        LocalDate min = rows.stream().map(StatementMapper.Row::txnDate).min(Comparator.naturalOrder()).orElse(today);
+        LocalDate max = rows.stream().map(StatementMapper.Row::txnDate).max(Comparator.naturalOrder()).orElse(today);
+        if (java.time.temporal.ChronoUnit.DAYS.between(min, max) > 400) {
+            out.add("The lines run from " + dmy(min) + " to " + dmy(max) + ", more than a year; check the date format "
+                    + "or split the file");
+        }
+        return out;
+    }
+
+    /**
+     * Without a mapped cheque-number column, a number in the text is a cheque number
+     * only when it is a cheque the books know on this bank account's ledger
+     * accounts (PR #353 review): a six-digit bank reference is not a cheque.
+     */
+    private StatementMapper.Result withKnownChequeNumbers(UUID t, UUID bankAccountId, StatementMapper.Result r) {
+        if (r.rows().stream().allMatch(x -> x.chequeCandidates().isEmpty())) return r;
+        Set<UUID> leaves = ledgers.leafSet(bankAccountId);
+        if (leaves.isEmpty()) leaves = Set.of(new UUID(0, 0));
+        Set<String> known = new HashSet<>();
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("l", leaves);
+        for (String sql : List.of(
+                """
+                select c.cheque_number from cheques c where c.tenant_id = :t and c.cheque_number is not null
+                  and (c.debit_account_id in (:l) or (c.debit_account_id is null and coalesce(
+                       (select pm.account_id from property_account_mappings pm
+                         where pm.tenant_id = c.tenant_id and pm.property_id = c.property_id and pm.role = 'BANK'),
+                       (select d.account_id from tenant_default_account_mappings d
+                         where d.tenant_id = c.tenant_id and d.role = 'BANK')) in (:l)))""",
+                "select cheque_number from issued_cheques where tenant_id = :t and bank_account_id in (:l)",
+                """
+                select cheque_number from vouchers where tenant_id = :t and cheque_number is not null
+                  and payment_account_id in (:l)""")) {
+            jdbc.queryForList(sql, p, String.class).forEach(n -> known.add(n.trim().replaceFirst("^0+(?=.)", "")));
+        }
+        List<StatementMapper.Row> rows = r.rows().stream().map(x -> x.chequeNo() != null ? x
+                : x.withChequeNo(x.chequeCandidates().stream()
+                        .filter(c -> known.contains(c.trim().replaceFirst("^0+(?=.)", ""))).findFirst().orElse(null)))
+                .toList();
+        return new StatementMapper.Result(rows, r.errors(), r.warnings(), r.missingColumns(), r.openingBalance(),
+                r.closingBalance(), r.hasBalance(), r.order());
+    }
+
+    /** One hash per row; {@code occurrence} counts identical lines (same day, amount, description) earlier in the file. */
     static List<String> hashes(UUID bankAccountId, List<StatementMapper.Row> rows) {
         Map<String, Integer> seen = new HashMap<>();
         List<String> out = new ArrayList<>(rows.size());
         for (StatementMapper.Row row : rows) {
-            String base = StatementValues.lineHash(bankAccountId, row.txnDate(), row.valueDate(), row.amount(),
-                    row.description(), row.reference(), row.balance(), 0);
-            int occurrence = seen.merge(base, 1, Integer::sum) - 1;
-            out.add(occurrence == 0 ? base : StatementValues.lineHash(bankAccountId, row.txnDate(), row.valueDate(),
-                    row.amount(), row.description(), row.reference(), row.balance(), occurrence));
+            String key = row.txnDate() + "|" + row.amount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                    + "|" + StatementValues.normalise(row.description());
+            int occurrence = seen.merge(key, 1, Integer::sum) - 1;
+            out.add(StatementValues.lineHash(bankAccountId, row.txnDate(), row.amount(), row.description(), occurrence));
         }
         return out;
     }
@@ -316,6 +400,28 @@ public class BankStatementImportService {
         LocalDate prevDate = ((java.sql.Date) prev.get(0).get("txn_date")).toLocalDate();
         return Optional.of("Lines may be missing between " + dmy(prevDate) + " and " + dmy(first.txnDate())
                 + ": the balance jumps by " + StatementValues.money(expectedOpening.subtract(before)));
+    }
+
+    /**
+     * A new line with the date, amount and running balance of a stored line is
+     * almost certainly that line read under a different mapping or wording
+     * (PR #353 review P2-2): said, not silently imported.
+     */
+    private Optional<String> driftWarning(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
+                                          Set<String> existing) {
+        int n = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            StatementMapper.Row row = rows.get(i);
+            if (existing.contains(hashes.get(i)) || row.balance() == null) continue;
+            Integer hit = jdbc.queryForObject("""
+                    select count(*) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
+                      and txn_date = :d and amount = :a and running_balance = :bal""",
+                    new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", row.txnDate())
+                            .addValue("a", row.amount()).addValue("bal", row.balance()), Integer.class);
+            if (hit != null && hit > 0) n++;
+        }
+        return n == 0 ? Optional.empty() : Optional.of(n + " new line(s) have the date, amount and balance of a line "
+                + "already imported, under a different description; check they are not the same lines");
     }
 
     private static String dmy(LocalDate d) {
@@ -352,6 +458,7 @@ public class BankStatementImportService {
         p.setFileKind(kind);
         if (saved != null) {
             p.setDateFormats(saved.getDateFormats());
+            p.setDecimalSeparator(saved.getDecimalSeparator());
             p.setChequeNoPattern(saved.getChequeNoPattern());
             p.setMatchWindowDays(saved.getMatchWindowDays());
         }
@@ -374,8 +481,8 @@ public class BankStatementImportService {
         ledgers.requireBankAccount(bankAccountId);
         Set<UUID> locked = new HashSet<>(jdbc.queryForList("""
                 select distinct l.import_id from bank_statement_lines l
-                join bank_match_statement_lines ml on ml.statement_line_id = l.id and not ml.released
-                join bank_matches m on m.id = ml.match_id and m.status = 'CONFIRMED'
+                join bank_match_statement_lines ml on ml.statement_line_id = l.id
+                join bank_matches m on m.id = ml.match_id and m.status <> 'SUGGESTED'
                 where l.tenant_id = :t and l.bank_account_id = :b""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class));
         return imports.findByBankAccountIdOrderByImportedAtDesc(bankAccountId).stream()
@@ -388,7 +495,8 @@ public class BankStatementImportService {
 
     /**
      * Delete import (spec §3): its lines go, while none of them is in a CONFIRMED
-     * match. Suggestions and undone history that touch them go with them.
+     * match. An undone match is the audit trail the spec keeps (PR #353 review), so
+     * a line with any match history also holds its import; only suggestions go.
      */
     @Transactional
     public void delete(UUID importId) {
@@ -407,9 +515,19 @@ public class BankStatementImportService {
             throw new BusinessRuleViolationException(confirmed + " line(s) of this import are in confirmed matches; "
                     + "undo those matches first");
         }
+        Integer history = jdbc.queryForObject("""
+                select count(*) from bank_statement_lines l
+                join bank_match_statement_lines ml on ml.statement_line_id = l.id
+                join bank_matches m on m.id = ml.match_id and m.status = 'UNDONE'
+                where l.tenant_id = :t and l.import_id = :i""", p, Integer.class);
+        if (history != null && history > 0) {
+            throw new BusinessRuleViolationException("Lines of this import have match history (undone matches), "
+                    + "which is kept as the audit trail; the import cannot be deleted");
+        }
         List<UUID> matches = jdbc.queryForList("""
                 select distinct ml.match_id from bank_match_statement_lines ml
                 join bank_statement_lines l on l.id = ml.statement_line_id
+                join bank_matches m on m.id = ml.match_id and m.status = 'SUGGESTED'
                 where l.tenant_id = :t and l.import_id = :i""", p, UUID.class);
         if (!matches.isEmpty()) {
             MapSqlParameterSource mp = new MapSqlParameterSource("t", t).addValue("m", matches);
