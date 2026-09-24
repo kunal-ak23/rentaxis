@@ -269,8 +269,21 @@ public class LeaseVariationService {
         }
         LeaseAddendum addendum = addendumRepository.findByIdAndLease_Id(addendumId, leaseId)
                 .orElseThrow(() -> new NotFoundException("Addendum not found"));
+        String before = addendum.getEjariNumber();
         addendum.setEjariNumber(ejari);
         addendum = addendumRepository.save(addendum);
+        // F14-33: the latest addendum's registration is the lease's current Ejari,
+        // so the header shows it (and a corrected number replaces it there too).
+        List<LeaseAddendum> all = addendumRepository.findByLease_IdOrderByCreatedAtAsc(leaseId);
+        if (!all.isEmpty() && all.get(all.size() - 1).getId().equals(addendum.getId())) {
+            lease.setEjariNumber(ejari);
+            leaseRepository.save(lease);
+        }
+        if (before != null && !before.equals(ejari)) {
+            leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(),
+                    "Ejari for addendum " + addendum.getAddendumNumber() + " corrected from " + before + " to " + ejari);
+            return toDto(addendum);
+        }
         leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(),
                 "Ejari " + ejari + " recorded for addendum " + addendum.getAddendumNumber());
         return toDto(addendum);

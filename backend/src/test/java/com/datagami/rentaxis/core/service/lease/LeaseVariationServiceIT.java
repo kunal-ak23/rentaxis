@@ -468,6 +468,12 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(recorded.ejariNumber()).isEqualTo("EJ-2027-00042");
         assertThat(recorded.ejariPending()).isFalse();
         assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::ejariPending).containsExactly(false, true);
+
+        // F14-33: the latest addendum's Ejari is the lease's; a corrected number replaces it.
+        variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00050");
+        variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00051");
+        String headerEjari = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getEjariNumber());
+        assertThat(headerEjari).isEqualTo("EJ-2027-00051");
     }
 
     // ------------------------------------------------------------------
