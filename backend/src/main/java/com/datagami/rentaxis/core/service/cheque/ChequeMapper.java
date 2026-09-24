@@ -30,12 +30,17 @@ public final class ChequeMapper {
     }
 
     public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays) {
+        return toDto(c, today, graceDays, false);
+    }
+
+    /** {@code ledgerSettled}: F14-52, a bounced row the ledger has closed — never overdue. */
+    public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays, boolean ledgerSettled) {
         // daysOverdue is a property of the date alone, so on its own it happily
         // reports 365 for a cheque that cleared a year ago. The wire shape is read
         // by a UI that renders the number next to an "overdue" badge, so it is
         // gated on overdue here rather than in the rule, which other callers use
         // for its unconditional meaning.
-        boolean overdue = ChequeDueRules.overdue(c, graceDays, today);
+        boolean overdue = !ledgerSettled && ChequeDueRules.overdue(c, graceDays, today);
         return new ChequeDTO(
                 c.getId(),
                 nullSafe(c.getLease(), lease -> lease.getId()),
@@ -80,7 +85,8 @@ public final class ChequeMapper {
                 overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0,
                 c.getVatAmount(),
                 c.getVatTaxableAmount(),
-                c.getRowKind());
+                c.getRowKind(),
+                ledgerSettled);
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

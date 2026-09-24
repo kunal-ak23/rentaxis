@@ -70,5 +70,8 @@ public record ChequeDTO(UUID id,
                         BigDecimal vatAmount,
                         BigDecimal vatTaxableAmount,
                         /* What the row collects (RENT, FEE, DEPOSIT, MIXED), or null when it never said. */
-                        com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind) {
+                        com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind,
+                        /* F14-52: a BOUNCED row whose debt the ledger no longer carries (a settlement or
+                           payment absorbed it): not overdue, nothing to replace. */
+                        boolean ledgerSettled) {
 }
