@@ -2121,6 +2121,8 @@
   "VatSchedule": {
     "title": "VAT schedule",
     "intro": "Each instalment's VAT is declared on its tax point — its due date, or the day it was received if earlier — and issues a numbered tax invoice. A CONTRACT-timed lease declares its whole VAT on one tax point at the contract date instead.",
+    "issueContractInvoice": "Issue contract tax invoice",
+    "issueContractInvoiceFailed": "The contract tax invoice could not be issued.",
     "loadFailed": "Could not load the VAT schedule.",
     "taxPoint": "Tax point",
     "instalment": "Instalment",

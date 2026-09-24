@@ -510,6 +510,14 @@ export const vatApi = {
   /** `dryRun: true` writes nothing and answers with `posted: 0` / `wouldPost: n`. */
   run: (to: string | undefined, dryRun: boolean) =>
     send<VatTaxPointRunResult>("POST", `/finance/vat/tax-points/run${qs({ to, dryRun })}`),
+  /**
+   * F14-53: `POST /leases/{id}/tax-invoices/contract` — a CONTRACT-timed
+   * lease's whole VAT, declared on one tax point at the contract date. The
+   * server is the last word on whether this lease may (posted, not a
+   * cut-over/import, no tax invoice issued yet); a refusal's message is
+   * shown as-is.
+   */
+  issueContractTaxInvoice: (leaseId: string) => send<TaxInvoice>("POST", `/leases/${leaseId}/tax-invoices/contract`),
   /** Not a fetch — the endpoint streams a PDF; open or download this path directly. */
   pdfUrl: (invoiceId: string) => `${BASE}/tax-invoices/${invoiceId}/pdf`,
 };
