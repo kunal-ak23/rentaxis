@@ -242,6 +242,8 @@ export type LeaseDetail = {
   contractDate: string | null;
   totalDays: number | null;
   gracePeriodDays: number | null;
+  /** False when the grace came from the property's default (gap #65); absent on an older server. */
+  gracePeriodOverridden?: boolean | null;
   firstDueDate: string | null;
   renterAcceptedAt: string | null;
   renewedFromLeaseId: string | null;

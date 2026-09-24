@@ -13,6 +13,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/GraceDaysField";
 import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
@@ -55,7 +56,8 @@ type Terms = {
     contractDate: string;
     startDate: string;
     endDate: string;
-    gracePeriodDays: number;
+    /** Null means the property's default (gap #65). */
+    gracePeriodDays: number | null;
     paymentTerms: number;
     firstDueDate: string;
     installmentDistribution: InstallmentDistribution;
@@ -71,7 +73,7 @@ const initialTerms: Terms = {
     contractDate: todayIso(),
     startDate: "",
     endDate: "",
-    gracePeriodDays: 0,
+    gracePeriodDays: null,
     paymentTerms: 4,
     firstDueDate: "",
     installmentDistribution: "LAST_LARGER",
@@ -167,6 +169,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const selectedUnit = useMemo(() => units.find(u => u.id === unitId), [units, unitId]);
     const selectedRenter = useMemo(() => renters.find(r => r.id === renterId), [renters, renterId]);
     const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, unitId);
+    const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.property?.id);
     const totals = totalsOf(rows, chargeTypes);
     const { rest: bannerErrors } = splitLineErrors(serverErrors);
 
@@ -457,7 +460,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 <input type="date" data-testid="wizard-end-date" className={field} value={terms.endDate} onChange={e => patch({ endDate: e.target.value })} />
                             </Field>
                             <Field label={t("gracePeriodDays")}>
-                                <NumberInput showZero min={0} max={90} className={field} value={terms.gracePeriodDays} onChange={v => patch({ gracePeriodDays: v })} />
+                                <GraceDaysField className={field} value={terms.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />
                             </Field>
                             <Field label={t("paymentTerms")}>
                                 <NumberInput showZero min={1} max={36} className={field} value={terms.paymentTerms} onChange={v => patch({ paymentTerms: Math.max(1, v) })} />

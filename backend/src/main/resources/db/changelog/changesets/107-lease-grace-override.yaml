@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # Gap #65: a lease's grace either came from its property's rent-collection
+  # policy or was typed on the lease. grace_period_days alone cannot say which,
+  # so a renewal could not tell "the building's 5 days" from "5 days agreed with
+  # this renter" and always copied the number.
+  #
+  # Existing rows are TRUE: their grace is the snapshot the renter agreed to,
+  # and a renewal of one keeps it. LeaseService.gracePeriodFor writes FALSE on
+  # new rows whose grace was inherited.
+  - changeSet:
+      id: 107-lease-grace-override
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: grace_period_overridden
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: leases
+            columnName: grace_period_overridden

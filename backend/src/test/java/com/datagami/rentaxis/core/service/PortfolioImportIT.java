@@ -183,6 +183,15 @@ class PortfolioImportIT extends AbstractPostgresIT {
                 .findFirst().orElseThrow();
         assertThat(tenant2Lease.getPaymentTerms()).isEqualTo(4);
 
+        // The sheet has no grace column, so every lease takes its property's
+        // default and is marked as inheriting it: a renewal re-reads the policy
+        // instead of copying the number (gap #65). None of these properties has a
+        // collection policy, so the default is no grace.
+        assertThat(leases).allSatisfy(l -> {
+            assertThat(l.isGracePeriodOverridden()).isFalse();
+            assertThat(l.getGracePeriodDays()).isZero();
+        });
+
         // Every imported lease now carries instruments, and the job's counter says
         // how many. The import used to create none at all.
         assertThat(completed.getSchedulesCreated()).isPositive();

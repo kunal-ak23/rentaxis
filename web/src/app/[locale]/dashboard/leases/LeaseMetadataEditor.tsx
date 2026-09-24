@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/GraceDaysField";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import { linesAreValid, splitLineErrors, toInputs, toRows, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
@@ -40,7 +41,8 @@ type Header = {
     endDate: string;
     contractDate: string;
     agreementDate: string;
-    gracePeriodDays: number;
+    /** Null means the property's default (gap #65). */
+    gracePeriodDays: number | null;
     paymentTerms: number;
     firstDueDate: string;
     installmentDistribution: InstallmentDistribution;
@@ -62,7 +64,9 @@ function toHeader(lease: LeaseDetail): Header {
         endDate: (lease.endDate || "").slice(0, 10),
         contractDate: (lease.contractDate || "").slice(0, 10),
         agreementDate: (lease.agreementDate || "").slice(0, 10),
-        gracePeriodDays: lease.gracePeriodDays ?? 0,
+        // An inherited grace is shown as the property default, and saved as null
+        // so it keeps inheriting; only one set on this lease fills the box.
+        gracePeriodDays: lease.gracePeriodOverridden === false ? null : lease.gracePeriodDays ?? null,
         paymentTerms: lease.paymentTerms ?? 1,
         firstDueDate: (lease.firstDueDate || "").slice(0, 10),
         installmentDistribution: lease.installmentDistribution ?? "LAST_LARGER",
@@ -85,6 +89,7 @@ type Props = {
 export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, className }: Props) {
     const t = useTranslations("Leasing");
     const [header, setHeader] = useState<Header>(() => toHeader(lease));
+    const propertyDefaultGrace = usePropertyDefaultGrace(lease.propertyId);
     const [rows, setRows] = useState<LineRow[]>(() => toRows(lease.lines));
     const [collapsed, setCollapsed] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -193,7 +198,7 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
                             <input type="date" className={field} value={header.agreementDate} onChange={e => patch({ agreementDate: e.target.value })} />
                         </Field>
                         <Field label={t("gracePeriodDays")}>
-                            <NumberInput showZero min={0} max={90} className={field} value={header.gracePeriodDays} onChange={v => patch({ gracePeriodDays: v })} />
+                            <GraceDaysField className={field} value={header.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />
                         </Field>
                         <Field label={t("paymentTerms")}>
                             <NumberInput showZero min={1} max={36} className={field} value={header.paymentTerms} onChange={v => patch({ paymentTerms: Math.max(1, v) })} />

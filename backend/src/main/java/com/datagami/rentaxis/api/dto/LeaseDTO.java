@@ -58,6 +58,8 @@ public class LeaseDTO {
     private LocalDate contractDate;
     private Integer totalDays;
     private Integer gracePeriodDays;
+    /** TRUE when the grace was set on this lease, FALSE when it came from the property (gap #65). */
+    private Boolean gracePeriodOverridden;
     private LocalDate firstDueDate;
 
     /**
