@@ -172,6 +172,9 @@ public class SettlementService {
      * they pass through to the utility account, and the early-termination fee and
      * "other" keep their own treatment.
      */
+    /** F14-36: the narration of the STL's refund-payable credit — how a reader finds that line again (R2 N2). */
+    public static final String REFUND_PAYABLE_NARRATION = "Deposit refund payable to the renter";
+
     static final java.util.Set<DeductionCategory> VATABLE_RECHARGES = java.util.EnumSet.of(
             DeductionCategory.PROPERTY_DAMAGE, DeductionCategory.CLEANING, DeductionCategory.KEY_REPLACEMENT);
 
@@ -673,7 +676,7 @@ public class SettlementService {
 
         if (netRefund.signum() > 0) {
             lines.add(PostingRequest.cr(AccountRole.RENTER_REFUND_PAYABLE, netRefund)
-                    .withNarration("Deposit refund payable to the renter"));
+                    .withNarration(REFUND_PAYABLE_NARRATION));
         }
 
         if (lines.isEmpty()) {
@@ -746,16 +749,13 @@ public class SettlementService {
             response.setRefundPaid(money(paid));
             // R1 P1: owed is what the finalize booked to the refund payable. A settlement
             // finalized before F14-36 paid its refund from the bank and owes nothing.
+            // R2 N2: read off the STL's own refund line, whatever the mapping says now.
             BigDecimal booked = BigDecimal.ZERO;
-            Lease settled = settlement.getLeaseId() == null ? null
-                    : leaseRepository.findById(settlement.getLeaseId()).orElse(null);
-            Account payable = settled == null ? null
-                    : accountResolver.resolveOrNull(AccountRole.RENTER_REFUND_PAYABLE, propertyIdOf(settled));
-            if (settlement.getJournalId() != null && payable != null) {
+            if (settlement.getJournalId() != null) {
                 booked = jdbc.queryForObject("""
                         select coalesce(sum(l.credit), 0) from journal_lines l
-                        where l.tenant_id = :t and l.journal_entry_id = :e and l.account_id = :a""",
-                        p.addValue("e", settlement.getJournalId()).addValue("a", payable.getId()), BigDecimal.class);
+                        where l.tenant_id = :t and l.journal_entry_id = :e and l.narration = :n""",
+                        p.addValue("e", settlement.getJournalId()).addValue("n", REFUND_PAYABLE_NARRATION), BigDecimal.class);
             }
             response.setRefundOutstanding(settlement.getStatus() == SettlementStatus.FINALIZED
                     ? money(booked.subtract(paid).max(BigDecimal.ZERO)) : BigDecimal.ZERO);

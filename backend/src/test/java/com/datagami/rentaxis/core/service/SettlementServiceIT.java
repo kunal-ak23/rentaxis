@@ -1130,6 +1130,27 @@ class SettlementServiceIT extends AbstractPostgresIT {
                 .hasMessageContaining("was paid when it was finalized");
     }
 
+    /** R2 N2: owed is read off the STL's own refund line, so a later mapping change does not zero it. */
+    @Test
+    void owedFollowsTheLeafTheFinalizeCreditedEvenAfterTheMappingChanges() {
+        UUID leaseId = terminatedGalah();
+        saveDraft(leaseId);
+        SettlementResponseDTO done = finalize(leaseId, null);
+        UUID original = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
+        UUID other = tx.execute(st -> accountService.createLeaf("Refunds payable – elsewhere",
+                accountService.getAccountByCode("B-01"), null).getId());
+        jdbcTemplate.update("update tenant_default_account_mappings set account_id = ? where role = 'RENTER_REFUND_PAYABLE'"
+                + " and tenant_id = ?", other, fixtures.tenantId());
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getRefundOutstanding())
+                .isEqualByComparingTo("8239.73");
+        Voucher paid = vouchers.post(vouchers.createDraft(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherInput(
+                VoucherType.BPV, SETTLED_ON, null, null, "Refund", null, null, leaf(AccountRole.BANK).getId(), null, null,
+                List.of(new com.datagami.rentaxis.core.service.voucher.VoucherService.VoucherLineInput(
+                        original, "Refund", new BigDecimal("8239.73"), BigDecimal.ZERO, null, null)),
+                null, null, VoucherPaymentMethod.TRANSFER, "TRF-N2", done.getId())).getId(), List.of());
+        assertThat(paid.getStatus()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.VoucherStatus.POSTED);
+    }
+
     /** R1 P2-4: the refund payable is only paid through a voucher naming the settlement. */
     @Test
     void aPlainPaymentOnTheRefundPayableIsRefused() {

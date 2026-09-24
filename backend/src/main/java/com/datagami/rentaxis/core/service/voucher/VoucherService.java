@@ -1185,7 +1185,9 @@ public class VoucherService {
      * tracking never sees.
      */
     private void requireRefundPayableNamesASettlement(VoucherInput in) {
-        if (in.settlementId() != null || accountResolver == null) return;
+        // R2 N4: debits only. A supplier credit note's lines are credits, so a
+        // correcting credit to the payable is not blocked.
+        if (in.settlementId() != null || accountResolver == null || in.docType() == VoucherType.PCN) return;
         java.util.Set<UUID> payables = new java.util.HashSet<>(entityManager.createQuery(
                 "select m.account.id from TenantDefaultAccountMapping m where m.role = :r", UUID.class)
                 .setParameter("r", com.datagami.rentaxis.domain.entity.enums.AccountRole.RENTER_REFUND_PAYABLE)
@@ -1218,8 +1220,20 @@ public class VoucherService {
         return s;
     }
 
-    /** The payable leaf the settlement's STL credited: RENTER_REFUND_PAYABLE resolved for its property (R1 P3-2). */
+    /**
+     * The payable leaf the settlement's STL credited (R2 N2: read off the journal's
+     * refund line); for a journal without one, RENTER_REFUND_PAYABLE resolved for its
+     * property (R1 P3-2).
+     */
     private UUID refundPayableLeaf(com.datagami.rentaxis.domain.entity.LeaseSettlement s) {
+        if (s.getJournalId() != null) {
+            List<UUID> credited = entityManager.createQuery(
+                    "select l.account.id from JournalLine l where l.entry.id = :e and l.narration = :n and l.credit > 0",
+                    UUID.class).setParameter("e", s.getJournalId())
+                    .setParameter("n", com.datagami.rentaxis.core.service.SettlementService.REFUND_PAYABLE_NARRATION)
+                    .getResultList();
+            if (!credited.isEmpty()) return credited.get(0);
+        }
         if (accountResolver == null) throw new IllegalStateException("No account resolver");
         com.datagami.rentaxis.domain.entity.Lease lease =
                 entityManager.find(com.datagami.rentaxis.domain.entity.Lease.class, s.getLeaseId());
@@ -1237,8 +1251,10 @@ public class VoucherService {
     public BigDecimal refundBooked(com.datagami.rentaxis.domain.entity.LeaseSettlement s) {
         if (s.getJournalId() == null) return BigDecimal.ZERO;
         return (BigDecimal) entityManager.createQuery(
-                "select coalesce(sum(l.credit), 0) from JournalLine l where l.entry.id = :e and l.account.id = :a")
-                .setParameter("e", s.getJournalId()).setParameter("a", refundPayableLeaf(s)).getSingleResult();
+                "select coalesce(sum(l.credit), 0) from JournalLine l where l.entry.id = :e and l.narration = :n")
+                .setParameter("e", s.getJournalId())
+                .setParameter("n", com.datagami.rentaxis.core.service.SettlementService.REFUND_PAYABLE_NARRATION)
+                .getSingleResult();
     }
 
     /** F14-36: what a settlement's refund still owes: what finalize booked less every POSTED payment naming it. */

@@ -117,8 +117,8 @@ public class PenaltyAssessmentService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final NotificationService notificationService;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.datagami.rentaxis.domain.repository.JournalEntryRepository journalEntries;
+    /** R2 N3: required, so the reversal-date rule can never be skipped. */
+    private final com.datagami.rentaxis.domain.repository.JournalEntryRepository journalEntries;
 
     public PenaltyAssessmentService(PenaltyAssessmentRepository repository,
                                     LeaseRepository leaseRepository,
@@ -126,7 +126,9 @@ public class PenaltyAssessmentService {
                                     PostingService postingService,
                                     ChequeService chequeService,
                                     LeaseAccessPolicy leaseAccessPolicy,
-                                    NotificationService notificationService) {
+                                    NotificationService notificationService,
+                                    com.datagami.rentaxis.domain.repository.JournalEntryRepository journalEntries) {
+        this.journalEntries = journalEntries;
         this.repository = repository;
         this.leaseRepository = leaseRepository;
         this.chequeRepository = chequeRepository;
@@ -424,9 +426,9 @@ public class PenaltyAssessmentService {
         }
         LocalDate on = date != null ? date : LocalDate.now();
         // R1 P2-3 (the F14-41 rule): not before the penalty was charged.
-        com.datagami.rentaxis.domain.entity.JournalEntry pen = journalEntries == null ? null
-                : journalEntries.findById(a.getJournalId()).orElse(null);
-        if (pen != null && pen.getEntryDate() != null && on.isBefore(pen.getEntryDate())) {
+        com.datagami.rentaxis.domain.entity.JournalEntry pen = journalEntries.findById(a.getJournalId())
+                .orElseThrow(() -> new IllegalStateException("Penalty journal " + a.getJournalId() + " not found"));
+        if (pen.getEntryDate() != null && on.isBefore(pen.getEntryDate())) {
             java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
             throw new BusinessRuleViolationException("A reversal cannot be dated before the penalty was charged ("
                     + pen.getEntryDate().format(dmy) + ")", "penalty.reverseBeforeCharge",
