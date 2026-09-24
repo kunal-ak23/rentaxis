@@ -3535,6 +3535,7 @@
     "needsLeaf": "Assign a ledger account before reconciling",
     "editLeaves": "Ledger accounts",
     "leavesHint": "Every bank ledger account whose money is in this real account. A ledger account belongs to one bank account.",
+    "leafOwnedBy": "owned by {bank}",
     "save": "Save",
     "cancel": "Cancel",
     "close": "Close",

@@ -109,7 +109,7 @@ export default function BankReconciliationPage() {
                                         <button type="button" className={small} data-testid={`import-${r.accountNumber}`} onClick={() => setImporting(r)}>
                                             <FileUp size={12} />{t("import")}
                                         </button>
-                                        <button type="button" className={small} onClick={() => setEditing(r)}><Layers size={12} />{t("editLeaves")}</button>
+                                        <button type="button" className={small} data-testid={`edit-leaves-${r.accountNumber}`} onClick={() => setEditing(r)}><Layers size={12} />{t("editLeaves")}</button>
                                         <button type="button" className={small} onClick={() => setHistory(r)}>{t("history")}</button>
                                         <Link href={`/dashboard/finance/bank-reconciliation/${r.id}`} className={small}>
                                             <ListChecks size={12} />{t("open")}
@@ -125,7 +125,10 @@ export default function BankReconciliationPage() {
                 <StatementImportDialog bankAccountId={importing.id} bankName={importing.bankName}
                                        onClose={() => setImporting(null)} onImported={load} />
             )}
-            {editing && <LeavesDialog row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+            {editing && (
+                <LeavesDialog row={editing} otherRows={(rows ?? []).filter(r => r.id !== editing.id)}
+                              onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+            )}
             {history && <HistoryDialog row={history} onClose={() => setHistory(null)} onChanged={load} />}
             {reopening && <ReopenDialog row={reopening} onClose={() => setReopening(null)} onDone={() => { setReopening(null); load(); }} />}
         </div>
@@ -133,13 +136,20 @@ export default function BankReconciliationPage() {
 }
 
 /** The ledger-account set and the bank's TRN. */
-function LeavesDialog({ row, onClose, onSaved }: { row: BankAccountRow; onClose: () => void; onSaved: () => void }) {
+function LeavesDialog({ row, otherRows, onClose, onSaved }: {
+    row: BankAccountRow; otherRows: BankAccountRow[]; onClose: () => void; onSaved: () => void;
+}) {
     const t = useTranslations("BankRec");
     const [leaves, setLeaves] = useState<Account[]>([]);
     const [picked, setPicked] = useState<Set<string>>(new Set(row.leaves.map(l => l.id)));
     const [trn, setTrn] = useState(row.bankTrn ?? "");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+
+    // F14-55: a leaf already assigned to a DIFFERENT bank account is shown,
+    // disabled, with whose it is — never offered as if it were free.
+    const ownedElsewhere = new Map<string, string>();
+    for (const r of otherRows) for (const l of r.leaves) ownedElsewhere.set(l.id, r.bankName);
 
     useEffect(() => {
         loadAccounts().then(a => setLeaves(a.filter(x => !x.group && x.active && x.accountSubType === "BANK"))).catch(() => {});
@@ -168,17 +178,25 @@ function LeavesDialog({ row, onClose, onSaved }: { row: BankAccountRow; onClose:
         <Modal title={`${t("editLeaves")} — ${row.bankName}`} onClose={onClose} testId="leaves-dialog">
             <p className="text-xs text-muted mb-3">{t("leavesHint")}</p>
             <div className="space-y-1 max-h-64 overflow-y-auto mb-4">
-                {leaves.map(a => (
-                    <label key={a.id} className="flex items-center gap-2 text-xs">
-                        <input type="checkbox" checked={picked.has(a.id)} data-testid={`leaf-${a.code}`}
-                               onChange={e => setPicked(s => {
-                                   const n = new Set(s);
-                                   if (e.target.checked) n.add(a.id); else n.delete(a.id);
-                                   return n;
-                               })} />
-                        <span className="text-muted">{a.code}</span> {a.name}
-                    </label>
-                ))}
+                {leaves.map(a => {
+                    const owner = ownedElsewhere.get(a.id);
+                    return (
+                        <label key={a.id} className={`flex items-center gap-2 text-xs ${owner ? "opacity-50" : ""}`}>
+                            <input type="checkbox" checked={picked.has(a.id)} disabled={!!owner} data-testid={`leaf-${a.code}`}
+                                   onChange={e => setPicked(s => {
+                                       const n = new Set(s);
+                                       if (e.target.checked) n.add(a.id); else n.delete(a.id);
+                                       return n;
+                                   })} />
+                            <span className="text-muted">{a.code}</span> {a.name}
+                            {owner && (
+                                <span className="text-[10px] text-muted" data-testid={`leaf-owned-${a.code}`}>
+                                    {t("leafOwnedBy", { bank: owner })}
+                                </span>
+                            )}
+                        </label>
+                    );
+                })}
             </div>
             <label className="block text-xs mb-1 font-semibold">{t("bankTrn")}</label>
             <input className={`${field} w-full mb-1`} value={trn} onChange={e => setTrn(e.target.value)} data-testid="bank-trn" dir="ltr" />
