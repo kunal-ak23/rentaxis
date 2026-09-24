@@ -50,6 +50,7 @@ public class DashboardService {
     private final LeaseRepository leaseRepository;
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
+    private final com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
 
     /**
      * The whole dashboard, for whoever is asking.
@@ -173,11 +174,14 @@ public class DashboardService {
         // show a renter as late days before their own contract says they are.
         BigDecimal overdueAmount = BigDecimal.ZERO;
         if (!scope.blocked()) {
-            for (Cheque c : chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
-                    org.springframework.data.domain.Pageable.unpaged()).getContent()) {
+            List<Cheque> due = chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
+                    org.springframework.data.domain.Pageable.unpaged()).getContent();
+            // F14-08: a bounced row counts only for the debt the ledger still carries.
+            Map<java.util.UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
+            for (Cheque c : due) {
                 Lease lease = c.getLease();
                 if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
-                    overdueAmount = overdueAmount.add(nz(c.getAmount()));
+                    overdueAmount = overdueAmount.add(open.get(c.getId()));
                 }
             }
         }

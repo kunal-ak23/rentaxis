@@ -55,7 +55,8 @@ class DashboardServicePendingThisMonthTest {
         leaseAccessPolicy = mock(LeaseAccessPolicy.class);
         when(leaseAccessPolicy.visiblePropertyIds()).thenReturn(null);
         service = new DashboardService(propertyRepository, unitRepository, leaseRepository,
-                chequeRepository, leaseAccessPolicy);
+                chequeRepository, leaseAccessPolicy,
+                new com.datagami.rentaxis.core.service.cheque.BouncedDebt(null));
     }
 
     @Test
