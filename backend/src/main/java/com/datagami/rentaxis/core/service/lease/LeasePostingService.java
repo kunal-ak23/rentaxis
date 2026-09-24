@@ -377,6 +377,11 @@ public class LeasePostingService {
         // own contents: no amount of fixing the grid makes this door the right one.
         draftImportBatchProblem(leaseId).ifPresent(errors::add);
         errors.addAll(plan.errors(propertyIdOf(lease)));
+        // F14-13: the unit-occupancy refusal markActiveOnPosting gives at the end of
+        // the post, asked the same way, so "Ready to post" cannot precede it.
+        if (lease.getStatus() == LeaseStatus.DRAFT || lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
+            leaseService.postingConflict(lease).ifPresent(errors::add);
+        }
         // What "carry the deposit forward" is actually worth today. Shown because
         // it is not the figure on last year's contract — a partly refunded deposit
         // carries only what is left — and an accountant approving the renewal

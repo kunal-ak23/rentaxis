@@ -18,10 +18,13 @@ public class UnitService {
     private final UnitRepository repository;
     private final TenantReferences refs;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
+    private final com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepository;
 
     public UnitService(UnitRepository repository, TenantReferences refs,
-                       com.datagami.rentaxis.core.security.PropertyScope propertyScope) {
+                       com.datagami.rentaxis.core.security.PropertyScope propertyScope,
+                       com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepository) {
         this.propertyScope = propertyScope;
+        this.leaseRepository = leaseRepository;
         this.repository = repository;
         this.refs = refs;
     }
@@ -73,13 +76,46 @@ public class UnitService {
         if (!propertyScope.canAccessProperty(propertyId)) {
             return List.of();
         }
-        return repository.findByPropertyId(propertyId);
+        return withOccupancy(repository.findByPropertyId(propertyId));
     }
 
     @Transactional(readOnly = true)
     public List<Unit> getAllUnits() {
-        return propertyScope.filter(repository.findAll(),
-                u -> u.getProperty() != null ? u.getProperty().getId() : null);
+        return withOccupancy(propertyScope.filter(repository.findAll(),
+                u -> u.getProperty() != null ? u.getProperty().getId() : null));
+    }
+
+    /**
+     * F14-01: fills each unit's date-based occupancy from its posted leases, in one
+     * query. A lease posted today for next month reserves the unit; it occupies it
+     * from its start date.
+     */
+    List<Unit> withOccupancy(List<Unit> units) {
+        if (units.isEmpty()) return units;
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.Lease>> byUnit = new java.util.HashMap<>();
+        leaseRepository.currentOrUpcomingOnUnits(units.stream().map(Unit::getId).toList(), today)
+                .forEach(l -> byUnit.computeIfAbsent(l.getUnit().getId(), k -> new java.util.ArrayList<>()).add(l));
+        for (Unit u : units) {
+            List<com.datagami.rentaxis.domain.entity.Lease> leases = byUnit.getOrDefault(u.getId(), List.of());
+            boolean covered = leases.stream().anyMatch(l -> l.getStartDate() == null || !l.getStartDate().isAfter(today));
+            com.datagami.rentaxis.domain.entity.Lease next = leases.stream()
+                    .filter(l -> l.getStartDate() != null && l.getStartDate().isAfter(today)
+                            && l.getStatus() != com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+                    .min(java.util.Comparator.comparing(com.datagami.rentaxis.domain.entity.Lease::getStartDate))
+                    .orElse(null);
+            u.setOccupancy(occupancyOf(u.getStatus(), covered, next != null));
+            u.setNextLeaseStart(next != null ? next.getStartDate() : null);
+            u.setNextTenantName(next != null && next.getRenter() != null ? next.getRenter().getNameEn() : null);
+        }
+        return units;
+    }
+
+    static String occupancyOf(com.datagami.rentaxis.domain.entity.enums.UnitStatus status, boolean covered,
+                              boolean upcoming) {
+        if (covered) return "OCCUPIED";
+        if (upcoming) return "RESERVED";
+        return status == com.datagami.rentaxis.domain.entity.enums.UnitStatus.MAINTENANCE ? "MAINTENANCE" : "VACANT";
     }
 
     /**

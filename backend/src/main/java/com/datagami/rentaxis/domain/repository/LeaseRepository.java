@@ -43,6 +43,53 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                                @Param("propertyIds") Collection<UUID> propertyIds);
 
     /**
+     * F14-01: units whose tenancy covers {@code today} — a posted lease (ACTIVE,
+     * NOTICE_GIVEN or RENEWED) with {@code start <= today <= end}, the end cut short
+     * by a termination date. A posted lease that starts later does not occupy the
+     * unit yet. Distinct units, within the caller's properties.
+     */
+    @Query("""
+        select distinct l.unit.id from Lease l
+        where l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+          and l.unit is not null
+          and (l.startDate is null or l.startDate <= :today)
+          and coalesce(l.terminatedOn, l.endDate) >= :today
+          and (:unrestricted = true or l.unit.property.id in :propertyIds)
+        """)
+    List<UUID> unitIdsOccupiedOnInScope(@Param("today") LocalDate today,
+                                        @Param("unrestricted") boolean unrestricted,
+                                        @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * F14-01: units with a posted lease that starts after {@code today} — reserved
+     * (upcoming), whether or not a current lease also covers today.
+     */
+    @Query("""
+        select distinct l.unit.id from Lease l
+        where l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN)
+          and l.unit is not null
+          and l.startDate > :today
+          and (:unrestricted = true or l.unit.property.id in :propertyIds)
+        """)
+    List<UUID> unitIdsReservedAfterInScope(@Param("today") LocalDate today,
+                                           @Param("unrestricted") boolean unrestricted,
+                                           @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /** F14-01: the posted leases on these units that cover today or start later (unit lists). */
+    @Query("""
+        select l from Lease l join fetch l.renter
+        where l.unit.id in :unitIds
+          and l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+          and coalesce(l.terminatedOn, l.endDate) >= :today
+        """)
+    List<Lease> currentOrUpcomingOnUnits(@Param("unitIds") Collection<UUID> unitIds, @Param("today") LocalDate today);
+
+    /**
      * Live tenancies ending inside {@code [from, to]}, within the caller's
      * properties — the "expiring soon" tile.
      */

@@ -249,17 +249,79 @@ public class LeaseService {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
 
-        boolean heldByAnother = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .anyMatch(other -> !other.getId().equals(lease.getId()));
-        if (heldByAnother) {
-            throw new BusinessRuleViolationException(
-                    "This unit already has an active lease. Terminate it before activating another.");
-        }
+        // F14-14: judged by dates, not by "is anything live here". The next renter's
+        // lease starting the day after the current one ends is a back-to-back
+        // letting, not a double-let; any overlap is still refused.
+        postingConflict(lease).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
 
         unit.setStatus(UnitStatus.OCCUPIED);
-        unit.setCurrentTenantName(lease.getRenter().getNameEn());
-        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
+        // A lease that starts later does not move the sitting renter's name off the
+        // unit; it takes over when the current one is released.
+        LocalDate today = LocalDate.now();
+        boolean someoneElseLivesThereToday = holdingLeases(unit.getId()).stream()
+                .filter(other -> !other.getId().equals(lease.getId()))
+                .anyMatch(other -> covers(other, today));
+        if (!someoneElseLivesThereToday) {
+            unit.setCurrentTenantName(lease.getRenter().getNameEn());
+            unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
+        }
         unitRepository.save(unit);
+    }
+
+    /** Posted statuses that hold a unit for their term (F14-14); RENEWED keeps its term until its end. */
+    private List<Lease> holdingLeases(UUID unitId) {
+        List<Lease> out = new java.util.ArrayList<>(leaseRepository.findByUnitIdAndStatusIn(unitId, LIVE));
+        out.addAll(leaseRepository.findByUnitIdAndStatusIn(unitId, EnumSet.of(LeaseStatus.RENEWED)));
+        return out;
+    }
+
+    /** The last day a lease holds its unit: the termination date when it was cut short. */
+    private static LocalDate holdsUntil(Lease l) {
+        return l.getTerminatedOn() != null ? l.getTerminatedOn() : l.getEndDate();
+    }
+
+    private static boolean covers(Lease l, LocalDate day) {
+        return (l.getStartDate() == null || !l.getStartDate().isAfter(day))
+                && (holdsUntil(l) == null || !holdsUntil(l).isBefore(day));
+    }
+
+    /** Inclusive ranges; an open end overlaps everything on that side. */
+    static boolean overlaps(LocalDate aStart, LocalDate aEnd, LocalDate bStart, LocalDate bEnd) {
+        boolean aStartsAfterB = aStart != null && bEnd != null && aStart.isAfter(bEnd);
+        boolean bStartsAfterA = bStart != null && aEnd != null && bStart.isAfter(aEnd);
+        return !aStartsAfterB && !bStartsAfterA;
+    }
+
+    /**
+     * The posted lease on this unit whose term overlaps {@code [start, end]}, other
+     * than {@code selfId} and {@code predecessorId} (a renewal's own predecessor).
+     */
+    private java.util.Optional<Lease> overlappingLease(UUID unitId, LocalDate start, LocalDate end,
+                                                       UUID selfId, UUID predecessorId) {
+        return holdingLeases(unitId).stream()
+                .filter(other -> !other.getId().equals(selfId) && !other.getId().equals(predecessorId))
+                .filter(other -> overlaps(start, end, other.getStartDate(), holdsUntil(other)))
+                .findFirst();
+    }
+
+    private static String describe(Lease other) {
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String who = other.getRenter() != null ? other.getRenter().getNameEn() : "another renter";
+        return who + ", " + (other.getStartDate() == null ? "?" : other.getStartDate().format(dmy)) + " – "
+                + (holdsUntil(other) == null ? "?" : holdsUntil(other).format(dmy));
+    }
+
+    /**
+     * Why posting this lease would double-let its unit, if it would (F14-13/F14-14).
+     * The post refuses with it; the dry run reports it, so the two cannot disagree.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<String> postingConflict(Lease lease) {
+        if (lease.getUnit() == null) return java.util.Optional.empty();
+        return overlappingLease(lease.getUnit().getId(), lease.getStartDate(), lease.getEndDate(),
+                lease.getId(), lease.getRenewedFromLeaseId())
+                .map(other -> "This unit already has an active lease for these dates (" + describe(other)
+                        + "). Terminate it before activating another, or start this lease after it ends.");
     }
 
     /**
@@ -292,8 +354,18 @@ public class LeaseService {
                 .filter(other -> !other.getId().equals(lease.getId()))
                 .toList();
         if (!stillLive.isEmpty()) {
-            // Leave the unit as it is: another lease is live on it. Its own
-            // termination will vacate the unit.
+            // Leave the unit held: another lease is live on it. Its own termination
+            // will vacate the unit. A back-to-back successor (F14-14) takes the name
+            // over now that the lease that carried it is gone.
+            Lease next = stillLive.stream()
+                    .min(java.util.Comparator.comparing(Lease::getStartDate,
+                            java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                    .orElseThrow();
+            if (next.getRenter() != null) {
+                unit.setCurrentTenantName(next.getRenter().getNameEn());
+                unit.setActualRent(next.getRentAmount() != null ? next.getRentAmount() : BigDecimal.ZERO);
+                unitRepository.save(unit);
+            }
             return;
         }
 
@@ -304,25 +376,23 @@ public class LeaseService {
     }
 
     /**
-     * Whether the only thing standing between this unit and a new lease is the very
-     * lease being renewed.
-     *
-     * <p>Asked of the <em>leases</em>, not of {@code unit.status}. A unit is left
-     * OCCUPIED by a lease that has since expired, and a renewal of an EXPIRED
-     * contract is exactly the case this exists for; conversely a unit that looks
-     * occupied because a third lease holds it must still be refused. "No ACTIVE
-     * lease on this unit other than the predecessor" is the question that answers
-     * both, and it is the same question {@link #claimUnitForLease} asks when the
-     * successor eventually posts.</p>
+     * A draft may be cut on a unit unless it is under maintenance or a posted lease
+     * holds it for dates that overlap the draft's (F14-14): the next renter's
+     * contract from the day after the current one ends is allowed. A renewal's own
+     * predecessor never counts against it.
      */
-    private boolean heldOnlyBy(Unit unit, Lease predecessor) {
-        if (predecessor == null || predecessor.getUnit() == null
-                || !predecessor.getUnit().getId().equals(unit.getId())) {
-            return false;
+    private void requireUnitFreeFor(Unit unit, LocalDate start, LocalDate end, UUID selfId, UUID predecessorId,
+                                    String refusal) {
+        if (unit.getStatus() == UnitStatus.MAINTENANCE) {
+            throw new BusinessRuleViolationException(refusal + " It is under maintenance.");
         }
-        return leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .allMatch(other -> other.getId().equals(predecessor.getId()));
+        java.util.Optional<Lease> other = overlappingLease(unit.getId(), start, end, selfId, predecessorId);
+        if (other.isPresent()) {
+            throw new BusinessRuleViolationException(refusal + " It is let for overlapping dates ("
+                    + describe(other.get()) + ").");
+        }
     }
+
 
     /**
      * The lease row, locked FOR UPDATE and tenant-checked — what a status
@@ -428,9 +498,8 @@ public class LeaseService {
         // keep letting it to the person living in it. Any other occupancy is still
         // refused, so a renewal cannot be used to slip a second lease onto a unit
         // a third contract holds.
-        if (unit.getStatus() != UnitStatus.VACANT && !heldOnlyBy(unit, predecessor)) {
-            throw new BusinessRuleViolationException("Cannot create lease. Unit is not vacant.");
-        }
+        requireUnitFreeFor(unit, dto.getStartDate(), dto.getEndDate(), null,
+                predecessor != null ? predecessor.getId() : null, "Cannot create lease. Unit is not vacant.");
 
         Renter renter = renterRepository.findById(dto.getRenterId())
                 .orElseThrow(() -> new NotFoundException("Renter not found"));
@@ -492,9 +561,9 @@ public class LeaseService {
         if (!lease.getUnit().getId().equals(dto.getUnitId())) {
             Unit newUnit = unitRepository.findById(dto.getUnitId())
                     .orElseThrow(() -> new NotFoundException("Unit not found"));
-            if (newUnit.getStatus() != UnitStatus.VACANT) {
-                throw new BusinessRuleViolationException("Cannot assign lease. Unit is not vacant.");
-            }
+            requireUnitFreeFor(newUnit, dto.getStartDate() != null ? dto.getStartDate() : lease.getStartDate(),
+                    dto.getEndDate() != null ? dto.getEndDate() : lease.getEndDate(), lease.getId(),
+                    lease.getRenewedFromLeaseId(), "Cannot assign lease. Unit is not vacant.");
             lease.setUnit(newUnit);
         }
 
@@ -1609,7 +1678,9 @@ public class LeaseService {
                 l.isVatApplicable(),
                 l.getPeriodStart(),
                 l.getPeriodEnd(),
-                l.getAddendumId());
+                l.getAddendumId(),
+                type != null ? type.getNameAr() : null,
+                credit != null ? credit.getNameAr() : null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

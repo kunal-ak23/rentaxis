@@ -79,23 +79,33 @@ public class DashboardService {
                 : (int) propertyRepository.countInScope(scope.unrestricted(), scope.propertyIds()));
 
         long totalUnits = 0;
+        long maintenanceCount = 0;
         long occupiedCount = 0;
-        long vacantCount = 0;
+        long reservedCount = 0;
         if (!scope.blocked()) {
             for (Object[] row : unitRepository.countByStatusInScope(
                     scope.unrestricted(), scope.propertyIds())) {
                 UnitStatus status = (UnitStatus) row[0];
                 long count = ((Number) row[1]).longValue();
                 totalUnits += count;
-                if (status == UnitStatus.OCCUPIED) {
-                    occupiedCount = count;
-                } else if (status == UnitStatus.VACANT) {
-                    vacantCount = count;
+                if (status == UnitStatus.MAINTENANCE) {
+                    maintenanceCount = count;
                 }
             }
+            // F14-01: occupied means a posted lease whose term covers today, not
+            // unit.status — posting flips the unit to OCCUPIED the day the contract
+            // is signed, which for a lease starting next month is a reservation.
+            java.util.Set<java.util.UUID> occupied = new java.util.HashSet<>(leaseRepository.unitIdsOccupiedOnInScope(
+                    today, scope.unrestricted(), scope.propertyIds()));
+            occupiedCount = occupied.size();
+            reservedCount = leaseRepository.unitIdsReservedAfterInScope(
+                    today, scope.unrestricted(), scope.propertyIds()).stream()
+                    .filter(id -> !occupied.contains(id)).count();
         }
+        long vacantCount = Math.max(0, totalUnits - occupiedCount - reservedCount - maintenanceCount);
         summary.setTotalUnits((int) totalUnits);
         summary.setOccupiedUnits((int) occupiedCount);
+        summary.setReservedUnits((int) reservedCount);
         summary.setVacantUnits((int) vacantCount);
         // Of the units the caller can see. A manager's occupancy is their own
         // buildings' occupancy; averaging in the rest of the estate would tell them

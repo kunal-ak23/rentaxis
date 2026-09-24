@@ -1,0 +1,56 @@
+# F14-14: a unit may carry the next renter's posted lease from the day after the
+# current one ends (back-to-back letting). ux_leases_one_active_per_unit (80,
+# widened in 86) allowed one ACTIVE/NOTICE_GIVEN lease per unit whatever the dates,
+# which refused that. It is replaced by an exclusion constraint on the dates: two
+# live leases on one unit may not overlap.
+databaseChangeLog:
+  - changeSet:
+      id: 116-drop-one-live-lease-per-unit
+      author: claude
+      comment: Drop the one-live-lease-per-unit index; overlap is judged by dates (F14-14)
+      changes:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_leases_one_active_per_unit
+      rollback:
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX IF NOT EXISTS ux_leases_one_active_per_unit
+              ON leases (unit_id) WHERE status IN ('ACTIVE', 'NOTICE_GIVEN')
+
+  # Separate changeset so a database that still holds overlapping live leases
+  # (legacy data) keeps the index drop and starts normally; the service layer
+  # refuses new overlaps under the unit row lock, and this constraint is created on
+  # the first deploy after the overlaps are resolved.
+  - changeSet:
+      id: 116-no-overlapping-live-leases-per-unit
+      author: claude
+      comment: Exclusion constraint - no two ACTIVE/NOTICE_GIVEN leases on one unit with overlapping terms
+      preConditions:
+        - onFail: CONTINUE
+        - onError: CONTINUE
+        - onFailMessage: >-
+            Skipped 116-no-overlapping-live-leases-per-unit: this database has units
+            with two live leases whose terms overlap. Startup continues and the
+            service layer prevents new overlaps. Resolve them and the constraint is
+            created on the next deploy.
+        - sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT (SELECT count(*) FROM leases
+                       WHERE status IN ('ACTIVE', 'NOTICE_GIVEN') AND end_date < start_date)
+                   + (SELECT count(*) FROM leases a JOIN leases b
+                        ON a.unit_id = b.unit_id AND a.id < b.id
+                      WHERE a.status IN ('ACTIVE', 'NOTICE_GIVEN') AND b.status IN ('ACTIVE', 'NOTICE_GIVEN')
+                        AND (a.start_date IS NULL OR b.end_date IS NULL OR a.start_date <= b.end_date)
+                        AND (b.start_date IS NULL OR a.end_date IS NULL OR b.start_date <= a.end_date))
+      changes:
+        - sql:
+            sql: CREATE EXTENSION IF NOT EXISTS btree_gist
+        - sql:
+            sql: >-
+              ALTER TABLE leases ADD CONSTRAINT ex_leases_no_overlap_per_unit
+              EXCLUDE USING gist (unit_id WITH =, daterange(start_date, end_date, '[]') WITH &&)
+              WHERE (status IN ('ACTIVE', 'NOTICE_GIVEN') AND unit_id IS NOT NULL)
+      rollback:
+        - sql:
+            sql: ALTER TABLE leases DROP CONSTRAINT IF EXISTS ex_leases_no_overlap_per_unit

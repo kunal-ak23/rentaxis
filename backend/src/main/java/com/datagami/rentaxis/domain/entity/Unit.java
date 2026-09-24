@@ -59,4 +59,27 @@ public class Unit extends BaseTenantEntity {
 
     @Version
     private Long version;
+
+    /**
+     * F14-01: occupancy by date, for the unit lists — OCCUPIED (a posted lease
+     * covers today), RESERVED (a posted lease starts later and none covers today),
+     * VACANT or MAINTENANCE. Derived by UnitService on read; {@link #status} stays
+     * the "held by a posted lease" marker the lease flow locks on.
+     */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private String occupancy;
+
+    /** F14-01: the start of the next posted lease (RESERVED, or a back-to-back after the current one). */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private java.time.LocalDate nextLeaseStart;
+
+    /** F14-01: the renter of that next lease. */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private String nextTenantName;
 }
