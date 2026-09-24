@@ -17,6 +17,7 @@ import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
 import { ApiError, chequeApi, onlinePayApi, type RenterCheque } from "@/lib/api/leasing";
 import PayOnlineButton from "@/components/renter/PayOnlineButton";
+import RenterTaxInvoices from "@/components/renter/RenterTaxInvoices";
 
 /**
  * The renter's own payments screen, on accounting-v2's own cheque register
@@ -304,6 +305,7 @@ export default function RenterPaymentsPage() {
                     )}
                 </>
             )}
+            <RenterTaxInvoices />
         </div>
     );
 }

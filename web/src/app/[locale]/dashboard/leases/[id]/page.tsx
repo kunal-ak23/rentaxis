@@ -33,6 +33,7 @@ import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
+import VatScheduleTab from "@/components/leases/VatScheduleTab";
 import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
@@ -120,7 +121,7 @@ const TICKET_STATUS_COLORS: Record<string, string> = {
     CLOSED: "bg-input text-muted", REOPENED: "bg-error/10 text-error",
 };
 
-const TABS = ["overview", "journals", "recognition", "penalties", "contract", "maintenance", "documents", "interactions"] as const;
+const TABS = ["overview", "journals", "recognition", "vat", "penalties", "contract", "maintenance", "documents", "interactions"] as const;
 type Tab = typeof TABS[number];
 
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
@@ -697,7 +698,9 @@ export default function LeaseDetailPage() {
 
                 {/* ── Tabs ───────────────────────────────────────────── */}
                 <div className="flex gap-1 border-b border-border overflow-x-auto">
-                    {TABS.map(key => (
+                    {/* The VAT schedule only exists for a contract that charges VAT
+                        (spec 2026-09-24 §1). */}
+                    {TABS.filter(key => key !== "vat" || totals.vat > 0).map(key => (
                         <button
                             key={key}
                             onClick={() => setTab(key)}
@@ -766,6 +769,7 @@ export default function LeaseDetailPage() {
                                         onGenerateNumbers={n => runCheques(() => leaseApi.generateChequeNumbers(leaseId, n))}
                                         propertyId={lease.propertyId}
                                         contractValueInclVat={totals.inclVat}
+                                        contractVat={totals.vat}
                                         defaultInstallments={lease.paymentTerms ?? 4}
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
                                         defaultDistribution={lease.installmentDistribution}
@@ -823,6 +827,16 @@ export default function LeaseDetailPage() {
                             // A truncated schedule is meant to be shorter than
                             // the contract's rent, so the tab reports progress
                             // instead of flagging a mismatch that is not one.
+                            terminated={lease.terminatedOn != null}
+                        />
+                    </div>
+                )}
+
+                {tab === "vat" && totals.vat > 0 && (
+                    <div data-testid="lease-vat-schedule">
+                        <VatScheduleTab
+                            leaseId={leaseId}
+                            contractVat={totals.vat}
                             terminated={lease.terminatedOn != null}
                         />
                     </div>
@@ -1160,6 +1174,7 @@ export default function LeaseDetailPage() {
             case "overview": return t("overviewTab");
             case "journals": return t("journalsTab");
             case "recognition": return t("recognitionSchedule");
+            case "vat": return t("vatScheduleTab");
             case "penalties": return t("penaltiesTab");
             case "contract": return tMaster("contractNumber");
             case "maintenance": return tMaster("maintenanceTickets");

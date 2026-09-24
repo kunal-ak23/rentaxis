@@ -279,3 +279,51 @@ describe("Unearned VAT", () => {
         expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("5,000.00");
     });
 });
+
+/**
+ * VAT per instalment (spec 2026-09-24 §1): the preview shows what the TCR does to
+ * VAT not yet declared — the tax points due by T posted first, the pending VAT
+ * reversed from the deferred account, and either VAT declared at T (P > U) or
+ * credited back (U > P).
+ */
+describe("VAT settlement", () => {
+    it("shows the declared-at-T pair when pending VAT exceeds the VAT on unearned rent", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            unearnedVat: 2975.34,
+            vatSettlement: {
+                dueByTerminationDate: 0, pendingCancelled: 3000, reversedFromDeferred: 2975.34,
+                declaredAtTermination: 24.66, creditedBack: 0,
+            },
+        });
+        renderPage();
+        expect(await screen.findByTestId("terminate-vat-settlement")).toBeInTheDocument();
+        expect(screen.getByTestId("terminate-vat-reversed")).toHaveTextContent("2,975.34");
+        expect(screen.getByTestId("terminate-vat-declared")).toHaveTextContent("24.66");
+        expect(screen.queryByTestId("terminate-vat-credited")).toBeNull();
+    });
+
+    it("shows the credit note when the VAT on unearned rent exceeds what is pending", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            unearnedVat: 1536.99,
+            vatSettlement: {
+                dueByTerminationDate: 1275, pendingCancelled: 1275, reversedFromDeferred: 1275,
+                declaredAtTermination: 0, creditedBack: 261.99,
+            },
+        });
+        renderPage();
+        expect(await screen.findByTestId("terminate-vat-credited")).toHaveTextContent("261.99");
+        expect(screen.getByTestId("terminate-vat-due")).toHaveTextContent("1,275.00");
+    });
+
+    it("is not shown on a lease with no VAT to settle", async () => {
+        api.preview.mockResolvedValue({
+            ...PREVIEW,
+            vatSettlement: { dueByTerminationDate: 0, pendingCancelled: 0, reversedFromDeferred: 0, declaredAtTermination: 0, creditedBack: 0 },
+        });
+        renderPage();
+        await screen.findByTestId("terminate-unearned");
+        expect(screen.queryByTestId("terminate-vat-settlement")).toBeNull();
+    });
+});

@@ -293,6 +293,12 @@ export type ChequeRowInput = {
   amount: number;
   narration?: string | null;
   mode?: ChequeMode | null;
+  /**
+   * The output VAT inside `amount` (spec 2026-09-24 §1). Null/absent asks the
+   * server for the pro-rata default: the rows without a figure share whatever of
+   * the contract's VAT the others have not claimed.
+   */
+  vatAmount?: number | null;
 };
 
 /** ExtendLeaseRequest. */
@@ -386,6 +392,88 @@ export type Cheque = {
   due: boolean;
   overdue: boolean;
   daysOverdue: number;
+  /**
+   * The VAT this instalment collects (part of `amount`) and the net it is charged
+   * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
+   * yet, whose VAT the server has still to work out, is typed honestly.
+   */
+  vatAmount?: number | null;
+  vatTaxableAmount?: number | null;
+};
+
+// ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----
+
+export type VatTaxPointKind = "INSTALMENT" | "TERMINATION_ADJUSTMENT";
+export type VatTaxPointStatus = "PLANNED" | "POSTED" | "CANCELLED";
+export type TaxInvoiceKind = "TAX_INVOICE" | "CREDIT_NOTE";
+
+/** VatTaxPointDTO — one row of a lease's VAT schedule. */
+export type VatTaxPoint = {
+  id: string;
+  leaseId: string;
+  chequeId: string | null;
+  chequeSeqNo: number | null;
+  chequeNumber: string | null;
+  propertyId: string | null;
+  propertyName: string | null;
+  unitNumber: string | null;
+  kind: VatTaxPointKind;
+  taxPointDate: string;
+  /** Signed: a termination adjustment that credits VAT back is negative. */
+  taxableAmount: number;
+  vatAmount: number;
+  status: VatTaxPointStatus;
+  journalId: string | null;
+  journalNumber: string | null;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+};
+
+/** VatTaxPointRunResult — what "run tax points to date" did, or would do. */
+export type VatTaxPointRunResult = {
+  preview: boolean;
+  posted: number;
+  wouldPost: number;
+  vatAmount: number;
+  points: VatTaxPoint[];
+  skippedLocked: number;
+  booksLockedThrough: string | null;
+  errors: string[];
+};
+
+/** TaxInvoiceDTO — a tax invoice or credit note issued on a tax point. */
+export type TaxInvoice = {
+  id: string;
+  invoiceNumber: string;
+  kind: TaxInvoiceKind;
+  issueDate: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  leaseId: string;
+  chequeId: string | null;
+  propertyName: string | null;
+  unitNumber: string | null;
+  customerName: string | null;
+  taxableAmount: number;
+  vatRate: number;
+  vatAmount: number;
+  totalAmount: number;
+};
+
+/**
+ * `VatController`. The schedule and the run are staff-only; a renter reaches
+ * their own invoices through `mine` and `pdfUrl` (the server checks the invoice
+ * is addressed to them).
+ */
+export const vatApi = {
+  schedule: (leaseId: string) => get<VatTaxPoint[]>(`/leases/${leaseId}/vat-schedule`),
+  leaseInvoices: (leaseId: string) => get<TaxInvoice[]>(`/leases/${leaseId}/tax-invoices`),
+  myInvoices: () => get<TaxInvoice[]>("/tax-invoices/mine"),
+  /** `dryRun: true` writes nothing and answers with `posted: 0` / `wouldPost: n`. */
+  run: (to: string | undefined, dryRun: boolean) =>
+    send<VatTaxPointRunResult>("POST", `/finance/vat/tax-points/run${qs({ to, dryRun })}`),
+  /** Not a fetch — the endpoint streams a PDF; open or download this path directly. */
+  pdfUrl: (invoiceId: string) => `${BASE}/tax-invoices/${invoiceId}/pdf`,
 };
 
 // ---- recognition (spec §8.2, §8.4 — api/dto/recognition) ----
@@ -468,6 +556,21 @@ export type TerminationPreview = {
    */
   bouncedOutstanding: Cheque[];
   receivableAfter: number;
+  /**
+   * On a lease whose VAT is declared per instalment (spec 2026-09-24 §1): the tax
+   * points due by T that post first, the pending VAT cancelled, and the settling
+   * pair — reversed from "Output VAT – not yet due", declared at T, or credited
+   * back. All zeros on a legacy lease; optional for the same reason as `unearnedVat`.
+   */
+  vatSettlement?: TerminationVatSettlement | null;
+};
+
+export type TerminationVatSettlement = {
+  dueByTerminationDate: number;
+  pendingCancelled: number;
+  reversedFromDeferred: number;
+  declaredAtTermination: number;
+  creditedBack: number;
 };
 
 /**
