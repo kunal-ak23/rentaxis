@@ -77,6 +77,7 @@ export default function MvpSidebar() {
     const tDashboard = useTranslations("Dashboard");
     const tVendors = useTranslations("Vendors");
     const tBankAccounts = useTranslations("BankAccounts");
+    const tBankRec = useTranslations("BankRec");
     const tStaff = useTranslations("Staff");
     const tGatePass = useTranslations("GatePass");
     const tBookings = useTranslations("Bookings");
@@ -243,6 +244,11 @@ export default function MvpSidebar() {
             // PR 3b: PaymentRunController and IssuedChequeController, finance roles only.
             { name: tPayables("paymentRuns"), href: "/dashboard/finance/payables/payment-runs", icon: Send, tourId: 'sidebar-payables-runs' },
             { name: tPayables("issuedCheques"), href: "/dashboard/finance/payables/issued-cheques", icon: ScrollText, tourId: 'sidebar-payables-issued-cheques' },
+        ] : []),
+        // Finance → Bank reconciliation (finance-ops spec §3): BankReconciliationController,
+        // finance roles only. A property manager keeps the cheque actions on the register.
+        ...(hasPermission(userRole, 'canReconcileBank') ? [
+            { name: tBankRec("sidebar"), href: "/dashboard/finance/bank-reconciliation", icon: Landmark, tourId: 'sidebar-bank-reconciliation' },
         ] : []),
     ];
 
