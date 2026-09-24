@@ -265,10 +265,10 @@ export default function MeetingsPage() {
                         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                         initialView="dayGridMonth"
                         headerToolbar={{
-                            // FullCalendar mirrors start/end itself under direction rtl.
-                            left: "prev,next today",
+                            // start/end (not left/right) so the toolbar mirrors under direction rtl.
+                            start: "prev,next today",
                             center: "title",
-                            right: "dayGridMonth,timeGridWeek,timeGridDay",
+                            end: "dayGridMonth,timeGridWeek,timeGridDay",
                         }}
                         // Arabic month and day names, RTL grid, translated buttons.
                         locales={[arLocale]}

@@ -114,8 +114,8 @@ export default function TicketDetailPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
     const tRoles = useTranslations("Roles");
-    const enumLabel = (group: "status" | "priority" | "category", code: string) =>
-        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
+    const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
+        !code ? "" : t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
     // History notes are written in English by the server. The known shapes are
     // rebuilt here from their structured fields so they read in the viewer's
     // language; anything unrecognised is shown as stored.

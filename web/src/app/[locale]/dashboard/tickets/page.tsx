@@ -128,8 +128,8 @@ export default function TicketsPage() {
     const isRenter = userRole === "RENTER";
     // Status, priority and category arrive as enum codes; an unknown code falls
     // back to its readable form rather than a raw key path.
-    const enumLabel = (group: "status" | "priority" | "category", code: string) =>
-        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
+    const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
+        !code ? "" : t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
 
     // ── Fetch data ──────────────────────────────────────────────────────
 

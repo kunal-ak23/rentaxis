@@ -54,8 +54,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export default function TicketReportsPage() {
     const t = useTranslations("Tickets");
-    const enumLabel = (group: "status" | "priority" | "category", code: string) =>
-        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
+    const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
+        !code ? "" : t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
     const [report, setReport] = useState<TicketReport | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
