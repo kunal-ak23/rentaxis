@@ -1039,6 +1039,14 @@ export default function VoucherForm({
                                             onChange={e => setChequeDate(e.target.value)}
                                         />
                                     </div>
+                                    {/* Finance-ops spec §2: a cheque dated after the voucher credits
+                                        PDC payable, not the bank, until it is presented. */}
+                                    {chequeDate && docDate && chequeDate > docDate && (
+                                        <p data-testid="pdc-banner" role="status"
+                                           className="col-span-full text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
+                                            {t("pdcBanner")}
+                                        </p>
+                                    )}
                                 </>
                             )}
                         </>

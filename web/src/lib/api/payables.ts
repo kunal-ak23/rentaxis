@@ -186,3 +186,183 @@ export const payablesApi = {
         remove: (id: string) => apiSend<void>("DELETE", `/finance/ap-opening-items/${id}`),
     },
 };
+
+// ---------------------------------------------------------------------------
+// PR 3b: payment runs and the issued-cheques register.
+// Routes: `api/PaymentRunController.java`, `api/IssuedChequeController.java`.
+// ---------------------------------------------------------------------------
+
+export type PaymentMethod = "TRANSFER" | "CHEQUE" | "CASH";
+export type PaymentRunStatus = "DRAFT" | "POSTED" | "CANCELLED";
+
+/** `PaymentRunInputDTO`. `applyAdvance` is per vendor in effect (any item of the vendor asking applies it). */
+export type PaymentRunInput = {
+    paymentDate: string;
+    paymentAccountId: string;
+    method: PaymentMethod;
+    chequeDate?: string | null;
+    firstChequeNumber?: string | null;
+    narration?: string | null;
+    items: { invoiceId?: string | null; openingItemId?: string | null; amount: number; applyAdvance: boolean }[];
+};
+
+/** `PaymentRunDTO`. */
+export type PaymentRun = {
+    id: string;
+    runNumber: string;
+    paymentDate: string;
+    paymentAccountId: string;
+    paymentAccountCode: string | null;
+    paymentAccountName: string | null;
+    method: PaymentMethod;
+    chequeDate: string | null;
+    firstChequeNumber: string | null;
+    narration: string | null;
+    status: PaymentRunStatus;
+    createdAt: string;
+    postedAt: string | null;
+    total: number;
+    vendorCount: number;
+    items: {
+        id: string;
+        vendorId: string;
+        vendorName: string | null;
+        kind: "PISR" | "OPENING";
+        invoiceId: string | null;
+        openingItemId: string | null;
+        docNumber: string | null;
+        invoiceNumber: string | null;
+        dueDate: string | null;
+        amount: number;
+        applyAdvance: boolean;
+        bpvId: string | null;
+        bpvNumber: string | null;
+        bpvStatus: "DRAFT" | "POSTED" | "REVERSED" | null;
+        chequeNumber: string | null;
+        /** The vendor's voucher total (the net payment), repeated on each of its items. */
+        bpvAmount: number | null;
+    }[];
+};
+
+/** `PaymentRunPreviewDTO`: one payment per vendor, and every problem at once. */
+export type RunProblem = {
+    code: "PAYMENT_ACCOUNT" | "DATE_LOCKED" | "NO_PDC_ACCOUNT" | "VENDOR_INACTIVE" | "NO_PAYABLE" | "OPEN_CHANGED"
+        | "CHEQUE_TAKEN" | "NO_IBAN";
+    severity: "ERROR" | "WARNING";
+    vendorId: string | null;
+    message: string;
+    params: Record<string, string>;
+};
+export type RunPreview = {
+    runId: string;
+    runNumber: string;
+    status: PaymentRunStatus;
+    paymentDate: string;
+    method: PaymentMethod;
+    postable: boolean;
+    problems: RunProblem[];
+    vendors: {
+        vendorId: string;
+        vendorName: string | null;
+        iban: string | null;
+        bankName: string | null;
+        items: {
+            itemId: string;
+            kind: "PISR" | "OPENING";
+            docNumber: string | null;
+            invoiceNumber: string | null;
+            dueDate: string | null;
+            amount: number;
+            openNow: number;
+            advanceApplied: number;
+            paid: number;
+        }[];
+        itemsTotal: number;
+        advanceApplied: number;
+        netPayment: number;
+        chequeNumber: string | null;
+        chequeDate: string | null;
+        postDated: boolean;
+        journal: { accountCode: string | null; accountName: string | null; debit: number; credit: number }[];
+    }[];
+    itemsTotal: number;
+    advanceApplied: number;
+    netPayment: number;
+};
+
+/** `PaymentRunCandidatesDTO`. */
+export type RunCandidates = {
+    items: { item: OpenItem; draftRuns: string[] }[];
+    advances: { vendorId: string; vendorName: string | null; unallocated: number }[];
+};
+
+export type IssuedChequeStatus = "ISSUED" | "PRESENTED" | "CANCELLED";
+
+/** `IssuedChequeDTO`. `duePresent`: ISSUED and its date has come. */
+export type IssuedCheque = {
+    id: string;
+    voucherId: string | null;
+    voucherNumber: string | null;
+    vendorId: string;
+    vendorName: string | null;
+    bankAccountId: string;
+    bankAccountCode: string | null;
+    bankAccountName: string | null;
+    chequeNumber: string;
+    chequeDate: string;
+    amount: number;
+    status: IssuedChequeStatus;
+    presentedOn: string | null;
+    bpcNumber: string | null;
+    cancelledOn: string | null;
+    cancelReason: string | null;
+    opening: boolean;
+    duePresent: boolean;
+};
+
+/** `IssuedChequeSummaryDTO`. */
+export type IssuedChequeSummary = {
+    outstandingTotal: number;
+    pdcPayableBalance: number;
+    difference: number;
+    perBank: { bankAccountId: string; bankAccountCode: string | null; bankAccountName: string | null; count: number; amount: number }[];
+    openingTotal: number;
+    openingBalance: number;
+    openingDifference: number;
+    duePresentCount: number;
+};
+
+export const paymentRunsApi = {
+    list: () => apiGet<PaymentRun[]>("/finance/payment-runs"),
+    get: (id: string) => apiGet<PaymentRun>(`/finance/payment-runs/${id}`),
+    candidates: (q: { dueBefore?: string; vendorId?: string; propertyId?: string; includePartPaid?: boolean; excludeRunId?: string }) =>
+        apiGet<RunCandidates>(`/finance/payment-runs/candidates${qs(q)}`),
+    create: (body: PaymentRunInput) => apiSend<PaymentRun>("POST", "/finance/payment-runs", body),
+    update: (id: string, body: PaymentRunInput) => apiSend<PaymentRun>("PUT", `/finance/payment-runs/${id}`, body),
+    remove: (id: string) => apiSend<void>("DELETE", `/finance/payment-runs/${id}`),
+    cancel: (id: string) => apiSend<PaymentRun>("POST", `/finance/payment-runs/${id}/cancel`),
+    preview: (id: string) => apiGet<RunPreview>(`/finance/payment-runs/${id}/preview`),
+    post: (id: string) => apiSend<PaymentRun>("POST", `/finance/payment-runs/${id}/post`),
+    bankFileUrl: (id: string) => `${PROXY}/finance/payment-runs/${id}/bank-file.csv`,
+};
+
+export const issuedChequesApi = {
+    list: (q: { status?: IssuedChequeStatus; bankAccountId?: string; from?: string; to?: string; duePresent?: boolean }) =>
+        apiGet<IssuedCheque[]>(`/finance/issued-cheques${qs(q)}`),
+    summary: () => apiGet<IssuedChequeSummary>("/finance/issued-cheques/summary"),
+    present: (id: string, date: string) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, { date }),
+    cancel: (id: string, date: string, reason: string) =>
+        apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/cancel`, { date, reason }),
+    unpresent: (id: string, date: string, reason: string) =>
+        apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/unpresent`, { date, reason }),
+    createOpening: (body: { vendorId: string; bankAccountId: string; chequeNumber: string; chequeDate: string; amount: number }) =>
+        apiSend<IssuedCheque>("POST", "/finance/issued-cheques/opening", body),
+    removeOpening: (id: string) => apiSend<void>("DELETE", `/finance/issued-cheques/${id}`),
+};
+
+/** Rows grouped by vendor, in first-seen order. */
+export function groupByVendor<T extends { vendorId: string }>(rows: T[]): Map<string, T[]> {
+    const out = new Map<string, T[]>();
+    for (const r of rows) out.set(r.vendorId, [...(out.get(r.vendorId) ?? []), r]);
+    return out;
+}
