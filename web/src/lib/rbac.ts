@@ -210,6 +210,16 @@ export const PERMISSIONS = {
     // is absent. Its own key for the same reason as the neighbours above: same
     // set today, a different annotation on a different controller.
     canManageOpeningBalances: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+
+    // Finance-ops audit S1 (P0): VendorController used to be SA/TA only, so an
+    // ACCOUNTANT's Purchase/Service Invoice and Payment Voucher forms could not
+    // load a vendor dropdown (the fetch 403'd and was swallowed to []). The
+    // controller now mirrors AccountController and admits ACCOUNTANT too — see
+    // VendorController.java. Vendors gets its own key rather than folding into
+    // canAccessFinanceOps: that key also gates Bank Accounts and Staff, whose
+    // controllers are still SA/TA only, and widening it would have shown an
+    // accountant two links that still 403 on arrival.
+    canManageVendors: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

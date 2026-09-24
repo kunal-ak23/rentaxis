@@ -220,6 +220,36 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+describe("VoucherForm — vendor load failure", () => {
+    /**
+     * Finance-ops audit S1: a `GET /v1/vendors` 403 (or any non-OK response)
+     * used to be swallowed into `[]` — indistinguishable from "this tenant has
+     * no vendors". An ACCOUNTANT hit exactly this before VendorController
+     * admitted the role: an empty, unexplained dropdown with no way to tell
+     * whether to type a vendor name or give up. The form must say the load
+     * failed instead of rendering a silently empty picker.
+     */
+    it("shows a load-error banner, not a silently empty vendor dropdown, on a failed fetch", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string) => {
+                const u = String(url);
+                if (u.includes("/vendors")) {
+                    return new Response(JSON.stringify({ message: "Forbidden" }), { status: 403 });
+                }
+                const body = u.includes("/units") ? UNITS : u.includes("/properties") ? PROPERTIES : [];
+                return new Response(JSON.stringify(body), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }),
+        );
+        renderForm();
+        expect(await screen.findByRole("alert")).toHaveTextContent(en.Common.loadFailed);
+        expect(screen.getByTestId("vendor")).toBeInTheDocument();
+    });
+});
+
 describe("VoucherForm — totals", () => {
     it("shows zero totals before anything is entered", async () => {
         renderForm();
