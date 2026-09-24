@@ -125,4 +125,12 @@ public class Account extends BaseTenantEntity {
 
     @Column(name = "display_order")
     private int displayOrder = 0;
+
+    /**
+     * The P&L row key shared across properties (finance-ops spec §1): a role name
+     * for a role leaf, {@code EXP_<CATEGORY>} for a direct-expense leaf, null when
+     * the account is its own row. See {@code ReportLines}.
+     */
+    @Column(name = "report_line", length = 40)
+    private String reportLine;
 }
