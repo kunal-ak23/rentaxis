@@ -84,7 +84,9 @@ public class BankReconciliationController {
             Map<String, Object> lock = jdbc.queryForMap("""
                     select b.reconciled_through, b.rec_start_date,
                            (select r.id from bank_reconciliations r where r.tenant_id = :t and r.bank_account_id = b.id
-                              and r.status = 'DRAFT') as draft_id
+                              and r.status = 'DRAFT') as draft_id,
+                           (select r.id from bank_reconciliations r where r.tenant_id = :t and r.bank_account_id = b.id
+                              and r.status = 'FINALIZED' order by r.period_to desc limit 1) as finalized_id
                     from bank_accounts b where b.id = :b and b.tenant_id = :t""",
                     new MapSqlParameterSource("t", t).addValue("b", b.getId()));
             out.add(new BankRecDTOs.BankAccountRow(b.getId(), b.getBankName(), b.getAccountNumber(), b.getIban(),
@@ -95,7 +97,7 @@ public class BankReconciliationController {
                     matches.unmatchedCount(b.getId()), profile != null && profile > 0,
                     lock.get("reconciled_through") == null ? null : ((java.sql.Date) lock.get("reconciled_through")).toLocalDate(),
                     lock.get("rec_start_date") == null ? null : ((java.sql.Date) lock.get("rec_start_date")).toLocalDate(),
-                    (UUID) lock.get("draft_id")));
+                    (UUID) lock.get("draft_id"), (UUID) lock.get("finalized_id")));
         }
         return ResponseEntity.ok(out);
     }

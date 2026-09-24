@@ -23,7 +23,8 @@ public final class BankRecDTOs {
                                  String bankTrn, boolean active, List<Leaf> leaves, boolean needsLeaf,
                                  Instant lastImportAt, String lastImportFile, LocalDate lastLineDate,
                                  long unmatchedLines, boolean hasProfile, LocalDate reconciledThrough,
-                                 LocalDate recStartDate, UUID draftReconciliationId) { }
+                                 LocalDate recStartDate, UUID draftReconciliationId,
+                                 UUID latestFinalizedReconciliationId) { }
 
     public record LedgerSetInput(@NotNull List<UUID> accountIds) { }
 
