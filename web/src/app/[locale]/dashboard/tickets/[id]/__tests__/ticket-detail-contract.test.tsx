@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import en from "../../../../../../../messages/en.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Covers three audited contract bugs on the ticket detail page:
@@ -17,10 +18,21 @@ const sessionUser = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
 vi.mock("next/navigation", () => ({
     useParams: () => ({ id: "11111111-1111-1111-1111-111111111111" }),
 }));
-vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
-    useLocale: () => "en",
-}));
+vi.mock("next-intl", async () => {
+    // The real English catalog, so labels, plurals and enum names render as
+    // a user sees them.
+    const { createTranslator } = await vi.importActual<typeof import("next-intl")>("next-intl");
+    const messages = (await import("../../../../../../../messages/en.json")).default;
+    // One translator per namespace, stable across renders like the real hook.
+    const cache = new Map<string, ReturnType<typeof createTranslator>>();
+    return {
+        useTranslations: (namespace: string) => {
+            if (!cache.has(namespace)) cache.set(namespace, createTranslator({ locale: "en", messages, namespace: namespace as never }));
+            return cache.get(namespace)!;
+        },
+        useLocale: () => "en",
+    };
+});
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: sessionUser.role, id: "99999999-9999-9999-9999-999999999999" } } }),
 }));
@@ -168,7 +180,7 @@ describe("TicketDetailPage API contract", () => {
         await screen.findByText("Leaking tap");
         // The mocked useTranslations returns the key itself — this fails if the
         // label ever reverts to a literal "Reported On" string.
-        expect(screen.getByText("reportedOn")).toBeTruthy();
+        expect(screen.getByText(en.Tickets.reportedOn)).toBeTruthy();
     });
 
     it("surfaces the backend message when a status action fails", async () => {
@@ -243,16 +255,16 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.closableWithoutOtp = true;
         render(<TicketDetailPage />);
 
-        fireEvent.click(await screen.findByText("closeTicket"));
+        fireEvent.click(await screen.findByText(en.Tickets.closeTicket));
         // Nothing is sent until the confirm, which explains the closure.
         expect(calls().some((c) => c.url.endsWith("/status"))).toBe(false);
-        expect(screen.getByText("closeWithoutOtpNoRenter")).toBeTruthy();
+        expect(screen.getByText(en.Tickets.closeWithoutOtpNoRenter)).toBeTruthy();
         // No code to enter or re-send when nobody can confirm.
         expect(screen.queryByPlaceholderText("6-digit OTP")).toBeNull();
-        expect(screen.queryByText("reissueOtp")).toBeNull();
+        expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
 
         await act(async () => {
-            fireEvent.click(screen.getByText("closeTicketConfirm"));
+            fireEvent.click(screen.getByText(en.Tickets.closeTicketConfirm));
         });
 
         const statusCall = calls().find((c) => c.url.endsWith(`/v1/tickets/${TICKET_ID}/status`));
@@ -266,10 +278,10 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.closableWithoutOtp = true;
         render(<TicketDetailPage />);
 
-        fireEvent.click(await screen.findByText("closeTicket"));
-        fireEvent.click(screen.getByText("cancel"));
+        fireEvent.click(await screen.findByText(en.Tickets.closeTicket));
+        fireEvent.click(screen.getByText(en.Tickets.cancel));
 
-        expect(screen.queryByText("closeWithoutOtpNoRenter")).toBeNull();
+        expect(screen.queryByText(en.Tickets.closeWithoutOtpNoRenter)).toBeNull();
         expect(calls().some((c) => c.url.endsWith("/status"))).toBe(false);
     });
 
@@ -280,9 +292,9 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.otpLocked = true;
         render(<TicketDetailPage />);
 
-        fireEvent.click(await screen.findByText("closeTicket"));
-        expect(screen.getByText("closeWithoutOtpLocked")).toBeTruthy();
-        expect(screen.queryByText("reissueOtp")).toBeNull();
+        fireEvent.click(await screen.findByText(en.Tickets.closeTicket));
+        expect(screen.getByText(en.Tickets.closeWithoutOtpLocked)).toBeTruthy();
+        expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
     });
 
     it("shows nothing new when the renter can confirm: OTP closure plus a re-send", async () => {
@@ -292,8 +304,8 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         render(<TicketDetailPage />);
 
         expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
-        expect(screen.queryByText("closeTicket")).toBeNull();
-        expect(screen.getByText("reissueOtp")).toBeTruthy();
+        expect(screen.queryByText(en.Tickets.closeTicket)).toBeNull();
+        expect(screen.getByText(en.Tickets.reissueOtp)).toBeTruthy();
     });
 
     it("does not offer Close ticket on a ticket that is not resolved", async () => {
@@ -303,7 +315,7 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         render(<TicketDetailPage />);
 
         await screen.findByText("Mark Resolved");
-        expect(screen.queryByText("closeTicket")).toBeNull();
+        expect(screen.queryByText(en.Tickets.closeTicket)).toBeNull();
     });
 
     it("tells a property manager a locked ticket needs an admin, with no close or re-send", async () => {
@@ -312,9 +324,9 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.otpLocked = true;
         render(<TicketDetailPage />);
 
-        expect(await screen.findByText("otpLockedStaffHint")).toBeTruthy();
-        expect(screen.queryByText("closeTicket")).toBeNull();
-        expect(screen.queryByText("reissueOtp")).toBeNull();
+        expect(await screen.findByText(en.Tickets.otpLockedStaffHint)).toBeTruthy();
+        expect(screen.queryByText(en.Tickets.closeTicket)).toBeNull();
+        expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
         expect(screen.queryByPlaceholderText("6-digit OTP")).toBeNull();
     });
 
@@ -324,14 +336,14 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.canReissueOtp = true;
         render(<TicketDetailPage />);
 
-        const resend = await screen.findByText("reissueOtp");
+        const resend = await screen.findByText(en.Tickets.reissueOtp);
         await act(async () => {
             fireEvent.click(resend);
         });
 
         const reissue = calls().find((c) => c.url.endsWith(`/v1/tickets/${TICKET_ID}/closure-otp`));
         expect(reissue?.init?.method).toBe("POST");
-        expect(await screen.findByText("reissueOtpSent")).toBeTruthy();
+        expect(await screen.findByText(en.Tickets.reissueOtpSent)).toBeTruthy();
     });
 
     it("surfaces the 3-per-24-hours cap when re-sending is refused", async () => {
@@ -349,12 +361,12 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         };
         render(<TicketDetailPage />);
 
-        fireEvent.click(await screen.findByText("reissueOtp"));
+        fireEvent.click(await screen.findByText(en.Tickets.reissueOtp));
 
         expect(
             await screen.findByText("A closure OTP can be re-issued at most 3 times in 24 hours. Try again later.")
         ).toBeTruthy();
-        expect(screen.queryByText("reissueOtpSent")).toBeNull();
+        expect(screen.queryByText(en.Tickets.reissueOtpSent)).toBeNull();
     });
 
     // PR #342 review r3 M1: OTP switched off for the organisation is its own reason.
@@ -365,10 +377,10 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         ticket.closeWithoutOtpReason = "OTP_OFF";
         render(<TicketDetailPage />);
 
-        fireEvent.click(await screen.findByText("closeTicket"));
-        expect(screen.getByText("closeWithoutOtpOtpOff")).toBeTruthy();
-        expect(screen.queryByText("closeWithoutOtpNoRenter")).toBeNull();
-        expect(screen.queryByText("reissueOtp")).toBeNull();
+        fireEvent.click(await screen.findByText(en.Tickets.closeTicket));
+        expect(screen.getByText(en.Tickets.closeWithoutOtpOtpOff)).toBeTruthy();
+        expect(screen.queryByText(en.Tickets.closeWithoutOtpNoRenter)).toBeNull();
+        expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
     });
 
     // PR #342 review r3 M5: a PM outside the property's scope gets canReissueOtp false.
@@ -379,6 +391,6 @@ describe("TicketDetailPage closing a resolved ticket", () => {
         render(<TicketDetailPage />);
 
         expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
-        expect(screen.queryByText("reissueOtp")).toBeNull();
+        expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
     });
 });

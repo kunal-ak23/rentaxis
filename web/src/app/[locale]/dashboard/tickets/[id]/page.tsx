@@ -113,6 +113,31 @@ export default function TicketDetailPage() {
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
+    const tRoles = useTranslations("Roles");
+    const enumLabel = (group: "status" | "priority" | "category", code: string) =>
+        t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code.replace(/_/g, " ");
+    // History notes are written in English by the server. The known shapes are
+    // rebuilt here from their structured fields so they read in the viewer's
+    // language; anything unrecognised is shown as stored.
+    const historyText = (h: { action: string; fromStatus: string; toStatus: string; notes: string }) => {
+        const notes = h.notes ?? "";
+        if (h.action === "STATUS_CHANGED") {
+            if (notes === "Ticket closed with OTP verification") return t("history.closedWithOtp");
+            if (notes === "Ticket closed without OTP (no renter to confirm)") return t("history.closedNoRenter");
+            if (notes.startsWith("Ticket closed without OTP (OTP closure locked")) return t("history.closedLocked");
+            if ((!notes || notes.startsWith("Status changed:")) && h.fromStatus && h.toStatus) {
+                return t("history.statusChanged", { from: enumLabel("status", h.fromStatus), to: enumLabel("status", h.toStatus) });
+            }
+        }
+        if (h.action === "OTP_REISSUED") {
+            return notes.includes("resolved again") ? t("history.otpReissuedResolvedAgain") : t("history.otpReissued");
+        }
+        if (h.action === "OTP_LOCKED") return t("history.otpLocked");
+        const assigned = /^Ticket (re)?assigned to (.+)$/.exec(notes);
+        if (assigned) return t(assigned[1] ? "history.reassigned" : "history.assigned", { name: `\u2068${assigned[2]}\u2069` });
+        return notes || h.action;
+    };
+    const dateTime = (iso: string) => new Date(iso).toLocaleString(locale === "ar" ? "ar-AE" : "en-GB");
 
     // Data
     const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -187,12 +212,12 @@ export default function TicketDetailPage() {
                 setStaffUsers(Array.isArray(data) ? data : []);
                 setStaffError(null);
             } else {
-                setStaffError(`Couldn't load the staff list (status ${res.status}) — "Assign To..." is unavailable.`);
+                setStaffError(t("staffLoadFailedStatus", { status: res.status }));
             }
         } catch {
-            setStaffError('Couldn\'t load the staff list — "Assign To..." is unavailable.');
+            setStaffError(t("staffLoadFailed"));
         }
-    }, [userRole, ticketId]);
+    }, [userRole, ticketId, t]);
 
     useEffect(() => {
         Promise.all([fetchTicket(), fetchReplies(), fetchAttachments(), fetchHistory(), fetchStaff()]).finally(() => setLoading(false));
@@ -241,7 +266,7 @@ export default function TicketDetailPage() {
             fetchHistory();
             return true;
         } catch (err) {
-            setActionError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+            setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
             return false;
         } finally {
             setActionLoading(null);
@@ -348,9 +373,9 @@ export default function TicketDetailPage() {
     if (!ticket) {
         return (
             <div className="text-center py-24">
-                <p className="text-sm text-muted">Ticket not found.</p>
+                <p className="text-sm text-muted">{t("notFound")}</p>
                 <Link href="/dashboard/tickets" className="text-xs text-primary font-semibold mt-2 inline-block">
-                    Back to Tickets
+                    {t("backToTickets")}
                 </Link>
             </div>
         );
@@ -370,7 +395,7 @@ export default function TicketDetailPage() {
             {/* Header */}
             <div className="flex items-center gap-4 mb-6">
                 <Link href="/dashboard/tickets" className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground">
-                    <ArrowLeft size={18} />
+                    <ArrowLeft size={18} className="rtl:rotate-180" />
                 </Link>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
@@ -379,11 +404,11 @@ export default function TicketDetailPage() {
                             "px-2.5 py-1 rounded-lg text-[10px] font-semibold border shrink-0",
                             STATUS_COLORS[ticket.status] || "bg-input text-muted border-border",
                         )}>
-                            {ticket.status.replace(/_/g, " ")}
+                            {enumLabel("status", ticket.status)}
                         </span>
                     </div>
                     <p className="text-xs text-muted mt-0.5">
-                        <span dir="ltr" data-testid="ticket-detail-reference">{ticket.reference ?? ticket.id.substring(0, 8)}</span> &bull; {ticket.propertyName} &bull; Unit {ticket.unitNumber}
+                        <span dir="ltr" data-testid="ticket-detail-reference">{ticket.reference ?? ticket.id.substring(0, 8)}</span> &bull; {ticket.propertyName} &bull; {t("unitInline", { unit: ticket.unitNumber })}
                     </p>
                 </div>
             </div>
@@ -394,16 +419,16 @@ export default function TicketDetailPage() {
                 <div className="lg:col-span-2 space-y-6">
                     {/* Description */}
                     <div className="bg-surface rounded-xl border border-border p-5">
-                        <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Description</h3>
+                        <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t("description")}</h3>
                         <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
-                            {ticket.description || "No description provided."}
+                            {ticket.description || t("noDescription")}
                         </p>
                     </div>
 
                     {/* Attachments Gallery */}
                     <div className="bg-surface rounded-xl border border-border p-5">
                         <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
-                            Attachments {attachments.length > 0 && <span className="text-muted/60">({attachments.length})</span>}
+                            {t("attachments")} {attachments.length > 0 && <span className="text-muted/60">({attachments.length})</span>}
                         </h3>
 
                         {attachments.length > 0 ? (
@@ -439,12 +464,12 @@ export default function TicketDetailPage() {
                                                     onClick={() => handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file")}
                                                 >
                                                     <FileText size={20} className="text-muted" />
-                                                    <p className="text-[9px] font-semibold text-muted uppercase">{att.fileType?.split("/")[1] || "FILE"}</p>
+                                                    <p className="text-[9px] font-semibold text-muted uppercase">{att.fileType?.split("/")[1] || t("fileFallback")}</p>
                                                 </div>
                                             )}
-                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <div className="flex items-center justify-between">
-                                                    <p className="text-[9px] text-white font-medium truncate flex-1">{(att.fileSize / 1024).toFixed(0)} KB</p>
+                                                    <p className="text-[9px] text-white font-medium truncate flex-1">{t("fileSizeKb", { size: (att.fileSize / 1024).toFixed(0) })}</p>
                                                     <div className="flex items-center gap-1">
                                                         <button onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file"); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
                                                         <button onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }} className="p-1 text-red-400 hover:text-red-300 cursor-pointer"><Trash2 size={11} /></button>
@@ -456,12 +481,12 @@ export default function TicketDetailPage() {
                                 })}
                             </div>
                         ) : (
-                            <p className="text-xs text-muted text-center py-3 mb-3">No attachments yet.</p>
+                            <p className="text-xs text-muted text-center py-3 mb-3">{t("noAttachments")}</p>
                         )}
 
                         <label className="flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg px-4 py-3 cursor-pointer hover:border-primary/40 hover:bg-input/30 transition-all">
                             <Upload size={14} className="text-muted" />
-                            <span className="text-xs text-muted">Add photos, videos or files</span>
+                            <span className="text-xs text-muted">{t("addFiles")}</span>
                             <input type="file" className="hidden" accept="image/*,video/*,.pdf,.doc,.docx" multiple
                                 onChange={(e) => { const files = e.target.files; if (files) Array.from(files).forEach(f => handleUploadAttachment(f)); if (e.target) e.target.value = ""; }}
                             />
@@ -471,7 +496,7 @@ export default function TicketDetailPage() {
                     {/* Renter OTP notice */}
                     {isRenter && ticket.status === "RESOLVED" && ticket.closureOtp && (
                         <div className="bg-success/5 border border-success/20 rounded-xl p-4">
-                            <p className="text-xs font-semibold text-success mb-1">Share this code with your property manager to close the ticket:</p>
+                            <p className="text-xs font-semibold text-success mb-1">{t("shareOtp")}</p>
                             <p className="text-2xl font-bold text-success tracking-[0.3em] text-center py-2">{ticket.closureOtp}</p>
                         </div>
                     )}
@@ -479,7 +504,7 @@ export default function TicketDetailPage() {
                     {/* Rating display (renter, after rated) */}
                     {isRenter && ticket.satisfactionRating && (
                         <div className="bg-surface rounded-xl border border-border p-5">
-                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Your Rating</h3>
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t("yourRating")}</h3>
                             <div className="flex items-center gap-1 mb-1">
                                 {[1,2,3,4,5].map(s => <Star key={s} size={20} className={cn(s <= ticket.satisfactionRating! ? "text-accent fill-accent" : "text-border")} />)}
                             </div>
@@ -490,7 +515,7 @@ export default function TicketDetailPage() {
                     {/* Rating form (renter, after CLOSED, not yet rated) */}
                     {isRenter && ticket.status === "CLOSED" && !ticket.satisfactionRating && (
                         <div className="bg-surface rounded-xl border border-border p-5">
-                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Rate this service</h3>
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{t("rateService")}</h3>
                             <div className="flex items-center gap-1 mb-3">
                                 {[1,2,3,4,5].map(star => (
                                     <button key={star} onClick={() => setRatingValue(star)} className="cursor-pointer p-0.5">
@@ -498,11 +523,11 @@ export default function TicketDetailPage() {
                                     </button>
                                 ))}
                             </div>
-                            <textarea value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} placeholder="Optional comment..." rows={2}
+                            <textarea value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} placeholder={t("optionalComment")} rows={2}
                                 className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none mb-3" />
                             <button onClick={handleSubmitRating} disabled={ratingValue === 0 || ratingSubmitting}
                                 className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer", ratingValue === 0 || ratingSubmitting ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-                                {ratingSubmitting && <Loader2 size={12} className="animate-spin" />} Submit Rating
+                                {ratingSubmitting && <Loader2 size={12} className="animate-spin" />} {t("submitRating")}
                             </button>
                         </div>
                     )}
@@ -510,13 +535,13 @@ export default function TicketDetailPage() {
                     {/* Conversation */}
                     <div className="bg-surface rounded-xl border border-border">
                         <div className="px-5 py-3.5 border-b border-border">
-                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><Send size={13} /> Conversation</h2>
+                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><Send size={13} /> {t("conversation")}</h2>
                         </div>
                         <div className="divide-y divide-border max-h-96 overflow-y-auto">
                             {replies.length === 0 && (
                                 <div className="text-center py-8 text-muted">
                                     <Send size={20} className="mx-auto mb-2 opacity-40" />
-                                    <p className="text-xs">No replies yet. Start the conversation.</p>
+                                    <p className="text-xs">{t("noReplies")}</p>
                                 </div>
                             )}
                             {replies.map(reply => (
@@ -528,7 +553,7 @@ export default function TicketDetailPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <span className="text-xs font-semibold text-foreground">{reply.userName}</span>
-                                                <span className="text-[10px] text-muted">{new Date(reply.createdAt).toLocaleString()}</span>
+                                                <span className="text-[10px] text-muted">{dateTime(reply.createdAt)}</span>
                                             </div>
                                             <p className="text-xs text-foreground/80 whitespace-pre-wrap">{reply.message}</p>
                                         </div>
@@ -538,14 +563,14 @@ export default function TicketDetailPage() {
                         </div>
                         <div className="px-5 py-4 border-t border-border">
                             <div className="flex items-end gap-3">
-                                <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Type your reply..." rows={2}
+                                <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder={t("replyPlaceholder")} rows={2}
                                     className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none"
                                     onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSendReply(); }}
                                 />
                                 <button onClick={handleSendReply} disabled={!replyText.trim() || sendingReply}
                                     className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0",
                                         !replyText.trim() || sendingReply ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-                                    {sendingReply ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send
+                                    {sendingReply ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} className="rtl:-scale-x-100" />} {t("send")}
                                 </button>
                             </div>
                         </div>
@@ -558,28 +583,28 @@ export default function TicketDetailPage() {
                     <div className="bg-surface rounded-xl border border-border p-5">
                         <div className="text-center mb-4">
                             <span className={cn("inline-block px-4 py-1.5 rounded-lg text-xs font-bold border", STATUS_COLORS[ticket.status] || "bg-input text-muted border-border")}>
-                                {ticket.status.replace(/_/g, " ")}
+                                {enumLabel("status", ticket.status)}
                             </span>
                         </div>
                         <div className="space-y-3">
-                            <DetailRow icon={<Tag size={12} />} label="Category" value={ticket.category?.replace(/_/g, " ") || "—"} />
-                            <DetailRow icon={<AlertTriangle size={12} />} label="Priority">
-                                <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-semibold", PRIORITY_COLORS[ticket.priority] || "bg-input text-muted")}>{ticket.priority}</span>
+                            <DetailRow icon={<Tag size={12} />} label={t("categoryLabel")} value={ticket.category ? enumLabel("category", ticket.category) : "—"} />
+                            <DetailRow icon={<AlertTriangle size={12} />} label={t("priorityLabel")}>
+                                <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-semibold", PRIORITY_COLORS[ticket.priority] || "bg-input text-muted")}>{enumLabel("priority", ticket.priority)}</span>
                             </DetailRow>
-                            <DetailRow icon={<Building2 size={12} />} label="Property" value={ticket.propertyName || "—"} />
-                            <DetailRow icon={<Home size={12} />} label="Unit" value={ticket.unitNumber || "—"} />
-                            <DetailRow icon={<User size={12} />} label="Reporter" value={ticket.reporterName || "—"} />
-                            <DetailRow icon={<Wrench size={12} />} label="Assigned To" value={ticket.assigneeName || "Unassigned"} />
+                            <DetailRow icon={<Building2 size={12} />} label={t("property")} value={ticket.propertyName || "—"} />
+                            <DetailRow icon={<Home size={12} />} label={t("unit")} value={ticket.unitNumber || "—"} />
+                            <DetailRow icon={<User size={12} />} label={t("reporter")} value={ticket.reporterName || "—"} />
+                            <DetailRow icon={<Wrench size={12} />} label={t("assignedTo")} value={ticket.assigneeName || t("unassigned")} />
                             <DetailRow icon={<Clock size={12} />} label={t("reportedOn")} value={fmtIsoDate(ticket.reportedDate, locale)} />
-                            <DetailRow icon={<Clock size={12} />} label="Created" value={new Date(ticket.createdAt).toLocaleDateString()} />
-                            {ticket.estimatedResolutionHours && <DetailRow icon={<Clock size={12} />} label="ETA" value={`${ticket.estimatedResolutionHours} hours`} />}
+                            <DetailRow icon={<Clock size={12} />} label={t("created")} value={fmtIsoDate(ticket.createdAt, locale)} />
+                            {ticket.estimatedResolutionHours && <DetailRow icon={<Clock size={12} />} label={t("eta")} value={t("etaHours", { count: ticket.estimatedResolutionHours })} />}
                         </div>
                     </div>
 
                     {/* Action buttons */}
                     {canManage && (
                         <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
-                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Actions</h3>
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t("actions")}</h3>
                             {actionError && (
                                 <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
                                     {actionError}
@@ -595,17 +620,17 @@ export default function TicketDetailPage() {
                             )}
                             {canManage && (ticket.status === "OPEN" || ticket.status === "REOPENED" || ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS") && (
                                 <button onClick={handleAssignToMe} disabled={actionLoading === "assign"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "assign" && <Loader2 size={12} className="animate-spin" />} Assign to Me
+                                    {actionLoading === "assign" && <Loader2 size={12} className="animate-spin" />} {t("assignToMe")}
                                 </button>
                             )}
                             {canManage && (ticket.status === "OPEN" || ticket.status === "REOPENED" || ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS") && staffUsers.length > 0 && (
                                 <div className="relative">
-                                    <button onClick={() => setShowAssignDropdown(!showAssignDropdown)} className="w-full flex items-center justify-center gap-2 bg-info/10 text-info px-4 py-2 rounded-lg text-xs font-semibold hover:bg-info/20 transition-all cursor-pointer">Assign To...</button>
+                                    <button onClick={() => setShowAssignDropdown(!showAssignDropdown)} className="w-full flex items-center justify-center gap-2 bg-info/10 text-info px-4 py-2 rounded-lg text-xs font-semibold hover:bg-info/20 transition-all cursor-pointer">{t("assignTo")}</button>
                                     {showAssignDropdown && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                                        <div className="absolute top-full inset-x-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
                                             {staffUsers.map(user => (
-                                                <button key={user.id} onClick={() => handleAssign(user.id)} className="w-full text-left px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
-                                                    <span className="font-medium text-foreground">{user.name}</span> <span className="text-muted">({user.role.replace(/_/g, " ")})</span>
+                                                <button key={user.id} onClick={() => handleAssign(user.id)} className="w-full text-start px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
+                                                    <span className="font-medium text-foreground">{user.name}</span> <span className="text-muted">({tRoles.has(user.role) ? tRoles(user.role) : user.role.replace(/_/g, " ")})</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -614,12 +639,12 @@ export default function TicketDetailPage() {
                             )}
                             {(ticket.status === "ASSIGNED" || ticket.status === "REOPENED") && (
                                 <button onClick={handleStartWork} disabled={actionLoading === "status"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} Start Work
+                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} {t("startWork")}
                                 </button>
                             )}
                             {ticket.status === "IN_PROGRESS" && (
                                 <button onClick={handleResolve} disabled={actionLoading === "status"} className="w-full flex items-center justify-center gap-2 bg-success/10 text-success px-4 py-2 rounded-lg text-xs font-semibold hover:bg-success/20 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> Mark Resolved
+                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> {t("markResolved")}
                                 </button>
                             )}
                             {ticket.status === "RESOLVED" && ticket.closableWithoutOtp && (
@@ -650,13 +675,13 @@ export default function TicketDetailPage() {
                                     {!ticket.closableWithoutOtp && !ticket.otpLocked && (
                                     <>
                                     <div className="space-y-2">
-                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">Close with OTP</label>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{t("closeWithOtp")}</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="text" value={otpInput} onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit OTP" maxLength={6}
+                                            <input type="text" value={otpInput} onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder={t("otpPlaceholder")} maxLength={6}
                                                 className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs text-center tracking-[0.3em] font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none" />
                                             <button onClick={handleClose} disabled={otpInput.length !== 6 || actionLoading === "close"}
                                                 className={cn("flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0", otpInput.length !== 6 || actionLoading === "close" ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-                                                {actionLoading === "close" && <Loader2 size={12} className="animate-spin" />} Close
+                                                {actionLoading === "close" && <Loader2 size={12} className="animate-spin" />} {t("close")}
                                             </button>
                                         </div>
                                     </div>
@@ -668,24 +693,24 @@ export default function TicketDetailPage() {
                                     </>
                                     )}
                                     <button onClick={handleReopen} disabled={actionLoading === "reopen"} className="w-full flex items-center justify-center gap-2 bg-error/10 text-error px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer disabled:opacity-50">
-                                        {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} Reopen
+                                        {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} {t("reopen")}
                                     </button>
                                 </>
                             )}
                             {ticket.status === "CLOSED" && (
                                 <button onClick={handleReopen} disabled={actionLoading === "reopen"} className="w-full flex items-center justify-center gap-2 bg-error/10 text-error px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} Reopen Ticket
+                                    {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} {t("reopenTicket")}
                                 </button>
                             )}
                             {(ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED") && (
                                 <div className="space-y-2 pt-2 border-t border-border">
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">Set Estimated Hours</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{t("setEstimatedHours")}</label>
                                     <div className="flex items-center gap-2">
-                                        <input type="number" value={etaInput} onChange={(e) => setEtaInput(e.target.value)} placeholder="Hours" min={1}
+                                        <input type="number" value={etaInput} onChange={(e) => setEtaInput(e.target.value)} placeholder={t("hoursPlaceholder")} min={1}
                                             className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none" />
                                         <button onClick={handleSetEta} disabled={!etaInput || actionLoading === "estimate"}
                                             className={cn("flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0", !etaInput || actionLoading === "estimate" ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-                                            {actionLoading === "estimate" && <Loader2 size={12} className="animate-spin" />} Set ETA
+                                            {actionLoading === "estimate" && <Loader2 size={12} className="animate-spin" />} {t("setEta")}
                                         </button>
                                     </div>
                                 </div>
@@ -696,15 +721,15 @@ export default function TicketDetailPage() {
                     {/* Activity History */}
                     {history.length > 0 && (
                         <div className="bg-surface rounded-xl border border-border p-5">
-                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3 flex items-center gap-2"><Clock size={13} /> Activity History</h3>
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3 flex items-center gap-2"><Clock size={13} /> {t("activityHistory")}</h3>
                             <div className="space-y-3 max-h-64 overflow-y-auto">
                                 {history.map(h => (
                                     <div key={h.id} className="flex gap-3">
                                         <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0" />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-[11px] text-foreground font-medium">{h.notes || h.action}</p>
+                                            <p className="text-[11px] text-foreground font-medium">{historyText(h)}</p>
                                             <p className="text-[10px] text-muted">
-                                                by {h.performedByName || "System"} &bull; {new Date(h.createdAt).toLocaleString()}
+                                                {t("byUser", { name: h.performedByName || t("system") })} &bull; {dateTime(h.createdAt)}
                                             </p>
                                         </div>
                                     </div>
@@ -716,7 +741,7 @@ export default function TicketDetailPage() {
                     {/* Rating display */}
                     {ticket.satisfactionRating && (
                         <div className="bg-surface rounded-xl border border-border p-4">
-                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Service Rating</h3>
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t("serviceRating")}</h3>
                             <div className="flex items-center gap-1 mb-1">
                                 {[1,2,3,4,5].map(s => <Star key={s} size={16} className={cn(s <= ticket.satisfactionRating! ? "text-accent fill-accent" : "text-border")} />)}
                             </div>

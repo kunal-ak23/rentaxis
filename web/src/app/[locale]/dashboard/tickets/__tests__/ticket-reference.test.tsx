@@ -1,11 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import en from "../../../../../../messages/en.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // #20: the tickets list shows the human reference ("TKT-26/14") instead of a
 // UUID prefix, and the search box finds a ticket by it.
 
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
-vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key, useLocale: () => "en" }));
+vi.mock("next-intl", async () => {
+    // The real English catalog, so labels, plurals and enum names render as
+    // a user sees them.
+    const { createTranslator } = await vi.importActual<typeof import("next-intl")>("next-intl");
+    const messages = (await import("../../../../../../messages/en.json")).default;
+    // One translator per namespace, stable across renders like the real hook.
+    const cache = new Map<string, ReturnType<typeof createTranslator>>();
+    return {
+        useTranslations: (namespace: string) => {
+            if (!cache.has(namespace)) cache.set(namespace, createTranslator({ locale: "en", messages, namespace: namespace as never }));
+            return cache.get(namespace)!;
+        },
+        useLocale: () => "en",
+    };
+});
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
         <a href={href} {...rest}>{children}</a>
@@ -83,7 +98,7 @@ describe("Tickets list — reference", () => {
         fireEvent.click(screen.getByText("Create Ticket"));
         fireEvent.change(screen.getByPlaceholderText("Brief summary of the issue"), { target: { value: "Noise" } });
         fireEvent.change(screen.getByDisplayValue("Select property"), { target: { value: "p1" } });
-        const picker = await screen.findByLabelText("onBehalfOfRenter");
+        const picker = await screen.findByLabelText(en.Tickets.onBehalfOfRenter);
         await screen.findByText(/Rajesh Kumar/);
         fireEvent.change(picker, { target: { value: "ren-1" } });
         // The header button and the form's submit share the label; the submit is last.
