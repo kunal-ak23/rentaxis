@@ -1612,7 +1612,10 @@
     "sectionWorkspace": "مساحة العمل",
     "tenants": "المؤسسات",
     "tickets": "التذاكر",
-    "users": "المستخدمون"
+    "users": "المستخدمون",
+    "updateProfile": "تحديث الملف الشخصي",
+    "logout": "تسجيل الخروج",
+    "userFallback": "المستخدم"
   },
   "TenantSwitcher": {
     "administering": "إدارة",

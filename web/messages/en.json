@@ -1612,7 +1612,10 @@
     "sectionWorkspace": "Workspace",
     "tenants": "Tenants",
     "tickets": "Tickets",
-    "users": "Users"
+    "users": "Users",
+    "updateProfile": "Update Profile",
+    "logout": "Logout",
+    "userFallback": "User"
   },
   "TenantSwitcher": {
     "administering": "Administering",

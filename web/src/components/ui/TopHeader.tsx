@@ -28,6 +28,7 @@ type Notification = {
 export function TopHeader() {
     const tRoles = useTranslations("Roles");
     const tNotifications = useTranslations("Notifications");
+    const tNav = useTranslations("Navigation");
     const tMeetings = useTranslations("Meetings");
     // t.has guards a role the catalogue does not know; getRoleLabel is the
     // English fallback rather than letting next-intl throw.
@@ -164,7 +165,7 @@ export function TopHeader() {
                             <button onClick={toggleDropdown} className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface text-[var(--ink-600)] hover:text-foreground hover:bg-[var(--sand-100)] transition-colors cursor-pointer">
                                 <Bell size={18} />
                                 {unreadCount > 0 && (
-                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                                    <span className="absolute -top-0.5 -end-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                                         {unreadCount > 9 ? "9+" : unreadCount}
                                     </span>
                                 )}
@@ -218,7 +219,7 @@ export function TopHeader() {
                                 className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg p-1 -m-1"
                             >
                                 <div className="flex flex-col items-end">
-                                    <span className="text-sm font-semibold text-foreground">{session.user.name || 'User'}</span>
+                                    <span className="text-sm font-semibold text-foreground">{session.user.name || tNav("userFallback")}</span>
                                     <span className="text-[10px] font-medium text-muted tracking-wider">
                                         {userRole ? roleLabel(userRole) : ''}
                                     </span>
@@ -233,10 +234,10 @@ export function TopHeader() {
                             {isProfileOpen && (
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
-                                    <div className="absolute right-0 top-full mt-2 w-56 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+                                    <div className="absolute end-0 top-full mt-2 w-56 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
                                         {/* User Info */}
                                         <div className="px-4 py-3 border-b border-border">
-                                            <p className="text-sm font-semibold text-foreground">{session.user.name || 'User'}</p>
+                                            <p className="text-sm font-semibold text-foreground">{session.user.name || tNav("userFallback")}</p>
                                             <p className="text-xs text-muted truncate">{session.user.email || ''}</p>
                                         </div>
 
@@ -248,7 +249,7 @@ export function TopHeader() {
                                                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground hover:bg-input transition-colors cursor-pointer"
                                             >
                                                 <User size={15} className="text-muted" />
-                                                Update Profile
+                                                {tNav("updateProfile")}
                                             </Link>
 
                                             {/* Divider */}
@@ -260,8 +261,8 @@ export function TopHeader() {
                                                 onClick={() => signOut()}
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-error hover:bg-error/5 transition-colors cursor-pointer"
                                             >
-                                                <LogOut size={15} />
-                                                Logout
+                                                <LogOut size={15} className="rtl:rotate-180" />
+                                                {tNav("logout")}
                                             </button>
                                         </div>
                                     </div>
