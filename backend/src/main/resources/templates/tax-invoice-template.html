@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style>
+    @page { size: A4; margin: 30px 40px; }
+    body { font-family: 'Noto Sans', 'Noto Sans Arabic', sans-serif; font-size: 10px; color: #1a1a2e; line-height: 1.5; margin: 0; padding: 0; }
+    .ar { font-family: 'Noto Sans Arabic', 'Noto Sans', sans-serif; direction: rtl; text-align: right; }
+    .header-table { width: 100%; border-bottom: 2px solid #1B1B1B; padding-bottom: 12px; margin-bottom: 16px; }
+    .org-name { font-size: 16px; font-weight: 700; color: #1B1B1B; }
+    .org-details { font-size: 9px; color: #555; line-height: 1.6; }
+    .title { font-size: 16px; font-weight: 700; color: #1B1B1B; text-align: right; }
+    .title-ar { font-size: 15px; font-weight: 700; color: #1B1B1B; }
+    .meta { font-size: 10px; color: #444; text-align: right; }
+    .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #1B1B1B; margin: 14px 0 6px 0; border-bottom: 1px solid #E2E0DC; padding-bottom: 3px; }
+    .info-table { width: 100%; border-collapse: collapse; }
+    .info-table td { padding: 3px 0; vertical-align: top; }
+    .label { font-size: 9px; font-weight: 600; color: #777; width: 150px; }
+    .value { font-size: 10px; color: #1a1a2e; }
+    .lines { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .lines th { background: #F5F4F0; font-size: 9px; text-align: left; padding: 6px; border: 1px solid #E2E0DC; }
+    .lines td { font-size: 10px; padding: 6px; border: 1px solid #E2E0DC; vertical-align: top; }
+    .num { text-align: right; white-space: nowrap; }
+    .totals { width: 55%; margin-left: 45%; border-collapse: collapse; margin-top: 10px; }
+    .totals td { padding: 4px 6px; font-size: 10px; border-bottom: 1px solid #E2E0DC; }
+    .totals tr.grand td { font-weight: 700; font-size: 12px; border-top: 2px solid #1B1B1B; }
+    .footer { margin-top: 26px; padding-top: 10px; border-top: 1px solid #E2E0DC; font-size: 8px; color: #999; text-align: center; }
+</style>
+</head>
+<body>
+<table class="header-table" cellpadding="0" cellspacing="0">
+    <tr>
+        <td style="vertical-align: top; width: 55%;">
+            {{ORG_LOGO}}
+            <div class="org-name">{{SUPPLIER_NAME}}</div>
+            <div class="org-details">
+                {{SUPPLIER_ADDRESS}}<br/>
+                TRN / الرقم الضريبي: {{SUPPLIER_TRN}}
+            </div>
+        </td>
+        <td style="vertical-align: top;">
+            <div class="title">{{TITLE_EN}}</div>
+            <div class="title-ar ar">{{TITLE_AR}}</div>
+            <div class="meta">No.: {{INVOICE_NUMBER}}</div>
+            <div class="meta">Date of issue / tax point: {{ISSUE_DATE}}</div>
+            {{REFERENCE_LINE}}
+        </td>
+    </tr>
+</table>
+
+<div class="section-title">Customer / العميل</div>
+<table class="info-table">
+    <tr><td class="label">Name</td><td class="value">{{CUSTOMER_NAME}}</td></tr>
+    {{CUSTOMER_NAME_AR_ROW}}
+    {{CUSTOMER_TRN_ROW}}
+    <tr><td class="label">Property / Unit</td><td class="value">{{PROPERTY_NAME}} — {{UNIT_NUMBER}}</td></tr>
+    <tr><td class="label">Period covered</td><td class="value">{{PERIOD}}</td></tr>
+</table>
+
+<div class="section-title">Supply / التوريد</div>
+<table class="lines">
+    <tr>
+        <th>Description</th>
+        <th class="num">Taxable amount (AED)</th>
+        <th class="num">VAT rate</th>
+        <th class="num">VAT (AED)</th>
+        <th class="num">Total (AED)</th>
+    </tr>
+    <tr>
+        <td>{{DESCRIPTION}}</td>
+        <td class="num">{{TAXABLE}}</td>
+        <td class="num">{{RATE}}</td>
+        <td class="num">{{VAT}}</td>
+        <td class="num">{{TOTAL}}</td>
+    </tr>
+</table>
+
+<table class="totals">
+    <tr><td>Total taxable amount</td><td class="num">AED {{TAXABLE}}</td></tr>
+    <tr><td>VAT {{RATE}}</td><td class="num">AED {{VAT}}</td></tr>
+    <tr class="grand"><td>{{TOTAL_LABEL}}</td><td class="num">AED {{TOTAL}}</td></tr>
+</table>
+
+<div class="footer">
+    {{FOOTER_NOTE}}
+</div>
+</body>
+</html>

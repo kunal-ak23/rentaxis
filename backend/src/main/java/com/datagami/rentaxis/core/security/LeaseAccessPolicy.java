@@ -162,6 +162,25 @@ public class LeaseAccessPolicy {
         return canManage(lease, currentCaller());
     }
 
+    /**
+     * Whether the caller is scoped as a renter (RENTER, or TENANT_USER, which this
+     * policy treats the same way), and so may only ever see documents addressed to
+     * {@link #callerRenterId()}.
+     */
+    public boolean callerIsRenter() {
+        return currentCaller().isRenter();
+    }
+
+    /**
+     * The renter record behind a renter-scoped caller, or null — for a document
+     * (a tax invoice) that names its renter directly, where "may read the lease" is
+     * not the whole question: the invoice must also be addressed to this renter.
+     */
+    public UUID callerRenterId() {
+        Caller caller = currentCaller();
+        return caller.isRenter() ? caller.renterId() : null;
+    }
+
     private boolean canManage(Lease lease, Caller caller) {
         if (lease == null) {
             return false;
