@@ -23,7 +23,12 @@ const amt = (amount: number, prior: number | null = null): PnlAmount => ({
     deltaPct: prior === null || prior === 0 ? null : Math.round(((amount - prior) / Math.abs(prior)) * 10000) / 100,
 });
 
-function pnl(opts: { columns: string[]; compare: boolean; scoped?: boolean }): PropertyPnl {
+function pnl(opts: {
+    columns: string[];
+    compare: boolean;
+    scoped?: boolean;
+    allocation?: PropertyPnl["allocation"];
+}): PropertyPnl {
     const withPrior = opts.compare;
     const cells = (m: Record<string, [number, number]>) =>
         Object.fromEntries(opts.columns.map(k => [k, withPrior ? amt(...(m[k] ?? [0, 0])) : amt((m[k] ?? [0, 0])[0])]));
@@ -59,7 +64,7 @@ function pnl(opts: { columns: string[]; compare: boolean; scoped?: boolean }): P
         income: cells({ [P1]: [82191.78, 82191.78], TOTAL: [82191.78, 82191.78] }),
         expenses: cells({ UNASSIGNED: [50, 0], TOTAL: [50, 0] }),
         noi: cells({ [P1]: [78991.78, 82791.78], UNASSIGNED: [-50, 0], TOTAL: [78941.78, 82791.78] }),
-        allocation: null,
+        allocation: opts.allocation ?? null,
         check: opts.scoped ? null : { ledgerNet: 78941.78, reportNet: 78941.78, difference: 0, ok: true },
         dataQuality: { lineAccountPropertyMismatches: 0 },
     };
@@ -108,6 +113,22 @@ describe("PnlTable", () => {
         // Δ% is blank on a zero base.
         const bank = screen.getByTestId("row-bank");
         expect(within(bank).getAllByRole("cell").map(c => c.textContent)).toContain("");
+    });
+
+    it("still shows the allocation row when the report is pivoted to a single property with a comparison (F14-45)", () => {
+        renderTable(pnl({
+            columns: [P1, "UNASSIGNED", "TOTAL"],
+            compare: true,
+            allocation: {
+                basis: "RENT", basisUsed: "RENT", unassignedCost: 50,
+                allocated: { [P1]: 50, TOTAL: 50 },
+                noiAfter: { [P1]: 78941.78, TOTAL: 78891.78 },
+                allocatedToOthers: 0,
+            },
+        }));
+        expect(screen.getByTestId("pnl-table").dataset.pivot).toBe("single");
+        expect(screen.getByTestId("allocation-row")).toBeInTheDocument();
+        expect(screen.getByTestId("allocation-row").textContent).toContain("50.00");
     });
 
     it("has no Unassigned or Total column in a manager's scoped report", () => {
