@@ -15,7 +15,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import {
     ApiError, recognitionApi,
-    type RecognitionEntry, type RecognitionRunResult,
+    type RecognitionEntry, type RecognitionRunResult, type RecognitionStatusSummary,
 } from "@/lib/api/leasing";
 
 /**
@@ -116,6 +116,9 @@ export default function RecognitionPage() {
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
+    // F14-27: a warning banner when the close is behind, or the last automated
+    // run failed on something.
+    const [status, setStatus] = useState<RecognitionStatusSummary | null>(null);
 
     const today = todayIso();
     const inTheFuture = to > today;
@@ -154,6 +157,12 @@ export default function RecognitionPage() {
             .then(f => setLockedThrough(f.booksLockedThrough))
             .catch(() => setLockedThrough(null));
     }, [allowed]);
+
+    useEffect(() => {
+        if (!allowed) return;
+        recognitionApi.status().then(setStatus).catch(() => setStatus(null));
+        // Re-read after a real run — it just changed what "behind" means.
+    }, [allowed, result]);
 
     useEffect(() => {
         setPage(1);
@@ -202,6 +211,36 @@ export default function RecognitionPage() {
                 </h1>
                 <p className="text-xs text-muted">{t("desc")}</p>
             </div>
+
+            {status && status.behind > 0 && (
+                <div
+                    role="alert"
+                    data-testid="recognition-behind-warning"
+                    className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-sm"
+                >
+                    {t("behindWarning", {
+                        count: status.behind,
+                        amount: fmtAmount(status.behindAmount),
+                        date: status.oldestPeriodEnd ? fmtIsoDate(status.oldestPeriodEnd, locale) : "—",
+                    })}
+                </div>
+            )}
+            {status && status.lastRunFailed > 0 && (
+                <div
+                    role="alert"
+                    data-testid="recognition-last-run-failed-warning"
+                    className="bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3 text-sm space-y-1.5"
+                >
+                    <p>{t("lastRunFailedWarning", { count: status.lastRunFailed })}</p>
+                    {status.lastRunErrors.length > 0 && (
+                        <ul className="list-disc ps-5 space-y-0.5" data-testid="recognition-last-run-errors">
+                            {status.lastRunErrors.map((e, i) => (
+                                <li key={i} className="text-xs">{e}</li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
 
             <div className="bg-surface border border-border rounded-xl px-5 py-4 flex flex-wrap items-end gap-4">
                 <label className="flex flex-col gap-1">

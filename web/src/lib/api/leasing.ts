@@ -571,6 +571,18 @@ export type RecognitionRunResult = {
   errors: string[];
 };
 
+/** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
+export type RecognitionStatusSummary = {
+  behind: number;
+  behindAmount: number;
+  oldestPeriodEnd: string | null;
+  lastRunFor: string | null;
+  lastRunFinishedAt: string | null;
+  lastRunPosted: number;
+  lastRunFailed: number;
+  lastRunErrors: string[];
+};
+
 // ---- termination (spec §9.1 — api/dto/lease) ----
 
 /** TerminationPreviewDTO — what ending the contract on `date` would do. */
@@ -1149,6 +1161,8 @@ export const recognitionApi = {
     send<RecognitionRunResult>("POST", `/finance/recognition/run${qs({ to, preview })}`),
   /** One lease's whole schedule, every status, oldest period first. Open to PROPERTY_MANAGER. */
   leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
+  /** F14-27: whether the close is behind, and how the last run went. */
+  status: () => get<RecognitionStatusSummary>("/finance/recognition/status"),
 };
 
 /** Who gave notice (#27): the renter leaving, or the landlord serving notice. */

@@ -29,11 +29,11 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-const api = vi.hoisted(() => ({ pending: vi.fn(), run: vi.fn(), fiscal: vi.fn() }));
+const api = vi.hoisted(() => ({ pending: vi.fn(), run: vi.fn(), fiscal: vi.fn(), status: vi.fn() }));
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, recognitionApi: { ...m.recognitionApi, pending: api.pending, run: api.run } };
+    return { ...m, recognitionApi: { ...m.recognitionApi, pending: api.pending, run: api.run, status: api.status } };
 });
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
@@ -83,6 +83,10 @@ beforeEach(() => {
     api.pending.mockResolvedValue(PENDING);
     api.run.mockResolvedValue(RUN);
     api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-06-30" });
+    api.status.mockResolvedValue({
+        behind: 0, behindAmount: 0, oldestPeriodEnd: null, lastRunFor: null,
+        lastRunFinishedAt: null, lastRunPosted: 0, lastRunFailed: 0, lastRunErrors: [],
+    });
 });
 
 afterEach(() => {
@@ -252,5 +256,40 @@ describe("Month-end recognition page", () => {
         api.pending.mockRejectedValue(new ApiError(400, "Select an organisation first"));
         renderPage();
         expect(await screen.findByRole("alert")).toHaveTextContent("Select an organisation first");
+    });
+});
+
+describe("month-end close — behind warning (F14-27)", () => {
+    it("warns when the close is behind, naming the count, amount and oldest period", async () => {
+        api.status.mockResolvedValue({
+            behind: 3, behindAmount: 15250.5, oldestPeriodEnd: "2026-07-31", lastRunFor: null,
+            lastRunFinishedAt: null, lastRunPosted: 0, lastRunFailed: 0, lastRunErrors: [],
+        });
+        renderPage();
+        expect(await screen.findByTestId("recognition-behind-warning")).toHaveTextContent(
+            "3 ended periods (15,250.50) not recognised yet, oldest ending 31/07/2026.",
+        );
+        expect(screen.queryByTestId("recognition-last-run-failed-warning")).not.toBeInTheDocument();
+    });
+
+    it("says nothing when the close is not behind", async () => {
+        renderPage();
+        await screen.findByTestId("recognition-pending-total");
+        expect(screen.queryByTestId("recognition-behind-warning")).not.toBeInTheDocument();
+    });
+
+    it("lists the last run's own errors when it failed on something", async () => {
+        api.status.mockResolvedValue({
+            behind: 0, behindAmount: 0, oldestPeriodEnd: null, lastRunFor: "2026-08-31",
+            lastRunFinishedAt: "2026-09-01T02:00:00Z", lastRunPosted: 10, lastRunFailed: 2,
+            lastRunErrors: ["Lease l-1: books locked through 2026-08-31", "Lease l-2: negative recognised amount"],
+        });
+        renderPage();
+        expect(await screen.findByTestId("recognition-last-run-failed-warning")).toHaveTextContent(
+            "The last recognition run failed on 2 entries:",
+        );
+        const errors = screen.getByTestId("recognition-last-run-errors");
+        expect(errors).toHaveTextContent("Lease l-1: books locked through 2026-08-31");
+        expect(errors).toHaveTextContent("Lease l-2: negative recognised amount");
     });
 });
