@@ -29,6 +29,13 @@ import {
     type ChequeStatus,
     type ChequeSummary,
 } from "@/lib/api/leasing";
+import {
+    filtersFromQuery,
+    queryWithFilters,
+    REGISTER_MODES,
+    REGISTER_STATUSES,
+    type RegisterFilters,
+} from "@/components/cheques/registerFilters";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 const field =
@@ -40,13 +47,10 @@ const td = "px-4 py-3 text-xs text-foreground";
 // Draft rows never enter the register — the server never returns them, and
 // offering DRAFT as a filter would let the operator ask for something the
 // endpoint can never answer.
-const STATUS_OPTIONS: ChequeStatus[] = [
-    "REGISTERED", "DEPOSITED", "CLEARED", "BOUNCED", "REPLACED", "CANCELLED", "RETURNED", "ONLINE_PENDING",
-];
-const MODE_OPTIONS: ChequeMode[] = ["PDC", "CASH", "TRANSFER", "ONLINE"];
+const STATUS_OPTIONS: ChequeStatus[] = REGISTER_STATUSES;
+const MODE_OPTIONS: ChequeMode[] = REGISTER_MODES;
 
-type Filters = { status: ChequeStatus | ""; mode: ChequeMode | ""; propertyId: string; from: string; to: string; search: string };
-const emptyFilters: Filters = { status: "", mode: "", propertyId: "", from: "", to: "", search: "" };
+type Filters = RegisterFilters;
 
 /** The dialog's own single-row action set — bounce, replace and receipt are handled separately. */
 type SingleRowAction = Extract<RegisterAction, "deposit" | "receive" | "details" | "cancel" | "clear" | "releaseOnline">;
@@ -65,7 +69,9 @@ export default function ChequeRegisterPage() {
     const properties = useNameLookup("properties", allowed);
     const searchParams = useSearchParams();
 
-    const [draft, setDraft] = useState<Filters>(() => ({ ...emptyFilters, search: searchParams.get("search") ?? "" }));
+    // #85: the register opens on the filters in its URL (`?status=BOUNCED`), so a
+    // link from the dashboard or a notification lands on the rows it promised.
+    const [draft, setDraft] = useState<Filters>(() => filtersFromQuery(searchParams));
     const [applied, setApplied] = useState<Filters>(draft);
     const [page, setPage] = useState<Page<Cheque> | null>(null);
     const [pageIndex, setPageIndex] = useState(0);
@@ -156,6 +162,13 @@ export default function ChequeRegisterPage() {
         setPageIndex(0);
         setApplied(draft);
         setSelected(new Map());
+        // …and writes them back, so the filtered register is a URL that can be
+        // copied, reloaded or sent. replaceState, not a navigation: nothing needs
+        // to re-render beyond what setApplied already does.
+        if (typeof window !== "undefined") {
+            const next = window.location.pathname + queryWithFilters(window.location.search, draft);
+            window.history.replaceState(window.history.state, "", next);
+        }
     };
 
     const refresh = () => {
