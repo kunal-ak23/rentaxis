@@ -366,15 +366,20 @@ public class VoucherService {
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
         // A grandfathered duplicate (changeset 110) shares its number with a POSTED
-        // invoice the guard protects, so it can only be corrected to a new number.
+        // invoice the guard protects, so it can only be corrected to a new number —
+        // while that invoice still stands (PR #351 re-review N3). Once it has been
+        // reversed or renumbered, nothing holds the number and the index allows it.
         if (original.getDocType() == VoucherType.PISR && original.isDuplicateGrandfathered()
                 && original.getInvoiceNoNorm() != null
                 && original.getInvoiceNoNorm().equals(normaliseInvoiceNumber(replacement.invoiceNumber()))) {
-            String first = vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
-                    .map(Voucher::getVoucherNumber).findFirst().orElse("another invoice");
-            throw new BusinessRuleViolationException(original.getVoucherNumber() + " is a grandfathered duplicate of "
-                    + first + " (both carry " + original.getInvoiceNumber()
-                    + "); amend it to a corrected invoice number");
+            vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
+                    .filter(d -> !d.getId().equals(original.getId()))
+                    .map(Voucher::getVoucherNumber).findFirst()
+                    .ifPresent(first -> {
+                        throw new BusinessRuleViolationException(original.getVoucherNumber()
+                                + " is a grandfathered duplicate of " + first + " (both carry "
+                                + original.getInvoiceNumber() + "); amend it to a corrected invoice number");
+                    });
         }
 
         // Every row the allocation hooks will touch, locked before the journal is

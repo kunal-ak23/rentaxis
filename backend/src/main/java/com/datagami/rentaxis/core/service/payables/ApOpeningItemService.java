@@ -149,19 +149,34 @@ public class ApOpeningItemService {
     private void requireEditableAgainstAllocations(ApOpeningItem o, ApOpeningItemInputDTO in) {
         UUID t = requireTenant();
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("id", o.getId());
+        // Rule 4 against the allocations that still count: live ones, and released
+        // ones whose window reaches past the new invoice date.
+        if (in.invoiceDate() != null) {
+            java.sql.Date earliestCounting = jdbc.queryForObject(
+                    "select min(allocated_on) from voucher_allocations where tenant_id = :t and opening_item_id = :id"
+                            + " and (released_on is null or released_on > :d)",
+                    new MapSqlParameterSource(p.getValues()).addValue("d", java.sql.Date.valueOf(in.invoiceDate())),
+                    java.sql.Date.class);
+            if (earliestCounting != null && in.invoiceDate().isAfter(earliestCounting.toLocalDate())) {
+                throw new BusinessRuleViolationException("A payment was allocated to this item on "
+                        + earliestCounting.toLocalDate() + "; its invoice date cannot be later than that");
+            }
+        }
+        // PR #351 re-review N4: the freeze reads every allocation, released ones
+        // included: one dated inside the lock counted in that closed period's
+        // aging even if it was released afterwards.
         java.sql.Date earliest = jdbc.queryForObject(
-                "select min(allocated_on) from voucher_allocations where tenant_id = :t and opening_item_id = :id and released_on is null",
+                "select min(allocated_on) from voucher_allocations where tenant_id = :t and opening_item_id = :id",
                 p, java.sql.Date.class);
         if (earliest == null) return;
-        if (in.invoiceDate() != null && in.invoiceDate().isAfter(earliest.toLocalDate())) {
-            throw new BusinessRuleViolationException("A payment was allocated to this item on " + earliest.toLocalDate()
-                    + "; its invoice date cannot be later than that");
-        }
         List<java.sql.Date> lock = jdbc.queryForList(
                 "select books_locked_through from tenant_fiscal_settings where tenant_id = :t", p, java.sql.Date.class);
+        // The property is a figure too: it decides which property's section 7 the
+        // settled amount lands in.
         boolean changesFigures = in.amount() == null || in.amount().setScale(2, RoundingMode.HALF_UP).compareTo(o.getAmount()) != 0
                 || !Objects.equals(in.invoiceDate(), o.getInvoiceDate())
-                || (in.dueDate() != null && !in.dueDate().equals(o.getDueDate()));
+                || (in.dueDate() != null && !in.dueDate().equals(o.getDueDate()))
+                || !Objects.equals(in.propertyId(), o.getPropertyId());
         if (changesFigures && !lock.isEmpty() && lock.get(0) != null && !earliest.toLocalDate().isAfter(lock.get(0).toLocalDate())) {
             throw new BusinessRuleViolationException("A payment allocated to this item is dated in the locked period "
                     + "(books locked through " + lock.get(0).toLocalDate() + "); its amount and dates cannot change");

@@ -147,9 +147,6 @@ public class VoucherAllocationService {
         if (invoiceId != null) ids.add(invoiceId);
         Map<UUID, Doc> locked = lockVouchers(ids);
         Doc target = invoiceId != null ? locked.get(invoiceId) : lockOpeningItem(openingItemId);
-        if (allocatedOn != null && allocatedOn.isAfter(today())) {
-            throw new BusinessRuleViolationException("An allocation cannot be dated in the future (" + allocatedOn + ")");
-        }
         return write(locked.get(paymentId), target, amount, allocatedOn, lockedThroughShared(), null);
     }
 
@@ -372,9 +369,14 @@ public class VoucherAllocationService {
             throw new BusinessRuleViolationException("Payment " + payment.label() + " and invoice " + target.label()
                     + " belong to different vendors");
         }
-        // Rule 4.
-        LocalDate earliest = notBefore == null ? latest(payment.date(), target.date())
-                : latest(payment.date(), target.date(), notBefore);
+        // Rule 4, plus PR #351 re-review N1: never before the latest release on
+        // either side. A payment released from one invoice on R and re-applied to
+        // another dated before R would count twice between the two dates (and the
+        // invoice likewise), so aging as of those days would show both paid.
+        UUID tInvoiceId = "VOUCHER".equals(target.kind()) ? target.id() : null;
+        UUID tOpeningId = tInvoiceId == null ? target.id() : null;
+        LocalDate lastRelease = latestRelease(payment.id(), tInvoiceId, tOpeningId);
+        LocalDate earliest = latest(payment.date(), target.date(), notBefore, lastRelease);
         LocalDate on = requestedOn != null ? requestedOn
                 : lock != null && !earliest.isAfter(lock) ? lock.plusDays(1) : earliest;
         if (lock != null && !on.isAfter(lock)) {
@@ -382,8 +384,20 @@ public class VoucherAllocationService {
                     + ": books are locked through " + lock);
         }
         if (on.isBefore(earliest)) {
-            throw new BusinessRuleViolationException("An allocation cannot be dated " + on + ", before the "
-                    + (on.isBefore(payment.date()) ? "payment (" + payment.date() + ")" : "invoice (" + target.date() + ")"));
+            String why = on.isBefore(payment.date()) ? "the payment (" + payment.date() + ")"
+                    : on.isBefore(target.date()) ? "the invoice (" + target.date() + ")"
+                    : lastRelease != null && on.isBefore(lastRelease)
+                            ? "the last release on this payment or invoice (" + lastRelease + ")"
+                            : "the reversal (" + notBefore + ")";
+            throw new BusinessRuleViolationException("An allocation cannot be dated " + on + ", before " + why);
+        }
+        // N5: one rule for an explicit date and a default one. Nothing is dated
+        // after today unless a document itself is (a future-dated payment), and
+        // then no later than the earliest date the documents allow.
+        LocalDate ceiling = latest(today(), earliest);
+        if (requestedOn != null && requestedOn.isAfter(ceiling)) {
+            throw new BusinessRuleViolationException("An allocation cannot be dated in the future (" + requestedOn
+                    + ")" + (ceiling.isAfter(today()) ? "; the documents allow " + ceiling : ""));
         }
         // Rule 2.
         BigDecimal paid = payableAmount(payment.id());
@@ -436,6 +450,17 @@ public class VoucherAllocationService {
         });
         if (!out.keySet().containsAll(wanted)) throw new NotFoundException("Voucher not found");
         return out;
+    }
+
+    /** The latest {@code released_on} among the allocations of this payment and of this invoice, or null. */
+    private LocalDate latestRelease(UUID paymentId, UUID invoiceId, UUID openingItemId) {
+        MapSqlParameterSource p = params(requireTenant()).addValue("p", paymentId);
+        String other;
+        if (invoiceId != null) { other = "invoice_voucher_id = :x"; p.addValue("x", invoiceId); }
+        else { other = "opening_item_id = :x"; p.addValue("x", openingItemId); }
+        Date d = jdbc.queryForObject("select max(released_on) from voucher_allocations where tenant_id = :t"
+                + " and released_on is not null and (payment_voucher_id = :p or " + other + ")", p, Date.class);
+        return d == null ? null : d.toLocalDate();
     }
 
     private Doc lockOpeningItem(UUID id) {

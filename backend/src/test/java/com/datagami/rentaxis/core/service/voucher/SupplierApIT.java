@@ -847,10 +847,14 @@ class SupplierApIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
                 LocalDate.of(2026, 7, 1), null, new BigDecimal("450.00"), null)))
                 .hasMessageContaining("locked period");
-        // A change that moves no figure (the property) is still allowed.
-        assertThat(openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
-                LocalDate.of(2026, 7, 1), o.dueDate(), new BigDecimal("500.00"), p1.getId())).propertyId())
-                .isEqualTo(p1.getId());
+        // The property decides whose section 7 the settlement lands in: frozen too (re-review N4).
+        assertThatThrownBy(() -> openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D",
+                LocalDate.of(2026, 7, 1), o.dueDate(), new BigDecimal("500.00"), p1.getId())))
+                .hasMessageContaining("locked period");
+        // A change that moves no figure (the invoice number's spelling) is still allowed.
+        assertThat(openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-D1",
+                LocalDate.of(2026, 7, 1), o.dueDate(), new BigDecimal("500.00"), null)).invoiceNumber())
+                .isEqualTo("OLD-D1");
         assertThat(pay.getStatus()).isEqualTo(VoucherStatus.POSTED);
     }
 
@@ -893,5 +897,85 @@ class SupplierApIT extends AbstractPostgresIT {
         } finally {
             org.springframework.security.core.context.SecurityContextHolder.clearContext();
         }
+    }
+
+    // ------------------------------------------------------------------ PR #351 re-review N1–N5
+
+    @Test
+    void aPaymentReappliedAfterAReleaseIsDatedNoEarlierThanTheReleaseSoPastAgingIsUnchanged() {
+        Voucher i1 = pisr(gulf, "INV-N1A", AUG_1, line(rmP1, "1000.00", "0", p1));
+        Voucher i2 = pisr(gulf, "INV-N1B", AUG_1, line(rmP1, "1000.00", "0", p1));
+        Voucher pay = bpv(gulf, AUG_15, "1000.00", "TRF-N1", to(i1, "1000.00"));
+        UUID first = allocationRepo.findByPaymentVoucherIdAndReleasedOnIsNull(pay.getId()).get(0).getId();
+        LocalDate today = VoucherAllocationService.today();
+        allocations.release(first, "should have gone to INV-N1B");
+
+        // An explicit date before the release is refused; no date takes the release date.
+        assertThatThrownBy(() -> allocations.allocate(pay.getId(), i2.getId(), null, new BigDecimal("1000.00"), AUG_20))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("before the last release on this payment or invoice (" + today + ")");
+        VoucherAllocation again = allocations.allocate(pay.getId(), i2.getId(), null, new BigDecimal("1000.00"), null);
+        assertThat(again.getAllocatedOn()).isEqualTo(today);
+
+        // As of 31/08 the payment still settles INV-N1A only: INV-N1B is open, nothing is paid twice,
+        // there is no negative advance and the tie-out holds.
+        PayablesAgingDTO aug = payables.aging(AUG_31, null, null);
+        assertThat(row(aug, gulf).items()).extracting(OpenItemDTO::invoiceNumber).containsExactly("INV-N1B");
+        assertThat(item(row(aug, gulf).items(), "INV-N1B").open()).isEqualByComparingTo("1000.00");
+        assertThat(row(aug, gulf).figures().advances()).isEqualByComparingTo("0.00");
+        assertThat(row(aug, gulf).figures().delta()).isEqualByComparingTo("0.00");
+        // August's section 7 paid 1,000 once.
+        assertThat(paid(p1, AUG_1, AUG_31, "allocatedPaid")).isEqualByComparingTo("1000.00");
+
+        // The invoice side too: another payment re-settling INV-N1A dates after INV-N1A's release.
+        Voucher pay2 = bpv(gulf, AUG_20, "1000.00", "TRF-N1C");
+        assertThat(allocations.allocate(pay2.getId(), i1.getId(), null, new BigDecimal("1000.00"), null).getAllocatedOn())
+                .isEqualTo(today);
+    }
+
+    @Test
+    void aGrandfatheredDuplicateKeepsItsNumberOnceTheProtectedInvoiceIsGone() {
+        Voucher first = pisr(gulf, "INV-GX", AUG_1, line(rmP1, "100.00", "0", p1));
+        Voucher second = pisr(gulf, "INV-GX2", AUG_1, line(rmP1, "100.00", "0", p1));
+        jdbc.update("update vouchers set invoice_number = 'INV-GX', invoice_no_norm = 'INVGX', duplicate_grandfathered = true"
+                + " where id = ?", second.getId());
+        // The protected invoice is renumbered: nothing holds INV-GX any more.
+        vouchers.amend(first.getId(), AUG_15, "renumber", pisrInput(gulf, "INV-GX-OLD", AUG_1, line(rmP1, "100.00", "0", p1)));
+        Voucher fixed = vouchers.amend(second.getId(), AUG_15, "fix amount",
+                pisrInput(gulf, "INV-GX", AUG_1, line(rmP1, "90.00", "0", p1)));
+        assertThat(fixed.getStatus()).isEqualTo(VoucherStatus.POSTED);
+        assertThat(fixed.isDuplicateGrandfathered()).isFalse();
+        assertThat(fixed.getInvoiceNoNorm()).isEqualTo("INVGX");
+    }
+
+    @Test
+    void aReleasedAllocationInsideTheLockStillFreezesTheOpeningItem() {
+        ApOpeningItemDTO o = openingItems.create(new ApOpeningItemInputDTO(gulf.getId(), "OLD-N4",
+                LocalDate.of(2026, 7, 1), null, new BigDecimal("500.00"), null));
+        Voucher pay = bpv(gulf, AUG_15, "200.00", "TRF-N4", new AllocationInput(null, o.id(), new BigDecimal("200.00")));
+        // Released (by the payment's amend, dated in September), then August is locked.
+        vouchers.amend(pay.getId(), SEP_5, "wrong item", bpvInput(gulf, AUG_15, "200.00", "TRF-N4B"), List.of());
+        assertThat(allocations.liveOnInvoice(null, o.id())).isEqualByComparingTo("0.00");
+        fiscal.lockThrough(AUG_31);
+        // August's aging counted the 200 against this item; its amount cannot move now.
+        assertThatThrownBy(() -> openingItems.update(o.id(), new ApOpeningItemInputDTO(gulf.getId(), "OLD-N4",
+                LocalDate.of(2026, 7, 1), null, new BigDecimal("150.00"), null)))
+                .hasMessageContaining("locked period");
+    }
+
+    @Test
+    void aFutureDatedPaymentAllocatesOnItsOwnDateAndNoLater() {
+        LocalDate ahead = VoucherAllocationService.today().plusDays(5);
+        Voucher inv = pisr(gulf, "INV-N5", AUG_1, line(rmP1, "300.00", "0", p1));
+        Voucher inv2 = pisr(gulf, "INV-N5B", AUG_1, line(rmP1, "300.00", "0", p1));
+        Voucher pay = bpv(gulf, ahead, "600.00", "TRF-N5", to(inv, "300.00"));
+        // The default date on post is the payment's own date.
+        assertThat(allocationRepo.findByPaymentVoucherIdAndReleasedOnIsNull(pay.getId()))
+                .singleElement().satisfies(a -> assertThat(a.getAllocatedOn()).isEqualTo(ahead));
+        // An explicit date: the payment's date is accepted, a day later is refused.
+        assertThatThrownBy(() -> allocations.allocate(pay.getId(), inv2.getId(), null, new BigDecimal("100"), ahead.plusDays(1)))
+                .hasMessageContaining("in the future").hasMessageContaining("the documents allow " + ahead);
+        assertThat(allocations.allocate(pay.getId(), inv2.getId(), null, new BigDecimal("100"), ahead).getAllocatedOn())
+                .isEqualTo(ahead);
     }
 }

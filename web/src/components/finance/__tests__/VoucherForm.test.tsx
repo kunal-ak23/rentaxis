@@ -1180,6 +1180,37 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
             .toHaveTextContent("This payment settles INV-7790. They will show as unpaid.");
     });
 
+    it("warns about an invoice the panel no longer lists, because it will not be sent (re-review N2)", async () => {
+        allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450 },
+            { id: "a2", live: true, invoiceNumber: "INV-7790", invoiceVoucherId: "inv-90", amount: 600 }];
+        // INV-7781 is no longer one of this vendor's items (reversed elsewhere, or the
+        // vendor changed): the panel cannot list it, so the amendment will not send it.
+        const onlyInv90 = OPEN_ITEMS.filter(i => i.id === "inv-90");
+        const base = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).getMockImplementation()!;
+        vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).includes("/open-items")
+            ? new Response(JSON.stringify(onlyInv90), { status: 200, headers: { "Content-Type": "application/json" } })
+            : base(url)));
+        api.get.mockResolvedValue(detail({
+            docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/55", paymentAccountId: "bank-1",
+            paymentMethod: "TRANSFER", paymentReference: "TRF-7781",
+            lines: [{ lineNo: 1, accountId: "pay-1", accountCode: "210101", accountName: "Emirates Facilities",
+                description: null, amount: 2050, vatRate: 0, vatAmount: 0, propertyId: null, unitId: null }],
+        }));
+        api.amend.mockResolvedValue(detail({ id: "v2", docType: "BPV", status: "POSTED", voucherNumber: "BPV-26/56" }));
+        renderForm("BPV", { voucherId: "v1" });
+        await waitFor(() => expect(screen.queryByTestId("settlements-panel")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("amend-voucher"));
+        expect(await screen.findByTestId("allocate-amount-INV-7790")).toHaveValue("600.00");
+        expect(screen.queryByTestId("allocate-amount-INV-7781")).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId("post-amendment")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("post-amendment"));
+        expect(await screen.findByTestId("amend-releases"))
+            .toHaveTextContent("This payment settles INV-7781. They will show as unpaid.");
+        fireEvent.click(screen.getByTestId("confirm-amend"));
+        await waitFor(() => expect(api.amend).toHaveBeenCalled());
+        expect(api.amend.mock.calls.at(-1)![1].allocations).toEqual([{ invoiceId: "inv-90", amount: 600 }]);
+    });
+
     it("releases an allocation with a reason, and not one inside the lock", async () => {
         api.fiscal.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2026-08-31" });
         allocations = [{ id: "a1", live: true, invoiceNumber: "INV-7781", invoiceVoucherId: "inv-81", amount: 1450, allocatedOn: "2026-09-10" },
