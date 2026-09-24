@@ -36,7 +36,8 @@ class BankRecRefusalHttpTest {
     private final MockMvc mvc = MockMvcBuilders
             .standaloneSetup(new BankReconciliationController(mock(BankAccountLedgerService.class), imports,
                     mock(BankMatchService.class), mock(BankLineActionService.class), mock(BankAccountRepository.class),
-                    mock(NamedParameterJdbcTemplate.class), MAPPER))
+                    mock(NamedParameterJdbcTemplate.class), MAPPER,
+                    mock(BankReconciliationService.class), mock(BankReconciliationPdfRenderer.class)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
 

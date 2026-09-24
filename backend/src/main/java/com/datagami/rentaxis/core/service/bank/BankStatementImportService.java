@@ -53,6 +53,7 @@ public class BankStatementImportService {
     private final XlsxStatementParser xlsx;
     private final NamedParameterJdbcTemplate jdbc;
     private final java.time.Clock clock;
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -63,7 +64,9 @@ public class BankStatementImportService {
 
     public BankStatementImportService(BankAccountLedgerService ledgers, BankStatementProfileRepository profiles,
                                       BankStatementImportRepository imports, CsvStatementParser csv,
-                                      XlsxStatementParser xlsx, NamedParameterJdbcTemplate jdbc, java.time.Clock clock) {
+                                      XlsxStatementParser xlsx, NamedParameterJdbcTemplate jdbc, java.time.Clock clock,
+                                      com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.clock = clock;
         this.ledgers = ledgers;
         this.profiles = profiles;
@@ -286,6 +289,23 @@ public class BankStatementImportService {
             }
         }
         int fresh = r.rows().size() - dup;
+        // Spec §4: a new line inside a finalized reconciliation would change it.
+        LocalDate locked = bankLock.reconciledThrough(bankAccountId).orElse(null);
+        if (locked != null) {
+            List<String> inside = new ArrayList<>();
+            for (int i = 0; i < r.rows().size(); i++) {
+                StatementMapper.Row row = r.rows().get(i);
+                if (!existing.contains(hashes.get(i)) && !row.txnDate().isAfter(locked)) {
+                    inside.add("Row " + row.fileRow() + " (" + row.txnDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                            + ") is a new line inside the reconciliation finalized through "
+                            + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; reopen it first");
+                }
+            }
+            if (!inside.isEmpty()) {
+                return result("INVALID", null, grid, kind, r, inside.size() > 20 ? inside.subList(0, 20) : inside, warnings,
+                        0, 0, List.of(), null, detected);
+            }
+        }
         if (dryRun) {
             return result("PREVIEW", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, null, detected);
         }
@@ -521,6 +541,15 @@ public class BankStatementImportService {
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("i", importId)
                 .addValue("b", imp.getBankAccountId());
         jdbc.queryForList("select id from bank_accounts where id = :b and tenant_id = :t for update", p, UUID.class);
+        LocalDate locked = bankLock.reconciledThrough(imp.getBankAccountId()).orElse(null);
+        if (locked != null) {
+            Integer inside = jdbc.queryForObject("select count(*) from bank_statement_lines where tenant_id = :t and import_id = :i and txn_date <= :r",
+                    new MapSqlParameterSource(p.getValues()).addValue("r", locked), Integer.class);
+            if (inside != null && inside > 0) {
+                throw new BusinessRuleViolationException(inside + " line(s) of this import are inside the reconciliation finalized through "
+                        + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; the import cannot be deleted");
+            }
+        }
         Integer confirmed = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l
                 join bank_match_statement_lines ml on ml.statement_line_id = l.id and not ml.released

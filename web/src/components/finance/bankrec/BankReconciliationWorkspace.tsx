@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, CheckCheck, Download, Link2, MoreHorizontal, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCheck, Download, Link2, Lock, MoreHorizontal, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/bankRec";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { LineActionDialog, actionsFor } from "./LineActionDialog";
+import { ReconciliationPanel } from "./ReconciliationPanel";
 import { Money } from "./Money";
 import { serverText } from "./serverText";
 import { button, field, label, primary, small, td, th } from "./styles";
@@ -57,6 +58,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
     const [busy, setBusy] = useState(false);
     const [selLines, setSelLines] = useState<Set<string>>(new Set());
     const [selItems, setSelItems] = useState<Set<string>>(new Set());
+    const [selOpen, setSelOpen] = useState<Set<string>>(new Set());
     const [acting, setActing] = useState<StatementLine[] | null>(null);
 
     const load = useCallback(async () => {
@@ -65,6 +67,7 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
             setWs(await bankRecApi.workspace(bankAccountId, { from, to, state }));
             setSelLines(new Set());
             setSelItems(new Set());
+            setSelOpen(new Set());
         } catch (err) {
             setLoadError(err instanceof ApiError ? serverText(t, err) : tCommon("loadFailed"));
         }
@@ -84,9 +87,14 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
     const lines = (ws?.statementLines ?? []).filter(l => matchesQuery(query, [l.description, l.reference, l.chequeNo], l.amount));
     const items = (ws?.bookItems ?? []).filter(i => matchesQuery(query, [i.narration, i.entryNumber, i.counterAccount, i.chequeNo], i.amount));
     const sumS = sumCents((ws?.statementLines ?? []).filter(l => selLines.has(l.id)).map(l => l.amount));
-    const sumB = sumCents((ws?.bookItems ?? []).filter(i => selItems.has(i.journalLineId)).map(i => i.amount));
-    const selected = selLines.size + selItems.size;
-    const oneSided = selLines.size === 0 || selItems.size === 0;
+    const openingItems = (ws?.openingItems ?? []).filter(o => matchesQuery(query, [o.description, o.reference, o.chequeNo], o.amount));
+    const sumB = sumCents([
+        ...(ws?.bookItems ?? []).filter(i => selItems.has(i.journalLineId)).map(i => i.amount),
+        ...(ws?.openingItems ?? []).filter(o => selOpen.has(o.id)).map(o => o.amount),
+    ]);
+    const bookSelected = selItems.size + selOpen.size;
+    const selected = selLines.size + bookSelected;
+    const oneSided = selLines.size === 0 || bookSelected === 0;
     const canMatch = selected >= 2 && (oneSided ? (selLines.size === 0 ? sumB : sumS) === 0 : sumS === sumB);
     const suggestions = (ws?.matches ?? []).filter(m => m.status === "SUGGESTED");
 
@@ -167,6 +175,13 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                 <label className="text-xs flex-1 min-w-40"><span className={`${label} block mb-1`}>{t("search")}</span>
                     <input className={`${field} w-full`} value={query} onChange={e => setQuery(e.target.value)} data-testid="ws-search" /></label>
             </form>
+
+            <ReconciliationPanel bankAccountId={bankAccountId} onChanged={load} />
+            {ws?.reconciledThrough && (
+                <div className="text-xs text-muted bg-input rounded-lg px-3 py-2 flex items-center gap-1" data-testid="ws-locked">
+                    <Lock size={12} />{t("lockedThrough", { date: dmy(ws.reconciledThrough) })}
+                </div>
+            )}
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={load} />}
             {ws?.needsLeaf && <div className="text-xs text-warning bg-warning/10 rounded-lg px-3 py-2">{t("needsLeaf")}</div>}
@@ -258,6 +273,21 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                                     <td className={`${td} text-end`}><BookAmount i={i} /></td>
                                 </tr>
                             ))}
+                            {openingItems.map(o => (
+                                <tr key={o.id} className={rowTone(o.matchStatus)} data-testid={`oi-${o.description}`}>
+                                    <td className={td}>
+                                        {o.matchId ? <Badge matchId={o.matchId} /> : (
+                                            <input type="checkbox" aria-label={o.description} checked={selOpen.has(o.id)}
+                                                   data-testid={`sel-oi-${o.description}`} onChange={() => toggle(selOpen, o.id, setSelOpen)} />
+                                        )}
+                                    </td>
+                                    <td className={td}><bdi dir="ltr">{dmy(o.itemDate)}</bdi></td>
+                                    <td className={td}><span className="px-1.5 rounded bg-input text-[10px]">{t("openingItem")}</span></td>
+                                    <td className={td}>{o.description}</td>
+                                    <td className={td}>{o.chequeNo ?? ""}</td>
+                                    <td className={`${td} text-end`}><Money v={o.amount} /></td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </section>
@@ -270,7 +300,8 @@ export function BankReconciliationWorkspace({ bankAccountId }: { bankAccountId: 
                 <span className="flex-1 text-muted">{selected === 0 ? t("selectToMatch") : ""}</span>
                 <button type="button" className={primary} disabled={busy || !canMatch} data-testid="match"
                         onClick={() => act(async () => {
-                            await bankRecApi.match({ statementLineIds: [...selLines], journalLineIds: [...selItems] });
+                            await bankRecApi.match({ statementLineIds: [...selLines], journalLineIds: [...selItems],
+                                ...(selOpen.size ? { openingItemIds: [...selOpen] } : {}) });
                             return null;
                         })}><Link2 size={13} />{t("match")}</button>
             </div>

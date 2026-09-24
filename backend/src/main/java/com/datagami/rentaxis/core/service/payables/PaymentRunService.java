@@ -84,12 +84,17 @@ public class PaymentRunService {
     private final NamedParameterJdbcTemplate jdbc;
     private final EntityManager entityManager;
 
+    /** Finance-ops spec §4: the per-bank lock, checked before a run posts. */
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+
     public PaymentRunService(PaymentRunRepository runs, PaymentRunItemRepository items, PayablesService payables,
                              VoucherService vouchers, VoucherRepository voucherRepo, VoucherAllocationService allocations,
                              VendorRepository vendors, AccountRepository accounts, ApOpeningItemRepository openingItems,
                              EntryNumberService numbers, TenantFiscalSettingsService fiscal,
                              TenantDefaultAccountMappingRepository defaults, NamedParameterJdbcTemplate jdbc,
-                             EntityManager entityManager) {
+                             EntityManager entityManager,
+                             com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.runs = runs;
         this.items = items;
         this.payables = payables;
@@ -255,6 +260,11 @@ public class PaymentRunService {
                     + errors.stream().map(PaymentRunPreviewDTO.Problem::message).collect(Collectors.joining("; ")));
         }
         requireAsPreviewed(plan, approved);
+        // Finance-ops spec §4: a run paid by transfer or current-dated cheque credits
+        // the payment account on the run's date; refused early inside a reconciled period.
+        if (plan.vendors().stream().anyMatch(vp -> !vp.postDated() && vp.net().signum() > 0)) {
+            bankLock.assertOpen(List.of(run.getPaymentAccountId()), run.getPaymentDate());
+        }
 
         for (VendorPlan vp : plan.vendors()) {
             for (AdvanceUse use : vp.uses()) {

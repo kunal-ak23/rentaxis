@@ -122,6 +122,30 @@ public class BankAccountLedgerService {
             }
         }
         Set<UUID> current = leafSet(bankAccountId);
+        // Spec §4: the set of a reconciled bank account is part of what was signed
+        // off. A leaf leaves it only after a reopen, and a leaf with postings inside
+        // the reconciled period cannot join it.
+        java.time.LocalDate locked = jdbc.queryForList("select reconciled_through from bank_accounts where id = :b and tenant_id = :t",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), java.time.LocalDate.class)
+                .stream().filter(Objects::nonNull).findFirst().orElse(null);
+        if (locked != null) {
+            String through = locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            if (current.stream().anyMatch(a -> !wanted.contains(a))) {
+                throw new BusinessRuleViolationException("This bank account is reconciled through " + through
+                        + "; a ledger account cannot leave its set until that reconciliation is reopened");
+            }
+            for (UUID a : wanted) {
+                if (current.contains(a)) continue;
+                Integer inside = jdbc.queryForObject("""
+                        select count(*) from journal_lines jl join journal_entries je on je.id = jl.journal_entry_id
+                        where jl.tenant_id = :t and jl.account_id = :a and je.entry_date <= :r""",
+                        new MapSqlParameterSource("t", t).addValue("a", a).addValue("r", locked), Integer.class);
+                if (inside != null && inside > 0) {
+                    throw new BusinessRuleViolationException("This bank account is reconciled through " + through
+                            + "; a ledger account with postings on or before that date cannot join its set");
+                }
+            }
+        }
         for (UUID gone : current) {
             if (wanted.contains(gone)) continue;
             Integer live = jdbc.queryForObject("""

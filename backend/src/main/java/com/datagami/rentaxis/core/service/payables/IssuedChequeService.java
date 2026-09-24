@@ -73,11 +73,16 @@ public class IssuedChequeService {
     private final java.time.Clock clock;
     private final ApOpeningItemRepository openingItems;
 
+    /** Finance-ops spec §4: the per-bank lock, checked before present and unpresent do any work. */
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+
     public IssuedChequeService(IssuedChequeRepository cheques, VoucherService vouchers, VoucherRepository voucherRepo,
                                PostingService posting, VendorRepository vendors, AccountRepository accounts,
                                JournalEntryRepository entries, TenantDefaultAccountMappingRepository defaults,
                                NamedParameterJdbcTemplate jdbc, EntityManager entityManager, java.time.Clock clock,
-                               ApOpeningItemRepository openingItems) {
+                               ApOpeningItemRepository openingItems,
+                               com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.cheques = cheques;
         this.vouchers = vouchers;
         this.voucherRepo = voucherRepo;
@@ -182,6 +187,7 @@ public class IssuedChequeService {
             throw new BusinessRuleViolationException("A cheque cannot be presented in the future (" + date.format(DMY) + ")");
         }
         Account bank = accounts.findById(c.getBankAccountId()).orElseThrow(() -> new NotFoundException("Bank account not found"));
+        bankLock.assertOpen(List.of(bank.getId()), date);
         Vendor vendor = vendors.findById(c.getVendorId()).orElse(null);
         UUID propertyId = c.getVoucherId() == null ? null
                 : voucherRepo.findById(c.getVoucherId()).map(Voucher::getPropertyId).orElse(null);
@@ -214,6 +220,7 @@ public class IssuedChequeService {
             throw new BusinessRuleViolationException("The cheque was presented on " + c.getPresentedOn().format(DMY)
                     + "; it cannot be returned before that");
         }
+        bankLock.assertOpenForEntry(c.getBpcJournalId(), date);
         posting.reverse(c.getBpcJournalId(), date, reason.trim());
         c.setStatus(IssuedCheque.Status.ISSUED);
         c.setPresentedOn(null);

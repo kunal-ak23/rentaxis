@@ -244,6 +244,8 @@ public class ChequeService {
      * the instalment's tax point, and a cancel has to say where its undeclared VAT goes.
      */
     private final VatTaxPointService vatTaxPoints;
+    /** Finance-ops spec §4: the per-bank lock, checked before a clearing or a bounce does any work. */
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
 
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
@@ -268,7 +270,9 @@ public class ChequeService {
                          EntityManager entityManager,
                          Clock clock,
                          VatTaxPointService vatTaxPoints,
+                         com.datagami.rentaxis.core.service.ledger.BankLockService bankLock,
                          OwnedBankLeaf ownedBankLeaf) {
+        this.bankLock = bankLock;
         this.ownedBankLeaf = ownedBankLeaf;
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
@@ -651,6 +655,7 @@ public class ChequeService {
         Line credit;
         if (afterClearing) {
             Account banked = cheque.getDebitAccount();
+            if (banked != null) bankLock.assertOpen(List.of(banked.getId()), date);
             credit = banked != null
                     ? PostingRequest.cr(banked.getId(), amount)
                     : PostingRequest.cr(settlementRole(cheque.getMode()), amount);
@@ -1247,6 +1252,9 @@ public class ChequeService {
         Line dr = debit != null
                 ? PostingRequest.dr(debit.getId(), amount)
                 : PostingRequest.dr(settlementRole(cheque.getMode()), amount);
+        // Early, with the lock's own message: a clearing into a reconciled bank
+        // leaf dated inside the reconciled period (PostingService refuses it too).
+        if (debit != null) bankLock.assertOpen(List.of(debit.getId()), date);
 
         JournalEntry crt = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.CRT,

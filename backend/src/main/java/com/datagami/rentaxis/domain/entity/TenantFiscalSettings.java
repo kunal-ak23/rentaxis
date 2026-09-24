@@ -36,6 +36,15 @@ public class TenantFiscalSettings {
     @Column(name = "next_account_code")
     private Long nextAccountCode;
 
+    /**
+     * The tenant has started reconciling a bank account (finance-ops spec §4):
+     * until then PostingService takes no bank lock. Read-only here and written by
+     * BankReconciliationService in SQL, so a save of this row for another reason
+     * (the account-code counter) can never write a stale false over it.
+     */
+    @Column(name = "bank_rec_started", nullable = false, insertable = false, updatable = false)
+    private boolean bankRecStarted;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 

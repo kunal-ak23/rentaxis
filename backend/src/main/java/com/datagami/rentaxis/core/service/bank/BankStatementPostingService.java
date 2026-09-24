@@ -36,8 +36,11 @@ public class BankStatementPostingService {
 
     private final PostingService posting;
     private final NamedParameterJdbcTemplate jdbc;
+    private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
 
-    public BankStatementPostingService(PostingService posting, NamedParameterJdbcTemplate jdbc) {
+    public BankStatementPostingService(PostingService posting, NamedParameterJdbcTemplate jdbc,
+                                       com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+        this.bankLock = bankLock;
         this.posting = posting;
         this.jdbc = jdbc;
     }
@@ -107,6 +110,8 @@ public class BankStatementPostingService {
                              boolean vatIncluded, boolean bankTrnSet, UUID accountId, String narration,
                              BigDecimal statedNet, BigDecimal statedVat, java.util.Set<UUID> leafSet) {
         UUID t = BankAccountLedgerService.requireTenant();
+        // Finance-ops spec §4: refused early inside a reconciled period of the leaf.
+        bankLock.assertOpen(List.of(leafId), date);
         BigDecimal total = lines.stream().map(Line::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         String first = lines.get(0).description();
         String text = narration != null && !narration.isBlank() ? narration.trim() : switch (kind) {

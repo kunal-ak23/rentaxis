@@ -366,6 +366,21 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /**
+     * Finance-ops PR 5: a native (JdbcTemplate) lock wait that timed out (55P03),
+     * a deadlock (40P01) or a serialisation failure (40001) reaches here
+     * uncategorised — the bank lock's FOR SHARE and finalize's FOR UPDATE are native
+     * SQL. The same "try again" 409 as the translated ones; anything else stays a 500.
+     */
+    @ExceptionHandler(org.springframework.jdbc.UncategorizedSQLException.class)
+    public ResponseEntity<Map<String, Object>> handleUncategorizedSql(org.springframework.jdbc.UncategorizedSQLException ex) {
+        String state = ex.getSQLException() == null ? null : ex.getSQLException().getSQLState();
+        if ("55P03".equals(state) || "40P01".equals(state) || "40001".equals(state)) {
+            return handleConcurrency(ex);
+        }
+        return handleRuntime(ex);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);
