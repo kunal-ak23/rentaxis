@@ -264,6 +264,7 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
         assertThat(summary.getReceivedThisMonth()).isEqualByComparingTo("0");
         assertThat(summary.getPendingThisMonthAmount()).isEqualByComparingTo("0");
         assertThat(summary.getDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo("0");
         assertThat(summary.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
         assertThat(summary.getCollectedArrears()).isEqualByComparingTo("0");
         assertThat(summary.getCollectedAdvance()).isEqualByComparingTo("0");
@@ -328,6 +329,9 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
                         && c.getChequeDate().isBefore(monthStart.plusMonths(1)))
                 .map(Cheque::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(summary.getDueThisMonth()).isEqualByComparingTo(thisMonth.getAmount().add(quarterlyDue));
+        // Nothing dated this month was paid ahead here, so the headline and the
+        // against-due part agree.
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo(thisMonth.getAmount());
 
         // The other building's manager sees none of it.
         asPropertyManagerFor(theirProperty.getId());
@@ -335,7 +339,48 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
         assertThat(theirs.getCollectedArrears()).isEqualByComparingTo("0");
         assertThat(theirs.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
         assertThat(theirs.getCollectedAdvance()).isEqualByComparingTo("0");
+        assertThat(theirs.getCollectedForThisMonth()).isEqualByComparingTo("0");
         assertThat(theirs.getReceivedThisMonth()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Review P2-1: an instalment dated this month that was paid last month is
+     * this month's money in the bank. The headline (collectedForThisMonth) counts
+     * it whenever it cleared; the against-due part of the identity, which only
+     * counts what cleared this month, does not, and last month's tile had it as
+     * advance.
+     */
+    @Test
+    void aRowDatedThisMonthPaidLastMonthCountsInTheHeadline() {
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate start = monthStart.minusMonths(3);
+        Unit unit = fixtures.createUnit(fixtures.property(), "104");
+        UUID leaseId = fixtures.postedLease(unit, fixtures.createRenter("Early Payer"),
+                start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "12000")), 12, "300020").lease().getId();
+
+        Cheque thisMonth = byDate(register(leaseId), monthStart);
+        // Paid ahead on the last day of last month (cash or transfer), so it
+        // cleared before its own date.
+        tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findById(thisMonth.getId()).orElseThrow();
+            c.setStatus(com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED);
+            c.setClearedAt(monthStart.minusDays(1));
+            chequeRepo.save(c);
+        });
+
+        asPropertyManagerFor(fixtures.property().getId());
+        DashboardSummaryDTO summary = dashboard.getSummary();
+
+        assertThat(summary.getCollectedForThisMonth()).isEqualByComparingTo(thisMonth.getAmount());
+        assertThat(summary.getCollectedAgainstDueThisMonth()).isEqualByComparingTo("0");
+        assertThat(summary.getDueThisMonth()).isGreaterThanOrEqualTo(thisMonth.getAmount());
+        // The identity still holds: nothing cleared this month.
+        assertThat(summary.getReceivedThisMonth()).isEqualByComparingTo(
+                summary.getCollectedAgainstDueThisMonth()
+                        .add(summary.getCollectedArrears())
+                        .add(summary.getCollectedAdvance()));
     }
 
     private static Cheque byDate(List<Cheque> rows, LocalDate date) {

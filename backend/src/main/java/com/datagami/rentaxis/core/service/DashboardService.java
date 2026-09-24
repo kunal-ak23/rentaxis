@@ -192,6 +192,7 @@ public class DashboardService {
         // is one query with sumClearedBetween's where clause, so the three parts
         // add up to receivedThisMonth by construction.
         BigDecimal dueThisMonth = BigDecimal.ZERO;
+        BigDecimal collectedForThisMonth = BigDecimal.ZERO;
         BigDecimal againstDue = BigDecimal.ZERO;
         BigDecimal arrears = BigDecimal.ZERO;
         BigDecimal advance = BigDecimal.ZERO;
@@ -199,6 +200,11 @@ public class DashboardService {
             for (Object[] row : chequeRepository.aggregateMonthly(monthStart, nextMonthStart,
                     scope.unrestricted(), scope.propertyIds())) {
                 dueThisMonth = dueThisMonth.add(nz((BigDecimal) row[1]));
+                // The headline: every CLEARED row dated this month, whenever it
+                // cleared. A September instalment paid on 28 August is
+                // September's money in the bank; counting only rows cleared in
+                // September would leave a fully paid month short of 100%.
+                collectedForThisMonth = collectedForThisMonth.add(nz((BigDecimal) row[2]));
             }
             List<Object[]> split = chequeRepository.sumClearedBetweenByDueWindow(monthStart, nextMonthStart,
                     scope.unrestricted(), scope.propertyIds());
@@ -210,6 +216,7 @@ public class DashboardService {
             }
         }
         summary.setDueThisMonth(dueThisMonth);
+        summary.setCollectedForThisMonth(collectedForThisMonth);
         summary.setCollectedAgainstDueThisMonth(againstDue);
         summary.setCollectedArrears(arrears);
         summary.setCollectedAdvance(advance);

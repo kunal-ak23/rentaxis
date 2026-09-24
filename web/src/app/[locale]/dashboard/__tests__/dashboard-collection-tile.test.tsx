@@ -45,6 +45,7 @@ const CATCH_UP_MONTH = {
     receivedThisMonth: 139550,
     receivedLastMonth: 0,
     dueThisMonth: 3667,
+    collectedForThisMonth: 0,
     collectedAgainstDueThisMonth: 0,
     collectedArrears: 139550,
     collectedAdvance: 0,
@@ -98,13 +99,28 @@ describe("collection tile (gap #59)", () => {
     });
 
     it("shows both arrears and advance when both came in", async () => {
-        summary = { ...CATCH_UP_MONTH, collectedAgainstDueThisMonth: 3667, collectedAdvance: 3667 };
+        summary = { ...CATCH_UP_MONTH, collectedForThisMonth: 3667, collectedAgainstDueThisMonth: 3667, collectedAdvance: 3667 };
         renderEn();
         await waitFor(async () =>
             expect(await tileText()).toContain(
                 "+ AED 139,550 arrears, + AED 3,667 advance collected this month"),
         );
         expect(await tileText()).toContain("of AED 3,667 due (100%)");
+    });
+
+    it("counts this month's instalment paid ahead last month in the headline (review P2-1)", async () => {
+        // Cleared on 28 August for September: not in the against-due part of the
+        // identity (it did not clear this month), but it is September's money.
+        summary = {
+            ...CATCH_UP_MONTH,
+            dueThisMonth: 10000,
+            collectedForThisMonth: 10000,
+            collectedAgainstDueThisMonth: 0,
+            collectedArrears: 0,
+        };
+        renderEn();
+        await waitFor(async () => expect(await tileText()).toContain("of AED 10,000 due (100%)"));
+        expect(await tileText()).toContain("AED 10,000");
     });
 
     it("says nothing is due rather than dividing by zero, and has no sub-line when nothing else came in", async () => {
@@ -122,6 +138,11 @@ describe("collectionTile", () => {
         expect(collectionTile(CATCH_UP_MONTH)).toEqual({
             collected: 0, due: 3667, percent: 0, arrears: 139550, advance: 0,
         });
+    });
+
+    it("heads with collectedForThisMonth, which includes rows paid ahead", () => {
+        expect(collectionTile({ dueThisMonth: 10000, collectedForThisMonth: 10000, collectedAgainstDueThisMonth: 0 }))
+            .toEqual({ collected: 10000, due: 10000, percent: 100, arrears: 0, advance: 0 });
     });
 
     it("tolerates missing fields", () => {

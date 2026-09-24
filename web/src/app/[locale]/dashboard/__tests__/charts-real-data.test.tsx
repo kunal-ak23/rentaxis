@@ -98,6 +98,7 @@ describe("DashboardPage charts use real data", () => {
                     receivedThisMonth: 12500,
                     receivedLastMonth: 10000,
                     dueThisMonth: 10000,
+                    collectedForThisMonth: 7500,
                     collectedAgainstDueThisMonth: 7500,
                     collectedArrears: 5000,
                     collectedAdvance: 0,
