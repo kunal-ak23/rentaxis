@@ -182,6 +182,30 @@ class StatementParsingTest {
     }
 
     @Test
+    void aSignedProfileIgnoresStaleDebitAndCreditColumnsFromAnEarlierLayout() throws Exception {
+        // F14-03: re-mapped from a debit/credit CSV to one signed amount; the old keys stay.
+        StatementGrid g = new CsvStatementParser().read(file("two-charges-no-balance.csv"), null, null);
+        StatementMapper.Result r = StatementMapper.map(g, profile(BankStatementProfile.FileKind.CSV,
+                BankStatementProfile.AmountMode.SIGNED, 1, Map.of("txnDate", "Date", "description", "Description",
+                        "amount", "Amount", "debit", "Debit", "credit", "Credit", "amountSign", "Dr/Cr")));
+        assertThat(r.missingColumns()).isEmpty();
+        assertThat(r.errors()).isEmpty();
+        assertThat(r.rows()).hasSize(3);
+        // A column the mode does use is still checked against the header.
+        StatementMapper.Result split = StatementMapper.map(g, profile(BankStatementProfile.FileKind.CSV,
+                BankStatementProfile.AmountMode.SPLIT, 1, Map.of("txnDate", "Date", "description", "Description",
+                        "amount", "Amount", "debit", "Debit", "credit", "Credit")));
+        assertThat(split.missingColumns()).containsExactly("debit (\"Debit\")", "credit (\"Credit\")");
+    }
+
+    @Test
+    void theDetectedDelimiterIsReportedForASemicolonFile() {
+        byte[] semi = "Date;Description;Amount\n01/09/2026;CHARGE;-10,50\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(CsvStatementParser.detectedDelimiter(semi)).isEqualTo(";");
+        assertThat(CsvStatementParser.detectedDelimiter("a\tb\tc\n1\t2\t3\n".getBytes())).isEqualTo("\t");
+    }
+
+    @Test
     void twoIdenticalChargesWithNoBalanceStayTwoLines() throws Exception {
         StatementGrid g = new CsvStatementParser().read(file("two-charges-no-balance.csv"), null, null);
         StatementMapper.Result r = StatementMapper.map(g, profile(BankStatementProfile.FileKind.CSV,

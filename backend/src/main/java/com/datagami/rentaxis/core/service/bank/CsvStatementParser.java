@@ -36,6 +36,13 @@ public class CsvStatementParser implements StatementParser {
         }
     }
 
+    /** F14-04: the delimiter {@link #read} would pick for this file with none given (a tab is "\t", the character). */
+    static String detectedDelimiter(byte[] bytes) {
+        String text = decode(bytes);
+        if (!text.isEmpty() && text.charAt(0) == '\uFEFF') text = text.substring(1);
+        return String.valueOf(detect(text));
+    }
+
     /** The delimiter that splits the first non-blank lines most evenly: comma, semicolon, tab or pipe. */
     static char detect(String text) {
         String[] lines = text.split("\r?\n", 12);
@@ -86,8 +93,8 @@ public class CsvStatementParser implements StatementParser {
             } else if (c == d) {
                 row.add(cell(f));
                 if (row.size() >= MAX_COLS) {
-                    throw new BusinessRuleViolationException("Row " + (rows.size() + 1) + " has more than " + MAX_COLS
-                            + " columns; a statement may use at most " + MAX_COLS);
+                    throw BankRecRefusal.refuse("tooManyColumns", "Row " + (rows.size() + 1) + " has more than " + MAX_COLS
+                            + " columns; a statement may use at most " + MAX_COLS, "row", rows.size() + 1, "max", MAX_COLS);
                 }
                 f.setLength(0);
                 fieldStarted = false;
@@ -118,6 +125,6 @@ public class CsvStatementParser implements StatementParser {
     }
 
     static BusinessRuleViolationException tooMany() {
-        return new BusinessRuleViolationException("A statement may have at most " + MAX_ROWS + " lines; split the file");
+        return BankRecRefusal.refuse("tooManyLines", "A statement may have at most " + MAX_ROWS + " lines; split the file", "max", MAX_ROWS);
     }
 }

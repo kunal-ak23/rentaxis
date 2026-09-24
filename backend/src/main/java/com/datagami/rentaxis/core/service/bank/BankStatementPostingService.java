@@ -64,31 +64,31 @@ public class BankStatementPostingService {
      */
     public static ChargeSplit chargeSplit(List<BigDecimal> debits, boolean vatIncluded, boolean bankTrnSet,
                                           BigDecimal statedNet, BigDecimal statedVat) {
-        if (debits.isEmpty()) throw new BusinessRuleViolationException("Select the charge line(s)");
+        if (debits.isEmpty()) throw BankRecRefusal.refuse("selectChargeLines", "Select the charge line(s)");
         if (debits.stream().anyMatch(a -> a.signum() >= 0)) {
-            throw new BusinessRuleViolationException("A bank charge is booked from debit lines");
+            throw BankRecRefusal.refuse("chargeFromDebit", "A bank charge is booked from debit lines");
         }
         BigDecimal gross = debits.stream().map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
         boolean stated = statedNet != null || statedVat != null;
         if (!stated && debits.size() > 1) {
-            throw new BusinessRuleViolationException("Several lines make one charge only with its split stated: "
+            throw BankRecRefusal.refuse("chargeSplitRequired", "Several lines make one charge only with its split stated: "
                     + "give the net charge and the VAT (or book each line as its own charge)");
         }
         if (stated) {
             BigDecimal net = (statedNet == null ? gross.subtract(statedVat) : statedNet).setScale(2, RoundingMode.HALF_UP);
             BigDecimal vat = (statedVat == null ? gross.subtract(net) : statedVat).setScale(2, RoundingMode.HALF_UP);
-            if (net.signum() <= 0 || vat.signum() < 0) throw new BusinessRuleViolationException("The net charge must be above zero and the VAT not below");
+            if (net.signum() <= 0 || vat.signum() < 0) throw BankRecRefusal.refuse("chargeNetPositive", "The net charge must be above zero and the VAT not below");
             if (net.add(vat).compareTo(gross) != 0) {
-                throw new BusinessRuleViolationException("Net " + StatementValues.money(net) + " + VAT " + StatementValues.money(vat)
-                        + " does not make the lines' " + StatementValues.money(gross));
+                throw BankRecRefusal.refuse("chargeSplitSum", "Net " + StatementValues.money(net) + " + VAT " + StatementValues.money(vat)
+                        + " does not make the lines' " + StatementValues.money(gross), "net", StatementValues.money(net), "vat", StatementValues.money(vat), "gross", StatementValues.money(gross));
             }
             if (vat.signum() > 0 && !bankTrnSet) {
-                throw new BusinessRuleViolationException("No bank TRN on file, so no input VAT can be claimed; book the whole amount as the charge");
+                throw BankRecRefusal.refuse("noTrnNoVat", "No bank TRN on file, so no input VAT can be claimed; book the whole amount as the charge");
             }
             BigDecimal cap = net.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP).add(new BigDecimal("0.01"));
             if (vat.compareTo(cap) > 0) {
-                throw new BusinessRuleViolationException("VAT " + StatementValues.money(vat) + " is more than 5% of the net "
-                        + StatementValues.money(net) + "; book the lines as separate charges");
+                throw BankRecRefusal.refuse("vatAboveRate", "VAT " + StatementValues.money(vat) + " is more than 5% of the net "
+                        + StatementValues.money(net) + "; book the lines as separate charges", "vat", StatementValues.money(vat), "net", StatementValues.money(net));
             }
             return new ChargeSplit(net, vat, gross);
         }
@@ -132,19 +132,19 @@ public class BankStatementPostingService {
             }
             case INTEREST, SUSPENSE -> {
                 if (lines.size() != 1 || total.signum() <= 0) {
-                    throw new BusinessRuleViolationException((kind == Kind.INTEREST ? "Interest" : "An unidentified receipt")
-                            + " is booked from one credit line");
+                    throw BankRecRefusal.refuse("oneCreditLine", (kind == Kind.INTEREST ? "Interest" : "An unidentified receipt")
+                            + " is booked from one credit line", "kind", kind == Kind.INTEREST ? "INTEREST" : "SUSPENSE");
                 }
                 jl.add(PostingRequest.dr(leafId, total).withNarration(text));
                 jl.add(PostingRequest.cr(kind == Kind.INTEREST ? AccountRole.BANK_INTEREST_INCOME : AccountRole.BANK_SUSPENSE,
                         total).withNarration(text));
             }
             case OTHER -> {
-                if (total.signum() == 0) throw new BusinessRuleViolationException("The selected lines net to zero");
+                if (total.signum() == 0) throw BankRecRefusal.refuse("linesNetZero", "The selected lines net to zero");
                 requireOtherAccount(t, accountId);
                 // PR #353 review: "Other" into the same real account moves nothing.
                 if (leafSet.contains(accountId)) {
-                    throw new BusinessRuleViolationException("That ledger account belongs to this same bank account; "
+                    throw BankRecRefusal.refuse("counterIsSameBank", "That ledger account belongs to this same bank account; "
                             + "choose the account on the other side of the movement");
                 }
                 BigDecimal a = total.abs();
@@ -164,7 +164,7 @@ public class BankStatementPostingService {
 
     /** "Other": an active leaf of this tenant that is not a control account nor the suspense leaf. */
     private void requireOtherAccount(UUID t, UUID accountId) {
-        if (accountId == null) throw new BusinessRuleViolationException("Choose the account to post to");
+        if (accountId == null) throw BankRecRefusal.refuse("chooseAccount", "Choose the account to post to");
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select a.code, a.name, a.account_sub_type, a.is_group, a.is_active,
                        exists (select 1 from tenant_default_account_mappings m where m.tenant_id = a.tenant_id
@@ -179,12 +179,12 @@ public class BankStatementPostingService {
         Map<String, Object> r = rows.get(0);
         String label = r.get("code") + " " + r.get("name");
         if (Boolean.TRUE.equals(r.get("is_group")) || !Boolean.TRUE.equals(r.get("is_active"))) {
-            throw new BusinessRuleViolationException(label + " is not an active ledger leaf");
+            throw BankRecRefusal.refuse("notActiveLeaf", label + " is not an active ledger leaf", "account", label);
         }
         if (CONTROL_SUB_TYPES.contains((String) r.get("account_sub_type")) || Boolean.TRUE.equals(r.get("control_role"))
                 || Boolean.TRUE.equals(r.get("property_control"))) {
-            throw new BusinessRuleViolationException(label + " is a control account with its own documents; "
-                    + "use the matching action (receive, clear, present) instead");
+            throw BankRecRefusal.refuse("controlAccount", label + " is a control account with its own documents; "
+                    + "use the matching action (receive, clear, present) instead", "account", label);
         }
     }
 }

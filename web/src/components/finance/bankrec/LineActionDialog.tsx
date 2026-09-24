@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { loadAccounts } from "@/components/finance/AccountPicker";
-import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, type Account } from "@/lib/api/ledger";
 import {
     bankRecApi,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/api/bankRec";
 import { Modal } from "./Modal";
 import { Money } from "./Money";
+import { serverText } from "./serverText";
 import { button, field, label, primary } from "./styles";
 
 export type LineAction = "clear" | "receive" | "receiveSuspense" | "bounce" | "present" | "charge" | "interest" | "suspense" | "other";
@@ -78,7 +78,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         bankRecApi.candidates(first.id).then(c => {
             setCands(c);
             if (c.leaves.length === 1) setLeafId(c.leaves[0].id);
-        }).catch(err => setError(err instanceof ApiError ? err.message : String(err)));
+        }).catch(err => setError(serverText(t, err)));
         loadAccounts().then(a => setAccounts(a.filter(x => !x.group && x.active && !CONTROL.has(x.accountSubType ?? "")))).catch(() => {});
     }, [first.id]);
 
@@ -96,6 +96,12 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     useEffect(() => {
         setPicked(new Set(list.filter(c => c.preselected).map(c => c.id)));
     }, [list]);
+
+    // F14-06: documents that would fit but are refused, and why, for this action.
+    const refused = useMemo(() => {
+        const kind = action === "present" ? "present" : action === "receive" ? "receive" : null;
+        return kind ? (cands?.refused ?? []).filter(r => r.kind === kind) : [];
+    }, [cands, action]);
 
     const multi = action === "clear";
     const pickedTotal = sumCents(list.filter(c => picked.has(c.id)).map(c => c.amount)) / 100;
@@ -161,7 +167,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
             }
             onDone(r);
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : String(err));
+            setError(serverText(t, err));
         } finally {
             setBusy(false);
         }
@@ -190,7 +196,9 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                         {action === "receiveSuspense" && cands && (
                             <p className="text-[11px] text-muted mb-1">{t("suspenseBalance", { amount: fmtAmount(cands.suspenseBalance) })}</p>
                         )}
-                        {list.length === 0 ? <p className="text-xs text-muted" data-testid="no-candidates">{t("noCandidates")}</p> : (
+                        {list.length === 0 && refused.length === 0 && <p className="text-xs text-muted" data-testid="no-candidates">{t("noCandidates")}</p>}
+                        {list.length === 0 && refused.length > 0 && <p className="text-xs text-muted">{t("noFittingCandidates")}</p>}
+                        {list.length > 0 && (
                             <div className="max-h-56 overflow-y-auto border border-border rounded-lg divide-y divide-border" data-testid="candidates">
                                 {list.map(c => (
                                     <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -208,6 +216,15 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                                     </label>
                                 ))}
                             </div>
+                        )}
+                        {refused.length > 0 && (
+                            <ul className="mt-1 space-y-0.5 text-[11px] text-muted list-disc ps-4" data-testid="refused">
+                                {refused.map(r => (
+                                    <li key={r.id} data-testid={`refused-${r.id}`}>
+                                        {serverText(t, { code: r.code, args: r.args, message: r.reason })}
+                                    </li>
+                                ))}
+                            </ul>
                         )}
                         {multi && list.length > 0 && (
                             <p className="text-[11px] mt-1" data-testid="cheques-total">

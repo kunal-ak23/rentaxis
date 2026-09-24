@@ -31,7 +31,7 @@ public class XlsxStatementParser implements StatementParser {
             for (int i = 0; i < wb.getNumberOfSheets(); i++) names.add(wb.getSheetName(i));
             Sheet sheet = sheetName == null || sheetName.isBlank() ? wb.getSheetAt(0) : wb.getSheet(sheetName);
             if (sheet == null) {
-                throw new BusinessRuleViolationException("The workbook has no sheet named \"" + sheetName + "\"");
+                throw BankRecRefusal.refuse("noSuchSheet", "The workbook has no sheet named \"" + sheetName + "\"", "sheet", sheetName);
             }
             if (sheet.getLastRowNum() + 1 > MAX_GRID_ROWS) throw CsvStatementParser.tooMany();
             FormulaEvaluator eval = wb.getCreationHelper().createFormulaEvaluator();
@@ -46,8 +46,8 @@ public class XlsxStatementParser implements StatementParser {
                         Object v = value(cell, eval);
                         if (c >= MAX_COLS) {
                             if (v == null) continue;
-                            throw new BusinessRuleViolationException("Row " + (r + 1) + " has a value in column "
-                                    + StatementMapper.letter(c) + "; a statement may use at most " + MAX_COLS + " columns");
+                            throw BankRecRefusal.refuse("tooManyColumnsAt", "Row " + (r + 1) + " has a value in column "
+                                    + StatementMapper.letter(c) + "; a statement may use at most " + MAX_COLS + " columns", "row", r + 1, "column", StatementMapper.letter(c), "max", MAX_COLS);
                         }
                         while (cells.size() < c) cells.add(null);
                         cells.add(v);
@@ -57,7 +57,7 @@ public class XlsxStatementParser implements StatementParser {
             }
             return new StatementGrid(rows, names, sheet.getSheetName());
         } catch (IOException e) {
-            throw new BusinessRuleViolationException("The workbook could not be read");
+            throw BankRecRefusal.refuse("workbookUnreadable", "The workbook could not be read");
         }
     }
 
