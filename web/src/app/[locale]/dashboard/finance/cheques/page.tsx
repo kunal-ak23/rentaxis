@@ -499,6 +499,11 @@ export default function ChequeRegisterPage() {
                                             <td className={td}>{tl(`mode.${c.mode}`)}</td>
                                             <td className={td}>
                                                 <ChequeStatusBadge status={c.status} testId={`cheque-status-${c.id}`} />
+                                                {c.receiptNumber && (
+                                                    <span className="block text-[10px] text-muted tabular-nums" data-testid={`cheque-receipt-${c.id}`}>
+                                                        {t("receiptNumber", { number: c.receiptNumber })}
+                                                    </span>
+                                                )}
                                                 {c.ledgerSettled && (
                                                     <span className="block text-[10px] text-muted" data-testid={`cheque-ledger-settled-${c.id}`}>
                                                         {t("ledgerSettled")}

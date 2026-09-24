@@ -14,4 +14,14 @@ public interface LeaseAddendumRepository extends JpaRepository<LeaseAddendum, UU
 
     /** Scoped to the lease in the path, so an addendum id from another lease is a 404, not an edit. */
     Optional<LeaseAddendum> findByIdAndLease_Id(UUID id, UUID leaseId);
+
+    /**
+     * F14-33: the lease's registered addendum Ejari numbers, latest first — the
+     * first is the lease's current registration (see {@code LeaseDTO.currentEjari}).
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            select a.ejariNumber from LeaseAddendum a
+            where a.lease.id = :leaseId and a.ejariNumber is not null and trim(a.ejariNumber) <> ''
+            order by a.createdAt desc, a.id desc""")
+    List<String> findRegisteredEjariLatestFirst(@org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
 }

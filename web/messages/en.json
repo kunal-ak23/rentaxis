@@ -1044,7 +1044,7 @@
     "pageSubtitle": "Penalties applied when a cheque fails. Applied across all properties unless overridden in a property's rent-collection settings.",
     "sectionAmounts": "Fine amounts",
     "lateFeeRuleHint": "Late fees are not set here — each property's own late-fee rule (penalty type and amount, under its rent-collection settings) decides those, together with the lease's grace period.",
-    "technicalReasonsUseBounceHint": "A stopped-payment or technical-return cheque is fined at the bounce amount above.",
+    "technicalReasonsUseBounceHint": "A stopped-payment cheque is fined at the bounce amount above. A technical return (stale, post-dated, amount mismatch) is the bank's error: no fee, and it does not count toward the bounce threshold.",
     "sectionAccrual": "Accrual after grace",
     "bounceAmount": "Bounce fine (AED)",
     "signatureMismatchAmount": "Signature mismatch fine (AED)",
@@ -2054,6 +2054,7 @@
     "paymentMethod": "Payment Method",
     "depositPaymentMethod": "Deposit Payment Method",
     "ejariNumber": "Ejari #",
+    "ejariOriginal": "Contract Ejari {number}",
     "paymentReference": "Payment Reference #",
     "rentVat": "Rent carries VAT",
     "unit": "Unit",
@@ -2237,6 +2238,7 @@
     "overdue": "Overdue",
     "daysOverdue": "{n} days overdue",
     "ledgerSettled": "Settled",
+    "receiptNumber": "Receipt {number}",
     "maturity": "Maturity",
     "receipt": "Receipt",
     "penalties": "Penalties",
@@ -2327,7 +2329,7 @@
     "postAnyway": "Post anyway",
     "errors": {
       "bank": {
-        "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. An entry dated {date} falls inside it: record it from its statement line in Bank reconciliation, or confirm that it is not on the statement."
+        "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. {when, select, before {An entry dated {date} is before the statement starts ({from}), so it changes the balance the statement opens with: confirm that it is not on the statement to post it.} other {An entry dated {date} is inside the statement period ({from} to {to}): record it from its statement line in Bank reconciliation, or confirm that it is not on the statement.}}"
       },
       "voucher": {
         "cashNegative": "{account} holds {balance} on {date}; paying {amount} would leave it at {after}.",
@@ -2517,7 +2519,8 @@
     "saveDraftToAttach": "Save the draft to attach files.",
     "totalDeductions": "Total deductions",
     "totalDeductionVat": "VAT on recharges",
-    "lineVat": "incl. VAT {amount}",
+    "totalDeductionsGross": "Total deductions incl. VAT",
+    "lineVat": "+ VAT {amount} = {gross}",
     "totalAdditions": "Total additions",
     "netRefund": "Net refund",
     "refundDue": "Refund to renter",
@@ -3650,6 +3653,7 @@
     "reject": "Reject",
     "undo": "Undo",
     "undoReverse": "Undo and reverse the entry",
+    "lineActions": "Record from this line…",
     "suggested": "Suggested",
     "matched": "Matched",
     "confidence_HIGH": "High",

@@ -546,26 +546,68 @@ describe("An acknowledgement the screen could not know about", () => {
     });
 });
 
-describe("VAT on recharges (F14-37)", () => {
-    it("shows each deduction line's VAT, and a 'VAT on recharges' total row", async () => {
+describe("VAT on recharges (F14-37 / F14-61)", () => {
+    const lines = (vat: number) => [
+        { id: "d1", category: "PROPERTY_DAMAGE", description: "Wall", amount: 400, autoCalculated: false,
+          type: "DEDUCTION", additionCategory: null, accountId: "acc-1", accountName: "Damage recovery",
+          attachments: [], vatAmount: vat, grossAmount: 400 + vat },
+        { id: "d2", category: "UTILITY_ARREARS", description: "DEWA", amount: 200, autoCalculated: false,
+          type: "DEDUCTION", additionCategory: null, accountId: "acc-2", accountName: "Utilities",
+          attachments: [], vatAmount: 0, grossAmount: 200 },
+    ];
+
+    it("prices a draft's VAT-able line with the statement's rule, and the refund nets it off", async () => {
+        api.statement.mockResolvedValue(statement({
+            vatRate: 0.05, vatableCategories: ["PROPERTY_DAMAGE", "CLEANING", "KEY_REPLACEMENT"],
+        }));
+        // The stored draft carries no VAT: the screen must not depend on it.
+        api.get.mockResolvedValue(stored({ totalDeductions: 600, deductions: lines(0) as never }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("+ VAT 20.00 = 420.00");
+        expect(screen.queryByTestId("settlement-line-vat-1")).not.toBeInTheDocument();
+        expect(screen.getByTestId("settlement-total-deductions")).toHaveTextContent("- 600.00");
+        expect(screen.getByTestId("settlement-total-deduction-vat")).toHaveTextContent("- 20.00");
+        expect(screen.getByTestId("settlement-total-deductions-gross")).toHaveTextContent("- 620.00");
+        // 10,000 held − (−164.38) receivable − 600 − 20 VAT
+        expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("9,544.38");
+    });
+
+    it("prices a half-fil line as the server books it: 80.30 carries 4.02 (R1 P2-1)", async () => {
+        api.statement.mockResolvedValue(statement({
+            vatRate: 0.05, vatableCategories: ["PROPERTY_DAMAGE", "CLEANING", "KEY_REPLACEMENT"],
+        }));
+        api.get.mockResolvedValue(stored({ totalDeductions: 80.3, deductions: [
+            { id: "d1", category: "PROPERTY_DAMAGE", description: "Wall", amount: 80.3, autoCalculated: false,
+              type: "DEDUCTION", additionCategory: null, accountId: "acc-1", accountName: "Damage recovery",
+              attachments: [], vatAmount: 0 },
+        ] as never }));
+        renderPage();
+
+        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("+ VAT 4.02 = 84.32");
+        // 10,000 held − (−164.38) receivable − 80.30 − 4.02 VAT
+        expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("10,080.06");
+    });
+
+    it("a finalized settlement's figures add up: net, VAT, gross and the booked refund", async () => {
         api.get.mockResolvedValue(stored({
-            totalDeductions: 1050, refundAmount: 9114.38,
-            deductions: [
-                { id: "d1", category: "UTILITY_ARREARS", description: "DEWA", amount: 1050, autoCalculated: false,
-                  type: "DEDUCTION", additionCategory: null, accountId: "acc-1", accountName: "Utilities recharge",
-                  attachments: [], vatAmount: 50 },
-            ],
+            status: "FINALIZED", journalId: "j9", journalNumber: "STL-26/8", settlementDate: "2026-07-05",
+            totalDeductions: 600, totalDeductionVat: 20, totalDeductionsGross: 620, refundAmount: 9544.38,
+            deductions: lines(20) as never,
         }));
         renderPage();
 
-        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("incl. VAT 50.00");
-        expect(screen.getByTestId("settlement-total-deduction-vat")).toHaveTextContent("- 50.00");
+        expect(await screen.findByTestId("settlement-line-vat-0")).toHaveTextContent("+ VAT 20.00 = 420.00");
+        expect(screen.getByTestId("settlement-total-deduction-vat")).toHaveTextContent("- 20.00");
+        expect(screen.getByTestId("settlement-total-deductions-gross")).toHaveTextContent("- 620.00");
+        expect(screen.getByTestId("settlement-net-refund")).toHaveTextContent("9,544.38");
     });
 
     it("shows neither row when no deduction carries VAT", async () => {
         renderPage();
         await screen.findByTestId("settlement-total-deductions");
         expect(screen.queryByTestId("settlement-total-deduction-vat")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("settlement-total-deductions-gross")).not.toBeInTheDocument();
     });
 });
 

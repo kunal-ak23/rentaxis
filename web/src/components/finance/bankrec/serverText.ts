@@ -33,12 +33,20 @@ export function codedOf(err: unknown): Coded {
 }
 
 /** The translated text for a coded server message, else its English message. */
+/**
+ * Arguments a catalog message selects on that an older server may not send.
+ * F14-60: `bank.statementCovers` selects on `when` (before | inside).
+ */
+const ARG_DEFAULTS: Record<string, Record<string, string>> = {
+    "bank.statementCovers": { when: "inside" },
+};
+
 export function serverText(t: T, err: unknown): string {
     const c = codedOf(err);
     if (c.code) {
         const key = `errors.${c.code}`;
         if (t.has(key)) {
-            const values: Record<string, string | number> = {};
+            const values: Record<string, string | number> = { ...(ARG_DEFAULTS[c.code] ?? {}) };
             for (const [k, v] of Object.entries(c.args ?? {})) values[k] = typeof v === "number" ? v : String(v ?? "");
             try {
                 return t(key, values);

@@ -365,8 +365,19 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
 
     long countByLease_IdAndStatusIn(UUID leaseId, Collection<ChequeStatus> statuses);
 
-    /** How many times this lease has bounced — the input to the penalty threshold. */
+    /** How many times this lease has bounced. */
     long countByLease_IdAndBouncedAtIsNotNull(UUID leaseId);
+
+    /**
+     * F14-22: the bounces that count towards the penalty threshold — every return
+     * except a TECHNICAL_RETURN, which is the bank's error, not the renter's.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            select count(c) from Cheque c
+            where c.lease.id = :leaseId and c.bouncedAt is not null
+              and (c.failureReason is null
+                   or c.failureReason <> com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason.TECHNICAL_RETURN)""")
+    long countPenalisableBounces(@org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
 
     /**
      * The retention purge's worklist: id, tenant and blob path only.

@@ -81,5 +81,11 @@ public record SettlementStatementDTO(
         BigDecimal netRefund,
         int unrecognisedEntries,
         /* F14-37: the output VAT on the taxable recharges, already taken off netRefund. */
-        BigDecimal totalDeductionVat) {
+        BigDecimal totalDeductionVat,
+        /* F14-61: totalDeductions + totalDeductionVat — what the deductions take off the refund. */
+        BigDecimal totalDeductionsGross,
+        /* F14-61: the rate a VAT-able recharge carries on this lease (0 when the lease charges no VAT),
+           and which categories are VAT-able, so a screen re-pricing unsaved lines uses the same rule. */
+        BigDecimal vatRate,
+        List<com.datagami.rentaxis.domain.entity.enums.DeductionCategory> vatableCategories) {
 }

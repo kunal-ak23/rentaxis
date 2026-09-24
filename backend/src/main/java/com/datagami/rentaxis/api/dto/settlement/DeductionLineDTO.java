@@ -28,5 +28,7 @@ public record DeductionLineDTO(
         boolean autoCalculated,
         List<DeductionAttachmentDTO> attachments,
         /* F14-37: 5 % output VAT on a taxable recharge of a VAT lease; zero otherwise. */
-        BigDecimal vatAmount) {
+        BigDecimal vatAmount,
+        /* F14-61: amount + vatAmount — what this line actually takes off the refund. */
+        BigDecimal grossAmount) {
 }

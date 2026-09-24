@@ -175,6 +175,8 @@ public class SettlementService {
     /** F14-36: the narration of the STL's refund-payable credit — how a reader finds that line again (R2 N2). */
     public static final String REFUND_PAYABLE_NARRATION = "Deposit refund payable to the renter";
 
+    static final String OUTPUT_VAT_NARRATION = "Output VAT on recharges deducted at settlement";
+
     static final java.util.Set<DeductionCategory> VATABLE_RECHARGES = java.util.EnumSet.of(
             DeductionCategory.PROPERTY_DAMAGE, DeductionCategory.CLEANING, DeductionCategory.KEY_REPLACEMENT);
 
@@ -364,10 +366,7 @@ public class SettlementService {
                         account == null ? null : account.getName()));
             } else {
                 totalDeductions = totalDeductions.add(amount);
-                BigDecimal vat = vatLease && VATABLE_RECHARGES.contains(line.getCategory())
-                        ? amount.multiply(com.datagami.rentaxis.core.service.lease.LeaseVat.RATE)
-                                .setScale(2, java.math.RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO;
+                BigDecimal vat = deductionVat(vatLease, line.getCategory(), amount);
                 totalDeductionVat = totalDeductionVat.add(vat);
                 deductions.add(new DeductionLineDTO(line.getId(), line.getCategory(),
                         line.getDescription(), amount,
@@ -375,7 +374,7 @@ public class SettlementService {
                         account == null ? null : account.getName(),
                         line.isAutoCalculated(),
                         deductionAttachmentService.getAttachments(line.getId()),
-                        money(vat)));
+                        money(vat), money(amount.add(vat))));
             }
         }
 
@@ -392,7 +391,22 @@ public class SettlementService {
                 money(instrumentsOutstanding), outstandingInstruments,
                 List.copyOf(deductions), List.copyOf(additions),
                 money(totalDeductions), money(totalAdditions), money(netRefund),
-                unrecognised, money(totalDeductionVat));
+                unrecognised, money(totalDeductionVat),
+                money(totalDeductions.add(totalDeductionVat)),
+                vatLease ? com.datagami.rentaxis.core.service.lease.LeaseVat.RATE : BigDecimal.ZERO,
+                List.copyOf(VATABLE_RECHARGES));
+    }
+
+    /**
+     * F14-61: the VAT a deduction line carries on top of its amount — the one rule the
+     * statement, the stored row and finalize all use.
+     */
+    static BigDecimal deductionVat(boolean vatLease, DeductionCategory category, BigDecimal amount) {
+        if (!vatLease || category == null || amount == null || !VATABLE_RECHARGES.contains(category)) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return amount.multiply(com.datagami.rentaxis.core.service.lease.LeaseVat.RATE)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     // ------------------------------------------------------------------
@@ -656,7 +670,7 @@ public class SettlementService {
         // F14-37: the output VAT on the taxable recharges, declared by this STL.
         if (statement.totalDeductionVat() != null && statement.totalDeductionVat().signum() > 0) {
             lines.add(PostingRequest.cr(AccountRole.OUTPUT_VAT, statement.totalDeductionVat())
-                    .withNarration("Output VAT on recharges deducted at settlement"));
+                    .withNarration(OUTPUT_VAT_NARRATION));
         }
 
         // Where the settlement leaves the receivable, as a signed debit-positive
@@ -791,12 +805,33 @@ public class SettlementService {
                         .map(JournalEntry::getEntryNumber).orElse(null));
         response.setCollectionChequeId(settlement.getCollectionChequeId());
 
+        // F14-61: the VAT on the recharges, by the statement's own rule. On a FINALIZED
+        // row it is what the STL booked (a settlement finalized before VAT existed
+        // booked none, and must not start showing some).
+        boolean vatLease = chargesVat(lease);
+        if (settlement.getStatus() == SettlementStatus.FINALIZED) {
+            vatLease = settlement.getJournalId() != null && jdbc != null
+                    && jdbc.queryForObject("""
+                        select coalesce(sum(l.credit), 0) from journal_lines l
+                        where l.tenant_id = :t and l.journal_entry_id = :e and l.narration = :n""",
+                        new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t", settlement.getTenantId())
+                                .addValue("e", settlement.getJournalId()).addValue("n", OUTPUT_VAT_NARRATION),
+                        BigDecimal.class).signum() > 0;
+        }
+        final boolean chargesVat = vatLease;
+        BigDecimal[] vatTotal = {BigDecimal.ZERO};
         response.setDeductions(storedLines(leaseId).stream().map(d -> {
             SettlementResponseDTO.DeductionDTO dto = new SettlementResponseDTO.DeductionDTO();
             dto.setId(d.getId());
             dto.setCategory(d.getCategory() != null ? d.getCategory().name() : null);
             dto.setDescription(d.getDescription());
             dto.setAmount(d.getAmount());
+            if (d.getType() != LineItemType.ADDITION) {
+                BigDecimal vat = deductionVat(chargesVat, d.getCategory(), money(d.getAmount()));
+                vatTotal[0] = vatTotal[0].add(vat);
+                dto.setVatAmount(vat);
+                dto.setGrossAmount(money(money(d.getAmount()).add(vat)));
+            }
             dto.setAutoCalculated(d.isAutoCalculated());
             dto.setType(d.getType().name());
             dto.setAdditionCategory(d.getAdditionCategory() != null ? d.getAdditionCategory().name() : null);
@@ -806,6 +841,8 @@ public class SettlementService {
             dto.setAttachments(deductionAttachmentService.getAttachments(d.getId()));
             return dto;
         }).collect(Collectors.toList()));
+        response.setTotalDeductionVat(money(vatTotal[0]));
+        response.setTotalDeductionsGross(money(money(settlement.getTotalDeductions()).add(vatTotal[0])));
         return response;
     }
 

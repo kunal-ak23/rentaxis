@@ -73,5 +73,8 @@ public record ChequeDTO(UUID id,
                         com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind,
                         /* F14-52: a BOUNCED row whose debt the ledger no longer carries (a settlement or
                            payment absorbed it): not overdue, nothing to replace. */
-                        boolean ledgerSettled) {
+                        boolean ledgerSettled,
+                        /* F14-24/F14-62: the receipt number (RR-yy/n) given when the money landed;
+                           null for a row not cleared, or cleared before the series existed. */
+                        String receiptNumber) {
 }

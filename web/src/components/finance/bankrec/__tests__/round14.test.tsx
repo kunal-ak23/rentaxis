@@ -289,8 +289,16 @@ describe("F14-05 the statement pane fits its half of the workspace", () => {
         expect(cell.className).toMatch(/\bsticky\b/);
         expect(cell.className).toMatch(/\bend-0\b/);
         expect(cell.className).not.toMatch(/\bright-0\b/);
+        // F14-05 (still failing at 1568px after eb03863b): every action sits behind one
+        // menu button, so the column is one button wide whatever the row offers.
+        expect(cell.querySelectorAll("button")).toHaveLength(1);
+        fireEvent.click(screen.getByTestId("row-menu-a"));
         expect(screen.getByTestId("undo-m1")).toBeInTheDocument();
         expect(screen.getByTestId("undo-reverse-m1")).toHaveAttribute("title", ar.BankRec.undoReverse);
+        expect(screen.getByTestId("row-menu-list-a")).not.toBeNull();
+        // The panes stack below a 1700-px window instead of splitting a 1568-px one in two.
+        expect(screen.getByTestId("panes").className).toContain("min-[1700px]:grid-cols-2");
+        expect(screen.getByTestId("panes").className).not.toMatch(/\bxl:grid-cols-2\b/);
         expect(screen.getByTitle(long)).toHaveClass("truncate");
         // The value date shows only where it differs from the date.
         expect(screen.getByTestId("vd-b")).toHaveTextContent("11/09/2026");
@@ -331,5 +339,61 @@ describe("F14-48 the CSV export carries the current locale", () => {
         renderIn("ar", <BankReconciliationWorkspace bankAccountId="ba-1" />);
         await waitFor(() => expect(screen.getByText(ar.BankRec.exportCsv).closest("a"))
             .toHaveAttribute("href", expect.stringContaining("lang=ar")));
+    });
+});
+
+describe("PR #357 R1 P2-4: the row menu works from the keyboard", () => {
+    const ws = (reverse: string | null) => ({ match: "", body: {
+        bankAccountId: "ba-1", leaves: [], needsLeaf: false, bookItems: [],
+        matches: [{ id: "m1", method: "CREATED", status: "CONFIRMED", confidence: null, statementLineIds: ["a"], journalLineIds: [],
+            statementTotal: -52.5, bookTotal: -52.5, createdAt: "", confirmedAt: null, createdDocTypes: ["BNK"], reverseOnDefault: reverse }],
+        statementLines: [{ ...line("a", "SERVICE CHARGE", -52.5), matchId: "m1", matchStatus: "CONFIRMED" }],
+    } });
+
+    it("focuses the first item on open, moves with the arrows, and gives focus back on Escape and Tab", async () => {
+        const { BankReconciliationWorkspace } = await import("../BankReconciliationWorkspace");
+        stubFetch(u => (u.includes("/workspace") ? ws("2026-09-04") : undefined));
+        renderIn("ar", <BankReconciliationWorkspace bankAccountId="ba-1" />);
+        const trigger = await screen.findByTestId("row-menu-a");
+
+        // Keyboard open: ArrowDown on the trigger.
+        trigger.focus();
+        fireEvent.keyDown(trigger, { key: "ArrowDown" });
+        const menu = await screen.findByTestId("row-menu-list-a");
+        expect(trigger).toHaveAttribute("aria-expanded", "true");
+        expect(trigger).toHaveAttribute("aria-controls", "row-menu-list-a");
+        await waitFor(() => expect(screen.getByTestId("undo-m1")).toHaveFocus());
+
+        fireEvent.keyDown(menu, { key: "ArrowDown" });
+        expect(screen.getByTestId("undo-reverse-m1")).toHaveFocus();
+        fireEvent.keyDown(menu, { key: "ArrowDown" });   // wraps
+        expect(screen.getByTestId("undo-m1")).toHaveFocus();
+        fireEvent.keyDown(menu, { key: "ArrowUp" });     // wraps back
+        expect(screen.getByTestId("undo-reverse-m1")).toHaveFocus();
+        fireEvent.keyDown(menu, { key: "Home" });
+        expect(screen.getByTestId("undo-m1")).toHaveFocus();
+        fireEvent.keyDown(menu, { key: "End" });
+        expect(screen.getByTestId("undo-reverse-m1")).toHaveFocus();
+
+        // A scroll inside the menu does not close it; one outside does.
+        fireEvent.scroll(menu);
+        expect(screen.getByTestId("row-menu-list-a")).toBeInTheDocument();
+
+        fireEvent.keyDown(menu, { key: "Escape" });
+        expect(screen.queryByTestId("row-menu-list-a")).toBeNull();
+        expect(trigger).toHaveFocus();
+
+        // Enter/click opens it again; Tab leaves it and focus is back on the trigger.
+        fireEvent.click(trigger);
+        const again = await screen.findByTestId("row-menu-list-a");
+        await waitFor(() => expect(screen.getByTestId("undo-m1")).toHaveFocus());
+        fireEvent.keyDown(again, { key: "Tab" });
+        expect(screen.queryByTestId("row-menu-list-a")).toBeNull();
+        expect(trigger).toHaveFocus();
+
+        fireEvent.click(trigger);
+        await screen.findByTestId("row-menu-list-a");
+        fireEvent.scroll(window);
+        expect(screen.queryByTestId("row-menu-list-a")).toBeNull();
     });
 });

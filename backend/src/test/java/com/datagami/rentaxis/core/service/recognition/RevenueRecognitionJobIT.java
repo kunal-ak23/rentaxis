@@ -315,15 +315,19 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
             jdbc.update("delete from recognition_runs");
             assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
 
-            freeLockAndCatchUp();   // no pass on record: nothing to catch up
-            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
-
-            jdbc.update("insert into recognition_runs (tenant_id, run_for, posted, failed) values (?, ?, 0, 0)",
-                    alpha.tenantId(), TODAY);
-            freeLockAndCatchUp();   // today's pass is on record
+            // Today's pass is on record for every organisation: nothing to catch up.
+            jdbc.update("""
+                    insert into recognition_runs (tenant_id, run_for, posted, failed)
+                    select id, ?, 0, 0 from landlord_org""", TODAY);
+            freeLockAndCatchUp();
             assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
 
             jdbc.update("update recognition_runs set run_for = ? where tenant_id = ?", TODAY.minusDays(1), alpha.tenantId());
+            // Before 00:30 + grace the nightly pass may still be coming: the catch-up waits.
+            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpGraceMinutes", 180L);
+            freeLockAndCatchUp();   // the clock reads 03:00, inside 00:30 + 3 h
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
+            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpGraceMinutes", 35L);
             freeLockAndCatchUp();
             assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isZero();
             assertThat(runLog.last(alpha.tenantId())).hasValueSatisfying(r -> {
@@ -334,6 +338,36 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
         } finally {
             org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", false);
         }
+    }
+
+    /**
+     * F14-63: the first night after the deploy that created recognition_runs has no
+     * pass on record at all. That is behind, not "nothing to compare with": once the
+     * nightly slot plus its grace has passed, the catch-up runs today's pass.
+     */
+    @Test
+    void withNoPassEverRecordedTheCatchUpStillRuns() {
+        org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", true);
+        try {
+            jdbc.update("delete from recognition_runs");
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isEqualTo(3);
+
+            freeLockAndCatchUp();
+
+            assertThat(as(alpha.tenantId(), () -> recognition.behind(TODAY)).behind()).isZero();
+            assertThat(runLog.last(alpha.tenantId())).hasValueSatisfying(r -> assertThat(r.runFor()).isEqualTo(TODAY));
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(job, "catchUpEnabled", false);
+        }
+    }
+
+    /** PR #357 R1: the catch-up gate opens strictly after the nightly lock can expire. */
+    @Test
+    void theCatchUpOpensAfterTheNightlyLockExpires() {
+        Object grace = org.springframework.test.util.ReflectionTestUtils.getField(job, "catchUpGraceMinutes");
+        assertThat(grace).isEqualTo(35L);
+        assertThat(RevenueRecognitionJob.NIGHTLY_AT.plusMinutes((Long) grace))
+                .isAfter(RevenueRecognitionJob.NIGHTLY_AT.plusMinutes(RevenueRecognitionJob.NIGHTLY_LOCK_MINUTES));
     }
 
     /** A second pass on the same night finds nothing left to do and writes nothing. */

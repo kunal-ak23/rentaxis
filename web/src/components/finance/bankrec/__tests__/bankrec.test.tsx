@@ -227,8 +227,12 @@ describe("undo and reverse", () => {
             { method: "DELETE", match: "/matches/", body: bnk.match }]);
         renderIn("en", <BankReconciliationWorkspace bankAccountId="ba-1" />);
         await screen.findByTestId("sl-SERVICE CHARGE");
+        // F14-05: the row's actions sit behind one menu button.
+        fireEvent.click(screen.getByTestId("row-menu-c2"));
         expect(screen.queryByTestId("undo-reverse-m-c2")).not.toBeInTheDocument();
         expect(screen.getByTestId("undo-m-c2")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("row-menu-c2"));
+        fireEvent.click(screen.getByTestId("row-menu-c1"));
         fireEvent.click(screen.getByTestId("undo-reverse-m-c1"));
         expect(calls.some(c => c.method === "DELETE")).toBe(false);
         expect(screen.getByTestId("reverse-on")).toHaveValue("2026-09-15");

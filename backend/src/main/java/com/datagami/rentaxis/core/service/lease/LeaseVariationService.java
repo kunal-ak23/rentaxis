@@ -272,13 +272,9 @@ public class LeaseVariationService {
         String before = addendum.getEjariNumber();
         addendum.setEjariNumber(ejari);
         addendum = addendumRepository.save(addendum);
-        // F14-33: the latest addendum's registration is the lease's current Ejari,
-        // so the header shows it (and a corrected number replaces it there too).
-        List<LeaseAddendum> all = addendumRepository.findByLease_IdOrderByCreatedAtAsc(leaseId);
-        if (!all.isEmpty() && all.get(all.size() - 1).getId().equals(addendum.getId())) {
-            lease.setEjariNumber(ejari);
-            leaseRepository.save(lease);
-        }
+        // F14-33 (PR #357 R1 ruling): leases.ejari_number is the original contract's
+        // registration and is never overwritten. The header reads LeaseDTO.currentEjari,
+        // computed on read from the latest registered addendum.
         if (before != null && !before.equals(ejari)) {
             leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(),
                     "Ejari for addendum " + addendum.getAddendumNumber() + " corrected from " + before + " to " + ejari);

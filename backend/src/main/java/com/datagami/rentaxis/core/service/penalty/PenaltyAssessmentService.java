@@ -584,6 +584,17 @@ public class PenaltyAssessmentService {
     private PenaltyAssessmentDTO dto(PenaltyAssessment a) {
         Cheque cheque = a.getCheque();
         Cheque collection = a.getCollectionCheque();
+        // F14-31 leftover: a system proposal written before description codes existed
+        // is read back into its code and arguments, so it renders in Arabic too.
+        String code = a.getDescriptionCode();
+        java.util.Map<String, String> args = a.getDescriptionArgs();
+        if (code == null && a.getProposedBy() == null) {
+            var legacy = LegacyPenaltyDescription.parse(a.getDescription()).orElse(null);
+            if (legacy != null) {
+                code = legacy.code();
+                args = legacy.args();
+            }
+        }
         return new PenaltyAssessmentDTO(
                 a.getId(),
                 a.getLease() != null ? a.getLease().getId() : null,
@@ -606,8 +617,8 @@ public class PenaltyAssessmentService {
                 collection != null ? collection.getId() : null,
                 collection != null ? collection.getStatus() : null,
                 a.getResolutionNote(),
-                a.getDescriptionCode(),
-                a.getDescriptionArgs(),
+                code,
+                args,
                 a.getProposedAmount());
     }
 }

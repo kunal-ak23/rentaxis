@@ -159,8 +159,14 @@ class StatementCoverIT extends AbstractPostgresIT {
         ChequeDTO inside = depositedCheque("000602");
         ChequeDTO after = depositedCheque("000603");
 
-        refusedAsCovered(() -> chequeService.clear(before.id(), ChequeActionRequest.on(AUG_15)));
-        refusedAsCovered(() -> chequeService.clear(inside.id(), ChequeActionRequest.on(SEP_10)));
+        // F14-60: the message says where the date falls — before the statement starts, or inside it.
+        refusedAsCovered(() -> chequeService.clear(before.id(), ChequeActionRequest.on(AUG_15)))
+                .withMessageContaining("An entry dated 15/08/2026 is before the statement starts (03/09/2026)")
+                .withMessageNotContaining("inside")
+                .matches(e -> "before".equals(e.getArgs().get("when")));
+        refusedAsCovered(() -> chequeService.clear(inside.id(), ChequeActionRequest.on(SEP_10)))
+                .withMessageContaining("An entry dated 10/09/2026 is inside the statement period (03/09/2026 to 10/09/2026)")
+                .matches(e -> "inside".equals(e.getArgs().get("when")));
         refusedAsCovered(() -> chequeService.clearBatch(new ClearBatchRequest(List.of(inside.id()), SEP_5, null)));
 
         ChequeDTO cleared = chequeService.clear(before.id(), new ChequeActionRequest(AUG_15, null, null, null, true));
@@ -177,6 +183,8 @@ class StatementCoverIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForList("select receipt_number from cheques where id in (?, ?, ?) order by receipt_number",
                 String.class, before.id(), inside.id(), after.id()))
                 .containsExactly("RR-26/1", "RR-26/2", "RR-26/3");
+        // F14-62: the number is on the cheque DTO the register reads.
+        assertThat(cleared.receiptNumber()).isEqualTo("RR-26/1");
 
         BankRecDTOs.Reconciliation draft = recs.create(ei.getId(),
                 new BankRecDTOs.ReconciliationInput(SEP_3, SEP_10, null, null));

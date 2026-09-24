@@ -583,10 +583,10 @@ export default function LeasesPage() {
                             {new Date(lease.startDate).toLocaleDateString()} &rarr; {new Date(lease.endDate).toLocaleDateString()}
                         </span>
                     </div>
-                    {!compact && lease.ejariNumber && (
+                    {!compact && (lease.currentEjari || lease.ejariNumber) && (
                         <div className="flex items-center gap-3 px-1">
                             <Home size={14} className="text-muted" />
-                            <span className="text-xs font-medium text-foreground">Ejari: {lease.ejariNumber}</span>
+                            <span className="text-xs font-medium text-foreground">Ejari: {lease.currentEjari || lease.ejariNumber}</span>
                         </div>
                     )}
                 </div>

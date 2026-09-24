@@ -85,6 +85,20 @@ public class RevenueRecognitionJob {
 
     private final RecognitionRunLog runLog;
 
+    /** The nightly slot, matching {@link #run()}'s cron. */
+    static final java.time.LocalTime NIGHTLY_AT = java.time.LocalTime.of(0, 30);
+
+    /** The nightly pass's ShedLock {@code lockAtMostFor}, in minutes (see {@link #run()}). */
+    static final long NIGHTLY_LOCK_MINUTES = 30;
+
+    /**
+     * F14-63: how long after {@link #NIGHTLY_AT} the catch-up waits for the nightly pass
+     * before running it. PR #357 R1: 35, so the gate (01:05) opens strictly after the
+     * nightly lock can expire (01:00) and a long nightly pass is never overlapped.
+     */
+    @Value("${rentaxis.recognition.job.catch-up-grace-minutes:35}")
+    private long catchUpGraceMinutes = 35;
+
     /** Off in the test suite (src/test/resources), whose shared database must not be closed behind a test's back. */
     @Value("${rentaxis.recognition.job.catch-up-enabled:true}")
     private boolean catchUpEnabled;
@@ -108,9 +122,13 @@ public class RevenueRecognitionJob {
      * <p>Every hour (first check a few minutes after start-up) this asks whether the
      * last recorded nightly pass was for an earlier day and, once the nightly hour
      * has passed, runs the pass for today under the same ShedLock name. The pass is
-     * idempotent: it only posts PLANNED rows whose period has ended. With no pass
-     * ever recorded (a fresh database, a test context) it does nothing; the next
-     * night records one.</p>
+     * idempotent: it only posts PLANNED rows whose period has ended.</p>
+     *
+     * <p>F14-63: an organisation with <em>no</em> pass recorded is behind too, so
+     * the first night after a deploy is caught up like any other: once 00:30 plus
+     * {@code rentaxis.recognition.job.catch-up-grace-minutes} (default 35, i.e. 01:05) has
+     * passed and some organisation has no pass recorded for today, today's pass
+     * runs.</p>
      */
     @Scheduled(initialDelayString = "${rentaxis.recognition.job.catch-up-initial-delay-ms:300000}",
             fixedDelayString = "${rentaxis.recognition.job.catch-up-interval-ms:3600000}")
@@ -119,10 +137,14 @@ public class RevenueRecognitionJob {
         if (!enabled || !catchUpEnabled) return;
         java.time.ZonedDateTime now = java.time.ZonedDateTime.now(clock);
         LocalDate today = now.toLocalDate();
-        if (now.toLocalTime().isBefore(java.time.LocalTime.of(0, 30))) return;
-        LocalDate last = runLog.oldestLastRunFor();
-        if (last == null || !last.isBefore(today)) return;
-        log.warn("Revenue recognition: the last nightly pass ran for {}; catching up for {}", last, today);
+        // F14-63: only once the nightly slot (00:30) plus a grace has passed, so the
+        // catch-up never races tonight's own pass.
+        if (now.toLocalTime().isBefore(NIGHTLY_AT.plusMinutes(catchUpGraceMinutes))) return;
+        // F14-63: "no pass recorded" is itself behind — the first night after the
+        // deploy that created recognition_runs, or an organisation added since.
+        if (!runLog.anyBehind(today)) return;
+        log.warn("Revenue recognition: today's pass has not run (oldest recorded pass: {}); catching up for {}",
+                runLog.oldestLastRunFor(), today);
         runFor(today);
     }
 

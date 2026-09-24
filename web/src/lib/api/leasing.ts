@@ -229,7 +229,10 @@ export type LeaseDetail = {
   status: LeaseStatus;
   rentAmount: number | null;
   depositAmount: number | null;
+  /** The original contract's Ejari. Never overwritten by an addendum. */
   ejariNumber: string | null;
+  /** F14-33: the Ejari in force — the latest registered addendum's, else `ejariNumber`. */
+  currentEjari?: string | null;
   paymentTerms: number | null;
   installmentDistribution: InstallmentDistribution | null;
   paymentMethod: PaymentMethod | null;
@@ -417,6 +420,8 @@ export type Cheque = {
    * "Replace" action and overdue badge to withhold too.
    */
   ledgerSettled: boolean;
+  /** F14-24/F14-62: RR-yy/n, given when the money landed; null before that or on rows cleared before the series. */
+  receiptNumber?: string | null;
   /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
@@ -670,8 +675,10 @@ export type DeductionLine = {
   accountName: string | null;
   autoCalculated: boolean;
   attachments: DeductionAttachment[];
-  /** F14-37: VAT this recharge line carries — already inside `amount`, and already subtracted out of the statement's `netRefund`. */
+  /** F14-37/F14-61: VAT this recharge line carries on top of `amount` (net); subtracted from `netRefund` as well. */
   vatAmount?: number | null;
+  /** F14-61: amount + vatAmount. */
+  grossAmount?: number | null;
 };
 
 /** AdditionLineDTO — something the landlord owes the renter on top of the deposit. */
@@ -728,8 +735,14 @@ export type SettlementStatement = {
   additions: AdditionLine[];
   totalDeductions: number;
   totalAdditions: number;
-  /** F14-37: Σ of the deduction lines' `vatAmount` — already inside `totalDeductions` and `netRefund`, shown as its own row. */
+  /** F14-37/F14-61: Σ of the deduction lines' `vatAmount` — on top of `totalDeductions` (net), already taken off `netRefund`. */
   totalDeductionVat?: number;
+  /** F14-61: totalDeductions + totalDeductionVat. */
+  totalDeductionsGross?: number;
+  /** F14-61: the rate a VAT-able recharge carries on this lease (0 when the lease charges no VAT). */
+  vatRate?: number;
+  /** F14-61: the deduction categories that carry VAT on a VAT lease. */
+  vatableCategories?: DeductionCategory[];
   /** >0 the landlord pays out, <0 the renter still owes. */
   netRefund: number;
   /** PLANNED recognition rows. Non-zero → run recognition before settling. */
@@ -748,8 +761,9 @@ export type SettlementLine = {
   accountId: string | null;
   accountName: string | null;
   attachments: DeductionAttachment[];
-  /** F14-37: mirrors DeductionLineDTO.vatAmount on the stored (saved/finalized) row. */
+  /** F14-37/F14-61: mirrors DeductionLineDTO.vatAmount on the stored row; on a FINALIZED row what the STL booked. */
   vatAmount?: number | null;
+  grossAmount?: number | null;
 };
 
 /** SettlementResponseDTO — the stored row: the draft as saved, or what finalise posted. */
@@ -759,6 +773,10 @@ export type SettlementResponse = {
   depositAmount: number;
   totalDeductions: number;
   totalAdditions: number;
+  /** F14-61: output VAT on the recharges — on a FINALIZED row, what the STL booked. */
+  totalDeductionVat?: number;
+  /** F14-61: totalDeductions + totalDeductionVat. */
+  totalDeductionsGross?: number;
   /** max(netRefund, 0). */
   refundAmount: number;
   notes: string | null;

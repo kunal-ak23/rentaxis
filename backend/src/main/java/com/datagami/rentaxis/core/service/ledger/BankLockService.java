@@ -172,12 +172,20 @@ public class BankLockService {
         if (cover.isEmpty()) return Optional.empty();
         StatementCover c = cover.get();
         if (evidence != StatementEvidence.CONFIRMED_NOT_ON_STATEMENT) {
+            // F14-60: the rule is "on or before the statement's last day", so the entry
+            // is either before the statement starts or inside its period — say which.
+            boolean before = date.isBefore(c.from());
+            String where = before
+                    ? " is before the statement starts (" + c.from().format(DMY) + "), so it changes the balance"
+                            + " the statement opens with: confirm that it is not on the statement to post it."
+                    : " is inside the statement period (" + c.from().format(DMY) + " to " + c.to().format(DMY)
+                            + "): record it from its statement line in Bank reconciliation, or confirm that it is"
+                            + " not on the statement.";
             throw new BusinessRuleViolationException("A statement for " + c.bankLabel() + " covering "
                     + c.from().format(DMY) + " to " + c.to().format(DMY) + " is already imported. An entry dated "
-                    + date.format(DMY) + " falls inside it: record it from its statement line in Bank reconciliation,"
-                    + " or confirm that it is not on the statement.",
+                    + date.format(DMY) + where,
                     "bank.statementCovers", java.util.Map.of("bank", c.bankLabel(), "from", c.from().format(DMY),
-                            "to", c.to().format(DMY), "date", date.format(DMY)));
+                            "to", c.to().format(DMY), "date", date.format(DMY), "when", before ? "before" : "inside"));
         }
         return cover;
     }

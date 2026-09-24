@@ -202,3 +202,15 @@ describe("batch summaries pluralise (M-6)", () => {
         expect(enFmt(en.Cheques.depositBatchSummary, 2)).toBe("2 cheques selected · 1.00");
     });
 });
+
+describe("The receipt number on the register (F14-24 / F14-62)", () => {
+    it("shows a cleared row's RR receipt number, and nothing for a row without one", async () => {
+        list.mockResolvedValue(page([
+            cheque({ id: "c1", seqNo: 1, status: "CLEARED", clearedAt: "2026-06-05", receiptNumber: "RR-26/7" }),
+            cheque({ id: "c2", seqNo: 2 }),
+        ]));
+        render(withIntl(<ChequeRegisterPage />));
+        expect(await screen.findByTestId("cheque-receipt-c1")).toHaveTextContent("Receipt RR-26/7");
+        expect(screen.queryByTestId("cheque-receipt-c2")).toBeNull();
+    });
+});

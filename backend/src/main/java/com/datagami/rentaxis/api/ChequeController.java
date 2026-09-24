@@ -285,12 +285,12 @@ public class ChequeController {
     @GetMapping("/{id}/receipt")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER', 'RENTER')")
     public ResponseEntity<byte[]> downloadReceipt(@PathVariable UUID id) {
-        byte[] pdf = rentReceiptService.generateReceipt(id);
+        // F14-62: named after the RR receipt number (old rows keep receipt-<id8>.pdf).
+        RentReceiptService.Receipt receipt = rentReceiptService.receipt(id);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=receipt-" + id.toString().substring(0, 8) + ".pdf")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + receipt.fileName())
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(pdf);
+                .body(receipt.pdf());
     }
 
     /** {@code YYYY-MM}, or the current month when the caller says nothing. */

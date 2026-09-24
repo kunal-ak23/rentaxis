@@ -86,7 +86,8 @@ public final class ChequeMapper {
                 c.getVatAmount(),
                 c.getVatTaxableAmount(),
                 c.getRowKind(),
-                ledgerSettled);
+                ledgerSettled,
+                c.getReceiptNumber());
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

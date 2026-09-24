@@ -1,0 +1,16 @@
+# F14-33, superseded before release (PR #357 R1 ruling): this changeset used to
+# copy the latest registered addendum's Ejari onto leases.ejari_number. That
+# column is the original contract's registration and is never overwritten; the
+# current Ejari is computed on read (LeaseDTO.currentEjari) instead. The id is
+# kept as a no-op so it is never reused. It never reached main or production.
+databaseChangeLog:
+  - changeSet:
+      id: 127-lease-ejari-from-latest-addendum
+      author: claude
+      changes:
+        - sql:
+            comment: No-op (superseded by LeaseDTO.currentEjari)
+            sql: SELECT 1
+      rollback:
+        - sql:
+            sql: SELECT 1

@@ -468,12 +468,41 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(recorded.ejariNumber()).isEqualTo("EJ-2027-00042");
         assertThat(recorded.ejariPending()).isFalse();
         assertThat(variations.list(leaseId)).extracting(LeaseAddendumDTO::ejariPending).containsExactly(false, true);
+        // F14-33: with the later addendum not yet registered, the first one's Ejari is current.
+        String original = jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId);
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00042");
 
-        // F14-33: the latest addendum's Ejari is the lease's; a corrected number replaces it.
+        // The latest registered addendum's Ejari is current; a corrected number replaces it.
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00050");
         variations.recordEjari(leaseId, second.addendum().id(), "EJ-2027-00051");
-        String headerEjari = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getEjariNumber());
-        assertThat(headerEjari).isEqualTo("EJ-2027-00051");
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        // Correcting an earlier addendum's number leaves the latest one current.
+        variations.recordEjari(leaseId, first.addendum().id(), "EJ-2027-00043");
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00051");
+        // R1 ruling: the contract's own Ejari is never overwritten.
+        assertThat(jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId))
+                .isEqualTo(original);
+        assertThat(tx.execute(s -> leaseService.getLeaseById(leaseId)).getEjariNumber()).isEqualTo(original);
+    }
+
+    /** F14-33 (R1 P2-2): an addendum created with its Ejari already set is current at once. */
+    @Test
+    void anAddendumCreatedWithItsEjariIsTheCurrentEjari() {
+        UUID leaseId = postedWithFee();
+        String original = jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId);
+        assertThat(currentEjari(leaseId)).isEqualTo(original);
+
+        AddChargeRequest p = parking("6000", "6000");
+        variations.addCharge(leaseId, new AddChargeRequest(p.effectiveFrom(), p.contractDate(), "EJ-2027-00777",
+                p.reason(), p.lines(), p.cheques()));
+
+        assertThat(currentEjari(leaseId)).isEqualTo("EJ-2027-00777");
+        assertThat(jdbc.queryForObject("select ejari_number from leases where id = ?", String.class, leaseId))
+                .isEqualTo(original);
+    }
+
+    private String currentEjari(UUID leaseId) {
+        return tx.execute(s -> leaseService.getLeaseById(leaseId)).getCurrentEjari();
     }
 
     // ------------------------------------------------------------------

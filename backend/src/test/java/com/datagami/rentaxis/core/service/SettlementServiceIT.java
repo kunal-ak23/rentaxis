@@ -528,6 +528,57 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * F14-61: the refund the preview shows is the refund finalize books, on a VAT lease
+     * with a damage recharge; the stored row carries the same net, VAT and gross.
+     */
+    @Test
+    void previewRefundEqualsBookedRefundOnAVatLeaseWithADamageDeduction() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000"),
+                        line("SECURITY_DEPOSIT", "5000")), 4, null).lease().getId();
+        leaseService.markExpired(leaseId, END.plusDays(1));
+        saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "400"),
+                deduction(DeductionCategory.UTILITY_ARREARS, "200"));
+
+        SettlementStatementDTO preview = settlement.statement(leaseId);
+        assertThat(preview.totalDeductions()).isEqualByComparingTo("600.00");
+        assertThat(preview.totalDeductionVat()).isEqualByComparingTo("20.00");
+        assertThat(preview.totalDeductionsGross()).isEqualByComparingTo("620.00");
+        assertThat(preview.vatRate()).isEqualByComparingTo("0.05");
+        assertThat(preview.deductions()).filteredOn(d -> d.category() == DeductionCategory.PROPERTY_DAMAGE)
+                .singleElement().satisfies(d -> {
+                    assertThat(d.vatAmount()).isEqualByComparingTo("20.00");
+                    assertThat(d.grossAmount()).isEqualByComparingTo("420.00");
+                });
+        assertThat(preview.netRefund()).isEqualByComparingTo(preview.depositsHeld()
+                .subtract(preview.receivableBalance()).subtract(preview.totalDeductionsGross())
+                .add(preview.totalAdditions()));
+        assertThat(preview.netRefund()).isPositive();
+
+        SettlementResponseDTO draft = tx.execute(s -> settlement.buildSettlementResponse(leaseId));
+        assertThat(draft.getTotalDeductionVat()).isEqualByComparingTo("20.00");
+        assertThat(draft.getRefundAmount()).isEqualByComparingTo(preview.netRefund());
+
+        settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(END.plusDays(3), null, true), null);
+        JournalEntry stl = stlOf(leaseId);
+        BigDecimal booked = linesOf(stl.getId()).stream()
+                .filter(l -> SettlementService.REFUND_PAYABLE_NARRATION.equals(l.getNarration()) && l.getCredit() != null)
+                .map(JournalLine::getCredit).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(booked).isEqualByComparingTo(preview.netRefund());
+        assertThat(creditOn(stl, leaf(AccountRole.OUTPUT_VAT).getId())).isEqualByComparingTo("20.00");
+
+        SettlementResponseDTO done = tx.execute(s -> settlement.buildSettlementResponse(leaseId));
+        assertThat(done.getRefundAmount()).isEqualByComparingTo(preview.netRefund());
+        assertThat(done.getTotalDeductions()).isEqualByComparingTo("600.00");
+        assertThat(done.getTotalDeductionVat()).isEqualByComparingTo("20.00");
+        assertThat(done.getTotalDeductionsGross()).isEqualByComparingTo("620.00");
+        assertThat(done.getDeductions()).filteredOn(d -> "PROPERTY_DAMAGE".equals(d.getCategory()))
+                .singleElement().satisfies(d -> assertThat(d.getGrossAmount()).isEqualByComparingTo("420.00"));
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void statementShowsCreditOwedToTenant() {
         UUID leaseId = terminatedGalah();
