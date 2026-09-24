@@ -161,9 +161,10 @@ export const PERMISSIONS = {
     // (RecognitionController.java:110-111).
     canViewRecognitionSchedule: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     // "Run VAT tax points to date" (spec 2026-09-24 §1). Mirrors
-    // VatController#run's @PreAuthorize("hasAnyRole('TENANT_ADMIN', 'ACCOUNTANT')"):
-    // declaring an organisation's output VAT is narrower than the month-end close.
-    canRunVatTaxPoints: ['TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // VatController#run's @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    // (#92 added SUPER_ADMIN): declaring an organisation's output VAT is narrower
+    // than the month-end close, which property managers may also run.
+    canRunVatTaxPoints: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     // Mirrors ChargeTypeController's write methods (POST, PUT /{id}):
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')"). The
     // class-level rule (which also admits PROPERTY_MANAGER) covers only the read,
