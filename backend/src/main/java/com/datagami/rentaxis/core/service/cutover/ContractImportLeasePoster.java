@@ -64,16 +64,19 @@ public class ContractImportLeasePoster {
     private final ChequeService chequeService;
     private final RecognitionService recognition;
     private final Clock clock;
+    private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
 
     public ContractImportLeasePoster(LeaseRepository leases, ChequeRepository cheques,
                                      LeasePostingService leasePosting, ChequeService chequeService,
-                                     RecognitionService recognition, Clock clock) {
+                                     RecognitionService recognition, Clock clock,
+                                     com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
         this.leases = leases;
         this.cheques = cheques;
         this.leasePosting = leasePosting;
         this.chequeService = chequeService;
         this.recognition = recognition;
         this.clock = clock;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     /**
@@ -213,6 +216,12 @@ public class ContractImportLeasePoster {
 
         int recognised = recogniseThrough == null ? 0
                 : recognition.catchUpLease(leaseId, recogniseThrough, batchId).posted();
+        // The VAT tax points that fell before the books open post inside the batch,
+        // each on its own date (spec 2026-09-24 §1, cut-over import). An instalment
+        // received early has already posted through the replay's clear.
+        if (recogniseThrough != null) {
+            vatTaxPoints.catchUpLease(leaseId, recogniseThrough, batchId);
+        }
 
         log.debug("Imported lease {} posted in batch {}: {} deposited, {} cleared, {} bounced, {} recognised",
                 leaseId, batchId, deposited, cleared, bounced, recognised);

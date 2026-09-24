@@ -33,8 +33,11 @@ class TenantFiscalSettingsServiceTest {
     JournalEntryRepository journals = mock(JournalEntryRepository.class);
     /** Same shape, for the other half of the invariant: no posted cut-over batch here either. */
     ImportBatchRepository importBatches = mock(ImportBatchRepository.class);
+    /** No VAT tax point is waiting in this unit's world, so the lock is never refused for one. */
+    com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints =
+            mock(com.datagami.rentaxis.domain.repository.VatTaxPointRepository.class);
     TenantFiscalSettingsService service =
-            new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches);
+            new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches, vatTaxPoints);
     UUID tenant = UUID.randomUUID();
 
     @BeforeEach void ctx() { TenantContextHolder.setTenantId(tenant); when(repo.save(any())).thenAnswer(i -> i.getArgument(0)); }

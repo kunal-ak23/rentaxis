@@ -7,6 +7,8 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.repository.ImportBatchRepository;
+import com.datagami.rentaxis.domain.repository.VatTaxPointRepository;
+import com.datagami.rentaxis.domain.entity.enums.VatTaxPointStatus;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
@@ -50,12 +52,17 @@ public class TenantFiscalSettingsService {
     public TenantFiscalSettingsService(TenantFiscalSettingsRepository repo,
                                        OpeningBalancePostingRepository openingBalances,
                                        JournalEntryRepository journals,
-                                       ImportBatchRepository importBatches) {
+                                       ImportBatchRepository importBatches,
+                                       VatTaxPointRepository vatTaxPoints) {
         this.repo = repo;
         this.openingBalances = openingBalances;
         this.journals = journals;
         this.importBatches = importBatches;
+        this.vatTaxPoints = vatTaxPoints;
     }
+
+    /** Read directly, for the dependency reason above: the lock must not strand a PLANNED tax point. */
+    private final VatTaxPointRepository vatTaxPoints;
 
     /** Settings for the current tenant; a default row is created on first access. */
     @Transactional
@@ -110,12 +117,27 @@ public class TenantFiscalSettingsService {
         }
     }
 
+    /**
+     * Close the books through {@code date}.
+     *
+     * <p><b>Refused while a VAT tax point dated on or before {@code date} is still
+     * PLANNED</b> (spec 2026-09-24 §1): the nightly job skips a locked date, so the
+     * point's VAT would sit in {@code OUTPUT_VAT_DEFERRED} for ever, undeclared. Post
+     * the tax points through {@code date} first.</p>
+     */
     @Transactional
     public TenantFiscalSettings lockThrough(LocalDate date) {
         TenantFiscalSettings s = get();
         if (s.getBooksLockedThrough() != null && date.isBefore(s.getBooksLockedThrough())) {
             throw new BusinessRuleViolationException("Period lock cannot move backwards (currently " + s.getBooksLockedThrough() + ")");
         }
+        vatTaxPoints.findFirstByTenantIdAndStatusAndTaxPointDateLessThanEqualOrderByTaxPointDateAsc(
+                        s.getTenantId(), VatTaxPointStatus.PLANNED, date)
+                .ifPresent(p -> {
+                    throw new BusinessRuleViolationException("Post the VAT tax points through " + date
+                            + " first: one dated " + p.getTaxPointDate() + " has not been declared yet, and locking"
+                            + " the books would leave it undeclared.");
+                });
         s.setBooksLockedThrough(date);
         return repo.save(s);
     }

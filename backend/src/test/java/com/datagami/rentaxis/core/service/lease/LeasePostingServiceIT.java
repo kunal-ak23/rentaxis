@@ -295,13 +295,18 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         List<ChequeDTO> grid = grid(leaseId);
         assertThat(grid.stream().map(ChequeDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .isEqualByComparingTo("53100");
+        // The admin-fee row carries its own VAT (spec 2026-09-24 §1); rent rows none.
+        assertThat(grid.stream().map(ChequeDTO::vatAmount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("100.00");
 
         PostLeaseResponse r = posting.post(leaseId);
 
         List<JournalLine> tcoLines = linesOf(r.tcoJournalId());
         assertThat(tcoLines).hasSize(6);
         Account rentReceivable = leaf(AccountRole.RENT_RECEIVABLE);
-        Account outputVat = leaf(AccountRole.OUTPUT_VAT);
+        // An INSTALMENT lease parks its VAT until each instalment's tax point
+        // (spec 2026-09-24 §1); the contract date declares none.
+        Account outputVat = leaf(AccountRole.OUTPUT_VAT_DEFERRED);
         assertThat(tcoLines.get(4).getAccountId()).isEqualTo(rentReceivable.getId());
         assertThat(tcoLines.get(4).getDebit()).isEqualByComparingTo("100.00");
         assertThat(tcoLines.get(4).getNarration()).isEqualTo("VAT on Admin Fee");

@@ -58,7 +58,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   Advance Rent - ST1      -71,021.92   derived (ADVANCE_RENT)
  *   Rental Income ST1          -978.08   derived (RENTAL_INCOME)
  *   Security Deposit ST1     -5,000.00   derived (SECURITY_DEPOSIT)
- *   Output VAT on Sales      -1,050.00   NOT derived — SAMPLE-0002's VAT
+ *   Output VAT on Sales           0.00   NOT derived
+ *   Output VAT – not yet due -1,050.00   derived (OUTPUT_VAT_DEFERRED) — SAMPLE-0002's VAT,
+ *                                        whose one instalment falls due on 1 Oct, the
+ *                                        day the books open (spec 2026-09-24 §1)
  *   Rent Receivable - ST1         0.00   derived (RENT_RECEIVABLE)
  * </pre>
  *
@@ -68,11 +71,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * than ours, which is the one genuine disagreement.</p>
  *
  * <p>The opening journal therefore posts {@code P − ours} on the non-derived accounts
- * and nothing at all on the derived ones:</p>
+ * and nothing at all on the derived ones — with one pairing: PACT books a contract's
+ * VAT into Output VAT on the contract date, so PACT's Output VAT covers our Output VAT
+ * <em>and</em> our Output VAT – not yet due, and the line is measured against their
+ * sum (otherwise the 1,050 would be on the books twice):</p>
  *
  * <pre>
  *   Sample Bank - ST1     Dr 219,000.00   = 250,000.00 - 31,000.00
- *   Output VAT on Sales   Cr   1,950.00   =   3,000.00 -  1,050.00
+ *   Output VAT on Sales   Cr   1,950.00   =   3,000.00 - (0.00 + 1,050.00)
  *   Capital Account       Cr 218,050.00   = 218,050.00 -      0.00
  *   ------------------------------------------------------------------
  *   Opening Balance Diff  Dr   1,000.00   the balancing gap
@@ -155,6 +161,14 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
                         .getAccount().getId()).getName());
     }
 
+    /** The leaf the tenant's default OUTPUT_VAT_DEFERRED mapping points at. */
+    private String deferredVatName() {
+        return tx.execute(s -> defaultMappings.findAll().stream()
+                .filter(m -> m.getRole() == AccountRole.OUTPUT_VAT_DEFERRED)
+                .findFirst().orElseThrow(() -> new AssertionError("OUTPUT_VAT_DEFERRED is not mapped"))
+                .getAccount().getName());
+    }
+
     private String differenceAccountName() {
         return tx.execute(s -> resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null).getName());
     }
@@ -213,7 +227,11 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         // Non-derived: exactly PACT's figure. Gross, the bank would read 281,000.00
         // (250,000 + the 31,000 cleared cheque, counted twice) and output VAT -4,050.00.
         assertThat(balanceOf("Sample Bank - ST1")).isEqualByComparingTo("250000.00");
-        assertThat(balanceOf(outputVatName())).isEqualByComparingTo("-3000.00");
+        // PACT's 3,000 of output VAT, split: 1,050 still waiting for SAMPLE-0002's
+        // instalment (untouched by the opening journal), 1,950 on Output VAT itself.
+        assertThat(balanceOf(outputVatName())).isEqualByComparingTo("-1950.00");
+        assertThat(balanceOf(deferredVatName())).as("the import's deferred VAT is left intact")
+                .isEqualByComparingTo("-1050.00");
         assertThat(balanceOf("Capital Account")).isEqualByComparingTo("-218050.00");
 
         // Derived: exactly what step 1 posted, PACT's own figure ignored. PACT says the
@@ -255,8 +273,17 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
                 .findFirst().orElseThrow();
         assertThat(vat.derived()).isFalse();
         assertThat(vat.enteredCredit()).isEqualByComparingTo("3000.00");
-        assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
+        // Nothing on Output VAT itself: SAMPLE-0002's VAT is waiting on the deferred
+        // leaf, and the post figure is measured against the two together.
+        assertThat(vat.derivedCredit()).isEqualByComparingTo("0.00");
         assertThat(vat.postCredit()).isEqualByComparingTo("1950.00");
+        assertThat(grid.problems()).anySatisfy(p -> assertThat(p.message())
+                .contains("1050.00 of it is already on the books as output VAT not yet due"));
+        var deferred = grid.rows().stream().filter(r -> deferredVatName().equals(r.name()))
+                .findFirst().orElseThrow();
+        assertThat(deferred.derived()).as("OUTPUT_VAT_DEFERRED is derived").isTrue();
+        assertThat(deferred.derivedCredit()).isEqualByComparingTo("1050.00");
+        assertThat(deferred.postCredit()).isEqualByComparingTo("0.00");
 
         // A derived row still shows PACT's figure — the reconciliation screen compares
         // against it — but nothing will be posted to it.
@@ -342,6 +369,9 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
 
         BigDecimal gapOnDerivedRoles = tx.execute(s -> openingBalances.reconcile().stream()
                 .filter(ReconciliationRow::derived)
+                // Except the deferred output VAT, whose "gap" against PACT (which has no
+                // such account) is exactly what the Output VAT line already absorbed.
+                .filter(r -> !deferredVatName().equals(r.name()))
                 // difference() is ours − PACT; the difference line closes the gap, so it
                 // is the negation.
                 .map(ReconciliationRow::difference)
@@ -373,24 +403,27 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         var grid = openingBalances.grid();
         var vat = grid.rows().stream().filter(r -> outputVatName().equals(r.name()))
                 .findFirst().orElseThrow();
-        assertThat(vat.derived()).as("output VAT is NOT one of the nine derived roles").isFalse();
+        assertThat(vat.derived()).as("output VAT is NOT one of the derived roles").isFalse();
         // PACT never named it at all, so entered* is empty — unlike the difference
         // row, which is empty for the same reason but computed rather than skipped.
         assertThat(vat.enteredDebit()).isEqualByComparingTo("0.00");
         assertThat(vat.enteredCredit()).isEqualByComparingTo("0.00");
-        // ours: SAMPLE-0002's VAT, a credit of 1,050.00 (class Javadoc).
+        // ours on Output VAT itself is nothing: SAMPLE-0002's 1,050 is on the deferred
+        // leaf (class Javadoc), which PACT's Output VAT figure is measured together with.
         assertThat(vat.derivedDebit()).isEqualByComparingTo("0.00");
-        assertThat(vat.derivedCredit()).isEqualByComparingTo("1050.00");
-        // The post figure is −ours: a debit of 1,050.00 closes out the credit step 1
-        // left, rather than leaving the account carrying it forever.
+        assertThat(vat.derivedCredit()).isEqualByComparingTo("0.00");
+        // The post figure is −ours over the pair: a debit of 1,050.00 closes out the
+        // VAT step 1 left, so PACT's "no output VAT" is what the books say at D − 1.
         assertThat(vat.postDebit()).isEqualByComparingTo("1050.00");
         assertThat(vat.postCredit()).isEqualByComparingTo("0.00");
 
         openingBalances.post();
 
-        assertThat(balanceOf(outputVatName()))
-                .as("the account PACT never named ends the cut-over at zero, not at what step 1 posted")
+        assertThat(balanceOf(outputVatName()).add(balanceOf(deferredVatName())))
+                .as("the VAT PACT never named ends the cut-over at zero, not at what step 1 posted")
                 .isEqualByComparingTo("0.00");
+        assertThat(balanceOf(deferredVatName())).as("the derived leaf itself is never posted to")
+                .isEqualByComparingTo("-1050.00");
     }
 
     // ------------------------------------------------------------------
@@ -472,7 +505,9 @@ class CutoverOpeningBalanceIT extends AbstractPostgresIT {
         openingBalances.repost("after the cut-over");
 
         assertThat(balanceOf("Sample Bank - ST1")).isEqualByComparingTo("250000.00");
-        assertThat(balanceOf(outputVatName())).isEqualByComparingTo("-3000.00");
+        // PACT's 3,000 of output VAT, 1,050 of it still waiting on the deferred leaf.
+        assertThat(balanceOf(outputVatName())).isEqualByComparingTo("-1950.00");
+        assertThat(balanceOf(deferredVatName())).isEqualByComparingTo("-1050.00");
         assertThat(balanceOf("PDC Receivable ST1")).isEqualByComparingTo("47050.00");
         assertThat(balanceOf(differenceAccountName())).isEqualByComparingTo("1000.00");
         assertThat(openingBalances.grid().changedSincePosted()).isFalse();

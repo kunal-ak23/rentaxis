@@ -79,15 +79,18 @@ public class ChequeDetailsService {
     private final LeaseAccessPolicy leaseAccessPolicy;
 
     private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+    private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
 
     public ChequeDetailsService(ChequeRepository chequeRepository,
                                 LeaseRepository leaseRepository,
                                 LeaseAccessPolicy leaseAccessPolicy,
-                                com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads) {
+                                com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads,
+                                com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.imageUploads = imageUploads;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     /**
@@ -127,6 +130,9 @@ public class ChequeDetailsService {
         }
         if (input.chequeDate() != null) {
             cheque.setChequeDate(input.chequeDate());
+            // A PLANNED VAT tax point follows the new date; a declared one stays put
+            // (spec 2026-09-24 §1).
+            vatTaxPoints.onChequeDateChanged(cheque);
         }
         if (input.payeeBank() != null) {
             cheque.setPayeeBank(blankToNull(input.payeeBank()));
@@ -317,6 +323,9 @@ public class ChequeDetailsService {
             }
             if (it.getChequeDate() != null) {
                 c.setChequeDate(it.getChequeDate());
+                if (c.getStatus() != ChequeStatus.DRAFT) {
+                    vatTaxPoints.onChequeDateChanged(c);
+                }
             }
             String path = blankToNull(it.getImageBlobPath());
             var issued = issuedImages.get(c.getId());

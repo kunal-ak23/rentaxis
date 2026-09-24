@@ -91,7 +91,7 @@ import java.util.UUID;
  * number posted, by construction rather than by agreement.</p>
  *
  * <p><b>And what it writes is the delta</b> — {@code PACT(X) − ours(X)} — not PACT's
- * figure gross (review C2, ruling R17). The nine {@link #DERIVED_ROLES} are the
+ * figure gross (review C2, ruling R17). The {@link #DERIVED_ROLES} are the
  * accounts step 1 <em>raises</em>; they are not the only accounts step 1
  * <em>touches</em>, and bank and output VAT are both. See {@link #postable} for the
  * arithmetic and for why the gross form double-counted them.</p>
@@ -157,11 +157,18 @@ public class OpeningBalanceService {
      * ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, RENTAL_INCOME, ADMIN_FEE,
      * *_PENALTY are excluded from manual entry (derived by step 1)." The two
      * {@code *_PENALTY} roles are RENT_PENALTY and CHEQUE_RETURN_PENALTY.
+     *
+     * <p>{@code OUTPUT_VAT_DEFERRED} joins them (spec 2026-09-24 §1): the contract
+     * import raises it with each VAT-bearing TCO and runs it down with the tax points
+     * before the books open, and PACT never names such an account. Treated as manual,
+     * the R16 delta rule would post {@code −ours} against it and wipe the VAT still
+     * waiting for its instalments.</p>
      */
     public static final Set<AccountRole> DERIVED_ROLES = Collections.unmodifiableSet(EnumSet.of(
             AccountRole.RENT_RECEIVABLE, AccountRole.PDC_RECEIVABLE, AccountRole.ADVANCE_RENT,
             AccountRole.SECURITY_DEPOSIT, AccountRole.PARKING_DEPOSIT, AccountRole.RENTAL_INCOME,
-            AccountRole.ADMIN_FEE, AccountRole.RENT_PENALTY, AccountRole.CHEQUE_RETURN_PENALTY));
+            AccountRole.ADMIN_FEE, AccountRole.RENT_PENALTY, AccountRole.CHEQUE_RETURN_PENALTY,
+            AccountRole.OUTPUT_VAT_DEFERRED));
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
@@ -605,7 +612,7 @@ public class OpeningBalanceService {
      * What <em>our</em> books hold per account as at {@code asOf}, debit-positive,
      * with the live opening journal's own lines taken back out.
      *
-     * <p>After the cut-over's step 1 this is, for the nine {@code DERIVED_ROLES},
+     * <p>After the cut-over's step 1 this is, for the {@code DERIVED_ROLES},
      * exactly what the contract import produced: the receivable the {@code TCO}
      * raised, the PDC receivable the {@code PDR}s hold, the advance rent the
      * catch-up has not released yet, the income it has, the bank the cleared
@@ -752,6 +759,15 @@ public class OpeningBalanceService {
             pact.merge(a.getId(), figure, BigDecimal::add);
         }
 
+        // Output VAT per instalment (spec 2026-09-24 §1). PACT books a contract's VAT
+        // into Output VAT at the contract date; the import parks the part whose
+        // instalment has not reached its tax point in OUTPUT_VAT_DEFERRED (derived, so
+        // never posted to here). PACT's Output VAT figure therefore covers both of our
+        // accounts, and the delta on Output VAT is taken against their sum — otherwise
+        // the deferred VAT would be counted twice, once in each account, with the
+        // excess parked on the difference line.
+        ours = foldDeferredVatIntoOutputVat(ours, derived, problems);
+
         LinkedHashMap<UUID, BigDecimal> byAccount = new LinkedHashMap<>();
         for (Map.Entry<UUID, BigDecimal> e : pact.entrySet()) {
             BigDecimal net = e.getValue().subtract(ours.getOrDefault(e.getKey(), ZERO));
@@ -784,6 +800,34 @@ public class OpeningBalanceService {
             byAccount.put(difference.getId(), gap.negate());
         }
         return new Postable(byAccount, entered, totalDebit, totalCredit, gap, difference, problems);
+    }
+
+    /**
+     * {@code ours} with the deferred output VAT added onto the Output VAT account —
+     * see {@link #postable}. The deferred account keeps its own figure too: it is
+     * derived, so nothing is posted to it, and this only changes what the Output VAT
+     * line is measured against. A warning on the grid says how much, so the post
+     * column's arithmetic is not a mystery.
+     */
+    private Map<UUID, BigDecimal> foldDeferredVatIntoOutputVat(Map<UUID, BigDecimal> ours,
+                                                               Map<UUID, AccountRole> derived,
+                                                               List<GridProblemDTO> problems) {
+        Account outputVat = resolver.resolveOrNull(AccountRole.OUTPUT_VAT, null);
+        if (outputVat == null) return ours;
+        BigDecimal deferred = ZERO;
+        for (Map.Entry<UUID, AccountRole> e : derived.entrySet()) {
+            if (e.getValue() == AccountRole.OUTPUT_VAT_DEFERRED) {
+                deferred = deferred.add(ours.getOrDefault(e.getKey(), ZERO));
+            }
+        }
+        if (deferred.signum() == 0) return ours;
+        Map<UUID, BigDecimal> out = new HashMap<>(ours);
+        out.merge(outputVat.getId(), deferred, BigDecimal::add);
+        problems.add(GridProblemDTO.warning(outputVat.getCode() + " " + outputVat.getName() + ": "
+                + deferred.negate().setScale(2, RoundingMode.HALF_UP).toPlainString()
+                + " of it is already on the books as output VAT not yet due on the imported contracts'"
+                + " instalments, so only the rest of PACT's figure is posted to it."));
+        return out;
     }
 
     /** True when the grid's postable lines no longer match the live OB journal's. */

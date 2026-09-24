@@ -210,8 +210,11 @@ public class ChequeController {
     @PutMapping("/{id}/cancel")
     @PreAuthorize(FINANCE)
     public ChequeDTO cancel(@PathVariable UUID id,
-                            @RequestBody(required = false) ChequeActionRequest request) {
-        return chequeService.cancel(id, request);
+                            @RequestBody(required = false) ChequeActionRequest request,
+                            @RequestParam(required = false) UUID moveVatTo) {
+        // moveVatTo: another pending instalment of the same lease to carry this row's
+        // undeclared VAT (spec 2026-09-24 §1). Required only when the row has some.
+        return chequeService.cancel(id, request, moveVatTo);
     }
 
     /**

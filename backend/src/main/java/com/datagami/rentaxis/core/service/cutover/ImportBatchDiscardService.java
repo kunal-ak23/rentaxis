@@ -107,6 +107,7 @@ public class ImportBatchDiscardService {
     private final PropertyAccountMappingRepository propertyMappings;
     private final AccountRepository accounts;
     private final LeaseService leaseService;
+    private final com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints;
 
     /** The run's own transaction: it holds the batch row lock and nothing else. */
     private final TransactionTemplate tx;
@@ -126,7 +127,8 @@ public class ImportBatchDiscardService {
                                      UnitRepository units, BuildingRepository buildings, RenterRepository renters,
                                      PropertyRepository properties,
                                      PropertyAccountMappingRepository propertyMappings, AccountRepository accounts,
-                                     LeaseService leaseService, PlatformTransactionManager transactionManager) {
+                                     LeaseService leaseService, PlatformTransactionManager transactionManager,
+                                     com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints) {
         this.batches = batches;
         this.leases = leases;
         this.journals = journals;
@@ -139,6 +141,7 @@ public class ImportBatchDiscardService {
         this.propertyMappings = propertyMappings;
         this.accounts = accounts;
         this.leaseService = leaseService;
+        this.vatTaxPoints = vatTaxPoints;
         this.tx = new TransactionTemplate(transactionManager);
         this.ownTx = new TransactionTemplate(transactionManager);
         this.ownTx.setPropagationBehavior(
@@ -313,8 +316,13 @@ public class ImportBatchDiscardService {
         for (RentSegment s : segments.findByLease_IdOrderByFromDateAsc(leaseId)) {
             segments.delete(s);
         }
+        // A VAT schedule carries a foreign key to the lease as well (changeset 108).
+        // A contract with no journals never posted a tax point, so only PLANNED or
+        // CANCELLED rows can be here — and no tax invoice, which only a post issues.
+        vatTaxPoints.deleteAll(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(leaseId));
         recognitionEntries.flush();
         segments.flush();
+        vatTaxPoints.flush();
         leaseService.deleteDraftLease(leaseId);
         return Outcome.DELETED;
     }

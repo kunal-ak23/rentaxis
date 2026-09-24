@@ -328,7 +328,11 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
                 "Storage room", List.of(storage), List.of(chequeRow("4200", LocalDate.of(2027, 3, 1)))));
 
         assertThat(leaseLines(leaseId).getLast().vatApplicable()).isTrue();
-        UUID outputVat = leaf(AccountRole.OUTPUT_VAT).getId();
+        // The addendum's TCO parks its VAT until the new row's tax point, and the new
+        // row carries exactly the new lines' VAT (spec 2026-09-24 §1).
+        UUID outputVat = leaf(AccountRole.OUTPUT_VAT_DEFERRED).getId();
+        assertThat(r.posting().cheques()).filteredOn(c -> c.chequeDate().equals(LocalDate.of(2027, 3, 1)))
+                .singleElement().satisfies(c -> assertThat(c.vatAmount()).isEqualByComparingTo("200.00"));
         assertThat(linesOf(r.posting().tcoJournalId()))
                 .filteredOn(l -> outputVat.equals(l.getAccountId()))
                 .singleElement()

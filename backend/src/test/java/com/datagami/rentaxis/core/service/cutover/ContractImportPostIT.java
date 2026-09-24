@@ -238,6 +238,92 @@ class ContractImportPostIT extends AbstractPostgresIT {
                 .isEmpty();
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints;
+    @org.springframework.beans.factory.annotation.Autowired
+    org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** The template, with SAMPLE-0002's one VAT-bearing cheque re-dated / re-stated. */
+    private UUID importWithSample2Cheque(String chequeDate, String status, String clearedDate) throws Exception {
+        try (Workbook wb = fixture.template()) {
+            var sheet = wb.getSheet("Cheques");
+            var row = sheet.getRow(3);
+            assertThat(row.getCell(0).getStringCellValue()).isEqualTo("SAMPLE-0002");
+            row.getCell(4).setCellValue(chequeDate);
+            row.getCell(10).setCellValue(status);
+            if (clearedDate != null) {
+                row.getCell(11, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(clearedDate);
+                row.getCell(12, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(clearedDate);
+            }
+            return contractPersist.persist(wb, fixture.newJob()).batchId();
+        }
+    }
+
+    /**
+     * Spec 2026-09-24 §1, cut-over import: the tax points dated before the books
+     * open post inside the batch, on their own dates (the batch id exempts them from
+     * the lock), each with its tax invoice. SAMPLE-0002's instalment re-dated to
+     * 20 Sep is one of them; its VAT is declared and nothing is left deferred.
+     */
+    @Test
+    void aTaxPointBeforeTheCutOverPostsInsideTheBatchOnItsOwnDate() throws Exception {
+        UUID batchId = importWithSample2Cheque("2026-09-20", "REGISTERED", null);
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
+
+        UUID second = leaseIdOf("SAMPLE-0002");
+        JournalEntry vtp = only(batchJournals(batchId), JournalDocType.VTP, second);
+        assertThat(vtp.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 20));
+        assertThat(vtp.getImportBatchId()).isEqualTo(batchId);
+        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
+                .singleElement().satisfies(p -> {
+                    assertThat(p.getStatus().name()).isEqualTo("POSTED");
+                    assertThat(p.getVatAmount()).isEqualByComparingTo("1050.00");
+                }));
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Long.class, second))
+                .isEqualTo(1);
+    }
+
+    /** A tax point on or after the cut-over date stays PLANNED for the live books. */
+    @Test
+    void aTaxPointOnTheCutOverDateIsLeftForTheLiveBooks() throws Exception {
+        UUID batchId = importTheTemplate();
+        postService.post(batchId);
+
+        UUID second = leaseIdOf("SAMPLE-0002");
+        assertThat(batchJournals(batchId)).noneMatch(e -> e.getDocType() == JournalDocType.VTP);
+        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
+                .singleElement().satisfies(p -> {
+                    assertThat(p.getStatus().name()).isEqualTo("PLANNED");
+                    assertThat(p.getTaxPointDate()).isEqualTo(CutoverFixture.BOOKS_START);
+                }));
+    }
+
+    /** An instalment PACT says was received early is declared on the day it was received, in the batch. */
+    @Test
+    void anEarlyReceiptReplayedByTheImportDeclaresItsVatOnTheReceiptDate() throws Exception {
+        UUID batchId = importWithSample2Cheque("2026-10-01", "CLEARED", "2026-09-15");
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
+
+        JournalEntry vtp = only(batchJournals(batchId), JournalDocType.VTP, leaseIdOf("SAMPLE-0002"));
+        assertThat(vtp.getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 15));
+    }
+
+    /** Reversing the batch takes the VTP off with everything else and cancels the schedule. */
+    @Test
+    void reversingTheBatchReversesItsTaxPoints() throws Exception {
+        UUID batchId = importWithSample2Cheque("2026-09-20", "REGISTERED", null);
+        postService.post(batchId);
+        UUID second = leaseIdOf("SAMPLE-0002");
+
+        batches.reverse(batchId, "wrong file");
+
+        assertThat(jdbc.queryForObject(
+                "select count(*) from journal_entries where lease_id = ? and doc_type = 'VTP' and status = 'POSTED'"
+                        + " and reversal_of_id is null", Long.class, second)).isZero();
+        tx.executeWithoutResult(s -> assertThat(vatTaxPoints.findByLeaseIdOrderByTaxPointDateAscCreatedAtAsc(second))
+                .allSatisfy(p -> assertThat(p.getStatus().name()).isEqualTo("CANCELLED")));
+    }
+
     /**
      * R4, the other half: an ordinary transition on the very same lease, after the
      * cut-over, must NOT land in the batch — otherwise "reverse the batch" would

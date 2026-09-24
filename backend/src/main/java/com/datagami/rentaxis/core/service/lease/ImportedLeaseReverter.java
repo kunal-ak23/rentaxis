@@ -86,11 +86,13 @@ public class ImportedLeaseReverter implements LeaseReverter {
     private final PenaltyAssessmentRepository penalties;
     private final JournalEntryRepository journals;
     private final LeaseService leaseService;
+    private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
 
     public ImportedLeaseReverter(LeaseRepository leases, ChequeRepository cheques,
                                  RecognitionEntryRepository recognitionEntries, RentSegmentRepository segments,
                                  LeaseSettlementRepository settlements, PenaltyAssessmentRepository penalties,
-                                 JournalEntryRepository journals, LeaseService leaseService) {
+                                 JournalEntryRepository journals, LeaseService leaseService,
+                                 com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
         this.leases = leases;
         this.cheques = cheques;
         this.recognitionEntries = recognitionEntries;
@@ -99,6 +101,7 @@ public class ImportedLeaseReverter implements LeaseReverter {
         this.penalties = penalties;
         this.journals = journals;
         this.leaseService = leaseService;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     // ------------------------------------------------------------------
@@ -161,6 +164,9 @@ public class ImportedLeaseReverter implements LeaseReverter {
             segment.setStatus(SegmentStatus.CANCELLED);
             segments.save(segment);
         }
+        // The VAT schedule goes the same way: the batch's VTPs were reversed with its
+        // other journals, and a re-post rebuilds the schedule from the rows.
+        vatTaxPoints.cancelAllForRevert(leaseId);
 
         LeaseStatus previous = lease.getStatus();
         lease.setStatus(LeaseStatus.DRAFT);
@@ -245,6 +251,7 @@ public class ImportedLeaseReverter implements LeaseReverter {
                         + " Correct individual contracts by amendment instead.");
             }
         }
+        blockers.addAll(vatTaxPoints.blockersAgainstRevert(leaseId, batchId, who));
         for (PenaltyAssessment p : penalties.findByLease_Id(leaseId)) {
             if (LIVE_PENALTIES.contains(p.getStatus())) {
                 // A cut-over proposes none of its own — the replay's penalty hooks are

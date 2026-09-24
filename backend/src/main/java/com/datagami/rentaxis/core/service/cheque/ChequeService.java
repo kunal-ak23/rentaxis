@@ -18,6 +18,7 @@ import com.datagami.rentaxis.core.service.NotificationService;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Line;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.vat.VatTaxPointService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
 import com.datagami.rentaxis.core.service.lease.LeaseClosureService;
 import com.datagami.rentaxis.core.service.penalty.PenaltyRuleEngine;
@@ -237,6 +238,12 @@ public class ChequeService {
     private final Clock clock;
 
     /**
+     * The VAT tax point hooks (spec 2026-09-24 §1): an early receipt moves and posts
+     * the instalment's tax point, and a cancel has to say where its undeclared VAT goes.
+     */
+    private final VatTaxPointService vatTaxPoints;
+
+    /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
      * over a layering mistake: the register tells the penalty module when a cheque
      * bounced, and the penalty module asks the register to create the collection
@@ -257,7 +264,8 @@ public class ChequeService {
                          LeaseClosureService closure,
                          ApplicationEventPublisher events,
                          EntityManager entityManager,
-                         Clock clock) {
+                         Clock clock,
+                         VatTaxPointService vatTaxPoints) {
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseEventRepository = leaseEventRepository;
@@ -272,6 +280,7 @@ public class ChequeService {
         this.events = events;
         this.entityManager = entityManager;
         this.clock = clock;
+        this.vatTaxPoints = vatTaxPoints;
     }
 
     /**
@@ -836,11 +845,23 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request) {
+        return cancel(chequeId, request, null);
+    }
+
+    /**
+     * The same cancellation, moving the row's undeclared VAT onto another pending
+     * instalment of the lease ({@code moveVatToChequeId}). A row carrying PLANNED VAT
+     * cannot be cancelled without naming one: its share would be stranded in the
+     * deferred account (spec 2026-09-24 §1).
+     */
+    @Transactional
+    public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
         requireSettlementUndisturbed(lease, cheque);
+        vatTaxPoints.beforeCancel(cheque, moveVatToChequeId);
 
         reversePdr(cheque, r.dateOrToday(), reasonOr(r.notes(), "Cheque cancelled"));
         moveTo(cheque, ChequeStatus.CANCELLED, r.notes());
@@ -1227,6 +1248,10 @@ public class ChequeService {
         cheque.setCrtJournalId(crt.getId());
         cheque.setClearedAt(date);
         moveTo(cheque, ChequeStatus.CLEARED, notes);
+        // Received before it fell due, the receipt is the VAT tax point: the
+        // instalment's VTP posts now, dated the receipt, in this same transaction
+        // (spec 2026-09-24 §1). On or after the due date nothing changes.
+        vatTaxPoints.onCleared(cheque, date, Replay.batchIdOf(replay));
     }
 
     private void reversePdr(Cheque cheque, LocalDate date, String reason) {
