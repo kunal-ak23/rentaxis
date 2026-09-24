@@ -43,6 +43,16 @@ public class OwnedBankLeaf {
         return n != null && n > 0;
     }
 
+    /** Whether this tenant has any bank account with a ledger leaf. */
+    @Transactional(readOnly = true)
+    public boolean anyOwned() {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null) return false;
+        Integer n = jdbc.queryForObject("select count(*) from bank_account_ledgers where tenant_id = :t",
+                new MapSqlParameterSource("t", t), Integer.class);
+        return n != null && n > 0;
+    }
+
     @Transactional(readOnly = true)
     public Optional<UUID> forProperty(UUID propertyId) {
         UUID t = TenantContextHolder.getTenantId();

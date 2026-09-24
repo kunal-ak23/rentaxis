@@ -272,4 +272,55 @@ class LeaseUnitOccupancyIT extends AbstractPostgresIT {
     private java.math.BigDecimal rentOf(Unit unit) {
         return tx.execute(s -> unitRepo.findById(unit.getId()).orElseThrow().getActualRent());
     }
+
+    private Unit unitNow(Unit unit) {
+        return tx.execute(s -> unitRepo.findById(unit.getId()).orElseThrow());
+    }
+
+    /**
+     * R2 N-1: a termination dated ahead keeps the unit held — stored OCCUPIED with
+     * the leaving renter — through the termination date, a nightly sync included,
+     * and the sync the day after releases it.
+     */
+    @Test
+    void aUnitTerminatedAheadIsHeldUntilTheDateAndReleasedTheDayAfter() {
+        Unit unit = fixtures.createUnit(fixtures.property(), "TR-" + UUID.randomUUID().toString().substring(0, 4));
+        Renter leaving = fixtures.createRenter("Leaving Lina");
+        UUID lease = posted(unit, leaving, CUR_START, CUR_END);
+        LocalDate t = TODAY.plusDays(10);
+        termination.terminate(lease, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(t, null, null, null), null);
+
+        Unit afterTerminate = unitNow(unit);
+        assertThat(afterTerminate.getStatus()).as("still held on the day of the termination")
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.UnitStatus.OCCUPIED);
+        assertThat(afterTerminate.getCurrentTenantName()).isEqualTo(leaving.getNameEn());
+
+        leaseService.syncUnitHolders(TODAY);
+        assertThat(unitNow(unit).getCurrentTenantName()).as("a nightly sync keeps it").isEqualTo(leaving.getNameEn());
+        leaseService.syncUnitHolders(t);
+        assertThat(unitNow(unit).getStatus()).as("on the termination date")
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.UnitStatus.OCCUPIED);
+
+        leaseService.syncUnitHolders(t.plusDays(1));
+        Unit released = unitNow(unit);
+        assertThat(released.getStatus()).as("the day after").isEqualTo(com.datagami.rentaxis.domain.entity.enums.UnitStatus.VACANT);
+        assertThat(released.getCurrentTenantName()).isNull();
+        assertThat(released.getActualRent()).isEqualByComparingTo("0");
+    }
+
+    /** R2 N-5: MAINTENANCE is never overwritten, and an unchanged unit is not saved or counted again. */
+    @Test
+    void theSyncLeavesMaintenanceAloneAndIsQuietWhenNothingChanged() {
+        Unit unit = fixtures.createUnit(fixtures.property(), "MN-" + UUID.randomUUID().toString().substring(0, 4));
+        posted(unit, fixtures.createRenter("Mona Maintenance"), CUR_START, CUR_END);
+        tx.executeWithoutResult(s -> {
+            Unit u = unitRepo.findById(unit.getId()).orElseThrow();
+            u.setStatus(com.datagami.rentaxis.domain.entity.enums.UnitStatus.MAINTENANCE);
+            unitRepo.save(u);
+        });
+
+        leaseService.syncUnitHolders(TODAY);
+        assertThat(leaseService.syncUnitHolders(TODAY)).as("second run: nothing left to change").isZero();
+        assertThat(unitNow(unit).getStatus()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.UnitStatus.MAINTENANCE);
+    }
 }

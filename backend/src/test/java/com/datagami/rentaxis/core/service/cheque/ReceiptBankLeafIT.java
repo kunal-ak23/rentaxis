@@ -38,6 +38,7 @@ import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * F14-16: every receipt lands in a bank leaf some bank account owns. Property
@@ -185,5 +186,29 @@ class ReceiptBankLeafIT extends AbstractPostgresIT {
         ChequeDTO pdc = r.cheques().stream().filter(c -> c.mode() == ChequeMode.PDC).findFirst().orElseThrow();
         assertThat(cheques.settlementTarget(pdc.id()).target().id()).as("an orphan bank leaf resolves to the owned one")
                 .isEqualTo(owned);
+    }
+
+    /** R2 N-4: a bank leaf named by the caller must be one a bank account owns; cash leaves pass. */
+    @Test
+    void anUnownedBankLeafNamedByTheCallerIsRefused() {
+        UUID orphan = bankLeafOf(fixtures.property());
+        PostLeaseResponse r = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(line("RENT", "36000")), 2, null);
+        ChequeDTO transfer = cheques.addRowToPostedLease(r.lease().getId(),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, START, null, START, null, null,
+                        null, new java.math.BigDecimal("1500"), "Transfer", ChequeMode.TRANSFER));
+        UUID owned = tenantBankLeaf();
+        bankAccountOwning(owned);
+
+        assertThatThrownBy(() -> cheques.receive(transfer.id(), new ChequeActionRequest(START, null, null, orphan)))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("is not attached to a bank account");
+        assertThat(cheques.receive(transfer.id(), new ChequeActionRequest(START, null, null, owned)).debitAccountId())
+                .isEqualTo(owned);
+
+        ChequeDTO cash = cheques.addRowToPostedLease(r.lease().getId(),
+                new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, START, null, START, null, null,
+                        null, new java.math.BigDecimal("500"), "Cash", ChequeMode.CASH));
+        assertThat(cheques.receive(cash.id(), new ChequeActionRequest(START, null, null, cashLeaf())).debitAccountId())
+                .isEqualTo(cashLeaf());
     }
 }

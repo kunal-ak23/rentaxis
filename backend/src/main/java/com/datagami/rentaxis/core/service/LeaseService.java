@@ -280,7 +280,7 @@ public class LeaseService {
         BigDecimal rent = holder.getRentAmount() != null ? holder.getRentAmount() : BigDecimal.ZERO;
         boolean changed = !java.util.Objects.equals(name, unit.getCurrentTenantName())
                 || unit.getActualRent() == null || unit.getActualRent().compareTo(rent) != 0
-                || unit.getStatus() != UnitStatus.OCCUPIED;
+                || (unit.getStatus() != UnitStatus.OCCUPIED && unit.getStatus() != UnitStatus.MAINTENANCE);
         unit.setCurrentTenantName(name);
         unit.setActualRent(rent);
         if (unit.getStatus() != UnitStatus.MAINTENANCE) unit.setStatus(UnitStatus.OCCUPIED);
@@ -288,25 +288,68 @@ public class LeaseService {
     }
 
     /**
-     * P2-5: every unit takes its holder and rent from the posted lease covering
-     * {@code day} — so a renewal (or the next renter's back-to-back lease) posted
-     * weeks ahead takes over on its start date, whatever order things were posted
-     * in. Run daily by {@link LeaseExpirationJob} after the expiry sweep; idempotent.
+     * The one rule for a leased unit's stored fields on {@code day} (R2 N-1), used
+     * by the nightly sync, by a post and by a release:
+     * <ul>
+     *   <li>a lease covers the day (ACTIVE / NOTICE_GIVEN / RENEWED, or TERMINATED
+     *       through its termination date): the latest-starting one is the holder —
+     *       OCCUPIED, its renter and rent;</li>
+     *   <li>none covers it but a posted lease starts later: the unit is reserved.
+     *       There is no RESERVED unit status, so it keeps the lease flow's OCCUPIED
+     *       marker with the incoming renter (the unit lists show RESERVED by date);</li>
+     *   <li>neither: released — VACANT, no holder, no rent.</li>
+     * </ul>
+     * MAINTENANCE is never overwritten; the holder fields are still kept current.
+     *
+     * @return whether a stored field changed
+     */
+    private static boolean settleUnit(Unit unit, List<Lease> leases, LocalDate day) {
+        java.util.Optional<Lease> holder = holderOn(leases, day);
+        if (holder.isPresent()) {
+            return applyHolder(unit, holder.get());
+        }
+        java.util.Optional<Lease> upcoming = leases.stream()
+                .filter(l -> LIVE.contains(l.getStatus()) && l.getStartDate() != null && l.getStartDate().isAfter(day))
+                .min(java.util.Comparator.comparing(Lease::getStartDate));
+        if (upcoming.isPresent()) {
+            return applyHolder(unit, upcoming.get());
+        }
+        boolean changed = unit.getCurrentTenantName() != null
+                || (unit.getActualRent() != null && unit.getActualRent().signum() != 0)
+                || unit.getStatus() == UnitStatus.OCCUPIED;
+        unit.setCurrentTenantName(null);
+        unit.setActualRent(BigDecimal.ZERO);
+        if (unit.getStatus() != UnitStatus.MAINTENANCE) unit.setStatus(UnitStatus.VACANT);
+        return changed;
+    }
+
+    /**
+     * P2-5 / R2 N-1: the single source of truth for leased units' stored status,
+     * holder and rent. Every unit a posted lease covers or reserves, and every unit
+     * still stored as held (OCCUPIED or naming a renter), is settled by
+     * {@link #settleUnit} for {@code day}: a renewal or back-to-back lease takes
+     * over on its start date, and a unit whose lease ended — a termination dated
+     * ahead, reached — is released the day after. Run nightly by
+     * {@link LeaseExpirationJob}; idempotent; only changed units are saved.
      *
      * @return how many units changed
      */
     @Transactional
     public int syncUnitHolders(LocalDate day) {
+        java.util.Map<UUID, Unit> units = new java.util.LinkedHashMap<>();
         java.util.Map<UUID, List<Lease>> byUnit = new java.util.HashMap<>();
-        for (Lease l : leaseRepository.coveringOn(day)) {
+        List<Lease> relevant = new java.util.ArrayList<>(leaseRepository.coveringOn(day));
+        relevant.addAll(leaseRepository.upcomingAfter(day));
+        for (Lease l : relevant) {
+            units.putIfAbsent(l.getUnit().getId(), l.getUnit());
             byUnit.computeIfAbsent(l.getUnit().getId(), k -> new java.util.ArrayList<>()).add(l);
         }
+        for (Unit u : unitRepository.findStoredAsHeld()) {
+            units.putIfAbsent(u.getId(), u);
+        }
         int changed = 0;
-        for (List<Lease> leases : byUnit.values()) {
-            Lease holder = holderOn(leases, day).orElse(null);
-            if (holder == null) continue;
-            Unit unit = holder.getUnit();
-            if (applyHolder(unit, holder)) {
+        for (Unit unit : units.values()) {
+            if (settleUnit(unit, byUnit.getOrDefault(unit.getId(), List.of()), day)) {
                 unitRepository.save(unit);
                 changed++;
             }
@@ -421,30 +464,17 @@ public class LeaseService {
     private void releaseUnitIfNoOtherActiveLease(Lease lease) {
         Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
                 .orElse(lease.getUnit());
-
-        List<Lease> stillLive = leaseRepository.findByUnitIdAndStatusIn(unit.getId(), LIVE).stream()
-                .filter(other -> !other.getId().equals(lease.getId()))
-                .toList();
-        if (!stillLive.isEmpty()) {
-            // Leave the unit held: another lease is live on it. Its own termination
-            // will vacate the unit. A back-to-back successor (F14-14) takes the name
-            // over now that the lease that carried it is gone.
-            Lease next = stillLive.stream()
-                    .min(java.util.Comparator.comparing(Lease::getStartDate,
-                            java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
-                    .orElseThrow();
-            if (next.getRenter() != null) {
-                unit.setCurrentTenantName(next.getRenter().getNameEn());
-                unit.setActualRent(next.getRentAmount() != null ? next.getRentAmount() : BigDecimal.ZERO);
-                unitRepository.save(unit);
-            }
-            return;
+        // R2 N-1: the same rule as the nightly sync. The lease being ended is judged
+        // as it now stands (a termination dated ahead still holds the unit through
+        // that date); the others as the database has them.
+        List<Lease> candidates = new java.util.ArrayList<>(holdingLeases(unit.getId()));
+        candidates.removeIf(other -> other.getId().equals(lease.getId()));
+        if (lease.getStatus() == LeaseStatus.TERMINATED && lease.getTerminatedOn() != null) {
+            candidates.add(lease);
         }
-
-        unit.setStatus(UnitStatus.VACANT);
-        unit.setCurrentTenantName(null);
-        unit.setActualRent(BigDecimal.ZERO);
-        unitRepository.save(unit);
+        if (settleUnit(unit, candidates, LocalDate.now())) {
+            unitRepository.save(unit);
+        }
     }
 
     /**

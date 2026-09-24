@@ -75,4 +75,12 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
     /** [propertyId, unit count] for the tenant, in one query (the P&L's allocation by units). */
     @Query("select u.property.id, count(u) from Unit u where u.tenantId = :tenantId and u.property is not null group by u.property.id")
     List<Object[]> countByProperty(@Param("tenantId") UUID tenantId);
+
+    /** R2 N-1: units whose stored fields say a lease holds them — the ones a nightly sync may release. */
+    @Query("""
+        select u from Unit u
+        where u.status = com.datagami.rentaxis.domain.entity.enums.UnitStatus.OCCUPIED
+           or u.currentTenantName is not null
+        """)
+    List<Unit> findStoredAsHeld();
 }

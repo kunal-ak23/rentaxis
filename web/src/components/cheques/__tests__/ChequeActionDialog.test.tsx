@@ -203,6 +203,20 @@ describe("ChequeActionDialog — receive account (F14-17)", () => {
         renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
 
         expect((await screen.findByTestId("cheque-settlement-error")).textContent).toContain("Access denied");
+        // R2 N-3: nothing can be confirmed, so the row's stamped leaf is never sent.
+        expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        expect(api.receive).not.toHaveBeenCalled();
+    });
+
+    it("keeps Receive disabled until the target has loaded", async () => {
+        let resolve: (v: unknown) => void = () => {};
+        api.settlementTarget.mockReturnValue(new Promise(r => { resolve = r; }));
+        api.receive.mockResolvedValue({});
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+        expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(true);
+        resolve({ target: CASH, options: [CASH] });
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(false));
     });
 });
 

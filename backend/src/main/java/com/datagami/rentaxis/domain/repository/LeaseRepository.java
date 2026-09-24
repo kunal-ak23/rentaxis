@@ -80,6 +80,15 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                            @Param("unrestricted") boolean unrestricted,
                                            @Param("propertyIds") Collection<UUID> propertyIds);
 
+    /** R2 N-1: posted live leases that start after {@code day} (they reserve their units). */
+    @Query("""
+        select l from Lease l join fetch l.unit left join fetch l.renter
+        where l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN)
+          and l.startDate > :day
+        """)
+    List<Lease> upcomingAfter(@Param("day") LocalDate day);
+
     /** P2-5: posted leases covering {@code day} (a terminated one through its termination date). */
     @Query("""
         select l from Lease l join fetch l.unit left join fetch l.renter

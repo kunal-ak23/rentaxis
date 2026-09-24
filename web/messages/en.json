@@ -3736,7 +3736,8 @@
         "presentBeforeChequeDate": "Issued cheque {cheque} is dated {chequeDate}; a cheque cannot be presented before its date (this line is {date})."
       },
       "cheque": {
-        "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
+        "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}.",
+        "bankLeafNotOwned": "Ledger account {account} is not attached to a bank account, so money put there could never be reconciled. Attach it to its bank account or choose another."
       },
       "issuedCheque": {
         "presentBeforeChequeDate": "A cheque cannot be presented before {chequeDate}"

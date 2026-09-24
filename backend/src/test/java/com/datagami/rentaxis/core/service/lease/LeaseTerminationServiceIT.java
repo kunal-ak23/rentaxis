@@ -611,6 +611,10 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThat(result.getTerminatedOn()).isEqualTo(T);
         assertThat(result.getTerminationJournalId()).isEqualTo(tcrId);
         assertThat(result.getTerminationNotes()).isEqualTo("Renter relocating");
+        // R2 N-1: T is still ahead, so the renter holds the unit until then; the
+        // nightly sync the day after T releases it.
+        assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        leaseService.syncUnitHolders(T.plusDays(1));
         assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(unit(fixtures.unit().getId()).getCurrentTenantName()).isNull();
         assertTrialBalanceBalances();

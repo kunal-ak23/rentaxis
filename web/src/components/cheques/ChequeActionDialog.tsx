@@ -91,7 +91,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         setDate(todayIso());
         setNotes("");
         setFailureReason("BOUNCE");
-        setDebitAccountId(cheque.debitAccountId);
+        // A receive starts with no account: the server's settlement target fills it
+        // (R2 N-3), and a failed lookup must not fall back to the row's stamped leaf.
+        setDebitAccountId(action === "receive" ? null : cheque.debitAccountId);
         // A replacement is a NEW instrument, so it starts without a number:
         // `ChequeService.takenNumbers` (:1096-1104) collects from every row of
         // the lease whatever its status, the bounced one included, so seeding
@@ -252,6 +254,8 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
             confirmDisabled={
                 (action === "replace" && !chequeRowIsValid(replacementRow))
                 || (action === "cancel" && vatMove !== null && !moveVatTo)
+                // R2 N-3: nothing to confirm until the server has said where it posts.
+                || (action === "receive" && !settlement)
             }
             confirmTestId={`cheque-${action}-confirm`}
         >

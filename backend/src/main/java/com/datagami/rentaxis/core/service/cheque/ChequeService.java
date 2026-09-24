@@ -1198,7 +1198,7 @@ public class ChequeService {
         if (debitAccountId != null) {
             // Which of our banks the paper physically went to. Recorded now so the
             // CRT that follows debits it rather than re-resolving the role.
-            cheque.setDebitAccount(settlementAccount(debitAccountId, cheque.getProperty()));
+            cheque.setDebitAccount(requireOwnedIfBank(settlementAccount(debitAccountId, cheque.getProperty())));
         }
         cheque.setDepositedAt(date);
         moveTo(cheque, ChequeStatus.DEPOSITED, notes);
@@ -1255,7 +1255,7 @@ public class ChequeService {
         Account debit = debitAccountId != null
                 ? (receiptSource && isSuspenseLeaf(account(debitAccountId))
                         ? account(debitAccountId)
-                        : settlementAccount(debitAccountId, cheque.getProperty()))
+                        : requireOwnedIfBank(settlementAccount(debitAccountId, cheque.getProperty())))
                 : requireSettlementAccount(cheque.getDebitAccount());
         if (debitAccountId == null && replay == null && !accountChosen) {
             debit = reconcilableLeaf(debit, cheque);
@@ -1844,6 +1844,23 @@ public class ChequeService {
      * both buildings' bank reconciliations would break. Same "does not exist"
      * wording as a foreign tenant's account.
      */
+    /**
+     * R2 N-4: a bank leaf the caller names for money arriving must be one a bank
+     * account owns, or the receipt can never be reconciled. Cash leaves are not
+     * reconciled and pass; a tenant with no bank account yet has nothing to own
+     * leaves, so it passes too.
+     */
+    private Account requireOwnedIfBank(Account a) {
+        if (a != null && a.getAccountSubType() == AccountSubType.BANK && !ownedBankLeaf.isOwned(a.getId())
+                && ownedBankLeaf.anyOwned()) {
+            throw new BusinessRuleViolationException("Ledger account " + a.getCode() + " " + a.getName()
+                    + " is not attached to a bank account, so money put there could never be reconciled."
+                    + " Attach it to its bank account (Bank reconciliation → ledger accounts) or choose another.",
+                    "cheque.bankLeafNotOwned", Map.of("account", a.getCode() + " " + a.getName()));
+        }
+        return a;
+    }
+
     private Account settlementAccount(UUID id, com.datagami.rentaxis.domain.entity.Property property) {
         Account a = requireSettlementAccount(account(id));
         UUID accountProperty = a.getPropertyId();

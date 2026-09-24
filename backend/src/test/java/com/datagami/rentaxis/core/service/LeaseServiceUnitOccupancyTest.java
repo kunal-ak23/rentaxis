@@ -289,6 +289,15 @@ class LeaseServiceUnitOccupancyTest {
     // ---- one active lease per unit (#197) ----------------------------------
 
     /** A different lease already ACTIVE on the same unit. */
+    /** The renter and rent a covering lease hands its unit. */
+    private static Lease heldBy(Lease lease, String renterName) {
+        com.datagami.rentaxis.domain.entity.Renter r = new com.datagami.rentaxis.domain.entity.Renter();
+        r.setNameEn(renterName);
+        lease.setRenter(r);
+        lease.setRentAmount(new BigDecimal("72000"));
+        return lease;
+    }
+
     private Lease otherActiveLeaseOn(Lease lease) {
         Lease other = new Lease();
         other.setId(UUID.randomUUID());
@@ -367,8 +376,9 @@ class LeaseServiceUnitOccupancyTest {
         lease.getUnit().setCurrentTenantName("Sitting Renter");
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         lockableUnit(lease);
+        // R2 N-1: the unit's holder comes from the lease still covering it.
         when(leaseRepository.findByUnitIdAndStatusIn(lease.getUnit().getId(), LIVE_STATUSES))
-                .thenReturn(List.of(lease, otherActiveLeaseOn(lease)));
+                .thenReturn(List.of(lease, heldBy(otherActiveLeaseOn(lease), "Sitting Renter")));
 
         // terminateLease is gone: a termination is now returning the uncleared
         // paper, truncating recognition and reversing the unearned rent
@@ -411,7 +421,7 @@ class LeaseServiceUnitOccupancyTest {
         ending.getUnit().setActualRent(new BigDecimal("72000"));
         when(leaseRepository.findById(ending.getId())).thenReturn(Optional.of(ending));
         lockableUnit(ending);
-        Lease sameUnitOnNotice = otherActiveLeaseOn(ending);
+        Lease sameUnitOnNotice = heldBy(otherActiveLeaseOn(ending), "Renter On Notice");
         sameUnitOnNotice.setStatus(LeaseStatus.NOTICE_GIVEN);
         when(leaseRepository.findByUnitIdAndStatusIn(ending.getUnit().getId(), LIVE_STATUSES))
                 .thenReturn(List.of(ending, sameUnitOnNotice));
