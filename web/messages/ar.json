@@ -1824,6 +1824,7 @@
     "status": "الحالة",
     "posted": "مرحّل",
     "reversed": "معكوس",
+    "void": "ملغى",
     "reverse": "عكس القيد",
     "reverseReason": "سبب العكس",
     "reverseDate": "تاريخ العكس",
@@ -2214,7 +2215,9 @@
     "failureReasons": {
       "BOUNCE": "ارتداد",
       "SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
-      "ACCOUNT_CLOSED": "الحساب مغلق"
+      "ACCOUNT_CLOSED": "الحساب مغلق",
+      "STOPPED_PAYMENT": "أُوقف الدفع",
+      "TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو عدم تطابق المبلغ)"
     },
     "replace": "استبدال",
     "replacements": "الشيكات البديلة",
@@ -2301,6 +2304,27 @@
     "moveVatOption": "{label} بتاريخ {date} بمبلغ {amount}"
   },
   "Common": {
+    "notOnStatement": "هذا القيد غير موجود في كشف الحساب المستورد",
+    "postAnyway": "الترحيل رغم ذلك",
+    "errors": {
+      "bank": {
+        "statementCovers": "تم بالفعل استيراد كشف حساب لـ {bank} يغطي الفترة من {from} إلى {to}. القيد بتاريخ {date} يقع ضمن هذه الفترة: سجّله من سطره في كشف الحساب ضمن التسوية البنكية، أو أكّد أنه غير موجود في الكشف."
+      },
+      "voucher": {
+        "cashNegative": "يحتفظ {account} برصيد {balance} بتاريخ {date}؛ دفع {amount} سيجعل الرصيد {after}.",
+        "reverseBeforeDocument": "لا يمكن أن يكون تاريخ العكس قبل {voucher} ({docDate})",
+        "reasonRequired": "السبب مطلوب.",
+        "voidSettledInvoice": "{voucher} مُسدّد بواسطة دفعة؛ حرّر ذلك التخصيص أو عدّل الدفعة قبل إلغاء هذا السند"
+      },
+      "cheque": {
+        "clearBeforeDeposit": "تم إيداع {row} بتاريخ {deposited}؛ لا يمكن تحصيله بتاريخ {date}",
+        "clearBeforeChequeDate": "{row} مؤرخ بـ {chequeDate}؛ لا يمكن تحصيله بتاريخ {date}"
+      },
+      "openingBalances": {
+        "locked": "الدفاتر مقفلة حتى {locked}. الأرصدة الافتتاحية مؤرخة بـ {date} ولا يمكن تغييرها أثناء إقفال تلك الفترة.",
+        "reasonRequired": "السبب مطلوب."
+      }
+    },
     "paginationShowing": "عرض {start}-{end} من {total}",
     "paginationPerPage": "{count} لكل صفحة",
     "loadFailed": "تعذّر التحميل. يرجى المحاولة مرة أخرى.",
@@ -2629,6 +2653,11 @@
     "allocatedTotal": "المخصص",
     "remainsAdvance": "يبقى دفعة مقدمة",
     "amendReleases": "هذه الدفعة تسدد {invoices}. ستظهر غير مدفوعة.",
+    "amendReasonRequired": "السبب مطلوب.",
+    "void": "إلغاء",
+    "confirmVoid": "إلغاء {number}؟ سيُعكس قيده بالتاريخ الذي تحدده، دون ترحيل بديل.",
+    "voidReason": "لماذا يُلغى هذا السند؟",
+    "voidReasonRequired": "السبب مطلوب.",
     "settlesTitle": "الفواتير التي تسددها هذه الدفعة",
     "settledByTitle": "الدفعات التي تسدد هذه الفاتورة",
     "allocatedOn": "تاريخ التخصيص",
@@ -2992,7 +3021,7 @@
     "parkingSpot": "موقف السيارة {spot}",
     "amountAed": "{amount} درهم",
     "penaltyReason": {"CHEQUE_RETURN": "ارتداد شيك", "LATE_PAYMENT": "تأخر في السداد", "OTHER": "أخرى"},
-    "failureReason": {"BOUNCE": "ارتداد", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق"},
+    "failureReason": {"BOUNCE": "ارتداد", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
     "renewalIntent": {"RENEW": "التجديد", "MOVE_OUT": "الإخلاء", "DISCUSS": "المناقشة"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "أُسندت إليك تذكرة", "body": "التذكرة: {ticketTitle}"},
@@ -3614,6 +3643,8 @@
     "reason_BOUNCE": "رصيد غير كافٍ",
     "reason_SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
     "reason_ACCOUNT_CLOSED": "حساب مغلق",
+    "reason_STOPPED_PAYMENT": "أُوقف الدفع",
+    "reason_TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو عدم تطابق المبلغ)",
     "suspenseBalance": "مقبوضات غير محددة قائمة: {amount}",
     "book": "قيد",
     "posted": "تم قيد {numbers}",

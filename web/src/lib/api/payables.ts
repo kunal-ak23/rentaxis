@@ -269,6 +269,8 @@ export type PaymentRun = {
 export type PostRunRequest = {
     vendors: { vendorId: string; netPayment: number; advanceApplied: number; chequeNumber: string | null;
         items: { itemId: string; paid: number }[] }[];
+    /** F14-20: see {@link IssuedChequeActionInput.notOnStatement} — resend once confirmed. */
+    notOnStatement?: boolean;
 };
 
 /** `PaymentRunPreviewDTO`: one payment per vendor, and every problem at once. */
@@ -374,11 +376,14 @@ export const paymentRunsApi = {
     bankFileUrl: (id: string, bom = false) => `${PROXY}/finance/payment-runs/${id}/bank-file.csv${bom ? "?bom=true" : ""}`,
 };
 
+/** `IssuedChequeActionDTO` for `POST .../present`: F14-20's notOnStatement flag. */
+export type IssuedChequeActionInput = { date: string; reason?: string | null; notOnStatement?: boolean };
+
 export const issuedChequesApi = {
     list: (q: { status?: IssuedChequeStatus; bankAccountId?: string; from?: string; to?: string; duePresent?: boolean }) =>
         apiGet<IssuedCheque[]>(`/finance/issued-cheques${qs(q)}`),
     summary: () => apiGet<IssuedChequeSummary>("/finance/issued-cheques/summary"),
-    present: (id: string, date: string) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, { date }),
+    present: (id: string, body: IssuedChequeActionInput) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, body),
     cancel: (id: string, date: string, reason: string) =>
         apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/cancel`, { date, reason }),
     unpresent: (id: string, date: string, reason: string) =>

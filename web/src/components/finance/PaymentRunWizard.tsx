@@ -10,6 +10,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, type Account } from "@/lib/api/ledger";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 import {
     approvedFrom,
     paymentRunsApi,
@@ -116,6 +118,7 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
     const [busy, setBusy] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [confirmPost, setConfirmPost] = useState(false);
+    const cover = useStatementCoverGuard(tCommon);
 
     const loadCandidates = useCallback(async () => {
         setLoading(true);
@@ -274,11 +277,16 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
         try {
             if (!preview) return;
             // What the preview showed: the server refuses (409) if the run would now post anything else.
-            await paymentRunsApi.post(runId, approvedFrom(preview));
+            await paymentRunsApi.post(runId, { ...approvedFrom(preview), notOnStatement: cover.notOnStatement || undefined });
             setConfirmPost(false);
             if (onPosted) onPosted();
             else router.push(`/dashboard/finance/payables/payment-runs/${runId}`);
         } catch (err) {
+            if (cover.catchStatementCover(err)) {
+                // The notice + checkbox is now showing in the confirm dialog; the
+                // user resubmits — the dialog stays open, nothing else to do.
+                return;
+            }
             setConfirmPost(false);
             setFormError(err instanceof ApiError
                 ? (err.status === 409 ? `${t("runChanged")} ${err.message}` : err.message)
@@ -512,7 +520,7 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
                         <div className="flex items-center gap-3">
                             {!preview.postable && <span className="text-xs text-danger">{t("notPostable")}</span>}
                             <button type="button" className={primary} disabled={!preview.postable || busy}
-                                    onClick={() => setConfirmPost(true)} data-testid="run-post">
+                                    onClick={() => { cover.reset(); setConfirmPost(true); }} data-testid="run-post">
                                 <Send size={13} className="rtl:-scale-x-100" />{t("postRun")}
                             </button>
                         </div>
@@ -530,7 +538,16 @@ export function PaymentRunWizard({ run, onPosted }: { run?: PaymentRun; onPosted
                 cancelText={t("close")}
                 isLoading={busy}
                 confirmTestId="run-confirm-post"
-            />
+            >
+                {cover.notice && (
+                    <StatementCoverNotice
+                        notice={cover.notice}
+                        checked={cover.notOnStatement}
+                        onChange={cover.setNotOnStatement}
+                        testIdPrefix="run-post"
+                    />
+                )}
+            </ConfirmDialog>
         </div>
     );
 }

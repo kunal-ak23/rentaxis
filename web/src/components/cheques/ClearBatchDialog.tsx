@@ -6,6 +6,8 @@ import LeaseDialog from "@/components/leases/LeaseDialog";
 import { fmtAmount } from "@/lib/api/ledger";
 import { todayIso } from "@/components/leases/leaseMath";
 import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 /**
  * One bank credit, cleared in one act (gap #57) — the counterpart of
@@ -33,6 +35,8 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
+    const cover = useStatementCoverGuard(tCommon);
 
     const [date, setDate] = useState(todayIso());
     const [narration, setNarration] = useState("");
@@ -44,6 +48,8 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
         setDate(todayIso());
         setNarration("");
         setError(null);
+        cover.reset();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const submit = async () => {
@@ -54,10 +60,15 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
                 chequeIds,
                 clearingDate: date,
                 narration: narration.trim() || null,
+                notOnStatement: cover.notOnStatement || undefined,
             });
             onDone(cheques);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            if (cover.catchStatementCover(e)) {
+                // The notice + checkbox is now showing; the user resubmits.
+            } else {
+                setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            }
         } finally {
             setBusy(false);
         }
@@ -102,6 +113,14 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
                     />
                 </div>
                 <p className="text-[10px] text-muted">{t("clearBatchHint")}</p>
+                {cover.notice && (
+                    <StatementCoverNotice
+                        notice={cover.notice}
+                        checked={cover.notOnStatement}
+                        onChange={cover.setNotOnStatement}
+                        testIdPrefix="clear-batch"
+                    />
+                )}
                 {error && (
                     <p className="text-[11px] text-error" data-testid="clear-batch-error">{error}</p>
                 )}

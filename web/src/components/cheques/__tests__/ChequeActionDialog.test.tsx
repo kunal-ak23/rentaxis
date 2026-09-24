@@ -220,6 +220,31 @@ describe("ChequeActionDialog — receive account (F14-17)", () => {
     });
 });
 
+describe("ChequeActionDialog — a statement already covers this date (F14-20)", () => {
+    it("shows the refusal with a checkbox, and resubmits with notOnStatement once it is ticked", async () => {
+        const cash = { id: "acc-cash", code: "A-02-05-001", name: "Cash in hand", nameAr: null, kind: "CASH" as const, bankAccount: null };
+        api.settlementTarget.mockResolvedValue({ target: cash, options: [cash] });
+        const covered = new ApiError(400, "covered", JSON.stringify({
+            code: "bank.statementCovers",
+            args: { bank: "Emirates Islamic 0123", from: "01/09/2026", to: "30/09/2026", date: "15/09/2026" },
+            message: "covered",
+        }));
+        api.receive.mockRejectedValueOnce(covered).mockResolvedValueOnce({});
+        renderDialog("receive", { mode: "CASH", debitAccountId: "acc-1" });
+        await waitFor(() => expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(false));
+
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        expect(await screen.findByTestId("cheque-receive-notice")).toHaveTextContent("Emirates Islamic 0123");
+        // Not shown as a generic error — the notice is the whole story.
+        expect(screen.queryByTestId("cheque-action-error")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId("cheque-receive-not-on-statement"));
+        fireEvent.click(screen.getByTestId("cheque-receive-confirm"));
+        await waitFor(() => expect(api.receive).toHaveBeenCalledTimes(2));
+        expect(api.receive).toHaveBeenLastCalledWith("c1", expect.objectContaining({ notOnStatement: true }));
+    });
+});
+
 function point(chequeId: string, over: Partial<VatTaxPoint> = {}): VatTaxPoint {
     return {
         id: `vtp-${chequeId}`, leaseId: "l1", chequeId, chequeSeqNo: null, chequeNumber: null,

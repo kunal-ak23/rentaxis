@@ -1824,6 +1824,7 @@
     "status": "Status",
     "posted": "Posted",
     "reversed": "Reversed",
+    "void": "Void",
     "reverse": "Reverse",
     "reverseReason": "Reason for reversal",
     "reverseDate": "Reversal date",
@@ -2214,7 +2215,9 @@
     "failureReasons": {
       "BOUNCE": "Bounced",
       "SIGNATURE_MISMATCH": "Signature Mismatch",
-      "ACCOUNT_CLOSED": "Account Closed"
+      "ACCOUNT_CLOSED": "Account Closed",
+      "STOPPED_PAYMENT": "Payment stopped",
+      "TECHNICAL_RETURN": "Technical return (stale, post-dated, amount mismatch)"
     },
     "replace": "Replace",
     "replacements": "Replacements",
@@ -2301,6 +2304,27 @@
     "moveVatOption": "{label} · {date} · {amount}"
   },
   "Common": {
+    "notOnStatement": "This entry is not on the imported statement",
+    "postAnyway": "Post anyway",
+    "errors": {
+      "bank": {
+        "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. An entry dated {date} falls inside it: record it from its statement line in Bank reconciliation, or confirm that it is not on the statement."
+      },
+      "voucher": {
+        "cashNegative": "{account} holds {balance} on {date}; paying {amount} would leave it at {after}.",
+        "reverseBeforeDocument": "A reversal cannot be dated before {voucher} ({docDate})",
+        "reasonRequired": "A reason is required.",
+        "voidSettledInvoice": "{voucher} is settled by a payment; release that allocation or amend the payment before voiding it"
+      },
+      "cheque": {
+        "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
+        "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}"
+      },
+      "openingBalances": {
+        "locked": "The books are locked through {locked}. The opening balances are dated {date} and cannot change while that period is locked.",
+        "reasonRequired": "A reason is required."
+      }
+    },
     "paginationShowing": "Showing {start}-{end} of {total}",
     "paginationPerPage": "{count} per page",
     "loadFailed": "Couldn't load this. Please try again.",
@@ -2629,6 +2653,11 @@
     "allocatedTotal": "Allocated",
     "remainsAdvance": "Left as advance",
     "amendReleases": "This payment settles {invoices}. They will show as unpaid.",
+    "amendReasonRequired": "A reason is required.",
+    "void": "Void",
+    "confirmVoid": "Void {number}? Its journal is reversed on the date you pick, with no replacement posted.",
+    "voidReason": "Why is this being voided?",
+    "voidReasonRequired": "A reason is required.",
     "settlesTitle": "Invoices this payment settles",
     "settledByTitle": "Payments settling this invoice",
     "allocatedOn": "Allocated on",
@@ -2992,7 +3021,7 @@
     "parkingSpot": "parking spot {spot}",
     "amountAed": "AED {amount}",
     "penaltyReason": {"CHEQUE_RETURN": "cheque return", "LATE_PAYMENT": "late payment", "OTHER": "other"},
-    "failureReason": {"BOUNCE": "bounced", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed"},
+    "failureReason": {"BOUNCE": "bounced", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
     "renewalIntent": {"RENEW": "renew", "MOVE_OUT": "move out", "DISCUSS": "discuss"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "Ticket assigned to you", "body": "Ticket: {ticketTitle}"},
@@ -3614,6 +3643,8 @@
     "reason_BOUNCE": "Insufficient funds",
     "reason_SIGNATURE_MISMATCH": "Signature mismatch",
     "reason_ACCOUNT_CLOSED": "Account closed",
+    "reason_STOPPED_PAYMENT": "Payment stopped",
+    "reason_TECHNICAL_RETURN": "Technical return (stale, post-dated, amount mismatch)",
     "suspenseBalance": "Unidentified receipts outstanding: {amount}",
     "book": "Book it",
     "posted": "Posted {numbers}",

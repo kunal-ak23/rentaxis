@@ -18,6 +18,8 @@ import {
     type IssuedChequeSummary,
 } from "@/lib/api/payables";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap text-start";
 const td = "px-3 py-2 text-xs";
@@ -71,6 +73,7 @@ export default function IssuedChequesPage() {
     const [reason, setReason] = useState("");
     const [actionError, setActionError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const cover = useStatementCoverGuard(tCommon);
 
     const [opening, setOpening] = useState({ vendorId: "", bankAccountId: "", chequeNumber: "", chequeDate: "", amount: "" });
     const [openingError, setOpeningError] = useState<string | null>(null);
@@ -117,6 +120,7 @@ export default function IssuedChequesPage() {
         setActionDate(kind === "present" && cheque.chequeDate > todayIso() ? cheque.chequeDate : todayIso());
         setReason("");
         setActionError(null);
+        cover.reset();
     };
 
     const needsReason = action?.kind === "cancel" || action?.kind === "unpresent";
@@ -129,14 +133,19 @@ export default function IssuedChequesPage() {
         setActionError(null);
         try {
             const id = action.cheque.id;
-            if (action.kind === "present") await issuedChequesApi.present(id, actionDate);
-            else if (action.kind === "cancel") await issuedChequesApi.cancel(id, actionDate, reason.trim());
+            if (action.kind === "present") {
+                await issuedChequesApi.present(id, { date: actionDate, notOnStatement: cover.notOnStatement || undefined });
+            } else if (action.kind === "cancel") await issuedChequesApi.cancel(id, actionDate, reason.trim());
             else if (action.kind === "unpresent") await issuedChequesApi.unpresent(id, actionDate, reason.trim());
             else await issuedChequesApi.removeOpening(id);
             setAction(null);
             await load();
         } catch (err) {
-            setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
+            if (action.kind === "present" && cover.catchStatementCover(err)) {
+                // The notice + checkbox is now showing; the user resubmits.
+            } else {
+                setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
+            }
         } finally {
             setBusy(false);
         }
@@ -399,6 +408,14 @@ export default function IssuedChequesPage() {
                         </label>
                         {early && <p className="text-xs text-danger" data-testid="cheque-early">{t("tooEarly", { date: formatDate(action.cheque.chequeDate) })}</p>}
                         {future && <p className="text-xs text-danger">{t("inFuture")}</p>}
+                        {action.kind === "present" && cover.notice && (
+                            <StatementCoverNotice
+                                notice={cover.notice}
+                                checked={cover.notOnStatement}
+                                onChange={cover.setNotOnStatement}
+                                testIdPrefix="cheque-present"
+                            />
+                        )}
                         {needsReason && (
                             <label className={`${label} block`}>
                                 <span className="block mb-1">{t("reason")}</span>
