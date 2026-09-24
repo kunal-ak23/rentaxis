@@ -1044,7 +1044,7 @@
     "pageSubtitle": "Penalties applied when a cheque fails. Applied across all properties unless overridden in a property's rent-collection settings.",
     "sectionAmounts": "Fine amounts",
     "lateFeeRuleHint": "Late fees are not set here — each property's own late-fee rule (penalty type and amount, under its rent-collection settings) decides those, together with the lease's grace period.",
-    "technicalReasonsUseBounceHint": "A stopped-payment or technical-return cheque is fined at the bounce amount above.",
+    "technicalReasonsUseBounceHint": "A stopped-payment cheque is fined at the bounce amount above. A technical return (stale, post-dated, amount mismatch) is the bank's error: no fee, and it does not count toward the bounce threshold.",
     "sectionAccrual": "Accrual after grace",
     "bounceAmount": "Bounce fine (AED)",
     "signatureMismatchAmount": "Signature mismatch fine (AED)",

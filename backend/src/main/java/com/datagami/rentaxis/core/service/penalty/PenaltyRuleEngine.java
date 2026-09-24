@@ -106,7 +106,14 @@ public class PenaltyRuleEngine {
         Integer threshold = cfg.bouncesBeforePenalty();
         if (threshold == null) return;
 
-        long bounces = chequeRepository.countByLease_IdAndBouncedAtIsNotNull(lease.getId());
+        // F14-22: a technical return is the bank's error — no fee, and it is not
+        // one of the renter's bounces (countPenalisableBounces leaves it out).
+        if (cheque.getFailureReason() == ChequeFailureReason.TECHNICAL_RETURN) {
+            log.info("No cheque-return penalty proposed for cheque {}: a technical return is a bank error", cheque.getId());
+            return;
+        }
+
+        long bounces = chequeRepository.countPenalisableBounces(lease.getId());
         if (bounces < threshold) return;
 
         if (assessments.existsByCheque_IdAndReasonAndStatusIn(

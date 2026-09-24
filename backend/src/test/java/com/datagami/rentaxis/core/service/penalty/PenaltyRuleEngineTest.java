@@ -120,7 +120,7 @@ class PenaltyRuleEngineTest {
     }
 
     private void bouncesOnThisLease(long count) {
-        when(chequeRepository.countByLease_IdAndBouncedAtIsNotNull(leaseId)).thenReturn(count);
+        when(chequeRepository.countPenalisableBounces(leaseId)).thenReturn(count);
     }
 
     /**
@@ -193,6 +193,34 @@ class PenaltyRuleEngineTest {
                 ChequeFailureReason.ACCOUNT_CLOSED));
 
         assertThat(proposedAmount()).isEqualByComparingTo("1000");
+    }
+
+    /** F14-22: a stopped payment is the renter's doing — the generic bounce fee. */
+    @Test
+    void aStoppedPaymentCarriesTheGenericBounceFee() {
+        fineConfig(cfg(1, true, false));
+        bouncesOnThisLease(1);
+
+        engine.onBounce(cheque("100043", "12750", LocalDate.of(2026, 12, 2), ChequeFailureReason.STOPPED_PAYMENT));
+
+        assertThat(proposedAmount()).isEqualByComparingTo("500");
+    }
+
+    /**
+     * F14-22 ruling: a technical return (stale, post-dated, words/figures mismatch) is
+     * the bank's error — no fee is proposed, however many bounces the lease has.
+     */
+    @Test
+    void aTechnicalReturnProposesNoFee() {
+        fineConfig(cfg(1, true, false));
+
+        engine.onBounce(cheque("100044", "12750", LocalDate.of(2026, 12, 2), ChequeFailureReason.TECHNICAL_RETURN));
+
+        verify(assessmentService, org.mockito.Mockito.never()).proposeBySystem(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(chequeRepository, org.mockito.Mockito.never()).countPenalisableBounces(any());
+        assertThat(new FineConfig(new BigDecimal("500"), new BigDecimal("750"), new BigDecimal("1000"), 7,
+                new BigDecimal("25"), 1, true, false, FineConfig.Source.ORG)
+                .amountFor(ChequeFailureReason.TECHNICAL_RETURN)).isEqualByComparingTo("0");
     }
 
     /**

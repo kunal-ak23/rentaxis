@@ -794,6 +794,33 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat(linkedCheque).isEqualTo(second);
     }
 
+    /**
+     * F14-22 ruling: a TECHNICAL_RETURN is the bank's error — no fee, and it does not
+     * count toward the threshold. With a threshold of two, a technical return followed
+     * by a stopped payment is still only one of the renter's bounces.
+     */
+    @Test
+    void aTechnicalReturnIsNotFinedAndDoesNotCountTowardTheThreshold() {
+        fineSettings(2, true, false);
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+
+        UUID first = r.cheques().get(0).id();
+        chequeService.deposit(first, ChequeActionRequest.on(DEPOSIT_DATE));
+        chequeService.bounce(first,
+                new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.TECHNICAL_RETURN, null));
+        assertThat(assessmentRows()).isZero();
+
+        ChequeDTO secondRow = r.cheques().get(1);
+        chequeService.deposit(secondRow.id(), ChequeActionRequest.on(secondRow.chequeDate()));
+        chequeService.bounce(secondRow.id(),
+                new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.STOPPED_PAYMENT, null));
+
+        assertThat(assessmentRows()).isZero();
+        assertThat((Long) tx.execute(s -> chequeRepo.countByLease_IdAndBouncedAtIsNotNull(leaseId))).isEqualTo(2L);
+        assertThat((Long) tx.execute(s -> chequeRepo.countPenalisableBounces(leaseId))).isEqualTo(1L);
+    }
+
     @Test
     void autoProposalTurnedOffLeavesTheWorklistEmptyHoweverManyBounce() {
         fineSettings(1, false, false);
