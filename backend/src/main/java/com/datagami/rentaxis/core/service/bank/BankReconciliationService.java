@@ -315,7 +315,7 @@ public class BankReconciliationService {
               BigDecimal amount, BigDecimal balance) { }
 
     record JI(UUID id, LocalDate date, String entryNumber, String docType, String sourceType, String narration,
-              String chequeNo, BigDecimal amount) { }
+              String chequeNo, BigDecimal amount, boolean offStatement) { }
 
     /** A confirmed live match: its statement lines, journal items and opening items. */
     static final class M {
@@ -398,15 +398,24 @@ public class BankReconciliationService {
                          when 'CHEQUE' then (select c.cheque_number from cheques c where c.id = je.source_id and c.tenant_id = je.tenant_id)
                          when 'ISSUED_CHEQUE' then (select ic.cheque_number from issued_cheques ic where ic.id = je.source_id and ic.tenant_id = je.tenant_id)
                          when 'VOUCHER' then (select v.cheque_number from vouchers v where v.id = je.source_id and v.tenant_id = je.tenant_id)
-                       end as cheque_no
+                       end as cheque_no,
+                       exists (select 1 from bank_off_statement_items o
+                               where o.tenant_id = je.tenant_id and o.bank_account_id = :b
+                                 and o.journal_entry_id = je.id) as off_statement
                 from journal_lines jl
                 join journal_entries je on je.id = jl.journal_entry_id and je.tenant_id = jl.tenant_id
                 where jl.tenant_id = :t and jl.account_id in (:leaves) and je.doc_type <> 'OB'
-                  and je.entry_date between :start and :to
+                  and (je.entry_date between :start and :to
+                       -- F14-20: confirmed "not on the statement" and dated before the
+                       -- reconciliation starts: outstanding until a statement line shows it.
+                       or (je.entry_date < :start and exists (select 1 from bank_off_statement_items o
+                               where o.tenant_id = je.tenant_id and o.bank_account_id = :b
+                                 and o.journal_entry_id = je.id)))
                 order by je.entry_date, je.entry_number, jl.line_no""", p,
                 (rs, i) -> new JI(rs.getObject("id", UUID.class), rs.getObject("entry_date", LocalDate.class),
                         rs.getString("entry_number"), rs.getString("doc_type"), rs.getString("source_type"),
-                        rs.getString("narration"), rs.getString("cheque_no"), rs.getBigDecimal("amount")));
+                        rs.getString("narration"), rs.getString("cheque_no"), rs.getBigDecimal("amount"),
+                        rs.getBoolean("off_statement")));
         List<BankRecDTOs.OpeningItem> openingItems = matches.openingItems(t, b);
         BigDecimal openingTotal = openingItems.stream().map(BankRecDTOs.OpeningItem::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -451,7 +460,8 @@ public class BankReconciliationService {
         int withoutEvidence = 0;
         for (JI j : bookItems) {
             if (!outstanding(byJournal.get(j.id()), recStart, to)) continue;
-            boolean handCleared = j.amount().signum() > 0 && "CRT".equals(j.docType()) && "CHEQUE".equals(j.sourceType());
+            boolean handCleared = j.offStatement()
+                    || j.amount().signum() > 0 && "CRT".equals(j.docType()) && "CHEQUE".equals(j.sourceType());
             if (handCleared) withoutEvidence++;
             BankRecDTOs.RecItem item = new BankRecDTOs.RecItem("JOURNAL", j.id(), j.date(), j.entryNumber(), j.narration(),
                     j.chequeNo(), j.amount(), handCleared);
@@ -532,7 +542,11 @@ public class BankReconciliationService {
                     select coalesce(sum(jl.debit - jl.credit), 0) from journal_lines jl
                     join journal_entries je on je.id = jl.journal_entry_id
                     where jl.tenant_id = :t and jl.account_id in (:leaves) and je.entry_date < :from""", p, BigDecimal.class));
-            checks.add(openingCheck(opening, openingTotal, bookAtStart, openingItems, from));
+            // F14-20: a confirmed off-statement entry dated before the start is in the
+            // book at the start and listed above as outstanding, like an opening item.
+            BigDecimal offBefore = bookItems.stream().filter(j -> j.offStatement() && j.date().isBefore(from))
+                    .map(JI::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            checks.add(openingCheck(opening, openingTotal.add(offBefore), bookAtStart, openingItems, from));
         }
         boolean canFinalize = "DRAFT".equals(r.status()) && checks.stream().allMatch(BankRecDTOs.Check::ok);
 

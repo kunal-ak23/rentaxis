@@ -26,7 +26,13 @@ import java.util.UUID;
 public record ChequeActionRequest(LocalDate date,
                                   String notes,
                                   ChequeFailureReason failureReason,
-                                  UUID debitAccountId) {
+                                  UUID debitAccountId,
+                                  Boolean notOnStatement) {
+
+    /** F14-20: without the "not on the statement" confirmation. */
+    public ChequeActionRequest(LocalDate date, String notes, ChequeFailureReason failureReason, UUID debitAccountId) {
+        this(date, notes, failureReason, debitAccountId, null);
+    }
 
     public static ChequeActionRequest on(LocalDate date) {
         return new ChequeActionRequest(date, null, null, null);

@@ -284,7 +284,10 @@ public class PaymentRunService {
             draft.setPaymentRunId(run.getId());
             // Flushed before post(), which re-reads the row under its lock.
             voucherRepo.saveAndFlush(draft);
-            Voucher posted = vouchers.post(draft.getId(), settle, run.getId());
+            // F14-20: the run's payments share one date and one bank; the user's
+            // "not on the statement" answer covers them all.
+            Voucher posted = vouchers.post(draft.getId(), settle, run.getId(),
+                    VoucherService.PostOptions.of(approved != null && Boolean.TRUE.equals(approved.notOnStatement()), false));
             for (ItemPlan ip : vp.items()) ip.item().setBpvId(posted.getId());
             items.saveAll(vp.items().stream().map(ItemPlan::item).toList());
         }

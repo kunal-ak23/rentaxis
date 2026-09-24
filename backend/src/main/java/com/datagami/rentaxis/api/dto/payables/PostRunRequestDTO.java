@@ -13,7 +13,12 @@ import java.util.UUID;
  * re-plans under its locks and refuses with 409 when any of it differs, so the
  * money that leaves the bank is the money the preview showed.
  */
-public record PostRunRequestDTO(@NotNull @Valid List<Vendor> vendors) {
+public record PostRunRequestDTO(@NotNull @Valid List<Vendor> vendors, Boolean notOnStatement) {
+
+    /** F14-20: without the "not on the statement" confirmation. */
+    public PostRunRequestDTO(List<Vendor> vendors) {
+        this(vendors, null);
+    }
 
     public record Vendor(@NotNull UUID vendorId, @NotNull BigDecimal netPayment, BigDecimal advanceApplied,
                          String chequeNumber, @NotNull List<Item> items) { }

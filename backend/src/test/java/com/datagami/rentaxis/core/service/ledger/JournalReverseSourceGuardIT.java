@@ -88,6 +88,18 @@ class JournalReverseSourceGuardIT extends AbstractPostgresIT {
         return tx.execute(s -> entries.count());
     }
 
+    /** F14-41: a manual reversal is dated on or after the entry, and says why. */
+    @Test
+    void aManualReversalCannotPrecedeTheEntryNorOmitTheReason() {
+        JournalEntry manual = entryFrom(JournalSourceType.MANUAL);
+        LocalDate day = manual.getEntryDate();
+        assertThatThrownBy(() -> journals.reverse(manual.getId(), new ReverseRequest(day.minusDays(1), "typo")))
+                .hasMessageContaining("cannot be dated before");
+        assertThatThrownBy(() -> journals.reverse(manual.getId(), new ReverseRequest(day, " ")))
+                .hasMessageContaining("Give the reason");
+        assertThat(statusOf(manual.getId())).isEqualTo(JournalStatus.POSTED);
+    }
+
     @Test
     void aManualJournalIsStillReversible() {
         JournalEntry manual = entryFrom(JournalSourceType.MANUAL);

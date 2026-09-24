@@ -61,7 +61,8 @@ public class IssuedChequeController {
     @PostMapping("/{id}/present")
     public ResponseEntity<IssuedChequeDTO> present(@PathVariable UUID id, @Valid @RequestBody IssuedChequeActionDTO body) {
         requireTenantSelected();
-        return ResponseEntity.ok(cheques.present(id, body.date()));
+        return ResponseEntity.ok(cheques.present(id, body.date(),
+                com.datagami.rentaxis.core.service.ledger.BankLockService.StatementEvidence.of(body.notOnStatement())));
     }
 
     @PostMapping("/{id}/cancel")

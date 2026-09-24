@@ -9,4 +9,10 @@ import java.util.List;
  * settles (spec §2). Allocations are written in the post's own transaction; a
  * draft holds none, because only a POSTED payment can settle anything.
  */
-public record PostVoucherDTO(@Valid List<AllocationInputDTO> allocations) { }
+public record PostVoucherDTO(@Valid List<AllocationInputDTO> allocations, Boolean notOnStatement,
+                             Boolean allowNegativeCash) {
+
+    public PostVoucherDTO(List<AllocationInputDTO> allocations) {
+        this(allocations, null, null);
+    }
+}

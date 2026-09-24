@@ -155,6 +155,14 @@ public class JournalService {
         requireManual(entry);
         ReverseRequest req = r == null ? new ReverseRequest(null, null) : r;
         LocalDate date = req.date() == null ? LocalDate.now() : req.date();
+        // F14-41: a reversal is dated on or after the entry it reverses, and says why.
+        if (entry.getEntryDate() != null && date.isBefore(entry.getEntryDate())) {
+            throw new BusinessRuleViolationException("A reversal cannot be dated before " + entry.getEntryNumber()
+                    + " (" + entry.getEntryDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + ")");
+        }
+        if (req.reason() == null || req.reason().isBlank()) {
+            throw new BusinessRuleViolationException("Give the reason for the reversal");
+        }
         bankLock.assertOpenForEntry(id, date);
         // PostingService owns the rest of the immutability rule: an entry that is
         // already REVERSED, and a reversal entry itself, are refused there.

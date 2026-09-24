@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service.bank;
 
+import com.datagami.rentaxis.core.service.ledger.BankLockService.StatementEvidence;
+
 import com.datagami.rentaxis.api.dto.bank.BankRecDTOs;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ClearBatchRequest;
@@ -169,7 +171,7 @@ public class BankLineActionService {
         // One cheque or several, the batch door (PR #353 review P2-1): it refuses a
         // clearing date in the future or before the deposit, which the single
         // clear() does not check.
-        cheques.clearBatch(new ClearBatchRequest(ids, date, "Cleared per bank statement"));
+        cheques.clearBatch(new ClearBatchRequest(ids, date, "Cleared per bank statement"), StatementEvidence.EXEMPT);
         em.flush();
         List<UUID> entries = jdbc.queryForList("select crt_journal_id from cheques where tenant_id = :t and id in (:ids)",
                 new MapSqlParameterSource("t", t).addValue("ids", ids), UUID.class);
@@ -221,7 +223,7 @@ public class BankLineActionService {
                         + "; only " + StatementValues.money(left.min(balance)) + " of this receipt is still unidentified", "amount", StatementValues.money(amount), "left", StatementValues.money(left.min(balance)));
             }
             cheques.receive(in.chequeId(), new ChequeActionRequest(line.date(), "Received from unidentified receipts", null,
-                    suspenseLeaf));
+                    suspenseLeaf), null, StatementEvidence.EXEMPT);
             em.flush();
             UUID crt = jdbc.queryForObject("select crt_journal_id from cheques where tenant_id = :t and id = :id",
                     new MapSqlParameterSource("t", t).addValue("id", in.chequeId()), UUID.class);
@@ -239,7 +241,8 @@ public class BankLineActionService {
                     + StatementValues.money(line.amount()), "amount", StatementValues.money(amount), "line", StatementValues.money(line.amount()));
         }
         UUID leaf = leafFor(leaves, (UUID) c.get("property_id"), in.bankLeafId());
-        cheques.receive(in.chequeId(), new ChequeActionRequest(line.date(), "Received per bank statement", null, leaf));
+        cheques.receive(in.chequeId(), new ChequeActionRequest(line.date(), "Received per bank statement", null, leaf), null,
+                StatementEvidence.EXEMPT);
         em.flush();
         UUID crt = jdbc.queryForObject("select crt_journal_id from cheques where tenant_id = :t and id = :id",
                 new MapSqlParameterSource("t", t).addValue("id", in.chequeId()), UUID.class);
@@ -329,7 +332,7 @@ public class BankLineActionService {
         if (line.chequeNo() != null && !BankMatchService.sameChequeNo(line.chequeNo(), (String) c.get("cheque_number"))) {
             throw BankRecRefusal.refuse("lineNamesOtherCheque", "The line names cheque " + line.chequeNo() + ", not " + c.get("cheque_number"), "lineCheque", line.chequeNo(), "cheque", c.get("cheque_number"));
         }
-        issuedCheques.present(in.issuedChequeId(), line.date());
+        issuedCheques.present(in.issuedChequeId(), line.date(), StatementEvidence.EXEMPT);
         em.flush();
         UUID bpc = jdbc.queryForObject("select bpc_journal_id from issued_cheques where tenant_id = :t and id = :id",
                 new MapSqlParameterSource("t", t).addValue("id", in.issuedChequeId()), UUID.class);

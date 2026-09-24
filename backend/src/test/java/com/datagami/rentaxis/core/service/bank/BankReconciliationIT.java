@@ -721,7 +721,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
         // Credited on 24/09, but the register says it was deposited on 26/09.
         assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
                 List.of(stmt(ws(), "CHQ DEP 000701").id()), List.of(c.id()))))
-                .hasMessageContaining("was deposited on 2026-09-26, after the clearing date 2026-09-24");
+                .hasMessageContaining("was deposited on 26/09/2026, after the clearing date 24/09/2026");
         // A value date after today.
         assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(
                 List.of(stmt(ws(), "CHQ DEP 000701 B").id()), List.of(c.id()))))

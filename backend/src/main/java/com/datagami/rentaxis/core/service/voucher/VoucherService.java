@@ -1,5 +1,11 @@
 package com.datagami.rentaxis.core.service.voucher;
 
+import com.datagami.rentaxis.core.service.ledger.BankLockService;
+import java.math.RoundingMode;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.Optional;
+
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
@@ -251,9 +257,38 @@ public class VoucherService {
                 && v.getChequeDate() != null && v.getDocDate() != null && v.getChequeDate().isAfter(v.getDocDate());
     }
 
+    /**
+     * What the user confirmed when posting (F14-20, F14-42).
+     *
+     * @param notOnStatement the bank payment is dated inside an imported statement's
+     *        range and the user confirmed it is not on that statement.
+     * @param allowNegativeCash the user saw the warning that the payment takes the
+     *        cash leaf below zero and posted anyway.
+     */
+    public record PostOptions(boolean notOnStatement, boolean allowNegativeCash, boolean statementExempt) {
+        public static final PostOptions NONE = new PostOptions(false, false, false);
+
+        public static PostOptions of(Boolean notOnStatement, Boolean allowNegativeCash) {
+            return new PostOptions(Boolean.TRUE.equals(notOnStatement), Boolean.TRUE.equals(allowNegativeCash), false);
+        }
+
+        /** An amend's replacement of a bank payment on the same leaf and date: the movement already existed. */
+        PostOptions exemptFromStatement() {
+            return new PostOptions(notOnStatement, allowNegativeCash, true);
+        }
+    }
+
     /** As above; {@code runId}: the payment run posting it, which its allocations are tagged with. */
     @Transactional
     public Voucher post(UUID voucherId, List<VoucherAllocationService.AllocationInput> allocations, UUID runId) {
+        return post(voucherId, allocations, runId, PostOptions.NONE);
+    }
+
+    /** As above, with what the user confirmed. */
+    @Transactional
+    public Voucher post(UUID voucherId, List<VoucherAllocationService.AllocationInput> allocations, UUID runId,
+                        PostOptions options) {
+        PostOptions opts = options == null ? PostOptions.NONE : options;
         Voucher v = lockForWrite(voucherId);
         requireDraft(v);
         requirePostable(v);
@@ -270,6 +305,20 @@ public class VoucherService {
         for (VoucherLine l : v.getLines()) touched.add(l.getAccount().getId());
         if (v.getDocType() == VoucherType.BPV && !postDated && v.getPaymentAccount() != null) touched.add(v.getPaymentAccount().getId());
         bankLock.assertOpen(touched, v.getDocDate());
+        // F14-20: a bank payment dated inside an imported statement's range only
+        // with the user's word that it is not on the statement.
+        Optional<BankLockService.StatementCover> offStatement =
+                v.getDocType() == VoucherType.BPV && !postDated && v.getPaymentAccount() != null
+                        ? bankLock.requireOffStatement(List.of(v.getPaymentAccount().getId()), v.getDocDate(),
+                                opts.statementExempt() ? BankLockService.StatementEvidence.EXEMPT
+                                        : opts.notOnStatement() ? BankLockService.StatementEvidence.CONFIRMED_NOT_ON_STATEMENT
+                                        : BankLockService.StatementEvidence.CHECK)
+                        : Optional.empty();
+        // F14-42: a cash payment may not take the till below zero unless the user
+        // saw the warning and confirmed it.
+        if (v.getDocType() == VoucherType.BPV && !postDated && !opts.allowNegativeCash()) {
+            requireCashCovers(v);
+        }
         // PR #352 review P3-5: every cheque — post-dated or not — is one number on
         // its bank leaf. The per-leaf advisory lock serialises two posts (or two
         // runs) reaching for the same numbers, so the check below cannot be raced.
@@ -339,9 +388,15 @@ public class VoucherService {
                     "Cash Receipt Vouchers are posted from the lease receipt screen");
         }
 
+        String baseNarration = v.getNarration();
+        LocalDate docDate = v.getDocDate();
+        String entryNarration = offStatement
+                .map(c -> (baseNarration == null ? "" : baseNarration) + BankLockService.offStatementNote(c))
+                .orElse(baseNarration);
         JournalEntry entry = posting.post(new PostingRequest(
-                v.getDocType().toDocType(), v.getDocDate(), v.getNarration(), headerDims,
+                v.getDocType().toDocType(), v.getDocDate(), entryNarration, headerDims,
                 JournalSourceType.VOUCHER, v.getId(), null, journalLines));
+        offStatement.ifPresent(c -> bankLock.recordOffStatement(c, entry.getId(), docDate));
 
         v.setStatus(VoucherStatus.POSTED);
         v.setJournalId(entry.getId());
@@ -481,6 +536,52 @@ public class VoucherService {
     }
 
     /**
+     * F14-41: a posted voucher is reversed (amend, void, payment reversal) on or
+     * after its own date, and only with a reason. A reversal dated earlier would
+     * cancel a document that did not exist yet, and could move its VAT into an
+     * earlier return.
+     */
+    static void requireReversible(Voucher original, LocalDate date, String reason) {
+        if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
+        if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
+            String doc = original.getVoucherNumber() == null ? "the voucher" : original.getVoucherNumber();
+            throw new BusinessRuleViolationException("A reversal cannot be dated before " + doc + " ("
+                    + original.getDocDate().format(DMY) + ")", "voucher.reverseBeforeDocument",
+                    Map.of("voucher", doc, "docDate", original.getDocDate().format(DMY), "date", date.format(DMY)));
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleViolationException("Give the reason for the reversal", "voucher.reasonRequired", Map.of());
+        }
+    }
+
+    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /**
+     * F14-42: a payment out of a cash leaf may not take it below zero on the
+     * payment's date. The balance counts every entry dated on or before it.
+     */
+    private void requireCashCovers(Voucher v) {
+        Account pay = v.getPaymentAccount();
+        if (pay == null || pay.getAccountSubType() != AccountSubType.CASH) return;
+        BigDecimal balance = (BigDecimal) entityManager.createQuery(
+                "select coalesce(sum(l.debit - l.credit), 0) from JournalLine l"
+                        + " where l.account.id = :a and l.entry.entryDate <= :d")
+                .setParameter("a", pay.getId()).setParameter("d", v.getDocDate()).getSingleResult();
+        BigDecimal net = VoucherMath.netTotal(v.getLines());
+        BigDecimal after = balance.subtract(net);
+        if (after.signum() < 0) {
+            String bal = balance.setScale(2, RoundingMode.HALF_UP).toPlainString();
+            String amt = net.setScale(2, RoundingMode.HALF_UP).toPlainString();
+            String left = after.setScale(2, RoundingMode.HALF_UP).toPlainString();
+            throw new BusinessRuleViolationException(pay.getName() + " holds " + bal + " on "
+                    + v.getDocDate().format(DMY) + "; paying " + amt + " from it would leave it at " + left
+                    + ". Confirm the payment to post it anyway.", "voucher.cashNegative",
+                    Map.of("account", pay.getName(), "balance", bal, "amount", amt,
+                            "date", v.getDocDate().format(DMY), "after", left));
+        }
+    }
+
+    /**
      * PR #352 review P3-1: an allocation released from this payment on R keeps
      * counting until R. Reversing the payment before R would leave it settling an
      * invoice after the payment is gone, so the reversal is dated on or after the
@@ -509,20 +610,57 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be reversed; this one is " + original.getStatus());
         }
-        if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
-        if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
-            throw new BusinessRuleViolationException("A reversal cannot be dated before the payment (" + original.getDocDate() + ")");
-        }
+        requireReversible(original, date, reason);
         fiscal.assertOpen(date);
         bankLock.assertOpenForEntry(original.getJournalId(), date);
         allocationService.lockCounterparts(original.getId(), null);
         requireNotBeforeARelease(original, date);
-        cancelIssuedChequeOf(original, date, reason);
-        posting.reverse(original.getJournalId(), date, reason);
+        cancelIssuedChequeOf(original, date, reason.trim());
+        posting.reverse(original.getJournalId(), date, reason.trim());
         original.setStatus(VoucherStatus.REVERSED);
         original.setUpdatedAt(Instant.now());
         vouchers.saveAndFlush(original);
         allocationService.releaseAllOfPayment(original.getId(), date, "Payment " + original.getVoucherNumber() + " reversed");
+        return original;
+    }
+
+    /**
+     * F14-42: void a posted voucher that should never have been posted — a
+     * mistaken payment or invoice. Its journal is reversed on {@code date} (on or
+     * after its own date, inside an open period and bank lock) with the reason, and
+     * it is marked VOID. A payment's allocations are released and an ISSUED
+     * post-dated cheque is cancelled, as for {@link #reversePayment}. An invoice a
+     * payment still settles is refused: release or amend that payment first.
+     */
+    @Transactional
+    public Voucher voidVoucher(UUID voucherId, LocalDate date, String reason) {
+        Voucher original = lockForWrite(voucherId);
+        if (original.getStatus() != VoucherStatus.POSTED) {
+            throw new BusinessRuleViolationException(
+                    "Only a POSTED voucher can be voided; this one is " + original.getStatus());
+        }
+        if (date == null) throw new BusinessRuleViolationException("A void date is required");
+        requireReversible(original, date, reason);
+        fiscal.assertOpen(date);
+        bankLock.assertOpenForEntry(original.getJournalId(), date);
+        allocationService.lockCounterparts(original.getId(), null);
+        if (original.getDocType() == VoucherType.PISR
+                && allocationService.liveOnInvoice(original.getId(), null).signum() > 0) {
+            throw new BusinessRuleViolationException(original.getVoucherNumber()
+                    + " is settled by a payment; release that allocation or amend the payment before voiding it",
+                    "voucher.voidSettledInvoice", Map.of("voucher", String.valueOf(original.getVoucherNumber())));
+        }
+        if (original.getDocType() == VoucherType.BPV) {
+            requireNotBeforeARelease(original, date);
+            cancelIssuedChequeOf(original, date, reason.trim());
+        }
+        posting.reverse(original.getJournalId(), date, "Void: " + reason.trim());
+        original.setStatus(VoucherStatus.VOID);
+        original.setUpdatedAt(Instant.now());
+        vouchers.saveAndFlush(original);
+        if (original.getDocType() == VoucherType.BPV) {
+            allocationService.releaseAllOfPayment(original.getId(), date, "Payment " + original.getVoucherNumber() + " voided");
+        }
         return original;
     }
 
@@ -561,6 +699,14 @@ public class VoucherService {
     @Transactional
     public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement,
                          List<VoucherAllocationService.AllocationInput> allocations) {
+        return amend(voucherId, reversalDate, reason, replacement, allocations, PostOptions.NONE);
+    }
+
+    /** As above, with what the user confirmed for the replacement (F14-20, F14-42). */
+    @Transactional
+    public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement,
+                         List<VoucherAllocationService.AllocationInput> allocations, PostOptions options) {
+        PostOptions opts = options == null ? PostOptions.NONE : options;
         Voucher original = lockForWrite(voucherId);
         if (original.getStatus() != VoucherStatus.POSTED) {
             throw new BusinessRuleViolationException(
@@ -570,6 +716,8 @@ public class VoucherService {
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
+        // F14-41: dated on or after the original, and a reason.
+        requireReversible(original, reversalDate, reason);
         bankLock.assertOpenForEntry(original.getJournalId(), reversalDate);
         // A grandfathered duplicate (changeset 110) shares its number with a POSTED
         // invoice the guard protects, so it can only be corrected to a new number —
@@ -600,9 +748,9 @@ public class VoucherService {
         lockChequeLeavesForAmend(original, replacement);
         if (original.getDocType() == VoucherType.BPV) requireNotBeforeARelease(original, reversalDate);
         // Before the replacement is written, so it may re-use the cheque number.
-        cancelIssuedChequeOf(original, reversalDate, reason);
+        cancelIssuedChequeOf(original, reversalDate, reason.trim());
 
-        posting.reverse(original.getJournalId(), reversalDate, reason);
+        posting.reverse(original.getJournalId(), reversalDate, reason.trim());
         original.setStatus(VoucherStatus.REVERSED);
         original.setUpdatedAt(Instant.now());
         vouchers.saveAndFlush(original);
@@ -623,7 +771,13 @@ public class VoucherService {
         // amendedFromId. (Same shape as the flush updateDraft needs, for the same
         // reason: this class hands rows to Hibernate and then re-reads them.)
         vouchers.saveAndFlush(fresh);
-        Voucher posted = post(fresh.getId(), List.of());
+        // F14-20: the replacement of a bank payment on the same leaf and date is the
+        // movement the statement already shows (or does not); it is not asked again.
+        boolean sameMovement = original.getDocType() == VoucherType.BPV && fresh.getDocType() == VoucherType.BPV
+                && original.getPaymentAccount() != null && fresh.getPaymentAccount() != null
+                && original.getPaymentAccount().getId().equals(fresh.getPaymentAccount().getId())
+                && java.util.Objects.equals(original.getDocDate(), fresh.getDocDate());
+        Voucher posted = post(fresh.getId(), List.of(), null, sameMovement ? opts.exemptFromStatement() : opts);
         if (original.getDocType() == VoucherType.PISR) {
             allocationService.carryToReplacement(original.getId(), posted.getId(), reversalDate);
         } else if (posted.getDocType() == VoucherType.BPV) {
@@ -785,6 +939,11 @@ public class VoucherService {
                 if (!ChequeService.isSettlementAccount(pay)) {
                     throw new BusinessRuleViolationException("Payment account " + pay.getCode() + " " + pay.getName()
                             + " must be a bank or cash account");
+                }
+                // F14-42: a line paying the payment account itself moves nothing.
+                if (v.getLines().stream().anyMatch(l -> l.getAccount().getId().equals(pay.getId()))) {
+                    throw new BusinessRuleViolationException("A line cannot be paid to " + pay.getCode() + " "
+                            + pay.getName() + ", the account the payment is made from");
                 }
                 requirePayableLinesMatchTheVendor(v.getVendor() == null ? null : v.getVendor().getId(),
                         v.getLines().stream().map(l -> l.getAccount().getId()).toList());

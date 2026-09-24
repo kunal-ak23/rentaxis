@@ -106,7 +106,7 @@ public class PayablesService {
                                      then l.amount + l.vat_amount else 0 end), 0) as property_gross
             from voucher_lines l join accounts la on la.id = l.account_id
             where l.voucher_id = v.id) g
-        where v.tenant_id = :t and v.doc_type = 'PISR' and v.status in ('POSTED', 'REVERSED')
+        where v.tenant_id = :t and v.doc_type = 'PISR' and v.status in ('POSTED', 'REVERSED', 'VOID')
           and v.doc_date <= :asOf and coalesce(v.supplier_invoice_date, v.doc_date) <= :asOf
           and (r.id is null or r.entry_date > :asOf)
           and (cast(:vendorId as uuid) is null or v.vendor_id = cast(:vendorId as uuid))
@@ -199,7 +199,7 @@ public class PayablesService {
         cross join lateral (
             select coalesce(sum(l.amount), 0) as paid from voucher_lines l
             where l.voucher_id = v.id and l.account_id = d.payable_account_id) p
-        where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED')
+        where v.tenant_id = :t and v.doc_type = 'BPV' and v.status in ('POSTED', 'REVERSED', 'VOID')
           and v.doc_date <= :asOf and (r.id is null or r.entry_date > :asOf) and p.paid > 0
           and (cast(:vendorId as uuid) is null or v.vendor_id = cast(:vendorId as uuid))
         order by v.doc_date, v.voucher_number
