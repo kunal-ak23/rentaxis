@@ -36,6 +36,8 @@ import {
     RefreshCcw,
     PieChart,
     FileSpreadsheet,
+    Send,
+    ScrollText,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -238,6 +240,9 @@ export default function MvpSidebar() {
         ] : []),
         ...(hasPermission(userRole, 'canManagePayables') ? [
             { name: tPayables("openingItems"), href: "/dashboard/finance/payables/opening-items", icon: FileSpreadsheet, tourId: 'sidebar-payables-opening' },
+            // PR 3b: PaymentRunController and IssuedChequeController, finance roles only.
+            { name: tPayables("paymentRuns"), href: "/dashboard/finance/payables/payment-runs", icon: Send, tourId: 'sidebar-payables-runs' },
+            { name: tPayables("issuedCheques"), href: "/dashboard/finance/payables/issued-cheques", icon: ScrollText, tourId: 'sidebar-payables-issued-cheques' },
         ] : []),
     ];
 

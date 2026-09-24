@@ -17,6 +17,7 @@ import com.datagami.rentaxis.domain.entity.enums.VoucherPaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.VoucherStatus;
 import com.datagami.rentaxis.domain.entity.enums.VoucherType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.IssuedChequeRepository;
 import com.datagami.rentaxis.domain.repository.VendorRepository;
 import com.datagami.rentaxis.domain.repository.VoucherRepository;
 import jakarta.persistence.EntityManager;
@@ -55,6 +56,7 @@ public class VoucherService {
     private final TenantFiscalSettingsService fiscal;
     private final EntityManager entityManager;
     private final VoucherAllocationService allocationService;
+    private final IssuedChequeRepository issuedCheques;
 
     /** UAE standard rate is 5%; zero-rated and exempt supplies are 0. Nothing else is legal today. */
     private static final Set<BigDecimal> ALLOWED_VAT_RATES =
@@ -234,6 +236,22 @@ public class VoucherService {
      */
     @Transactional
     public Voucher post(UUID voucherId, List<VoucherAllocationService.AllocationInput> allocations) {
+        return post(voucherId, allocations, null);
+    }
+
+    /**
+     * Finance-ops spec §2: a payment by cheque dated after the voucher is a
+     * post-dated cheque. It credits {@code PDC_PAYABLE}, not the bank, and is
+     * registered in {@code issued_cheques}; the bank moves when it is presented.
+     */
+    public static boolean isPostDatedCheque(Voucher v) {
+        return v.getDocType() == VoucherType.BPV && v.getPaymentMethod() == VoucherPaymentMethod.CHEQUE
+                && v.getChequeDate() != null && v.getDocDate() != null && v.getChequeDate().isAfter(v.getDocDate());
+    }
+
+    /** As above; {@code runId}: the payment run posting it, which its allocations are tagged with. */
+    @Transactional
+    public Voucher post(UUID voucherId, List<VoucherAllocationService.AllocationInput> allocations, UUID runId) {
         Voucher v = lockForWrite(voucherId);
         requireDraft(v);
         requirePostable(v);
@@ -243,6 +261,14 @@ public class VoucherService {
         }
         // Before the journal: this row, then the invoices, then the sequence (lockForWrite).
         if (allocating) allocationService.lockTargets(allocations);
+        boolean postDated = isPostDatedCheque(v);
+        // PR #352 review P3-5: every cheque — post-dated or not — is one number on
+        // its bank leaf. The per-leaf advisory lock serialises two posts (or two
+        // runs) reaching for the same numbers, so the check below cannot be raced.
+        if (v.getDocType() == VoucherType.BPV && v.getPaymentMethod() == VoucherPaymentMethod.CHEQUE) {
+            lockChequeNumbers(v.getPaymentAccount().getId());
+            requireChequeNumberFree(v.getPaymentAccount(), v.getChequeNumber(), v.getId());
+        }
 
         BigDecimal net = VoucherMath.netTotal(v.getLines());
         BigDecimal vat = VoucherMath.vatTotal(v.getLines());
@@ -284,11 +310,20 @@ public class VoucherService {
                                 ? v.getVendor().getNameEn()
                                 : v.getVendor().getNameEn() + " — " + v.getInvoiceNumber()));
             }
-            case BPV -> journalLines.add(PostingRequest.cr(v.getPaymentAccount().getId(), net)
-                    .withDims(headerDims)
-                    .withNarration(v.getChequeNumber() == null
-                            ? v.getPaymentAccount().getName()
-                            : "Cheque " + v.getChequeNumber()));
+            // A post-dated cheque is held in PDC_PAYABLE until it is presented
+            // (IssuedChequeService posts the BPC then); every other payment
+            // credits the payment account on the voucher's date, as before.
+            case BPV -> journalLines.add(postDated
+                    ? PostingRequest.cr(AccountRole.PDC_PAYABLE, net)
+                        .withDims(headerDims)
+                        .withNarration("PDC " + v.getChequeNumber() + " dated "
+                                + v.getChequeDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                                + " on " + v.getPaymentAccount().getName())
+                    : PostingRequest.cr(v.getPaymentAccount().getId(), net)
+                        .withDims(headerDims)
+                        .withNarration(v.getChequeNumber() == null
+                                ? v.getPaymentAccount().getName()
+                                : "Cheque " + v.getChequeNumber()));
             // Unreachable: requirePostable refuses RCP above, and validate() refuses it
             // at draft time. The arm is here because the switch is exhaustive over
             // VoucherType, and an RCP that ever did arrive should say where it belongs.
@@ -317,8 +352,145 @@ public class VoucherService {
             }
             throw e;
         }
-        if (allocating) allocationService.allocateOnPost(v.getId(), allocations);
+        if (postDated) registerIssuedCheque(v, net);
+        if (allocating) allocationService.allocateOnPost(v.getId(), allocations, null, runId);
         return v;
+    }
+
+    /** The {@code issued_cheques} row of a post-dated BPV, ISSUED. The partial unique index is the backstop. */
+    private void registerIssuedCheque(Voucher v, BigDecimal amount) {
+        IssuedCheque c = new IssuedCheque();
+        c.setVoucherId(v.getId());
+        c.setVendorId(v.getVendor() == null ? null : v.getVendor().getId());
+        if (c.getVendorId() == null) throw new BusinessRuleViolationException(PDC_NEEDS_VENDOR);
+        c.setBankAccountId(v.getPaymentAccount().getId());
+        c.setChequeNumber(v.getChequeNumber().trim());
+        c.setChequeDate(v.getChequeDate());
+        c.setAmount(amount);
+        c.setCreatedBy(v.getPostedBy());
+        try {
+            issuedCheques.saveAndFlush(c);
+        } catch (DataIntegrityViolationException e) {
+            if (String.valueOf(e.getMostSpecificCause().getMessage()).contains("ux_issued_cheques_number")) {
+                throw new BusinessRuleViolationException(chequeTaken(v.getPaymentAccount(), c.getChequeNumber()));
+            }
+            throw e;
+        }
+    }
+
+    static final String PDC_NEEDS_VENDOR = "A cheque dated after the voucher is a post-dated cheque, held in PDC payable"
+            + " against the vendor it is written to. Name the vendor, or date the cheque on the voucher date.";
+
+    static String chequeTaken(Account bank, String chequeNumber) {
+        return "Cheque " + chequeNumber + " on " + bank.getName() + " is already issued";
+    }
+
+    /**
+     * A cheque number is used once per bank leaf: among the issued cheques that
+     * are not cancelled, and among the posted payments that name it.
+     */
+    private void requireChequeNumberFree(Account bank, String chequeNumber, UUID selfId) {
+        if (chequeNumber == null || chequeNumber.isBlank()) return;
+        if (chequeNumberTaken(bank.getId(), chequeNumber, selfId)) {
+            throw new BusinessRuleViolationException(chequeTaken(bank, chequeNumber.trim()));
+        }
+    }
+
+    /**
+     * Transaction-scoped advisory lock on a bank leaf's cheque numbers, taken
+     * after the voucher and invoice rows (the order {@link #lockForWrite}
+     * documents) and before the entry-number sequence. A run takes it inside each
+     * vendor's post, after it has locked every row it touches.
+     */
+    public void lockChequeNumbers(UUID bankAccountId) {
+        UUID t = TenantContextHolder.getTenantId();
+        entityManager.createNativeQuery("select pg_advisory_xact_lock(hashtextextended(:k, 0))")
+                .setParameter("k", "cheque-numbers:" + t + ":" + bankAccountId)
+                .getSingleResult();
+    }
+
+    /** True when this cheque number is already out on this bank leaf (see {@link #requireChequeNumberFree}). */
+    @Transactional(readOnly = true)
+    public boolean chequeNumberTaken(UUID bankAccountId, String chequeNumber, UUID excludeVoucherId) {
+        String no = chequeNumber.trim();
+        if (issuedCheques.countOutstandingNumber(bankAccountId, no, excludeVoucherId) > 0) return true;
+        Long n = (Long) entityManager.createQuery("""
+                select count(v) from Voucher v where v.docType = :bpv and v.status = :posted
+                  and v.paymentAccount.id = :bank and trim(v.chequeNumber) = :no
+                  and (:self is null or v.id <> :self)""")
+                .setParameter("bpv", VoucherType.BPV).setParameter("posted", VoucherStatus.POSTED)
+                .setParameter("bank", bankAccountId).setParameter("no", no)
+                .setParameter("self", excludeVoucherId).getSingleResult();
+        return n > 0;
+    }
+
+    /**
+     * A payment that is being reversed takes its post-dated cheque with it: an
+     * ISSUED cheque is CANCELLED on the reversal date; a PRESENTED one refuses —
+     * the bank has paid it, so the BPC has to be undone (unpresent) first.
+     */
+    private void cancelIssuedChequeOf(Voucher original, LocalDate on, String reason) {
+        if (original.getDocType() != VoucherType.BPV) return;
+        for (IssuedCheque c : issuedCheques.findByVoucherId(original.getId())) {
+            // Locked and re-read: a racing Present must not be overwritten by a stale ISSUED.
+            entityManager.refresh(c, LockModeType.PESSIMISTIC_WRITE);
+            if (c.getStatus() == IssuedCheque.Status.PRESENTED) {
+                throw new BusinessRuleViolationException("Cheque " + c.getChequeNumber() + " was presented on "
+                        + c.getPresentedOn() + "; unpresent it before reversing " + original.getVoucherNumber());
+            }
+            if (c.getStatus() == IssuedCheque.Status.ISSUED) {
+                c.setStatus(IssuedCheque.Status.CANCELLED);
+                c.setCancelledOn(on);
+                c.setCancelReason(reason == null || reason.isBlank() ? "Payment " + original.getVoucherNumber() + " reversed" : reason.trim());
+                c.setUpdatedAt(Instant.now());
+                issuedCheques.saveAndFlush(c);
+            }
+        }
+    }
+
+    /**
+     * PR #352 review P3-1: an allocation released from this payment on R keeps
+     * counting until R. Reversing the payment before R would leave it settling an
+     * invoice after the payment is gone, so the reversal is dated on or after the
+     * latest release.
+     */
+    private void requireNotBeforeARelease(Voucher payment, LocalDate reversalDate) {
+        LocalDate released = allocationService.latestReleaseOfPayment(payment.getId());
+        if (released != null && reversalDate.isBefore(released)) {
+            throw new BusinessRuleViolationException("An allocation of " + payment.getVoucherNumber() + " was released on "
+                    + released + "; the payment cannot be reversed before that date");
+        }
+    }
+
+    /**
+     * Reverse a posted payment with no replacement — an issued cheque cancelled
+     * or stopped (spec §2). Its live allocations are released on {@code date}
+     * and its invoices re-open; an ISSUED post-dated cheque is cancelled.
+     */
+    @Transactional
+    public Voucher reversePayment(UUID voucherId, LocalDate date, String reason) {
+        Voucher original = lockForWrite(voucherId);
+        if (original.getDocType() != VoucherType.BPV) {
+            throw new BusinessRuleViolationException("Only a payment voucher is reversed this way");
+        }
+        if (original.getStatus() != VoucherStatus.POSTED) {
+            throw new BusinessRuleViolationException(
+                    "Only a POSTED voucher can be reversed; this one is " + original.getStatus());
+        }
+        if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
+        if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
+            throw new BusinessRuleViolationException("A reversal cannot be dated before the payment (" + original.getDocDate() + ")");
+        }
+        fiscal.assertOpen(date);
+        allocationService.lockCounterparts(original.getId(), null);
+        requireNotBeforeARelease(original, date);
+        cancelIssuedChequeOf(original, date, reason);
+        posting.reverse(original.getJournalId(), date, reason);
+        original.setStatus(VoucherStatus.REVERSED);
+        original.setUpdatedAt(Instant.now());
+        vouchers.saveAndFlush(original);
+        allocationService.releaseAllOfPayment(original.getId(), date, "Payment " + original.getVoucherNumber() + " reversed");
+        return original;
     }
 
     /**
@@ -366,21 +538,29 @@ public class VoucherService {
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
         // A grandfathered duplicate (changeset 110) shares its number with a POSTED
-        // invoice the guard protects, so it can only be corrected to a new number.
+        // invoice the guard protects, so it can only be corrected to a new number —
+        // while that invoice still stands (PR #351 re-review N3). Once it has been
+        // reversed or renumbered, nothing holds the number and the index allows it.
         if (original.getDocType() == VoucherType.PISR && original.isDuplicateGrandfathered()
                 && original.getInvoiceNoNorm() != null
                 && original.getInvoiceNoNorm().equals(normaliseInvoiceNumber(replacement.invoiceNumber()))) {
-            String first = vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
-                    .map(Voucher::getVoucherNumber).findFirst().orElse("another invoice");
-            throw new BusinessRuleViolationException(original.getVoucherNumber() + " is a grandfathered duplicate of "
-                    + first + " (both carry " + original.getInvoiceNumber()
-                    + "); amend it to a corrected invoice number");
+            vouchers.findPostedDuplicate(original.getVendor().getId(), original.getInvoiceNoNorm()).stream()
+                    .filter(d -> !d.getId().equals(original.getId()))
+                    .map(Voucher::getVoucherNumber).findFirst()
+                    .ifPresent(first -> {
+                        throw new BusinessRuleViolationException(original.getVoucherNumber()
+                                + " is a grandfathered duplicate of " + first + " (both carry "
+                                + original.getInvoiceNumber() + "); amend it to a corrected invoice number");
+                    });
         }
 
         // Every row the allocation hooks will touch, locked before the journal is
         // (voucher rows, then opening items, then the sequence): the original's
         // counterparts and whatever the replacement will settle.
         allocationService.lockCounterparts(original.getId(), allocations);
+        if (original.getDocType() == VoucherType.BPV) requireNotBeforeARelease(original, reversalDate);
+        // Before the replacement is written, so it may re-use the cheque number.
+        cancelIssuedChequeOf(original, reversalDate, reason);
 
         posting.reverse(original.getJournalId(), reversalDate, reason);
         original.setStatus(VoucherStatus.REVERSED);
@@ -393,6 +573,10 @@ public class VoucherService {
 
         Voucher fresh = createDraft(replacement);
         fresh.setAmendedFromId(original.getId());
+        // PR #352 review P3-11: an amended run payment stays in its run (and bank file).
+        if (original.getDocType() == VoucherType.BPV && fresh.getDocType() == VoucherType.BPV) {
+            fresh.setPaymentRunId(original.getPaymentRunId());
+        }
         // Flushed before post(), which loads the row by key and refreshes it under a
         // lock: refresh overwrites the instance from the database, so an insert still
         // sitting in the action queue would either be missed or would lose
@@ -625,8 +809,15 @@ public class VoucherService {
                 throw new BusinessRuleViolationException("Payment account " + pay.getCode() + " " + pay.getName()
                         + " must be a bank or cash account");
             }
-            requireMethodMatchesAccount(in.paymentMethod() == null ? inferMethod(in.chequeNumber(), pay) : in.paymentMethod(),
-                    pay, in.chequeNumber());
+            VoucherPaymentMethod method = in.paymentMethod() == null ? inferMethod(in.chequeNumber(), pay) : in.paymentMethod();
+            requireMethodMatchesAccount(method, pay, in.chequeNumber());
+            // PR #352 review P3-6: a post-dated cheque is held in PDC payable against
+            // the vendor it was written to (issued_cheques names one). Said at draft
+            // save, not first at post.
+            if (method == VoucherPaymentMethod.CHEQUE && in.chequeDate() != null && in.docDate() != null
+                    && in.chequeDate().isAfter(in.docDate()) && in.vendorId() == null) {
+                throw new BusinessRuleViolationException(PDC_NEEDS_VENDOR);
+            }
             if (in.paymentReference() != null && in.paymentReference().trim().length() > 60) {
                 throw new BusinessRuleViolationException("The payment reference is at most 60 characters");
             }

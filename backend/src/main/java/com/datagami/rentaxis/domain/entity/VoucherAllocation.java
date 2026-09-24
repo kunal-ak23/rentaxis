@@ -42,6 +42,8 @@ public class VoucherAllocation extends BaseTenantEntity {
     @Column(name = "created_by") private UUID createdBy;
     @Column(name = "created_at", nullable = false) private Instant createdAt = Instant.now();
     @Column(name = "released_by") private UUID releasedBy;
+    /** The payment run that wrote this allocation (changeset 111), if any. */
+    @Column(name = "payment_run_id") private UUID paymentRunId;
 
     public boolean isLive() { return releasedOn == null; }
 }

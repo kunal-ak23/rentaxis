@@ -113,6 +113,8 @@ public final class StatementLabels {
                 "تُحتسب دفعات الموردين عند تخصيصها لفاتورة تخص هذا العقار، بحصة العقار من الفاتورة؛ ويُخصم التخصيص الملغى.");
         put("note.unallocatedNotAttributable", "Payments below are not allocated to an invoice yet, so they are not attributable to a property and are not included above.",
                 "الدفعات أدناه غير مخصصة لفاتورة بعد، لذا لا تُنسب إلى عقار ولا تدخل في الأرقام أعلاه.");
+        put("note.pdcCountedWhenIssued", "Some payments above are post-dated cheques the bank had not paid by the end of the period; they count when allocated, and leave the bank when presented.",
+                "بعض الدفعات أعلاه شيكات مؤجلة لم يصرفها البنك حتى نهاية الفترة؛ تُحتسب عند تخصيصها، وتخرج من البنك عند تقديمها.");
         put("note.inputVatHeaderProperty", "Input VAT on a voucher with no header property is under Unassigned.",
                 "ضريبة المدخلات على سند بلا عقار في رأسه تظهر ضمن غير المخصص.");
         put("note.notCashAtBank", "Net property cash movement, not cash at bank: a bank account can serve several properties.",

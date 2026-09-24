@@ -1,0 +1,87 @@
+databaseChangeLog:
+  # Finance-ops spec 2026-09-24 §2 (PR 3b): supplier payment runs.
+  #
+  #   - payment_runs: one run pays many vendors on one date from one payment
+  #     account; DRAFT until posted (one BPV per vendor, all or nothing), or
+  #     CANCELLED before that. PR-<fy2>/<n> numbers come from the entry-number
+  #     sequence under the series "PR";
+  #   - payment_run_items: the invoices (PISR) or opening items a run pays, with
+  #     the amount chosen, and whether the vendor's unallocated advance is applied
+  #     first. After posting, bpv_id names the vendor's voucher;
+  #   - vouchers.payment_run_id and voucher_allocations.payment_run_id link what a
+  #     run wrote back to it.
+  #
+  # FKs point child → parent only (items → runs, vouchers → runs), so the tenant
+  # purge's pass loop can clear them in some order.
+  - changeSet:
+      id: 111-payment-runs
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: payment_runs
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_payment_runs_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: run_number, type: varchar(40), constraints: { nullable: false } }
+              - column: { name: payment_date, type: date, constraints: { nullable: false } }
+              - column: { name: payment_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_payment_runs_account, referencedTableName: accounts, referencedColumnNames: id } }
+              - column: { name: method, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: cheque_date, type: date }
+              - column: { name: first_cheque_number, type: varchar(50) }
+              - column: { name: narration, type: text }
+              - column: { name: status, type: varchar(10), defaultValue: DRAFT, constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: posted_at, type: timestamptz }
+              - column: { name: cancelled_at, type: timestamptz }
+        - sql:
+            comment: Status and method are closed sets
+            sql: |
+              ALTER TABLE payment_runs
+                ADD CONSTRAINT ck_payment_runs_status CHECK (status IN ('DRAFT', 'POSTED', 'CANCELLED')),
+                ADD CONSTRAINT ck_payment_runs_method CHECK (method IN ('TRANSFER', 'CHEQUE', 'CASH'))
+        - createIndex: { tableName: payment_runs, indexName: ux_payment_runs_number, unique: true, columns: [ { column: { name: tenant_id } }, { column: { name: run_number } } ] }
+
+        - createTable:
+            tableName: payment_run_items
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_payment_run_items_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: run_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_payment_run_items_run, referencedTableName: payment_runs, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: vendor_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_payment_run_items_vendor, referencedTableName: vendors, referencedColumnNames: id } }
+              - column: { name: invoice_voucher_id, type: uuid, constraints: { foreignKeyName: fk_payment_run_items_invoice, referencedTableName: vouchers, referencedColumnNames: id } }
+              - column: { name: opening_item_id, type: uuid, constraints: { foreignKeyName: fk_payment_run_items_opening_item, referencedTableName: ap_opening_items, referencedColumnNames: id } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: apply_advance, type: boolean, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: bpv_id, type: uuid, constraints: { foreignKeyName: fk_payment_run_items_bpv, referencedTableName: vouchers, referencedColumnNames: id } }
+        - sql:
+            comment: A positive amount against exactly one invoice or opening item, each at most once per run
+            sql: |
+              ALTER TABLE payment_run_items
+                ADD CONSTRAINT ck_payment_run_items_amount CHECK (amount > 0),
+                ADD CONSTRAINT ck_payment_run_items_target CHECK ((invoice_voucher_id IS NULL) <> (opening_item_id IS NULL));
+              CREATE UNIQUE INDEX ux_payment_run_items_invoice ON payment_run_items (run_id, invoice_voucher_id)
+                WHERE invoice_voucher_id IS NOT NULL;
+              CREATE UNIQUE INDEX ux_payment_run_items_opening ON payment_run_items (run_id, opening_item_id)
+                WHERE opening_item_id IS NOT NULL;
+        - createIndex: { tableName: payment_run_items, indexName: idx_payment_run_items_run, columns: [ { column: { name: run_id } } ] }
+
+        - addColumn:
+            tableName: vouchers
+            columns:
+              - column: { name: payment_run_id, type: uuid, constraints: { foreignKeyName: fk_vouchers_payment_run, referencedTableName: payment_runs, referencedColumnNames: id } }
+        - addColumn:
+            tableName: voucher_allocations
+            columns:
+              - column: { name: payment_run_id, type: uuid, constraints: { foreignKeyName: fk_voucher_allocations_payment_run, referencedTableName: payment_runs, referencedColumnNames: id } }
+        - createIndex: { tableName: vouchers, indexName: idx_vouchers_payment_run, columns: [ { column: { name: payment_run_id } } ] }
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE voucher_allocations DROP COLUMN IF EXISTS payment_run_id;
+              ALTER TABLE vouchers DROP COLUMN IF EXISTS payment_run_id;
+              DROP TABLE IF EXISTS payment_run_items;
+              DROP TABLE IF EXISTS payment_runs;

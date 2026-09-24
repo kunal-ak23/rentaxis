@@ -417,20 +417,33 @@ export default function VoucherForm({
         }
         return out;
     }, [ownAllocations]);
+    /**
+     * What the amendment will actually send, by panel key, in fils. Only the
+     * current vendor's open items reach the body (re-review N2): a key the panel
+     * no longer lists — the old vendor's invoice after a vendor change — sends 0.
+     */
+    const sentByKey = useMemo(() => {
+        const out: Record<string, number> = {};
+        for (const a of allocationInputs) {
+            const key = a.invoiceId ? `PISR:${a.invoiceId}` : `OPENING:${a.openingItemId}`;
+            out[key] = (out[key] ?? 0) + Math.round(a.amount * 100);
+        }
+        return out;
+    }, [allocationInputs]);
     /** Invoices the amendment would leave less settled than today — the ones the warning names. */
     const reopened = useMemo(
         () => [...new Set(ownAllocations
             .filter(a => {
                 const key = a.invoiceVoucherId ? `PISR:${a.invoiceVoucherId}` : `OPENING:${a.openingItemId}`;
-                return Math.round(num(allocate[key] ?? "") * 100) < (ownByKey[key] ?? 0);
+                return (sentByKey[key] ?? 0) < (ownByKey[key] ?? 0);
             })
             .map(a => a.invoiceNumber ?? ""))].filter(Boolean),
-        [ownAllocations, ownByKey, allocate],
+        [ownAllocations, ownByKey, sentByKey],
     );
     const allocationsChanged = useMemo(() => {
-        const keys = new Set([...Object.keys(ownByKey), ...Object.keys(allocate)]);
-        return [...keys].some(k => Math.round(num(allocate[k] ?? "") * 100) !== (ownByKey[k] ?? 0));
-    }, [ownByKey, allocate]);
+        const keys = new Set([...Object.keys(ownByKey), ...Object.keys(sentByKey)]);
+        return [...keys].some(k => (sentByKey[k] ?? 0) !== (ownByKey[k] ?? 0));
+    }, [ownByKey, sentByKey]);
     const allocationTotal = useMemo(
         () => Math.round(allocationInputs.reduce((s, a) => s + a.amount * 100, 0)) / 100,
         [allocationInputs],
@@ -1026,6 +1039,14 @@ export default function VoucherForm({
                                             onChange={e => setChequeDate(e.target.value)}
                                         />
                                     </div>
+                                    {/* Finance-ops spec §2: a cheque dated after the voucher credits
+                                        PDC payable, not the bank, until it is presented. */}
+                                    {chequeDate && docDate && chequeDate > docDate && (
+                                        <p data-testid="pdc-banner" role="status"
+                                           className="col-span-full text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
+                                            {t("pdcBanner")}
+                                        </p>
+                                    )}
                                 </>
                             )}
                         </>

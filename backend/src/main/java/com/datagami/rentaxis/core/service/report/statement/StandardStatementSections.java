@@ -375,6 +375,13 @@ public final class StandardStatementSections {
      *       dated earlier and released in the period comes back off. So a payment
      *       is counted once across consecutive periods, whatever happens to it
      *       later.</li>
+     *   <li><b>Post-dated cheques</b> (PR 3b) follow the same rule: the spec's
+     *       section 7 is the sub-ledger, so a supplier PDC counts when its payment
+     *       is allocated (the BPV's date), not when the bank pays it. A note says
+     *       so whenever a counted payment is a cheque not yet presented at
+     *       {@code to} — read as at {@code to} from its BPC journals and cancel
+     *       date, so re-rendering a closed period gives the same note; the bank side of that cheque is the BPC, which touches
+     *       neither this section nor the P&L.</li>
      *   <li><b>Direct:</b> payment vouchers that debit an expense leaf of the
      *       property directly, as before.</li>
      *   <li><b>Not attributable yet:</b> payments dated in the period with an
@@ -402,7 +409,15 @@ public final class StandardStatementSections {
             select a.allocated_on, a.released_on, a.amount, pv.voucher_number as payment_number,
                    d.name_en as vendor, coalesce(iv.invoice_number, o.invoice_number) as invoice_number,
                    g.gross, g.property_gross,
-                   (a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to)) as counted
+                   (a.allocated_on between :from and :to and (a.released_on is null or a.released_on > :to)) as counted,
+                   exists (select 1 from issued_cheques c where c.voucher_id = a.payment_voucher_id
+                             and (c.cancelled_on is null or c.cancelled_on > :to)
+                             and not exists (select 1 from journal_entries b
+                                             where b.tenant_id = c.tenant_id and b.source_type = 'ISSUED_CHEQUE'
+                                               and b.source_id = c.id and b.doc_type = 'BPC' and b.entry_date <= :to
+                                               and not exists (select 1 from journal_entries r
+                                                               where r.reversal_of_id = b.id and r.entry_date <= :to))
+                   ) as unpresented_pdc
             from voucher_allocations a
             join vouchers pv on pv.id = a.payment_voucher_id
             join vendors d on d.id = a.vendor_id
@@ -452,7 +467,9 @@ public final class StandardStatementSections {
                     .addValue("scoped", propertyScope.isScoped());
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal[] allocated = {BigDecimal.ZERO};
+            boolean[] unpresentedPdc = {false};
             jdbc.query(ALLOCATED_SQL, params, rs -> {
+                if (rs.getBoolean("counted") && rs.getBoolean("unpresented_pdc")) unpresentedPdc[0] = true;
                 BigDecimal share = PayablesService.share(rs.getBigDecimal("amount"), rs.getBigDecimal("property_gross"),
                         rs.getBigDecimal("gross"));
                 boolean counted = rs.getBoolean("counted");
@@ -491,6 +508,7 @@ public final class StandardStatementSections {
             BigDecimal paid = allocated[0].add(directPaid);
             List<String> notes = new ArrayList<>(List.of("paidBySubledger"));
             if (!unallocated.isEmpty()) notes.add("unallocatedNotAttributable");
+            if (unpresentedPdc[0]) notes.add("pdcCountedWhenIssued");
             return new Section("expensesPaid", 7, "SUBLEDGER", List.of(
                     Figure.of("allocatedPaid", money(allocated[0])),
                     Figure.of("directPaid", money(directPaid)),

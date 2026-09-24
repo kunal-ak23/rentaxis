@@ -186,7 +186,18 @@ describe("sidebar finance gating", () => {
         ).toEqual([]);
         // The opening-items grid is PayablesController, which refuses a manager.
         expect(links).not.toContain("/dashboard/finance/payables/opening-items");
+        // Payment runs and issued cheques: finance roles only (PR 3b).
+        expect(links).not.toContain("/dashboard/finance/payables/payment-runs");
+        expect(links).not.toContain("/dashboard/finance/payables/issued-cheques");
         expect(links).not.toContain("/dashboard/staff");
+    });
+
+    it("offers an accountant payment runs and the issued-cheques register", () => {
+        const links = hrefs(renderAs("ACCOUNTANT").container);
+        expect(links).toEqual(expect.arrayContaining([
+            "/dashboard/finance/payables/payment-runs",
+            "/dashboard/finance/payables/issued-cheques",
+        ]));
     });
 
     it("renders the group heading only when the group has items", () => {

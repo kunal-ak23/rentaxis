@@ -114,7 +114,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
     void postingDebitsEveryLineAndCreditsThePaymentAccount() {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), vendor.getId(), null,
-                "October payment run", null, null, bank.getId(), "000451", LocalDate.of(2026, 10, 22),
+                "October payment run", null, null, bank.getId(), "000451", LocalDate.of(2026, 10, 20),
                 List.of(sharedLine(vendor.getPayableAccount().getId(),
                                 "Settle EMR-4471", new BigDecimal("5100.00"), BigDecimal.ZERO, null, null),
                         sharedLine(salaries.getId(),
@@ -141,7 +141,7 @@ class PaymentVoucherPostingIT extends AbstractPostgresIT {
     void theChequeNumberReachesTheBankLineNarration() {
         Voucher v = vouchers.createDraft(new VoucherService.VoucherInput(
                 VoucherType.BPV, LocalDate.of(2026, 10, 20), null, null, "x", null, null,
-                bank.getId(), "000451", LocalDate.of(2026, 10, 22),
+                bank.getId(), "000451", LocalDate.of(2026, 10, 20),
                 List.of(sharedLine(salaries.getId(), null,
                         new BigDecimal("100.00"), BigDecimal.ZERO, null, null))));
         Voucher posted = vouchers.post(v.getId());

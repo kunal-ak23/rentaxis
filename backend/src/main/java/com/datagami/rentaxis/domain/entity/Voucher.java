@@ -99,6 +99,9 @@ public class Voucher extends BaseTenantEntity {
 
     @Column(name = "amended_from_id") private UUID amendedFromId;
 
+    /** The payment run that wrote this BPV (changeset 111), if any. */
+    @Column(name = "payment_run_id") private UUID paymentRunId;
+
     @Column(name = "posted_by") private UUID postedBy;
     @Column(name = "posted_at") private Instant postedAt;
 

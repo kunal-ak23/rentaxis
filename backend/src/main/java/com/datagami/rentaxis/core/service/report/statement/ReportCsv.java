@@ -134,7 +134,12 @@ public final class ReportCsv {
     }
 
     public static byte[] encode(List<List<String>> rows) {
-        StringBuilder b = new StringBuilder("﻿");
+        return encode(rows, true);
+    }
+
+    /** {@code bom}: lead with a UTF-8 byte-order mark (Excel wants it; some bank portals reject it). */
+    public static byte[] encode(List<List<String>> rows, boolean bom) {
+        StringBuilder b = new StringBuilder(bom ? "﻿" : "");
         for (List<String> row : rows) {
             for (int i = 0; i < row.size(); i++) {
                 if (i > 0) b.append(',');
