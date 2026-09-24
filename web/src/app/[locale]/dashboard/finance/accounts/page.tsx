@@ -61,6 +61,8 @@ export default function AccountsPage() {
     const tl = useTranslations("Ledger");
     const locale = useLocale();
     const isAr = locale === "ar";
+    const typeLabel = (type: string) => (tl.has(`accountTypes.${type}`) ? tl(`accountTypes.${type}`) : type);
+    const subTypeLabel = (st: string) => (t.has(`accountSubTypes.${st}`) ? t(`accountSubTypes.${st}`) : st.replace(/_/g, " "));
 
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [properties, setProperties] = useState<PropertySummary[]>([]);
@@ -118,7 +120,7 @@ export default function AccountsPage() {
                 setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
             }
         } catch (err) {
-            setPageError(err instanceof ApiError ? err.message : "Failed to load accounts");
+            setPageError(err instanceof ApiError ? err.message : t("loadAccountsFailed"));
         } finally {
             setLoading(false);
         }
@@ -228,7 +230,7 @@ export default function AccountsPage() {
             await fetchAccounts();
             expandAll(seeded);
         } catch (err) {
-            setPageError(err instanceof ApiError ? err.message : "Failed to seed default accounts");
+            setPageError(err instanceof ApiError ? err.message : t("seedFailed"));
         } finally {
             setSeeding(false);
         }
@@ -263,7 +265,7 @@ export default function AccountsPage() {
             setFormData(EMPTY_FORM);
             fetchAccounts();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : "Failed to create account");
+            setFormError(err instanceof ApiError ? err.message : t("createAccountFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -300,7 +302,7 @@ export default function AccountsPage() {
             setFormData(EMPTY_FORM);
             fetchAccounts();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : "Failed to update account");
+            setFormError(err instanceof ApiError ? err.message : t("updateAccountFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -315,7 +317,7 @@ export default function AccountsPage() {
             fetchAccounts();
         } catch (err) {
             setShowDeleteConfirm(null);
-            setPageError(err instanceof ApiError ? err.message : "Failed to delete account");
+            setPageError(err instanceof ApiError ? err.message : t("deleteAccountFailed"));
         }
     };
 
@@ -348,7 +350,7 @@ export default function AccountsPage() {
             setImportFile(null);
             fetchAccounts();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : "Failed to import accounts");
+            setFormError(err instanceof ApiError ? err.message : t("importAccountsFailed"));
         } finally {
             setImporting(false);
         }
@@ -368,38 +370,38 @@ export default function AccountsPage() {
     const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string, isEdit = false) => (
         <form onSubmit={onSubmit} className="grid grid-cols-2 gap-5">
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("code")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("code")}</label>
                 <input
                     disabled={isEdit}
-                    placeholder="Auto (e.g. A-01)"
+                    placeholder={t("codePlaceholder")}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.code}
                     onChange={ev => setFormData({ ...formData, code: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("accountType")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("accountType")}</label>
                 <select
                     disabled={isEdit}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.accountType}
                     onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
                 >
-                    {TYPE_ORDER.map(type => <option key={type} value={type}>{type}</option>)}
+                    {TYPE_ORDER.map(type => <option key={type} value={type}>{typeLabel(type)}</option>)}
                 </select>
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameEn")}</label>
                 <input
                     required
-                    placeholder="Account name in English"
+                    placeholder={t("nameEnPlaceholder")}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.nameEn}
                     onChange={ev => setFormData({ ...formData, nameEn: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameAr")}</label>
                 <input
                     placeholder="اسم الحساب بالعربي"
                     dir="rtl"
@@ -409,7 +411,7 @@ export default function AccountsPage() {
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("subType")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("subType")}</label>
                 <select
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.accountSubType}
@@ -417,12 +419,12 @@ export default function AccountsPage() {
                 >
                     <option value="">--</option>
                     {SUB_TYPES_BY_TYPE[formData.accountType]?.map(st => (
-                        <option key={st} value={st}>{st.replace(/_/g, " ")}</option>
+                        <option key={st} value={st}>{subTypeLabel(st)}</option>
                     ))}
                 </select>
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("parentAccount")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{tl("parentAccount")}</label>
                 {isEdit ? (
                     // parentId is immutable after create — the backend has no
                     // way to re-file an account, so this is shown, not offered.
@@ -447,16 +449,16 @@ export default function AccountsPage() {
                 )}
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("alias")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{tl("alias")}</label>
                 <input
-                    placeholder="Short name used in reports"
+                    placeholder={t("aliasPlaceholder")}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.alias}
                     onChange={ev => setFormData({ ...formData, alias: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{tl("propertyTag")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{tl("propertyTag")}</label>
                 <select
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.propertyId}
@@ -469,9 +471,9 @@ export default function AccountsPage() {
                 </select>
             </div>
             <div className="col-span-2">
-                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("description")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("description")}</label>
                 <textarea
-                    placeholder="Optional description"
+                    placeholder={t("descriptionPlaceholder")}
                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 h-20 resize-none"
                     value={formData.description}
                     onChange={ev => setFormData({ ...formData, description: ev.target.value })}
@@ -516,7 +518,7 @@ export default function AccountsPage() {
                     className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2"
                 >
                     {submitting && <Loader2 size={14} className="animate-spin" />}
-                    {title === t("editAccount") ? t("accountUpdated").replace("Account updated", "Save") || "Save" : t("create")}
+                    {isEdit ? t("save") : t("create")}
                 </button>
             </div>
         </form>
@@ -542,7 +544,7 @@ export default function AccountsPage() {
                         "flex items-center justify-between px-5 py-3 hover:bg-input/30 transition-all duration-200 border-b border-border",
                         !account.active && "opacity-50"
                     )}
-                    style={{ paddingLeft: `${20 + depth * 24}px` }}
+                    style={{ paddingInlineStart: `${20 + depth * 24}px` }}
                 >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                         {/* Expand/collapse or spacer */}
@@ -551,7 +553,7 @@ export default function AccountsPage() {
                                 onClick={() => toggleExpand(account.id)}
                                 className="p-0.5 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:outline-none flex-shrink-0"
                             >
-                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} className="rtl:rotate-180" />}
                             </button>
                         ) : (
                             <span className="w-[18px] flex-shrink-0" />
@@ -574,7 +576,7 @@ export default function AccountsPage() {
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {account.accountSubType && (
                             <span className="text-[9px] font-bold text-muted uppercase hidden md:inline">
-                                {account.accountSubType.replace(/_/g, " ")}
+                                {subTypeLabel(account.accountSubType)}
                             </span>
                         )}
                         {account.propertyId && (
@@ -583,13 +585,13 @@ export default function AccountsPage() {
                             </span>
                         )}
                         {account.group && (
-                            <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider">Group</span>
+                            <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider">{t("groupBadge")}</span>
                         )}
                         {account.system && (
-                            <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                            <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">{t("systemBadge")}</span>
                         )}
                         {!account.system && (
-                            <div className="flex items-center gap-1 ml-2">
+                            <div className="flex items-center gap-1 ms-2">
                                 <button
                                     onClick={() => openEdit(account)}
                                     className="p-1.5 text-muted hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
@@ -704,7 +706,7 @@ export default function AccountsPage() {
                         onChange={ev => setFilterType(ev.target.value as AccountType | "")}
                     >
                         <option value="">{t("allTypes")}</option>
-                        {TYPE_ORDER.map(type => <option key={type} value={type}>{type}</option>)}
+                        {TYPE_ORDER.map(type => <option key={type} value={type}>{typeLabel(type)}</option>)}
                     </select>
                 </div>
 
@@ -735,8 +737,8 @@ export default function AccountsPage() {
                     <span className="text-xs font-bold text-muted">{t("activeOnly")}</span>
                 </label>
 
-                <div className="ml-auto text-[10px] text-muted font-medium">
-                    {filtered.length} accounts
+                <div className="ms-auto text-[10px] text-muted font-medium">
+                    {t("accountsCount", { count: filtered.length })}
                 </div>
             </div>
 
@@ -746,13 +748,13 @@ export default function AccountsPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
                         <button
                             onClick={() => { setShowAddModal(false); setFormData(EMPTY_FORM); }}
-                            aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
+                            aria-label={t("closeModal")}
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
                         <h2 className="text-lg font-bold mb-1">{t("addAccount")}</h2>
-                        <p className="text-xs text-muted mb-8 font-medium">Create a new account in the chart of accounts.</p>
+                        <p className="text-xs text-muted mb-8 font-medium">{t("addAccountDesc")}</p>
                         {renderAccountForm(handleCreate, t("addAccount"))}
                     </div>
                 </div>
@@ -764,13 +766,13 @@ export default function AccountsPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
                         <button
                             onClick={() => { setShowEditModal(false); setEditId(null); setFormData(EMPTY_FORM); }}
-                            aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
+                            aria-label={t("closeModal")}
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
                         <h2 className="text-lg font-bold mb-1">{t("editAccount")}</h2>
-                        <p className="text-xs text-muted mb-8 font-medium">Update the account details.</p>
+                        <p className="text-xs text-muted mb-8 font-medium">{t("editAccountDesc")}</p>
                         {renderAccountForm(handleUpdate, t("editAccount"), true)}
                     </div>
                 </div>
@@ -782,8 +784,8 @@ export default function AccountsPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
                         <button
                             onClick={() => { setShowImportModal(false); setImportFile(null); }}
-                            aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
+                            aria-label={t("closeModal")}
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
@@ -933,24 +935,23 @@ export default function AccountsPage() {
                                 >
                                     <div className="flex items-center gap-3">
                                         <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold", TYPE_BADGE[type])}>
-                                            {type}
+                                            {typeLabel(type)}
                                         </span>
-                                        <span className="text-xs font-bold text-foreground">{type.charAt(0) + type.slice(1).toLowerCase()}</span>
-                                        <span className="text-[10px] text-muted font-medium">{items.length} accounts</span>
+                                        <span className="text-[10px] text-muted font-medium">{t("accountsCount", { count: items.length })}</span>
                                     </div>
-                                    {isExpanded ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted" />}
+                                    {isExpanded ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted rtl:rotate-180" />}
                                 </button>
                                 {isExpanded && (
                                     <div className="border-t border-border">
                                         <table className="w-full">
                                             <thead>
                                                 <tr className="border-b border-border">
-                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("code")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{tl("propertyTag")}</th>
-                                                    <th className="text-right px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
+                                                    <th className="text-start px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("code")}</th>
+                                                    <th className="text-start px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</th>
+                                                    <th className="text-start px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
+                                                    <th className="text-start px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
+                                                    <th className="text-start px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{tl("propertyTag")}</th>
+                                                    <th className="text-end px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-border">
@@ -973,7 +974,7 @@ export default function AccountsPage() {
                                                             </td>
                                                             <td className="px-5 py-3 hidden md:table-cell">
                                                                 <span className="text-[10px] text-muted">
-                                                                    {account.accountSubType?.replace(/_/g, " ") || "—"}
+                                                                    {account.accountSubType ? subTypeLabel(account.accountSubType) : "—"}
                                                                 </span>
                                                             </td>
                                                             <td className="px-5 py-3 hidden md:table-cell">
@@ -992,13 +993,13 @@ export default function AccountsPage() {
                                                                         : tl("tenantWide")}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-5 py-3 text-right">
+                                                            <td className="px-5 py-3 text-end">
                                                                 <div className="flex items-center justify-end gap-1">
                                                                     {account.group && (
-                                                                        <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider mr-1">Group</span>
+                                                                        <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider me-1">{t("groupBadge")}</span>
                                                                     )}
                                                                     {account.system ? (
-                                                                        <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                                                                        <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">{t("systemBadge")}</span>
                                                                     ) : (
                                                                         <>
                                                                             <button
