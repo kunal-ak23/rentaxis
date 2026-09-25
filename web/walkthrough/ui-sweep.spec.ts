@@ -149,6 +149,8 @@ test('00 provision an organisation, the three roles and a posted contract', asyn
     const posted = await postLease(admin.id, admin.role, tenant.id, draft.id);
     fx = { tenantId: tenant.id, creds, propertyId: property.id, renterId: renter.id, leaseId: draft.id, journalId: posted.tcoJournalId };
     for (const { role } of ROLES) await bankSession(browser, creds[role].email, creds[role].password, path.join(STATE_DIR, `${role}.json`));
+    // The dev bootstrap system admin (DataInitializer), for the header switcher check.
+    await bankSession(browser, 'admin@rentaxis.com', 'admin123', path.join(STATE_DIR, 'SUPER_ADMIN.json'));
     fs.writeFileSync(path.join(STATE_DIR, 'fixture.json'), JSON.stringify(fx, null, 2));
 });
 
@@ -186,5 +188,70 @@ for (const locale of LOCALES) {
             for (const [k, v] of Object.entries(move.query ?? { tab: 'keep' })) expect(url.searchParams.get(k), `${move.from} ${k}`).toBe(v);
         }
         await context.close();
+    });
+}
+
+// PR #363 R1: at a 1024 px laptop/tablet width the rail opens a flyout that
+// survives navigation, and the organisation switcher (header, one instance)
+// is reachable — for a super admin it lists the organisations.
+for (const locale of LOCALES) {
+    test(`shell ${locale} 1024px: flyout survives navigation; header switcher reachable`, async ({ browser }) => {
+        const ta = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1024, height: 800 }, storageState: path.join(STATE_DIR, 'TENANT_ADMIN.json') });
+        const page = await ta.newPage();
+        await page.goto(`/${locale}/dashboard`);
+        await page.getByTestId('rail-accounting').click();
+        const flyout = page.getByTestId('nav-flyout');
+        await expect(flyout).toBeVisible();
+        expect(new URL(page.url()).pathname).toBe(`/${locale}/dashboard`);
+        await flyout.getByTestId('sidebar-trial-balance').click();
+        await page.waitForURL(/\/finance\/trial-balance/);
+        await expect(flyout).toBeVisible();
+        await flyout.getByTestId('sidebar-general-ledger').click();
+        await page.waitForURL(/\/finance\/general-ledger/);
+        await page.keyboard.press('Escape');
+        await expect(flyout).toHaveCount(0);
+        await page.getByTestId('rail-leasing').click();
+        await expect(flyout).toBeVisible();
+        // Outside click: page content at x=700 is clear of the flyout in LTR (64–304) and RTL (720–960).
+        await page.mouse.click(700, 400);
+        await expect(flyout).toHaveCount(0);
+        await ta.close();
+
+        const sa = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1024, height: 800 }, storageState: path.join(STATE_DIR, 'SUPER_ADMIN.json') });
+        const saPage = await sa.newPage();
+        await saPage.goto(`/${locale}/dashboard`);
+        const switcher = saPage.getByTestId('header-org-switcher').getByTestId('org-switcher-button');
+        await expect(switcher).toBeVisible();
+        await expect(saPage.getByTestId('org-switcher-button')).toHaveCount(1);
+        await switcher.click();
+        const msgs = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'messages', `${locale}.json`), 'utf8'));
+        await saPage.getByLabel(msgs.TenantSwitcher.searchOrganizations).fill(`UI-SWEEP ${SUFFIX}`);
+        await expect(saPage.getByRole('button', { name: new RegExp(`UI-SWEEP ${SUFFIX}`) })).toBeVisible();
+        await sa.close();
+    });
+}
+
+// PR #363 R1: the panel's item list scrolls in its own area above a pinned status
+// card (no overlap at 900 px tall or less); at ≥ 1280 px the one org control tops
+// the panel and the header has none.
+for (const [width, height] of [[1440, 900], [1280, 720]] as const) {
+    test(`panel ${width}x${height}: list scrolls above the pinned status card; one org control, in the panel`, async ({ browser }) => {
+        const sa = await browser.newContext({ baseURL: BASE_URL, viewport: { width, height }, storageState: path.join(STATE_DIR, 'SUPER_ADMIN.json') });
+        const page = await sa.newPage();
+        await page.goto('/en/dashboard/finance/journals');
+        const list = page.getByTestId('nav-panel-list');
+        const card = page.getByTestId('nav-status-card');
+        await expect(card).toBeVisible();
+        const lb = (await list.boundingBox())!;
+        const cb = (await card.boundingBox())!;
+        expect(lb.y + lb.height, 'list ends above the card').toBeLessThanOrEqual(cb.y + 0.5);
+        const last = list.locator('a').last();
+        await last.scrollIntoViewIfNeeded();
+        const ib = (await last.boundingBox())!;
+        expect(ib.y + ib.height, 'last item reachable above the card').toBeLessThanOrEqual(cb.y + 0.5);
+        await expect(page.getByTestId('org-switcher-button')).toHaveCount(1);
+        await expect(page.getByTestId('panel-org').getByTestId('org-switcher-button')).toBeVisible();
+        await expect(page.getByTestId('header-org-switcher')).toHaveCount(0);
+        await sa.close();
     });
 }
