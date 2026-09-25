@@ -4287,5 +4287,39 @@
     "cancel": "إلغاء",
     "status": {
       "WRITTEN_OFF": "مشطوب","PROPOSED": "مقترح", "APPROVED": "محمّل", "WAIVED": "معفى", "REVERSED": "معكوس"}
+  },
+  "Collections": {
+    "tabDeposit": "للإيداع",
+    "tabDue": "مستحقة",
+    "tabOverdue": "متأخرة",
+    "tabReturned": "مرتجعة / استبدال",
+    "tabPostDated": "مؤجلة الدفع",
+    "tabPenalties": "الغرامات",
+    "tabAll": "سجل الشيكات"
+  },
+  "AccountingNav": {
+    "label": "أقسام المحاسبة",
+    "groupAccounts": "الحسابات",
+    "groupReceiptsPayments": "المقبوضات والمدفوعات",
+    "groupJournalEntries": "قيود اليومية",
+    "groupRegisters": "السجلات",
+    "groupReceivablesPayables": "الذمم المدينة والدائنة",
+    "groupBank": "البنك",
+    "groupFinalReports": "التقارير الختامية",
+    "groupYearEnd": "إقفال نهاية السنة",
+    "groupSetup": "إعداد لمرة واحدة",
+    "receiptPaymentVouchers": "سندات القبض والصرف",
+    "creditNote": "إشعار دائن",
+    "chequeRegisters": "سجلات الشيكات",
+    "penalties": "الغرامات",
+    "cutoverReconciliation": "تسوية الانتقال"
+  },
+  "SettingsPage": {
+    "title": "الإعدادات",
+    "sectionsLabel": "أقسام الإعدادات",
+    "sectionOrganisation": "المؤسسة",
+    "sectionUsers": "المستخدمون والموظفون",
+    "sectionRent": "الإيجار والغرامات",
+    "sectionPayments": "المدفوعات"
   }
 }

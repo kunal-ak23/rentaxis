@@ -4287,5 +4287,39 @@
     "cancel": "Cancel",
     "status": {
       "WRITTEN_OFF": "Written off","PROPOSED": "Proposed", "APPROVED": "Charged", "WAIVED": "Waived", "REVERSED": "Reversed"}
+  },
+  "Collections": {
+    "tabDeposit": "To deposit",
+    "tabDue": "Due",
+    "tabOverdue": "Overdue",
+    "tabReturned": "Returned / replace",
+    "tabPostDated": "Post-dated",
+    "tabPenalties": "Penalties",
+    "tabAll": "Cheque register"
+  },
+  "AccountingNav": {
+    "label": "Accounting sections",
+    "groupAccounts": "Accounts",
+    "groupReceiptsPayments": "Receipts & Payments",
+    "groupJournalEntries": "Journal Entries",
+    "groupRegisters": "Registers",
+    "groupReceivablesPayables": "Receivables & Payables",
+    "groupBank": "Bank",
+    "groupFinalReports": "Final Reports",
+    "groupYearEnd": "Year End Closing",
+    "groupSetup": "One-time setup",
+    "receiptPaymentVouchers": "Receipt / Payment Vouchers",
+    "creditNote": "Credit Note",
+    "chequeRegisters": "Cheque registers",
+    "penalties": "Penalties",
+    "cutoverReconciliation": "Cut-over reconciliation"
+  },
+  "SettingsPage": {
+    "title": "Settings",
+    "sectionsLabel": "Settings sections",
+    "sectionOrganisation": "Organisation",
+    "sectionUsers": "Users & staff",
+    "sectionRent": "Rent & fines",
+    "sectionPayments": "Payments"
   }
 }
