@@ -92,9 +92,15 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
 
     useEffect(() => {
         fetchUsers();
-        fetchTenants();
         fetchProperties();
     }, []);
+
+    // GET /admin/tenants is SUPER_ADMIN-only: a tenant admin (who now reaches
+    // this list from Settings › Users & staff) only ever got a 403 from it and
+    // sees their own organisation read-only below, so it is not asked for.
+    useEffect(() => {
+        if (isSuperAdmin) fetchTenants();
+    }, [isSuperAdmin]);
 
     const fetchUsers = async () => {
         setLoading(true);
