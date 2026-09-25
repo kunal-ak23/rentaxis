@@ -277,3 +277,5 @@ databaseChangeLog:
       file: db/changelog/changesets/134-lease-assignment.yaml
   - include:
       file: db/changelog/changesets/135-unit-transfer.yaml
+  - include:
+      file: db/changelog/changesets/136-lease-current-rent.yaml

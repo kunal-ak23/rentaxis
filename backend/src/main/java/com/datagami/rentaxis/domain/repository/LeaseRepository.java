@@ -34,7 +34,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      * lease can be lost by it.</p>
      */
     @Query("""
-        select l.status, count(l), coalesce(sum(l.rentAmount), 0)
+        select l.status, count(l), coalesce(sum(coalesce(l.currentRentAmount, l.rentAmount)), 0)
         from Lease l
         where (:unrestricted = true or l.unit.property.id in :propertyIds)
         group by l.status

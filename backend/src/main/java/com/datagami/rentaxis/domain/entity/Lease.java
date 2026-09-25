@@ -207,6 +207,10 @@ public class Lease extends BaseTenantEntity {
 
     // ---- renewal chain ------------------------------------------------------
 
+    /** PR #359 R1: the rent charged now, after credit addenda; rentAmount is the contract as signed. */
+    @Column(name = "current_rent_amount")
+    private BigDecimal currentRentAmount;
+
     @Column(name = "renewed_from_lease_id")
     private UUID renewedFromLeaseId;
 

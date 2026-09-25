@@ -137,9 +137,14 @@ export function renewalRows(
                 && l.periodStart != null && l.periodStart > termStart)
             // Spec §4c: a one-off fee is not renewed.
             && !isOneOff(l)
-            && !(opts.carryDepositForward && l.behaviour === "DEPOSIT"))
+            && !(opts.carryDepositForward && l.behaviour === "DEPOSIT")
+            // PR #359 R1: a charge a credit addendum removed does not renew.
+            && !(l.currentAmount != null && l.currentAmount === 0))
         .map((l, i) => {
-            const row = toRow(l, i);
+            // …and a reduced one renews at what the renter pays now.
+            const row = l.currentAmount != null
+                ? { ...toRow(l, i), grossAmount: l.currentAmount, discountAmount: 0 }
+                : toRow(l, i);
             // Concessions do not renew (spec §4a): discount and rent-free reset.
             return l.behaviour === "RENT" ? { ...row, narration: "", discountAmount: 0, rentFreeAmount: 0 } : row;
         });

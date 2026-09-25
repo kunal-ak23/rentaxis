@@ -331,6 +331,10 @@ public class LeaseReductionService {
             creditRepository.save(c);
         }
 
+        // PR #359 R1 P2-1: the header's current rent, the unit's rent and the dashboard.
+        leaseService.syncDerivedTotals(lease);
+        leaseRepository.save(lease);
+
         leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(),
                 "Credit addendum " + number + " from " + e + ": " + money(total) + " off the renter's account ("
                         + plans.stream().map(p -> p.line().getChargeType().getCode()).distinct()

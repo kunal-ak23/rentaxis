@@ -73,6 +73,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseReductionIT extends AbstractPostgresIT {
 
     @Autowired LeaseReductionService reductions;
+    @Autowired LeaseRenewalService renewal;
+    @Autowired LeaseTransferService transfers;
     @Autowired LeaseVariationService variations;
     @Autowired LeaseTerminationService termination;
     @Autowired LeasePostingService posting;
@@ -296,6 +298,48 @@ class LeaseReductionIT extends AbstractPostgresIT {
         recognition.runTo(t, false);
         assertThat(balanceOf(AccountRole.ADVANCE_RENT, leaseId)).isEqualByComparingTo("0");
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * PR #359 R1 P2-1: after 51,000 → 39,000, everything that reads the lease's current
+     * terms reads 39,000 — a "no change" renewal keeps 39,000, +5% gives 40,950, the
+     * header's current rent is 39,000 (the contract rent stays 51,000) — and a
+     * transfer does not bring back a charge the addendum removed.
+     */
+    @Test
+    void theReducedTermsAreWhatRenewalTransferAndTheHeaderRead() {
+        UUID leaseId = galahWithTwoCleared();
+        reductions.reduce(leaseId, credit(lineId(leaseId, "RENT"), "39000"));
+        LocalDate from = LocalDate.of(2027, 9, 24), to = LocalDate.of(2028, 9, 23);
+        var same = renewal.planFor(leaseId, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null, from, to,
+                null, true, null, null, null));
+        assertThat(same.baseRent()).isEqualByComparingTo("39000");
+        assertThat(same.newRent()).isEqualByComparingTo("39000");
+        var up = renewal.planFor(leaseId, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null, from, to,
+                null, true, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest.RentChange(
+                        com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest.RentChange.Mode.PERCENT, new BigDecimal("5"), null),
+                null, null));
+        assertThat(up.newRent()).isEqualByComparingTo("40950");
+        var dto = tx.execute(s -> leaseService.getLeaseById(leaseId));
+        assertThat(dto.getRentAmount()).isEqualByComparingTo("51000");
+        assertThat(dto.getCurrentRentAmount()).isEqualByComparingTo("39000");
+        assertThat(dto.getLines()).filteredOn(l -> "RENT".equals(l.chargeTypeCode())).singleElement()
+                .satisfies(l -> assertThat(l.currentAmount()).isEqualByComparingTo("39000"));
+    }
+
+    @Test
+    void aTransferDoesNotBringBackARemovedFee() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("PARKING_FEE", "3650")), 4, null).lease().getId();
+        reductions.reduce(leaseId, credit(lineId(leaseId, "PARKING_FEE"), "0"));
+        var plan = renewal.planFor(leaseId, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null,
+                LocalDate.of(2027, 9, 24), LocalDate.of(2028, 9, 23), null, true));
+        assertThat(plan.lines()).as("nor does a renewal").hasSize(1);
+        var unit = tx.execute(s -> fixtures.createUnit(fixtures.property(), "R-2"));
+        var b = transfers.draft(leaseId, new com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest(
+                LocalDate.of(2027, 3, 15), unit.getId(), null, null, null, null), posting);
+        List<LeaseLineDTO> bLines = tx.execute(s -> leaseService.getLines(b.getId()));
+        assertThat(bLines).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
     }
 
     @Test

@@ -83,6 +83,8 @@ public class LeaseDTO {
 
     // ---- renewal chain ----
     private UUID renewedFromLeaseId;
+    /** PR #359 R1: the rent charged now, after credit addenda (rentAmount is the contract's). */
+    private java.math.BigDecimal currentRentAmount;
     /** Spec §2: B → A for a unit transfer, the move date, and (on A) the lease it moved to. */
     private UUID transferredFromLeaseId;
     private java.time.LocalDate transferMoveDate;

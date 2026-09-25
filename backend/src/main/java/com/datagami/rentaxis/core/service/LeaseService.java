@@ -282,7 +282,8 @@ public class LeaseService {
      * keeps the contract figure.
      */
     public static BigDecimal annualRent(Lease lease) {
-        BigDecimal rent = lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
+        BigDecimal rent = lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount()
+                : lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
         if (lease.getStartDate() == null || lease.getEndDate() == null || lease.getEndDate().isBefore(lease.getStartDate())) {
             return rent;
         }
@@ -1288,11 +1289,17 @@ public class LeaseService {
     public void syncDerivedTotals(Lease lease) {
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         lease.setRentAmount(sumNet(lines, ChargeBehaviour.RENT));
+        // PR #359 R1 P2-1: what the lease charges after its credit addenda.
+        lease.setCurrentRentAmount(effectiveTerms != null && lease.getId() != null
+                ? effectiveTerms.currentRent(lease) : lease.getRentAmount());
         lease.setDepositAmount(sumNet(lines, ChargeBehaviour.DEPOSIT));
         if (lease.getStartDate() != null && lease.getEndDate() != null) {
             lease.setTotalDays((int) ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1);
         }
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.lease.LeaseEffectiveTerms effectiveTerms;
 
     private static BigDecimal sumNet(List<LeaseLine> lines, ChargeBehaviour behaviour) {
         return lines.stream()
@@ -1320,10 +1327,27 @@ public class LeaseService {
     public List<LeaseLineDTO> getLines(UUID leaseId) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
         leaseAccessPolicy.requireReadable(lease);
-        return leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+        return withCurrentAmounts(lease, leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
                 .map(LeaseService::toLineDTO)
-                .toList();
+                .toList());
     }
+
+    /** PR #359 R1 P2-1: each credited line's current amount, for the renew and extend dialogs. */
+    private List<LeaseLineDTO> withCurrentAmounts(Lease lease, List<LeaseLineDTO> dtos) {
+        if (effectiveTerms == null || lease.getPostedAt() == null || addendumRepository == null
+                || !addendumRepository.existsByLease_IdAndKind(lease.getId(),
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+            return dtos;
+        }
+        java.util.Map<UUID, BigDecimal> current = new java.util.HashMap<>();
+        for (var e : effectiveTerms.effectiveLines(lease, null)) {
+            if (e.credited()) current.put(e.line().getId(), e.amount());
+        }
+        return dtos.stream().map(d -> current.containsKey(d.id()) ? d.withCurrentAmount(current.get(d.id())) : d).toList();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addendumRepository;
 
     /**
      * The object-level guard on its own, for a lease sub-resource served by a
@@ -2030,6 +2054,7 @@ public class LeaseService {
         dto.setFirstDueDate(lease.getFirstDueDate());
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
+        dto.setCurrentRentAmount(lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount() : lease.getRentAmount());
         dto.setTransferredFromLeaseId(lease.getTransferredFromLeaseId());
         dto.setTransferMoveDate(lease.getTransferMoveDate());
         if (lease.getId() != null && lease.getPostedAt() != null) {
@@ -2052,7 +2077,8 @@ public class LeaseService {
         dto.setIntendedMoveOutDate(lease.getIntendedMoveOutDate());
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
-        dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
+        dto.setLines(new java.util.ArrayList<>(withCurrentAmounts(lease,
+                lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()))));
         dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines));
         dto.setRenewalPreviousRent(lease.getRenewalPreviousRent());
         dto.setRenewalChangePercent(lease.getRenewalChangePercent());
@@ -2112,7 +2138,8 @@ public class LeaseService {
                 credit != null ? credit.getNameAr() : null,
                 type != null && type.getRecognition() != null ? type.getRecognition().name() : null,
                 l.getRentFreeAmount(),
-                l.getPostedRecognition() != null ? l.getPostedRecognition().name() : null);
+                l.getPostedRecognition() != null ? l.getPostedRecognition().name() : null,
+                null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

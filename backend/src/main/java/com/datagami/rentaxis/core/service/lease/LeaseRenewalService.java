@@ -205,6 +205,8 @@ public class LeaseRenewalService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private LeaseEffectiveTerms effectiveTerms;
 
     /** PR #359 R1 P2-3: a lease whose renter is about to change is not renewed or transferred first. */
     void requireNoAssignmentPending(UUID leaseId) {
@@ -302,6 +304,14 @@ public class LeaseRenewalService {
                 // that rent; a percentage and the notice are measured net to net.
                 dropped = contractRent.getDiscountAmount() == null ? BigDecimal.ZERO : contractRent.getDiscountAmount();
                 base = contractRent.getGrossAmount().subtract(dropped);
+                // PR #359 R1 P2-1: a credit addendum cut the rent — the renter pays the
+                // reduced rate, and that is what a renewal carries on and escalates.
+                LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(
+                        effectiveTerms.effectiveLines(predecessor, null), contractRent);
+                if (eff != null && eff.credited()) {
+                    dropped = BigDecimal.ZERO;
+                    base = eff.amount();
+                }
                 newRent = switch (mode) {
                     case NONE -> base;
                     case AMOUNT -> {
@@ -448,6 +458,9 @@ public class LeaseRenewalService {
      */
     private Copied copiedLines(Lease predecessor, RenewLeaseRequest r) {
         List<LeaseLine> source = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
+        // PR #359 R1 P2-1: the terms after any credit addendum — a removed charge is not
+        // copied, a reduced one is copied at its reduced amount.
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(predecessor, null);
         List<LeaseLineInput> copied = new ArrayList<>(source.size());
         List<LeaseLine> copiedFrom = new ArrayList<>(source.size());
         List<LeaseLine> skipped = new ArrayList<>();
@@ -471,12 +484,17 @@ public class LeaseRenewalService {
                 skipped.add(line);
                 continue;
             }
+            LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, line);
+            if (eff != null && eff.removed()) {
+                continue;
+            }
+            boolean credited = eff != null && eff.credited();
             copiedFrom.add(line);
             copied.add(new LeaseLineInput(
                     type != null ? type.getId() : null,
                     null,
-                    line.getGrossAmount(),
-                    line.getDiscountAmount(),
+                    credited ? eff.amount() : line.getGrossAmount(),
+                    credited ? BigDecimal.ZERO : line.getDiscountAmount(),
                     rent ? null : line.getNarration(),
                     line.isVatApplicable(),
                     line.getCreditAccount() != null ? line.getCreditAccount().getId() : null,

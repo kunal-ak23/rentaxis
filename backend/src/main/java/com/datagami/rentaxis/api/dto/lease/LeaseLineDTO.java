@@ -42,5 +42,14 @@ public record LeaseLineDTO(UUID id,
                            /* Spec §4b: the rent-free concession on this line (0 unless it is the contract's rent). */
                            BigDecimal rentFreeAmount,
                            /* #99 / F15-06: what posting did with the line (RENT_LIKE | ONE_OFF | PASS_THROUGH | NONE); null on a draft. */
-                           String postedRecognition) {
+                           String postedRecognition,
+                           /* PR #359 R1: what the line charges now after credit addenda; null when never credited. */
+                           BigDecimal currentAmount) {
+
+    public LeaseLineDTO withCurrentAmount(BigDecimal amount) {
+        return new LeaseLineDTO(id, seqNo, chargeTypeId, chargeTypeCode, chargeTypeName, behaviour, creditAccountId,
+                creditAccountCode, creditAccountName, grossAmount, discountAmount, netAmount, narration, vatApplicable,
+                periodStart, periodEnd, addendumId, chargeTypeNameAr, creditAccountNameAr, recognition, rentFreeAmount,
+                postedRecognition, amount);
+    }
 }

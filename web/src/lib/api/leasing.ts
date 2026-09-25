@@ -200,6 +200,8 @@ export type LeaseLine = {
   rentFreeAmount?: number | null;
   /** #99 / F15-06: what posting did with the line; null on a draft or an older server. */
   postedRecognition?: PostedRecognition | null;
+  /** PR #359 R1: what the line charges now after credit addenda; null when never credited (0 = removed). */
+  currentAmount?: number | null;
 };
 
 /** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */
@@ -294,6 +296,8 @@ export type LeaseDetail = {
   firstDueDate: string | null;
   renterAcceptedAt: string | null;
   renewedFromLeaseId: string | null;
+  /** PR #359 R1: the rent charged now, after credit addenda; rentAmount is the contract's. */
+  currentRentAmount?: number | null;
   /** Spec §2: B → A for a unit transfer, the move date, and (on A) where it moved to. */
   transferredFromLeaseId?: string | null;
   transferMoveDate?: string | null;

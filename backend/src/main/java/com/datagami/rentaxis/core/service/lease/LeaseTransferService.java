@@ -182,7 +182,11 @@ public class LeaseTransferService {
     List<LeaseLineInput> defaultLines(Lease a, LocalDate start, LocalDate end) {
         int newDays = ProrationEngine.daysInclusive(start, end);
         List<LeaseLineInput> out = new ArrayList<>();
+        // PR #359 R1 P2-1: the terms after any credit addendum on the move date.
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(a, start);
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+            LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, l);
+            if (eff != null && eff.removed()) continue;
             ChargeType type = l.getChargeType();
             if (type == null || l.getAddendumId() != null) continue;
             ChargeBehaviour b = type.getBehaviour();
@@ -191,7 +195,8 @@ public class LeaseTransferService {
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
             LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
             if (from.isAfter(a.getStartDate())) continue;   // an extension's window
-            BigDecimal net = l.getGrossAmount().subtract(l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount());
+            BigDecimal net = eff != null && eff.credited() ? eff.amount()
+                    : l.getGrossAmount().subtract(l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount());
             BigDecimal amount = net.multiply(BigDecimal.valueOf(newDays))
                     .divide(BigDecimal.valueOf(ProrationEngine.daysInclusive(from, to)), 2, RoundingMode.HALF_UP);
             out.add(new LeaseLineInput(type.getId(), null, amount, BigDecimal.ZERO,
@@ -309,6 +314,8 @@ public class LeaseTransferService {
     private com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
     @org.springframework.beans.factory.annotation.Autowired
     private LeaseRenewalService renewalService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private LeaseEffectiveTerms effectiveTerms;
 
     private boolean chargeTypeRent(UUID id) {
         return chargeTypes.findById(id).map(ct -> ct.getBehaviour() == ChargeBehaviour.RENT).orElse(false);

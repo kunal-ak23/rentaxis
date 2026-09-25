@@ -1,0 +1,17 @@
+# PR #359 R1 P2-1: the rent a lease charges now, after its credit addenda (F14-32).
+# rent_amount stays the contract as signed; current_rent_amount is what the lease
+# header's "Current rent", the unit's rent and the dashboard read. Equal to
+# rent_amount until a credit addendum cuts the rent; backfilled so.
+databaseChangeLog:
+  - changeSet:
+      id: 136-lease-current-rent
+      author: claude
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: current_rent_amount, type: "decimal(14,2)" }
+        - sql:
+            sql: UPDATE leases SET current_rent_amount = rent_amount
+      rollback:
+        - dropColumn: { tableName: leases, columnName: current_rent_amount }

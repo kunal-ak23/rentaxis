@@ -205,6 +205,13 @@ describe("renewalRows", () => {
     const extension: LeaseLine = { ...base, id: "line-4", seqNo: 4, narration: "Extension to 2025-12-31",
         periodStart: "2025-10-01", periodEnd: "2025-12-31" };
 
+    it("renews a reduced line at what is charged now and drops a removed one (PR #359 R1)", () => {
+        const reduced = { ...base, currentAmount: 39000, discountAmount: 500 };
+        const removed = { ...fee, recognition: "RENT_LIKE" as const, currentAmount: 0 };
+        const rows = renewalRows([reduced, removed], "2024-10-01");
+        expect(rows.map((r) => [r.id, r.grossAmount, r.discountAmount])).toEqual([["line-1", 39000, 0]]);
+    });
+
     it("clears a rent line's narration and keeps a fee's", () => {
         const rows = renewalRows([base, fee], "2024-10-01");
         expect(rows.map((r) => r.narration)).toEqual(["", "Contract admin fee"]);

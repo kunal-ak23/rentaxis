@@ -733,6 +733,14 @@ export default function LeaseDetailPage() {
                     <Ribbon label={t("contractValue")} value={fmtAmount(lease.contractValue ?? totals.net)} />
                     <Ribbon label={t("contractValueInclVat")} value={fmtAmount(totals.inclVat)} />
                     <Ribbon label={t("paymentTerms")} value={String(cheques.length || lease.paymentTerms || 0)} />
+                    {/* PR #359 R1: a credit addendum cut the rent — the contract as signed and what is charged now. */}
+                    {lease.currentRentAmount != null && lease.rentAmount != null
+                        && Math.abs(lease.currentRentAmount - lease.rentAmount) >= 0.005 && (
+                        <>
+                            <Ribbon label={t("contractRent")} value={fmtAmount(lease.rentAmount)} />
+                            <Ribbon label={t("currentRent")} value={fmtAmount(lease.currentRentAmount)} testId="lease-current-rent" />
+                        </>
+                    )}
                 </div>
 
                 {/* ── Tabs ───────────────────────────────────────────── */}
@@ -1277,9 +1285,9 @@ export default function LeaseDetailPage() {
     }
 }
 
-function Ribbon({ label, value }: { label: string; value: string }) {
+function Ribbon({ label, value, testId }: { label: string; value: string; testId?: string }) {
     return (
-        <div>
+        <div data-testid={testId}>
             <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-500)]">{label}</p>
             <p className="text-sm font-semibold text-foreground tabular-nums">{value}</p>
         </div>

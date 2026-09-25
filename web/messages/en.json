@@ -2209,7 +2209,9 @@
       "pendingBanner": "Transfer pending → draft on {unit}",
       "toBanner": "Transferred to {unit}",
       "failed": "The transfer could not be drafted."
-    }
+    },
+    "contractRent": "Contract rent",
+    "currentRent": "Current rent (after credit addenda)"
   },
   "VatSchedule": {
     "title": "VAT schedule",
