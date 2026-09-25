@@ -1,0 +1,81 @@
+# F15-11: every journal balances per property.
+#
+#   - A-02-06 "Inter-property clearing" (ASSET group) and A-02-06-001, the tenant-level
+#     leaf, for every tenant whose chart has the A-02 group; the INTERPROPERTY_CLEARING
+#     tenant default onto it.
+#   - One leaf per existing property under A-02-06 ("Inter-property clearing - <name>",
+#     code A-02-06-P<nnn>) with its property mapping, and the template row that gives
+#     properties created later their own leaf.
+databaseChangeLog:
+  - changeSet:
+      id: 138-interproperty-clearing
+      author: claude
+      changes:
+        - sql:
+            comment: A-02-06 group and the tenant-level leaf
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, description, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'A-02-06', 'Inter-property clearing', 'Inter-property clearing',
+                     'مقاصة بين العقارات', 'ASSET', 'OTHER_ASSET', g.id,
+                     'Balances a journal that spans properties, one leaf per property', TRUE, TRUE, TRUE, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'A-02' AND g.is_group
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'A-02-06');
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'A-02-06-001', 'Inter-property clearing – head office',
+                     'Inter-property clearing – head office', 'مقاصة بين العقارات – المكتب الرئيسي', 'ASSET', 'OTHER_ASSET',
+                     g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'A-02-06'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'A-02-06-001');
+        - sql:
+            comment: INTERPROPERTY_CLEARING tenant default and the template row
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'INTERPROPERTY_CLEARING', a.id
+                FROM accounts a
+               WHERE a.code = 'A-02-06-001'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'INTERPROPERTY_CLEARING');
+              INSERT INTO property_account_template_rows (id, tenant_id, role, name_pattern, parent_account_id, enabled)
+              SELECT gen_random_uuid(), g.tenant_id, 'INTERPROPERTY_CLEARING', 'Inter-property clearing - {property}', g.id, TRUE
+                FROM accounts g
+               WHERE g.code = 'A-02-06'
+                 AND EXISTS (SELECT 1 FROM property_account_template_rows t WHERE t.tenant_id = g.tenant_id)
+                 AND NOT EXISTS (SELECT 1 FROM property_account_template_rows t
+                                  WHERE t.tenant_id = g.tenant_id AND t.role = 'INTERPROPERTY_CLEARING');
+        - sql:
+            comment: One leaf per existing property, with its mapping
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, property_id, report_line, is_system, is_group, is_active, display_order,
+                                    created_at, updated_at)
+              SELECT gen_random_uuid(), p.tenant_id,
+                     'A-02-06-P' || lpad(CAST(row_number() OVER (PARTITION BY p.tenant_id ORDER BY p.created_at, p.id) AS text), 3, '0'),
+                     'Inter-property clearing - ' || p.name_en, 'Inter-property clearing - ' || p.name_en,
+                     'مقاصة بين العقارات - ' || coalesce(nullif(p.name_ar, ''), p.name_en),
+                     'ASSET', 'OTHER_ASSET', g.id, p.id, 'INTERPROPERTY_CLEARING', FALSE, FALSE, TRUE, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM properties p
+                JOIN accounts g ON g.tenant_id = p.tenant_id AND g.code = 'A-02-06'
+               WHERE NOT EXISTS (SELECT 1 FROM property_account_mappings m
+                                  WHERE m.property_id = p.id AND m.role = 'INTERPROPERTY_CLEARING');
+              INSERT INTO property_account_mappings (id, tenant_id, property_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, a.property_id, 'INTERPROPERTY_CLEARING', a.id
+                FROM accounts a
+               WHERE a.code LIKE 'A-02-06-P%' AND a.property_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM property_account_mappings m
+                                  WHERE m.property_id = a.property_id AND m.role = 'INTERPROPERTY_CLEARING');
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM property_account_mappings WHERE role = 'INTERPROPERTY_CLEARING';
+              DELETE FROM property_account_template_rows WHERE role = 'INTERPROPERTY_CLEARING';
+              DELETE FROM tenant_default_account_mappings WHERE role = 'INTERPROPERTY_CLEARING';
+              DELETE FROM accounts a WHERE a.code LIKE 'A-02-06%' AND NOT a.is_group
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DELETE FROM accounts a WHERE a.code = 'A-02-06'
+                AND NOT EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = a.id);

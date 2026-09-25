@@ -1794,6 +1794,10 @@
     "TENANT_USER": "Tenant"
   },
   "Ledger": {
+    "interPropertyUnbalanced": "{count, plural, one {# journal does} other {# journals do}} not balance per property, so a property's trial balance is out. Post a clearing journal for each.",
+    "interPropertyRepair": "Post clearing journals",
+    "interPropertyRepairConfirm": "Post an inter-property clearing journal for each of the {count} journals? Each is dated the original's date, or the first open day when that date is locked.",
+    "interPropertyRepairDone": "{count} clearing journal(s) posted; every property's trial balance nets to zero.",
     "generalLedger": "General Ledger",
     "tenantLedger": "Tenant Ledger",
     "vendorLedger": "Vendor Ledger",
@@ -2426,6 +2430,7 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
       "bank": {
         "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. {when, select, before {An entry dated {date} is before the statement starts ({from}), so it changes the balance the statement opens with: confirm that it is not on the statement to post it.} other {An entry dated {date} is inside the statement period ({from} to {to}): record it from its statement line in Bank reconciliation, or confirm that it is not on the statement.}}"
       },

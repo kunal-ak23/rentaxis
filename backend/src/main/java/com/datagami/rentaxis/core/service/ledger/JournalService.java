@@ -93,7 +93,8 @@ public class JournalService {
             out.add(line.withDims(dims).withNarration(l.narration()));
         }
         JournalEntry e = posting.post(new PostingRequest(JournalDocType.JV, r.entryDate(), r.narration(),
-                Dimensions.ofProperty(r.propertyId()), JournalSourceType.MANUAL, null, null, out));
+                Dimensions.ofProperty(r.propertyId()), JournalSourceType.MANUAL, null, null, out)
+                .withInterPropertyClearing());   // F15-11: lines on several properties clear per property
         return toDto(e, true);
     }
 
@@ -198,6 +199,8 @@ public class JournalService {
             case ISSUED_CHEQUE -> "supplier cheque; present, unpresent or cancel it from the issued-cheques register";
             case BANK_STATEMENT -> "bank statement line; undo its match in Bank reconciliation and reverse it there";
             case YEAR_END -> "year-end close; re-open the fiscal year from Settings → Fiscal year & period lock instead";
+            case INTERPROPERTY_REPAIR -> "inter-property clearing repair, which keeps a past journal balanced per"
+                    + " property; it is not reversed";
             case MANUAL -> throw new IllegalStateException("MANUAL is reversible");
         };
         return "This journal belongs to a " + belongsTo;

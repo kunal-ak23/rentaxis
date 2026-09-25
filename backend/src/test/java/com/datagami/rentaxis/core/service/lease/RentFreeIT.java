@@ -139,6 +139,17 @@ class RentFreeIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aDraftWithARentFreePeriodCanBeDeleted() {
+        // F15-09: the period's FK has no ON DELETE clause; the draft delete removes it.
+        UUID leaseId = draft();
+        rentFree.replace(leaseId, List.of(JUNE_EXACT));
+        tx.executeWithoutResult(s -> leaseService.deleteDraftLease(leaseId));
+        assertThat(leaseRepo.findById(leaseId)).isEmpty();
+        assertThat(jdbc.queryForObject("select count(*) from lease_rent_free_periods where lease_id = ?", Integer.class, leaseId))
+                .isZero();
+    }
+
+    @Test
     void withoutAnOverrideTheConcessionIsHeadlineTimesFreeDaysOverTermDays() {
         UUID leaseId = draft();
         rentFree.replace(leaseId, List.of(new RentFreePeriodDTO(null, START, LocalDate.of(2026, 6, 30), null, null, null, null)));

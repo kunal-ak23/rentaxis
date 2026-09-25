@@ -402,6 +402,8 @@ public class LeasePostingService {
      * contract of this endpoint is that the review step sees every problem before the
      * button rather than one refusal per attempt.</p>
      */
+    static final String NO_CHEQUE_GRID = "The lease has no cheque grid; generate the instalments before posting.";
+
     @Transactional(readOnly = true)
     public PostLeaseDryRunResponse dryRun(UUID leaseId) {
         Lease lease = leaseRepository.findByIdScopedToTenant(leaseId)
@@ -421,6 +423,9 @@ public class LeasePostingService {
             // the contract plus C less what the carried ones already pay.
             plan = validate(lease, lines, cheques, Preconditions.FOR_POST, Set.of(),
                     est.carriedBalance().subtract(est.carriedTotal()));
+            // F15-07: a fully carried transfer has no rows of its own until the post
+            // appends the carried ones (completeForPosting runs before validate there).
+            if (cheques.isEmpty() && est.carriedTotal().signum() > 0) plan = plan.without(NO_CHEQUE_GRID);
         } else {
             plan = validate(lease, lines, cheques);
         }
@@ -778,7 +783,7 @@ public class LeasePostingService {
 
         BigDecimal chequeTotal = BigDecimal.ZERO;
         if (cheques.isEmpty()) {
-            otherErrors.add("The lease has no cheque grid; generate the instalments before posting.");
+            otherErrors.add(NO_CHEQUE_GRID);
         }
         for (Cheque c : cheques) {
             chequeTotal = chequeTotal.add(c.getAmount() == null ? BigDecimal.ZERO : c.getAmount());
@@ -1176,6 +1181,12 @@ public class LeasePostingService {
                                Set<AccountRole> missingRoles,
                                List<String> accountErrors,
                                List<String> otherErrors) {
+
+        PostingPlan without(String error) {
+            List<String> other = new ArrayList<>(otherErrors);
+            other.remove(error);
+            return new PostingPlan(pairs, contractValue, contractValueInclVat, chequeTotal, missingRoles, accountErrors, other);
+        }
 
         List<String> errors(UUID propertyId) {
             List<String> all = new ArrayList<>(accountErrors);

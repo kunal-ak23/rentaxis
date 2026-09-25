@@ -142,7 +142,7 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 20), "misposted", Dimensions.none(),
                 JournalSourceType.MANUAL, null, null, List.of(
                 dr(marinaCleaning, new BigDecimal("250.00")).withDims(Dimensions.ofProperty(fx.p2.getId())),
-                cr(AccountRole.CASH, new BigDecimal("250.00")))));
+                cr(AccountRole.CASH, new BigDecimal("250.00")))).withInterPropertyClearing());
 
         PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
         assertThat(row(r, "EXP_CLEANING", fx.p2.getId().toString()).amount()).isEqualByComparingTo("250.00");
@@ -247,7 +247,8 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 15), "old building",
                 Dimensions.none(), JournalSourceType.MANUAL, null, null, List.of(
                 dr(AccountRole.CASH, new BigDecimal("100.00")),
-                cr(fx.bankInterest.getId(), new BigDecimal("100.00")).withDims(Dimensions.ofProperty(gone)))));
+                cr(fx.bankInterest.getId(), new BigDecimal("100.00")).withDims(Dimensions.ofProperty(gone))))
+                .withInterPropertyClearing());   // F15-11
         PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.EQUAL);
         assertThat(r.columns()).extracting(PropertyPnlDTO.Column::name).anyMatch(n -> n.startsWith("Deleted property"));
         assertThat(r.allocation().allocated().get(gone.toString())).isEqualByComparingTo("0.00");

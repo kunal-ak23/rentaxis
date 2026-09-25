@@ -442,7 +442,7 @@ public class VoucherService {
                 .orElse(baseNarration);
         JournalEntry entry = posting.post(new PostingRequest(
                 v.getDocType().toDocType(), v.getDocDate(), entryNarration, headerDims,
-                JournalSourceType.VOUCHER, v.getId(), null, journalLines));
+                JournalSourceType.VOUCHER, v.getId(), null, journalLines).withInterPropertyClearing());   // F15-11
         offStatement.ifPresent(c -> bankLock.recordOffStatement(c, entry.getId(), docDate));
 
         v.setStatus(VoucherStatus.POSTED);

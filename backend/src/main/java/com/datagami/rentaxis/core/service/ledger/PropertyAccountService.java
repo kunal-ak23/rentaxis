@@ -65,7 +65,8 @@ public class PropertyAccountService {
             Map.entry(AccountRole.MAINTENANCE_CHARGES, "رسوم الصيانة"),
             Map.entry(AccountRole.RENT_PENALTY, "غرامة تأخير الإيجار"),
             Map.entry(AccountRole.CHEQUE_RETURN_PENALTY, "غرامة الشيكات المرتجعة"),
-            Map.entry(AccountRole.OTHER_INCOME, "إيرادات أخرى"));
+            Map.entry(AccountRole.OTHER_INCOME, "إيرادات أخرى"),
+            Map.entry(AccountRole.INTERPROPERTY_CLEARING, "مقاصة بين العقارات"));
 
     /**
      * "label - property", the Arabic counterpart of the English leaf name. The
@@ -151,6 +152,7 @@ public class PropertyAccountService {
             // PenaltyReason.OTHER). Without a row here the "Other" reason exists in
             // the UI and refuses on approval with an unmapped-role error.
             template(AccountRole.OTHER_INCOME, "Other Income - {property}", "C-01-02");
+            template(AccountRole.INTERPROPERTY_CLEARING, "Inter-property clearing - {property}", "A-02-06");
         }
         defaultIfMissing(AccountRole.CASH, "A-02-05-001");
         defaultIfMissing(AccountRole.OUTPUT_VAT, "B-01-03-001");
@@ -170,6 +172,7 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.RENTER_REFUND_PAYABLE, "B-01-07");
         defaultIfMissing(AccountRole.UNEARNED_CHARGES, "B-01-08");
         defaultIfMissing(AccountRole.RETAINED_EARNINGS, "F-03");
+        defaultIfMissing(AccountRole.INTERPROPERTY_CLEARING, "A-02-06-001");
     }
 
     /**

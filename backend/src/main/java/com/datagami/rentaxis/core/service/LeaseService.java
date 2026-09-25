@@ -1533,6 +1533,12 @@ public class LeaseService {
         }
         leaseLineRepository.deleteByLease_Id(leaseId);
         deleteDraftCheques(leaseId);
+        // F15-09: lease_rent_free_periods.lease_id has no ON DELETE clause, so a draft
+        // with a rent-free period was undeletable (409 fk_lrfp_lease).
+        if (rentFreePeriods != null) {
+            rentFreePeriods.deleteAll(rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId));
+            rentFreePeriods.flush();
+        }
         leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));
         // lease_interactions.lease_id is NOT NULL with no ON DELETE clause, and
         // LeaseInteractionService.softDelete only stamps deletedAt — the row

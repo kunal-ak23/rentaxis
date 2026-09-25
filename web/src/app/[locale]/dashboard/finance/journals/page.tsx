@@ -13,6 +13,7 @@ import { journalStatusClass } from "@/components/finance/journalStatus";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type JournalDocType, type JournalEntry, type Page } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import InterPropertyRepairBanner from "@/components/finance/journals/InterPropertyRepairBanner";
 
 const field =
     "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -145,6 +146,7 @@ function Journals() {
                 )}
             </div>
 
+            {hasPermission(userRole, "canAccessFinanceOps") && <InterPropertyRepairBanner />}
             {loadError && <LoadErrorBanner message={loadError} onRetry={load} />}
 
             <div className="bg-surface border border-border rounded-xl shadow-sm p-4 mb-6">

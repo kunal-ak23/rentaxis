@@ -183,7 +183,7 @@ public class DepositCarryForward {
                 JournalSourceType.LEASE,
                 successor.getId(),
                 importBatchId,
-                pairs));
+                pairs).withInterPropertyClearing());   // F15-11: a transfer across properties
     }
 
     /** How the narration names the contract left behind: its number, else its id. */

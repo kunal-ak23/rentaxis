@@ -22,7 +22,13 @@ public enum AccountRole {
     /** F14-18: periodic fees (parking, cooling, service charge) billed for the term and not yet earned (B-01-08). */
     UNEARNED_CHARGES,
     /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03); lines carry the property dimension. */
-    RETAINED_EARNINGS;
+    RETAINED_EARNINGS,
+    /**
+     * F15-11: inter-property clearing (A-02-06), one leaf per property. A journal whose
+     * lines span properties posts a clearing leg in each, so every property's trial
+     * balance nets to zero and the clearing leaves net to zero company-wide.
+     */
+    INTERPROPERTY_CLEARING;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
