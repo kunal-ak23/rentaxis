@@ -57,12 +57,13 @@ const CAPITAL = 'Capital Account';
 
 const FINANCE_NAV: [string, string][] = [
     ['Chart of Accounts', '/dashboard/finance/accounts'],
-    ['Journal Vouchers', '/dashboard/finance/journals'],
+    ['Journal Voucher', '/dashboard/finance/journals'],
     ['General Ledger', '/dashboard/finance/general-ledger'],
     ['Tenant Ledger', '/dashboard/finance/tenant-ledger'],
     ['Trial Balance', '/dashboard/finance/trial-balance'],
     // 'Payments' was the v1 register; plan 2 replaced it with Cheques.
-    ['Cheque Register', '/dashboard/finance/cheques'],
+    // The register lives in Cheque / Cash Collection; Accounting › Registers links to it.
+    ['Cheque registers', '/dashboard/finance/cheques'],
     ['Vendors', '/dashboard/finance/vendors'],
     ['Bank Accounts', '/dashboard/finance/bank-accounts'],
 ];
@@ -297,14 +298,17 @@ test('01 login and the finance navigation', async ({ browser }) => {
     try {
         await signIn(page, fx.admin.email, fx.admin.password);
 
-        const nav = page.locator('nav[data-tour="sidebar-nav"]');
+        // Rail + panel shell: the Accounting pages are listed in the panel
+        // while an Accounting page is open.
+        await page.goto('/en/dashboard/finance/journals');
+        const nav = page.getByTestId('nav-panel');
         for (const [label, href] of FINANCE_NAV) {
             await expect(nav.getByRole('link', { name: label, exact: true })).toHaveAttribute('href', `/en${href}`);
         }
         // The two v1 pages the ledger replaced must be gone from the nav, not
         // merely unreachable.
         await expect(nav.locator('a[href*="/finance/transactions"]')).toHaveCount(0);
-        await expect(nav.locator('a[href*="/finance/reports"]')).toHaveCount(0);
+        await expect(nav.locator('a[href$="/finance/reports"]')).toHaveCount(0);
 
         await page.context().storageState({ path: STATE });
         await hold(page);
@@ -705,12 +709,14 @@ test('13 the accountant owns the ledger and the property manager does not', asyn
     try {
         // ── ACCOUNTANT ──
         await signIn(page, fx.accountant.email, fx.accountant.password);
-        const nav = page.locator('nav[data-tour="sidebar-nav"]');
-        for (const label of ['General Ledger', 'Trial Balance', 'Journal Vouchers']) {
+        await page.goto('/en/dashboard/finance/journals');
+        const nav = page.getByTestId('nav-panel');
+        for (const label of ['General Ledger', 'Trial Balance', 'Journal Voucher']) {
             await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
         }
-        await expect(nav.getByRole('link', { name: 'Property account template', exact: true })).toBeVisible();
-        await expect(nav.getByRole('link', { name: 'Fiscal year & period lock', exact: true })).toBeVisible();
+        // One-time setup collapses once the books are live: present, maybe hidden.
+        await expect(nav.getByRole('link', { name: 'Property account template', exact: true, includeHidden: true })).toHaveCount(1);
+        await expect(nav.getByRole('link', { name: 'Year End Closing', exact: true, includeHidden: true })).toHaveCount(1);
         // Gateway configuration is a tenant-admin concern, not an accountant's.
         await expect(nav.locator('a[href*="/settings/gateway"]')).toHaveCount(0);
         // Neither are the operational pages that merely live under /finance:
@@ -725,14 +731,18 @@ test('13 the accountant owns the ledger and the property manager does not', asyn
         await expect(page.getByRole('link', { name: 'New Journal Voucher' })).toBeVisible();
         await page.goto('/en/dashboard/settings/account-template');
         await expect(page.getByRole('heading', { name: 'Property account template' }).first()).toBeVisible();
+        // The old URL still works: it 308s to /finance/fiscal.
         await page.goto('/en/dashboard/settings/fiscal');
-        await expect(page.getByRole('heading', { name: 'Fiscal year & period lock' })).toBeVisible();
+        await expect(page).toHaveURL(/\/en\/dashboard\/finance\/fiscal/);
+        await expect(page.getByRole('heading', { name: 'Year End Closing' })).toBeVisible();
         await hold(page, 1200);
 
         // ── PROPERTY_MANAGER ──
         await page.context().clearCookies();
         await signIn(page, fx.manager.email, fx.manager.password);
-        const pmNav = page.locator('nav[data-tour="sidebar-nav"]');
+        // The Accounting panel as a property manager sees it (their own reports).
+        await page.goto('/en/dashboard/finance/reports/property-pl');
+        const pmNav = page.getByTestId('nav-panel');
         // Plan 1 hid all of finance from a property manager; plans 2–4 gave them the
         // operational screens (cheque register, penalties, vendors, bank accounts).
         // The LEDGER stays the accountant's: none of these may be reachable.
@@ -741,8 +751,8 @@ test('13 the accountant owns the ledger and the property manager does not', asyn
             '/finance/import-batches', '/finance/opening-balances', '/finance/reconciliation']) {
             await expect(pmNav.locator(`a[href*="${ledgerHref}"]`)).toHaveCount(0);
         }
-        await expect(pmNav.locator('a[href*="/settings/account-template"]')).toHaveCount(0);
-        await expect(pmNav.locator('a[href*="/settings/fiscal"]')).toHaveCount(0);
+        await expect(pmNav.locator('a[href*="/finance/account-template"]')).toHaveCount(0);
+        await expect(pmNav.locator('a[href*="/finance/fiscal"]')).toHaveCount(0);
 
         // A property manager has no `canAccessFinance`, so the journals page is
         // not a reduced view — it is refused outright.

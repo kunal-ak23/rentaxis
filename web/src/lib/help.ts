@@ -37,8 +37,9 @@ export const HELP_PAGE_MAP: Record<string, { article?: string; tour?: string }> 
   '/dashboard/renter-portal': { article: 'renter--renter-portal-overview', tour: 'renter-portal' },
   '/dashboard/renter-portal/payments': { article: 'renter--making-payments' },
   '/dashboard/staff': { article: 'admin--managing-staff' },
-  '/dashboard/settings/gateway': { article: 'admin--tenant-settings' },
-  '/dashboard/settings/rent-settings': { article: 'admin--tenant-settings' },
+  '/dashboard/settings': { article: 'admin--tenant-settings' },
+  '/dashboard/finance/journals': { article: 'finance--chart-of-accounts', tour: 'finance-overview' },
+  '/dashboard/finance/account-template': { article: 'finance--chart-of-accounts' },
   '/superadmin/tenants': { article: 'admin--super-admin-guide', tour: 'super-admin' },
   '/superadmin/users': { article: 'admin--super-admin-guide' },
 };

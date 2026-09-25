@@ -24,7 +24,7 @@ Depending on your role, you'll have access to different features:
 ### Quick Start
 
 1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
-2. **Check the Sidebar** — Navigate between modules using the left sidebar menu
+2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 
 ### Need a Guided Tour?

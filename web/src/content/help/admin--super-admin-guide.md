@@ -13,14 +13,14 @@ As a System Admin, you have full access across all tenants in RentAxis.
 
 ### Managing Tenants
 
-1. Go to **Tenants** from the sidebar
+1. Go to **Settings › Administration › Organisations**
 2. View all registered organizations
 3. Create new tenant organizations
 4. View tenant details and their users
 
 ### Managing Users
 
-1. Go to **Users** from the sidebar
+1. Go to **Settings › Administration › Users**
 2. View all users across all tenants
 3. Create, edit, or deactivate user accounts
 4. Assign roles and tenant memberships

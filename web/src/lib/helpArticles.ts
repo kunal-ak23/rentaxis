@@ -30,7 +30,7 @@ Depending on your role, you'll have access to different features:
 ### Quick Start
 
 1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
-2. **Check the Sidebar** — Navigate between modules using the left sidebar menu
+2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 
 ### Need a Guided Tour?
@@ -103,7 +103,7 @@ Follow these steps to get your first property up and running in RentAxis.
 
 ### Step 1: Add a Property
 
-1. Go to **Properties** from the sidebar
+1. Go to **Leasing › Properties & Units**
 2. Click **Add Property**
 3. Fill in the property details:
    - Property name and type (Residential, Commercial, Mixed)
@@ -131,7 +131,7 @@ If your property has multiple buildings:
 
 ### Step 4: Add a Tenant
 
-1. Go to **Tenants** from the sidebar
+1. Go to **Leasing › Tenants**
 2. Click **Add Tenant**
 3. Enter the renter's name, email, phone, and Emirates ID
 
@@ -257,7 +257,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 
 ### Creating a New Tenancy Contract
 
-1. Go to **Tenancy Contracts** from the sidebar
+1. Go to **Leasing › Tenancy Contracts**
 2. Click **Create Tenancy Contract**
 3. Fill in the contract details:
    - **Property & Unit** — Select from your existing properties and vacant units
@@ -350,7 +350,7 @@ When a contract is created, RentAxis automatically generates monthly payment ent
 
 ### Managing Payments
 
-1. Go to **Finance > Payments** from the sidebar
+1. Go to **Cheque / Cash Collection** from the left rail
 2. View all payment schedules across contracts
 3. Update payment status as you collect rent
 4. For cheque payments, track the deposit and clearance process
@@ -385,7 +385,7 @@ RentAxis uses standard double-entry accounting with five account types:
 
 ### Managing Accounts
 
-1. Go to **Finance > Chart of Accounts**
+1. Go to **Accounting › Accounts › Chart of Accounts**
 2. View all accounts organized by type
 3. Click **Add Account** to create a new account
 4. Each account has a code, name, type, and optional description
@@ -403,13 +403,13 @@ Accounts form a tree: each account names its parent, group accounts hold childre
 
 Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
 
-- **Settings > Account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
+- **Accounting › One-time setup › Property account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
 - A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.
 - A role with no property-level mapping falls back to the organisation-wide default account for that role.
 
 ### Journals, Not Edits
 
-Posted entries are immutable. A mistake is corrected by reversing the entry from **Finance > Journal Vouchers**, which posts a mirror entry — the original stays on the books and is marked reversed.
+Posted entries are immutable. A mistake is corrected by reversing the entry from **Accounting › Journal Entries › Journal Voucher**, which posts a mirror entry — the original stays on the books and is marked reversed.
 `);
 
 // ─── Renter Portal ──────────────────────────────────────────────────────────
@@ -540,7 +540,7 @@ Add team members to your organization and assign them appropriate roles.
 
 ### Adding Staff
 
-1. Go to **Staff** from the sidebar
+1. Go to **Operations › Staff** (also under **Settings › Users & staff**)
 2. Click **Add Staff Member**
 3. Enter their details:
    - Name and email
@@ -567,30 +567,30 @@ roles: [TENANT_ADMIN]
 order: 2
 ---
 
-## Tenant Settings
+## Organisation Settings
 
-Configure your organization's settings from the Settings section in the sidebar.
+Configure your organisation's settings from **Settings** on the left rail — one page with **Organisation**, **Users & staff**, **Rent & fines** and **Payments** sections. Accounting setup lives under **Accounting › One-time setup**.
 
-### Account Mappings
+### Property account template
 
 Map your chart of accounts to RentAxis's automatic transaction types:
-1. Go to **Settings > Account Mappings**
+1. Go to **Accounting › One-time setup › Property account template**
 2. Set the default accounts for rent income, receivables, and deposits
 3. These mappings are used when payments are automatically recorded
 
 ### Payment Gateway
 
 Configure online payment collection:
-1. Go to **Settings > Payment Gateway Configuration**
+1. Go to **Settings › Payments**
 2. Enter your Razorpay API credentials
 3. Enable or disable the gateway configuration
 
 > **Note:** Online payment initiation is not yet available in the tenant portal — tenants currently track their payment schedule and download receipts there.
 
-### Rent Settings
+### Rent & fines
 
 Customize how rent is calculated and scheduled:
-1. Go to **Settings > Rent Settings**
+1. Go to **Settings › Rent & fines**
 2. Configure pro-rata calculation preferences
 3. Set default payment methods and schedules
 `);
@@ -610,14 +610,14 @@ As a System Admin, you have full access across all tenants in RentAxis.
 
 ### Managing Tenants
 
-1. Go to **Tenants** from the sidebar
+1. Go to **Settings › Administration › Organisations**
 2. View all registered organizations
 3. Create new tenant organizations
 4. View tenant details and their users
 
 ### Managing Users
 
-1. Go to **Users** from the sidebar
+1. Go to **Settings › Administration › Users**
 2. View all users across all tenants
 3. Create, edit, or deactivate user accounts
 4. Assign roles and tenant memberships

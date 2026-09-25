@@ -20,6 +20,8 @@ export const financeOverviewTour: TourDef = {
       title: 'Journal Voucher',
       text: 'Every entry in the books lives here as a balanced voucher. Most are posted automatically as payments move; you can also post a manual one, and reverse anything that was wrong.',
       position: 'right',
+      // The next targets are Accounting-panel items; keep that panel showing.
+      nextRoute: '/dashboard/finance/journals',
     },
     {
       id: 'general-ledger-link',

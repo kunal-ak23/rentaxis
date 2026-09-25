@@ -12,7 +12,7 @@ Add team members to your organization and assign them appropriate roles.
 
 ### Adding Staff
 
-1. Go to **Staff** from the sidebar
+1. Go to **Operations › Staff** (also under **Settings › Users & staff**)
 2. Click **Add Staff Member**
 3. Enter their details:
    - Name and email

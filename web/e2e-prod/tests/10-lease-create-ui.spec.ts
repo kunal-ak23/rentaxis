@@ -67,7 +67,7 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
 
   await page.goto('/en/dashboard/leases');
   // Trigger label is "Draft Lease" (en.json: "draftLease": "Draft Lease").
-  await page.getByRole('button', { name: /draft lease/i }).first().click();
+  await page.getByRole('button', { name: /draft (lease|tenancy contract)/i }).first().click();
 
   // Wizard dialog. Step 1: parties.
   // The unit picker filters to VACANT — pick our freshly-created unit by its number.

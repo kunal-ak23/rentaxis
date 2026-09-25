@@ -12,12 +12,14 @@ export const superAdminTour: TourDef = {
       title: 'System Dashboard',
       text: 'As a System Admin, you have full access across all tenants. This dashboard shows system-wide metrics.',
       position: 'bottom',
+      // Organisations and Users are in the Settings panel's Administration group.
+      nextRoute: '/dashboard/settings',
     },
     {
       id: 'tenants-link',
       target: '[data-tour="sidebar-tenants"]',
-      title: 'Tenants',
-      text: 'Manage all registered organizations. Create new tenants, view their details, and monitor usage.',
+      title: 'Organisations',
+      text: 'Manage all registered organisations. Create new organisations, view their details, and monitor usage.',
       position: 'right',
     },
     {

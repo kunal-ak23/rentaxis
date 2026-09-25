@@ -30,7 +30,7 @@ When a contract is created, RentAxis automatically generates monthly payment ent
 
 ### Managing Payments
 
-1. Go to **Finance > Payments** from the sidebar
+1. Go to **Cheque / Cash Collection** from the left rail
 2. View all payment schedules across contracts
 3. Update payment status as you collect rent
 4. For cheque payments, track the deposit and clearance process

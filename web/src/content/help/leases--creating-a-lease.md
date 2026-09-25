@@ -13,7 +13,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 
 ### Creating a New Tenancy Contract
 
-1. Go to **Tenancy Contracts** from the sidebar
+1. Go to **Leasing › Tenancy Contracts**
 2. Click **Create Tenancy Contract**
 3. Fill in the contract details:
    - **Property & Unit** — Select from your existing properties and vacant units

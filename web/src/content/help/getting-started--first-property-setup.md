@@ -13,7 +13,7 @@ Follow these steps to get your first property up and running in RentAxis.
 
 ### Step 1: Add a Property
 
-1. Go to **Properties** from the sidebar
+1. Go to **Leasing › Properties & Units**
 2. Click **Add Property**
 3. Fill in the property details:
    - Property name and type (Residential, Commercial, Mixed)
@@ -41,7 +41,7 @@ If your property has multiple buildings:
 
 ### Step 4: Add a Tenant
 
-1. Go to **Tenants** from the sidebar
+1. Go to **Leasing › Tenants**
 2. Click **Add Tenant**
 3. Enter the renter's name, email, phone, and Emirates ID
 

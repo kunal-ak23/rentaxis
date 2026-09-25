@@ -12,7 +12,7 @@ test.describe('Renters CRUD', () => {
 
   test('list renters page loads', async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
-    await expect(page.getByText(/renter/i).first()).toBeVisible();
+    await expect(page.getByText(/renter|tenant/i).first()).toBeVisible();
   });
 
   test('seeded renter is visible', async ({ page, testContext }, testInfo) => {
@@ -25,7 +25,7 @@ test.describe('Renters CRUD', () => {
   test('create a new renter without portal account', async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
 
-    await page.getByRole('button', { name: /add renter/i }).first().click();
+    await page.getByRole('button', { name: /add (renter|tenant)/i }).first().click();
 
     const ts = Date.now();
     // Name English - placeholder "John Doe"
@@ -55,7 +55,7 @@ test.describe('Renters CRUD', () => {
   test('create a new renter with portal account', async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
 
-    await page.getByRole('button', { name: /add renter/i }).first().click();
+    await page.getByRole('button', { name: /add (renter|tenant)/i }).first().click();
 
     const ts = Date.now();
     await page.locator('input[placeholder="John Doe"]').fill(`Portal Renter ${ts}`);
