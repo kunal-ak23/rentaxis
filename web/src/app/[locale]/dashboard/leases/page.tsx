@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseDialog from "@/components/leases/LeaseDialog";
+import { runPool } from "@/lib/pool";
 import {
     ApiError, chequeApi, leaseApi,
     type LeaseChequeStats, type LeaseDetail, type LeaseStatus,
@@ -36,6 +37,9 @@ const STATUSES: LeaseStatus[] = [
  * so the list and the detail page can no longer disagree about one contract.
  */
 const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
+
+/** How many drafts a bulk post sends at once. */
+const BULK_POST_CONCURRENCY = 4;
 
 /** One row of the bulk-post run: what was attempted, and what came back. */
 type PostResult = { leaseId: string; label: string; ok: boolean; message: string };
@@ -209,36 +213,32 @@ export default function LeasesPage() {
     };
 
     /**
-     * Post the selected drafts one at a time, and report each outcome on its
-     * own row.
+     * Post the selected drafts, a few at a time, and report each outcome on
+     * its own row (scale spec #23: at 8,000 contracts a year one-by-one is
+     * too slow).
      *
-     * Sequential, not parallel: each post writes journals and takes an entry
-     * number from the same tenant-wide sequence, and one 400 must not stop the
-     * rest of the batch from being attempted. The result list is the point --
-     * "3 of 7 posted" with no word on which three is not an answer an
-     * accountant can act on.
+     * Limited concurrency, not all at once: each post writes journals and takes
+     * an entry number from one tenant-wide sequence, which the server hands out
+     * under a row lock, so parallel posts are safe but queue on that lock — a
+     * small pool gets the overlap without piling requests onto it. One 400 must
+     * not stop the rest of the batch from being attempted. The result list, in
+     * the order selected, is the point -- "3 of 7 posted" with no word on which
+     * three is not an answer an accountant can act on.
      */
     const handleBulkPost = async () => {
         const targets = filteredLeases.filter(l => selected.has(l.id) && l.status === "DRAFT");
         if (targets.length === 0) return;
         setPostResults(null);
         setPostProgress({ done: 0, total: targets.length });
-        const results: PostResult[] = [];
-        for (const lease of targets) {
+        const results = await runPool(targets, BULK_POST_CONCURRENCY, async (lease): Promise<PostResult> => {
             const label = `${t("unit")} ${lease.unitIdentifier ?? ""} — ${lease.renterName ?? ""}`.trim();
             try {
                 const res = await leaseApi.post(lease.id);
-                results.push({ leaseId: lease.id, label, ok: true, message: res.tcoEntryNumber });
+                return { leaseId: lease.id, label, ok: true, message: res.tcoEntryNumber };
             } catch (e) {
-                results.push({
-                    leaseId: lease.id,
-                    label,
-                    ok: false,
-                    message: e instanceof ApiError ? e.message : tl("postFailed"),
-                });
+                return { leaseId: lease.id, label, ok: false, message: e instanceof ApiError ? e.message : tl("postFailed") };
             }
-            setPostProgress({ done: results.length, total: targets.length });
-        }
+        }, done => setPostProgress({ done, total: targets.length }));
         setPostProgress(null);
         setPostResults(results);
         setSelected(new Set());

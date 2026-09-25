@@ -7,9 +7,9 @@ import type { LeaseDetail } from "@/lib/api/leasing";
 /**
  * Posting a batch of drafts from the list.
  *
- * Sequential, and every row's outcome reported: each post writes journals and
- * takes an entry number from one tenant-wide sequence, so they cannot go out
- * together, and one refusal must not stop the rest from being attempted.
+ * A few at a time (scale #23), every row's outcome reported in the order
+ * selected: the server hands entry numbers out under a row lock, so a small
+ * pool is safe, and one refusal must not stop the rest from being attempted.
  * "3 of 7 posted" with no word on which three is not an answer an accountant
  * can act on.
  */
@@ -105,7 +105,28 @@ describe("Leases list — renter acceptance (#79)", () => {
 });
 
 describe("Leases list — bulk post", () => {
-    it("posts each selected draft in turn and lists every outcome", async () => {
+    it("posts several drafts at once, never more than four, and lists outcomes in the order selected", async () => {
+        const many = Array.from({ length: 7 }, (_, i) => lease({ id: `d${i}`, unitIdentifier: `B-${i}` }));
+        api.paged.mockImplementation(async () => ({ content: many, totalElements: 7, totalPages: 1, number: 0, size: 25 }));
+        let inFlight = 0, peak = 0;
+        api.post.mockImplementation(async (id: string) => {
+            inFlight++; peak = Math.max(peak, inFlight);
+            // Later rows answer first, so completion order differs from selection order.
+            await new Promise(r => setTimeout(r, 30 - Number(id.slice(1)) * 3));
+            inFlight--;
+            return { lease: many[0], tcoJournalId: "j", tcoEntryNumber: `TCO-${id}`, cheques: [] };
+        });
+        renderPage();
+        for (let i = 0; i < 7; i++) fireEvent.click(await screen.findByTestId(`bulk-post-select-d${i}`));
+        fireEvent.click(screen.getByTestId("bulk-post"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-results")).toBeInTheDocument());
+        expect(peak).toBe(4);
+        expect(api.post).toHaveBeenCalledTimes(7);
+        const order = [...screen.getByTestId("bulk-post-results").querySelectorAll("[data-testid^='bulk-post-result-']")].map(e => e.getAttribute("data-testid"));
+        expect(order).toEqual(many.map(l => `bulk-post-result-${l.id}`));
+    });
+
+    it("posts each selected draft and lists every outcome", async () => {
         api.post
             .mockResolvedValueOnce({ lease: ROWS[0], tcoJournalId: "j1", tcoEntryNumber: "TCO-26/15", cheques: [] })
             .mockRejectedValueOnce(
