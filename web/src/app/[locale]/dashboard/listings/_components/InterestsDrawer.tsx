@@ -3,10 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
-import { useRouter } from "@/i18n/routing";
+
 import { X, Download, Loader2, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createLeaseFromInterest, fetchInterests } from "@/lib/api/listings";
+import { ApiError } from "@/lib/api/facilities";
+import { serverText } from "@/components/finance/bankrec/serverText";
+import { Link, useRouter } from "@/i18n/routing";
 import type { InterestDTO, InterestStatus } from "@/types/listing";
 
 interface InterestsDrawerProps {
@@ -20,6 +23,7 @@ function getInterestStatusClass(status: InterestStatus) {
     case 'ACTIVE':    return 'bg-success/10 text-success border border-success/20';
     case 'NOTIFIED':  return 'bg-blue-50 text-blue-600 border border-blue-200';
     case 'WITHDRAWN': return 'bg-input text-muted border border-border';
+    case 'CONVERTED': return 'bg-success/10 text-success border border-success/30';
     default:          return 'bg-input text-muted border border-border';
   }
 }
@@ -33,6 +37,7 @@ function getInitials(name: string | null): string {
 
 export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsDrawerProps) {
   const t = useTranslations('Listings');
+  const tCommon = useTranslations('Common');
   const { data: session } = useSession();
   const token = (session?.user as { accessToken?: string })?.accessToken;
   const router = useRouter();
@@ -45,7 +50,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
       const lease = await createLeaseFromInterest(listingId, interestId, token);
       router.push(`/dashboard/leases/${lease.id}`);
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : t('createLeaseFailed'));
+      setCreateError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t('createLeaseFailed'));
     } finally {
       setCreating(null);
     }
@@ -119,6 +124,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
       case 'ACTIVE':    return t('interestStatusActive');
       case 'NOTIFIED':  return t('interestStatusNotified');
       case 'WITHDRAWN': return t('interestStatusWithdrawn');
+      case 'CONVERTED': return t('interestStatusConverted');
       default:          return status;
     }
   }
@@ -228,7 +234,13 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
                         {new Date(interest.createdAt).toLocaleDateString()}
                       </p>
                       {/* F14-51: turn the enquiry into a draft lease. */}
-                      {interest.status !== 'WITHDRAWN' && (
+                      {interest.status === 'CONVERTED' && interest.leaseId && (
+                        <Link href={`/dashboard/leases/${interest.leaseId}`} data-testid={`interest-lease-${interest.id}`}
+                              className="mt-2 inline-block text-xs font-semibold text-primary hover:underline">
+                          {t('leaseCreated')}
+                        </Link>
+                      )}
+                      {interest.status !== 'WITHDRAWN' && interest.status !== 'CONVERTED' && (
                         <button
                           type="button"
                           data-testid={`interest-create-lease-${interest.id}`}

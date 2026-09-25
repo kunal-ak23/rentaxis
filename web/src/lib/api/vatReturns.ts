@@ -1,4 +1,5 @@
 import { apiGet, apiSend, qs } from "@/lib/api/ledger";
+import { PROXY } from "@/lib/api/propertyReports";
 
 /** #55: the quarterly VAT return (VatReturnController). Box codes follow the FTA VAT 201 form. */
 export type VatBox = { code: string; key: string; amount: number | null; vat: number | null; documents: number; total: boolean };
@@ -14,6 +15,9 @@ export type VatReturn = {
   netVat: number;
   outputCheck: { documents: number; ledger: number; difference: number; ok: boolean } | null;
   commercialWithoutVat: number;
+  /** PR #361 R1: Input VAT moved by an OB / import / JV (not in box 9), and box 9's VAT on exempt-property costs. */
+  inputVatOther?: number;
+  inputVatOnExempt?: number;
   canFile: boolean;
   cannotFileReason: string | null;
 };
@@ -26,7 +30,6 @@ export type VatFiling = {
   filedAt: string; filedByName: string | null; reopenedAt: string | null; reopenReason: string | null;
 };
 
-const PROXY = "/api/proxy/v1";
 
 export const vatReturnsApi = {
   get: (periodStart: string) => apiGet<VatReturn>(`/finance/vat-returns${qs({ periodStart })}`),

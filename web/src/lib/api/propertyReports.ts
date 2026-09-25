@@ -181,7 +181,8 @@ function pnlQuery(q: PnlQuery, extra: Record<string, string> = {}): string {
   return `?${sp.toString()}`;
 }
 
-const PROXY = "/api/proxy/v1";
+/** The Next.js proxy prefix for file downloads (never the backend origin). */
+export const PROXY = "/api/proxy/v1";
 
 export const propertyReportsApi = {
   pnl: (q: PnlQuery) => apiGet<PropertyPnl>(`/finance/reports/property-pl${pnlQuery(q)}`),

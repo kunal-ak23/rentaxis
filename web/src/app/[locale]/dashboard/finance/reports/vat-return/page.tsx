@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Receipt, ShieldC
 import VatReturnView from "@/components/finance/vat/VatReturnView";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { lastQuarterStart, vatReturnsApi, type VatFiling, type VatReturn } from "@/lib/api/vatReturns";
@@ -37,6 +38,8 @@ export default function VatReturnPage() {
     const [actionError, setActionError] = useState<string | null>(null);
     const [reference, setReference] = useState("");
     const [busy, setBusy] = useState(false);
+    const [confirm, setConfirm] = useState<"file" | "reopen" | null>(null);
+    const [reopenReason, setReopenReason] = useState("");
 
     const load = useCallback(async (start: string) => {
         setLoading(true);
@@ -63,6 +66,8 @@ export default function VatReturnPage() {
         setActionError(null);
         try {
             await fn();
+            setConfirm(null);
+            setReopenReason("");
             await load(periodStart);
         } catch (err) {
             setActionError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
@@ -148,6 +153,16 @@ export default function VatReturnPage() {
                             {t("commercialWithoutVat", { amount: fmtAmount(data.commercialWithoutVat) })}
                         </p>
                     )}
+                    {!!data.inputVatOther && (
+                        <p className="mt-2 text-xs text-warning" data-testid="vat-input-other">
+                            {t("inputVatOther", { amount: fmtAmount(data.inputVatOther) })}
+                        </p>
+                    )}
+                    {!!data.inputVatOnExempt && (
+                        <p className="mt-2 text-xs text-warning" data-testid="vat-input-exempt">
+                            {t("inputVatOnExempt", { amount: fmtAmount(data.inputVatOnExempt) })}
+                        </p>
+                    )}
                     <p className="mt-3 text-xs text-muted">{t("lockNote")}</p>
 
                     {canFile && data.status !== "FILED" && (
@@ -157,7 +172,7 @@ export default function VatReturnPage() {
                                 <input className={input} value={reference} onChange={e => setReference(e.target.value)} data-testid="vat-reference" />
                             </label>
                             <button type="button" disabled={busy || !data.canFile} data-testid="vat-file"
-                                    onClick={() => { if (window.confirm(t("fileConfirm"))) act(() => vatReturnsApi.file(periodStart, reference)); }}
+                                    onClick={() => setConfirm("file")}
                                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold disabled:opacity-50">
                                 <Lock size={13} />{t("markFiled")}
                             </button>
@@ -168,14 +183,33 @@ export default function VatReturnPage() {
                     )}
                     {canFile && data.status === "FILED" && data.id && (
                         <button type="button" disabled={busy} data-testid="vat-reopen" className={`${button} mt-5`}
-                                onClick={() => {
-                                    const reason = window.prompt(t("reopenPrompt"));
-                                    if (reason && reason.trim()) act(() => vatReturnsApi.reopen(data.id!, reason.trim()));
-                                }}>
+                                onClick={() => setConfirm("reopen")}>
                             <Unlock size={13} />{t("reopen")}
                         </button>
                     )}
                     {actionError && <p className="mt-2 text-xs text-error" data-testid="vat-error">{actionError}</p>}
+                    {/* PR #361 R1: the app's dialog; re-opening asks for its reason in the dialog. */}
+                    <ConfirmDialog
+                        isOpen={confirm !== null}
+                        onClose={() => setConfirm(null)}
+                        isLoading={busy}
+                        isDestructive={confirm === "reopen"}
+                        title={confirm === "reopen" ? t("reopen") : t("markFiled")}
+                        description={confirm === "reopen" ? t("reopenPrompt") : t("fileConfirm")}
+                        confirmText={confirm === "reopen" ? t("reopen") : t("markFiled")}
+                        cancelText={t("cancel")}
+                        confirmTestId="vat-confirm"
+                        confirmDisabled={confirm === "reopen" && !reopenReason.trim()}
+                        onConfirm={() => {
+                            if (confirm === "file") act(() => vatReturnsApi.file(periodStart, reference));
+                            if (confirm === "reopen" && data.id) act(() => vatReturnsApi.reopen(data.id!, reopenReason.trim()));
+                        }}
+                    >
+                        {confirm === "reopen" && (
+                            <textarea className={`${input} w-full`} rows={3} value={reopenReason} data-testid="vat-reopen-reason"
+                                      placeholder={t("reopenReason")} onChange={e => setReopenReason(e.target.value)} />
+                        )}
+                    </ConfirmDialog>
                 </>
             ) : null}
 

@@ -65,7 +65,7 @@ export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER"
   /* F14-30: consideration for a supply — 5 % VAT on a VAT lease by default. */
   | "SERVICE_RECHARGE" | "ADMIN_FEE" | "DAMAGE" | "MAINTENANCE_RECHARGE" | "BOOKING_FEE";
 
-export type PenaltyAssessmentStatus = "PROPOSED" | "APPROVED" | "WAIVED" | "REVERSED";
+export type PenaltyAssessmentStatus = "PROPOSED" | "APPROVED" | "WAIVED" | "REVERSED" | "WRITTEN_OFF";
 
 /** Not carried on any DTO the web reads today; kept for the i18n labels and for later tasks. */
 export type OnlinePaymentStatus = "CREATED" | "CAPTURED" | "CAPTURED_UNAPPLIED" | "FAILED" | "REFUNDED";

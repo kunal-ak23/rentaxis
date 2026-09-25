@@ -1,3 +1,4 @@
+import { ApiError } from '@/lib/api/facilities'
 import { cache } from 'react'
 import type {
   UnitListingSummaryDTO,
@@ -274,9 +275,11 @@ export async function createLeaseFromInterest(listingId: string, interestId: str
   if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${BASE}/${listingId}/interests/${interestId}/lease`, { method: 'POST', headers })
   if (!res.ok) {
+    // An ApiError with the body, so the drawer can render a coded refusal in the viewer's language.
+    const body = await res.text()
     let message = `Failed to create the lease: ${res.status}`
-    try { const b = await res.json(); if (b?.message) message = b.message } catch { /* keep the status */ }
-    throw new Error(message)
+    try { const b = JSON.parse(body); if (b?.message) message = b.message } catch { /* keep the status */ }
+    throw new ApiError(res.status, message, body)
   }
   return res.json()
 }

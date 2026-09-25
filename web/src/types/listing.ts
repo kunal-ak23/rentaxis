@@ -66,6 +66,8 @@ export interface InterestDTO {
   id: string; listingId: string; renterUserId: string
   renterName: string | null; renterEmail: string | null; renterPhone: string | null
   note: string | null; status: InterestStatus; createdAt: string
+  /** F14-51: the draft lease a CONVERTED enquiry became. */
+  leaseId?: string | null
 }
 
 export interface PageResponse<T> {
