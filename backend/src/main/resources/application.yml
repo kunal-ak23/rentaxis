@@ -22,6 +22,12 @@ spring:
       # JVM's zone. Instants are unaffected either way — Hibernate binds them in UTC.
       connection-init-sql: SET TIME ZONE 'UTC'
   jpa:
+    # Off (scale P1-11): with it on, every entity a long batch request loads stays in the
+    # request's session and each later flush dirty-checks all of them, so a month-end
+    # recognition run grew quadratically. DTOs are mapped inside @Transactional services;
+    # TenantAspect gives a stray repository call its own transaction so the tenant filter
+    # still applies.
+    open-in-view: false
     hibernate:
       ddl-auto: validate
     show-sql: false

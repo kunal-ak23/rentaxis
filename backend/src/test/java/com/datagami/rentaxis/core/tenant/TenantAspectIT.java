@@ -211,17 +211,18 @@ class TenantAspectIT extends AbstractPostgresIT {
     }
 
     /**
-     * The known limitation, pinned so it is a decision rather than a surprise: the
-     * filter is enabled on the session bound to the <em>current transaction</em>.
-     * With no transaction of its own, a repository call gets a fresh session for
-     * the query and the filter enabled a moment earlier is not on it. This is why
-     * every tenant-scoped service read in this codebase is {@code @Transactional}
-     * and why a method without it needs an explicit tenant comparison.
+     * Scale PR A turned open-session-in-view off, which would have made every repository
+     * call outside a transaction an unfiltered, cross-tenant read (each call gets a fresh
+     * session, and the filter enabled a moment earlier is not on it). The aspect now runs
+     * such a call inside a transaction of its own with the filter on, so it is filtered
+     * like any other.
      */
     @Test
-    void aReadWithNoTransactionOfItsOwnIsNotFiltered() {
+    void aReadWithNoTransactionOfItsOwnIsFilteredToo() {
         TenantContextHolder.setTenantId(tenantA);
         List<UUID> ids = tickets.findAll().stream().map(MaintenanceTicket::getId).toList();
-        assertThat(ids).as("unfiltered: the documented limitation").contains(ticketA, ticketB);
+        assertThat(ids).contains(ticketA).doesNotContain(ticketB);
+        assertThat(tickets.findById(ticketB)).isEmpty();
+        assertThat(tickets.count()).isEqualTo(tx.execute(s -> tickets.count()));
     }
 }

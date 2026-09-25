@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.util.Loaded;
 import com.datagami.rentaxis.api.dto.UnitRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.Building;
@@ -56,7 +57,7 @@ public class UnitService {
         if (r.expectedRent() != null) u.setExpectedRent(r.expectedRent());
         if (r.actualRent() != null) u.setActualRent(r.actualRent());
         u.setCurrentTenantName(r.currentTenantName());
-        return repository.save(u);
+        return Loaded.with(repository.save(u), Unit::getProperty, Unit::getBuilding);
     }
 
     /**
@@ -108,7 +109,8 @@ public class UnitService {
             u.setNextLeaseStart(next != null ? next.getStartDate() : null);
             u.setNextTenantName(next != null && next.getRenter() != null ? next.getRenter().getNameEn() : null);
         }
-        return units;
+        // Serialised with their property and building after this transaction ends (OSIV off).
+        return Loaded.all(units, Unit::getProperty, Unit::getBuilding);
     }
 
     static String occupancyOf(com.datagami.rentaxis.domain.entity.enums.UnitStatus status, boolean covered,

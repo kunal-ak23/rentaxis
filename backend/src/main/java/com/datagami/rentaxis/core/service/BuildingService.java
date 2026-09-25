@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.util.Loaded;
 import com.datagami.rentaxis.api.dto.BuildingRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -43,7 +44,7 @@ public class BuildingService {
         b.setNameEn(r.nameEn().trim());
         b.setNameAr(r.nameAr());
         b.setFloors(r.floors());
-        return repository.save(b);
+        return Loaded.with(repository.save(b), Building::getProperty);
     }
 
     /**
@@ -62,13 +63,13 @@ public class BuildingService {
         if (!propertyScope.canAccessProperty(propertyId)) {
             return List.of();
         }
-        return repository.findByPropertyId(propertyId);
+        return Loaded.all(repository.findByPropertyId(propertyId), Building::getProperty);
     }
 
     @Transactional(readOnly = true)
     public List<Building> getAllBuildings() {
-        return propertyScope.filter(repository.findAll(),
-                b -> b.getProperty() != null ? b.getProperty().getId() : null);
+        return Loaded.all(propertyScope.filter(repository.findAll(),
+                b -> b.getProperty() != null ? b.getProperty().getId() : null), Building::getProperty);
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +77,7 @@ public class BuildingService {
         Building building = repository.findById(id).orElseThrow(() -> new NotFoundException("Building not found"));
         propertyScope.requireCanAccessProperty(
                 building.getProperty() != null ? building.getProperty().getId() : null, "Building not found");
-        return building;
+        return Loaded.with(building, Building::getProperty);
     }
 
     @Transactional

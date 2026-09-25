@@ -1,10 +1,14 @@
 package com.datagami.rentaxis.core.tenant;
 
 import jakarta.persistence.EntityManager;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.aspectj.lang.annotation.Before;
 import org.hibernate.Session;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.UUID;
 
@@ -32,14 +36,17 @@ import java.util.UUID;
  * behaviour, including a direct assertion that one inherited call is enough to
  * leave the filter enabled on the session.
  *
- * <p><b>What it does not do</b> is make the filter outlive the session it was
- * enabled on. {@code entityManager} is the shared transaction-aware proxy: inside
- * a transaction it resolves to the bound session, which is the same session the
- * query then runs on; with no transaction in progress each call gets a fresh
- * EntityManager, so the filter is enabled on one session and the query runs on
- * another. That is why every tenant-scoped service read is {@code @Transactional},
- * and why one that cannot be needs an explicit tenant comparison instead.
- * {@code TenantAspectIT.aReadWithNoTransactionOfItsOwnIsNotFiltered} pins that too.
+ * <p><b>Outside a transaction it opens one.</b> {@code entityManager} is the shared
+ * transaction-aware proxy: inside a transaction it resolves to the bound session, which
+ * is the same session the query then runs on; with no transaction (and, since scale PR A,
+ * no open-session-in-view either) each call would get a fresh EntityManager, so a filter
+ * enabled here would sit on one session while the query ran on another — an unfiltered,
+ * cross-tenant read. So a repository call made with a tenant in context and no
+ * transaction in progress runs inside a transaction of its own (REQUIRED, read-write so
+ * a stray {@code save} still flushes), with the filter enabled on that transaction's
+ * session. Entities it returns are detached afterwards: a service that maps lazy
+ * associations must itself be {@code @Transactional}.
+ * {@code TenantAspectIT.aReadWithNoTransactionOfItsOwnIsFilteredToo} pins it.
  *
  * <p>A null tenant context leaves the filter off on purpose: SUPER_ADMIN and the
  * bootstrap paths read across tenants.
@@ -49,17 +56,47 @@ import java.util.UUID;
 public class TenantAspect {
 
     private final EntityManager entityManager;
+    private final TransactionTemplate standalone;
 
-    public TenantAspect(EntityManager entityManager) {
+    public TenantAspect(EntityManager entityManager, PlatformTransactionManager transactionManager) {
         this.entityManager = entityManager;
+        this.standalone = new TransactionTemplate(transactionManager);
     }
 
-    @Before("execution(* com.datagami.rentaxis.domain.repository..*(..))")
-    public void enableTenantFilter() {
+    @Around("execution(* com.datagami.rentaxis.domain.repository..*(..))")
+    public Object enableTenantFilter(ProceedingJoinPoint call) throws Throwable {
         UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null) {
-            Session session = entityManager.unwrap(Session.class);
-            session.enableFilter("tenantFilter").setParameter("tenantId", tenantId);
+        if (tenantId == null) {
+            return call.proceed();
+        }
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            enable(tenantId);
+            return call.proceed();
+        }
+        try {
+            return standalone.execute(status -> {
+                enable(tenantId);
+                try {
+                    return call.proceed();
+                } catch (RuntimeException | Error e) {
+                    throw e;
+                } catch (Throwable t) {
+                    throw new CheckedWrapper(t);
+                }
+            });
+        } catch (CheckedWrapper w) {
+            throw w.getCause();
+        }
+    }
+
+    private void enable(UUID tenantId) {
+        Session session = entityManager.unwrap(Session.class);
+        session.enableFilter("tenantFilter").setParameter("tenantId", tenantId);
+    }
+
+    private static final class CheckedWrapper extends RuntimeException {
+        CheckedWrapper(Throwable cause) {
+            super(cause);
         }
     }
 }
