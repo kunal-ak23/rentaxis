@@ -14,6 +14,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { runPool } from "@/lib/pool";
+import { BULK_POST_CONCURRENCY, withOneRetry } from "@/lib/leases/bulkPost";
 import {
     ApiError, chequeApi, leaseApi,
     type LeaseChequeStats, type LeaseDetail, type LeaseStatus,
@@ -37,9 +38,6 @@ const STATUSES: LeaseStatus[] = [
  * so the list and the detail page can no longer disagree about one contract.
  */
 const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
-
-/** How many drafts a bulk post sends at once. */
-const BULK_POST_CONCURRENCY = 4;
 
 /** One row of the bulk-post run: what was attempted, and what came back. */
 type PostResult = { leaseId: string; label: string; ok: boolean; message: string };
@@ -91,6 +89,8 @@ export default function LeasesPage() {
     const [statusFilter, setStatusFilter] = useState<LeaseStatus | "">("");
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [postResults, setPostResults] = useState<PostResult[] | null>(null);
+    /** The drafts the last bulk run tried, so "Retry failed" can send them again. */
+    const [postTargets, setPostTargets] = useState<LeaseDetail[]>([]);
     const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
     const [chequeStats, setChequeStats] = useState<Record<string, LeaseChequeStats>>({});
     const [chequeStatsLoading, setChequeStatsLoading] = useState(false);
@@ -213,36 +213,41 @@ export default function LeasesPage() {
     };
 
     /**
-     * Post the selected drafts, a few at a time, and report each outcome on
-     * its own row (scale spec #23: at 8,000 contracts a year one-by-one is
-     * too slow).
+     * Post drafts a few at a time and report each outcome on its own row
+     * (scale spec #23: at 8,000 contracts a year one-by-one is too slow).
      *
-     * Limited concurrency, not all at once: each post writes journals and takes
-     * an entry number from one tenant-wide sequence, which the server hands out
-     * under a row lock, so parallel posts are safe but queue on that lock — a
-     * small pool gets the overlap without piling requests onto it. One 400 must
-     * not stop the rest of the batch from being attempted. The result list, in
-     * the order selected, is the point -- "3 of 7 posted" with no word on which
+     * Three at once, not more: the scale test saw posting endpoints return
+     * 500s from lock contention at 8 threads. A post that loses such a race
+     * (409, or a 500 naming a lock) is retried once after a short pause; if it
+     * fails again it is listed as failed with its message and the rest carry
+     * on. "Retry failed" re-runs just those. One 400 never stops the batch.
+     * Results keep the order selected -- "3 of 7 posted" with no word on which
      * three is not an answer an accountant can act on.
      */
-    const handleBulkPost = async () => {
-        const targets = filteredLeases.filter(l => selected.has(l.id) && l.status === "DRAFT");
+    const runBulkPost = async (targets: LeaseDetail[], keep: PostResult[] = []) => {
         if (targets.length === 0) return;
         setPostResults(null);
         setPostProgress({ done: 0, total: targets.length });
         const results = await runPool(targets, BULK_POST_CONCURRENCY, async (lease): Promise<PostResult> => {
             const label = `${t("unit")} ${lease.unitIdentifier ?? ""} — ${lease.renterName ?? ""}`.trim();
             try {
-                const res = await leaseApi.post(lease.id);
+                const res = await withOneRetry(() => leaseApi.post(lease.id));
                 return { leaseId: lease.id, label, ok: true, message: res.tcoEntryNumber };
             } catch (e) {
                 return { leaseId: lease.id, label, ok: false, message: e instanceof ApiError ? e.message : tl("postFailed") };
             }
         }, done => setPostProgress({ done, total: targets.length }));
         setPostProgress(null);
-        setPostResults(results);
+        const retried = new Map(results.map(r => [r.leaseId, r]));
+        setPostResults(keep.length ? keep.map(r => retried.get(r.leaseId) ?? r) : results);
+        setPostTargets(prev => (keep.length ? prev : targets));
         setSelected(new Set());
         fetchLeases();
+    };
+    const handleBulkPost = () => runBulkPost(filteredLeases.filter(l => selected.has(l.id) && l.status === "DRAFT"));
+    const retryFailedPosts = () => {
+        const failed = new Set((postResults ?? []).filter(r => !r.ok).map(r => r.leaseId));
+        runBulkPost(postTargets.filter(l => failed.has(l.id)), postResults ?? []);
     };
 
     const toggleSelected = (id: string) =>
@@ -1139,6 +1144,15 @@ export default function LeasesPage() {
                 confirmTestId="bulk-post-results-close"
                 width="lg"
             >
+                {(postResults ?? []).some(r => !r.ok) && (
+                    <div className="mb-3 flex items-center justify-between gap-3 text-xs">
+                        <span className="text-muted">{tl("bulkPostFailedCount", { n: (postResults ?? []).filter(r => !r.ok).length })}</span>
+                        <button type="button" data-testid="bulk-post-retry-failed" onClick={retryFailedPosts} disabled={!!postProgress}
+                            className="px-3 py-1.5 rounded-lg border border-border font-semibold hover:bg-input/40 cursor-pointer disabled:opacity-50">
+                            {tl("bulkPostRetryFailed")}
+                        </button>
+                    </div>
+                )}
                 <ul className="space-y-2 text-xs" data-testid="bulk-post-results">
                     {(postResults ?? []).map((r) => (
                         <li

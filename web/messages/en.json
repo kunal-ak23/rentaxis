@@ -2276,7 +2276,9 @@
       "failed": "The transfer could not be drafted."
     },
     "contractRent": "Contract rent",
-    "currentRent": "Current rent (after credit addenda)"
+    "currentRent": "Current rent (after credit addenda)",
+    "bulkPostFailedCount": "{n, plural, one {# contract was not posted.} other {# contracts were not posted.}}",
+    "bulkPostRetryFailed": "Retry failed"
   },
   "VatSchedule": {
     "title": "VAT schedule",
