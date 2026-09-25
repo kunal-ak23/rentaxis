@@ -97,8 +97,12 @@ class ChargeVatIT extends AbstractPostgresIT {
         UUID lease = vatLease();
         PenaltyAssessmentDTO raised = raise(lease, PenaltyReason.SERVICE_RECHARGE, "200.00", null);
         assertThat(raised.vatable()).isTrue();
+        // F15-18: the approver sees the VAT before approving.
+        assertThat(raised.vatAmount()).isZero();
+        assertThat(raised.expectedVat()).isEqualByComparingTo("10.00");
         PenaltyAssessmentDTO a = service.approve(raised.id(), ON);
         assertThat(a.vatAmount()).isEqualByComparingTo("10.00");
+        assertThat(a.expectedVat()).isEqualByComparingTo("10.00");
         assertThat(outputVatOn(a.journalId())).isEqualByComparingTo("10.00");
         assertThat(jdbc.queryForObject("select amount from cheques where id = ?", BigDecimal.class, a.collectionChequeId()))
                 .as("the renter owes the charge with its VAT").isEqualByComparingTo("210.00");
@@ -119,6 +123,7 @@ class ChargeVatIT extends AbstractPostgresIT {
         UUID lease = vatLease();
         PenaltyAssessmentDTO late = service.approve(raise(lease, PenaltyReason.LATE_PAYMENT, "300.00", null).id(), ON);
         assertThat(late.vatable()).isFalse();
+        assertThat(late.expectedVat()).isEqualByComparingTo("0");
         assertThat(outputVatOn(late.journalId())).isZero();
         PenaltyAssessmentDTO bounce = raise(lease, PenaltyReason.CHEQUE_RETURN, "500.00", null);
         assertThat(bounce.vatable()).isFalse();

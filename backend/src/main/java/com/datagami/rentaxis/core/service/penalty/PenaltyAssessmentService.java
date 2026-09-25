@@ -786,6 +786,9 @@ public class PenaltyAssessmentService {
                 code,
                 args,
                 a.getProposedAmount(),
-                a.isVatable(), a.getVatAmount(), a.getSourceType(), a.getSourceId());
+                a.isVatable(), a.getVatAmount(), a.getSourceType(), a.getSourceId(),
+                // F15-18: VAT is set at approval; a proposal shows what approval will add.
+                a.getStatus() != PenaltyAssessmentStatus.PROPOSED ? (a.getVatAmount() == null ? BigDecimal.ZERO : a.getVatAmount())
+                        : a.isVatable() && a.getAmount() != null ? LeaseVat.vatOfNet(a.getAmount()) : BigDecimal.ZERO);
     }
 }

@@ -46,5 +46,8 @@ public record PenaltyAssessmentDTO(UUID id,
                                    BigDecimal vatAmount,
                                    /* F14-49 / F14-50: TICKET or BOOKING, and its id. */
                                    String sourceType,
-                                   UUID sourceId) {
+                                   UUID sourceId,
+                                   /* F15-18: the VAT this charge carries — posted, or the 5 % approval will add
+                                      while it is proposed — so the approver sees net / VAT / gross first. */
+                                   BigDecimal expectedVat) {
 }

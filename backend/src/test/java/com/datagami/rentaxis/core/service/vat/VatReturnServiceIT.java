@@ -155,6 +155,32 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         String pdfHead = new String(VatReturnExport.pdf(r, "ar"), 0, 5, StandardCharsets.ISO_8859_1);
         assertThat(pdfHead).isEqualTo("%PDF-");
         assertThat(new String(VatReturnExport.csv(r, "ar"), StandardCharsets.UTF_8)).contains("التوريدات المعفاة").contains("1450.00");
+        // F15-17: the CSV carries the commercial-without-VAT warning the screen shows.
+        assertThat(new String(VatReturnExport.csv(r, "en"), StandardCharsets.UTF_8))
+                .contains("Rent on commercial units without VAT").contains("12200.00");
+    }
+
+    /** F15-17: a SUPER_ADMIN (no tenant_id) filing inside the organisation is named on the filing. */
+    @Test
+    void aFilingBySuperAdminShowsWhoFiledIt() {
+        quarter();
+        UUID tenant = TenantContextHolder.getTenantId();
+        TenantContextHolder.clear();
+        com.datagami.rentaxis.domain.entity.User sa = new com.datagami.rentaxis.domain.entity.User();
+        sa.setName("Platform Admin");
+        sa.setEmail("vat-sa-" + UUID.randomUUID() + "@example.invalid");
+        sa.setPasswordHash("x");
+        sa.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.SUPER_ADMIN);
+        sa.setTenantId(null);
+        UUID saId = userRepo.saveAndFlush(sa).getId();
+        TenantContextHolder.setTenantId(tenant);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(saId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))));
+        VatReturnDTO filed = service.file(Q2, "FTA-9");
+        assertThat(filed.filedByName()).isEqualTo("Platform Admin");
+        assertThat(service.filings()).singleElement().satisfies(f -> assertThat(f.filedByName()).isEqualTo("Platform Admin"));
+        assertThat(new String(VatReturnExport.csv(service.get(Q2), "en"), StandardCharsets.UTF_8)).contains("Platform Admin");
     }
 
     /** A tax point falling in a filed quarter is declared on the first open day: it shows on the next return. */

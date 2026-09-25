@@ -62,12 +62,15 @@ public final class VatReturnExport {
     public static byte[] csv(VatReturnDTO r, String lang) {
         List<List<String>> out = new ArrayList<>();
         out.add(List.of(lbl("vat.title", lang), r.periodStart().toString(), r.periodEnd().toString(),
-                lbl("vat.status." + r.status(), lang), r.filingReference() == null ? "" : r.filingReference()));
+                lbl("vat.status." + r.status(), lang), r.filingReference() == null ? "" : r.filingReference(),
+                r.filedAt() == null ? "" : STAMP.format(r.filedAt()), r.filedByName() == null ? "" : r.filedByName()));
         out.add(List.of(lbl("vat.box", lang), lbl("vat.description", lang), lbl("vat.amount", lang), lbl("vat.vat", lang)));
         for (VatReturnDTO.Box b : r.boxes()) {
             out.add(List.of(b.code(), lbl("vat." + b.key(), lang), plain(b.amount()), plain(b.vat())));
         }
         if (r.outputCheck() != null) out.add(List.of("", lbl("vat.outputCheckBad", lang), plain(r.outputCheck().difference())));
+        // F15-17: every check and warning the screen shows.
+        out.add(List.of("", lbl("vat.commercialWithoutVat", lang), plain(r.commercialWithoutVat())));
         out.add(List.of("", lbl("vat.inputVatOther", lang), plain(r.inputVatOther())));
         out.add(List.of("", lbl("vat.inputVatOnExempt", lang), plain(r.inputVatOnExempt())));
         return ReportCsv.encode(out);
