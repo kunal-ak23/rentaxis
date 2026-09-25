@@ -21,4 +21,7 @@ public class RentCollectionSettingsDTO {
     private java.math.BigDecimal fineAccountClosedAmount;
     private Integer fineGraceDays;
     private java.math.BigDecimal finePerDayRate;
+
+    /** Spec §4a: informational threshold for a renewal increase, in percent; null = no notice. */
+    private java.math.BigDecimal renewalIncreaseWarnPercent;
 }

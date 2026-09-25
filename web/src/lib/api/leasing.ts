@@ -308,6 +308,9 @@ export type LeaseDetail = {
   skippedOneOffLines?: LeaseLine[] | null;
   /** Spec §4b: the contract's rent-free windows; absent/empty when none. */
   rentFreePeriods?: RentFreePeriod[] | null;
+  /** Spec §4a: on a renewal, the headline rent it revised and the change in percent. */
+  renewalPreviousRent?: number | null;
+  renewalChangePercent?: number | null;
 };
 
 /** AmendLeaseLinesRequest. */
@@ -316,6 +319,10 @@ export type AmendLeaseLinesInput = {
   reason?: string | null;
 };
 
+/** Spec §4a: how a renewal moves the rent. PERCENT rounds to whole AED and needs the same term length. */
+export type RentChangeMode = "NONE" | "PERCENT" | "AMOUNT";
+export type RentChange = { mode: RentChangeMode; percent?: number | null; newRentAmount?: number | null };
+
 /** RenewLeaseRequest — `lines` omitted/null means "copy the predecessor's lines". */
 export type RenewLeaseInput = {
   contractDate?: string | null;
@@ -323,6 +330,27 @@ export type RenewLeaseInput = {
   endDate: string;
   lines?: LeaseLineInput[] | null;
   carryDepositForward: boolean;
+  /** Spec §4a: only with copied lines (the server refuses both). */
+  rentChange?: RentChange | null;
+  /** Spec §4a: the new registration, when known; blank leaves a follow-up on the draft. */
+  ejariNumber?: string | null;
+  /** Spec §4d: charges added to the renewal, e.g. a renewal fee. */
+  additionalLines?: LeaseLineInput[] | null;
+};
+
+/** RenewalPreviewDTO (spec §4a/§4c). */
+export type RenewalPreview = {
+  baseRent: number | null;
+  newRent: number | null;
+  changePercent: number | null;
+  copiedLines: {
+    chargeTypeId: string | null; chargeTypeCode: string | null; chargeTypeName: string | null;
+    chargeTypeNameAr: string | null; behaviour: ChargeBehaviour | null;
+    grossAmount: number; discountAmount: number | null; vatApplicable: boolean;
+  }[];
+  skippedOneOffLines: LeaseLine[];
+  warnPercent: number | null;
+  exceedsWarn: boolean;
 };
 
 /** ChequeRowInput — one row of a lease's cheque grid, or an extension's registered cheques. */
@@ -1198,6 +1226,9 @@ export const leaseApi = {
   dryRunPost: (id: string) => send<PostLeaseDryRunResponse>("POST", `/leases/${id}/post${qs({ dryRun: true })}`),
   amendLines: (id: string, body: AmendLeaseLinesInput) => send<PostLeaseResponse>("POST", `/leases/${id}/amend-lines`, body),
   renew: (id: string, body: RenewLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/renew`, body),
+  /** Spec §4a/§4c: what renewing on these terms would draft; writes nothing. */
+  renewalPreview: (id: string, q: { startDate: string; endDate: string; mode?: RentChangeMode; percent?: number | null; amount?: number | null; carryDeposit?: boolean }) =>
+    get<RenewalPreview>(`/leases/${id}/renewal-preview${qs({ startDate: q.startDate, endDate: q.endDate, mode: q.mode ?? "NONE", percent: q.percent ?? undefined, amount: q.amount ?? undefined, carryDeposit: q.carryDeposit ?? false })}`),
   extend: (id: string, body: ExtendLeaseInput) => send<PostLeaseResponse>("POST", `/leases/${id}/extend`, body),
   addCharge: (id: string, body: AddChargeInput) => send<AddendumResponse>("POST", `/leases/${id}/addenda`, body),
   addenda: (id: string) => get<LeaseAddendum[]>(`/leases/${id}/addenda`),

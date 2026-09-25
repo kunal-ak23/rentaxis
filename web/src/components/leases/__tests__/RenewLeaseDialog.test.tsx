@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import type { ChargeType, LeaseDetail, LeaseLine } from "@/lib/api/leasing";
@@ -14,9 +14,11 @@ import type { ChargeType, LeaseDetail, LeaseLine } from "@/lib/api/leasing";
 vi.mock("@/components/leases/LeaseLinesGrid", () => ({ default: () => <div data-testid="lines-grid" /> }));
 
 const renew = vi.fn();
+const renewalPreview = vi.fn();
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, leaseApi: { ...m.leaseApi, renew: (...a: unknown[]) => renew(...a) } };
+    return { ...m, leaseApi: { ...m.leaseApi, renew: (...a: unknown[]) => renew(...a),
+        renewalPreview: (...a: unknown[]) => renewalPreview(...a) } };
 });
 
 import RenewLeaseDialog from "../RenewLeaseDialog";
@@ -54,6 +56,12 @@ function renderDialog() {
 afterEach(() => {
     cleanup();
     renew.mockReset();
+    renewalPreview.mockReset();
+});
+
+beforeEach(() => {
+    renewalPreview.mockResolvedValue({ baseRent: 48000, newRent: 48000, changePercent: null, copiedLines: [],
+        skippedOneOffLines: [], warnPercent: null, exceedsWarn: false });
 });
 
 describe("RenewLeaseDialog deposit carry-forward (I2)", () => {
@@ -82,17 +90,17 @@ describe("RenewLeaseDialog deposit carry-forward (I2)", () => {
 });
 
 /**
- * #23: "copy lines" carries one-off charges (an Admin Fee) into the new term.
- * What is copied is a pending product decision; the dialog must at least say
- * so, by name and amount, while copying is on.
+ * Spec §4c: a one-off fee (an admin fee) is not copied into the new term, and the
+ * dialog says so by name and amount — nothing is dropped silently.
  */
-describe("RenewLeaseDialog copied one-off charges (#23)", () => {
+describe("RenewLeaseDialog one-off charges (§4c)", () => {
     const adminFee: LeaseLine = {
         ...rent, id: "line-3", seqNo: 3, chargeTypeId: "ct-admin", chargeTypeCode: "ADMIN_FEE",
         chargeTypeName: "Admin Fee", behaviour: "FEE", grossAmount: 1500, netAmount: 1500,
-        periodStart: null, periodEnd: null,
+        periodStart: null, periodEnd: null, recognition: "ONE_OFF",
     };
-    const parkingByAddendum: LeaseLine = { ...adminFee, id: "line-4", chargeTypeName: "Parking", addendumId: "add-1" };
+    const parking: LeaseLine = { ...adminFee, id: "line-4", chargeTypeId: "ct-park", chargeTypeName: "Parking", recognition: "RENT_LIKE" };
+    const oneOffByAddendum: LeaseLine = { ...adminFee, id: "line-5", chargeTypeName: "Key fee", addendumId: "add-1" };
 
     function renderWith(lines: LeaseLine[]) {
         return render(
@@ -103,22 +111,82 @@ describe("RenewLeaseDialog copied one-off charges (#23)", () => {
         );
     }
 
-    it("names the one-off charges that will be copied", () => {
-        renderWith([rent, deposit, adminFee, parkingByAddendum]);
-
-        const note = screen.getByTestId("renew-copied-charges");
-        expect(note).toHaveTextContent("This charge will be copied to the new term: Admin Fee 1,500.00");
-        // An addendum line is not copied, so it is not listed.
+    it("names the one-off charges that will not be copied", () => {
+        renderWith([rent, deposit, adminFee, parking, oneOffByAddendum]);
+        const note = screen.getByTestId("renew-skipped-one-offs");
+        expect(note).toHaveTextContent("Not copied (one-off): Admin Fee 1,500.00");
         expect(note).not.toHaveTextContent("Parking");
+        expect(note).not.toHaveTextContent("Key fee");
     });
 
-    it("goes away once copy lines is unticked, and never shows for rent and deposit alone", () => {
-        renderWith([rent, deposit, adminFee]);
+    it("leaves them out of a hand-edited grid too", async () => {
+        renew.mockResolvedValue({ id: "lease-2" });
+        renderWith([rent, deposit, adminFee, parking]);
         fireEvent.click(screen.getByTestId("renew-copy-lines"));
-        expect(screen.queryByTestId("renew-copied-charges")).toBeNull();
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalled());
+        expect(renew.mock.calls[0][1].lines.map((l: { chargeTypeId: string }) => l.chargeTypeId))
+            .toEqual(["ct-rent", "ct-park"]);
+    });
+});
 
-        cleanup();
-        renderWith([rent, deposit]);
-        expect(screen.queryByTestId("renew-copied-charges")).toBeNull();
+/** Spec §4a/§4d: rent change with a live preview, added charges and the Ejari. */
+describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
+    const TYPES = [
+        ...CHARGE_TYPES,
+        { id: "ct-renewal", code: "RENEWAL_FEE", nameEn: "Renewal Fee", nameAr: "رسوم التجديد", behaviour: "FEE",
+            active: true, vatApplicableDefault: false },
+    ] as unknown as ChargeType[];
+
+    function renderTerms() {
+        return render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <RenewLeaseDialog open lease={LEASE} chargeTypes={TYPES} onClose={() => {}} onRenewed={() => {}} />
+            </NextIntlClientProvider>,
+        );
+    }
+
+    it("previews a percentage, warns above the building's threshold, and sends the change", async () => {
+        renewalPreview.mockResolvedValue({ baseRent: 48000, newRent: 51840, changePercent: 8, copiedLines: [],
+            skippedOneOffLines: [], warnPercent: 5, exceedsWarn: true });
+        renew.mockResolvedValue({ id: "lease-2" });
+        renderTerms();
+        fireEvent.click(screen.getByTestId("renew-mode-PERCENT"));
+        fireEvent.change(screen.getByTestId("renew-percent"), { target: { value: "8" } });
+        expect(await screen.findByTestId("renew-rent-preview")).toHaveTextContent("48,000.00 → 51,840.00 (+8.00%)");
+        expect(screen.getByTestId("renew-rent-notice")).toHaveTextContent("5%");
+        await waitFor(() => expect(renewalPreview).toHaveBeenLastCalledWith("lease-1",
+            expect.objectContaining({ mode: "PERCENT", percent: 8 })));
+
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalled());
+        const body = renew.mock.calls[0][1];
+        expect(body.lines).toBeNull();
+        expect(body.rentChange).toEqual({ mode: "PERCENT", percent: 8, newRentAmount: null });
+    });
+
+    it("shows the server's refusal of a percentage on a changed term", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        renewalPreview.mockRejectedValue(new ApiError(400, "The term length changed; enter the new rent amount instead of a percentage."));
+        renderTerms();
+        fireEvent.click(screen.getByTestId("renew-mode-PERCENT"));
+        fireEvent.change(screen.getByTestId("renew-percent"), { target: { value: "8" } });
+        expect(await screen.findByTestId("renew-preview-error")).toHaveTextContent("term length changed");
+    });
+
+    it("adds a renewal fee and the Ejari to the request", async () => {
+        renew.mockResolvedValue({ id: "lease-2" });
+        renderTerms();
+        fireEvent.click(screen.getByTestId("renew-add-charge"));
+        expect((screen.getByTestId("renew-extra-type-0") as HTMLSelectElement).value).toBe("ct-renewal");
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("renew-extra-amount-0"), { target: { value: "1050" } });
+        fireEvent.change(screen.getByTestId("renew-ejari"), { target: { value: "EJ-2025-9" } });
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalled());
+        const body = renew.mock.calls[0][1];
+        expect(body.additionalLines).toEqual([{ chargeTypeId: "ct-renewal", grossAmount: 1050, discountAmount: 0, vatApplicable: false }]);
+        expect(body.ejariNumber).toBe("EJ-2025-9");
+        expect(body.rentChange).toBeNull();
     });
 });

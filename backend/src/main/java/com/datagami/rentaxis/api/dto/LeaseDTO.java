@@ -119,4 +119,8 @@ public class LeaseDTO {
 
     /** Spec §4b: the contract's rent-free windows and their concessions; empty when none. */
     private List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriods;
+
+    /** Spec §4a: on a renewal, the headline rent it revised and the change in percent; null otherwise. */
+    private BigDecimal renewalPreviousRent;
+    private BigDecimal renewalChangePercent;
 }

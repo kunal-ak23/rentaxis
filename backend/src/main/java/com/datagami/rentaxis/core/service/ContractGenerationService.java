@@ -466,7 +466,22 @@ public class ContractGenerationService {
             sNo = appendSection3Row(sb, sNo, labelOf(l), l.getNetAmount(), vatOn(l));
         }
         appendRentFreeRows(sb, lease, lines);
+        appendRenewalRow(sb, lease, lines);
         return sb.toString();
+    }
+
+    /** Spec §4a: "Rent revised from 85,000.00 to 91,800.00 (+8.00%)", EN and AR. */
+    private void appendRenewalRow(StringBuilder sb, Lease lease, List<LeaseLine> lines) {
+        if (lease.getRenewalPreviousRent() == null) return;
+        LeaseLine rent = com.datagami.rentaxis.core.service.LeaseService.contractRentLine(lease, lines);
+        if (rent == null) return;
+        BigDecimal pct = lease.getRenewalChangePercent() == null ? BigDecimal.ZERO : lease.getRenewalChangePercent();
+        String signed = (pct.signum() >= 0 ? "+" : "") + pct.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
+        appendNoteRow(sb,
+                "Rent revised from AED " + formatAmount(lease.getRenewalPreviousRent()) + " to AED "
+                        + formatAmount(rent.getGrossAmount()) + " (" + signed + ")",
+                "تم تعديل الإيجار من " + formatAmount(lease.getRenewalPreviousRent()) + " درهم إلى "
+                        + formatAmount(rent.getGrossAmount()) + " درهم (" + signed + ")");
     }
 
     private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;

@@ -31,5 +31,26 @@ public record RenewLeaseRequest(LocalDate contractDate,
                                 @NotNull(message = "The renewal needs a start date") LocalDate startDate,
                                 @NotNull(message = "The renewal needs an end date") LocalDate endDate,
                                 List<LeaseLineInput> lines,
-                                boolean carryDepositForward) {
+                                boolean carryDepositForward,
+                                /* Spec §4a: how the rent moves; null = NONE. */
+                                RentChange rentChange,
+                                /* Spec §4a: the new registration, when already known. */
+                                String ejariNumber,
+                                /* Spec §4d: charges added to this renewal (e.g. a renewal fee). */
+                                List<LeaseLineInput> additionalLines) {
+
+    /** The shape before §4a/§4d. */
+    public RenewLeaseRequest(LocalDate contractDate, LocalDate startDate, LocalDate endDate,
+                             List<LeaseLineInput> lines, boolean carryDepositForward) {
+        this(contractDate, startDate, endDate, lines, carryDepositForward, null, null, null);
+    }
+
+    /**
+     * Spec §4a. {@code PERCENT}: new rent = round(headline × (1 + percent/100)) to
+     * whole AED, same term length only. {@code AMOUNT}: the new headline rent as
+     * typed. {@code NONE}: last year's headline.
+     */
+    public record RentChange(Mode mode, java.math.BigDecimal percent, java.math.BigDecimal newRentAmount) {
+        public enum Mode { NONE, PERCENT, AMOUNT }
+    }
 }

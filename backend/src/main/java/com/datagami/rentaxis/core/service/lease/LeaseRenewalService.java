@@ -165,17 +165,184 @@ public class LeaseRenewalService {
                             + " (" + existing.getStatus() + "); delete that draft or renew the successor instead.");
         }
 
+        RenewalPlan plan = plan(predecessor, r);
         CreateLeaseDTO dto = successorHeader(predecessor, r);
-        Copied copied = r.lines() != null ? new Copied(r.lines(), List.of()) : copiedLines(predecessor, r);
-        dto.setLines(copied.lines());
+        dto.setLines(plan.lines());
+        // Spec §4a: the new registration, when the operator already has it.
+        String ejari = r.ejariNumber() == null || r.ejariNumber().isBlank() ? null : r.ejariNumber().trim();
+        dto.setEjariNumber(ejari);
         LeaseDTO draft = leaseService.createRenewalDraft(dto, predecessor, r.carryDepositForward());
+
+        Lease successor = leaseRepository.findById(draft.getId()).orElseThrow();
+        if (plan.changed()) {
+            // Audit (spec §4a): shown on the lease header and the contract.
+            successor.setRenewalPreviousRent(plan.baseRent());
+            successor.setRenewalChangePercent(plan.changePercent());
+            leaseRepository.save(successor);
+            draft.setRenewalPreviousRent(plan.baseRent());
+            draft.setRenewalChangePercent(plan.changePercent());
+        }
+        if (ejari == null) {
+            // The same follow-up the addendum flow leaves: the lease's history says so.
+            leaseService.recordLeaseEvent(successor, LeaseStatus.DRAFT, LeaseStatus.DRAFT,
+                    "Renewal drafted; Ejari registration pending");
+        }
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
-        draft.setSkippedOneOffLines(copied.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
+        draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
         return draft;
     }
 
-    /** The lines a renewal copies, and the one-off lines it deliberately left behind (spec §4c). */
-    record Copied(List<LeaseLineInput> lines, List<LeaseLine> skippedOneOff) {
+    /** The lines a renewal copies, the contract rent among them, and the one-off lines left behind (spec §4c). */
+    record Copied(List<LeaseLineInput> lines, List<LeaseLine> sources, List<LeaseLine> skippedOneOff) {
+    }
+
+    /**
+     * What a renewal will draft (spec §4a, §4c, §4d): the lines, the rent before and
+     * after, the one-off lines not copied, and the property's notice threshold.
+     *
+     * @param baseRent      the predecessor's contract RENT line headline (gross, before
+     *                      discount and rent-free concession); null when it has none
+     * @param newRent       the successor's headline rent
+     * @param changePercent (new − base) ÷ base × 100 at 3 dp; null when unchanged by request
+     * @param warnPercent   the property's notice threshold, or null
+     * @param exceedsWarn   the change is above it (informational only)
+     */
+    public record RenewalPlan(BigDecimal baseRent, BigDecimal newRent, BigDecimal changePercent, boolean changed,
+                              List<LeaseLineInput> lines, List<LeaseLine> copiedSources,
+                              List<LeaseLine> skippedOneOff, BigDecimal warnPercent, boolean exceedsWarn) {
+    }
+
+    /** The renewal a request would draft, with nothing written (the preview endpoint). */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO preview(UUID leaseId, RenewLeaseRequest r) {
+        RenewalPlan plan = planFor(leaseId, r);
+        List<com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO.Line> lines = new ArrayList<>();
+        for (int i = 0; i < plan.lines().size(); i++) {
+            LeaseLineInput in = plan.lines().get(i);
+            LeaseLine src = i < plan.copiedSources().size() ? plan.copiedSources().get(i) : null;
+            ChargeType type = src == null ? null : src.getChargeType();
+            lines.add(new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO.Line(in.chargeTypeId(),
+                    type == null ? in.chargeTypeCode() : type.getCode(), type == null ? null : type.getNameEn(),
+                    type == null ? null : type.getNameAr(),
+                    type == null || type.getBehaviour() == null ? null : type.getBehaviour().name(),
+                    in.grossAmount(), in.discountAmount(), Boolean.TRUE.equals(in.vatApplicable())));
+        }
+        return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
+                plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
+                plan.warnPercent(), plan.exceedsWarn());
+    }
+
+    /** The plan itself, for tests and the preview. */
+    @Transactional(readOnly = true)
+    public RenewalPlan planFor(UUID leaseId, RenewLeaseRequest r) {
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireManageable(predecessor);
+        if (r == null || r.startDate() == null || r.endDate() == null || !r.endDate().isAfter(r.startDate())) {
+            throw new BusinessRuleViolationException("A renewal needs a start date and a later end date");
+        }
+        return plan(predecessor, r);
+    }
+
+    private RenewalPlan plan(Lease predecessor, RenewLeaseRequest r) {
+        RenewLeaseRequest.RentChange change = r.rentChange();
+        RenewLeaseRequest.RentChange.Mode mode = change == null || change.mode() == null
+                ? RenewLeaseRequest.RentChange.Mode.NONE : change.mode();
+        if (r.lines() != null && mode != RenewLeaseRequest.RentChange.Mode.NONE) {
+            throw new BusinessRuleViolationException(
+                    "Send either the renewal's lines or a rent change, not both.");
+        }
+        List<LeaseLineInput> lines;
+        List<LeaseLine> sources;
+        List<LeaseLine> skipped;
+        BigDecimal base = null;
+        BigDecimal newRent = null;
+        BigDecimal percent = null;
+        if (r.lines() != null) {
+            lines = new ArrayList<>(r.lines());
+            sources = List.of();
+            skipped = List.of();
+        } else {
+            Copied copied = copiedLines(predecessor, r);
+            lines = new ArrayList<>(copied.lines());
+            sources = copied.sources();
+            skipped = copied.skippedOneOff();
+            LeaseLine contractRent = LeaseService.contractRentLine(predecessor,
+                    leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId()));
+            int rentIndex = contractRent == null ? -1 : sources.indexOf(contractRent);
+            if (rentIndex >= 0) {
+                base = contractRent.getGrossAmount();
+                newRent = switch (mode) {
+                    case NONE -> base;
+                    case AMOUNT -> {
+                        if (change.newRentAmount() == null || change.newRentAmount().signum() <= 0) {
+                            throw new BusinessRuleViolationException("Enter the new rent amount.");
+                        }
+                        yield change.newRentAmount().setScale(2, java.math.RoundingMode.HALF_UP);
+                    }
+                    case PERCENT -> {
+                        if (change.percent() == null) {
+                            throw new BusinessRuleViolationException("Enter the rent change in percent.");
+                        }
+                        if (!sameTermLength(predecessor.getStartDate(), predecessor.getEndDate(), r.startDate(), r.endDate())) {
+                            throw new BusinessRuleViolationException(
+                                    "The term length changed; enter the new rent amount instead of a percentage.");
+                        }
+                        // Whole AED, half up (PACT contracts are whole-dirham; product decision).
+                        BigDecimal factor = BigDecimal.ONE.add(change.percent().movePointLeft(2));
+                        BigDecimal escalated = base.multiply(factor).setScale(0, java.math.RoundingMode.HALF_UP);
+                        if (escalated.signum() <= 0) {
+                            throw new BusinessRuleViolationException("The rent change leaves no rent to charge.");
+                        }
+                        yield escalated.setScale(2);
+                    }
+                };
+                if (base.signum() > 0) {
+                    percent = newRent.subtract(base).multiply(BigDecimal.valueOf(100))
+                            .divide(base, 3, java.math.RoundingMode.HALF_UP);
+                }
+                // Concessions do not renew (spec §4a): the discount resets to 0, and the
+                // successor starts with no rent-free period.
+                LeaseLineInput in = lines.get(rentIndex);
+                lines.set(rentIndex, new LeaseLineInput(in.chargeTypeId(), in.chargeTypeCode(), newRent,
+                        BigDecimal.ZERO, in.narration(), in.vatApplicable(), in.creditAccountId(),
+                        in.periodStart(), in.periodEnd()));
+            } else if (mode != RenewLeaseRequest.RentChange.Mode.NONE) {
+                throw new BusinessRuleViolationException("The lease being renewed has no contract rent line to revise.");
+            }
+        }
+        // Spec §4d: charges added to this renewal — ordinary lines on the draft.
+        if (r.additionalLines() != null) {
+            for (LeaseLineInput extra : r.additionalLines()) {
+                if (extra != null) lines.add(extra);
+            }
+        }
+        BigDecimal warn = warnPercentFor(predecessor);
+        boolean changed = mode != RenewLeaseRequest.RentChange.Mode.NONE;
+        boolean exceeds = warn != null && percent != null && percent.compareTo(warn) > 0;
+        return new RenewalPlan(base, newRent, changed ? percent : null, changed, List.copyOf(lines), sources,
+                skipped, warn, exceeds);
+    }
+
+    /** Same length in whole calendar months and days: 24/09→23/09 and 01/10→30/09 are both 12 months. */
+    static boolean sameTermLength(LocalDate oldStart, LocalDate oldEnd, LocalDate newStart, LocalDate newEnd) {
+        java.time.Period a = java.time.Period.between(oldStart, oldEnd.plusDays(1)).normalized();
+        java.time.Period b = java.time.Period.between(newStart, newEnd.plusDays(1)).normalized();
+        return a.toTotalMonths() == b.toTotalMonths() && a.getDays() == b.getDays();
+    }
+
+    private com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository rentSettings;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentSettings(com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository repo) {
+        this.rentSettings = repo;
+    }
+
+    private BigDecimal warnPercentFor(Lease lease) {
+        if (rentSettings == null || lease.getUnit() == null || lease.getUnit().getProperty() == null) return null;
+        return rentSettings.findByPropertyId(lease.getUnit().getProperty().getId())
+                .map(com.datagami.rentaxis.domain.entity.RentCollectionSettings::getRenewalIncreaseWarnPercent)
+                .orElse(null);
     }
 
     /**
@@ -252,6 +419,7 @@ public class LeaseRenewalService {
     private Copied copiedLines(Lease predecessor, RenewLeaseRequest r) {
         List<LeaseLine> source = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
         List<LeaseLineInput> copied = new ArrayList<>(source.size());
+        List<LeaseLine> copiedFrom = new ArrayList<>(source.size());
         List<LeaseLine> skipped = new ArrayList<>();
         for (LeaseLine line : source) {
             ChargeType type = line.getChargeType();
@@ -273,6 +441,7 @@ public class LeaseRenewalService {
                 skipped.add(line);
                 continue;
             }
+            copiedFrom.add(line);
             copied.add(new LeaseLineInput(
                     type != null ? type.getId() : null,
                     null,
@@ -288,7 +457,7 @@ public class LeaseRenewalService {
             throw new BusinessRuleViolationException(
                     "There is nothing to copy from the lease being renewed; send the renewal's lines explicitly.");
         }
-        return new Copied(copied, skipped);
+        return new Copied(copied, copiedFrom, skipped);
     }
 
     /** A RENT line dated from after the lease's start — only an extension writes one. */

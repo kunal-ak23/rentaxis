@@ -194,7 +194,9 @@ class LeaseControllerRenewExtendEndpointsIT extends AbstractPostgresIT {
         assertThat(renewed.getBody().get("status")).isEqualTo("DRAFT");
         assertThat(renewed.getBody().get("renewedFromLeaseId")).isEqualTo(leaseId.toString());
         assertThat(renewed.getBody().get("chainId")).isEqualTo(leaseId.toString());
-        assertThat((List<?>) renewed.getBody().get("lines")).hasSize(2);
+        // The rent is copied; the one-off admin fee is not, and the response says so (spec §4c).
+        assertThat((List<?>) renewed.getBody().get("lines")).hasSize(1);
+        assertThat((List<?>) renewed.getBody().get("skippedOneOffLines")).hasSize(1);
         assertThat(currentStatus()).isEqualTo(LeaseStatus.ACTIVE);
 
         assertThat(status(propertyManager, HttpMethod.POST, extendPath(), extendBody()))

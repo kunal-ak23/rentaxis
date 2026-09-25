@@ -3931,5 +3931,31 @@
     "days": "{days} days",
     "concession": "concession {amount}",
     "summary": "Headline rent {headline} − concession {concession} = payable {payable}"
+  },
+  "Renewal": {
+    "rentChange": "Rent change",
+    "modes": {
+      "NONE": "No change",
+      "PERCENT": "By percent",
+      "AMOUNT": "New amount"
+    },
+    "percent": "Change in percent",
+    "newRent": "New annual rent",
+    "rentPreview": "Rent {from} → {to} ({change})",
+    "aboveNotice": "This increase is above the building's notice threshold of {percent}%. It is allowed; check it before posting.",
+    "previewFailed": "The renewal preview could not be loaded.",
+    "concessionsDoNotRenew": "A discount and rent-free periods do not carry over to the new term.",
+    "notCopied": "Not copied (one-off): {list}",
+    "additionalCharges": "Additional charges",
+    "chargeType": "Charge",
+    "amount": "Amount",
+    "vat": "VAT",
+    "removeCharge": "Remove charge",
+    "addCharge": "Add charge",
+    "ejari": "Ejari number",
+    "ejariPlaceholder": "Leave blank if not registered yet",
+    "revised": "Rent revised from {from} to {to} ({change})",
+    "warnPercent": "Renewal increase notice (%)",
+    "warnPercentHint": "A renewal that raises the rent by more than this shows a notice. It is not a cap; leave blank for no notice."
   }
 }

@@ -3931,5 +3931,31 @@
     "days": "{days} يوماً",
     "concession": "إعفاء بقيمة {amount}",
     "summary": "الإيجار الأساسي {headline} − الإعفاء {concession} = المستحق {payable}"
+  },
+  "Renewal": {
+    "rentChange": "تغيير الإيجار",
+    "modes": {
+      "NONE": "دون تغيير",
+      "PERCENT": "بنسبة مئوية",
+      "AMOUNT": "مبلغ جديد"
+    },
+    "percent": "نسبة التغيير",
+    "newRent": "الإيجار السنوي الجديد",
+    "rentPreview": "الإيجار {from} ← {to} ({change})",
+    "aboveNotice": "هذه الزيادة أعلى من حد التنبيه للمبنى البالغ {percent}%. الزيادة مسموحة؛ راجعها قبل الترحيل.",
+    "previewFailed": "تعذّر تحميل معاينة التجديد.",
+    "concessionsDoNotRenew": "لا ينتقل الخصم وفترات الإعفاء من الإيجار إلى المدة الجديدة.",
+    "notCopied": "لا تُنسخ (لمرة واحدة): {list}",
+    "additionalCharges": "رسوم إضافية",
+    "chargeType": "الرسوم",
+    "amount": "المبلغ",
+    "vat": "ضريبة القيمة المضافة",
+    "removeCharge": "إزالة الرسوم",
+    "addCharge": "إضافة رسوم",
+    "ejari": "رقم إيجاري",
+    "ejariPlaceholder": "اتركه فارغاً إن لم يُسجَّل بعد",
+    "revised": "تم تعديل الإيجار من {from} إلى {to} ({change})",
+    "warnPercent": "تنبيه زيادة التجديد (%)",
+    "warnPercentHint": "يظهر تنبيه عند تجديد يرفع الإيجار بأكثر من هذه النسبة. ليست حداً أقصى؛ اتركه فارغاً لعدم التنبيه."
   }
 }

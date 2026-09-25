@@ -126,12 +126,22 @@ export function renewalRows(
 ): LineRow[] {
     return lines
         .filter((l) => !l.addendumId
-            && !(l.behaviour === "RENT" && l.periodStart != null && l.periodStart > termStart)
+            // An extension's rent — and (F14-18) an extension's periodic fee — covered its window only.
+            && !((l.behaviour === "RENT" || (l.behaviour === "FEE" && (l.recognition ?? "RENT_LIKE") === "RENT_LIKE"))
+                && l.periodStart != null && l.periodStart > termStart)
+            // Spec §4c: a one-off fee is not renewed.
+            && !isOneOff(l)
             && !(opts.carryDepositForward && l.behaviour === "DEPOSIT"))
         .map((l, i) => {
             const row = toRow(l, i);
-            return l.behaviour === "RENT" ? { ...row, narration: "" } : row;
+            // Concessions do not renew (spec §4a): discount and rent-free reset.
+            return l.behaviour === "RENT" ? { ...row, narration: "", discountAmount: 0, rentFreeAmount: 0 } : row;
         });
+}
+
+/** Spec §4c: a FEE line whose charge type is one-off (e.g. an admin fee) — a renewal does not copy it. */
+export function isOneOff(l: LeaseLine): boolean {
+    return l.behaviour === "FEE" && l.recognition === "ONE_OFF";
 }
 
 /**

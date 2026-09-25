@@ -161,6 +161,7 @@ export default function LeaseDetailPage() {
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
     const tSettlement = useTranslations("Settlement");
+    const tRenewal = useTranslations("Renewal");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -748,6 +749,16 @@ export default function LeaseDetailPage() {
                                     {/* F14-33: the Ejari in force (latest registered addendum), with the
                                         contract's own registration beside it when they differ. */}
                                     <Detail label={t("ejariNumber")} value={lease.currentEjari || lease.ejariNumber || "—"} />
+                                    {/* Spec §4a: the rent change this renewal made. */}
+                                    {lease.renewalPreviousRent != null && (
+                                        <p className="text-[11px] text-muted text-end tabular-nums" data-testid="lease-renewal-revised">
+                                            {tRenewal("revised", {
+                                                from: fmtAmount(lease.renewalPreviousRent),
+                                                to: fmtAmount(lease.lines.find(l => l.behaviour === "RENT" && !l.addendumId)?.grossAmount ?? 0),
+                                                change: `${(lease.renewalChangePercent ?? 0) >= 0 ? "+" : ""}${Number(lease.renewalChangePercent ?? 0).toFixed(2)}%`,
+                                            })}
+                                        </p>
+                                    )}
                                     {lease.ejariNumber && lease.currentEjari && lease.currentEjari !== lease.ejariNumber && (
                                         <p className="text-[11px] text-muted text-end" data-testid="lease-ejari-original">
                                             {t("ejariOriginal", { number: lease.ejariNumber })}

@@ -1920,6 +1920,8 @@ public class LeaseService {
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
         dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines));
+        dto.setRenewalPreviousRent(lease.getRenewalPreviousRent());
+        dto.setRenewalChangePercent(lease.getRenewalChangePercent());
         dto.setContractValue(contractValueOf(lines));
         return dto;
     }

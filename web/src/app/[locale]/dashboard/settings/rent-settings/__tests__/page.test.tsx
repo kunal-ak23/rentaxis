@@ -86,6 +86,21 @@ describe("RentSettingsPage fetchSettings", () => {
         expect(screen.getByDisplayValue("15")).toBeTruthy();
     });
 
+    /** Spec §4a: the renewal notice threshold loads and is saved with the rest. */
+    it("loads and saves the renewal increase notice threshold", async () => {
+        settingsResponse = { status: 200, body: { id: "rs-1", propertyId: "p1", dueDayOfMonth: 1, gracePeriodDays: 5,
+            penaltyType: "NONE", penaltyAmount: 0, onlinePaymentEnabled: false, renewalIncreaseWarnPercent: 5 } };
+        await selectProperty();
+        const input = (await screen.findByTestId("renewal-warn-percent")) as HTMLInputElement;
+        expect(input.value).toBe("5");
+        fireEvent.change(input, { target: { value: "7.5" } });
+        const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
+        fireEvent.click(screen.getByRole("button", { name: /save/i }));
+        await vi.waitFor(() => expect(fetchMock.mock.calls.some(c => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true));
+        const post = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "POST")!;
+        expect(JSON.parse(String((post[1] as RequestInit).body)).renewalIncreaseWarnPercent).toBe(7.5);
+    });
+
     it("surfaces an error (instead of silently showing defaults) when the load fails", async () => {
         settingsResponse = { status: 500, body: { message: "boom" } };
         await selectProperty();

@@ -51,6 +51,11 @@ public class RentCollectionSettingsService {
         settings.setFineAccountClosedAmount(dto.getFineAccountClosedAmount());
         settings.setFineGraceDays(dto.getFineGraceDays());
         settings.setFinePerDayRate(dto.getFinePerDayRate());
+        if (dto.getRenewalIncreaseWarnPercent() != null && dto.getRenewalIncreaseWarnPercent().signum() < 0) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "The renewal increase notice threshold cannot be negative");
+        }
+        settings.setRenewalIncreaseWarnPercent(dto.getRenewalIncreaseWarnPercent());
         settings.setUpdatedAt(Instant.now());
 
         RentCollectionSettings saved = rentCollectionSettingsRepository.save(settings);
@@ -71,6 +76,7 @@ public class RentCollectionSettingsService {
         dto.setFineAccountClosedAmount(settings.getFineAccountClosedAmount());
         dto.setFineGraceDays(settings.getFineGraceDays());
         dto.setFinePerDayRate(settings.getFinePerDayRate());
+        dto.setRenewalIncreaseWarnPercent(settings.getRenewalIncreaseWarnPercent());
         return dto;
     }
 }
