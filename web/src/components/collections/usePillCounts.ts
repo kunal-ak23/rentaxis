@@ -13,11 +13,14 @@ import type { PillCounts } from "./CollectionPills";
  * register (everything) have none. A failed call leaves its pill without a number.
  */
 export function usePillCounts(role: UserRole | undefined, propertyId: string): PillCounts {
-    const [counts, setCounts] = useState<PillCounts>({});
+    // Counts are kept per (role, property): a reply for another filter never mixes in.
+    const key = `${role ?? ""}|${propertyId}`;
+    const [state, setState] = useState<{ key: string; counts: PillCounts }>({ key, counts: {} });
     useEffect(() => {
         let alive = true;
-        const put = (c: PillCounts) => { if (alive) setCounts(prev => ({ ...prev, ...c })); };
-        setCounts({});
+        const put = (c: PillCounts) => {
+            if (alive) setState(prev => ({ key, counts: { ...(prev.key === key ? prev.counts : {}), ...c } }));
+        };
         const pid = propertyId || undefined;
         if (hasPermission(role, "canManageCheques")) {
             chequeApi.toDeposit({ propertyId: pid, page: 0, size: 1 }).then(p => put({ deposit: p.totalElements })).catch(() => {});
@@ -27,6 +30,6 @@ export function usePillCounts(role: UserRole | undefined, propertyId: string): P
             penaltyApi.list({ status: "PROPOSED", propertyId: pid, page: 0, size: 1 }).then(p => put({ penalties: p.totalElements })).catch(() => {});
         }
         return () => { alive = false; };
-    }, [role, propertyId]);
-    return counts;
+    }, [role, propertyId, key]);
+    return state.key === key ? state.counts : {};
 }
