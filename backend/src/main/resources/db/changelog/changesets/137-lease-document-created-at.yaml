@@ -1,0 +1,19 @@
+# PR #359 R1 (portal privacy after an assignment, F14-39): a renter sees a lease's
+# documents from their own side of the assignment date only, so a document needs
+# the time it was made. Every document already stored predates any assignment
+# (the feature ships with this PR), so existing rows are dated the epoch.
+databaseChangeLog:
+  - changeSet:
+      id: 137-lease-document-created-at
+      author: claude
+      changes:
+        - addColumn:
+            tableName: lease_documents
+            columns:
+              - column: { name: created_at, type: timestamptz }
+        - sql:
+            sql: UPDATE lease_documents SET created_at = TIMESTAMPTZ '1970-01-01 00:00:00+00' WHERE created_at IS NULL
+        - addDefaultValue: { tableName: lease_documents, columnName: created_at, defaultValueComputed: now() }
+        - addNotNullConstraint: { tableName: lease_documents, columnName: created_at, columnDataType: timestamptz }
+      rollback:
+        - dropColumn: { tableName: lease_documents, columnName: created_at }

@@ -640,7 +640,8 @@ public class ContractGenerationService {
                     ? c.getStatus() == ChequeStatus.DRAFT
                     : c.getStatus() != ChequeStatus.CANCELLED
                         && c.getStatus() != ChequeStatus.RETURNED
-                        && c.getStatus() != ChequeStatus.REPLACED;
+                        && c.getStatus() != ChequeStatus.REPLACED
+                        && c.getStatus() != ChequeStatus.TRANSFERRED;
             if (include) printable.add(c);
         }
         printable.sort(Comparator.comparingInt(Cheque::getSeqNo)
@@ -866,6 +867,12 @@ public class ContractGenerationService {
         if (stored.isPresent()) {
             return getDocumentContent(stored.get().getId());
         }
+        // PR #359 R1: a rendered contract names today's renter over the whole term;
+        // after an assignment neither side's portal gets it.
+        var window = leaseAccessPolicy.renterWindow(lease);
+        if (window != null && window.bounded()) {
+            throw new NotFoundException("No contract has been issued for this lease yet");
+        }
         if (lease.getPostedAt() == null) {
             throw new NotFoundException("No contract has been issued for this lease yet");
         }
@@ -888,9 +895,14 @@ public class ContractGenerationService {
     public List<LeaseDocumentDTO> getDocuments(UUID leaseId) {
         // Granted to RENTER, and nothing below asked whose lease it is — the
         // same exposure as lease attachments, for generated contracts.
-        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
+        Lease lease = leaseRepository.findById(leaseId).orElse(null);
+        leaseAccessPolicy.requireReadable(lease);
+        // PR #359 R1: after an assignment each renter sees their own side of the date.
+        var window = leaseAccessPolicy.renterWindow(lease);
 
         return leaseDocumentRepository.findByLeaseId(leaseId).stream()
+                .filter(d -> window == null || !window.bounded()
+                        || window.contains(d.getCreatedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -903,6 +915,7 @@ public class ContractGenerationService {
         // The download takes a document id directly, so guarding the list alone
         // would leave it reachable.
         leaseAccessPolicy.requireReadable(doc.getLease());
+        leaseAccessPolicy.requireInRenterWindow(doc.getLease(), doc.getCreatedAt());
 
         String url = doc.getDocumentUrl();
         // documentUrl can contain a bearer-style SAS signature. Never write it

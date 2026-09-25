@@ -205,6 +205,13 @@ describe("renewalRows", () => {
     const extension: LeaseLine = { ...base, id: "line-4", seqNo: 4, narration: "Extension to 2025-12-31",
         periodStart: "2025-10-01", periodEnd: "2025-12-31" };
 
+    it("renews a reduced line at what is charged now and drops a removed one (PR #359 R1)", () => {
+        const reduced = { ...base, currentAmount: 39000, discountAmount: 500 };
+        const removed = { ...fee, recognition: "RENT_LIKE" as const, currentAmount: 0 };
+        const rows = renewalRows([reduced, removed], "2024-10-01");
+        expect(rows.map((r) => [r.id, r.grossAmount, r.discountAmount])).toEqual([["line-1", 39000, 0]]);
+    });
+
     it("clears a rent line's narration and keeps a fee's", () => {
         const rows = renewalRows([base, fee], "2024-10-01");
         expect(rows.map((r) => r.narration)).toEqual(["", "Contract admin fee"]);
@@ -248,5 +255,33 @@ describe("renewal deposit rows (I2: no second deposit when the old one is carrie
         const rows = [...renewalRows(lines, "2024-10-01", { carryDepositForward: true }), topUp];
         expect(withCarriedDeposit(rows, lines, "2024-10-01", true).map((r) => r.key)).toContain(9);
         expect(withCarriedDeposit(rows, lines, "2024-10-01", false).map((r) => r.key)).toContain(9);
+    });
+});
+
+import { chargedMonths, defaultInstallmentsFor } from "../leaseMath";
+
+describe("F15-04: charged months", () => {
+    const freeOctober = [{ fromDate: "2026-10-01", toDate: "2026-10-31" }];
+    it("a free first month leaves eleven charged months of a year", () => {
+        expect(chargedMonths("2026-10-01", "2027-09-30", freeOctober)).toBe(11);
+        expect(defaultInstallmentsFor(12, "2026-10-01", "2027-09-30", freeOctober)).toBe(11);
+    });
+    it("a quarterly lease keeps its four; no window keeps the terms", () => {
+        expect(defaultInstallmentsFor(4, "2026-10-01", "2027-09-30", freeOctober)).toBe(4);
+        expect(defaultInstallmentsFor(12, "2026-10-01", "2027-09-30", [])).toBe(12);
+    });
+    it("clamps month ends like java.time (31 Jan + 1 month = 28 Feb)", () => {
+        // 31/01 moves to 28/02, which the next month's clamped anchor repeats: ten charged months.
+        expect(chargedMonths("2027-01-31", "2027-12-30", [{ fromDate: "2027-01-31", toDate: "2027-02-27" }])).toBe(10);
+    });
+});
+
+import { sameTermEnd } from "../leaseMath";
+
+describe("F15-05: a term as long as the current one", () => {
+    it("matches java.time Period (months, then days)", () => {
+        expect(sameTermEnd("2026-04-01", "2026-09-30", "2026-10-01")).toBe("2027-03-31");
+        expect(sameTermEnd("2024-10-01", "2025-09-30", "2025-10-01")).toBe("2026-09-30");
+        expect(sameTermEnd("2026-01-15", "2026-03-24", "2026-03-25")).toBe("2026-06-03");
     });
 });

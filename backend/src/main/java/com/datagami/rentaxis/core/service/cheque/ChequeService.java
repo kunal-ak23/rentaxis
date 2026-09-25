@@ -949,6 +949,23 @@ public class ChequeService {
         return dto(cheque, lease);
     }
 
+    /**
+     * Spec §2 (#52): the instrument goes with the renter to their new unit. Its PDR
+     * is reversed here (the receivable is carried in the transfer's JV) and the row
+     * becomes TRANSFERRED; the successor's copy of it registers there.
+     */
+    @Transactional
+    public void transferOut(UUID chequeId, LocalDate date, String reason) {
+        Cheque cheque = lock(chequeId);
+        Lease lease = managedLeaseOf(cheque);
+        requireStatus(cheque, "carry", ChequeStatus.REGISTERED);
+        LocalDate on = date != null ? date : LocalDate.now();
+        reversePdr(cheque, on, reasonOr(reason, "Cheque carried to the new lease"));
+        moveTo(cheque, ChequeStatus.TRANSFERRED, reason);
+        chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "carried to the new lease" + (reason != null && !reason.isBlank() ? " — " + reason.trim() : ""));
+    }
+
     // ------------------------------------------------------------------
     // a row added to a lease that is already on the books
     // ------------------------------------------------------------------

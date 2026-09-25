@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    FileText, Gavel, Loader2, Mail, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    ArrowRightLeft, FileText, Gavel, Loader2, Mail, MinusCircle, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
@@ -28,6 +28,9 @@ import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import AddChargeDialog from "@/components/leases/AddChargeDialog";
+import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
+import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
+import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -35,7 +38,7 @@ import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
-import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
+import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
     type ChargeType, type Cheque, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
@@ -209,6 +212,8 @@ export default function LeaseDetailPage() {
     const [renewOpen, setRenewOpen] = useState(false);
     const [extendOpen, setExtendOpen] = useState(false);
     const [addChargeOpen, setAddChargeOpen] = useState(false);
+    const [reduceOpen, setReduceOpen] = useState(false);
+    const [transferOpen, setTransferOpen] = useState(false);
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
@@ -526,6 +531,19 @@ export default function LeaseDetailPage() {
                             </p>
                         )}
                         <div className="flex items-center gap-3 flex-wrap mt-1 text-[11px]">
+                            {/* Spec §2: the two ends of a unit transfer, linked. */}
+                            {lease.transferredFromLeaseId && (
+                                <Link href={`/dashboard/leases/${lease.transferredFromLeaseId}`} className="text-primary hover:underline" data-testid="lease-transferred-from">
+                                    {t("transfer.fromBanner", { date: lease.transferMoveDate ? fmtIsoDate(lease.transferMoveDate, locale) : "—" })}
+                                </Link>
+                            )}
+                            {lease.transferredToLeaseId && (
+                                <Link href={`/dashboard/leases/${lease.transferredToLeaseId}`} className="text-primary hover:underline" data-testid="lease-transferred-to">
+                                    {lease.transferredToStatus === "DRAFT"
+                                        ? t("transfer.pendingBanner", { unit: lease.transferredToUnit ?? "—" })
+                                        : t("transfer.toBanner", { unit: lease.transferredToUnit ?? "—" })}
+                                </Link>
+                            )}
                             {lease.renewedFromLeaseId && (
                                 <Link href={`/dashboard/leases/${lease.renewedFromLeaseId}`} className="text-primary hover:underline" data-testid="lease-renewed-from">
                                     {t("renewFrom", { number: lease.renewedFromLeaseId.slice(0, 8) })}
@@ -598,6 +616,25 @@ export default function LeaseDetailPage() {
                                 className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
                             >
                                 <PlusCircle size={14} /> {t("addCharge")}
+                            </button>
+                        )}
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canRenew
+                            && !lease.transferredToLeaseId && (
+                            <button
+                                onClick={() => setTransferOpen(true)}
+                                data-testid="lease-transfer"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <ArrowRightLeft size={14} /> {t("transfer.open")}
+                            </button>
+                        )}
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && (canExtend || canRenew) && (
+                            <button
+                                onClick={() => setReduceOpen(true)}
+                                data-testid="lease-reduce"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <MinusCircle size={14} /> {t("reduction.open")}
                             </button>
                         )}
                         {posted && (
@@ -696,6 +733,14 @@ export default function LeaseDetailPage() {
                     <Ribbon label={t("contractValue")} value={fmtAmount(lease.contractValue ?? totals.net)} />
                     <Ribbon label={t("contractValueInclVat")} value={fmtAmount(totals.inclVat)} />
                     <Ribbon label={t("paymentTerms")} value={String(cheques.length || lease.paymentTerms || 0)} />
+                    {/* PR #359 R1: a credit addendum cut the rent — the contract as signed and what is charged now. */}
+                    {lease.currentRentAmount != null && lease.rentAmount != null
+                        && Math.abs(lease.currentRentAmount - lease.rentAmount) >= 0.005 && (
+                        <>
+                            <Ribbon label={t("contractRent")} value={fmtAmount(lease.rentAmount)} />
+                            <Ribbon label={t("currentRent")} value={fmtAmount(lease.currentRentAmount)} testId="lease-current-rent" />
+                        </>
+                    )}
                 </div>
 
                 {/* ── Tabs ───────────────────────────────────────────── */}
@@ -799,7 +844,9 @@ export default function LeaseDetailPage() {
                                         propertyId={lease.propertyId}
                                         contractValueInclVat={totals.inclVat}
                                         contractVat={totals.vat}
-                                        defaultInstallments={lease.paymentTerms ?? 4}
+                                        // F15-04: capped at the charged months when the term has rent-free windows.
+                                        defaultInstallments={defaultInstallmentsFor(lease.paymentTerms,
+                                            lease.firstDueDate ?? lease.startDate, lease.endDate, lease.rentFreePeriods)}
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
                                         defaultDistribution={lease.installmentDistribution}
                                         busy={chequeBusy}
@@ -841,6 +888,8 @@ export default function LeaseDetailPage() {
                         {(addenda.length > 0 || canExtend) && (
                             <LeaseAddendaPanel leaseId={lease.id} addenda={addenda} canRecordEjari={canExtend} onChanged={loadLease} />
                         )}
+                        {/* F14-39: hand the lease to another renter. */}
+                        <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
                     </div>
                 )}
 
@@ -1106,6 +1155,27 @@ export default function LeaseDetailPage() {
                 }}
             />
 
+            <TransferLeaseDialog
+                open={transferOpen}
+                lease={lease}
+                onClose={() => setTransferOpen(false)}
+                onDrafted={b => {
+                    setTransferOpen(false);
+                    router.push(`/dashboard/leases/${b.id}`);
+                }}
+            />
+
+            <ReduceLeaseDialog
+                previewOnly={!canExtend}
+                open={reduceOpen}
+                lease={lease}
+                onClose={() => setReduceOpen(false)}
+                onReduced={async () => {
+                    setReduceOpen(false);
+                    await loadLease();
+                }}
+            />
+
             <ChequeActionDialog
                 action={chequeAction?.action ?? null}
                 cheque={chequeAction?.cheque ?? null}
@@ -1216,9 +1286,9 @@ export default function LeaseDetailPage() {
     }
 }
 
-function Ribbon({ label, value }: { label: string; value: string }) {
+function Ribbon({ label, value, testId }: { label: string; value: string; testId?: string }) {
     return (
-        <div>
+        <div data-testid={testId}>
             <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-500)]">{label}</p>
             <p className="text-sm font-semibold text-foreground tabular-nums">{value}</p>
         </div>

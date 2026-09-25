@@ -282,7 +282,8 @@ public class LeaseService {
      * keeps the contract figure.
      */
     public static BigDecimal annualRent(Lease lease) {
-        BigDecimal rent = lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
+        BigDecimal rent = lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount()
+                : lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO;
         if (lease.getStartDate() == null || lease.getEndDate() == null || lease.getEndDate().isBefore(lease.getStartDate())) {
             return rent;
         }
@@ -358,6 +359,16 @@ public class LeaseService {
         List<Lease> relevant = new java.util.ArrayList<>(leaseRepository.coveringOn(day));
         relevant.addAll(leaseRepository.upcomingAfter(day));
         for (Lease l : relevant) {
+            // PR #359 R2: a credit addendum dated ahead takes effect in the stored
+            // current rent (unit rent, dashboard) on its date.
+            if (effectiveTerms != null && addendumRepository != null && addendumRepository.existsByLease_IdAndKind(
+                    l.getId(), com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+                BigDecimal now = effectiveTerms.currentRent(l);
+                if (l.getCurrentRentAmount() == null || now.compareTo(l.getCurrentRentAmount()) != 0) {
+                    l.setCurrentRentAmount(now);
+                    leaseRepository.save(l);
+                }
+            }
             units.putIfAbsent(l.getUnit().getId(), l.getUnit());
             byUnit.computeIfAbsent(l.getUnit().getId(), k -> new java.util.ArrayList<>()).add(l);
         }
@@ -473,6 +484,18 @@ public class LeaseService {
      * second copy of "is anybody else living here" is how a unit comes to read
      * VACANT with a renter in it.
      */
+    /**
+     * F14-39: re-settle the lease's unit today — after an assignment the holder's
+     * name on the unit is the incoming renter's. Same rule as the nightly sync.
+     */
+    @Transactional
+    public void resettleUnitOf(Lease lease) {
+        Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId()).orElse(lease.getUnit());
+        if (settleUnit(unit, holdingLeases(unit.getId()), LocalDate.now())) {
+            unitRepository.save(unit);
+        }
+    }
+
     @Transactional
     public void releaseUnitIfNoOtherLiveLease(Lease lease) {
         releaseUnitIfNoOtherActiveLease(lease);
@@ -624,6 +647,19 @@ public class LeaseService {
         return createDraft(dto, predecessor, carryDepositForward);
     }
 
+    /**
+     * PR #359 R1 P2-3: a successor (renewal or transfer) must be in the name of the
+     * predecessor's current renter; after an assignment that is the new renter.
+     */
+    public static void requireSameRenter(Lease predecessor, UUID successorRenterId) {
+        UUID current = predecessor.getRenter() == null ? null : predecessor.getRenter().getId();
+        if (current != null && !current.equals(successorRenterId)) {
+            throw new BusinessRuleViolationException("This contract continues a lease that now belongs to "
+                    + predecessor.getRenter().getNameEn() + "; the new contract must be in that renter's name.",
+                    "lease.successorRenterMismatch", java.util.Map.of("renter", predecessor.getRenter().getNameEn()));
+        }
+    }
+
     private LeaseDTO createDraft(CreateLeaseDTO dto, Lease predecessor, boolean carryDepositForward) {
         Unit unit = unitRepository.findById(dto.getUnitId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
@@ -642,6 +678,7 @@ public class LeaseService {
 
         Renter renter = renterRepository.findById(dto.getRenterId())
                 .orElseThrow(() -> new NotFoundException("Renter not found"));
+        if (predecessor != null) requireSameRenter(predecessor, renter.getId());
 
         Lease lease = new Lease();
         lease.setUnit(unit);
@@ -688,6 +725,66 @@ public class LeaseService {
         return mapToDTO(savedLease);
     }
 
+    /**
+     * Spec §2 (#52): the successor B of a unit transfer — the same renter on another
+     * unit from the day after the move date, in A's chain, with the deposit carried
+     * forward. Drafted like any lease (line validation, account resolution, derived
+     * totals); {@code LeaseTransferService} owns whether A may be transferred.
+     */
+    @Transactional
+    public LeaseDTO createTransferDraft(CreateLeaseDTO dto, Lease from, LocalDate moveDate) {
+        if (from == null || moveDate == null) throw new IllegalArgumentException("A transfer needs its lease and move date");
+        Unit unit = unitRepository.findById(dto.getUnitId())
+                .filter(u -> from.getTenantId().equals(u.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+        requireUnitFreeFor(unit, dto.getStartDate(), dto.getEndDate(), null, null,
+                "Cannot create lease. Unit is not vacant.");
+        Lease lease = new Lease();
+        lease.setUnit(unit);
+        lease.setRenter(from.getRenter());
+        applyHeader(lease, dto, unit);
+        lease.setStatus(LeaseStatus.DRAFT);
+        lease.setTransferredFromLeaseId(from.getId());
+        lease.setTransferMoveDate(moveDate);
+        lease.setChainId(from.getChainId() != null ? from.getChainId() : from.getId());
+        lease.setCarryDepositForward(true);
+        Lease saved = leaseRepository.save(lease);
+        applyLines(saved, dto.getLines());
+        syncDerivedTotals(saved);
+        saved = leaseRepository.save(saved);
+        recordEvent(saved, null, LeaseStatus.DRAFT, "Lease drafted as a transfer from " + unitLabel(from)
+                + ", move date " + moveDate);
+        return mapToDTO(saved);
+    }
+
+    /**
+     * Spec §2: A ends on the move date because the renter moved to B — TERMINATED
+     * through {@code t} (the unit is released after it), with no exit fee and no
+     * termination notice to the renter, who has not left the landlord.
+     */
+    @Transactional
+    public void markTransferredOut(Lease lease, LocalDate t, Lease successor, UUID tcrId) {
+        leaseAccessPolicy.requireManageable(lease);
+        LeaseStatus previous = lease.getStatus();
+        lease.setStatus(LeaseStatus.TERMINATED);
+        lease.setTerminatedOn(t);
+        lease.setTerminationNotes("Transferred to " + unitLabel(successor));
+        lease.setTerminationJournalId(tcrId);
+        releaseUnitIfNoOtherActiveLease(lease);
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, previous, LeaseStatus.TERMINATED, "Transferred to " + unitLabel(successor) + " on " + t);
+        try {
+            unitListingService.syncAvailableFrom(saved.getUnit().getId(), null);
+        } catch (Exception e) {
+            // Non-critical, as on termination.
+        }
+    }
+
+    private static String unitLabel(Lease lease) {
+        return lease.getUnit() != null && lease.getUnit().getUnitNumber() != null
+                ? lease.getUnit().getUnitNumber() : String.valueOf(lease.getId());
+    }
+
     @Transactional
     public LeaseDTO updateDraftLease(UUID leaseId, CreateLeaseDTO dto) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
@@ -714,6 +811,11 @@ public class LeaseService {
                 unitChanged ? "Cannot assign lease. Unit is not vacant." : "Cannot update lease. Unit is not vacant.");
         if (unitChanged) lease.setUnit(targetUnit);
 
+        // PR #359 R1 P2-3: a renewal or transfer continues its predecessor's renter.
+        UUID predecessorId = lease.predecessorId();
+        if (predecessorId != null && dto.getRenterId() != null) {
+            leaseRepository.findByIdScopedToTenant(predecessorId).ifPresent(p -> requireSameRenter(p, dto.getRenterId()));
+        }
         // If renter changed
         if (!lease.getRenter().getId().equals(dto.getRenterId())) {
             Renter renter = renterRepository.findById(dto.getRenterId())
@@ -1197,11 +1299,17 @@ public class LeaseService {
     public void syncDerivedTotals(Lease lease) {
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         lease.setRentAmount(sumNet(lines, ChargeBehaviour.RENT));
+        // PR #359 R1 P2-1: what the lease charges after its credit addenda.
+        lease.setCurrentRentAmount(effectiveTerms != null && lease.getId() != null
+                ? effectiveTerms.currentRent(lease) : lease.getRentAmount());
         lease.setDepositAmount(sumNet(lines, ChargeBehaviour.DEPOSIT));
         if (lease.getStartDate() != null && lease.getEndDate() != null) {
             lease.setTotalDays((int) ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1);
         }
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.lease.LeaseEffectiveTerms effectiveTerms;
 
     private static BigDecimal sumNet(List<LeaseLine> lines, ChargeBehaviour behaviour) {
         return lines.stream()
@@ -1229,9 +1337,40 @@ public class LeaseService {
     public List<LeaseLineDTO> getLines(UUID leaseId) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
         leaseAccessPolicy.requireReadable(lease);
-        return leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+        return withCurrentAmounts(lease, leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
                 .map(LeaseService::toLineDTO)
-                .toList();
+                .toList());
+    }
+
+    /** PR #359 R1 P2-1: each credited line's current amount, for the renew and extend dialogs. */
+    private List<LeaseLineDTO> withCurrentAmounts(Lease lease, List<LeaseLineDTO> dtos) {
+        if (effectiveTerms == null || lease.getPostedAt() == null || addendumRepository == null
+                || !addendumRepository.existsByLease_IdAndKind(lease.getId(),
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+            return dtos;
+        }
+        java.util.Map<UUID, BigDecimal> current = new java.util.HashMap<>();
+        for (var e : effectiveTerms.effectiveLines(lease, null)) {
+            if (e.credited()) current.put(e.line().getId(), e.amount());
+        }
+        return dtos.stream().map(d -> current.containsKey(d.id()) ? d.withCurrentAmount(current.get(d.id())) : d).toList();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addendumRepository;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager em;
+
+    /** The assignment JV's lines for the incoming renter on accounts of one sub-type (debit − credit). */
+    private BigDecimal openingOf(com.datagami.rentaxis.domain.entity.LeaseAssignment a, UUID renterId, String subType) {
+        if (a.getJournalId() == null) return BigDecimal.ZERO;
+        Object v = em.createQuery("select coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) from JournalLine l"
+                        + " where l.entry.id = :j and l.renterId = :r and cast(l.account.accountSubType as string) = :t")
+                .setParameter("j", a.getJournalId()).setParameter("r", renterId).setParameter("t", subType)
+                .getSingleResult();
+        return v == null ? BigDecimal.ZERO : new BigDecimal(v.toString()).setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     /**
@@ -1761,9 +1900,36 @@ public class LeaseService {
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
         Renter renter = renterRepository.findByUserId(userId)
                 .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
-        return leaseRepository.findByRenterId(renter.getId()).stream()
+        List<LeaseDTO> out = leaseRepository.findByRenterId(renter.getId()).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+        if (assignmentRepository == null) return out;
+        // PR #359 R1: the lease that came by assignment opens with what came with it.
+        for (LeaseDTO dto : out) {
+            assignmentRepository.findByLeaseIdAndStatusOrderByEffectiveDateAsc(dto.getId(),
+                    com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED).stream()
+                    .filter(a -> renter.getId().equals(a.getToRenterId())).reduce((x, y) -> y)
+                    .ifPresent(a -> {
+                        dto.setAssignedToYouOn(a.getEffectiveDate());
+                        dto.setOpeningReceivable(openingOf(a, renter.getId(), "RECEIVABLE"));
+                        dto.setOpeningDeposit(openingOf(a, renter.getId(), "DEPOSIT_HELD").negate());
+                    });
+        }
+        // …and a lease handed over stays visible to the renter who left it, up to that date.
+        java.util.Set<UUID> seen = out.stream().map(LeaseDTO::getId).collect(Collectors.toSet());
+        for (var a : assignmentRepository.findByFromRenterIdAndStatus(renter.getId(),
+                com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED)) {
+            if (!seen.add(a.getLeaseId())) continue;
+            leaseRepository.findByIdScopedToTenant(a.getLeaseId()).ifPresent(l -> {
+                LeaseDTO dto = mapToDTO(l);
+                dto.setRenterId(renter.getId());
+                dto.setRenterName(renter.getNameEn());
+                dto.setYourAccessEndedOn(a.getEffectiveDate());
+                dto.setCurrentRentAmount(null);
+                out.add(dto);
+            });
+        }
+        return out;
     }
 
     /**
@@ -1939,6 +2105,22 @@ public class LeaseService {
         dto.setFirstDueDate(lease.getFirstDueDate());
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
+        dto.setCurrentRentAmount(lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount() : lease.getRentAmount());
+        // PR #359 R2: live on read, so a reduction from a later date shows on that date.
+        if (effectiveTerms != null && addendumRepository != null && lease.getPostedAt() != null
+                && addendumRepository.existsByLease_IdAndKind(lease.getId(),
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+            dto.setCurrentRentAmount(effectiveTerms.currentRent(lease));
+        }
+        dto.setTransferredFromLeaseId(lease.getTransferredFromLeaseId());
+        dto.setTransferMoveDate(lease.getTransferMoveDate());
+        if (lease.getId() != null && lease.getPostedAt() != null) {
+            leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream().findFirst().ifPresent(b -> {
+                dto.setTransferredToLeaseId(b.getId());
+                dto.setTransferredToUnit(b.getUnit() != null ? b.getUnit().getUnitNumber() : null);
+                dto.setTransferredToStatus(b.getStatus() != null ? b.getStatus().name() : null);
+            });
+        }
         dto.setChainId(lease.getChainId());
         dto.setReceivableAccountId(lease.getReceivableAccountId());
         dto.setIncomeAccountId(lease.getIncomeAccountId());
@@ -1952,7 +2134,8 @@ public class LeaseService {
         dto.setIntendedMoveOutDate(lease.getIntendedMoveOutDate());
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
-        dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
+        dto.setLines(new java.util.ArrayList<>(withCurrentAmounts(lease,
+                lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()))));
         dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines));
         dto.setRenewalPreviousRent(lease.getRenewalPreviousRent());
         dto.setRenewalChangePercent(lease.getRenewalChangePercent());
@@ -2011,7 +2194,9 @@ public class LeaseService {
                 type != null ? type.getNameAr() : null,
                 credit != null ? credit.getNameAr() : null,
                 type != null && type.getRecognition() != null ? type.getRecognition().name() : null,
-                l.getRentFreeAmount());
+                l.getRentFreeAmount(),
+                l.getPostedRecognition() != null ? l.getPostedRecognition().name() : null,
+                null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

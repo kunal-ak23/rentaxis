@@ -50,6 +50,7 @@ const STATUS_COLORS: Record<ChequeStatus, string> = {
     CANCELLED: "bg-input text-muted",
     RETURNED: "bg-warning/10 text-warning",
     ONLINE_PENDING: "bg-warning/10 text-warning",
+    TRANSFERRED: "bg-input text-muted",
 };
 
 export type GenerateForm = {
@@ -161,6 +162,10 @@ export default function ChequeGrid({
     // across reloads, so a distribution changed on the lease must reach the
     // Generate form rather than stay frozen at the first render's value.
     const [distributionTouched, setDistributionTouched] = useState(false);
+    // F15-04: likewise the instalment count follows the lease's (which drops to the
+    // charged months when a rent-free window is saved) until the operator types one.
+    const [installmentsTouched, setInstallmentsTouched] = useState(false);
+    const installments = installmentsTouched ? gen.installments : (defaultInstallments || 1);
     const distribution: InstallmentDistribution = distributionTouched
         ? gen.distribution
         : defaultDistribution ?? "LAST_LARGER";
@@ -258,8 +263,11 @@ export default function ChequeGrid({
                             max={36}
                             showZero
                             className={field}
-                            value={gen.installments}
-                            onChange={v => setGen(g => ({ ...g, installments: v }))}
+                            value={installments}
+                            onChange={v => {
+                                setInstallmentsTouched(true);
+                                setGen(g => ({ ...g, installments: v }));
+                            }}
                         />
                     </Labelled>
                     <Labelled label={t("firstDueDate")}>
@@ -333,7 +341,7 @@ export default function ChequeGrid({
                             onClick={() => {
                                 setGenOpen(false);
                                 onGenerate?.({
-                                    installments: gen.installments || null,
+                                    installments: installments || null,
                                     firstDueDate: gen.firstDueDate || null,
                                     distribution,
                                     payeeBank: gen.payeeBank || null,

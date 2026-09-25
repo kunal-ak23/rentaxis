@@ -413,10 +413,94 @@ public class RecognitionService {
                 log.debug("Segment {} ended {} on or before termination date {}; left as is",
                         segment.getId(), segment.getToDate(), t);
             } else {
-                truncateSegment(segment, t);
+                truncateSegment(segment, t, t, "Lease terminated " + t);
             }
         }
         return summary;
+    }
+
+    // ------------------------------------------------------------------
+    // mid-term reduction (F14-32)
+    // ------------------------------------------------------------------
+
+    /**
+     * The line's live schedule from {@code e} on: its ACTIVE segments that run to
+     * {@code e} or later, oldest first. Empty when the line has no schedule (a
+     * one-off fee, a lease posted with fees at posting) or its schedule ended before
+     * {@code e}.
+     */
+    @Transactional(readOnly = true)
+    public List<RentSegment> liveSegmentsFrom(UUID leaseId, UUID lineId, LocalDate e) {
+        return liveSegments(leaseId).stream()
+                .filter(s -> lineId.equals(s.getLeaseLineId()) && !s.getToDate().isBefore(e))
+                .toList();
+    }
+
+    /** What these segments still have to earn from {@code e} on: amount − earned through the day before. */
+    public static BigDecimal remainingFrom(List<RentSegment> segs, LocalDate e) {
+        BigDecimal remaining = BigDecimal.ZERO;
+        for (RentSegment s : segs) {
+            BigDecimal earned = ProrationEngine.earnedThrough(s.getAmount(), s.getFromDate(), s.getToDate(), e.minusDays(1));
+            remaining = remaining.add(s.getAmount().subtract(earned));
+        }
+        return remaining.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * A credit addendum cut a line's rate from {@code e} (F14-32): the schedule
+     * keeps what was earned through {@code e − 1} and earns {@code newRemaining}
+     * over {@code e} → the old end, day by day. Months already recognised after
+     * {@code e − 1} are reversed (dated no earlier than {@code floor}) and the month
+     * containing it is re-cut, exactly as a termination does; the kept part stays
+     * ACTIVE (not TRUNCATED), so a later termination before {@code e} still cuts it.
+     *
+     * @return the new segment, or null when nothing is left to earn (the charge was removed)
+     */
+    @Transactional
+    public RentSegment reduceFrom(Lease lease, List<RentSegment> segs, LocalDate e, BigDecimal newRemaining,
+                                  LocalDate floor, String reason) {
+        if (segs.isEmpty()) throw new IllegalStateException("No live schedule to reduce");
+        RentSegment template = segs.get(0);
+        LocalDate from = segs.stream().map(RentSegment::getFromDate).min(LocalDate::compareTo).orElseThrow();
+        LocalDate to = segs.stream().map(RentSegment::getToDate).max(LocalDate::compareTo).orElseThrow();
+        LocalDate newFrom = from.isAfter(e) ? from : e;
+        for (RentSegment seg : segs) {
+            if (!seg.getFromDate().isBefore(e)) {
+                cancelWholeSegment(seg, floor, reason);
+            } else {
+                truncateSegment(seg, e.minusDays(1), floor, reason);
+                seg.setStatus(SegmentStatus.ACTIVE);
+                segments.save(seg);
+            }
+        }
+        if (newRemaining == null || newRemaining.signum() <= 0) return null;
+        RentSegment segment = new RentSegment();
+        segment.setTenantId(lease.getTenantId());
+        segment.setLease(lease);
+        segment.setLeaseLineId(template.getLeaseLineId());
+        segment.setFromDate(newFrom);
+        segment.setToDate(to);
+        segment.setAmount(newRemaining);
+        segment.setDays(ProrationEngine.daysInclusive(newFrom, to));
+        segment.setDayRate(ProrationEngine.dayRate(newRemaining, newFrom, to));
+        segment.setStatus(SegmentStatus.ACTIVE);
+        segment.setDeferralAccountId(template.getDeferralAccountId());
+        segment.setIncomeAccountId(template.getIncomeAccountId());
+        segments.flush();
+        segment = segments.save(segment);
+        for (ProrationEngine.Slice slice : ProrationEngine.slice(newRemaining, newFrom, to)) {
+            RecognitionEntry entry = new RecognitionEntry();
+            entry.setTenantId(lease.getTenantId());
+            entry.setLease(lease);
+            entry.setSegment(segment);
+            entry.setPeriodStart(slice.periodStart());
+            entry.setPeriodEnd(slice.periodEnd());
+            entry.setDays(slice.days());
+            entry.setAmount(slice.amount());
+            entry.setStatus(RecognitionStatus.PLANNED);
+            entries.save(entry);
+        }
+        return segment;
     }
 
     /** Only ACTIVE: a TRUNCATED segment has already been cut, and a CANCELLED one is history. */
@@ -505,14 +589,24 @@ public class RecognitionService {
     }
 
     private void cancelWholeSegment(RentSegment segment, LocalDate t) {
+        cancelWholeSegment(segment, t, "Lease terminated " + t);
+    }
+
+    private void cancelWholeSegment(RentSegment segment, LocalDate t, String reason) {
         for (RecognitionEntry entry : entries.findBySegment_IdOrderByPeriodStartAsc(segment.getId())) {
-            retire(entry.getId(), t);
+            retire(entry.getId(), t, reason);
         }
         segment.setStatus(SegmentStatus.CANCELLED);
         segments.save(segment);
     }
 
-    private void truncateSegment(RentSegment segment, LocalDate t) {
+    /**
+     * @param t      the last day the segment keeps
+     * @param floor  the earliest date a reversal files on (a termination's own date;
+     *               a credit addendum's entry date)
+     * @param reason the narration on the reversals
+     */
+    private void truncateSegment(RentSegment segment, LocalDate t, LocalDate floor, String reason) {
         // Built from the rows that are actually on the schedule rather than
         // re-sliced from the segment: these are the amounts the ledger has seen, and
         // the cut amount is defined against them.
@@ -534,9 +628,9 @@ public class RecognitionService {
         // unlocked read; only the status can have moved under us, and that is
         // exactly what changes cancel into reverse.
         for (int i = cutIndex + 1; i < live.size(); i++) {
-            retire(live.get(i).getId(), t);
+            retire(live.get(i).getId(), floor, reason);
         }
-        recut(live.get(cutIndex).getId(), kept.get(cutIndex), segment, t);
+        recut(live.get(cutIndex).getId(), kept.get(cutIndex), segment, floor, reason);
 
         // Read before anything moves: earnedThrough is defined over the segment's
         // ORIGINAL window, and the next four lines are about to shorten it.
@@ -580,7 +674,7 @@ public class RecognitionService {
      * <p>Lock order is lease → entry, everywhere: a termination takes the lease row
      * first and the poster takes no lease lock at all, so the two cannot cycle.</p>
      */
-    private void retire(UUID entryId, LocalDate t) {
+    private void retire(UUID entryId, LocalDate t, String reason) {
         RecognitionEntry entry = lock(entryId);
         if (entry.getStatus() == RecognitionStatus.POSTED) {
             if (entry.getJournalId() == null) {
@@ -591,8 +685,7 @@ public class RecognitionService {
                 throw new IllegalStateException(
                         "Recognition entry " + entryId + " is POSTED with no journal to reverse");
             }
-            postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t),
-                    "Lease terminated " + t);
+            postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t), reason);
             entry.setStatus(RecognitionStatus.REVERSED);
             entries.save(entry);
         } else if (entry.getStatus() == RecognitionStatus.PLANNED) {
@@ -680,7 +773,7 @@ public class RecognitionService {
      * <p>See the method note on {@link #truncateForTermination} for why the
      * comparison is on amount as well as period.</p>
      */
-    private void recut(UUID entryId, ProrationEngine.Slice cut, RentSegment segment, LocalDate t) {
+    private void recut(UUID entryId, ProrationEngine.Slice cut, RentSegment segment, LocalDate t, String reason) {
         RecognitionEntry entry = lock(entryId);
         if (entry.getStatus() == RecognitionStatus.PLANNED) {
             entry.setPeriodEnd(cut.periodEnd());
@@ -698,8 +791,7 @@ public class RecognitionService {
         if (unchanged) {
             return;
         }
-        postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t),
-                "Lease terminated " + t);
+        postingService.reverse(entry.getJournalId(), reversalDate(entry.getJournalId(), t), reason);
         entry.setStatus(RecognitionStatus.REVERSED);
         entries.save(entry);
         // Flushed before the replacement is inserted: they share

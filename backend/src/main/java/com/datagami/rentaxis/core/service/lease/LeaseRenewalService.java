@@ -165,6 +165,17 @@ public class LeaseRenewalService {
                             + " (" + existing.getStatus() + "); delete that draft or renew the successor instead.");
         }
 
+        requireNoAssignmentPending(leaseId);
+
+        // Spec §2: a lease with a transfer (drafted or posted) is not renewed; the
+        // transfer's lease is, once it is on the books.
+        Lease transfer = leaseRepository.findByTransferredFromLeaseId(leaseId).stream().findFirst().orElse(null);
+        if (transfer != null) {
+            throw new BusinessRuleViolationException("This lease is being transferred to lease " + transfer.getId()
+                    + " (" + transfer.getStatus() + "); delete that draft, or renew the new lease instead.",
+                    "lease.renewHasTransfer", java.util.Map.of());
+        }
+
         RenewalPlan plan = plan(predecessor, r);
         CreateLeaseDTO dto = successorHeader(predecessor, r);
         dto.setLines(plan.lines());
@@ -190,6 +201,20 @@ public class LeaseRenewalService {
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
         draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
         return draft;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private LeaseEffectiveTerms effectiveTerms;
+
+    /** PR #359 R1 P2-3: a lease whose renter is about to change is not renewed or transferred first. */
+    void requireNoAssignmentPending(UUID leaseId) {
+        if (assignmentRepository != null && assignmentRepository.existsByLeaseIdAndStatus(leaseId,
+                com.datagami.rentaxis.domain.entity.LeaseAssignment.DRAFT)) {
+            throw new BusinessRuleViolationException("This lease has a draft assignment to another renter; post or"
+                    + " delete it first.", "lease.assignmentPending", java.util.Map.of());
+        }
     }
 
     /** The lines a renewal copies, the contract rent among them, and the one-off lines left behind (spec §4c). */
@@ -279,6 +304,14 @@ public class LeaseRenewalService {
                 // that rent; a percentage and the notice are measured net to net.
                 dropped = contractRent.getDiscountAmount() == null ? BigDecimal.ZERO : contractRent.getDiscountAmount();
                 base = contractRent.getGrossAmount().subtract(dropped);
+                // PR #359 R1 P2-1: a credit addendum cut the rent — the renter pays the
+                // reduced rate, and that is what a renewal carries on and escalates.
+                LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(
+                        effectiveTerms.effectiveLines(predecessor, null), contractRent);
+                if (eff != null && eff.credited()) {
+                    dropped = BigDecimal.ZERO;
+                    base = eff.amount();
+                }
                 newRent = switch (mode) {
                     case NONE -> base;
                     case AMOUNT -> {
@@ -425,6 +458,9 @@ public class LeaseRenewalService {
      */
     private Copied copiedLines(Lease predecessor, RenewLeaseRequest r) {
         List<LeaseLine> source = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
+        // PR #359 R1 P2-1: the terms after any credit addendum — a removed charge is not
+        // copied, a reduced one is copied at its reduced amount.
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(predecessor, null);
         List<LeaseLineInput> copied = new ArrayList<>(source.size());
         List<LeaseLine> copiedFrom = new ArrayList<>(source.size());
         List<LeaseLine> skipped = new ArrayList<>();
@@ -448,12 +484,17 @@ public class LeaseRenewalService {
                 skipped.add(line);
                 continue;
             }
+            LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, line);
+            if (eff != null && eff.removed()) {
+                continue;
+            }
+            boolean credited = eff != null && eff.credited();
             copiedFrom.add(line);
             copied.add(new LeaseLineInput(
                     type != null ? type.getId() : null,
                     null,
-                    line.getGrossAmount(),
-                    line.getDiscountAmount(),
+                    credited ? eff.amount() : line.getGrossAmount(),
+                    credited ? BigDecimal.ZERO : line.getDiscountAmount(),
                     rent ? null : line.getNarration(),
                     line.isVatApplicable(),
                     line.getCreditAccount() != null ? line.getCreditAccount().getId() : null,

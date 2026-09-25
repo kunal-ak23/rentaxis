@@ -317,3 +317,21 @@ describe("ChequeGrid row actions", () => {
         expect(screen.getByTestId("cheque-grid-notice")).toHaveTextContent("cleared because the charge lines changed");
     });
 });
+
+describe("F15-04: the instalment count on a term with a rent-free month", () => {
+    it("proposes the lease's count until the operator types one, and follows a new default", () => {
+        const onGenerate = vi.fn();
+        const { rerender } = renderGrid({ cheques: [], editable: true, onGenerate, contractValueInclVat: 66000, defaultInstallments: 12 });
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        expect((screen.getByLabelText("Installments") as HTMLInputElement).value).toBe("12");
+        // A rent-free window is saved: the lease's default drops to the charged months.
+        rerender(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequeGrid cheques={[]} editable onGenerate={onGenerate} contractValueInclVat={66000} defaultInstallments={11} />
+            </NextIntlClientProvider>,
+        );
+        expect((screen.getByLabelText("Installments") as HTMLInputElement).value).toBe("11");
+        fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
+        expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ installments: 11 }));
+    });
+});

@@ -195,6 +195,14 @@ public class Cheque extends BaseTenantEntity {
     @JoinColumn(name = "replaced_by_id")
     private Cheque replacedBy;
 
+    /** Spec §2: the same instrument's row on the lease it was carried from (a unit transfer). */
+    @Column(name = "transferred_from_id")
+    private UUID transferredFromId;
+
+    /** Spec §2: the row this instrument was carried to; set on the old row, which is TRANSFERRED. */
+    @Column(name = "transferred_to_id")
+    private UUID transferredToId;
+
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 

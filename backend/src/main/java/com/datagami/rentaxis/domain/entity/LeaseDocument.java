@@ -27,4 +27,8 @@ public class LeaseDocument extends BaseTenantEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private DocumentType type;
+
+    /** PR #359 R1: when the document was made — a renter sees their side of an assignment only. */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private java.time.Instant createdAt = java.time.Instant.now();
 }

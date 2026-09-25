@@ -81,9 +81,14 @@ public class LeaseAttachmentService {
         // The role gate on this endpoint includes RENTER, and nothing below it
         // asked whose lease this is — so any renter holding any lease id could
         // list that lease's contracts, ID scans and cheque images.
-        leaseAccessPolicy.requireReadable(leaseRepository.findById(leaseId).orElse(null));
+        var lease = leaseRepository.findById(leaseId).orElse(null);
+        leaseAccessPolicy.requireReadable(lease);
+        // PR #359 R1: after an assignment each renter sees their own side of the date.
+        var window = leaseAccessPolicy.renterWindow(lease);
 
         return attachmentRepository.findByLeaseId(leaseId).stream()
+                .filter(a -> window == null || !window.bounded() || window.contains(a.getUploadedAt() == null ? null
+                        : a.getUploadedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -96,6 +101,7 @@ public class LeaseAttachmentService {
         // Guarding the list alone would be pointless: the download takes an
         // attachment id directly, so it is reachable without ever listing.
         leaseAccessPolicy.requireReadable(attachment.getLease());
+        leaseAccessPolicy.requireInRenterWindow(attachment.getLease(), attachment.getUploadedAt());
 
         String url = attachment.getFileUrl();
 

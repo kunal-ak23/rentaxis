@@ -34,7 +34,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      * lease can be lost by it.</p>
      */
     @Query("""
-        select l.status, count(l), coalesce(sum(l.rentAmount), 0)
+        select l.status, count(l), coalesce(sum(coalesce(l.currentRentAmount, l.rentAmount)), 0)
         from Lease l
         where (:unrestricted = true or l.unit.property.id in :propertyIds)
         group by l.status
@@ -275,6 +275,10 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      */
     @Query("SELECT l FROM Lease l WHERE l.renewedFromLeaseId = :leaseId")
     List<Lease> findByRenewedFromLeaseId(@Param("leaseId") UUID leaseId);
+
+    /** Spec §2: the successor on another unit, drafted or posted. */
+    @Query("SELECT l FROM Lease l WHERE l.transferredFromLeaseId = :leaseId")
+    List<Lease> findByTransferredFromLeaseId(@Param("leaseId") UUID leaseId);
 
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);

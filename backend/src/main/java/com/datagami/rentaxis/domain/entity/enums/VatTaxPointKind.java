@@ -13,5 +13,7 @@ public enum VatTaxPointKind {
      * posting itself is the tax point: POSTED with the TCO, and its tax invoice is
      * issued in the same transaction. An amendment records the delta the same way.
      */
-    CONTRACT
+    CONTRACT,
+    /** F14-32: VAT credited back by a credit addendum (mid-term reduction) beyond what was still to be declared. */
+    REDUCTION
 }

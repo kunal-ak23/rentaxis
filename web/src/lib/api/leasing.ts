@@ -41,6 +41,8 @@ export type ChargeBehaviour = "RENT" | "DEPOSIT" | "FEE";
  * RENT and DEPOSIT types always carry RENT_LIKE.
  */
 export type ChargeRecognition = "RENT_LIKE" | "ONE_OFF" | "PASS_THROUGH";
+/** #99 / F15-06: what posting did with a line; NONE = a deposit, never income. */
+export type PostedRecognition = ChargeRecognition | "NONE";
 
 export type ChequeMode = "PDC" | "CASH" | "TRANSFER" | "ONLINE";
 
@@ -53,7 +55,9 @@ export type ChequeStatus =
   | "REPLACED"
   | "CANCELLED"
   | "RETURNED"
-  | "ONLINE_PENDING";
+  | "ONLINE_PENDING"
+  /** Spec §2: carried to the successor lease on a unit transfer (terminal). */
+  | "TRANSFERRED";
 
 export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED" | "STOPPED_PAYMENT" | "TECHNICAL_RETURN";
 
@@ -194,6 +198,10 @@ export type LeaseLine = {
   recognition?: ChargeRecognition | null;
   /** Spec §4b: the rent-free concession on the contract's RENT line; 0 elsewhere. */
   rentFreeAmount?: number | null;
+  /** #99 / F15-06: what posting did with the line; null on a draft or an older server. */
+  postedRecognition?: PostedRecognition | null;
+  /** PR #359 R1: what the line charges now after credit addenda; null when never credited (0 = removed). */
+  currentAmount?: number | null;
 };
 
 /** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */
@@ -288,6 +296,14 @@ export type LeaseDetail = {
   firstDueDate: string | null;
   renterAcceptedAt: string | null;
   renewedFromLeaseId: string | null;
+  /** PR #359 R1: the rent charged now, after credit addenda; rentAmount is the contract's. */
+  currentRentAmount?: number | null;
+  /** Spec §2: B → A for a unit transfer, the move date, and (on A) where it moved to. */
+  transferredFromLeaseId?: string | null;
+  transferMoveDate?: string | null;
+  transferredToLeaseId?: string | null;
+  transferredToUnit?: string | null;
+  transferredToStatus?: string | null;
   chainId: string | null;
   receivableAccountId: string | null;
   incomeAccountId: string | null;
@@ -422,6 +438,111 @@ export type LeaseAddendum = {
    */
   superseded: boolean;
   createdAt: string;
+  /** F14-32: CHARGE (adds lines) or CREDIT (a mid-term reduction, posted as a TCC); absent on an older server. */
+  kind?: "CHARGE" | "CREDIT";
+  /** For a CREDIT: CHEQUES (instalments handed back / replaced) or CREDIT (left on the renter's account). */
+  excess?: "CHEQUES" | "CREDIT" | null;
+  credits?: LeaseAddendumCredit[];
+};
+
+/** F14-32: one line a credit addendum cut. */
+export type LeaseAddendumCredit = {
+  leaseLineId: string;
+  chargeTypeCode: string | null;
+  chargeTypeName: string | null;
+  chargeTypeNameAr: string | null;
+  newLineAmount: number;
+  remainingBefore: number;
+  remainingAfter: number;
+  creditAmount: number;
+  vatAmount: number;
+};
+
+/** F14-32: ReduceLeaseRequest — a mid-term reduction as a credit addendum. */
+export type ReduceLeaseInput = {
+  effectiveFrom: string;
+  contractDate?: string | null;
+  reason?: string | null;
+  ejariNumber?: string | null;
+  /** Each line cut: its new value over its whole window (0 removes it). */
+  lines: { lineId: string; newAmount: number }[];
+  excess: "CHEQUES" | "CREDIT";
+  returnChequeIds: string[];
+  cheques: ChequeRowInput[];
+};
+
+/** F14-32: ReductionPreviewDTO. */
+export type ReductionPreview = {
+  effectiveFrom: string | null;
+  lines: {
+    lineId: string; chargeTypeCode: string; chargeTypeName: string; chargeTypeNameAr: string | null;
+    lineAmount: number; newLineAmount: number; from: string; to: string; remainingDays: number;
+    remainingBefore: number; remainingAfter: number; credit: number; vat: number;
+  }[];
+  creditNet: number;
+  vatFromDeferred: number;
+  vatCreditNote: number;
+  creditTotal: number;
+  returnable: { id: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number; vatAmount: number | null }[];
+  returnedTotal: number;
+  newRowsTotal: number;
+  gap: number;
+  /** Refusals the post would raise, coded (Common.errors.<code>) with the English text as fallback. */
+  problems: { code: string | null; message: string; args: Record<string, unknown> | null }[];
+};
+
+/** F14-39: LeaseAssignmentDTO — a lease handed to another renter; balances/overdue filled on a draft. */
+export type LeaseAssignment = {
+  id: string;
+  leaseId: string;
+  fromRenterId: string;
+  fromRenterName: string | null;
+  toRenterId: string;
+  toRenterName: string | null;
+  effectiveDate: string;
+  reason: string | null;
+  takeOverOverdue: boolean;
+  status: "DRAFT" | "POSTED" | "CANCELLED";
+  journalId: string | null;
+  journalNumber: string | null;
+  createdAt: string;
+  postedAt: string | null;
+  balances: { accountId: string; accountCode: string | null; accountName: string | null; accountNameAr: string | null; amount: number }[];
+  overdue: { chequeId: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; status: string; amount: number }[];
+  chequesMoving: number;
+};
+
+export type AssignLeaseInput = { toRenterId: string; effectiveDate: string; reason: string; takeOverOverdue?: boolean | null };
+
+/** Spec §2: TransferLeaseRequest. */
+export type TransferLeaseInput = {
+  moveDate: string;
+  targetUnitId: string;
+  endDate?: string | null;
+  contractDate?: string | null;
+  lines?: LeaseLineInput[] | null;
+  chequeDispositions?: { chequeId: string; disposition: "CARRY" | "KEEP" | "RETURN" }[];
+  /** With no lines: the new term's rent in place of the suggested one. */
+  rent?: number | null;
+};
+
+/** Spec §2: TransferPreviewDTO. */
+export type TransferPreview = {
+  moveDate: string | null;
+  targetUnitId: string | null;
+  newStart: string | null;
+  newEnd: string | null;
+  newDays: number;
+  earnedThrough: number | null;
+  unearned: number | null;
+  unearnedVat: number | null;
+  balanceCarried: number | null;
+  depositCarried: number | null;
+  suggestedRent: number | null;
+  cheques: { chequeId: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number; status: string; disposition: "CARRY" | "KEEP" | "RETURN" }[];
+  carriedTotal: number | null;
+  gapToCollect: number | null;
+  problems: string[];
 };
 
 /** AddendumResponse. */
@@ -1234,6 +1355,20 @@ export const leaseApi = {
   extend: (id: string, body: ExtendLeaseInput) => send<PostLeaseResponse>("POST", `/leases/${id}/extend`, body),
   addCharge: (id: string, body: AddChargeInput) => send<AddendumResponse>("POST", `/leases/${id}/addenda`, body),
   addenda: (id: string) => get<LeaseAddendum[]>(`/leases/${id}/addenda`),
+  reductionPreview: (id: string, body: ReduceLeaseInput) =>
+    send<ReductionPreview>("POST", `/leases/${id}/reductions/preview`, body),
+  reduce: (id: string, body: ReduceLeaseInput) => send<AddendumResponse>("POST", `/leases/${id}/reductions`, body),
+  assignments: (id: string) => get<LeaseAssignment[]>(`/leases/${id}/assignments`),
+  transferPreview: (id: string, moveDate: string, targetUnitId: string, endDate?: string | null) =>
+    get<TransferPreview>(`/leases/${id}/transfer/preview?moveDate=${encodeURIComponent(moveDate)}&targetUnitId=${encodeURIComponent(targetUnitId)}${endDate ? `&endDate=${encodeURIComponent(endDate)}` : ""}`),
+  transfer: (id: string, body: TransferLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/transfer`, body),
+  unitOptions: () => get<{ id: string; unitNumber: string; occupancy?: string | null; status?: string | null; property?: { id: string; nameEn?: string | null } | null; propertyId?: string | null }[]>(`/units`),
+  draftAssignment: (id: string, body: AssignLeaseInput) => send<LeaseAssignment>("POST", `/leases/${id}/assignments`, body),
+  postAssignment: (id: string, assignmentId: string, takeOverOverdue?: boolean) =>
+    send<LeaseAssignment>("POST", `/leases/${id}/assignments/${assignmentId}/post`, { takeOverOverdue: !!takeOverOverdue }),
+  cancelAssignment: (id: string, assignmentId: string) =>
+    send<void>("DELETE", `/leases/${id}/assignments/${assignmentId}`),
+  renterOptions: () => get<{ id: string; nameEn: string; nameAr?: string | null }[]>(`/renters`),
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),

@@ -95,3 +95,16 @@ describe("LeaseAddendaPanel", () => {
         expect(screen.queryByTestId("addendum-ejari-edit-a3")).not.toBeInTheDocument();
     });
 });
+
+describe("LeaseAddendaPanel credit addenda (F14-32)", () => {
+    it("marks a credit addendum, names what it cut and where the excess went", () => {
+        const CREDIT = { ...RECORDED, id: "a4", addendumNumber: "ADD-27/4", value: -6805.48, kind: "CREDIT" as const,
+            excess: "CREDIT" as const, tcoEntryNumber: "TCC-27/1",
+            credits: [{ leaseLineId: "l1", chargeTypeCode: "RENT", chargeTypeName: "Rent", chargeTypeNameAr: null,
+                newLineAmount: 39000, remainingBefore: 28923.29, remainingAfter: 22117.81, creditAmount: 6805.48, vatAmount: 0 }] };
+        renderPanel(false, vi.fn(), [CREDIT]);
+        expect(screen.getByTestId("addendum-credit-a4")).toHaveTextContent("Credit");
+        expect(screen.getByText(/Rent · Leave it on the renter's account/)).toBeInTheDocument();
+        expect(screen.getByText("-6,805.48")).toBeInTheDocument();
+    });
+});

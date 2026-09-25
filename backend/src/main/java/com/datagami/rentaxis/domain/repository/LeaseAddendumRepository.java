@@ -12,6 +12,9 @@ import java.util.UUID;
 public interface LeaseAddendumRepository extends JpaRepository<LeaseAddendum, UUID> {
     List<LeaseAddendum> findByLease_IdOrderByCreatedAtAsc(UUID leaseId);
 
+    /** F14-32: whether a credit addendum has cut this lease's lines. */
+    boolean existsByLease_IdAndKind(UUID leaseId, String kind);
+
     /** Scoped to the lease in the path, so an addendum id from another lease is a 404, not an edit. */
     Optional<LeaseAddendum> findByIdAndLease_Id(UUID id, UUID leaseId);
 

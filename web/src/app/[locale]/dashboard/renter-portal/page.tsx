@@ -37,6 +37,13 @@ type Lease = {
     contractDocumentId?: string | null;
     /** When the renter accepted the contract; null until then (#79). */
     renterAcceptedAt?: string | null;
+    /** PR #359 R1: the lease came to this renter by assignment on this date, with this opening line. */
+    assignedToYouOn?: string | null;
+    openingReceivable?: number | null;
+    openingDeposit?: number | null;
+    /** PR #359 R1: this renter handed the lease over on this date; their history runs up to it. */
+    yourAccessEndedOn?: string | null;
+    currentRentAmount?: number | null;
 };
 
 type Meeting = {
@@ -437,6 +444,23 @@ export default function RenterPortalPage() {
                 )}
             </div>
 
+            {/* PR #359 R1: a lease that changed hands — each renter sees their own side. */}
+            {lease.assignedToYouOn && (
+                <p className="mb-4 text-xs text-muted" data-testid={`portal-assigned-${lease.id}`}>
+                    {tLeasing.rich("assignment.portalOpening", {
+                        date: fmtIsoDate(lease.assignedToYouOn, locale),
+                        balance: formatCurrencyCompact(Math.abs(lease.openingReceivable ?? 0)),
+                        owed: (lease.openingReceivable ?? 0) > 0 ? "owed" : (lease.openingReceivable ?? 0) < 0 ? "credit" : "nil",
+                        deposit: formatCurrencyCompact(lease.openingDeposit ?? 0),
+                        n: (c) => <bdi dir="ltr">{c}</bdi>,
+                    })}
+                </p>
+            )}
+            {lease.yourAccessEndedOn && (
+                <p className="mb-4 text-xs text-muted" data-testid={`portal-handed-over-${lease.id}`}>
+                    {tLeasing("assignment.portalHandedOver", { date: fmtIsoDate(lease.yourAccessEndedOn, locale) })}
+                </p>
+            )}
             {lease.status === 'PENDING_SIGNATURE' && paymentsByLease[lease.id]?.length > 0 && (() => {
                 const plan = paymentsByLease[lease.id];
                 const isExpanded = expandedPlanLeaseId === lease.id;

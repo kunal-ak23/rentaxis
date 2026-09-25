@@ -25,4 +25,15 @@ public interface LeaseLineRepository extends JpaRepository<LeaseLine, UUID> {
      */
     @Modifying
     void deleteByLease_Id(UUID leaseId);
+
+    /**
+     * #99: how many leases past DRAFT carry a line of this charge type. Such a
+     * type's recognition and behaviour are frozen: the books already followed them.
+     * JPQL, so the tenant filter applies (callers are {@code @Transactional}).
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT COUNT(DISTINCT l.lease.id) FROM LeaseLine l
+             WHERE l.chargeType.id = :chargeTypeId
+               AND l.lease.status <> com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT""")
+    long countNonDraftLeasesUsing(@org.springframework.data.repository.query.Param("chargeTypeId") UUID chargeTypeId);
 }

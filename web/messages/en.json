@@ -1915,7 +1915,10 @@
   },
   "Leasing": {
     "noticeGivenBy": "Given by",
-    "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
+    "noticeParty": {
+      "RENTER": "Renter",
+      "LANDLORD": "Landlord"
+    },
     "noticeDate": "Notice date",
     "intendedMoveOut": "Intended move-out",
     "noticeNotes": "Notes",
@@ -2121,7 +2124,101 @@
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
     "cancel": "Cancel",
     "noPenalties": "No penalties raised against this contract.",
-    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone."
+    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone.",
+    "lineRecognition": {
+      "RENT_LIKE": "Deferred — earned over the term",
+      "ONE_OFF": "Income when charged",
+      "PASS_THROUGH": "Pass-through (at cost)",
+      "NONE": "Held — not income"
+    },
+    "creditAddendum": "Credit",
+    "reduction": {
+      "open": "Reduce or remove a charge",
+      "title": "Reduce or remove a charge (credit addendum)",
+      "hint": "For the rest of the term, from the effective date. The credit is worked out per day: what the charge still has to earn, less the rest of the term at the new amount. Nothing already on the books is rewritten, so cleared cheques are no obstacle.",
+      "confirm": "Post credit addendum",
+      "lines": "Charges to reduce",
+      "current": "Current amount",
+      "newAmount": "New amount (for the whole period)",
+      "remove": "Remove",
+      "credit": "Credit",
+      "perDay": "{days} day(s) left, {from} to {to}",
+      "nothingReducible": "No rent or charge earned over the term can be reduced on this lease.",
+      "excess": "The credit",
+      "excessCredit": "Leave it on the renter's account (applied to later dues, refunded at settlement)",
+      "excessCheques": "Hand back uncleared cheques (and take smaller ones)",
+      "handBack": "Cheques to hand back",
+      "noneToHandBack": "No uncleared cheque can be handed back.",
+      "replacements": "Replacement cheques",
+      "creditNet": "Credit on the charges",
+      "vatFromDeferred": "VAT not yet declared, taken off the instalments",
+      "vatCreditNote": "VAT already declared, credited back (tax credit note)",
+      "creditTotal": "Off the renter's account",
+      "gap": "Still to settle by cheques",
+      "failed": "The credit addendum could not be posted.",
+      "previewOnly": "You can see what this reduction would do; an administrator or accountant posts it."
+    },
+    "assignment": {
+      "title": "Assignment to another renter",
+      "start": "Assign to another renter",
+      "toRenter": "New renter",
+      "chooseRenter": "Choose the renter taking over",
+      "reason": "Reason",
+      "reasonHint": "e.g. death of the tenant, company novation",
+      "takeOver": "The new renter takes on anything overdue",
+      "draft": "Create draft",
+      "pending": "Assignment pending: {from} → {to} from {date}",
+      "moves": "Posting moves from the outgoing renter's account",
+      "dr": "Dr <n>{amount}</n>",
+      "cr": "Cr <n>{amount}</n>",
+      "cheques": "{count} open instalment(s) move to the new renter; the drawer stays as written on the cheque.",
+      "overdue": "Overdue on the outgoing renter",
+      "takenOver": "The new renter takes these on.",
+      "post": "Post assignment",
+      "delete": "Delete draft",
+      "posted": "Assigned from {from} to {to} on {date} ({journal})",
+      "failed": "The assignment could not be saved.",
+      "portalOpening": "This lease came to you on {date}. Opening balance: {owed, select, owed {you owe <n>{balance}</n>} credit {in your favour <n>{balance}</n>} other {nil}}; deposit held <n>{deposit}</n>. Earlier history belongs to the previous renter.",
+      "portalHandedOver": "You handed this lease over on {date}. You can see its history up to that date.",
+      "confirmPostTitle": "Post this assignment?",
+      "confirmPost": "The lease passes from {from} to {to} on {date}. One journal moves {from}'s receivable, cheques held, deposit and unearned rent on this lease to {to}, and {count} open instalment(s) are re-attributed. This cannot be undone from here.",
+      "confirmDeleteTitle": "Delete this draft assignment?",
+      "confirmDelete": "The draft is discarded. Nothing was posted, and the lease stays with the current renter."
+    },
+    "transfer": {
+      "open": "Transfer to another unit",
+      "title": "Transfer to another unit",
+      "hint": "The current lease ends on the move date with no exit fee; the new one starts the next day. The deposit, the balance and the cheques you carry move across. Nothing is posted until you post the new lease.",
+      "step1": "The move",
+      "moveDate": "Last night in the current unit",
+      "targetUnit": "New unit",
+      "chooseUnit": "Choose a vacant unit",
+      "endDate": "New term ends",
+      "rent": "Rent for the new term",
+      "rentHint": "Current rate for {days} day(s): <n>{amount}</n>",
+      "step2": "Cheques",
+      "noCheques": "No uncleared cheques.",
+      "disposition": "What happens to cheque",
+      "dispositions": {
+        "CARRY": "Carry",
+        "KEEP": "Keep",
+        "RETURN": "Return"
+      },
+      "earned": "Earned on the current unit",
+      "prepaidCarried": "Paid ahead, carried to the new lease",
+      "owedCarried": "Owed, carried to the new lease",
+      "depositCarried": "Deposit carried",
+      "chequesCarried": "Cheques carried",
+      "gap": "Gap to collect",
+      "gapHint": "Add cheques for the gap on the new lease's grid before posting it.",
+      "createDraft": "Create draft",
+      "fromBanner": "Transfer from the previous unit · move date {date}",
+      "pendingBanner": "Transfer pending → draft on {unit}",
+      "toBanner": "Transferred to {unit}",
+      "failed": "The transfer could not be drafted."
+    },
+    "contractRent": "Contract rent",
+    "currentRent": "Current rent (after credit addenda)"
   },
   "VatSchedule": {
     "title": "VAT schedule",
@@ -2197,7 +2294,8 @@
       "REPLACED": "Replaced",
       "CANCELLED": "Cancelled",
       "RETURNED": "Returned",
-      "ONLINE_PENDING": "Online Pending"
+      "ONLINE_PENDING": "Online Pending",
+      "TRANSFERRED": "Transferred"
     },
     "mode": {
       "PDC": "Post-Dated Cheque",
@@ -2361,6 +2459,32 @@
       },
       "account": {
         "deactivateWithBalance": "Account {account} still has a balance of {balance}; move the balance (or close the fiscal year) before deactivating it."
+      },
+      "chargeType": {
+        "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind and how it is earned cannot change. Create a new charge type for the new rule."
+      },
+      "lease": {
+        "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
+        "reductionNotLower": "Line {line} ({code}): the new amount is not lower than what the charge still has to earn; a credit addendum only reduces.",
+        "reductionNotScheduled": "Line {line} ({code}) has nothing left to earn from the effective date (a one-off fee, a fee taken to income at posting, or a charge whose period has ended), so it cannot be reduced.",
+        "reductionChequeGap": "The cheques handed back ({returned}) less the replacements ({replaced}) must come to the credit of {credit}; they are {gap} {direction, select, short {short} other {over}}.",
+        "reductionChequeNotReturnable": "Instalment {row} cannot be handed back: only an uncleared, undeposited rent or fee instalment can.",
+        "amendAfterCredit": "This lease has a credit addendum, so its lines can no longer be amended; post a further addendum instead.",
+        "assignmentOverdue": "{from} has {count} overdue instalment(s) on this lease ({amount}). Confirm that {to} takes them on, or collect them first.",
+        "assignmentSameRenter": "The lease already belongs to {renter}.",
+        "assignmentReason": "Say why the lease changes hands.",
+        "assignmentDraftExists": "This lease already has a draft assignment; post or delete it first.",
+        "transferOnLastDay": "The move date is the lease's last day: renew onto the new unit instead of transferring.",
+        "transferSameUnit": "The renter is already in this unit; choose another.",
+        "transferExists": "This lease already has a transfer.",
+        "transferHasRenewal": "This lease has a renewal; delete the draft renewal first.",
+        "transferCarryNotRegistered": "Cheque {row} is {status}; only a cheque still in the drawer can be carried.",
+        "renewHasTransfer": "This lease is being transferred; delete that draft, or renew the new lease instead.",
+        "assignmentSuccessorDraft": "This lease has a draft {kind, select, transfer {transfer} other {renewal}} in the current renter's name; delete it before assigning the lease.",
+        "assignmentPending": "This lease has a draft assignment to another renter; post or delete it first.",
+        "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name.",
+        "assignmentFuture": "An assignment cannot take effect after today; post it on or after {date}.",
+        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -3917,7 +4041,7 @@
     "renewalCopied": "Copied",
     "renewalSkipped": "Not copied (one-off)",
     "renewalDeposit": "Carried or re-collected",
-    "appliesToNewLeases": "A change applies to leases posted afterwards. Leases already on the books are not restated."
+    "appliesToNewLeases": "A fee already used on a lease past draft keeps how it is earned, and each posted line shows the rule it was posted with. For a different rule, create a new charge type."
   },
   "RentFree": {
     "title": "Rent-free periods",
@@ -3998,6 +4122,7 @@
       "draftVouchers": "{count} draft voucher(s) are dated inside the year; closing will lock them out of it."
     },
     "beforeClosing": "Before closing entries",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "broughtForward": "Brought forward from earlier years (not yet closed)"
   }
 }

@@ -10,7 +10,7 @@
  * against the tenancy, not consideration for a supply.
  */
 
-import type { ChargeBehaviour, ChargeType, LeaseLine, LeaseLineInput } from "@/lib/api/leasing";
+import type { ChargeBehaviour, ChargeRecognition, ChargeType, LeaseLine, LeaseLineInput, PostedRecognition } from "@/lib/api/leasing";
 
 /** UAE standard rate. Not configurable: a change is a tax event, not a setting. */
 export const VAT_RATE = 0.05;
@@ -61,6 +61,10 @@ export type LineRow = {
      * Read-only and never sent — the server re-derives it from the lease's periods.
      */
     rentFreeAmount?: number;
+    /** The charge type's recognition for a persisted line. Read-only. */
+    recognition?: ChargeRecognition | null;
+    /** #99 / F15-06: what posting did with a persisted line; null on a draft. Read-only. */
+    postedRecognition?: PostedRecognition | null;
     /**
      * The operator ticked or unticked this row's VAT box by hand (#54 review
      * M-3). A touched RENT row keeps its choice when the header's "Rent carries
@@ -102,6 +106,8 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         periodEnd: line.periodEnd ?? null,
         addendumId: line.addendumId ?? null,
         rentFreeAmount: line.rentFreeAmount ?? 0,
+        recognition: line.recognition ?? null,
+        postedRecognition: line.postedRecognition ?? null,
     };
 }
 
@@ -131,9 +137,14 @@ export function renewalRows(
                 && l.periodStart != null && l.periodStart > termStart)
             // Spec §4c: a one-off fee is not renewed.
             && !isOneOff(l)
-            && !(opts.carryDepositForward && l.behaviour === "DEPOSIT"))
+            && !(opts.carryDepositForward && l.behaviour === "DEPOSIT")
+            // PR #359 R1: a charge a credit addendum removed does not renew.
+            && !(l.currentAmount != null && l.currentAmount === 0))
         .map((l, i) => {
-            const row = toRow(l, i);
+            // …and a reduced one renews at what the renter pays now.
+            const row = l.currentAmount != null
+                ? { ...toRow(l, i), grossAmount: l.currentAmount, discountAmount: 0 }
+                : toRow(l, i);
             // Concessions do not renew (spec §4a): discount and rent-free reset.
             return l.behaviour === "RENT" ? { ...row, narration: "", discountAmount: 0, rentFreeAmount: 0 } : row;
         });
@@ -414,4 +425,84 @@ export function clampIso(iso: string, min?: string | null, max?: string | null):
     if (min && iso < min) return min;
     if (max && iso > max) return max;
     return iso;
+}
+
+// ---- F15-04: instalments on a term with rent-free windows ----
+
+type Ymd = { y: number; m: number; d: number };
+const ymd = (iso: string): Ymd => {
+    const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+    return { y, m, d };
+};
+const iso = ({ y, m, d }: Ymd) => `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+function plusMonths(date: string, k: number): string {
+    const { y, m, d } = ymd(date);
+    const total = y * 12 + (m - 1) + k;
+    const ny = Math.floor(total / 12);
+    const nm = (total % 12) + 1;
+    return iso({ y: ny, m: nm, d: Math.min(d, daysIn(ny, nm)) });
+}
+function plusDays(date: string, k: number): string {
+    const { y, m, d } = ymd(date);
+    const t = new Date(Date.UTC(y, m - 1, d + k));
+    return iso({ y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() });
+}
+/** java.time's MONTHS.between: whole months from a to b. */
+function monthsBetween(a: string, b: string): number {
+    const x = ymd(a);
+    const z = ymd(b);
+    let months = (z.y * 12 + z.m) - (x.y * 12 + x.m);
+    const days = z.d - x.d;
+    if (months > 0 && days < 0) months--;
+    else if (months < 0 && days > 0) months++;
+    return months;
+}
+function outOfFree(day: string, free: { fromDate: string; toDate: string }[]): string {
+    let d = day;
+    for (const p of free) if (d >= p.fromDate && d <= p.toDate) d = plusDays(p.toDate, 1);
+    return d;
+}
+
+/**
+ * How many instalments a term with rent-free windows can take — one per charged
+ * month, the server's `ChequeGenerationService.chargedAnchors`: each month's due
+ * date from the first, moved out of any free window, distinct and within the term.
+ */
+export function chargedMonths(firstDue: string, end: string, free: { fromDate: string; toDate: string }[]): number {
+    const windows = [...free].sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+    const months = Math.max(monthsBetween(firstDue, plusDays(end, 1)), 1);
+    const anchors: string[] = [];
+    for (let k = 0; k < months; k++) {
+        const a = outOfFree(plusMonths(firstDue, k), windows);
+        if (a > end) continue;
+        if (anchors.length && a <= anchors[anchors.length - 1]) continue;
+        anchors.push(a);
+    }
+    return Math.max(anchors.length, 1);
+}
+
+/** F15-04: the Generate form's instalment count — the lease's terms, capped at the charged months. */
+export function defaultInstallmentsFor(
+    paymentTerms: number | null | undefined,
+    firstDue: string | null | undefined,
+    end: string | null | undefined,
+    free: { fromDate: string; toDate: string }[] | null | undefined,
+): number {
+    const n = paymentTerms ?? 4;
+    if (!free?.length || !firstDue || !end) return n;
+    return Math.min(n, chargedMonths(firstDue, end, free));
+}
+
+/**
+ * F15-05: the end of a term as long as the current one, starting on {@code newStart} —
+ * the server's `LeaseRenewalService.sameTermLength` (java.time Period: whole months,
+ * then days), so a renewal by percent is accepted as proposed.
+ */
+export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string): string {
+    const afterOld = plusDays(oldEnd, 1);
+    const months = monthsBetween(oldStart, afterOld);
+    const anchor = plusMonths(oldStart, months);
+    const days = Math.round((Date.parse(afterOld) - Date.parse(anchor)) / 86_400_000);
+    return plusDays(plusDays(plusMonths(newStart, months), days), -1);
 }

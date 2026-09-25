@@ -6,7 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount } from "@/lib/api/ledger";
-import type { ChargeType } from "@/lib/api/leasing";
+import type { ChargeBehaviour, ChargeType } from "@/lib/api/leasing";
 import {
     accountTypeFor,
     behaviourOf,
@@ -61,6 +61,18 @@ type Props = {
      */
     rentVat?: boolean;
 };
+
+/**
+ * #99 / F15-02 / F15-06: how the books treat a fee or deposit line — what posting
+ * did (the line's snapshot) once posted, else what the charge type will do. A fee
+ * earned over the term is deferred at posting, so the credit account shown beside
+ * it is where it is released to, not where the TCO credits it.
+ */
+function lineRecognitionOf(row: LineRow, behaviour: ChargeBehaviour | null | undefined, type?: ChargeType) {
+    if (behaviour === "DEPOSIT") return row.postedRecognition ?? "NONE";
+    if (behaviour !== "FEE") return null;
+    return row.postedRecognition ?? row.recognition ?? type?.recognition ?? "RENT_LIKE";
+}
 
 export default function LeaseLinesGrid({
     lines,
@@ -155,10 +167,20 @@ export default function LeaseLinesGrid({
                                                 ))}
                                             </select>
                                         ) : (
-                                            <span className="text-foreground">
-                                                {locale === "ar"
-                                                    ? row.chargeTypeNameAr || row.chargeTypeName || type?.nameAr || type?.nameEn || "—"
-                                                    : row.chargeTypeName || type?.nameEn || "—"}
+                                            <>
+                                                <span className="text-foreground">
+                                                    {locale === "ar"
+                                                        ? row.chargeTypeNameAr || row.chargeTypeName || type?.nameAr || type?.nameEn || "—"
+                                                        : row.chargeTypeName || type?.nameEn || "—"}
+                                                </span>
+                                            </>
+                                        )}
+                                        {lineRecognitionOf(row, behaviour, type) && (
+                                            <span
+                                                className="block mt-0.5 text-[10px] text-muted"
+                                                data-testid={`lease-line-recognition-${i}`}
+                                            >
+                                                {t(`lineRecognition.${lineRecognitionOf(row, behaviour, type)}`)}
                                             </span>
                                         )}
                                     </td>

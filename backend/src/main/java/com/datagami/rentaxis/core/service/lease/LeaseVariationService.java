@@ -80,6 +80,8 @@ public class LeaseVariationService {
     private final EntryNumberService entryNumbers;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.domain.repository.LeaseAddendumCreditRepository credits;
 
     public LeaseVariationService(LeaseRepository leaseRepository,
                                  LeaseLineRepository leaseLineRepository,
@@ -312,9 +314,21 @@ public class LeaseVariationService {
     }
 
     /** Same DTO, without the lookup, for a caller that already knows the TCO's status. */
-    private static LeaseAddendumDTO toDto(LeaseAddendum a, JournalStatus tcoStatus) {
+    LeaseAddendumDTO toDto(LeaseAddendum a, JournalStatus tcoStatus) {
+        List<com.datagami.rentaxis.api.dto.lease.LeaseAddendumCreditDTO> cut = List.of();
+        if (LeaseAddendum.KIND_CREDIT.equals(a.getKind()) && credits != null) {
+            cut = credits.findByAddendumIdIn(List.of(a.getId())).stream().map(c -> {
+                LeaseLine line = leaseLineRepository.findById(c.getLeaseLineId()).orElse(null);
+                var type = line == null ? null : line.getChargeType();
+                return new com.datagami.rentaxis.api.dto.lease.LeaseAddendumCreditDTO(c.getLeaseLineId(),
+                        type == null ? null : type.getCode(), type == null ? null : type.getNameEn(),
+                        type == null ? null : type.getNameAr(), c.getNewLineAmount(), c.getRemainingBefore(),
+                        c.getRemainingAfter(), c.getCreditAmount(), c.getVatAmount());
+            }).toList();
+        }
         return new LeaseAddendumDTO(a.getId(), a.getAddendumNumber(), a.getEffectiveFrom(), a.getContractDate(),
                 a.getEjariNumber(), a.getEjariNumber() == null, a.getReason(), a.getValue(),
-                a.getTcoJournalId(), a.getTcoEntryNumber(), tcoStatus == JournalStatus.REVERSED, a.getCreatedAt());
+                a.getTcoJournalId(), a.getTcoEntryNumber(), tcoStatus == JournalStatus.REVERSED, a.getCreatedAt(),
+                a.getKind(), a.getExcess(), cut);
     }
 }

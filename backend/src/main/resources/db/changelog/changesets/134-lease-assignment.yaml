@@ -1,0 +1,40 @@
+# F14-39: a lease assigned to another renter (death of the tenant, company
+# novation) — same unit, same lease number, deposit and cheque schedule. Drafted,
+# then posted: the post moves renter A's sub-ledger balances on the lease to renter
+# B in one journal and re-attributes the open cheques (the drawer stays as written).
+# At most one DRAFT assignment per lease.
+databaseChangeLog:
+  - changeSet:
+      id: 134-lease-assignment
+      author: claude
+      changes:
+        - createTable:
+            tableName: lease_assignments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_assign_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: from_renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_assign_from, referencedTableName: renters, referencedColumnNames: id } }
+              - column: { name: to_renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_assign_to, referencedTableName: renters, referencedColumnNames: id } }
+              - column: { name: effective_date, type: date, constraints: { nullable: false } }
+              - column: { name: reason, type: text }
+              - column: { name: take_over_overdue, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false } }
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_lease_assign_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: journal_number, type: varchar(40) }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: posted_by, type: uuid }
+              - column: { name: posted_at, type: timestamptz }
+        - createIndex:
+            tableName: lease_assignments
+            indexName: ix_lease_assignments_lease
+            columns:
+              - column: { name: lease_id }
+        - sql:
+            comment: At most one draft assignment per lease
+            sql: CREATE UNIQUE INDEX ux_lease_assignments_one_draft ON lease_assignments (lease_id) WHERE status = 'DRAFT'
+        - sql:
+            sql: ALTER TABLE lease_assignments ADD CONSTRAINT ck_lease_assignments_status CHECK (status IN ('DRAFT', 'POSTED', 'CANCELLED'))
+      rollback:
+        - dropTable: { tableName: lease_assignments }

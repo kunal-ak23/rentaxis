@@ -182,6 +182,27 @@ class YearEndCloseIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("locked");
     }
 
+    /**
+     * F15-01: with 2024 still open, 2025's preview shows 2025's own result per
+     * property (17,800, what its lines and net add up to) and 2024's 19,200 apart,
+     * as brought forward — never the cumulative 37,000 as "the year's" profit.
+     */
+    @Test
+    void anOpenEarlierYearIsShownAsBroughtForwardNotAsTheYearsProfit() {
+        twoYears(true);
+        YearClosePreviewDTO preview = closes.preview(2025, TODAY);
+        assertThat(preview.netResult()).isEqualByComparingTo("17800");
+        assertThat(preview.retainedEarnings()).singleElement().satisfies(r -> {
+            assertThat(r.profit()).isEqualByComparingTo("17800");
+            assertThat(r.broughtForward()).isEqualByComparingTo("19200");
+        });
+        closes.close(2024, false, TODAY);
+        assertThat(closes.preview(2025, TODAY).retainedEarnings()).singleElement().satisfies(r -> {
+            assertThat(r.profit()).isEqualByComparingTo("17800");
+            assertThat(r.broughtForward()).isEqualByComparingTo("0");
+        });
+    }
+
     @Test
     void yearsCloseInOrderAndOnlyTheLatestReopens() {
         twoYears(true);

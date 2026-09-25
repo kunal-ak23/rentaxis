@@ -19,6 +19,15 @@ public class LeaseDTO {
     private UUID renterId;
     private String unitIdentifier;
     private String renterName;
+    /**
+     * PR #359 R1 (renter portal after an assignment): for the incoming renter, the date the
+     * lease came to them and what came with it as one opening line (receivable, debit
+     * positive, and deposit held); for the outgoing renter, the date their access ends.
+     */
+    private java.time.LocalDate assignedToYouOn;
+    private java.math.BigDecimal openingReceivable;
+    private java.math.BigDecimal openingDeposit;
+    private java.time.LocalDate yourAccessEndedOn;
     private LocalDate startDate;
     private LocalDate endDate;
     private LeaseStatus status;
@@ -83,6 +92,14 @@ public class LeaseDTO {
 
     // ---- renewal chain ----
     private UUID renewedFromLeaseId;
+    /** PR #359 R1: the rent charged now, after credit addenda (rentAmount is the contract's). */
+    private java.math.BigDecimal currentRentAmount;
+    /** Spec §2: B → A for a unit transfer, the move date, and (on A) the lease it moved to. */
+    private UUID transferredFromLeaseId;
+    private java.time.LocalDate transferMoveDate;
+    private UUID transferredToLeaseId;
+    private String transferredToUnit;
+    private String transferredToStatus;
     private UUID chainId;
 
     // ---- posting ----

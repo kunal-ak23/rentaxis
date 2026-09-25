@@ -235,6 +235,36 @@ describe("LeaseLinesGrid", () => {
      * `creditAccountNameAr` on Arabic, and falls back sensibly when a line
      * predates those fields.
      */
+    describe("how the books treat a line (#99, F15-02, F15-06)", () => {
+        it("labels a fee by what posting did with it, a deposit as not income, and rent not at all — EN and AR", () => {
+            const lines = [
+                row({ key: 0, chargeTypeId: "ct-rent", grossAmount: 60000, recognition: "RENT_LIKE", postedRecognition: "RENT_LIKE" }),
+                row({ key: 1, chargeTypeId: "ct-fee", grossAmount: 1000, recognition: "RENT_LIKE", postedRecognition: "ONE_OFF" }),
+                row({ key: 2, chargeTypeId: "ct-dep", grossAmount: 5000, recognition: "RENT_LIKE", postedRecognition: "NONE" }),
+                row({ key: 3, chargeTypeId: "ct-fee", grossAmount: 650, recognition: "PASS_THROUGH" }),
+            ];
+            renderReadOnly(lines);
+            expect(screen.queryByTestId("lease-line-recognition-0")).toBeNull();
+            expect(screen.getByTestId("lease-line-recognition-1")).toHaveTextContent(en.Leasing.lineRecognition.ONE_OFF);
+            expect(screen.getByTestId("lease-line-recognition-2")).toHaveTextContent(en.Leasing.lineRecognition.NONE);
+            expect(screen.getByTestId("lease-line-recognition-3")).toHaveTextContent("Pass-through (at cost)");
+            cleanup();
+            renderReadOnlyAr(lines);
+            expect(screen.getByTestId("lease-line-recognition-1")).toHaveTextContent(ar.Leasing.lineRecognition.ONE_OFF);
+        });
+
+        it("says a periodic fee is deferred while the lease is being drafted", () => {
+            const types = CHARGE_TYPES.map(c => (c.id === "ct-fee" ? { ...c, recognition: "RENT_LIKE" as const } : c));
+            render(
+                <NextIntlClientProvider locale="en" messages={en}>
+                    <LeaseLinesGrid lines={[row({ key: 0, chargeTypeId: "ct-fee", grossAmount: 3650 })]}
+                        chargeTypes={types} editable onChange={() => {}} />
+                </NextIntlClientProvider>,
+            );
+            expect(screen.getByTestId("lease-line-recognition-0")).toHaveTextContent("Deferred — earned over the term");
+        });
+    });
+
     describe("Arabic charge and account names (F14-15)", () => {
         it("shows the line's own Arabic charge and account names on /ar", () => {
             renderReadOnlyAr([

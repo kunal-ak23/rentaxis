@@ -202,3 +202,22 @@ describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
         expect(body.rentChange).toBeNull();
     });
 });
+
+/** F15-05: the new term defaults to the current one's length, not a year. */
+describe("RenewLeaseDialog default term (F15-05)", () => {
+    it("proposes a six-month renewal of a six-month lease", () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <RenewLeaseDialog open lease={{ ...LEASE, startDate: "2026-04-01", endDate: "2026-09-30" } as LeaseDetail}
+                    chargeTypes={CHARGE_TYPES} onClose={() => {}} onRenewed={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        expect((document.getElementById("renew-start-date") as HTMLInputElement).value).toBe("2026-10-01");
+        expect((document.getElementById("renew-end-date") as HTMLInputElement).value).toBe("2027-03-31");
+    });
+
+    it("keeps a year for a year, and a month-and-days term to the day", () => {
+        renderDialog();
+        expect((document.getElementById("renew-end-date") as HTMLInputElement).value).toBe("2026-09-30");
+    });
+});

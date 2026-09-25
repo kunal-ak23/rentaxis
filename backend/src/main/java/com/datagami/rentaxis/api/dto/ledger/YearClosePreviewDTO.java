@@ -29,7 +29,16 @@ public record YearClosePreviewDTO(int fiscalYear, LocalDate periodStart, LocalDa
                           UUID propertyId, String propertyName, BigDecimal amount) {
     }
 
-    /** The profit (Cr) or loss (Dr, negative) the close moves to Retained Earnings for one property. */
-    public record RetainedLine(UUID propertyId, String propertyName, BigDecimal profit) {
+    /**
+     * The profit (Cr) or loss (Dr, negative) of the year itself for one property —
+     * the same figure the lines and {@code netResult} add up to (F15-01) — and,
+     * separately, any result of earlier years still open ({@code broughtForward}),
+     * which the close would sweep into Retained Earnings too. Zero once every
+     * earlier year is closed; while one is open the close is blocked anyway.
+     */
+    public record RetainedLine(UUID propertyId, String propertyName, BigDecimal profit, BigDecimal broughtForward) {
+        public RetainedLine(UUID propertyId, String propertyName, BigDecimal profit) {
+            this(propertyId, propertyName, profit, BigDecimal.ZERO.setScale(2));
+        }
     }
 }

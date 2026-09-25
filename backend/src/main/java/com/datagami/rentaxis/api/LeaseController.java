@@ -76,6 +76,9 @@ public class LeaseController {
     private final LeaseTerminationService leaseTerminationService;
     private final LeaseVariationService leaseVariationService;
     private final com.datagami.rentaxis.core.service.lease.RentFreeService rentFreeService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseTransferService leaseTransferService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -450,6 +453,82 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseAddendumDTO>> listAddenda(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseVariationService.list(id));
+    }
+
+    /**
+     * F14-32: what a mid-term reduction (credit addendum) would do, with nothing
+     * written. Readable, like the termination preview.
+     */
+    @PostMapping("/{id}/reductions/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.ReductionPreviewDTO> previewReduction(
+            @PathVariable UUID id, @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+        return ResponseEntity.ok(leaseReductionService.preview(id, request));
+    }
+
+    /** F14-32: post a mid-term reduction as a numbered credit addendum. Finance roles, like /addenda. */
+    @PostMapping("/{id}/reductions")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<AddendumResponse> reduce(@PathVariable UUID id,
+            @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+        return ResponseEntity.ok(leaseReductionService.reduce(id, request));
+    }
+
+    // --- Spec 2026-09-24 §2: unit transfer ----------------------------------
+
+    /**
+     * Draft the transfer: B on the target unit from the day after the move date,
+     * with the cheque plan. Writes nothing to the ledger; posting B completes it
+     * (POST /{B}/post, finance roles). Manageable, like a renewal draft.
+     */
+    @PostMapping("/{id}/transfer")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<LeaseDTO> transferLease(@PathVariable UUID id,
+            @RequestBody com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest request) {
+        return ResponseEntity.ok(leaseTransferService.draft(id, request, leasePostingService));
+    }
+
+    @GetMapping("/{id}/transfer/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.TransferPreviewDTO> previewTransfer(
+            @PathVariable UUID id,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate moveDate,
+            @RequestParam UUID targetUnitId,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(leaseTransferService.preview(id, moveDate, targetUnitId, endDate));
+    }
+
+    // --- F14-39: assignment to another renter -----------------------------
+
+    /** Draft an assignment: writes nothing to the ledger. Manageable, like a renewal draft. */
+    @PostMapping("/{id}/assignments")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO> draftAssignment(
+            @PathVariable UUID id, @RequestBody com.datagami.rentaxis.api.dto.lease.AssignLeaseRequest request) {
+        return ResponseEntity.ok(leaseAssignmentService.draft(id, request));
+    }
+
+    @GetMapping("/{id}/assignments")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO>> listAssignments(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseAssignmentService.list(id));
+    }
+
+    /** Post it: one journal moves the outgoing renter's balances. Finance roles, like Post. */
+    @PostMapping("/{id}/assignments/{assignmentId}/post")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO> postAssignment(
+            @PathVariable UUID id, @PathVariable UUID assignmentId,
+            @RequestBody(required = false) Map<String, Boolean> body) {
+        return ResponseEntity.ok(leaseAssignmentService.post(id, assignmentId,
+                body == null ? null : body.get("takeOverOverdue")));
+    }
+
+    @DeleteMapping("/{id}/assignments/{assignmentId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Void> cancelAssignment(@PathVariable UUID id, @PathVariable UUID assignmentId) {
+        leaseAssignmentService.cancel(id, assignmentId);
+        return ResponseEntity.noContent().build();
     }
 
     /** Fill in the Ejari a variation was re-registered under; blank until then ("Ejari pending"). */

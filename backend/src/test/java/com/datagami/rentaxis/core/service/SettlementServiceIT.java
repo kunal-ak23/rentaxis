@@ -684,6 +684,19 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(response.getSettledByName()).isEqualTo("Kunal (Platform Admin)");
     }
 
+    /** F15-03: Finalize on a fresh settlement page, with no draft saved, books the statement it showed. */
+    @Test
+    void finalizeWithoutASavedDraftCreatesItFromTheStatement() {
+        UUID leaseId = terminatedGalah();
+        assertThat(settlement.getSettlement(leaseId)).isEmpty();
+        SettlementResponseDTO response = finalize(leaseId, leaf(AccountRole.BANK).getId());
+        assertThat(response.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+        assertThat(response.getRefundAmount()).isEqualByComparingTo("8239.73");
+        assertThat(stlOf(leaseId).getEntryDate()).isEqualTo(SETTLED_ON);
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void finalizeRefundPostsStlAndClosesLease() {
         UUID leaseId = terminatedGalah();
