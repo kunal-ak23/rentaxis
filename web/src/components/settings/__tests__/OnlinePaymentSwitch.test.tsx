@@ -27,3 +27,53 @@ describe("OnlinePaymentSwitch", () => {
         expect(fetch).toHaveBeenCalledWith("/api/proxy/v1/rent-settings/p1", expect.objectContaining({ method: "POST" }));
     });
 });
+
+describe("OnlinePaymentSwitch — a late response for the previous property (PR #363 R1)", () => {
+    it("ignores A's row when it lands after B was picked, and saves B's own row to B", async () => {
+        const pending: Record<string, (body: unknown) => void> = {};
+        global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.endsWith("/v1/properties")) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => [
+                    { property: { id: "pA", nameEn: "Alpha" } }, { property: { id: "pB", nameEn: "Bravo" } }] } as unknown as Response);
+            }
+            if (init?.method === "POST") {
+                posted.push({ url, ...JSON.parse(String(init.body)) });
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+            }
+            const id = url.split("/").pop()!;
+            return new Promise(resolve => {
+                pending[id] = body => resolve({ ok: true, status: 200, json: async () => body } as unknown as Response);
+            });
+        }) as unknown as typeof fetch;
+
+        render(<OnlinePaymentSwitch />);
+        await screen.findByText("Bravo");
+        fireEvent.change(screen.getByRole("combobox"), { target: { value: "pA" } });
+        fireEvent.change(screen.getByRole("combobox"), { target: { value: "pB" } });
+        // B answers first, then A's slow response arrives.
+        pending.pB({ propertyId: "pB", onlinePaymentEnabled: false, dueDayOfMonth: 2, penaltyType: "NONE", penaltyAmount: 0 });
+        const sw = await screen.findByRole("switch");
+        pending.pA({ propertyId: "pA", onlinePaymentEnabled: true, dueDayOfMonth: 28, penaltyType: "PERCENTAGE", penaltyAmount: 9 });
+        await new Promise(r => setTimeout(r, 0));
+        expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+
+        fireEvent.click(sw);
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ url: "/api/proxy/v1/rent-settings/pB", dueDayOfMonth: 2, penaltyType: "NONE", onlinePaymentEnabled: true });
+    });
+
+    it("shows no switch (so nothing can be saved) while the selected property's row is still loading", async () => {
+        global.fetch = vi.fn((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.endsWith("/v1/properties")) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => [{ property: { id: "pA", nameEn: "Alpha" } }] } as unknown as Response);
+            }
+            return new Promise(() => {});
+        }) as unknown as typeof fetch;
+        render(<OnlinePaymentSwitch />);
+        await screen.findByText("Alpha");
+        fireEvent.change(screen.getByRole("combobox"), { target: { value: "pA" } });
+        expect(screen.queryByRole("switch")).toBeNull();
+    });
+});
