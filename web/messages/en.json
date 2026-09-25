@@ -1914,7 +1914,6 @@
     "chargeTypes": "Charge types"
   },
   "Leasing": {
-    "renewCopiedChargesNotice": "{count, plural, one {This charge will} other {These charges will}} be copied to the new term: {list}. Untick “Copy the charge lines” to edit {count, plural, one {it} other {them}}.",
     "noticeGivenBy": "Given by",
     "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
     "noticeDate": "Notice date",
@@ -2359,6 +2358,9 @@
         "duplicateTrn": "{vendor} already uses this TRN.",
         "duplicateName": "{vendor} already uses this name.",
         "hasPostings": "{vendor} has postings. Mark it inactive instead."
+      },
+      "account": {
+        "deactivateWithBalance": "Account {account} still has a balance of {balance}; move the balance (or close the fiscal year) before deactivating it."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -3929,8 +3931,8 @@
     "save": "Save periods",
     "saveFailed": "The rent-free periods could not be saved.",
     "days": "{days} days",
-    "concession": "concession {amount}",
-    "summary": "Headline rent {headline} − concession {concession} = payable {payable}"
+    "concession": "concession <n>{amount}</n>",
+    "summary": "Headline rent <n>{headline}</n> − concession <n>{concession}</n> = payable <n>{payable}</n>"
   },
   "Renewal": {
     "rentChange": "Rent change",
@@ -3941,11 +3943,11 @@
     },
     "percent": "Change in percent",
     "newRent": "New annual rent",
-    "rentPreview": "Rent {from} → {to} ({change})",
-    "aboveNotice": "This increase is above the building's notice threshold of {percent}%. It is allowed; check it before posting.",
+    "rentPreview": "Rent <n>{from}</n> → <n>{to}</n> (<n>{change}</n>)",
+    "aboveNotice": "This increase is above the building's notice threshold of <n>{percent}%</n>. It is allowed; check it before posting.",
     "previewFailed": "The renewal preview could not be loaded.",
     "concessionsDoNotRenew": "A discount and rent-free periods do not carry over to the new term.",
-    "notCopied": "Not copied (one-off): {list}",
+    "notCopied": "Not copied (one-off):",
     "additionalCharges": "Additional charges",
     "chargeType": "Charge",
     "amount": "Amount",
@@ -3954,9 +3956,10 @@
     "addCharge": "Add charge",
     "ejari": "Ejari number",
     "ejariPlaceholder": "Leave blank if not registered yet",
-    "revised": "Rent revised from {from} to {to} ({change})",
+    "revised": "Rent revised from <n>{from}</n> to <n>{to}</n> (<n>{change}</n>)",
     "warnPercent": "Renewal increase notice (%)",
-    "warnPercentHint": "A renewal that raises the rent by more than this shows a notice. It is not a cap; leave blank for no notice."
+    "warnPercentHint": "A renewal that raises the rent by more than this shows a notice. It is not a cap; leave blank for no notice.",
+    "droppedDiscount": "Discount <n>{amount}</n> on the current lease does not renew"
   },
   "FiscalYears": {
     "title": "Fiscal years",
@@ -3979,11 +3982,11 @@
     "expense": "Expense",
     "retainedEarnings": "Retained earnings",
     "noProperty": "No property",
-    "credit": "Cr {amount}",
-    "debit": "Dr {amount}",
-    "lockAfter": "Books will be locked through {date}.",
+    "credit": "Cr <n>{amount}</n>",
+    "debit": "Dr <n>{amount}</n>",
+    "lockAfter": "Books will be locked through <n>{date}</n>.",
     "reopenTitle": "Re-open fiscal year {year}",
-    "reopenWarning": "This reverses the closing entry and unlocks every period after {date}. Lock the books again when you are done.",
+    "reopenWarning": "This reverses the closing entry and unlocks every period after <n>{date}</n>. Lock the books again when you are done.",
     "reason": "Reason",
     "issues": {
       "alreadyClosed": "Fiscal year {year} is already closed.",

@@ -351,6 +351,8 @@ export type RenewalPreview = {
   skippedOneOffLines: LeaseLine[];
   warnPercent: number | null;
   exceedsWarn: boolean;
+  /** PR #358 R1 P2-3: the current lease's rent discount, which does not renew. */
+  droppedDiscount?: number | null;
 };
 
 /** ChequeRowInput — one row of a lease's cheque grid, or an extension's registered cheques. */

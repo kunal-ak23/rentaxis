@@ -16,6 +16,9 @@ type Props = {
     onChanged?: () => void;
 };
 
+/** Amounts and dates inside translated sentences stay LTR (the VoucherForm convention). */
+const bdi = { n: (chunks: React.ReactNode) => <bdi dir="ltr">{chunks}</bdi> };
+
 const chip: Record<FiscalYear["status"], string> = {
     OPEN: "bg-input text-muted",
     CLOSED: "bg-success/10 text-success",
@@ -164,7 +167,7 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
                                             <span className="ms-2 text-[10px] text-muted">{y.journalNumber}</span>
                                         )}
                                     </td>
-                                    <td className="py-2 pe-3 text-end tabular-nums">{fmtAmount(y.netResult)}</td>
+                                    <td className="py-2 pe-3 text-end tabular-nums"><bdi dir="ltr">{fmtAmount(y.netResult)}</bdi></td>
                                     <td className="py-2 text-end">
                                         {y.status !== "CLOSED" ? (
                                             <button type="button" data-testid={`fiscal-year-close-${y.fiscalYear}`}
@@ -233,14 +236,14 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
                                     {preview.retainedEarnings.map(r => (
                                         <li key={r.propertyId ?? "none"} className="flex justify-between gap-3">
                                             <span>{r.propertyName ?? t("noProperty")}</span>
-                                            <span>{r.profit >= 0 ? t("credit", { amount: fmtAmount(r.profit) }) : t("debit", { amount: fmtAmount(-r.profit) })}</span>
+                                            <span>{r.profit >= 0 ? t.rich("credit", { amount: fmtAmount(r.profit), ...bdi }) : t.rich("debit", { amount: fmtAmount(-r.profit), ...bdi })}</span>
                                         </li>
                                     ))}
                                 </ul>
                             </div>
                         )}
                         {preview.lockAfter && (
-                            <p className="text-muted">{t("lockAfter", { date: formatDate(preview.lockAfter) })}</p>
+                            <p className="text-muted">{t.rich("lockAfter", { date: formatDate(preview.lockAfter), ...bdi })}</p>
                         )}
                     </div>
                 )}
@@ -255,11 +258,15 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
                 isDestructive
                 confirmDisabled={!reason.trim()}
                 title={reopening ? t("reopenTitle", { year: label(reopening) }) : ""}
-                description={reopening ? t("reopenWarning", { date: formatDate(dayBefore(reopening.periodStart)) }) : ""}
                 confirmText={t("reopen")}
                 confirmTestId="fiscal-reopen-confirm"
                 cancelText={t("cancel")}
             >
+                {reopening && (
+                    <p className="text-xs text-muted" data-testid="fiscal-reopen-warning">
+                        {t.rich("reopenWarning", { date: formatDate(dayBefore(reopening.periodStart)), ...bdi })}
+                    </p>
+                )}
                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1" htmlFor="fiscal-reopen-reason">
                     {t("reason")}
                 </label>

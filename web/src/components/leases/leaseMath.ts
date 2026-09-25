@@ -127,7 +127,7 @@ export function renewalRows(
     return lines
         .filter((l) => !l.addendumId
             // An extension's rent — and (F14-18) an extension's periodic fee — covered its window only.
-            && !((l.behaviour === "RENT" || (l.behaviour === "FEE" && (l.recognition ?? "RENT_LIKE") === "RENT_LIKE"))
+            && !((l.behaviour === "RENT" || (l.behaviour === "FEE" && (l.recognition ?? "RENT_LIKE") !== "ONE_OFF"))
                 && l.periodStart != null && l.periodStart > termStart)
             // Spec §4c: a one-off fee is not renewed.
             && !isOneOff(l)

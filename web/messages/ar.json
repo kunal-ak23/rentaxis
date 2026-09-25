@@ -1914,7 +1914,6 @@
     "chargeTypes": "أنواع الرسوم"
   },
   "Leasing": {
-    "renewCopiedChargesNotice": "{count, plural, one {سيُنسخ هذا الرسم} two {سيُنسخ هذان الرسمان} few {ستُنسخ هذه الرسوم} many {ستُنسخ هذه الرسوم} other {ستُنسخ هذه الرسوم}} إلى المدة الجديدة: {list}. ألغِ تحديد «نسخ بنود الرسوم» لتعديل{count, plural, one {ه} two {هما} other {ها}}.",
     "noticeGivenBy": "مقدَّم من",
     "noticeParty": {"RENTER": "المستأجر", "LANDLORD": "المالك"},
     "noticeDate": "تاريخ الإشعار",
@@ -2359,6 +2358,9 @@
         "duplicateTrn": "{vendor} يستخدم بالفعل هذا الرقم الضريبي.",
         "duplicateName": "{vendor} يستخدم بالفعل هذا الاسم.",
         "hasPostings": "لدى {vendor} قيود مرحّلة. اجعله غير نشط بدلاً من ذلك."
+      },
+      "account": {
+        "deactivateWithBalance": "لا يزال الحساب {account} يحمل رصيداً قدره {balance}؛ انقل الرصيد (أو أقفل السنة المالية) قبل إيقافه."
       }
     },
     "paginationShowing": "عرض {start}-{end} من {total}",
@@ -3929,8 +3931,8 @@
     "save": "حفظ الفترات",
     "saveFailed": "تعذّر حفظ فترات الإعفاء من الإيجار.",
     "days": "{days} يوماً",
-    "concession": "إعفاء بقيمة {amount}",
-    "summary": "الإيجار الأساسي {headline} − الإعفاء {concession} = المستحق {payable}"
+    "concession": "إعفاء بقيمة <n>{amount}</n>",
+    "summary": "الإيجار الأساسي <n>{headline}</n> − الإعفاء <n>{concession}</n> = المستحق <n>{payable}</n>"
   },
   "Renewal": {
     "rentChange": "تغيير الإيجار",
@@ -3941,11 +3943,11 @@
     },
     "percent": "نسبة التغيير",
     "newRent": "الإيجار السنوي الجديد",
-    "rentPreview": "الإيجار {from} ← {to} ({change})",
-    "aboveNotice": "هذه الزيادة أعلى من حد التنبيه للمبنى البالغ {percent}%. الزيادة مسموحة؛ راجعها قبل الترحيل.",
+    "rentPreview": "الإيجار <n>{from}</n> ← <n>{to}</n> (<n>{change}</n>)",
+    "aboveNotice": "هذه الزيادة أعلى من حد التنبيه للمبنى البالغ <n>{percent}%</n>. الزيادة مسموحة؛ راجعها قبل الترحيل.",
     "previewFailed": "تعذّر تحميل معاينة التجديد.",
     "concessionsDoNotRenew": "لا ينتقل الخصم وفترات الإعفاء من الإيجار إلى المدة الجديدة.",
-    "notCopied": "لا تُنسخ (لمرة واحدة): {list}",
+    "notCopied": "لا تُنسخ (لمرة واحدة):",
     "additionalCharges": "رسوم إضافية",
     "chargeType": "الرسوم",
     "amount": "المبلغ",
@@ -3954,9 +3956,10 @@
     "addCharge": "إضافة رسوم",
     "ejari": "رقم إيجاري",
     "ejariPlaceholder": "اتركه فارغاً إن لم يُسجَّل بعد",
-    "revised": "تم تعديل الإيجار من {from} إلى {to} ({change})",
+    "revised": "تم تعديل الإيجار من <n>{from}</n> إلى <n>{to}</n> (<n>{change}</n>)",
     "warnPercent": "تنبيه زيادة التجديد (%)",
-    "warnPercentHint": "يظهر تنبيه عند تجديد يرفع الإيجار بأكثر من هذه النسبة. ليست حداً أقصى؛ اتركه فارغاً لعدم التنبيه."
+    "warnPercentHint": "يظهر تنبيه عند تجديد يرفع الإيجار بأكثر من هذه النسبة. ليست حداً أقصى؛ اتركه فارغاً لعدم التنبيه.",
+    "droppedDiscount": "الخصم البالغ <n>{amount}</n> على العقد الحالي لا يُجدَّد"
   },
   "FiscalYears": {
     "title": "السنوات المالية",
@@ -3979,11 +3982,11 @@
     "expense": "المصروفات",
     "retainedEarnings": "الأرباح المحتجزة",
     "noProperty": "دون عقار",
-    "credit": "دائن {amount}",
-    "debit": "مدين {amount}",
-    "lockAfter": "ستُقفل الدفاتر حتى {date}.",
+    "credit": "دائن <n>{amount}</n>",
+    "debit": "مدين <n>{amount}</n>",
+    "lockAfter": "ستُقفل الدفاتر حتى <n>{date}</n>.",
     "reopenTitle": "إعادة فتح السنة المالية {year}",
-    "reopenWarning": "يعكس هذا قيد الإقفال ويفتح كل الفترات بعد {date}. أقفل الدفاتر مجدداً عند الانتهاء.",
+    "reopenWarning": "يعكس هذا قيد الإقفال ويفتح كل الفترات بعد <n>{date}</n>. أقفل الدفاتر مجدداً عند الانتهاء.",
     "reason": "السبب",
     "issues": {
       "alreadyClosed": "السنة المالية {year} مقفلة بالفعل.",

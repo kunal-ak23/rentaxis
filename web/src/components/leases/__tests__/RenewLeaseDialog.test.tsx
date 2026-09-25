@@ -165,6 +165,18 @@ describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
         expect(body.rentChange).toEqual({ mode: "PERCENT", percent: 8, newRentAmount: null });
     });
 
+    /** PR #358 R1 P2-3: the discount that does not renew is its own line; amounts isolated LTR. */
+    it("names the dropped discount and keeps the preview's figures LTR", async () => {
+        renewalPreview.mockResolvedValue({ baseRent: 80000, newRent: 86400, changePercent: 8, copiedLines: [],
+            skippedOneOffLines: [], warnPercent: null, exceedsWarn: false, droppedDiscount: 5000 });
+        renderTerms();
+        expect(await screen.findByTestId("renew-dropped-discount"))
+            .toHaveTextContent("Discount 5,000.00 on the current lease does not renew");
+        const preview = await screen.findByTestId("renew-rent-preview");
+        expect(Array.from(preview.querySelectorAll("bdi[dir='ltr']")).map(b => b.textContent))
+            .toEqual(["80,000.00", "86,400.00", "+8.00%"]);
+    });
+
     it("shows the server's refusal of a percentage on a changed term", async () => {
         const { ApiError } = await import("@/lib/api/leasing");
         renewalPreview.mockRejectedValue(new ApiError(400, "The term length changed; enter the new rent amount instead of a percentage."));

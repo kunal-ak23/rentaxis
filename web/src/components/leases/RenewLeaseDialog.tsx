@@ -65,6 +65,9 @@ function yearFrom(iso: string): string {
     return `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
 }
 
+/** Amounts inside translated sentences stay LTR (the VoucherForm convention). */
+const bdi = { n: (chunks: React.ReactNode) => <bdi dir="ltr">{chunks}</bdi> };
+
 const num = (s: string): number | null => {
     const n = Number(s);
     return s.trim() !== "" && Number.isFinite(n) ? n : null;
@@ -244,17 +247,23 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                         </div>
                         {preview && preview.baseRent != null && preview.newRent != null && (
                             <p className="text-xs text-foreground tabular-nums" data-testid="renew-rent-preview">
-                                {tr("rentPreview", {
+                                {tr.rich("rentPreview", {
+                                    ...bdi,
                                     from: fmtAmount(preview.baseRent),
                                     to: fmtAmount(preview.newRent),
                                     change: signed(preview.changePercent ?? (preview.baseRent ? ((preview.newRent - preview.baseRent) * 100) / preview.baseRent : 0)),
                                 })}
                             </p>
                         )}
+                        {preview && (preview.droppedDiscount ?? 0) > 0 && (
+                            <p className="text-[11px] text-muted" data-testid="renew-dropped-discount">
+                                {tr.rich("droppedDiscount", { amount: fmtAmount(preview.droppedDiscount ?? 0), ...bdi })}
+                            </p>
+                        )}
                         {preview?.exceedsWarn && preview.warnPercent != null && (
                             <p role="note" data-testid="renew-rent-notice"
                                 className="text-[11px] text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                                {tr("aboveNotice", { percent: preview.warnPercent })}
+                                {tr.rich("aboveNotice", { percent: preview.warnPercent, ...bdi })}
                             </p>
                         )}
                         {previewError && (
@@ -282,7 +291,13 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 {skipped.length > 0 && (
                     <p role="note" data-testid="renew-skipped-one-offs"
                         className="text-[11px] text-muted bg-input/40 border border-border rounded-lg px-3 py-2">
-                        {tr("notCopied", { list: skipped.map(l => `${nameOf(l)} ${fmtAmount(l.netAmount)}`).join(", ") })}
+                        {tr("notCopied")}{" "}
+                        {skipped.map((l, i) => (
+                            <span key={l.id}>
+                                {i > 0 && ", "}
+                                {nameOf(l)} <bdi dir="ltr">{fmtAmount(l.netAmount)}</bdi>
+                            </span>
+                        ))}
                     </p>
                 )}
 

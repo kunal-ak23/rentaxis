@@ -71,8 +71,13 @@ describe("RentFreePeriodsCard", () => {
         expect(screen.queryByTestId("rent-free-card")).not.toBeInTheDocument();
     });
 
-    it("reads in Arabic", () => {
+    it("reads in Arabic, with Western-digit amounts isolated LTR (PR #358 R1)", () => {
         renderCard(lease(), true, "ar");
         expect(screen.getByText("فترات الإعفاء من الإيجار")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("rent-free-add"));
+        fireEvent.change(screen.getByLabelText("إلى"), { target: { value: "2026-06-30" } });
+        const amounts = Array.from(screen.getByTestId("rent-free-summary").querySelectorAll("bdi[dir='ltr']"))
+            .map(b => b.textContent);
+        expect(amounts).toEqual(["72,000.00", "5,917.81", "66,082.19"]);
     });
 });

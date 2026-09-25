@@ -52,6 +52,7 @@ describe("FiscalYearsCard", () => {
         fireEvent.click(await screen.findByTestId("fiscal-year-close-2025"));
         expect(await screen.findByTestId("fiscal-close-net")).toHaveTextContent("17,800.00");
         expect(screen.getByTestId("fiscal-close-retained")).toHaveTextContent("Marina Heights");
+        expect(screen.getByTestId("fiscal-close-retained").querySelector("bdi[dir='ltr']")?.textContent).toBe("17,800.00");
         expect(screen.getByText("2 draft voucher(s) are dated inside the year; closing will lock them out of it.")).toBeTruthy();
         const confirm = screen.getByTestId("fiscal-close-confirm");
         expect(confirm).toBeDisabled();
@@ -73,7 +74,7 @@ describe("FiscalYearsCard", () => {
         api.reopen.mockResolvedValue(year(2024, "REOPENED"));
         renderCard();
         fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
-        expect(screen.getByText(/unlocks every period after 31\/12\/2023/)).toBeTruthy();
+        expect(screen.getByTestId("fiscal-reopen-warning")).toHaveTextContent("unlocks every period after 31/12/2023");
         const confirm = screen.getByTestId("fiscal-reopen-confirm");
         expect(confirm).toBeDisabled();
         fireEvent.change(screen.getByTestId("fiscal-reopen-reason"), { target: { value: "Missed invoice" } });

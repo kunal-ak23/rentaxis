@@ -752,9 +752,12 @@ export default function LeaseDetailPage() {
                                     {/* Spec §4a: the rent change this renewal made. */}
                                     {lease.renewalPreviousRent != null && (
                                         <p className="text-[11px] text-muted text-end tabular-nums" data-testid="lease-renewal-revised">
-                                            {tRenewal("revised", {
+                                            {tRenewal.rich("revised", {
+                                                n: (chunks: React.ReactNode) => <bdi dir="ltr">{chunks}</bdi>,
                                                 from: fmtAmount(lease.renewalPreviousRent),
-                                                to: fmtAmount(lease.lines.find(l => l.behaviour === "RENT" && !l.addendumId)?.grossAmount ?? 0),
+                                                // Net to net (PR #358 R1 P2-3).
+                                                to: fmtAmount(((r) => (r?.grossAmount ?? 0) - (r?.discountAmount ?? 0))(
+                                                    lease.lines.find(l => l.behaviour === "RENT" && !l.addendumId))),
                                                 change: `${(lease.renewalChangePercent ?? 0) >= 0 ? "+" : ""}${Number(lease.renewalChangePercent ?? 0).toFixed(2)}%`,
                                             })}
                                         </p>

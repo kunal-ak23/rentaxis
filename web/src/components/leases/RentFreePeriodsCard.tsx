@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Gift, Loader2, Plus, Trash2 } from "lucide-react";
 import { ApiError, leaseApi, type LeaseDetail, type RentFreePeriod } from "@/lib/api/leasing";
+import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 
 const field =
@@ -12,8 +13,8 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 
 type Draft = { fromDate: string; toDate: string; concessionOverride: string; note: string };
 
-const fmt = (n: number, locale: string) =>
-    n.toLocaleString(locale === "ar" ? "ar-AE" : "en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Amounts stay Western-digit and LTR in both locales (the project's formatter); wrapped in <bdi> in prose. */
+const bdi = { n: (chunks: React.ReactNode) => <bdi dir="ltr">{chunks}</bdi> };
 
 function daysBetween(from: string, to: string): number {
     if (!from || !to) return 0;
@@ -100,7 +101,7 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                         <li key={p.id ?? p.fromDate} className="text-xs text-foreground" data-testid="rent-free-row">
                             {fmtIsoDate(p.fromDate, locale)} – {fmtIsoDate(p.toDate, locale)}
                             {" · "}{t("days", { days: p.days ?? daysBetween(p.fromDate, p.toDate) })}
-                            {" · "}{t("concession", { amount: fmt(p.concession ?? 0, locale) })}
+                            {" · "}{t.rich("concession", { amount: fmtAmount(p.concession ?? 0), ...bdi })}
                             {p.note ? <span className="text-muted"> · {p.note}</span> : null}
                         </li>
                     ))}
@@ -124,7 +125,7 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                             <div>
                                 <label className={label} htmlFor={`rf-override-${i}`}>{t("override")}</label>
                                 <input id={`rf-override-${i}`} type="number" min={0} step="0.01" className={`${field} text-end`}
-                                    placeholder={fmt(computedConcession(headline, daysBetween(r.fromDate, r.toDate), termDays), "en")}
+                                    placeholder={fmtAmount(computedConcession(headline, daysBetween(r.fromDate, r.toDate), termDays))}
                                     value={r.concessionOverride}
                                     data-testid={`rent-free-override-${i}`}
                                     onChange={e => update(i, { concessionOverride: e.target.value })} />
@@ -148,7 +149,7 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                     </button>
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
                         <p className="text-[11px] text-muted tabular-nums" data-testid="rent-free-summary">
-                            {t("summary", { headline: fmt(headline, locale), concession: fmt(total, locale), payable: fmt(Math.max(0, headline - (rentLine?.discountAmount ?? 0) - total), locale) })}
+                            {t.rich("summary", { headline: fmtAmount(headline), concession: fmtAmount(total), payable: fmtAmount(Math.max(0, headline - (rentLine?.discountAmount ?? 0) - total)), ...bdi })}
                         </p>
                         <button type="button" data-testid="rent-free-save" onClick={save}
                             disabled={busy || rows.some(r => !r.fromDate || !r.toDate)}
