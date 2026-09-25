@@ -214,7 +214,7 @@ export default function IssuedChequesPage() {
             )}
 
             {summary && summary.perBank.length > 0 && (
-                <div className="bg-surface rounded-xl border border-border overflow-x-auto mb-5">
+                <div className="bg-surface rounded-xl border border-border relative overflow-x-auto mb-5">
                     <table className="w-full" data-testid="cheque-per-bank">
                         <thead className="bg-background border-b border-border">
                             <tr>
@@ -261,7 +261,7 @@ export default function IssuedChequesPage() {
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={load} />}
 
-            <div className="bg-surface rounded-xl border border-border overflow-x-auto mb-8">
+            <div className="bg-surface rounded-xl border border-border relative overflow-x-auto mb-8">
                 <table className="w-full" data-testid="cheque-register">
                     <thead className="bg-background border-b border-border">
                         <tr>

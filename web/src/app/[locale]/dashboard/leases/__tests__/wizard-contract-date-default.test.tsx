@@ -49,7 +49,7 @@ function renderWizard() {
 
 async function goToTermsStep() {
     fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u1" } });
-    fireEvent.change(screen.getByLabelText("Renter"), { target: { value: "r1" } });
+    fireEvent.change(screen.getByLabelText("Tenant"), { target: { value: "r1" } });
     fireEvent.change(screen.getByTestId("wizard-agreement-date"), { target: { value: "2025-11-20" } });
     fireEvent.click(screen.getByTestId("wizard-next"));
     await waitFor(() => expect(screen.getByTestId("wizard-contract-date")).toBeInTheDocument());

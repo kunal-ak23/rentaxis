@@ -66,7 +66,7 @@ describe("Lease page — renter acceptance badge", () => {
         api.get.mockImplementation(async () => ({ ...LEASE, renterAcceptedAt: "2026-09-20T08:00:00Z" }));
         renderPage();
         expect((await screen.findByTestId("lease-renter-accepted")).textContent)
-            .toBe("Accepted by renter 20/09/2026");
+            .toBe("Accepted by tenant 20/09/2026");
     });
 
     it("shows nothing before the renter has accepted", async () => {

@@ -87,7 +87,7 @@ test('manager publishes a listing that public and renter journeys can use', asyn
   await managerPage.goto('/en/dashboard/listings');
   const interestedRow = managerPage.getByRole('row').filter({ hasText: listingTitle });
   await interestedRow.getByRole('button', { name: '1' }).click();
-  const interestsDrawer = managerPage.getByRole('dialog', { name: 'Interested Renters' });
+  const interestsDrawer = managerPage.getByRole('dialog', { name: 'Interested Tenants' });
   await expect(interestsDrawer.getByText(/Please arrange a viewing\./)).toBeVisible();
   await expect(interestsDrawer.getByText(ctx.renter.email, { exact: true })).toBeVisible();
 

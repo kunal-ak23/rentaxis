@@ -15,22 +15,22 @@ relatedTour: admin-onboarding
 
 ## Welcome to RentAxis
 
-RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, leases, and finances.
+RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, contracts, and finances.
 
 ### What You Can Do
 
 Depending on your role, you'll have access to different features:
 
-- **Tenant Admins** — Full control over properties, leases, finance, staff, and settings
-- **Property Managers** — Manage properties, units, handle maintenance tickets, and view leases
+- **Company Admins** — Full control over properties, contracts, finance, staff, and settings
+- **Property Managers** — Manage properties, units, handle maintenance tickets, and view contracts
 - **Security Guards** — Manage gate access, expected visitors, pass scans, and walk-ins for assigned properties
-- **Tenant Users** — View your assigned unit details
-- **Renters** — Access your lease, track rent payments, and submit maintenance tickets
+- **Company Users** — View your assigned unit details
+- **Tenants** — Access your contract, track rent payments, and submit maintenance tickets
 
 ### Quick Start
 
 1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
-2. **Check the Sidebar** — Navigate between modules using the left sidebar menu
+2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 
 ### Need a Guided Tour?
@@ -55,24 +55,24 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 | Role | Access Level |
 |------|-------------|
 | **System Admin** | Full system access across all tenants. Manages organizations and users. |
-| **Tenant Admin** | Full access within their organization. Manages properties, leases, finance, and staff. |
-| **Property Manager** | Manages assigned properties, views leases, handles maintenance tickets. |
+| **Company Admin** | Full access within their organization. Manages properties, contracts, finance, and staff. |
+| **Property Manager** | Manages assigned properties, views contracts, handles maintenance tickets. |
 | **Security Guard** | Manages gate access at assigned properties. Scans passes and handles approved visitors. |
-| **Tenant User** | Limited access. Can view their assigned unit details. |
-| **Renter** | Self-service portal. Views leases, tracks payments, submits tickets. |
+| **Company User** | Limited access. Can view their assigned unit details. |
+| **Tenant** | Self-service portal. Views contracts, tracks payments, submits tickets. |
 
 ### What Each Role Can Do
 
-**Tenant Admin** has access to:
+**Company Admin** has access to:
 - Create and manage properties, buildings, and units
-- Create and manage leases and renters
+- Create and manage contracts and tenants
 - Full accounting module: chart of accounts, journal vouchers, general ledger, tenant ledger and trial balance
 - Staff management and settings configuration
 - Payment gateway and rent settings
 
 **Property Manager** has access to:
 - View properties and units
-- View leases
+- View contracts
 - Resolve maintenance tickets
 
 **Security Guard** has access to:
@@ -81,11 +81,11 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 - Scan QR or numeric pass codes for entry and exit
 - Register walk-in visitors and admit them after resident approval
 
-**Renter** has access to:
-- View their active leases
+**Tenant** has access to:
+- View their active contracts
 - Track rent payments and download receipts
 - Submit and track maintenance tickets
-- Download lease contracts
+- Download contracts
 `);
 
 registerArticle('getting-started--first-property-setup', `---
@@ -103,7 +103,7 @@ Follow these steps to get your first property up and running in RentAxis.
 
 ### Step 1: Add a Property
 
-1. Go to **Properties** from the sidebar
+1. Go to **Leasing › Properties & Units**
 2. Click **Add Property**
 3. Fill in the property details:
    - Property name and type (Residential, Commercial, Mixed)
@@ -129,18 +129,18 @@ If your property has multiple buildings:
    - Monthly rent amount
 4. Repeat for all units
 
-### Step 4: Add a Renter
+### Step 4: Add a Tenant
 
-1. Go to **Renters** from the sidebar
-2. Click **Add Renter**
+1. Go to **Leasing › Tenants**
+2. Click **Add Tenant**
 3. Enter the renter's name, email, phone, and Emirates ID
 
-### Step 5: Create a Lease
+### Step 5: Create a Tenancy Contract
 
-1. Go to **Leases** and click **Create Lease**
-2. Select the property, unit, and renter
-3. Set the lease dates, rent amount, and payment schedule
-4. The lease starts in **Draft** status — review and activate when ready
+1. Go to **Tenancy Contracts** and click **Create Tenancy Contract**
+2. Select the property, unit, and tenant
+3. Set the contract dates, rent amount, and payment schedule
+4. The contract starts in **Draft** status — review and activate when ready
 
 Your property is now set up and ready to manage!
 `);
@@ -181,7 +181,7 @@ The properties page shows all your properties in a table view with:
 ### Property Detail View
 
 Click on any property to see its detail page, which includes:
-- **Overview** — Key metrics (occupancy, revenue, lease status)
+- **Overview** — Key metrics (occupancy, revenue, contract status)
 - **Units** — All units with their status (Vacant/Occupied)
 - **Buildings** — Building breakdown if applicable
 
@@ -216,7 +216,7 @@ Units are the individual rentable spaces within a property (apartments, offices,
 - **Type** — Studio, 1BR, 2BR, 3BR, Office, Shop, etc.
 - **Area** — Size in square feet
 - **Rent** — Monthly rent amount
-- **Status** — Vacant or Occupied (automatically updated when a lease is activated)
+- **Status** — Vacant or Occupied (automatically updated when a contract is activated)
 
 **Adding Units:**
 1. Navigate to the property detail page
@@ -235,8 +235,8 @@ Buildings help organize units within larger properties that have multiple struct
 
 ### Occupancy Tracking
 
-- Units are automatically marked **Occupied** when an active lease exists
-- Units return to **Vacant** when a lease is terminated or expires
+- Units are automatically marked **Occupied** when an active contract exists
+- Units return to **Vacant** when a contract is terminated or expires
 - Occupancy rate is calculated as: occupied units / total units
 `);
 
@@ -251,35 +251,35 @@ order: 1
 relatedTour: lease-workflow
 ---
 
-## Creating a Lease
+## Creating a Tenancy Contract
 
-Leases are the core of RentAxis — they link a renter to a unit with payment terms.
+Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with payment terms.
 
-### Creating a New Lease
+### Creating a New Tenancy Contract
 
-1. Go to **Leases** from the sidebar
-2. Click **Create Lease**
-3. Fill in the lease details:
+1. Go to **Leasing › Tenancy Contracts**
+2. Click **Create Tenancy Contract**
+3. Fill in the contract details:
    - **Property & Unit** — Select from your existing properties and vacant units
-   - **Renter** — Choose an existing renter or create a new one
-   - **Lease Dates** — Start date and end date
+   - **Tenant** — Choose an existing tenant or create a new one
+   - **Tenancy Contract Dates** — Start date and end date
    - **Rent Amount** — Monthly rent in AED
    - **Security Deposit** — If applicable
    - **Payment Method** — Cheque, Online, Cash, or Bank Transfer
 
 ### Payment Schedule
 
-When you create a lease, RentAxis automatically generates a payment schedule based on:
-- The lease duration
+When you create a contract, RentAxis automatically generates a payment schedule based on:
+- The contract duration
 - Monthly rent amount
 - Selected payment method
 - Pro-rata calculation for the first partial month (if applicable)
 
-You can review and edit the payment schedule before activating the lease.
+You can review and edit the payment schedule before activating the contract.
 
-### Activating the Lease
+### Activating the Tenancy Contract
 
-1. Review the lease details and payment schedule
+1. Review the contract details and payment schedule
 2. Change the status from **Draft** to **Active**
 3. The unit will automatically be marked as **Occupied**
 `);
@@ -292,9 +292,9 @@ roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 2
 ---
 
-## Lease Lifecycle
+## Tenancy Contract Lifecycle
 
-Every lease in RentAxis follows a defined lifecycle.
+Every contract in RentAxis follows a defined lifecycle.
 
 ### Status Flow
 
@@ -302,19 +302,19 @@ DRAFT → PENDING_SIGNATURE → ACTIVE → NOTICE_GIVEN → TERMINATED/EXPIRED �
 
 | Status | Meaning |
 |--------|---------|
-| **Draft** | Lease is being prepared. Can still be edited freely. |
-| **Pending Signature** | Sent to renter for review/acceptance. |
-| **Active** | Lease is live. Unit is marked occupied. Payments are expected. |
-| **Notice Given** | Either party has given notice to end the lease. |
-| **Terminated** | Lease was ended before its natural expiry date. |
-| **Expired** | Lease reached its end date. |
-| **Closed** | All financial obligations settled. Lease is archived. |
+| **Draft** | Tenancy Contract is being prepared. Can still be edited freely. |
+| **Pending Signature** | Sent to tenant for review/acceptance. |
+| **Active** | Tenancy Contract is live. Unit is marked occupied. Payments are expected. |
+| **Notice Given** | Either party has given notice to end the contract. |
+| **Terminated** | Tenancy Contract was ended before its natural expiry date. |
+| **Expired** | Tenancy Contract reached its end date. |
+| **Closed** | All financial obligations settled. Tenancy Contract is archived. |
 
 ### Key Actions
 
 - **Activate** — Move from Draft to Active (requires all fields complete)
 - **Give Notice** — Mark that notice has been given with a notice date
-- **Terminate** — End the lease early
+- **Terminate** — End the contract early
 - **Close** — Settle remaining balances and archive
 `);
 
@@ -328,12 +328,12 @@ order: 3
 
 ## Payment Schedules
 
-Each lease has an associated payment schedule that tracks all expected rent payments.
+Each contract has an associated payment schedule that tracks all expected rent payments.
 
 ### Auto-Generated Schedule
 
-When a lease is created, RentAxis automatically generates monthly payment entries:
-- The first month is pro-rated if the lease doesn't start on the 1st
+When a contract is created, RentAxis automatically generates monthly payment entries:
+- The first month is pro-rated if the contract doesn't start on the 1st
 - Each entry includes: due date, amount, payment method, and status
 
 ### Payment Statuses
@@ -350,8 +350,8 @@ When a lease is created, RentAxis automatically generates monthly payment entrie
 
 ### Managing Payments
 
-1. Go to **Finance > Payments** from the sidebar
-2. View all payment schedules across leases
+1. Go to **Cheque / Cash Collection** from the left rail
+2. View all payment schedules across contracts
 3. Update payment status as you collect rent
 4. For cheque payments, track the deposit and clearance process
 `);
@@ -385,7 +385,7 @@ RentAxis uses standard double-entry accounting with five account types:
 
 ### Managing Accounts
 
-1. Go to **Finance > Chart of Accounts**
+1. Go to **Accounting › Accounts › Chart of Accounts**
 2. View all accounts organized by type
 3. Click **Add Account** to create a new account
 4. Each account has a code, name, type, and optional description
@@ -403,13 +403,13 @@ Accounts form a tree: each account names its parent, group accounts hold childre
 
 Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
 
-- **Settings > Account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
+- **Accounting › One-time setup › Property account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
 - A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.
 - A role with no property-level mapping falls back to the organisation-wide default account for that role.
 
 ### Journals, Not Edits
 
-Posted entries are immutable. A mistake is corrected by reversing the entry from **Finance > Journal Vouchers**, which posts a mirror entry — the original stays on the books and is marked reversed.
+Posted entries are immutable. A mistake is corrected by reversing the entry from **Accounting › Journal Entries › Journal Voucher**, which posts a mirror entry — the original stays on the books and is marked reversed.
 `);
 
 // ─── Renter Portal ──────────────────────────────────────────────────────────
@@ -423,27 +423,27 @@ order: 1
 relatedTour: renter-portal
 ---
 
-## Renter Portal
+## Tenant Portal
 
-The Renter Portal is your self-service hub for everything related to your tenancy.
+The Tenant Portal is your self-service hub for everything related to your tenancy.
 
 ### What You Can Do
 
-- **View Your Leases** — See your active lease details, including rent amount, dates, and contract terms
+- **View Your Tenancy Contracts** — See your active contract details, including rent amount, dates, and contract terms
 - **Track Payments** — Follow your payment schedule and the status of each payment
 - **Submit Tickets** — Report maintenance issues or make requests
-- **Download Documents** — Access your lease contract and payment receipts
+- **Download Documents** — Access your contract and payment receipts
 
 ### Navigation
 
 Your portal sidebar shows:
-- **My Leases** — Your lease details and history
+- **My Tenancy Contracts** — Your contract details and history
 - **My Payments** — Payment schedule and history
 - **My Tickets** — Maintenance requests and their status
 
 ### Getting Help
 
-If you have questions about your lease or payments, submit a ticket through the portal and your landlord's team will respond.
+If you have questions about your contract or payments, submit a ticket through the portal and your landlord's team will respond.
 `);
 
 registerArticle('renter--submitting-tickets', `---
@@ -540,17 +540,17 @@ Add team members to your organization and assign them appropriate roles.
 
 ### Adding Staff
 
-1. Go to **Staff** from the sidebar
+1. Go to **Operations › Staff** (also under **Settings › Users & staff**)
 2. Click **Add Staff Member**
 3. Enter their details:
    - Name and email
-   - Role (Property Manager or Tenant User)
+   - Role (Property Manager or Company User)
    - Assign to specific properties if applicable
 
 ### Role Assignment
 
 - **Property Manager** — Can view properties, manage units, and handle tickets
-- **Tenant User** — Limited access, can view assigned unit information
+- **Company User** — Limited access, can view assigned unit information
 
 ### Managing Existing Staff
 
@@ -567,30 +567,30 @@ roles: [TENANT_ADMIN]
 order: 2
 ---
 
-## Tenant Settings
+## Organisation Settings
 
-Configure your organization's settings from the Settings section in the sidebar.
+Configure your organisation's settings from **Settings** on the left rail — one page with **Organisation**, **Users & staff**, **Rent & fines** and **Payments** sections. Accounting setup lives under **Accounting › One-time setup**.
 
-### Account Mappings
+### Property account template
 
 Map your chart of accounts to RentAxis's automatic transaction types:
-1. Go to **Settings > Account Mappings**
+1. Go to **Accounting › One-time setup › Property account template**
 2. Set the default accounts for rent income, receivables, and deposits
 3. These mappings are used when payments are automatically recorded
 
 ### Payment Gateway
 
 Configure online payment collection:
-1. Go to **Settings > Payment Gateway Configuration**
+1. Go to **Settings › Payments**
 2. Enter your Razorpay API credentials
 3. Enable or disable the gateway configuration
 
-> **Note:** Online payment initiation is not yet available in the renter portal — renters currently track their payment schedule and download receipts there.
+> **Note:** Online payment initiation is not yet available in the tenant portal — tenants currently track their payment schedule and download receipts there.
 
-### Rent Settings
+### Rent & fines
 
 Customize how rent is calculated and scheduled:
-1. Go to **Settings > Rent Settings**
+1. Go to **Settings › Rent & fines**
 2. Configure pro-rata calculation preferences
 3. Set default payment methods and schedules
 `);
@@ -610,14 +610,14 @@ As a System Admin, you have full access across all tenants in RentAxis.
 
 ### Managing Tenants
 
-1. Go to **Tenants** from the sidebar
+1. Go to **Settings › Administration › Organisations**
 2. View all registered organizations
 3. Create new tenant organizations
 4. View tenant details and their users
 
 ### Managing Users
 
-1. Go to **Users** from the sidebar
+1. Go to **Settings › Administration › Users**
 2. View all users across all tenants
 3. Create, edit, or deactivate user accounts
 4. Assign roles and tenant memberships

@@ -13,7 +13,7 @@ Follow these steps to get your first property up and running in RentAxis.
 
 ### Step 1: Add a Property
 
-1. Go to **Properties** from the sidebar
+1. Go to **Leasing › Properties & Units**
 2. Click **Add Property**
 3. Fill in the property details:
    - Property name and type (Residential, Commercial, Mixed)
@@ -39,17 +39,17 @@ If your property has multiple buildings:
    - Monthly rent amount
 4. Repeat for all units
 
-### Step 4: Add a Renter
+### Step 4: Add a Tenant
 
-1. Go to **Renters** from the sidebar
-2. Click **Add Renter**
+1. Go to **Leasing › Tenants**
+2. Click **Add Tenant**
 3. Enter the renter's name, email, phone, and Emirates ID
 
-### Step 5: Create a Lease
+### Step 5: Create a Tenancy Contract
 
-1. Go to **Leases** and click **Create Lease**
-2. Select the property, unit, and renter
-3. Set the lease dates, rent amount, and payment schedule
-4. The lease starts in **Draft** status — review and activate when ready
+1. Go to **Tenancy Contracts** and click **Create Tenancy Contract**
+2. Select the property, unit, and tenant
+3. Set the contract dates, rent amount, and payment schedule
+4. The contract starts in **Draft** status — review and activate when ready
 
 Your property is now set up and ready to manage!

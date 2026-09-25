@@ -8,12 +8,12 @@ order: 3
 
 ## Payment Schedules
 
-Each lease has an associated payment schedule that tracks all expected rent payments.
+Each contract has an associated payment schedule that tracks all expected rent payments.
 
 ### Auto-Generated Schedule
 
-When a lease is created, RentAxis automatically generates monthly payment entries:
-- The first month is pro-rated if the lease doesn't start on the 1st
+When a contract is created, RentAxis automatically generates monthly payment entries:
+- The first month is pro-rated if the contract doesn't start on the 1st
 - Each entry includes: due date, amount, payment method, and status
 
 ### Payment Statuses
@@ -30,7 +30,7 @@ When a lease is created, RentAxis automatically generates monthly payment entrie
 
 ### Managing Payments
 
-1. Go to **Finance > Payments** from the sidebar
-2. View all payment schedules across leases
+1. Go to **Cheque / Cash Collection** from the left rail
+2. View all payment schedules across contracts
 3. Update payment status as you collect rent
 4. For cheque payments, track the deposit and clearance process

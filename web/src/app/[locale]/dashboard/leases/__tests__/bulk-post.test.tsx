@@ -99,8 +99,8 @@ describe("Leases list — renter acceptance (#79)", () => {
         api.paged.mockImplementation(async () => ({ content: rows, totalElements: 2, totalPages: 1, number: 0, size: 25 }));
         renderPage();
         const row = await screen.findByTestId("lease-row-p1");
-        expect(row).toHaveTextContent("Accepted by renter 20/09/2026");
-        expect(screen.getByTestId("lease-row-p2")).not.toHaveTextContent("Accepted by renter");
+        expect(row).toHaveTextContent("Accepted by tenant 20/09/2026");
+        expect(screen.getByTestId("lease-row-p2")).not.toHaveTextContent("Accepted by tenant");
     });
 });
 

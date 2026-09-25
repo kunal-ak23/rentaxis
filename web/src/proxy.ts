@@ -2,6 +2,7 @@ import { getToken } from "next-auth/jwt";
 import createIntlMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import { NextRequest, NextResponse } from "next/server";
+import { legacyRedirect } from "./lib/nav/routeMap";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -158,6 +159,14 @@ export default async function middleware(req: NextRequest) {
         }), req.nextUrl.pathname);
     }
 
+    // Admin UI simplification: a moved page answers its old URL with a
+    // permanent redirect that keeps the locale and every query parameter
+    // (routeMap.ts). Runs before next-intl so the locale is never rewritten.
+    const moved = legacyRedirect(new URL(req.nextUrl.toString()));
+    if (moved) {
+        return addSecurityHeaders(NextResponse.redirect(moved, 308), req.nextUrl.pathname);
+    }
+
     // For all other routes, let next-intl handle internationalization
     const response = intlMiddleware(req);
     return addSecurityHeaders(response as NextResponse, req.nextUrl.pathname);
@@ -165,5 +174,5 @@ export default async function middleware(req: NextRequest) {
 
 export const config = {
     // Match internationalized pathnames AND api proxy routes
-    matcher: ['/', '/(ar|en)/:path*', '/api/proxy/:path*']
+    matcher: ['/', '/(ar|en)/:path*', '/dashboard/:path*', '/api/proxy/:path*']
 };

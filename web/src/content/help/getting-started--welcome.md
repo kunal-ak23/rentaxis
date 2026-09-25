@@ -9,22 +9,22 @@ relatedTour: admin-onboarding
 
 ## Welcome to RentAxis
 
-RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, leases, and finances.
+RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, contracts, and finances.
 
 ### What You Can Do
 
 Depending on your role, you'll have access to different features:
 
-- **Tenant Admins** — Full control over properties, leases, finance, staff, and settings
-- **Property Managers** — Manage properties, units, handle maintenance tickets, and view leases
+- **Company Admins** — Full control over properties, contracts, finance, staff, and settings
+- **Property Managers** — Manage properties, units, handle maintenance tickets, and view contracts
 - **Security Guards** — Manage gate access, expected visitors, pass scans, and walk-ins for assigned properties
-- **Tenant Users** — View your assigned unit details
-- **Renters** — Access your lease, track rent payments, and submit maintenance tickets
+- **Company Users** — View your assigned unit details
+- **Tenants** — Access your contract, track rent payments, and submit maintenance tickets
 
 ### Quick Start
 
 1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
-2. **Check the Sidebar** — Navigate between modules using the left sidebar menu
+2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 
 ### Need a Guided Tour?

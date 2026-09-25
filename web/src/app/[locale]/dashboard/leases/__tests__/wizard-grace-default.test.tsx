@@ -83,7 +83,7 @@ async function toTermsStep() {
         </NextIntlClientProvider>,
     );
     fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u1" } });
-    fireEvent.change(screen.getByLabelText("Renter"), { target: { value: "r1" } });
+    fireEvent.change(screen.getByLabelText("Tenant"), { target: { value: "r1" } });
     fireEvent.click(screen.getByTestId("wizard-next"));
     await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });

@@ -4,13 +4,18 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSession, signOut } from "next-auth/react";
 import { Link } from "@/i18n/routing";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 import { notificationText, timeAgo } from "@/lib/notificationText";
-import { LogOut, User, ChevronDown, Bell } from "lucide-react";
+import { LogOut, User, ChevronDown, Bell, HelpCircle, Menu as MenuIcon } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import GlobalSearch from "./GlobalSearch";
+import { TenantSwitcher } from "./TenantSwitcher";
+import { useNavShell } from "@/components/nav/NavShellContext";
+import { activeNav, buildNav } from "@/lib/nav/navModel";
+import { useLabel } from "@/lib/nav/useLabel";
+import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 
 type Notification = {
     id: string;
@@ -39,6 +44,15 @@ export function TopHeader() {
     const locale = useLocale();
     const router = useRouter();
     const userRole = session?.user?.role as UserRole | undefined;
+    // Phone drawer + breadcrumb ("Leasing › Tenancy Contracts") from the same
+    // nav model the rail renders, so the two can never disagree.
+    const { setDrawerOpen, inlinePanel } = useNavShell();
+    const label = useLabel();
+    const { isEnabled, tenantSlug } = useTenantFeatures();
+    const rail = buildNav({ role: userRole, isEnabled, tenantSlug, booksLive: true });
+    const here = activeNav(pathname, rail, useSearchParams()?.toString() ?? "");
+    const hereSection = rail.find(s => s.id === here.section);
+    const hereItem = hereSection?.groups.flatMap(g => g.items).find(i => i.id === here.item);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -122,12 +136,32 @@ export function TopHeader() {
     };
 
     return (
-        <header className="h-[60px] px-7 flex items-center gap-4 border-b border-border bg-surface shrink-0 z-30">
+        <header className="h-[60px] px-4 md:px-7 flex items-center gap-4 border-b border-border bg-surface shrink-0 z-30">
             <div className="flex items-center relative w-full justify-between gap-4">
-                <GlobalSearch role={userRole} locale={locale} />
+                <div className="flex items-center gap-3 min-w-0">
+                    <button type="button" onClick={() => setDrawerOpen(true)} aria-label={tNav("openMenu")} data-testid="header-menu"
+                        className="md:hidden w-9 h-9 shrink-0 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface cursor-pointer">
+                        <MenuIcon size={18} />
+                    </button>
+                    {hereSection && (
+                        <nav aria-label={tNav("breadcrumb")} data-testid="header-breadcrumb" className="hidden lg:flex items-center gap-1.5 text-[13px] text-[var(--ink-500)] whitespace-nowrap">
+                            <span>{label(hereSection.label)}</span>
+                            {hereItem && <><span aria-hidden className="rtl:-scale-x-100">›</span><span className="font-semibold text-foreground">{label(hereItem.label)}</span></>}
+                        </nav>
+                    )}
+                    <GlobalSearch role={userRole} locale={locale} />
+                </div>
 
                 {/* Right Side */}
-                <div className="flex items-center gap-3">{/* (locale, bell, profile) */}
+                <div className="flex items-center gap-2 md:gap-3">{/* (org, locale, help, bell, profile) */}
+
+                    {/* The one organisation control: here only while the section panel is not
+                        inline (< 1280 px, or the panel hidden); otherwise it tops the panel. */}
+                    {!inlinePanel && (
+                        <div data-testid="header-org-switcher" className="shrink-0">
+                            <TenantSwitcher isCollapsed={false} responsive />
+                        </div>
+                    )}
 
                     {/* Locale Switcher */}
                     <div className="flex items-center bg-[var(--sand-100)] rounded-[var(--radius)] p-0.5 border border-border">
@@ -159,10 +193,16 @@ export function TopHeader() {
                         </Link>
                     </div>
 
+                    {/* Help (moved here from the sidebar) */}
+                    <Link href="/dashboard/help" aria-label={tNav("helpAndGuides")} data-tour="header-help" data-testid="header-help"
+                        className="w-9 h-9 shrink-0 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface text-[var(--ink-600)] hover:text-foreground hover:bg-[var(--sand-100)] transition-colors">
+                        <HelpCircle size={18} />
+                    </Link>
+
                     {/* Notification Bell */}
                     {session?.user && (
                         <div className="relative">
-                            <button onClick={toggleDropdown} className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface text-[var(--ink-600)] hover:text-foreground hover:bg-[var(--sand-100)] transition-colors cursor-pointer">
+                            <button onClick={toggleDropdown} data-testid="header-notifications" className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface text-[var(--ink-600)] hover:text-foreground hover:bg-[var(--sand-100)] transition-colors cursor-pointer">
                                 <Bell size={18} />
                                 {unreadCount > 0 && (
                                     <span className="absolute -top-0.5 -end-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -218,9 +258,11 @@ export function TopHeader() {
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg p-1 -m-1"
                             >
-                                <div className="flex flex-col items-end">
-                                    <span className="text-sm font-semibold text-foreground">{session.user.name || tNav("userFallback")}</span>
-                                    <span className="text-[10px] font-medium text-muted tracking-wider">
+                                {/* One line each, truncated with a tooltip; below xl only the avatar shows. */}
+                                <div data-testid="header-user-name" className="hidden xl:flex min-w-0 max-w-[160px] flex-col items-end leading-tight">
+                                    <span className="max-w-full truncate whitespace-nowrap text-sm font-semibold text-foreground"
+                                        title={session.user.name || tNav("userFallback")}>{session.user.name || tNav("userFallback")}</span>
+                                    <span className="max-w-full truncate whitespace-nowrap text-[10px] font-medium text-muted tracking-wider">
                                         {userRole ? roleLabel(userRole) : ''}
                                     </span>
                                 </div>

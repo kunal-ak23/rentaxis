@@ -9,15 +9,15 @@ export const renterPortalTour: TourDef = {
     {
       id: 'renter-home',
       target: '[data-tour="dashboard-header"]',
-      title: 'Your Renter Portal',
-      text: 'Welcome! This is your self-service portal where you can view leases, make payments, and submit maintenance requests.',
+      title: 'Your Tenant Portal',
+      text: 'Welcome! This is your self-service portal where you can view contracts, make payments, and submit maintenance requests.',
       position: 'bottom',
     },
     {
       id: 'my-leases',
       target: '[data-tour="sidebar-my-leases"]',
-      title: 'My Leases',
-      text: 'View your active lease details including rent amount, dates, and contract documents.',
+      title: 'My Contracts',
+      text: 'View your active contract details including rent amount, dates, and contract documents.',
       position: 'right',
     },
     {

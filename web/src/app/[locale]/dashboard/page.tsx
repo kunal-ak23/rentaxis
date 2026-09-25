@@ -378,13 +378,16 @@ export default function DashboardPage() {
           value={formatCurrencyCompact(summary.pendingThisMonthAmount)}
           sub={t("dueThisMonthUnpaid")}
         />
-        <StatCard
-          label={t("occupancy")}
-          value={summary.occupancyRate.toFixed(1)}
-          unit="%"
-          sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
-          note={reservedUnits > 0 ? t("reservedSubline", { count: reservedUnits }) : undefined}
-        />
+        {/* Home › Unit Status lands here (/dashboard#unit-status). */}
+        <div id="unit-status" className="scroll-mt-6 [&>div]:h-full">
+          <StatCard
+            label={t("occupancy")}
+            value={summary.occupancyRate.toFixed(1)}
+            unit="%"
+            sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
+            note={reservedUnits > 0 ? t("reservedSubline", { count: reservedUnits }) : undefined}
+          />
+        </div>
         <Link
           href="/dashboard/finance/cheques"
           aria-label={t("viewOverduePayments")}

@@ -15,6 +15,7 @@ vi.mock("next-auth/react", () => ({
     signOut: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
+    useSearchParams: () => new URLSearchParams(),
     usePathname: () => "/ar/dashboard",
     useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
@@ -25,6 +26,9 @@ vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock("../GlobalSearch", () => ({ default: () => <div /> }));
+vi.mock("@/hooks/useTenantFeatures", () => ({
+    useTenantFeatures: () => ({ isEnabled: () => true, tenantSlug: "acme", features: {}, loading: false }),
+}));
 
 import { TopHeader } from "../TopHeader";
 

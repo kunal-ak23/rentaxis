@@ -17,9 +17,11 @@ export const financeOverviewTour: TourDef = {
     {
       id: 'journals-link',
       target: '[data-tour="sidebar-journals"]',
-      title: 'Journal Vouchers',
+      title: 'Journal Voucher',
       text: 'Every entry in the books lives here as a balanced voucher. Most are posted automatically as payments move; you can also post a manual one, and reverse anything that was wrong.',
       position: 'right',
+      // The next targets are Accounting-panel items; keep that panel showing.
+      nextRoute: '/dashboard/finance/journals',
     },
     {
       id: 'general-ledger-link',
@@ -31,8 +33,8 @@ export const financeOverviewTour: TourDef = {
     {
       id: 'cheques-link',
       target: '[data-tour="sidebar-cheques-register"]',
-      title: 'Cheque Register',
-      text: 'Track rent collection across all leases. Deposit, clear, bounce and replace cheques as they move through the register.',
+      title: 'Cheque registers',
+      text: 'Deposit, clear, bounce and replace tenants\' cheques as they move through collection.',
       position: 'right',
     },
   ],

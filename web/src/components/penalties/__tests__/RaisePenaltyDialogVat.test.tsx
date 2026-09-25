@@ -29,7 +29,7 @@ describe("RaisePenaltyDialog VAT", () => {
         propose.mockResolvedValue({ id: "p1" });
         renderIn("en");
         fireEvent.change(screen.getByLabelText(/Penalty category|Category/i), { target: { value: "SERVICE_RECHARGE" } });
-        expect(screen.getByText("Automatic — charged on a VAT lease")).toBeTruthy();
+        expect(screen.getByText("Automatic — charged on a VAT contract")).toBeTruthy();
         fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "200" } });
         fireEvent.change(screen.getByLabelText("VAT (5%)"), { target: { value: "no" } });
         fireEvent.click(screen.getByTestId("raise-penalty-confirm"));

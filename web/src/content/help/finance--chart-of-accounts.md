@@ -25,7 +25,7 @@ RentAxis uses standard double-entry accounting with five account types:
 
 ### Managing Accounts
 
-1. Go to **Finance > Chart of Accounts**
+1. Go to **Accounting › Accounts › Chart of Accounts**
 2. View all accounts organized by type
 3. Click **Add Account** to create a new account
 4. Each account has a code, name, type, and optional description
@@ -43,10 +43,10 @@ Accounts form a tree: each account names its parent, group accounts hold childre
 
 Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
 
-- **Settings > Account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
+- **Accounting › One-time setup › Property account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
 - A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.
 - A role with no property-level mapping falls back to the organisation-wide default account for that role.
 
 ### Journals, Not Edits
 
-Posted entries are immutable. A mistake is corrected by reversing the entry from **Finance > Journal Vouchers**, which posts a mirror entry — the original stays on the books and is marked reversed.
+Posted entries are immutable. A mistake is corrected by reversing the entry from **Accounting › Journal Entries › Journal Voucher**, which posts a mirror entry — the original stays on the books and is marked reversed.

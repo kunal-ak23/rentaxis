@@ -70,6 +70,6 @@ describe("Renter portal — a lease that changed hands (PR #359 R1)", () => {
         leases = [{ ...base, status: "ACTIVE", yourAccessEndedOn: "2027-02-01" }];
         renderPage();
         const note = await screen.findByTestId("portal-handed-over-l1");
-        expect(note.textContent).toBe("You handed this lease over on 01/02/2027. You can see its history up to that date.");
+        expect(note.textContent).toBe("You handed this contract over on 01/02/2027. You can see its history up to that date.");
     });
 });

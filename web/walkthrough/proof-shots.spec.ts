@@ -48,7 +48,7 @@ test('proof: empty number fields and the asking-rent warning', async ({ page }) 
     });
 
     await page.goto('/en/dashboard/leases');
-    await page.getByRole('button', { name: /draft lease/i }).first().click();
+    await page.getByRole('button', { name: /draft (lease|tenancy contract)/i }).first().click();
 
     const wizard = page
         .locator('div.fixed.inset-0')

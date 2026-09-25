@@ -47,7 +47,7 @@ describe("InterestsDrawer create lease", () => {
                 <InterestsDrawer listingId="L1" listingTitle="Bright 1BR" onClose={() => {}} />
             </NextIntlClientProvider>,
         );
-        expect(await screen.findByText("Lease drafted")).toBeTruthy();
+        expect(await screen.findByText("Tenancy Contract drafted")).toBeTruthy();
         expect(screen.getByTestId("interest-lease-i2").getAttribute("href")).toBe("/dashboard/leases/lease-7");
         expect(screen.queryByTestId("interest-create-lease-i2")).toBeNull();
     });

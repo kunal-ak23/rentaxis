@@ -18,7 +18,7 @@ Units are the individual rentable spaces within a property (apartments, offices,
 - **Type** — Studio, 1BR, 2BR, 3BR, Office, Shop, etc.
 - **Area** — Size in square feet
 - **Rent** — Monthly rent amount
-- **Status** — Vacant or Occupied (automatically updated when a lease is activated)
+- **Status** — Vacant or Occupied (automatically updated when a contract is activated)
 
 **Adding Units:**
 1. Navigate to the property detail page
@@ -37,6 +37,6 @@ Buildings help organize units within larger properties that have multiple struct
 
 ### Occupancy Tracking
 
-- Units are automatically marked **Occupied** when an active lease exists
-- Units return to **Vacant** when a lease is terminated or expires
+- Units are automatically marked **Occupied** when an active contract exists
+- Units return to **Vacant** when a contract is terminated or expires
 - Occupancy rate is calculated as: occupied units / total units

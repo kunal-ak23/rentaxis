@@ -37,7 +37,7 @@ test('TENANT_ADMIN creates a renter via the dashboard UI', async ({ browser }) =
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
   // 3. Open the create-renter modal. Trigger button has text "Add Renter".
-  await page.getByRole('button', { name: /add renter/i }).first().click();
+  await page.getByRole('button', { name: /add (renter|tenant)/i }).first().click();
 
   // 4. Form is in a fixed-position dialog (z-[100]). Scope all field locators
   //    to it via the form element so we don't accidentally hit the search

@@ -20,10 +20,11 @@ import en from "../../../../messages/en.json";
  * of failures worth catching.
  */
 
-const pathname = "/en/dashboard";
+const path = { current: "/en/dashboard" };
 
 vi.mock("next/navigation", () => ({
-    usePathname: () => pathname,
+    useSearchParams: () => new URLSearchParams(),
+    usePathname: () => path.current,
     useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/i18n/routing", () => ({
@@ -46,6 +47,9 @@ vi.mock("@/hooks/useTenantFeatures", () => ({
         loading: false,
     }),
 }));
+vi.mock("@/components/nav/useNavCounts", () => ({
+    useNavCounts: () => ({ collectionBadge: null, chequesToDeposit: null, booksLockedThrough: null, booksLive: true }),
+}));
 vi.mock("framer-motion", () => ({
     motion: new Proxy({}, {
         get: () => ({ children, ...rest }: { children?: React.ReactNode }) => <div {...rest}>{children}</div>,
@@ -57,17 +61,19 @@ vi.mock("next/image", () => ({
 }));
 
 import MvpSidebar from "../MvpSidebar";
+import { NavShellProvider } from "@/components/nav/NavShellContext";
 import { TenantSwitcher } from "../TenantSwitcher";
 
 function renderIn(locale: "en" | "ar", ui: React.ReactElement) {
     return render(
         <NextIntlClientProvider locale={locale} messages={locale === "ar" ? ar : en}>
-            {ui}
+            <NavShellProvider>{ui}</NavShellProvider>
         </NextIntlClientProvider>,
     );
 }
 
 beforeEach(() => {
+    path.current = "/en/dashboard";
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] })) as unknown as typeof fetch;
     Object.defineProperty(window, "localStorage", {
         value: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
@@ -82,28 +88,40 @@ afterEach(() => {
 
 describe("dashboard shell localization", () => {
     it("renders sidebar nav labels in Arabic", () => {
-        renderIn("ar", <MvpSidebar />);
-
-        // Terms the catalog already established elsewhere, reused here.
+        // Each label lives in its section's panel, which shows for the page you are on.
+        path.current = "/ar/dashboard/tickets";
+        const tickets = renderIn("ar", <MvpSidebar />);
         expect(screen.getByText(ar.Navigation.tickets)).toBeInTheDocument();
+        tickets.unmount();
+        path.current = "/ar/dashboard/meetings";
+        const meetings = renderIn("ar", <MvpSidebar />);
         expect(screen.getByText(ar.Navigation.meetings)).toBeInTheDocument();
-        expect(screen.getByText(ar.Navigation.listings)).toBeInTheDocument();
+        meetings.unmount();
+        path.current = "/ar/dashboard/listings";
+        renderIn("ar", <MvpSidebar />);
+        expect(screen.getByText(ar.Navigation.enquiry)).toBeInTheDocument();
     });
 
     it("leaves no English nav literal on an Arabic page", () => {
-        const { container } = renderIn("ar", <MvpSidebar />);
-        const text = container.textContent ?? "";
-
-        // The exact literals that used to be hardcoded.
-        for (const literal of ["Tickets", "Meetings", "Listings", "Account Mappings", "Cheque-failure Fines"]) {
-            expect(text, `"${literal}" should not appear on an Arabic page`).not.toContain(literal);
+        for (const p of ["/ar/dashboard", "/ar/dashboard/tickets", "/ar/dashboard/meetings", "/ar/dashboard/listings", "/ar/dashboard/finance/journals", "/ar/dashboard/settings"]) {
+            path.current = p;
+            const { container, unmount } = renderIn("ar", <MvpSidebar />);
+            const text = container.textContent ?? "";
+            // The exact literals that used to be hardcoded.
+            for (const literal of ["Tickets", "Meetings", "Listings", "Account Mappings", "Cheque-failure Fines"]) {
+                expect(text, `"${literal}" should not appear on ${p}`).not.toContain(literal);
+            }
+            unmount();
         }
     });
 
     it("still renders English nav labels in the English locale", () => {
-        renderIn("en", <MvpSidebar />);
-
+        path.current = "/en/dashboard/tickets";
+        const tickets = renderIn("en", <MvpSidebar />);
         expect(screen.getByText("Tickets")).toBeInTheDocument();
+        tickets.unmount();
+        path.current = "/en/dashboard/meetings";
+        renderIn("en", <MvpSidebar />);
         expect(screen.getByText("Meetings")).toBeInTheDocument();
     });
 

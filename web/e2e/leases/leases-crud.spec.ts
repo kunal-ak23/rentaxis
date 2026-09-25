@@ -30,7 +30,7 @@ test.describe('Leases CRUD', () => {
 
   test('leases page loads', async ({ page }, testInfo) => {
     if (!['super-admin', 'tenant-admin'].includes(testInfo.project.name)) return;
-    await expect(page.getByText(/lease/i).first()).toBeVisible();
+    await expect(page.getByText(/lease|contract/i).first()).toBeVisible();
   });
 
   test('grid and board view toggle', async ({ page }, testInfo) => {

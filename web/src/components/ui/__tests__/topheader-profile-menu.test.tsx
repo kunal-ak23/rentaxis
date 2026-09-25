@@ -19,6 +19,7 @@ vi.mock("next-auth/react", () => ({
     signOut: (...args: unknown[]) => signOut(...args),
 }));
 vi.mock("next/navigation", () => ({
+    useSearchParams: () => new URLSearchParams(),
     usePathname: () => "/en/dashboard",
     useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
@@ -30,8 +31,12 @@ vi.mock("@/i18n/routing", () => ({
 }));
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("../GlobalSearch", () => ({ default: () => <div /> }));
+vi.mock("@/hooks/useTenantFeatures", () => ({
+    useTenantFeatures: () => ({ isEnabled: () => true, tenantSlug: "acme", features: {}, loading: false }),
+}));
 
 import { TopHeader } from "../TopHeader";
+import { NavShellProvider } from "@/components/nav/NavShellContext";
 
 beforeEach(() => {
     signOut.mockReset();
@@ -42,14 +47,14 @@ afterEach(cleanup);
 
 describe("TopHeader profile menu", () => {
     it("hides Logout until the profile menu is opened", () => {
-        render(<TopHeader />);
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
 
         expect(screen.getByTestId("profile-menu")).toBeTruthy();
         expect(screen.queryByTestId("logout")).toBeNull();
     });
 
     it("reveals a Logout entry that signs the user out", () => {
-        render(<TopHeader />);
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
 
         fireEvent.click(screen.getByTestId("profile-menu"));
 
@@ -58,5 +63,22 @@ describe("TopHeader profile menu", () => {
 
         fireEvent.click(logout);
         expect(signOut).toHaveBeenCalledTimes(1);
+    });
+
+    it("links Help from the header", () => {
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
+        expect(screen.getByTestId("header-help")).toHaveAttribute("href", "/dashboard/help");
+    });
+
+    it("keeps the user's name on one line with a tooltip, and hides name and role below xl (PR #363 R1)", () => {
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
+        const block = screen.getByTestId("header-user-name");
+        expect(block.className).toMatch(/(^|\s)hidden(\s|$)/);
+        expect(block.className).toMatch(/xl:flex/);
+        const [name, role] = Array.from(block.querySelectorAll("span"));
+        expect(name.className).toMatch(/truncate/);
+        expect(name.className).toMatch(/whitespace-nowrap/);
+        expect(name).toHaveAttribute("title", name.textContent ?? "");
+        expect(role.className).toMatch(/truncate/);
     });
 });

@@ -70,6 +70,7 @@ export default function PropertyDetailPage() {
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
     const tLedger = useTranslations("Ledger");
+    const tNav = useTranslations("Navigation");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -235,7 +236,7 @@ export default function PropertyDetailPage() {
                     </div>
                     {canManageRentSettings && (
                         <Link
-                            href="/dashboard/settings/rent-settings"
+                            href="/dashboard/settings?section=rent"
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-border text-muted hover:bg-background hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Settings size={14} />
@@ -501,7 +502,16 @@ export default function PropertyDetailPage() {
             )}
 
             {activeTab === "units" && (
-                <UnitsTab units={units} buildings={buildings} propertyId={propertyId} canCreate={canCreate} onUpdate={fetchUnits} />
+                <>
+                    {/* The occupancy view (reserved / maintenance, incoming tenant) had no inbound link. */}
+                    <div className="flex justify-end mb-3">
+                        <Link href={`/dashboard/properties/${propertyId}/units`} data-testid="property-units-page-link"
+                            className="text-xs font-semibold text-primary hover:underline">
+                            {tNav("openUnitsPage")}
+                        </Link>
+                    </div>
+                    <UnitsTab units={units} buildings={buildings} propertyId={propertyId} canCreate={canCreate} onUpdate={fetchUnits} />
+                </>
             )}
 
             {activeTab === "leases" && (

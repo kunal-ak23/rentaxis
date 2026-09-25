@@ -33,7 +33,7 @@ test('the rent warning reads the asking rent as annual', async ({ page }) => {
         { name: 'active_tenant_id', value: tenants[0].id, domain: new URL(BASE).hostname, path: '/' },
     ]);
     await page.goto('/en/dashboard/leases');
-    await page.getByRole('button', { name: /draft lease/i }).first().click();
+    await page.getByRole('button', { name: /draft (lease|tenancy contract)/i }).first().click();
 
     // The wizard is not a role="dialog" (issue #176); anchor on its close button.
     const wizard = page

@@ -228,7 +228,7 @@ export default function SuperAdminTenantsPage() {
         <div className="p-8 max-w-7xl mx-auto">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="mb-1">Super Admin: Manage Tenants</h1>
+                    <h1 className="mb-1">{tSa("organisationsTitle")}</h1>
                     <p className="text-sm text-muted">System-wide infrastructure and data isolation control.</p>
                 </div>
                 <div className="flex items-center gap-3">
