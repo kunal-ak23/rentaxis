@@ -1964,7 +1964,8 @@
     "pickAccountsPlaceholder": "Search account code or name",
     "accountsPicked": "{count} of {max} accounts",
     "tooManyAccounts": "You can pick up to {max} accounts at a time. Remove one to add another.",
-    "periodLabel": "{from} to {to}"
+    "periodLabel": "{from} to {to}",
+    "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
     "chargeRaisedBanner": "{type} proposed. It appears in the Penalties tab for finance to approve.",
@@ -2504,7 +2505,6 @@
     "bounceFlowReplaced": "Replacement recorded.",
     "bounceFlowFeeHeading": "Bounce fee / penalty",
     "bounceFlowChecking": "Checking for an automatic penalty…",
-    "bounceFlowAutoProposed": "A cheque-return penalty of {amount} was proposed automatically. Finance approves it under Penalties.",
     "bounceFlowFeeHint": "Propose a cheque-return fee. Finance approves it under Penalties.",
     "bounceFlowFeeAmount": "Fee amount",
     "bounceFlowProposeFee": "Propose fee",
@@ -2518,7 +2518,9 @@
     "pasteExtraRows": "{n, plural, one {# pasted row is past the end of the grid.} other {# pasted rows are past the end of the grid.}}",
     "pasteAddRows": "{n, plural, one {Add # row} other {Add # rows}}",
     "pasteAddedRows": "{n, plural, one {# row added for the paste.} other {# rows added for the paste.}}",
-    "pasteDismiss": "Dismiss"
+    "pasteDismiss": "Dismiss",
+    "bounceFlowExistingFee": "This cheque already has a cheque-return charge of {amount} ({status}), so no second fee is offered.",
+    "bounceFlowCheckFailed": "Could not check for an existing cheque-return fee, so none is offered here. Raise one from the contract if needed."
   },
   "Common": {
     "notOnStatement": "This entry is not on the imported statement",

@@ -82,4 +82,20 @@ describe("General Ledger — on demand", () => {
         await waitFor(() => expect(general).toHaveBeenCalledWith(expect.objectContaining({ accountIds: ["a3", "a4"], from: "2026-01-01", to: "2026-03-31", propertyId: "p1" })));
         expect(screen.queryByTestId("ledger-pick-prompt")).toBeNull();
     });
+
+    it("caps a URL with more than 20 accounts to the first 20 and says so", async () => {
+        query.current = `accountIds=${Array.from({ length: 21 }, (_, i) => `a${i}`).join(",")}`;
+        render(<Page />);
+        await waitFor(() => expect(general).toHaveBeenCalled());
+        expect(general.mock.calls[0][0].accountIds).toHaveLength(20);
+        expect(screen.getByTestId("ledger-url-capped")).toHaveTextContent("This link named 21 accounts; the first 20 are shown.");
+    });
+
+    it("lets a P&L drill-down name every leaf of its cell", async () => {
+        query.current = `effectiveProperty=true&propertyId=p1&accountIds=${Array.from({ length: 25 }, (_, i) => `a${i % 21}x${i}`).join(",")}`;
+        render(<Page />);
+        await waitFor(() => expect(general).toHaveBeenCalled());
+        expect(general.mock.calls[0][0].accountIds).toHaveLength(25);
+        expect(screen.queryByTestId("ledger-url-capped")).toBeNull();
+    });
 });

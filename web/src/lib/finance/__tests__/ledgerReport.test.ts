@@ -31,9 +31,11 @@ describe("buildLedgerReport", () => {
         expect(drCr(g.subTotal.balance)).toBe("45,758.33 Cr");
     });
 
-    it("falls back to the server totals when the rows were truncated", () => {
-        const l = ledger("a", "1100", 0, [row("1", 10, 0, 10)], { truncated: true, totalDebit: 999, totalCredit: 1, closingBalance: 998 });
-        expect(buildLedgerReport([l]).groups[0].subTotal).toEqual({ debit: 999, credit: 1, balance: 998 });
+    it("sums a truncated account over the rows shown (the server's totals cover the same capped rows) and keeps the flag", () => {
+        const l = ledger("a", "1100", 5, [row("1", 10, 0, 15)], { truncated: true });
+        const g = buildLedgerReport([l]).groups[0];
+        expect(g.subTotal).toEqual({ debit: 10, credit: 0, balance: 15 });
+        expect(g.truncated).toBe(true);
     });
 
     it("totals the report across accounts", () => {

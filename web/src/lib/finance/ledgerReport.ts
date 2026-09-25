@@ -17,16 +17,19 @@ const fils = (n: number) => Math.round(n * 100) / 100;
  * Balances are debit-positive, so a Sub Total's balance is brought forward +
  * Σdebit − Σcredit. The endpoints return the brought-forward balance as
  * `openingBalance` (the balance before `from`), so no second call is needed.
- * When the endpoint cut the rows short (`truncated`) the rows no longer add up
- * to the account, so the server's own totals are used for that account.
+ *
+ * A truncated account (`truncated`: the server stopped at its row cap) is
+ * partial either way — the server computes its totals over the same capped
+ * rows (LedgerQueryService) — so its Sub Total covers the rows shown, and the
+ * table says the rows were cut short.
  */
 export function buildLedgerReport(ledgers: AccountLedger[]): { groups: LedgerGroup[]; total: LedgerTotals } {
     const groups = [...ledgers]
         .sort((a, b) => a.accountCode.localeCompare(b.accountCode, "en", { numeric: true }))
         .map(l => {
-            const debit = l.truncated ? l.totalDebit : fils(l.rows.reduce((s, r) => s + r.debit, 0));
-            const credit = l.truncated ? l.totalCredit : fils(l.rows.reduce((s, r) => s + r.credit, 0));
-            const balance = l.truncated ? l.closingBalance : fils(l.openingBalance + debit - credit);
+            const debit = fils(l.rows.reduce((s, r) => s + r.debit, 0));
+            const credit = fils(l.rows.reduce((s, r) => s + r.credit, 0));
+            const balance = fils(l.openingBalance + debit - credit);
             return { accountId: l.accountId, code: l.accountCode, ledger: l, opening: l.openingBalance, rows: l.rows, subTotal: { debit, credit, balance }, truncated: l.truncated };
         });
     const total = groups.reduce<LedgerTotals>((t, g) => ({

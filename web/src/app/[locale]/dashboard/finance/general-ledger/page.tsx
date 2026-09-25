@@ -47,14 +47,21 @@ function GeneralLedger() {
     // rule — coalesce(line property, account property) — so the ledger lists
     // every line the cell summed.
     const accountIdsParam = params.get("accountIds");
+    const effectiveProperty = params.get("effectiveProperty") === "true";
+    // The 20-account cap holds for a typed or bookmarked URL too (PR #365 R1).
+    // A P&L drill-down (effectiveProperty) is exempt: it names exactly the
+    // leaves its cell summed, and dropping any would make the ledger disagree
+    // with the figure the user clicked.
+    const urlIds = accountIdsParam ? [...new Set(accountIdsParam.split(",").filter(Boolean))] : [];
+    const capped = !effectiveProperty && urlIds.length > MAX_LEDGER_ACCOUNTS;
     const range = defaultLedgerRange();
     const initial: LedgerQuery = {
         ...range,
         from: params.get("from") || range.from,
         to: params.get("to") || range.to,
         propertyId: params.get("propertyId") || undefined,
-        effectiveProperty: params.get("effectiveProperty") === "true" || undefined,
-        accountIds: accountIdsParam ? accountIdsParam.split(",").filter(Boolean)
+        effectiveProperty: effectiveProperty || undefined,
+        accountIds: urlIds.length ? (capped ? urlIds.slice(0, MAX_LEDGER_ACCOUNTS) : urlIds)
             : accountId ? [accountId] : undefined,
     };
     // `draft` is what the filter bar edits; `applied` is what the report shows.
@@ -189,6 +196,11 @@ function GeneralLedger() {
             </div>
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={() => load(applied)} />}
+            {capped && (
+                <p role="status" data-testid="ledger-url-capped" className="mb-4 text-xs text-warning">
+                    {t("urlAccountsCapped", { count: urlIds.length, max: MAX_LEDGER_ACCOUNTS })}
+                </p>
+            )}
 
             <LedgerFilters
                 value={draft}

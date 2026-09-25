@@ -56,21 +56,42 @@ describe("BounceFlow", () => {
         fireEvent.change(await screen.findByTestId("bounce-flow-fee-amount"), { target: { value: "500" } });
         fireEvent.click(screen.getByTestId("bounce-flow-propose-fee"));
         expect(await screen.findByTestId("bounce-flow-fee-proposed")).toHaveTextContent("500.00");
-        expect(api.propose).toHaveBeenCalledWith({ leaseId: "l1", chequeId: "c1", reason: "CHEQUE_RETURN", amount: 500 });
+        // The fee carries the bounce date, not "today" by default.
+        expect(api.propose).toHaveBeenCalledWith({ leaseId: "l1", chequeId: "c1", reason: "CHEQUE_RETURN", amount: 500, incidentDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+        expect(api.propose.mock.calls[0][0].incidentDate).toBe((api.bounce.mock.calls[0][1] as { date: string }).date);
         expect(onChanged).toHaveBeenCalledTimes(3);
 
         fireEvent.click(screen.getByTestId("bounce-flow-done"));
         expect(onClose).toHaveBeenCalled();
     });
 
-    it("does not offer a second fee when the rule engine already proposed one for this cheque", async () => {
+    it.each(["PROPOSED", "APPROVED", "WRITTEN_OFF"])("does not offer a second fee when the cheque already has a %s cheque-return charge", async status => {
         api.bounce.mockResolvedValue(CHEQUE);
-        api.list.mockResolvedValue(page([{ id: "pen", chequeId: "c1", reason: "CHEQUE_RETURN", amount: 250, status: "PROPOSED" }]));
+        api.list.mockImplementation(async (q: { status: string }) => page(q.status === status
+            ? [{ id: "pen", chequeId: "c1", reason: "CHEQUE_RETURN", amount: 250, status }] : []));
         renderFlow();
         await bounce();
         expect(await screen.findByTestId("bounce-flow-auto-penalty")).toHaveTextContent("250.00");
         expect(screen.queryByTestId("bounce-flow-propose-fee")).toBeNull();
-        expect(api.list).toHaveBeenCalledWith({ leaseId: "l1", status: "PROPOSED", page: 0, size: 50 });
+        for (const s of ["PROPOSED", "APPROVED", "WRITTEN_OFF"]) expect(api.list).toHaveBeenCalledWith({ leaseId: "l1", status: s, page: 0, size: 200 });
+    });
+
+    it("still offers a fee when only a waived or reversed charge exists", async () => {
+        api.bounce.mockResolvedValue(CHEQUE);
+        api.list.mockResolvedValue(page([]));
+        renderFlow();
+        await bounce();
+        expect(await screen.findByTestId("bounce-flow-propose-fee")).toBeInTheDocument();
+        expect(api.list).not.toHaveBeenCalledWith(expect.objectContaining({ status: "WAIVED" }));
+    });
+
+    it("offers no fee when the check for an existing one fails", async () => {
+        api.bounce.mockResolvedValue(CHEQUE);
+        api.list.mockRejectedValue(new Error("down"));
+        renderFlow();
+        await bounce();
+        expect(await screen.findByTestId("bounce-flow-check-failed")).toBeInTheDocument();
+        expect(screen.queryByTestId("bounce-flow-propose-fee")).toBeNull();
     });
 
     it("offers no fee to a role that may not propose one", async () => {

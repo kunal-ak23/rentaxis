@@ -1964,7 +1964,8 @@
     "pickAccountsPlaceholder": "ابحث برمز الحساب أو اسمه",
     "accountsPicked": "{count} من {max} حساب",
     "tooManyAccounts": "يمكنك اختيار حتى {max} حساباً في المرة الواحدة. أزل حساباً لإضافة آخر.",
-    "periodLabel": "من {from} إلى {to}"
+    "periodLabel": "من {from} إلى {to}",
+    "urlAccountsCapped": "ذكر هذا الرابط {count} حساباً؛ يُعرض أول {max} منها. اختر عدداً أقل، أو افتح ميزان المراجعة لعرض الشركة بالكامل."
   },
   "Leasing": {
     "chargeRaisedBanner": "اقتُرحت رسوم ({type}). تظهر في تبويب الغرامات ليعتمدها قسم المالية.",
@@ -2504,7 +2505,6 @@
     "bounceFlowReplaced": "تم تسجيل البديل.",
     "bounceFlowFeeHeading": "رسوم الارتجاع / الغرامة",
     "bounceFlowChecking": "جارٍ التحقق من وجود غرامة تلقائية…",
-    "bounceFlowAutoProposed": "تم اقتراح غرامة ارتجاع شيك بقيمة {amount} تلقائياً. يعتمدها قسم المالية ضمن الغرامات.",
     "bounceFlowFeeHint": "اقترح رسوم ارتجاع الشيك. يعتمدها قسم المالية ضمن الغرامات.",
     "bounceFlowFeeAmount": "قيمة الرسوم",
     "bounceFlowProposeFee": "اقتراح الرسوم",
@@ -2518,7 +2518,9 @@
     "pasteExtraRows": "{n, plural, zero {لا توجد صفوف زائدة.} one {صف ملصق واحد بعد نهاية الجدول.} two {صفان ملصقان بعد نهاية الجدول.} few {# صفوف ملصقة بعد نهاية الجدول.} many {# صفاً ملصقاً بعد نهاية الجدول.} other {# صف ملصق بعد نهاية الجدول.}}",
     "pasteAddRows": "{n, plural, zero {لا صفوف} one {إضافة صف واحد} two {إضافة صفين} few {إضافة # صفوف} many {إضافة # صفاً} other {إضافة # صف}}",
     "pasteAddedRows": "{n, plural, zero {لم تتم إضافة صفوف.} one {تمت إضافة صف واحد للصق.} two {تمت إضافة صفين للصق.} few {تمت إضافة # صفوف للصق.} many {تمت إضافة # صفاً للصق.} other {تمت إضافة # صف للصق.}}",
-    "pasteDismiss": "إغلاق"
+    "pasteDismiss": "إغلاق",
+    "bounceFlowExistingFee": "لدى هذا الشيك رسوم ارتجاع بقيمة {amount} ({status})، لذا لا تُعرض رسوم ثانية.",
+    "bounceFlowCheckFailed": "تعذّر التحقق من وجود رسوم ارتجاع سابقة، لذا لا تُعرض هنا. أضفها من العقد عند الحاجة."
   },
   "Common": {
     "notOnStatement": "هذا القيد غير موجود في كشف الحساب المستورد",

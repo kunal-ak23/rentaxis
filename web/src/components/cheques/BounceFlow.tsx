@@ -6,12 +6,15 @@ import { CheckCircle2 } from "lucide-react";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount } from "@/lib/api/ledger";
-import { ApiError, penaltyApi, type Cheque, type PenaltyAssessment } from "@/lib/api/leasing";
+import { ApiError, penaltyApi, type Cheque, type PenaltyAssessment, type PenaltyAssessmentStatus } from "@/lib/api/leasing";
 import BounceChequeDialog from "./BounceChequeDialog";
 import ReplaceChequeDialog from "./ReplaceChequeDialog";
 import { chequeLabel } from "./chequeLabel";
 
 type Step = "bounce" | "next" | "replace";
+
+/** The statuses the server's duplicate guard treats as an open charge (PenaltyAssessmentService.OPEN). */
+const OPEN_PENALTY: PenaltyAssessmentStatus[] = ["PROPOSED", "APPROVED", "WRITTEN_OFF"];
 
 type Props = {
     cheque: Cheque | null;
@@ -39,6 +42,9 @@ export default function BounceFlow({ cheque, canProposeFee, onClose, onChanged }
     const [step, setStep] = useState<Step>("bounce");
     const [replaced, setReplaced] = useState(false);
     const [auto, setAuto] = useState<PenaltyAssessment | null | undefined>(undefined);
+    /** The check for an existing fee failed: no manual fee is offered blind. */
+    const [checkFailed, setCheckFailed] = useState(false);
+    const [bounceDate, setBounceDate] = useState<string | null>(null);
     const [fee, setFee] = useState(0);
     const [proposed, setProposed] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
@@ -51,22 +57,31 @@ export default function BounceFlow({ cheque, canProposeFee, onClose, onChanged }
         setFee(0);
         setProposed(null);
         setError(null);
+        setCheckFailed(false);
+        setBounceDate(null);
     }, [cheque]);
 
-    // After the bounce: is there already an automatic cheque-return penalty for this cheque?
+    // After the bounce: is there already a cheque-return fee on this cheque that
+    // the server would count as open (PROPOSED, APPROVED or WRITTEN_OFF — its own
+    // duplicate guard, PenaltyAssessmentService.OPEN)? Only then is a manual fee
+    // withheld; a failed lookup offers none either (PR #365 R1).
     useEffect(() => {
-        if (step !== "next" || !cheque || auto !== undefined) return;
+        if (step !== "next" || !cheque || auto !== undefined || checkFailed) return;
         let alive = true;
-        penaltyApi.list({ leaseId: cheque.leaseId, status: "PROPOSED", page: 0, size: 50 })
-            .then(p => { if (alive) setAuto((p.content ?? []).find(a => a.chequeId === cheque.id && a.reason === "CHEQUE_RETURN") ?? null); })
-            .catch(() => { if (alive) setAuto(null); });
+        Promise.all(OPEN_PENALTY.map(status => penaltyApi.list({ leaseId: cheque.leaseId, status, page: 0, size: 200 })))
+            .then(pages => {
+                if (!alive) return;
+                const all = pages.flatMap(p => p.content ?? []);
+                setAuto(all.find(a => a.chequeId === cheque.id && a.reason === "CHEQUE_RETURN") ?? null);
+            })
+            .catch(() => { if (alive) setCheckFailed(true); });
         return () => { alive = false; };
-    }, [step, cheque, auto]);
+    }, [step, cheque, auto, checkFailed]);
 
     if (!cheque) return null;
 
     if (step === "bounce") {
-        return <BounceChequeDialog cheque={cheque} onClose={onClose} onDone={() => { onChanged(); setStep("next"); }} />;
+        return <BounceChequeDialog cheque={cheque} onClose={onClose} onDone={date => { setBounceDate(date); onChanged(); setStep("next"); }} />;
     }
     if (step === "replace") {
         return (
@@ -83,7 +98,7 @@ export default function BounceFlow({ cheque, canProposeFee, onClose, onChanged }
         setBusy(true);
         setError(null);
         try {
-            await penaltyApi.propose({ leaseId: cheque.leaseId, chequeId: cheque.id, reason: "CHEQUE_RETURN", amount: fee });
+            await penaltyApi.propose({ leaseId: cheque.leaseId, chequeId: cheque.id, reason: "CHEQUE_RETURN", amount: fee, incidentDate: bounceDate });
             setProposed(fee);
             onChanged();
         } catch (e) {
@@ -125,10 +140,12 @@ export default function BounceFlow({ cheque, canProposeFee, onClose, onChanged }
                 {(canProposeFee || auto) && (
                     <section className="space-y-1.5 border-t border-border pt-3">
                         <h4 className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t("bounceFlowFeeHeading")}</h4>
-                        {auto === undefined ? (
+                        {checkFailed ? (
+                            <p className="text-muted" data-testid="bounce-flow-check-failed">{t("bounceFlowCheckFailed")}</p>
+                        ) : auto === undefined ? (
                             <p className="text-muted">{t("bounceFlowChecking")}</p>
                         ) : auto ? (
-                            <p className="flex items-center gap-1.5" data-testid="bounce-flow-auto-penalty">{done}{t("bounceFlowAutoProposed", { amount: fmtAmount(auto.amount) })}</p>
+                            <p className="flex items-center gap-1.5" data-testid="bounce-flow-auto-penalty">{done}{t("bounceFlowExistingFee", { amount: fmtAmount(auto.amount), status: t(`penaltyStatus.${auto.status}`) })}</p>
                         ) : proposed !== null ? (
                             <p className="flex items-center gap-1.5 text-success" data-testid="bounce-flow-fee-proposed">{done}{t("bounceFlowFeeProposed", { amount: fmtAmount(proposed) })}</p>
                         ) : (
