@@ -2441,6 +2441,7 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason."},
       "vat": {"periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
       "bank": {
@@ -4196,5 +4197,24 @@
     "reopen": "Re-open",
     "reopenPrompt": "Why is the filed return being re-opened?",
     "history": "Filing history"
+  },
+  "BadDebts": {
+    "title": "Bad debts",
+    "openItems": "Unpaid and bounced items the renter owes. Pick what cannot be recovered.",
+    "itemStatus": {"UNPAID": "unpaid", "BOUNCED": "bounced"},
+    "reason": "Reason (required)",
+    "propose": "Propose write-off of {amount}",
+    "status": {"PROPOSED": "Proposed", "WRITTEN_OFF": "Written off", "REJECTED": "Rejected", "REVERSED": "Reversed"},
+    "recovered": "{amount} recovered",
+    "approve": "Approve",
+    "reject": "Reject",
+    "reverse": "Reverse",
+    "recover": "Record recovery",
+    "vatNote": "VAT already declared on these amounts stays declared: bad-debt relief is not automatic (FTA conditions apply).",
+    "confirm": {"approve": "Write this debt off?", "reject": "Reject this write-off?", "reverse": "Reverse this write-off? The debt becomes open again.", "recover": "Record money recovered"},
+    "note": "Reason",
+    "amount": "Amount",
+    "account": "Bank or cash account",
+    "cancel": "Cancel"
   }
 }

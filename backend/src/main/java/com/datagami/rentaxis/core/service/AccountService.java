@@ -370,6 +370,8 @@ public class AccountService {
         seed(byCode, "C-02", "Indirect Income", "إيرادات غير مباشرة", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C", null, true);
         // Finance-ops spec §3: interest the bank credits (role BANK_INTEREST_INCOME). Changeset 114.
         seed(byCode, "C-02-001", "Bank Interest", "فوائد بنكية", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C-02", null, false);
+        // F14-38: recoveries on written-off debts (role BAD_DEBT_RECOVERED). Changeset 141.
+        seed(byCode, "C-02-002", "Bad debts recovered", "ديون معدومة مستردة", AccountType.INCOME, AccountSubType.OTHER_INCOME, "C-02", null, false);
 
         seed(byCode, "D", "Expense", "المصروفات", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, null, "All expenses", true);
         seed(byCode, "D-01", "Direct Expense", "المصروفات المباشرة", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D", "Building running costs, one leaf per property per category", true);
@@ -377,6 +379,8 @@ public class AccountService {
         seed(byCode, "D-02-001", "Rounding Off", "فروق التقريب", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D-02", null, false);
         seed(byCode, "D-02-002", "Discount Allowed", "خصم مسموح", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D-02", null, false);
         seed(byCode, "D-02-003", "Bank Charges", "رسوم بنكية", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D-02", null, false);
+        // F14-38: bad debts written off (role BAD_DEBT); lines carry the property. Changeset 141.
+        seed(byCode, "D-02-004", "Bad debts written off", "ديون معدومة مشطوبة", AccountType.EXPENSE, AccountSubType.OTHER_EXPENSE, "D-02", null, false);
 
         seed(byCode, "F", "Equity", "حقوق الملكية", AccountType.EQUITY, AccountSubType.CAPITAL, null, null, true);
         seed(byCode, "F-01", "Capital Account", "حساب رأس المال", AccountType.EQUITY, AccountSubType.CAPITAL, "F", "Owner's capital account", false);

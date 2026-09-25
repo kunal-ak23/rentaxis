@@ -287,3 +287,5 @@ databaseChangeLog:
       file: db/changelog/changesets/139-vat-returns.yaml
   - include:
       file: db/changelog/changesets/140-charge-vat.yaml
+  - include:
+      file: db/changelog/changesets/141-bad-debts.yaml

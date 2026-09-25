@@ -899,6 +899,33 @@ public class ChequeService {
     }
 
     /**
+     * F14-38: closes an open item a bad-debt write-off takes over — the row drops out
+     * of every due / overdue list. A REGISTERED row's PDR is reversed first (the debt
+     * goes back to rent receivable, which the write-off then credits); a BOUNCED row's
+     * debt is already there. Undeclared VAT on the row is refused: run the VAT tax
+     * points first (the declared VAT stays as it is — no automatic bad-debt relief).
+     *
+     * @return the amount the row carried
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public BigDecimal closeForWriteOff(UUID chequeId, LocalDate date, String note) {
+        Cheque cheque = lock(chequeId);
+        Lease lease = cheque.getLease();
+        if (cheque.getStatus() == ChequeStatus.REGISTERED) {
+            vatTaxPoints.beforeWriteOff(cheque);
+            reversePdr(cheque, date, note);
+        } else if (cheque.getStatus() != ChequeStatus.BOUNCED) {
+            throw new BusinessRuleViolationException("Instalment " + cheque.getSeqNo() + " is " + cheque.getStatus()
+                    + "; only an unpaid or bounced item can be written off.", "badDebt.itemNotOpen",
+                    java.util.Map.of("row", String.valueOf(cheque.getSeqNo()), "status", cheque.getStatus().name()));
+        }
+        moveTo(cheque, ChequeStatus.CANCELLED, note);
+        chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "written off as a bad debt — " + note);
+        return cheque.getAmount();
+    }
+
+    /**
      * The same cancellation, moving the row's undeclared VAT onto another pending
      * instalment of the lease ({@code moveVatToChequeId}). A row carrying PLANNED VAT
      * cannot be cancelled without naming one: its share would be stranded in the

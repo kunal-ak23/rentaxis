@@ -278,6 +278,18 @@ public class VatTaxPointService {
         points.save(point);
     }
 
+    /** F14-38: a row whose VAT is still undeclared cannot be written off (declare it first; it then stays declared). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void beforeWriteOff(Cheque row) {
+        points.findLiveByChequeId(row.getId()).filter(p -> p.getStatus() == VatTaxPointStatus.PLANNED
+                        && p.getVatAmount().signum() > 0)
+                .ifPresent(p -> {
+                    throw new BusinessRuleViolationException("Instalment " + label(row) + " carries VAT not declared yet;"
+                            + " post the VAT tax points through its date first.", "badDebt.vatNotDeclared",
+                            java.util.Map.of("row", label(row)));
+                });
+    }
+
     /**
      * A REGISTERED row is being cancelled. Its PLANNED VAT has to go somewhere, or
      * it is stranded in the deferred account for ever: onto another pending row of
