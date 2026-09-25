@@ -32,7 +32,10 @@ import com.datagami.rentaxis.domain.entity.TenantFiscalSettings;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChargeRecognition;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
+import com.datagami.rentaxis.domain.entity.enums.FeeTiming;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -314,6 +317,12 @@ public class LeasePostingService {
     private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
                                    Set<UUID> numberExempt) {
         Lease lease = lockLease(leaseId);
+        if (checks == Preconditions.FOR_IMPORT_POST && lease.getFeeTiming() != FeeTiming.AT_POSTING) {
+            // F14-18: a cut-over replays PACT, which booked every fee as income on the
+            // contract date. ContractImportLeasePoster sets this too; it is repeated
+            // here so no cut-over path can defer a fee.
+            lease.setFeeTiming(FeeTiming.AT_POSTING);
+        }
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         allocateVatIfNeverAllocated(lease, lines, cheques);
@@ -438,8 +447,14 @@ public class LeasePostingService {
         }
         for (LeaseLine line : lines) {
             if (line.getCreditAccount() == null
-                    && line.getChargeType() != null && line.getChargeType().getRole() != null) {
+                    && line.getChargeType() != null && line.getChargeType().getRole() != null
+                    // A pass-through's role is nominal: its account is the property's
+                    // Utilities leaf, and planLines says so when there is none.
+                    && !passThrough(line.getChargeType())) {
                 roles.add(line.getChargeType().getRole());
+            }
+            if (earnedOverTerm(lease, line) && line.getNetAmount() != null && line.getNetAmount().signum() > 0) {
+                roles.add(AccountRole.UNEARNED_CHARGES);
             }
             if (LeaseVat.vatOf(line).signum() > 0) {
                 roles.add(AccountRole.OUTPUT_VAT);
@@ -788,7 +803,10 @@ public class LeasePostingService {
             if (credit == null) {
                 // The draft was allowed to be saved unmapped (see LeaseLine); this is
                 // where that debt comes due.
-                errors.add(where + " has no credit account.");
+                errors.add(passThrough(type)
+                        ? where + " is a utility recovered at cost and the property has no Utilities expense"
+                            + " account. Generate the property's accounts, or pick an account on the line."
+                        : where + " has no credit account.");
                 continue;
             }
             // Re-checked rather than trusted: the account was an active leaf of the
@@ -803,11 +821,26 @@ public class LeasePostingService {
                 continue;
             }
 
+            if (passThrough(type) && credit.getAccountType() == AccountType.INCOME) {
+                // F14-18: a draft saved before its type became a pass-through still
+                // names an income leaf; recovered-at-cost utilities are never income.
+                errors.add(where + " is a utility recovered at cost, but its credit account " + credit.getCode()
+                        + " is income. Pick the property's Utilities expense account.");
+                continue;
+            }
+
             String narration = narrationOf(line, type);
             if (lineNet.signum() > 0) {
+                // F14-18: a periodic fee on a lease posted under the new rule is
+                // billed for the term and earned month by month — parked in
+                // UNEARNED_CHARGES here, released to the line's own income account by
+                // the recognition run. Every other line credits its account as before.
+                PostingRequest.Line credited = earnedOverTerm(lease, line)
+                        ? PostingRequest.cr(AccountRole.UNEARNED_CHARGES, lineNet)
+                        : PostingRequest.cr(credit.getId(), lineNet);
                 pairs.add(PostingRequest.pair(
                         LeaseChequeRegistrar.drReceivable(lease, lineNet).withNarration(narration),
-                        PostingRequest.cr(credit.getId(), lineNet).withNarration(narration)));
+                        credited.withNarration(narration)));
             }
             if (lineVat.signum() > 0) {
                 String vatNarration = "VAT on " + (type != null ? type.getNameEn() : code);
@@ -823,6 +856,24 @@ public class LeasePostingService {
             }
         }
         return new LinePlan(pairs, net, gross, errors);
+    }
+
+    /**
+     * F14-18: whether this line is a periodic fee the lease earns over its term —
+     * a FEE of a RENT_LIKE charge type on a lease posted under the new rule. The
+     * TCO defers it and {@code RecognitionService} schedules it; both ask here.
+     */
+    public static boolean earnedOverTerm(Lease lease, LeaseLine line) {
+        ChargeType type = line.getChargeType();
+        return lease.getFeeTiming() == FeeTiming.OVER_TERM
+                && type != null
+                && type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == ChargeRecognition.RENT_LIKE;
+    }
+
+    private static boolean passThrough(ChargeType type) {
+        return type != null && type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == ChargeRecognition.PASS_THROUGH;
     }
 
     /** What {@link #planLines} found: the entry to write, its totals, and its complaints. */

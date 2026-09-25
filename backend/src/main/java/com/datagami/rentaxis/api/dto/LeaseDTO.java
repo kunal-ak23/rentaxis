@@ -109,4 +109,11 @@ public class LeaseDTO {
     private BigDecimal contractValue;
 
     private List<LeaseLineDTO> lines;
+
+    /**
+     * Spec §4c: on the response to a renewal only — the predecessor's one-off
+     * lines (e.g. an admin fee) that were not copied, so nothing is dropped
+     * silently. Null elsewhere.
+     */
+    private List<LeaseLineDTO> skippedOneOffLines;
 }

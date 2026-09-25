@@ -166,8 +166,16 @@ public class LeaseRenewalService {
         }
 
         CreateLeaseDTO dto = successorHeader(predecessor, r);
-        dto.setLines(r.lines() != null ? r.lines() : copiedLines(predecessor, r));
-        return leaseService.createRenewalDraft(dto, predecessor, r.carryDepositForward());
+        Copied copied = r.lines() != null ? new Copied(r.lines(), List.of()) : copiedLines(predecessor, r);
+        dto.setLines(copied.lines());
+        LeaseDTO draft = leaseService.createRenewalDraft(dto, predecessor, r.carryDepositForward());
+        // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
+        draft.setSkippedOneOffLines(copied.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
+        return draft;
+    }
+
+    /** The lines a renewal copies, and the one-off lines it deliberately left behind (spec §4c). */
+    record Copied(List<LeaseLineInput> lines, List<LeaseLine> skippedOneOff) {
     }
 
     /**
@@ -241,9 +249,10 @@ public class LeaseRenewalService {
      * nothing is left once these are skipped, the renewal is refused as having
      * nothing to copy.</p>
      */
-    private List<LeaseLineInput> copiedLines(Lease predecessor, RenewLeaseRequest r) {
+    private Copied copiedLines(Lease predecessor, RenewLeaseRequest r) {
         List<LeaseLine> source = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
         List<LeaseLineInput> copied = new ArrayList<>(source.size());
+        List<LeaseLine> skipped = new ArrayList<>();
         for (LeaseLine line : source) {
             ChargeType type = line.getChargeType();
             ChargeBehaviour behaviour = type != null ? type.getBehaviour() : null;
@@ -251,7 +260,17 @@ public class LeaseRenewalService {
                 continue;
             }
             boolean rent = behaviour == ChargeBehaviour.RENT;
-            if (line.getAddendumId() != null || (rent && isExtensionLine(line, predecessor))) {
+            // F14-18: a periodic fee an extension charged is dated to its window,
+            // exactly like the extension's rent, and is left behind the same way.
+            boolean periodic = behaviour == ChargeBehaviour.FEE && type.getRecognition() != null
+                    && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+            if (line.getAddendumId() != null || ((rent || periodic) && isExtensionLine(line, predecessor))) {
+                continue;
+            }
+            // Spec §4c: a one-off fee (admin fee, last year's renewal fee) was charged
+            // once for that contract; the renewal reports it rather than re-charging it.
+            if (behaviour == ChargeBehaviour.FEE && type.getRecognition() != null && !type.getRecognition().recurs()) {
+                skipped.add(line);
                 continue;
             }
             copied.add(new LeaseLineInput(
@@ -269,7 +288,7 @@ public class LeaseRenewalService {
             throw new BusinessRuleViolationException(
                     "There is nothing to copy from the lease being renewed; send the renewal's lines explicitly.");
         }
-        return copied;
+        return new Copied(copied, skipped);
     }
 
     /** A RENT line dated from after the lease's start — only an extension writes one. */

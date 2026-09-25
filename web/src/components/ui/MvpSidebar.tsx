@@ -38,6 +38,7 @@ import {
     FileSpreadsheet,
     Send,
     ScrollText,
+    Tags,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -267,6 +268,7 @@ export default function MvpSidebar() {
         ...(hasPermission(userRole, 'canManageAccountSetup') ? [
             { name: tLedger("accountTemplate"), href: "/dashboard/settings/account-template", icon: LayoutTemplate },
             { name: tLedger("fiscal"), href: "/dashboard/settings/fiscal", icon: CalendarClock },
+            { name: tLedger("chargeTypes"), href: "/dashboard/settings/charge-types", icon: Tags },
         ] : []),
         ...(userRole && canConfigureGateway(userRole) ? [
             { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },

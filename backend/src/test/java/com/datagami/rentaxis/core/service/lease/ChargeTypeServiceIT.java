@@ -6,6 +6,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChargeRecognition;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
@@ -45,10 +46,40 @@ class ChargeTypeServiceIT extends AbstractPostgresIT {
     @Test
     void seedingTwiceLeavesTheSevenPactParticulars() {
         service.seedDefaults();
-        assertThat(service.list(false)).hasSize(7)
+        // The seven PACT particulars plus RENEWAL_FEE (§4c) and UTILITIES (F14-18).
+        assertThat(service.list(false)).hasSize(9)
                 .extracting(ChargeTypeDTO::code)
-                .containsExactly("RENT", "SECURITY_DEPOSIT", "ADMIN_FEE", "PARKING_DEPOSIT",
-                        "COOLING", "PARKING_FEE", "MAINTENANCE");
+                .containsExactly("RENT", "SECURITY_DEPOSIT", "ADMIN_FEE", "RENEWAL_FEE", "PARKING_DEPOSIT",
+                        "COOLING", "PARKING_FEE", "MAINTENANCE", "UTILITIES");
+        // F14-18: periodic fees are earned over the term; admin and renewal fees are one-off.
+        assertThat(service.list(false)).extracting(ChargeTypeDTO::code, ChargeTypeDTO::recognition)
+                .contains(org.assertj.core.groups.Tuple.tuple("ADMIN_FEE", ChargeRecognition.ONE_OFF),
+                        org.assertj.core.groups.Tuple.tuple("RENEWAL_FEE", ChargeRecognition.ONE_OFF),
+                        org.assertj.core.groups.Tuple.tuple("PARKING_FEE", ChargeRecognition.RENT_LIKE),
+                        org.assertj.core.groups.Tuple.tuple("COOLING", ChargeRecognition.RENT_LIKE),
+                        org.assertj.core.groups.Tuple.tuple("MAINTENANCE", ChargeRecognition.RENT_LIKE),
+                        org.assertj.core.groups.Tuple.tuple("UTILITIES", ChargeRecognition.PASS_THROUGH),
+                        org.assertj.core.groups.Tuple.tuple("RENT", ChargeRecognition.RENT_LIKE),
+                        org.assertj.core.groups.Tuple.tuple("SECURITY_DEPOSIT", ChargeRecognition.RENT_LIKE));
+    }
+
+    /** F14-18: only a FEE can be one-off or a pass-through; an update that names none keeps the row's own. */
+    @Test
+    void recognitionIsAFeesChoiceAndSurvivesAnOldClientsUpdate() {
+        service.seedDefaults();
+        assertThatThrownBy(() -> service.create(new ChargeTypeDTO(null, "KEY_DEP", "Key deposit", null,
+                AccountRole.SECURITY_DEPOSIT, ChargeBehaviour.DEPOSIT, false, true, 90, ChargeRecognition.ONE_OFF)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Only a FEE charge type can be ONE_OFF");
+        ChargeTypeDTO cooling = service.list(false).stream().filter(t -> t.code().equals("COOLING")).findFirst().orElseThrow();
+        ChargeTypeDTO flipped = service.update(cooling.id(), new ChargeTypeDTO(cooling.id(), "COOLING", cooling.nameEn(),
+                cooling.nameAr(), cooling.role(), cooling.behaviour(), false, true, cooling.displayOrder(),
+                ChargeRecognition.PASS_THROUGH));
+        assertThat(flipped.recognition()).isEqualTo(ChargeRecognition.PASS_THROUGH);
+        // A client from before F14-18 sends no recognition: the row keeps PASS_THROUGH.
+        ChargeTypeDTO again = service.update(cooling.id(), new ChargeTypeDTO(cooling.id(), "COOLING", "Chiller at cost",
+                cooling.nameAr(), cooling.role(), cooling.behaviour(), false, true, cooling.displayOrder()));
+        assertThat(again.recognition()).isEqualTo(ChargeRecognition.PASS_THROUGH);
     }
 
     /**
@@ -87,7 +118,7 @@ class ChargeTypeServiceIT extends AbstractPostgresIT {
         TenantContextHolder.setTenantId(newTenant());
         assertThat(service.list(false)).isEmpty();
         service.seedDefaults();
-        assertThat(service.list(false)).hasSize(7);
+        assertThat(service.list(false)).hasSize(9);
         assertThat(service.getByCode("RENT").getRole()).isEqualTo(AccountRole.ADVANCE_RENT);
     }
 
@@ -168,7 +199,7 @@ class ChargeTypeServiceIT extends AbstractPostgresIT {
                         AccountRole.DISCOUNT_ALLOWED, AccountRole.ROUNDING_OFF,
                         AccountRole.OPENING_BALANCE_DIFFERENCE, AccountRole.OUTPUT_VAT_DEFERRED,
                         AccountRole.PDC_PAYABLE, AccountRole.BANK_CHARGES, AccountRole.BANK_INTEREST_INCOME,
-                        AccountRole.RENTER_REFUND_PAYABLE,
+                        AccountRole.RENTER_REFUND_PAYABLE, AccountRole.UNEARNED_CHARGES,
                         AccountRole.BANK_SUSPENSE);
         // every seeded particular clears its own guard
         assertThat(service.list(false)).allSatisfy(t -> assertThat(creditable).contains(t.role()));
@@ -192,6 +223,6 @@ class ChargeTypeServiceIT extends AbstractPostgresIT {
 
         // seeding after an edit does not resurrect the original row
         service.seedDefaults();
-        assertThat(service.list(false)).hasSize(7);
+        assertThat(service.list(false)).hasSize(9);
     }
 }

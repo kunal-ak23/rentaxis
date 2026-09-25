@@ -456,6 +456,9 @@ public class ContractImportPersistService {
         // CONTRACT model: the TCO credits Output VAT in full, with no tax points and
         // no tax invoices of ours (spec 2026-09-24 §1, cut-over ruling).
         lease.setVatTiming(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
+        // F14-18: PACT booked every fee as income on the contract date; the replay
+        // keeps that (the golden gate stays byte-identical).
+        lease.setFeeTiming(com.datagami.rentaxis.domain.entity.enums.FeeTiming.AT_POSTING);
         // A blank cell is the property's default, not zero (gap #65).
         String grace = SheetCells.cell(row, hi, "GracePeriodDays");
         leaseService.applyGracePeriod(lease, grace.isBlank() ? null : Integer.parseInt(grace.trim()), unit);

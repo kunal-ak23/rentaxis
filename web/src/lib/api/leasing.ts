@@ -34,6 +34,14 @@ async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string
 
 export type ChargeBehaviour = "RENT" | "DEPOSIT" | "FEE";
 
+/**
+ * F14-18 / spec §4c: how a FEE charge type is earned and whether a renewal copies it.
+ * RENT_LIKE — earned over the term like rent (copied); ONE_OFF — income when charged
+ * (not copied); PASS_THROUGH — a utility recovered at cost, never income (copied).
+ * RENT and DEPOSIT types always carry RENT_LIKE.
+ */
+export type ChargeRecognition = "RENT_LIKE" | "ONE_OFF" | "PASS_THROUGH";
+
 export type ChequeMode = "PDC" | "CASH" | "TRANSFER" | "ONLINE";
 
 export type ChequeStatus =
@@ -154,6 +162,8 @@ export type ChargeType = {
   vatApplicableDefault: boolean;
   active: boolean;
   displayOrder: number;
+  /** Absent from an older server; treat as RENT_LIKE. */
+  recognition?: ChargeRecognition | null;
 };
 
 /** LeaseLineDTO — a persisted lease line as read back from the server. */
@@ -180,6 +190,8 @@ export type LeaseLine = {
   periodEnd: string | null;
   /** The addendum that charged this line; null for the contract's own lines and an extension's. */
   addendumId?: string | null;
+  /** F14-18: the charge type's recognition; absent on an older server. */
+  recognition?: ChargeRecognition | null;
 };
 
 /** LeaseLineInput — one line as the caller submits it (create, update, renew, extend, amend). */
@@ -276,6 +288,8 @@ export type LeaseDetail = {
   noticeGivenBy?: NoticeParty | null;
   intendedMoveOutDate?: string | null;
   lines: LeaseLine[];
+  /** Spec §4c: on a renewal's response only — the one-off lines not copied. */
+  skippedOneOffLines?: LeaseLine[] | null;
 };
 
 /** AmendLeaseLinesRequest. */
@@ -554,6 +568,10 @@ export type RecognitionEntry = {
   journalNumber: string | null;
   /** Instant — an ISO timestamp, not a date. */
   postedAt: string | null;
+  /** F14-18: the periodic fee this row earns (its charge type), or null/absent for rent. */
+  chargeCode?: string | null;
+  chargeName?: string | null;
+  chargeNameAr?: string | null;
 };
 
 /**

@@ -156,6 +156,18 @@ describe("RecognitionScheduleTab", () => {
         expect(screen.getByTestId("recognition-schedule-check")).toHaveTextContent("Matches the contract rent.");
     });
 
+    /** F14-18: a periodic fee earned alongside the rent is labelled and kept out of the rent check. */
+    it("labels a periodic fee's rows and still matches the rent", async () => {
+        const rows = schedule();
+        rows.push({ ...rows[0], id: "fee-1", segmentId: "seg-2", amount: 310, chargeCode: "PARKING_FEE",
+            chargeName: "Parking Fee", chargeNameAr: "رسوم موقف السيارات" });
+        api.leaseSchedule.mockResolvedValue(rows);
+        renderTab({ contractRent: 120000 });
+        expect(await screen.findByTestId("recognition-schedule-total")).toHaveTextContent("120,310.00");
+        expect(screen.getByTestId("recognition-schedule-check")).toHaveTextContent("Matches the contract rent.");
+        expect(screen.getByTestId("recognition-charge-13")).toHaveTextContent("Parking Fee");
+    });
+
     it("says so, with the difference, when the schedule does not add back", async () => {
         renderTab({ contractRent: 119000 });
         expect(await screen.findByTestId("recognition-schedule-check")).toHaveTextContent("1,000.00");

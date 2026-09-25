@@ -13,5 +13,14 @@ import java.util.UUID;
  */
 public record ChargeTypeDTO(UUID id, String code, String nameEn, String nameAr, AccountRole role,
                             ChargeBehaviour behaviour, boolean vatApplicableDefault, boolean active,
-                            int displayOrder) {
+                            int displayOrder,
+                            /* F14-18 / §4c; null on a request means "the default for its role". */
+                            com.datagami.rentaxis.domain.entity.enums.ChargeRecognition recognition) {
+
+    /** The shape before F14-18: the recognition takes its role's default. */
+    public ChargeTypeDTO(UUID id, String code, String nameEn, String nameAr, AccountRole role,
+                         ChargeBehaviour behaviour, boolean vatApplicableDefault, boolean active,
+                         int displayOrder) {
+        this(id, code, nameEn, nameAr, role, behaviour, vatApplicableDefault, active, displayOrder, null);
+    }
 }

@@ -261,3 +261,5 @@ databaseChangeLog:
       file: db/changelog/changesets/126-attach-property-bank-leaves.yaml
   - include:
       file: db/changelog/changesets/127-lease-ejari-from-latest-addendum.yaml
+  - include:
+      file: db/changelog/changesets/128-charge-recognition.yaml

@@ -1910,7 +1910,8 @@
     "importBatchFilter": "Import batch",
     "removeFilter": "Remove this filter",
     "accountCodeLabel": "Account Code",
-    "accountNameLabel": "Name"
+    "accountNameLabel": "Name",
+    "chargeTypes": "Charge types"
   },
   "Leasing": {
     "renewCopiedChargesNotice": "{count, plural, one {This charge will} other {These charges will}} be copied to the new term: {list}. Untick “Copy the charge lines” to edit {count, plural, one {it} other {them}}.",
@@ -2449,7 +2450,7 @@
     "dateHint": "Inside the contract term, {start} – {end}.",
     "earnedThroughDate": "Earned through date",
     "recognisedSoFar": "Recognised so far",
-    "unearnedRent": "Unearned rent to reverse",
+    "unearnedRent": "Unearned rent and charges to reverse",
     "unearnedVat": "Unearned VAT to credit",
     "unearnedVatHint": "Credited back by the same TCR as a credit note. Already netted off the receivable below.",
     "unearnedVatInstalmentHint": "Settled by the same TCR: the VAT on instalments not yet declared is cancelled, the part of it that covers rent earned by the termination date is declared at that date, and any VAT already declared on rent not supplied is credited back with a credit note. Already netted off the receivable below.",
@@ -3888,5 +3889,32 @@
     "bankLocksTitle": "Bank accounts reconciled through",
     "bankLocksHint": "Each bank account's own lock, set when a reconciliation is finalized. It applies on top of the period lock above.",
     "notReconciled": "Not reconciled yet"
+  },
+  "ChargeTypes": {
+    "title": "Charge types",
+    "description": "The charges a lease can carry, and how each fee reaches the books.",
+    "accessDenied": "Only an administrator or accountant can manage charge types.",
+    "code": "Code",
+    "name": "Name",
+    "behaviour": "Kind",
+    "recognition": "How it is earned",
+    "renewal": "On renewal",
+    "active": "Active",
+    "yes": "Yes",
+    "no": "No",
+    "behaviours": {
+      "RENT": "Rent",
+      "DEPOSIT": "Deposit",
+      "FEE": "Fee"
+    },
+    "recognitions": {
+      "RENT_LIKE": "Over the term, like rent",
+      "ONE_OFF": "One-off, when charged",
+      "PASS_THROUGH": "Recovered at cost (not income)"
+    },
+    "renewalCopied": "Copied",
+    "renewalSkipped": "Not copied (one-off)",
+    "renewalDeposit": "Carried or re-collected",
+    "appliesToNewLeases": "A change applies to leases posted afterwards. Leases already on the books are not restated."
   }
 }

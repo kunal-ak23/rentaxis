@@ -9,6 +9,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
+import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
@@ -151,10 +152,13 @@ public class RecognitionPoster {
         RentSegment segment = entry.getSegment();
         Lease lease = entry.getLease();
 
+        // F14-18: a periodic fee's segment names its own two leaves.
+        boolean fee = segment.getIncomeAccountId() != null;
         JournalEntry cil = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.CIL,
                 entry.getPeriodEnd(),
-                "Advance rent adjustment – " + MONTH.format(entry.getPeriodEnd()),
+                (fee ? "Unearned charges adjustment – " : "Advance rent adjustment – ")
+                        + MONTH.format(entry.getPeriodEnd()),
                 LeaseChequeRegistrar.dimensions(lease, null),
                 JournalSourceType.RECOGNITION,
                 entry.getId(),
@@ -162,7 +166,8 @@ public class RecognitionPoster {
                 List.of(PostingRequest.pair(
                         new PostingRequest.Line(deferralOf(segment, lease), PostingRequest.Side.DR,
                                 entry.getAmount(), null, null),
-                        new PostingRequest.Line(incomeOf(lease), PostingRequest.Side.CR,
+                        new PostingRequest.Line(fee ? new PostingRequest.ById(segment.getIncomeAccountId())
+                                : incomeOf(lease), PostingRequest.Side.CR,
                                 entry.getAmount(), null, null)))));
 
         entry.setStatus(RecognitionStatus.POSTED);
@@ -176,12 +181,18 @@ public class RecognitionPoster {
         // there is no page here.
         Unit unit = lease.getUnit();
         Property property = unit == null ? null : unit.getProperty();
+        java.util.Optional<ChargeType> feeType = fee
+                ? leaseLines.findById(segment.getLeaseLineId()).map(LeaseLine::getChargeType)
+                : java.util.Optional.empty();
         return new RecognitionEntryDTO(entry.getId(), lease.getId(), segment.getId(),
                 property == null ? null : property.getId(),
                 property == null ? null : property.getNameEn(),
                 unit == null ? null : unit.getUnitNumber(),
                 entry.getPeriodStart(), entry.getPeriodEnd(), entry.getDays(), entry.getAmount(),
-                RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), entry.getPostedAt());
+                RecognitionStatus.POSTED, cil.getId(), cil.getEntryNumber(), entry.getPostedAt(),
+                fee ? feeType.map(ChargeType::getCode).orElse("FEE") : null,
+                feeType.map(ChargeType::getNameEn).orElse(null),
+                feeType.map(ChargeType::getNameAr).orElse(null));
     }
 
     /**
@@ -250,6 +261,10 @@ public class RecognitionPoster {
      * Call it inside a transaction — it reads the line and resolves the role.</p>
      */
     public PostingRequest.AccountRef deferralOf(RentSegment segment, Lease lease) {
+        if (segment.getDeferralAccountId() != null) {
+            // F14-18: a fee's segment recorded the leaf its TCO deferred into.
+            return new PostingRequest.ById(segment.getDeferralAccountId());
+        }
         Account lineAccount = leaseLines.findById(segment.getLeaseLineId())
                 .map(LeaseLine::getCreditAccount).orElse(null);
         if (lineAccount == null) {
@@ -259,6 +274,15 @@ public class RecognitionPoster {
         return mapped != null && mapped.getId().equals(lineAccount.getId())
                 ? new PostingRequest.ByRole(AccountRole.ADVANCE_RENT)
                 : new PostingRequest.ById(lineAccount.getId());
+    }
+
+    /**
+     * F14-18: the leaf a periodic fee is deferred into — {@code UNEARNED_CHARGES}
+     * resolved for the lease's property. Called while building the schedule, inside
+     * the posting transaction whose TCO credited the same role.
+     */
+    public java.util.UUID unearnedChargesLeaf(Lease lease) {
+        return accountResolver.resolve(AccountRole.UNEARNED_CHARGES, propertyIdOf(lease)).getId();
     }
 
     /** The lease's own income account when it names one (spec §6.3), else the property's. */

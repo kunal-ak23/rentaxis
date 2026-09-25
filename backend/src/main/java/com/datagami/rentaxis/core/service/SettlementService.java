@@ -307,7 +307,8 @@ public class SettlementService {
 
         List<RecognitionEntryDTO> schedule = recognitionService.scheduleFor(leaseId);
         BigDecimal earnedRent = schedule.stream()
-                .filter(r -> r.status() == RecognitionStatus.POSTED)
+                // F14-18: rent only; a periodic fee's earned months are not rent.
+                .filter(r -> r.status() == RecognitionStatus.POSTED && r.rent())
                 .map(RecognitionEntryDTO::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         int unrecognised = (int) schedule.stream()

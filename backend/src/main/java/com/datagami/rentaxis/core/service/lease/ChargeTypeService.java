@@ -7,6 +7,7 @@ import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
+import com.datagami.rentaxis.domain.entity.enums.ChargeRecognition;
 import com.datagami.rentaxis.domain.repository.ChargeTypeRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,7 +45,11 @@ public class ChargeTypeService {
             new ChargeTypeDTO(null, "SECURITY_DEPOSIT", "Security Deposit", "مبلغ التأمين",
                     AccountRole.SECURITY_DEPOSIT, ChargeBehaviour.DEPOSIT, false, true, 20),
             new ChargeTypeDTO(null, "ADMIN_FEE", "Admin Fee", "رسوم إدارية",
-                    AccountRole.ADMIN_FEE, ChargeBehaviour.FEE, false, true, 30),
+                    AccountRole.ADMIN_FEE, ChargeBehaviour.FEE, false, true, 30, ChargeRecognition.ONE_OFF),
+            // Spec §4c: added to a renewal, never copied by the next one. VAT off by
+            // default like the admin fee (spec Q8, pending the tax adviser).
+            new ChargeTypeDTO(null, "RENEWAL_FEE", "Renewal Fee", "رسوم التجديد",
+                    AccountRole.ADMIN_FEE, ChargeBehaviour.FEE, false, true, 35, ChargeRecognition.ONE_OFF),
             new ChargeTypeDTO(null, "PARKING_DEPOSIT", "Parking Security Deposit", "تأمين موقف السيارات",
                     AccountRole.PARKING_DEPOSIT, ChargeBehaviour.DEPOSIT, false, true, 40),
             new ChargeTypeDTO(null, "COOLING", "Cooling Charges", "رسوم التبريد",
@@ -52,7 +57,40 @@ public class ChargeTypeService {
             new ChargeTypeDTO(null, "PARKING_FEE", "Parking Fee", "رسوم موقف السيارات",
                     AccountRole.PARKING_INCOME, ChargeBehaviour.FEE, false, true, 60),
             new ChargeTypeDTO(null, "MAINTENANCE", "Maintenance Charges", "رسوم الصيانة",
-                    AccountRole.MAINTENANCE_CHARGES, ChargeBehaviour.FEE, false, true, 70));
+                    AccountRole.MAINTENANCE_CHARGES, ChargeBehaviour.FEE, false, true, 70),
+            // F14-18: a utility recovered at cost. The role is nominal — a pass-through
+            // line credits the property's Utilities expense leaf, never income.
+            new ChargeTypeDTO(null, "UTILITIES", "Utilities (recovered at cost)", "المرافق (مستردة بالتكلفة)",
+                    AccountRole.OTHER_INCOME, ChargeBehaviour.FEE, false, true, 80, ChargeRecognition.PASS_THROUGH));
+
+    /**
+     * F14-18: the recognition a charge type gets when none is named — the seeded
+     * rule changeset 128 applies to existing rows. RENT and DEPOSIT types are
+     * RENT_LIKE (their behaviour governs them). A fee on a periodic role (parking,
+     * cooling, maintenance) is earned over the term; a fee on any other role (admin
+     * fee, penalties, other income, forfeiture) stays income when charged — the
+     * conservative choice for a tenant's own type, whose periodicity is unknown.
+     */
+    public static ChargeRecognition defaultRecognition(AccountRole role, ChargeBehaviour behaviour) {
+        if (behaviour != ChargeBehaviour.FEE) return ChargeRecognition.RENT_LIKE;
+        return switch (role == null ? AccountRole.OTHER_INCOME : role) {
+            case PARKING_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES -> ChargeRecognition.RENT_LIKE;
+            default -> ChargeRecognition.ONE_OFF;
+        };
+    }
+
+    /**
+     * The recognition a request asks for, checked against its behaviour: only a FEE
+     * can be ONE_OFF or PASS_THROUGH. Null takes {@link #defaultRecognition}.
+     */
+    static ChargeRecognition recognitionOf(ChargeRecognition r, AccountRole role, ChargeBehaviour behaviour) {
+        if (r == null) return defaultRecognition(role, behaviour);
+        if (behaviour != ChargeBehaviour.FEE && r != ChargeRecognition.RENT_LIKE) {
+            throw new BusinessRuleViolationException("Only a FEE charge type can be " + r
+                    + "; a " + behaviour + " type follows its own rule");
+        }
+        return r;
+    }
 
     /**
      * The default {@link #seedDefaults()} would create for this code, or null when
@@ -249,6 +287,11 @@ public class ChargeTypeService {
         e.setNameAr(dto.nameAr());
         e.setRole(dto.role());
         e.setBehaviour(dto.behaviour());
+        // An update that names no recognition (a client from before F14-18) keeps
+        // the row's own; a create takes the role's default.
+        ChargeRecognition asked = dto.recognition() != null ? dto.recognition()
+                : e.getId() != null ? e.getRecognition() : null;
+        e.setRecognition(recognitionOf(asked, dto.role(), dto.behaviour()));
         e.setVatApplicableDefault(dto.vatApplicableDefault());
         e.setActive(dto.active());
         e.setDisplayOrder(dto.displayOrder());
@@ -256,6 +299,6 @@ public class ChargeTypeService {
 
     public static ChargeTypeDTO toDTO(ChargeType e) {
         return new ChargeTypeDTO(e.getId(), e.getCode(), e.getNameEn(), e.getNameAr(), e.getRole(),
-                e.getBehaviour(), e.isVatApplicableDefault(), e.isActive(), e.getDisplayOrder());
+                e.getBehaviour(), e.isVatApplicableDefault(), e.isActive(), e.getDisplayOrder(), e.getRecognition());
     }
 }

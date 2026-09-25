@@ -980,6 +980,8 @@ public class LeaseService {
      * hand and the message can name the line.</p>
      */
     private Account resolveCreditAccount(LeaseLineInput in, ChargeType type, UUID propertyId, int seqNo) {
+        boolean passThrough = type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH;
         if (in.creditAccountId() != null) {
             String where = "Line " + seqNo + " (" + type.getCode() + "): credit account ";
             // A 400, not a 404: the id came from the request body, and the
@@ -994,6 +996,16 @@ public class LeaseService {
             if (!account.isActive()) {
                 throw new BusinessRuleViolationException(
                         where + account.getCode() + " is inactive");
+            }
+            if (passThrough) {
+                // F14-18: a utility recovered at cost is never income — an expense
+                // leaf it offsets, or a liability it is held in until paid over.
+                if (account.getAccountType() != AccountType.EXPENSE && account.getAccountType() != AccountType.LIABILITY) {
+                    throw new BusinessRuleViolationException(where + account.getCode()
+                            + " must be an EXPENSE or LIABILITY account: " + type.getCode()
+                            + " is recovered at cost, not income");
+                }
+                return account;
             }
             AccountType expected = ChargeTypeService.expectedTypeFor(type.getRole());
             if (expected == null) {
@@ -1019,6 +1031,11 @@ public class LeaseService {
         //
         // A null account is deliberate: see applyLines' note. The line stays
         // unmapped and the posting guard reports it.
+        if (passThrough) {
+            // F14-18: the property's Utilities expense leaf — the same account a
+            // settlement's utility arrears pass through (F14-37).
+            return accountRepository.findUtilitiesLeaves(propertyId).stream().findFirst().orElse(null);
+        }
         return accountResolver.resolveOrNull(type.getRole(), propertyId);
     }
 
@@ -1808,7 +1825,7 @@ public class LeaseService {
                 : propertyCode + "/" + contractNumber;
     }
 
-    private static LeaseLineDTO toLineDTO(LeaseLine l) {
+    public static LeaseLineDTO toLineDTO(LeaseLine l) {
         ChargeType type = l.getChargeType();
         Account credit = l.getCreditAccount();
         return new LeaseLineDTO(
@@ -1830,7 +1847,8 @@ public class LeaseService {
                 l.getPeriodEnd(),
                 l.getAddendumId(),
                 type != null ? type.getNameAr() : null,
-                credit != null ? credit.getNameAr() : null);
+                credit != null ? credit.getNameAr() : null,
+                type != null && type.getRecognition() != null ? type.getRecognition().name() : null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

@@ -329,6 +329,9 @@ public class AccountService {
         seed(byCode, "B-01-06", "Unidentified bank receipts", "مقبوضات بنكية غير محددة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
         // F14-36: deposit refunds owed to renters until paid (role RENTER_REFUND_PAYABLE). Changeset 124.
         seed(byCode, "B-01-07", "Refunds payable – renters", "مبالغ مستردة مستحقة للمستأجرين", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
+        // F14-18: periodic fees billed for the whole term and earned month by month
+        // (role UNEARNED_CHARGES). Changeset 128.
+        seed(byCode, "B-01-08", "Unearned charges", "رسوم غير مكتسبة", AccountType.LIABILITY, AccountSubType.ADVANCE, "B-01", null, false);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
         // Finance-ops spec §2: post-dated cheques we issued, until the bank pays them
         // (role PDC_PAYABLE). Changeset 112 adds it to charts seeded before it existed.

@@ -80,15 +80,20 @@ class AdditionalCharges {
                 throw new BusinessRuleViolationException(where + ": " + act.indefinite
                         + " cannot charge a deposit — the tenancy's deposit is already held.");
             }
-            if (type.getBehaviour() != ChargeBehaviour.RENT) {
-                // A fee carries no period; it is charged for the act itself.
+            boolean periodic = type.getBehaviour() == ChargeBehaviour.FEE
+                    && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+            if (type.getBehaviour() != ChargeBehaviour.RENT && !periodic) {
+                // A one-off fee carries no period; it is charged for the act itself.
                 out.add(in);
                 continue;
             }
+            // Rent, and (F14-18) a periodic fee, are earned over the window this act
+            // charges for — never the lease's whole term.
             LocalDate from = in.periodStart() != null ? in.periodStart() : windowStart;
             LocalDate to = in.periodEnd() != null ? in.periodEnd() : windowEnd;
             if (from.isBefore(windowStart) || to.isAfter(windowEnd) || to.isBefore(from)) {
-                throw new BusinessRuleViolationException(where + ": a rent line must cover part of "
+                throw new BusinessRuleViolationException(where + ": " + (periodic ? "a periodic charge" : "a rent line")
+                        + " must cover part of "
                         + act.definite + " (" + windowStart + " to " + windowEnd + "), not " + from + " to " + to + ".");
             }
             out.add(new LeaseLineInput(in.chargeTypeId(), in.chargeTypeCode(), in.grossAmount(),

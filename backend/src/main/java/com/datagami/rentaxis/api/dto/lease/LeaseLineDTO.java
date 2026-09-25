@@ -36,5 +36,7 @@ public record LeaseLineDTO(UUID id,
                            UUID addendumId,
                            /* F14-15: the Arabic names, for the /ar lease view; null when the chart has none. */
                            String chargeTypeNameAr,
-                           String creditAccountNameAr) {
+                           String creditAccountNameAr,
+                           /* F14-18 / §4c: the charge type's recognition (RENT_LIKE | ONE_OFF | PASS_THROUGH). */
+                           String recognition) {
 }

@@ -67,7 +67,9 @@ export type AccountRole =
   | "BANK_INTEREST_INCOME"
   | "BANK_SUSPENSE"
   /** F14-36: "Refunds payable – renters" — what the STL credits for a deposit refund owed. */
-  | "RENTER_REFUND_PAYABLE";
+  | "RENTER_REFUND_PAYABLE"
+  /** F14-18: periodic fees billed for the term and not yet earned (B-01-08). */
+  | "UNEARNED_CHARGES";
 
 export type JournalDocType =
   | "TCO"
