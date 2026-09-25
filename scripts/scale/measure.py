@@ -52,6 +52,20 @@ def endpoints(api):
          {"accountIds": leaf["id"], **last12}),
         ("GET /finance/recognition/pending", "/api/v1/finance/recognition/pending", None),
         ("GET /finance/journals?page=0", "/api/v1/finance/journals", {"page": 0, "size": 25}),
+        # Scale PR A: the paged / search endpoints that replace the unbounded lists.
+        ("GET /renters/paged p1", "/api/v1/renters/paged", {"page": 0, "size": 25}),
+        ("GET /renters/paged q=al", "/api/v1/renters/paged", {"q": "al", "page": 0, "size": 25}),
+        ("GET /renters/search q=deepa", "/api/v1/renters/search", {"q": "deepa", "limit": 20}),
+        ("GET /units/paged p1", "/api/v1/units/paged", {"page": 0, "size": 25}),
+        ("GET /units/paged q=07-", "/api/v1/units/paged", {"q": "07-", "page": 0, "size": 25}),
+        ("GET /units/search q=12-0", "/api/v1/units/search", {"q": "12-0", "limit": 20}),
+        ("GET /tickets/paged p1", "/api/v1/tickets/paged", {"page": 0, "size": 25}),
+        ("GET /tickets/paged status=OPEN", "/api/v1/tickets/paged", {"status": "OPEN", "page": 0, "size": 25}),
+        ("GET /vendors/paged p1", "/api/v1/vendors/paged", {"page": 0, "size": 25}),
+        ("GET /finance/payment-runs/paged p1", "/api/v1/finance/payment-runs/paged", {"page": 0, "size": 25}),
+        ("GET /finance/issued-cheques/paged p1", "/api/v1/finance/issued-cheques/paged", {"page": 0, "size": 25}),
+        ("GET /cheques/post-dated/paged p1", "/api/v1/cheques/post-dated/paged", {"page": 0, "size": 50}),
+        ("GET /cheques/summary", "/api/v1/cheques/summary", None),
     ]
 
 
@@ -85,11 +99,14 @@ def main():
     ap.add_argument("--count-queries", action="store_true")
     ap.add_argument("--backend-log", default=None)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--only", default=None, help="comma-separated substrings; measure only matching endpoints")
     a = ap.parse_args()
     st = json.load(open(a.state or os.path.expanduser(f"~/.cache/rentaxis-scale/{a.label}.json")))
     api = Api(a.base, st["users"]["TENANT_ADMIN"], "TENANT_ADMIN", st["tenantId"])
     results = []
     for name, path, params in endpoints(api):
+        if a.only and not any(x in name for x in a.only.split(",")):
+            continue
         row = {"name": name, "path": path, "params": params}
         if a.count_queries:
             off = os.path.getsize(a.backend_log)
