@@ -522,6 +522,27 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         """)
     List<Cheque> findAllDue(@Param("today") LocalDate today);
 
+    /**
+     * {@link #findAllDue} for one organisation, a slice at a time (scale P1-1): the daily
+     * reminder job pages through it instead of loading every due row of every tenant.
+     * The lease is fetched for its grace period; order is by id so pages do not overlap.
+     */
+    @Query("""
+        select c from Cheque c join fetch c.lease l
+        where c.tenantId = :tenantId
+          and ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+                and c.chequeDate <= :today)
+               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+          and l.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                               com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        order by c.id
+        """)
+    org.springframework.data.domain.Slice<Cheque> findAllDue(@Param("tenantId") UUID tenantId,
+                                                            @Param("today") LocalDate today,
+                                                            Pageable pageable);
+
     /** The property statement's register rows (finance-ops spec §1, sections 2 and 4). Tenant-filtered: call inside a transaction. */
     List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
 
