@@ -123,6 +123,11 @@ const REASON_GROUP: Record<string, string> = {
     CHEQUE_RETURN: "penaltyReason",
     LATE_PAYMENT: "penaltyReason",
     OTHER: "penaltyReason",
+    SERVICE_RECHARGE: "penaltyReason",
+    ADMIN_FEE: "penaltyReason",
+    DAMAGE: "penaltyReason",
+    MAINTENANCE_RECHARGE: "penaltyReason",
+    BOOKING_FEE: "penaltyReason",
 };
 
 /** A meeting slot as the office keeps it: UAE time, in the viewer's language. */

@@ -1,0 +1,37 @@
+# F14-30: VAT on charges that are consideration for a supply; F14-49/50 source links.
+#
+#   - penalty_assessments.vatable / vat_amount: set for new charges only (existing
+#     rows stay false / 0, as posted).
+#   - penalty_assessments.source_type / source_id: the maintenance ticket or the
+#     booking that raised the charge.
+#   - vat_tax_points kind CHARGE: the tax point (and tax invoice / credit note) of a
+#     charge's VAT.
+databaseChangeLog:
+  - changeSet:
+      id: 140-charge-vat
+      author: claude
+      changes:
+        - addColumn:
+            tableName: penalty_assessments
+            columns:
+              - column: { name: vatable, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: vat_amount, type: "numeric(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: source_type, type: varchar(20) }
+              - column: { name: source_id, type: uuid }
+        - sql:
+            sql: |
+              CREATE INDEX ix_pa_source ON penalty_assessments (tenant_id, source_type, source_id);
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT', 'REDUCTION', 'CHARGE'));
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT', 'REDUCTION'));
+              DROP INDEX IF EXISTS ix_pa_source;
+              ALTER TABLE penalty_assessments DROP COLUMN IF EXISTS source_id;
+              ALTER TABLE penalty_assessments DROP COLUMN IF EXISTS source_type;
+              ALTER TABLE penalty_assessments DROP COLUMN IF EXISTS vat_amount;
+              ALTER TABLE penalty_assessments DROP COLUMN IF EXISTS vatable;

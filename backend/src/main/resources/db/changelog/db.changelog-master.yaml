@@ -285,3 +285,5 @@ databaseChangeLog:
       file: db/changelog/changesets/138-interproperty-clearing.yaml
   - include:
       file: db/changelog/changesets/139-vat-returns.yaml
+  - include:
+      file: db/changelog/changesets/140-charge-vat.yaml

@@ -548,6 +548,29 @@ public class VatTaxPointService {
         taxInvoices.issueFor(p, lease, null);
     }
 
+    /**
+     * F14-30: the VAT on a charge raised on the lease, declared by its PEN (or, with
+     * negative amounts, credited back by the PEN's reversal): a POSTED CHARGE point
+     * that issues its tax invoice / credit note in the same transaction.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordChargeVat(Lease lease, LocalDate date, UUID journalId, BigDecimal taxable, BigDecimal vat) {
+        if (vat == null || vat.signum() == 0) return;
+        VatTaxPoint p = new VatTaxPoint();
+        p.setTenantId(lease.getTenantId());
+        p.setLeaseId(lease.getId());
+        stampWhere(p, lease);
+        p.setKind(VatTaxPointKind.CHARGE);
+        p.setTaxPointDate(date);
+        p.setVatAmount(vat);
+        p.setTaxableAmount(taxable);
+        p.setStatus(VatTaxPointStatus.POSTED);
+        p.setJournalId(journalId);
+        p.setPostedAt(Instant.now());
+        p = points.saveAndFlush(p);
+        taxInvoices.issueFor(p, lease, null);
+    }
+
     /** Whether this lease's contract VAT carries a tax invoice of ours (a POSTED CONTRACT point). */
     @Transactional(readOnly = true)
     public boolean contractDocumented(UUID leaseId) {

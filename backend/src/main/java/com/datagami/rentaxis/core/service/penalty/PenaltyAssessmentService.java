@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service.penalty;
 
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
+
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
@@ -176,7 +178,9 @@ public class PenaltyAssessmentService {
             throw new BusinessRuleViolationException(
                     "A penalty cannot be raised for a date before the contract (" + floor + ")");
         }
-        return dto(save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser));
+        PenaltyAssessment saved = save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser);
+        saved.setVatable(vatableFor(lease, r.reason(), r.vatable()));
+        return dto(repository.save(saved));
     }
 
     /**
@@ -208,6 +212,7 @@ public class PenaltyAssessmentService {
                                              String descriptionCode, java.util.Map<String, String> args) {
         PenaltyAssessment a = save(lease, cheque, reason, amount, description,
                 incidentDate != null ? incidentDate : LocalDate.now(), null);
+        a.setVatable(vatableFor(lease, reason, null));
         if (descriptionCode != null) {
             a.setDescriptionCode(descriptionCode);
             a.setDescriptionArgs(args);
@@ -280,6 +285,21 @@ public class PenaltyAssessmentService {
         UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
         String narration = narrationFor(a);
 
+        // F14-30: a charge that is consideration for a supply carries 5 % VAT on top,
+        // declared on the PEN itself (tax point = the charge date) with its tax invoice.
+        BigDecimal vat = a.isVatable() ? LeaseVat.vatOfNet(amount) : BigDecimal.ZERO;
+        BigDecimal owed = amount.add(vat);
+        List<PostingRequest.Pair> pairs = new java.util.ArrayList<>();
+        pairs.add(PostingRequest.pair(
+                LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
+                PostingRequest.cr(a.getReason().incomeRole(), amount).withNarration(narration)));
+        if (vat.signum() > 0) {
+            String vatNarration = "VAT on " + narration;
+            pairs.add(PostingRequest.pair(
+                    LeaseChequeRegistrar.drReceivable(lease, vat).withNarration(vatNarration),
+                    PostingRequest.cr(com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, vat)
+                            .withNarration(vatNarration)));
+        }
         JournalEntry pen = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.PEN,
                 on,
@@ -288,9 +308,11 @@ public class PenaltyAssessmentService {
                 JournalSourceType.PENALTY,
                 a.getId(),
                 null,
-                List.of(PostingRequest.pair(
-                        LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
-                        PostingRequest.cr(a.getReason().incomeRole(), amount).withNarration(narration)))));
+                pairs));
+        a.setVatAmount(vat);
+        if (vat.signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(lease, on, pen.getId(), amount, vat);
+        }
 
         // Through ChequeService, not by hand: the row has to be validated, numbered
         // and registered by exactly the code every other row goes through, or the
@@ -303,7 +325,7 @@ public class PenaltyAssessmentService {
         // reason: the amount is not the caller's to choose, the debt it collects was
         // raised in the ledger a line above, and no user typed it.
         ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
-                null, null, on, null, on, null, null, null, amount,
+                null, null, on, null, on, null, null, null, owed,
                 "Penalty - " + a.getReason().label(), ChequeMode.CASH));
 
         // Set on the entity rather than widened into ChequeRowInput: the link is a
@@ -435,7 +457,11 @@ public class PenaltyAssessmentService {
                     java.util.Map.of("charged", pen.getEntryDate().format(dmy), "date", on.format(dmy)));
         }
         String reason = note.trim();
-        postingService.reverse(a.getJournalId(), on, reason);
+        com.datagami.rentaxis.domain.entity.JournalEntry rev = postingService.reverse(a.getJournalId(), on, reason);
+        // F14-30: the VAT a tax invoice declared goes back on a tax credit note.
+        if (a.getVatAmount() != null && a.getVatAmount().signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(a.getLease(), on, rev.getId(), a.getAmount().negate(), a.getVatAmount().negate());
+        }
 
         // Only from REGISTERED: a row that was cancelled or returned already had its
         // PDR reversed, and reversing it twice is refused by PostingService anyway.
@@ -515,6 +541,37 @@ public class PenaltyAssessmentService {
     // ------------------------------------------------------------------
     // guards and plumbing
     // ------------------------------------------------------------------
+
+    private com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+
+    /** Setter-injected: hand-built instances in unit tests need no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVatTaxPoints(com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
+        this.vatTaxPoints = vatTaxPoints;
+    }
+
+    /**
+     * F14-30: whether a new charge carries VAT. Only on a VAT-registered lease (its
+     * rent carries VAT); there, the caller's choice, else the reason's default —
+     * a penalty (bounce, late payment) is out of scope, a service / admin / damage
+     * / booking charge is standard-rated.
+     */
+    boolean vatableFor(Lease lease, PenaltyReason reason, Boolean requested) {
+        boolean vatLease = LeaseVat.isVatLease(lease, leaseLines);
+        if (Boolean.TRUE.equals(requested) && !vatLease) {
+            throw new BusinessRuleViolationException("This lease carries no VAT, so the charge cannot either.",
+                    "penalty.vatOnNonVatLease", java.util.Map.of());
+        }
+        if (!vatLease) return false;
+        return requested != null ? requested : reason.vatableByDefault();
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setLeaseLines(com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
+        this.leaseLines = leaseLines;
+    }
 
     /**
      * The row, locked, tenant-checked.
@@ -619,6 +676,7 @@ public class PenaltyAssessmentService {
                 a.getResolutionNote(),
                 code,
                 args,
-                a.getProposedAmount());
+                a.getProposedAmount(),
+                a.isVatable(), a.getVatAmount(), a.getSourceType(), a.getSourceId());
     }
 }

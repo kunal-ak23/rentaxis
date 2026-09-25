@@ -38,6 +38,25 @@ public final class LeaseVat {
     private LeaseVat() {
     }
 
+    /** F14-30: VAT at the standard rate on a net charge, to the fils. */
+    public static BigDecimal vatOfNet(BigDecimal net) {
+        return vatOf(net);
+    }
+
+    /**
+     * F14-30: a VAT-registered lease — its rent carries VAT (the header flag, or a
+     * RENT line marked VAT). A charge on it that is consideration for a supply
+     * carries VAT too.
+     */
+    public static boolean isVatLease(com.datagami.rentaxis.domain.entity.Lease lease,
+                                     com.datagami.rentaxis.domain.repository.LeaseLineRepository lines) {
+        if (lease == null) return false;
+        if (lease.isRentVatApplicable()) return true;
+        if (lines == null || lease.getId() == null) return false;
+        return lines.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream().anyMatch(l -> l.isVatApplicable()
+                && l.getChargeType() != null && l.getChargeType().getBehaviour() == ChargeBehaviour.RENT);
+    }
+
     /** VAT on an amount, to the fils. Null and negative-free: a null net is no VAT. */
     static BigDecimal vatOf(BigDecimal net) {
         if (net == null) return BigDecimal.ZERO;

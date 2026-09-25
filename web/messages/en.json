@@ -2270,6 +2270,12 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "chargeVat": "VAT (5%)",
+    "chargeVatAutoYes": "Automatic — charged on a VAT lease",
+    "chargeVatAutoNo": "Automatic — none (a penalty is not a supply)",
+    "chargeVatYes": "Charge VAT",
+    "chargeVatNo": "No VAT",
+    "plusVat": "+ VAT {amount}",
     "bank": "Bank",
     "bank_CONFIRMED": "Confirmed {date}",
     "bank_NOT_ON_STATEMENT": "Not on a statement yet",
@@ -2357,6 +2363,11 @@
     "approvedList": "Approved",
     "proposedBySystem": "Proposed by system",
     "reason": {
+      "SERVICE_RECHARGE": "Service Recharge",
+      "ADMIN_FEE": "Admin Fee",
+      "DAMAGE": "Damage / Cleaning",
+      "MAINTENANCE_RECHARGE": "Maintenance Recharge",
+      "BOOKING_FEE": "Booking Fee",
       "CHEQUE_RETURN": "Cheque Return",
       "LATE_PAYMENT": "Late Payment",
       "OTHER": "Other"
@@ -2452,6 +2463,7 @@
         "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
+        "vatOnNonVatLease": "This lease carries no VAT, so the charge cannot either.",
         "reverseBeforeCharge": "A reversal cannot be dated before the penalty was charged ({charged})."
       },
       "openingBalances": {
@@ -3202,7 +3214,7 @@
     "refInstalment": "Instalment #{seq}",
     "parkingSpot": "parking spot {spot}",
     "amountAed": "AED {amount}",
-    "penaltyReason": {"CHEQUE_RETURN": "cheque return", "LATE_PAYMENT": "late payment", "OTHER": "other"},
+    "penaltyReason": {"CHEQUE_RETURN": "cheque return", "LATE_PAYMENT": "late payment", "OTHER": "other", "SERVICE_RECHARGE": "service recharge", "ADMIN_FEE": "admin fee", "DAMAGE": "damage / cleaning", "MAINTENANCE_RECHARGE": "maintenance recharge", "BOOKING_FEE": "booking fee"},
     "failureReason": {"BOUNCE": "bounced", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
     "renewalIntent": {"RENEW": "renew", "MOVE_OUT": "move out", "DISCUSS": "discuss"},
     "messages": {

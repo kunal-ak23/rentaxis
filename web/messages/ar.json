@@ -2270,6 +2270,12 @@
     "runFailed": "تعذّر ترحيل نقاط الاستحقاق الضريبي."
   },
   "Cheques": {
+    "chargeVat": "ضريبة القيمة المضافة (5%)",
+    "chargeVatAutoYes": "تلقائي — تُحتسب على عقد خاضع للضريبة",
+    "chargeVatAutoNo": "تلقائي — لا ضريبة (الغرامة ليست توريدًا)",
+    "chargeVatYes": "احتساب الضريبة",
+    "chargeVatNo": "بدون ضريبة",
+    "plusVat": "+ ضريبة {amount}",
     "bank": "البنك",
     "bank_CONFIRMED": "مؤكد {date}",
     "bank_NOT_ON_STATEMENT": "لم يظهر في كشف بعد",
@@ -2357,6 +2363,11 @@
     "approvedList": "المعتمدة",
     "proposedBySystem": "مقترح آليًا من النظام",
     "reason": {
+      "SERVICE_RECHARGE": "إعادة تحميل خدمة",
+      "ADMIN_FEE": "رسوم إدارية",
+      "DAMAGE": "أضرار / تنظيف",
+      "MAINTENANCE_RECHARGE": "إعادة تحميل صيانة",
+      "BOOKING_FEE": "رسوم حجز",
       "CHEQUE_RETURN": "ارتداد شيك",
       "LATE_PAYMENT": "تأخر السداد",
       "OTHER": "أخرى"
@@ -2452,6 +2463,7 @@
         "receiveBeforeBooked": "أُدرج {row} في الدفاتر بتاريخ {booked}؛ ولا يمكن استلامه أو تحصيله بتاريخ {date} السابق لذلك. استلمه بتاريخ {booked} أو بعده."
       },
       "penalty": {
+        "vatOnNonVatLease": "هذا العقد غير خاضع للضريبة، لذا لا يمكن احتساب الضريبة على الرسوم.",
         "reverseBeforeCharge": "لا يمكن أن يسبق تاريخ العكس تاريخ فرض الغرامة ({charged})."
       },
       "openingBalances": {
@@ -3202,7 +3214,7 @@
     "refInstalment": "القسط رقم {seq}",
     "parkingSpot": "موقف السيارة {spot}",
     "amountAed": "{amount} درهم",
-    "penaltyReason": {"CHEQUE_RETURN": "ارتداد شيك", "LATE_PAYMENT": "تأخر في السداد", "OTHER": "أخرى"},
+    "penaltyReason": {"CHEQUE_RETURN": "ارتداد شيك", "LATE_PAYMENT": "تأخر في السداد", "OTHER": "أخرى", "SERVICE_RECHARGE": "إعادة تحميل خدمة", "ADMIN_FEE": "رسوم إدارية", "DAMAGE": "أضرار / تنظيف", "MAINTENANCE_RECHARGE": "إعادة تحميل صيانة", "BOOKING_FEE": "رسوم حجز"},
     "failureReason": {"BOUNCE": "ارتداد", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
     "renewalIntent": {"RENEW": "التجديد", "MOVE_OUT": "الإخلاء", "DISCUSS": "المناقشة"},
     "messages": {

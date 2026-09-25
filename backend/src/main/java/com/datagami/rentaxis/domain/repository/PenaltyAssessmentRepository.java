@@ -113,7 +113,7 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
      * {@code c.unit}.</p>
      */
     @Query("""
-        select coalesce(sum(p.amount), 0) from PenaltyAssessment p
+        select coalesce(sum(p.amount + p.vatAmount), 0) from PenaltyAssessment p
         left join p.collectionCheque collection
         where p.lease.id = :leaseId
           and p.status = com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED

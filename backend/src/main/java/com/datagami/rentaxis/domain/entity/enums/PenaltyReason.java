@@ -10,24 +10,49 @@ package com.datagami.rentaxis.domain.entity.enums;
  */
 public enum PenaltyReason {
 
-    /** A returned cheque — the fine the fine-settings screen configures per failure reason. */
-    CHEQUE_RETURN(AccountRole.CHEQUE_RETURN_PENALTY, "Cheque return"),
+    /** A returned cheque — the fine the fine-settings screen configures per failure reason. Not a supply: no VAT. */
+    CHEQUE_RETURN(AccountRole.CHEQUE_RETURN_PENALTY, "Cheque return", false),
 
-    /** Rent that arrived after its grace period, charged per day late. */
-    LATE_PAYMENT(AccountRole.RENT_PENALTY, "Late payment"),
+    /** Rent that arrived after its grace period, charged per day late. Compensation, not a supply: no VAT. */
+    LATE_PAYMENT(AccountRole.RENT_PENALTY, "Late payment", false),
 
-    /** Anything finance raises by hand that is neither of the above. */
-    OTHER(AccountRole.OTHER_INCOME, "Other");
+    /** Anything finance raises by hand that is none of the others. VAT only when finance ticks it. */
+    OTHER(AccountRole.OTHER_INCOME, "Other", false),
+
+    /** F14-30: a service recharged to the renter (cooling, cleaning of common areas, a key card). */
+    SERVICE_RECHARGE(AccountRole.MAINTENANCE_CHARGES, "Service recharge", true),
+
+    /** F14-30: an admin or processing fee (a cheque replacement, a NOC, a contract amendment). */
+    ADMIN_FEE(AccountRole.ADMIN_FEE, "Admin fee", true),
+
+    /** F14-30: damage or cleaning charged to the renter. */
+    DAMAGE(AccountRole.OTHER_INCOME, "Damage / cleaning", true),
+
+    /** F14-49: a vendor bill on a maintenance ticket, recharged to the renter. */
+    MAINTENANCE_RECHARGE(AccountRole.MAINTENANCE_CHARGES, "Maintenance recharge", true),
+
+    /** F14-50: the fee for an amenity or parking booking. */
+    BOOKING_FEE(AccountRole.OTHER_INCOME, "Booking fee", true);
 
     private final AccountRole incomeRole;
     private final String label;
+    private final boolean vatable;
 
-    PenaltyReason(AccountRole incomeRole, String label) {
+    PenaltyReason(AccountRole incomeRole, String label, boolean vatable) {
         this.incomeRole = incomeRole;
         this.label = label;
+        this.vatable = vatable;
     }
 
-    /** The credit side of the {@code PEN} entry, resolved against the lease's property. */
+    /**
+     * F14-30: whether a charge of this type is consideration for a supply, so it
+     * carries 5 % VAT and a tax invoice on a VAT-registered lease. Bounce fees and
+     * late-payment penalties are compensation, out of scope of VAT.
+     */
+    public boolean vatableByDefault() {
+        return vatable;
+    }
+
     public AccountRole incomeRole() {
         return incomeRole;
     }

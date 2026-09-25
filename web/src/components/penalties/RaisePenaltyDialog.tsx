@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { businessTodayIso } from "@/lib/businessDate";
@@ -19,7 +20,9 @@ import { ApiError, penaltyApi, type PenaltyAssessment, type PenaltyReason } from
  * chosen at approval.
  */
 
-const REASONS: PenaltyReason[] = ["OTHER", "LATE_PAYMENT", "CHEQUE_RETURN"];
+const REASONS: PenaltyReason[] = ["OTHER", "LATE_PAYMENT", "CHEQUE_RETURN", "SERVICE_RECHARGE", "ADMIN_FEE", "DAMAGE"];
+/** F14-30: the reasons that are consideration for a supply (the server's PenaltyReason.vatableByDefault). */
+const VAT_BY_DEFAULT: PenaltyReason[] = ["SERVICE_RECHARGE", "ADMIN_FEE", "DAMAGE", "MAINTENANCE_RECHARGE", "BOOKING_FEE"];
 const field = "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1";
 
@@ -35,10 +38,13 @@ type Props = {
 export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, minDate }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const [reason, setReason] = useState<PenaltyReason>("OTHER");
     const [amount, setAmount] = useState(0);
     const [incidentDate, setIncidentDate] = useState(businessTodayIso());
     const [description, setDescription] = useState("");
+    // F14-30: "auto" leaves VAT to the reason and the lease.
+    const [vat, setVat] = useState<"auto" | "yes" | "no">("auto");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +54,7 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
             setAmount(0);
             setIncidentDate(businessTodayIso());
             setDescription("");
+            setVat("auto");
             setError(null);
         }
     }, [open]);
@@ -61,10 +68,11 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
         try {
             const raised = await penaltyApi.propose({
                 leaseId, reason, amount, incidentDate, description: description.trim() || null,
+                vatable: vat === "auto" ? null : vat === "yes",
             });
             onRaised(raised);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
         } finally {
             setBusy(false);
         }
@@ -92,6 +100,14 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
                 <div>
                     <label className={label} htmlFor="raise-penalty-amount">{tl("amount")}</label>
                     <NumberInput id="raise-penalty-amount" min={0} step={0.01} className={`${field} text-end tabular-nums`} value={amount} onChange={setAmount} />
+                </div>
+                <div>
+                    <label className={label} htmlFor="raise-penalty-vat">{t("chargeVat")}</label>
+                    <select id="raise-penalty-vat" className={field} value={vat} onChange={e => setVat(e.target.value as "auto" | "yes" | "no")}>
+                        <option value="auto">{t(`chargeVatAuto${VAT_BY_DEFAULT.includes(reason) ? "Yes" : "No"}`)}</option>
+                        <option value="yes">{t("chargeVatYes")}</option>
+                        <option value="no">{t("chargeVatNo")}</option>
+                    </select>
                 </div>
                 <div>
                     <label className={label} htmlFor="raise-penalty-date">{tl("penaltyIncidentDate")}</label>

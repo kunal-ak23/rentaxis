@@ -220,6 +220,11 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                         </td>
                                         <td className={`${td} text-end tabular-nums font-semibold`}>
                                             {fmtAmount(p.amount)}
+                                            {!!p.vatAmount && p.vatAmount > 0 && (
+                                                <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-vat-${i}`}>
+                                                    {t("plusVat", { amount: fmtAmount(p.vatAmount) })}
+                                                </span>
+                                            )}
                                             {p.proposedAmount != null && (
                                                 <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-reduced-from-${i}`}>
                                                     {t("reducedFrom", { amount: fmtAmount(p.proposedAmount) })}
