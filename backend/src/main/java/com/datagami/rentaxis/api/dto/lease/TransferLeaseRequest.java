@@ -15,9 +15,16 @@ import java.util.UUID;
  *                           current day rate for the new term's days; the deposit is carried)
  * @param chequeDispositions each uncleared row of the current lease: CARRY | KEEP | RETURN
  *                           (default: CARRY when dated after T, else KEEP)
+ * @param rent               with no {@code lines}: the new term's rent in place of the suggested one
  */
 public record TransferLeaseRequest(LocalDate moveDate, UUID targetUnitId, LocalDate endDate, LocalDate contractDate,
-                                   List<LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions) {
+                                   List<LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions,
+                                   java.math.BigDecimal rent) {
+
+    public TransferLeaseRequest(LocalDate moveDate, UUID targetUnitId, LocalDate endDate, LocalDate contractDate,
+                                List<LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions) {
+        this(moveDate, targetUnitId, endDate, contractDate, lines, chequeDispositions, null);
+    }
 
     public record ChequeDisposition(UUID chequeId, String disposition) {
     }

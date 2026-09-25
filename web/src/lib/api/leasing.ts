@@ -55,7 +55,9 @@ export type ChequeStatus =
   | "REPLACED"
   | "CANCELLED"
   | "RETURNED"
-  | "ONLINE_PENDING";
+  | "ONLINE_PENDING"
+  /** Spec §2: carried to the successor lease on a unit transfer (terminal). */
+  | "TRANSFERRED";
 
 export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED" | "STOPPED_PAYMENT" | "TECHNICAL_RETURN";
 
@@ -292,6 +294,12 @@ export type LeaseDetail = {
   firstDueDate: string | null;
   renterAcceptedAt: string | null;
   renewedFromLeaseId: string | null;
+  /** Spec §2: B → A for a unit transfer, the move date, and (on A) where it moved to. */
+  transferredFromLeaseId?: string | null;
+  transferMoveDate?: string | null;
+  transferredToLeaseId?: string | null;
+  transferredToUnit?: string | null;
+  transferredToStatus?: string | null;
   chainId: string | null;
   receivableAccountId: string | null;
   incomeAccountId: string | null;
@@ -501,6 +509,37 @@ export type LeaseAssignment = {
 };
 
 export type AssignLeaseInput = { toRenterId: string; effectiveDate: string; reason: string; takeOverOverdue?: boolean | null };
+
+/** Spec §2: TransferLeaseRequest. */
+export type TransferLeaseInput = {
+  moveDate: string;
+  targetUnitId: string;
+  endDate?: string | null;
+  contractDate?: string | null;
+  lines?: LeaseLineInput[] | null;
+  chequeDispositions?: { chequeId: string; disposition: "CARRY" | "KEEP" | "RETURN" }[];
+  /** With no lines: the new term's rent in place of the suggested one. */
+  rent?: number | null;
+};
+
+/** Spec §2: TransferPreviewDTO. */
+export type TransferPreview = {
+  moveDate: string | null;
+  targetUnitId: string | null;
+  newStart: string | null;
+  newEnd: string | null;
+  newDays: number;
+  earnedThrough: number | null;
+  unearned: number | null;
+  unearnedVat: number | null;
+  balanceCarried: number | null;
+  depositCarried: number | null;
+  suggestedRent: number | null;
+  cheques: { chequeId: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number; status: string; disposition: "CARRY" | "KEEP" | "RETURN" }[];
+  carriedTotal: number | null;
+  gapToCollect: number | null;
+  problems: string[];
+};
 
 /** AddendumResponse. */
 export type AddendumResponse = { addendum: LeaseAddendum; posting: PostLeaseResponse };
@@ -1316,6 +1355,10 @@ export const leaseApi = {
     send<ReductionPreview>("POST", `/leases/${id}/reductions/preview`, body),
   reduce: (id: string, body: ReduceLeaseInput) => send<AddendumResponse>("POST", `/leases/${id}/reductions`, body),
   assignments: (id: string) => get<LeaseAssignment[]>(`/leases/${id}/assignments`),
+  transferPreview: (id: string, moveDate: string, targetUnitId: string, endDate?: string | null) =>
+    get<TransferPreview>(`/leases/${id}/transfer/preview?moveDate=${encodeURIComponent(moveDate)}&targetUnitId=${encodeURIComponent(targetUnitId)}${endDate ? `&endDate=${encodeURIComponent(endDate)}` : ""}`),
+  transfer: (id: string, body: TransferLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/transfer`, body),
+  unitOptions: () => get<{ id: string; unitNumber: string; occupancy?: string | null; status?: string | null; property?: { id: string; nameEn?: string | null } | null; propertyId?: string | null }[]>(`/units`),
   draftAssignment: (id: string, body: AssignLeaseInput) => send<LeaseAssignment>("POST", `/leases/${id}/assignments`, body),
   postAssignment: (id: string, assignmentId: string, takeOverOverdue?: boolean) =>
     send<LeaseAssignment>("POST", `/leases/${id}/assignments/${assignmentId}/post`, { takeOverOverdue: !!takeOverOverdue }),

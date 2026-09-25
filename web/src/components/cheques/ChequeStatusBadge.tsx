@@ -12,6 +12,7 @@ const STATUS_COLORS: Record<ChequeStatus, string> = {
     CANCELLED: "bg-input text-muted",
     RETURNED: "bg-warning/10 text-warning",
     ONLINE_PENDING: "bg-warning/10 text-warning",
+    TRANSFERRED: "bg-input text-muted",
 };
 
 /** A cheque's status, coloured the same way everywhere it appears — the

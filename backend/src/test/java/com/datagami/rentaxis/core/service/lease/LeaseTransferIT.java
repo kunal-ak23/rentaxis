@@ -261,6 +261,21 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /** No lines sent: A's recurring lines at A's day rate, the typed rent in place of the suggestion, no deposit line. */
+    @Test
+    void theTypedRentReplacesTheSuggestionAndTheDepositIsNotChargedAgain() {
+        UUID a = leaseA(true);
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-205"));
+        LeaseDTO b = transfers.draft(a, new TransferLeaseRequest(T, target.getId(), null, null, null, null,
+                new BigDecimal("41589.04")), posting);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> lines = tx.execute(s -> leaseService.getLines(b.getId()));
+        assertThat(lines).extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::chargeTypeCode,
+                        com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::grossAmount)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("RENT", new BigDecimal("41589.04")));
+        assertThat(b.getTransferredFromLeaseId()).isEqualTo(a);
+        assertThat(b.getTransferMoveDate()).isEqualTo(T);
+    }
+
     @Test
     void refusals() {
         UUID a = leaseA(true);

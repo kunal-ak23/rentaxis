@@ -2177,6 +2177,38 @@
       "delete": "Delete draft",
       "posted": "Assigned from {from} to {to} on {date} ({journal})",
       "failed": "The assignment could not be saved."
+    },
+    "transfer": {
+      "open": "Transfer to another unit",
+      "title": "Transfer to another unit",
+      "hint": "The current lease ends on the move date with no exit fee; the new one starts the next day. The deposit, the balance and the cheques you carry move across. Nothing is posted until you post the new lease.",
+      "step1": "The move",
+      "moveDate": "Last night in the current unit",
+      "targetUnit": "New unit",
+      "chooseUnit": "Choose a vacant unit",
+      "endDate": "New term ends",
+      "rent": "Rent for the new term",
+      "rentHint": "Current rate for {days} day(s): <n>{amount}</n>",
+      "step2": "Cheques",
+      "noCheques": "No uncleared cheques.",
+      "disposition": "What happens to cheque",
+      "dispositions": {
+        "CARRY": "Carry",
+        "KEEP": "Keep",
+        "RETURN": "Return"
+      },
+      "earned": "Earned on the current unit",
+      "prepaidCarried": "Paid ahead, carried to the new lease",
+      "owedCarried": "Owed, carried to the new lease",
+      "depositCarried": "Deposit carried",
+      "chequesCarried": "Cheques carried",
+      "gap": "Gap to collect",
+      "gapHint": "Add cheques for the gap on the new lease's grid before posting it.",
+      "createDraft": "Create draft",
+      "fromBanner": "Transfer from the previous unit · move date {date}",
+      "pendingBanner": "Transfer pending → draft on {unit}",
+      "toBanner": "Transferred to {unit}",
+      "failed": "The transfer could not be drafted."
     }
   },
   "VatSchedule": {
@@ -2253,7 +2285,8 @@
       "REPLACED": "Replaced",
       "CANCELLED": "Cancelled",
       "RETURNED": "Returned",
-      "ONLINE_PENDING": "Online Pending"
+      "ONLINE_PENDING": "Online Pending",
+      "TRANSFERRED": "Transferred"
     },
     "mode": {
       "PDC": "Post-Dated Cheque",
@@ -2431,7 +2464,13 @@
         "assignmentOverdue": "{from} has {count} overdue instalment(s) on this lease ({amount}). Confirm that {to} takes them on, or collect them first.",
         "assignmentSameRenter": "The lease already belongs to {renter}.",
         "assignmentReason": "Say why the lease changes hands.",
-        "assignmentDraftExists": "This lease already has a draft assignment; post or delete it first."
+        "assignmentDraftExists": "This lease already has a draft assignment; post or delete it first.",
+        "transferOnLastDay": "The move date is the lease's last day: renew onto the new unit instead of transferring.",
+        "transferSameUnit": "The renter is already in this unit; choose another.",
+        "transferExists": "This lease already has a transfer.",
+        "transferHasRenewal": "This lease has a renewal; delete the draft renewal first.",
+        "transferCarryNotRegistered": "Cheque {row} is {status}; only a cheque still in the drawer can be carried.",
+        "renewHasTransfer": "This lease is being transferred; delete that draft, or renew the new lease instead."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",

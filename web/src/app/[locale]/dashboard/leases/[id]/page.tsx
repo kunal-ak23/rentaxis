@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    FileText, Gavel, Loader2, Mail, MinusCircle, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    ArrowRightLeft, FileText, Gavel, Loader2, Mail, MinusCircle, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
@@ -30,6 +30,7 @@ import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import AddChargeDialog from "@/components/leases/AddChargeDialog";
 import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
+import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -212,6 +213,7 @@ export default function LeaseDetailPage() {
     const [extendOpen, setExtendOpen] = useState(false);
     const [addChargeOpen, setAddChargeOpen] = useState(false);
     const [reduceOpen, setReduceOpen] = useState(false);
+    const [transferOpen, setTransferOpen] = useState(false);
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
@@ -529,6 +531,19 @@ export default function LeaseDetailPage() {
                             </p>
                         )}
                         <div className="flex items-center gap-3 flex-wrap mt-1 text-[11px]">
+                            {/* Spec §2: the two ends of a unit transfer, linked. */}
+                            {lease.transferredFromLeaseId && (
+                                <Link href={`/dashboard/leases/${lease.transferredFromLeaseId}`} className="text-primary hover:underline" data-testid="lease-transferred-from">
+                                    {t("transfer.fromBanner", { date: lease.transferMoveDate ? fmtIsoDate(lease.transferMoveDate, locale) : "—" })}
+                                </Link>
+                            )}
+                            {lease.transferredToLeaseId && (
+                                <Link href={`/dashboard/leases/${lease.transferredToLeaseId}`} className="text-primary hover:underline" data-testid="lease-transferred-to">
+                                    {lease.transferredToStatus === "DRAFT"
+                                        ? t("transfer.pendingBanner", { unit: lease.transferredToUnit ?? "—" })
+                                        : t("transfer.toBanner", { unit: lease.transferredToUnit ?? "—" })}
+                                </Link>
+                            )}
                             {lease.renewedFromLeaseId && (
                                 <Link href={`/dashboard/leases/${lease.renewedFromLeaseId}`} className="text-primary hover:underline" data-testid="lease-renewed-from">
                                     {t("renewFrom", { number: lease.renewedFromLeaseId.slice(0, 8) })}
@@ -601,6 +616,16 @@ export default function LeaseDetailPage() {
                                 className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
                             >
                                 <PlusCircle size={14} /> {t("addCharge")}
+                            </button>
+                        )}
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canRenew
+                            && !lease.transferredToLeaseId && (
+                            <button
+                                onClick={() => setTransferOpen(true)}
+                                data-testid="lease-transfer"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <ArrowRightLeft size={14} /> {t("transfer.open")}
                             </button>
                         )}
                         {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canExtend && (
@@ -1119,6 +1144,16 @@ export default function LeaseDetailPage() {
                 onAdded={async () => {
                     setAddChargeOpen(false);
                     await loadLease();
+                }}
+            />
+
+            <TransferLeaseDialog
+                open={transferOpen}
+                lease={lease}
+                onClose={() => setTransferOpen(false)}
+                onDrafted={b => {
+                    setTransferOpen(false);
+                    router.push(`/dashboard/leases/${b.id}`);
                 }}
             />
 

@@ -150,7 +150,16 @@ public class LeaseTransferService {
         dto.setDepositPaymentMethod(a.getDepositPaymentMethod() != null ? a.getDepositPaymentMethod().name() : null);
         dto.setGracePeriodDays(a.isGracePeriodOverridden() ? a.getGracePeriodDays() : null);
         dto.setRentVatApplicable(a.isRentVatApplicable());
-        dto.setLines(r.lines() != null && !r.lines().isEmpty() ? r.lines() : defaultLines(a, start, end));
+        List<LeaseLineInput> lines = r.lines() != null && !r.lines().isEmpty() ? r.lines() : defaultLines(a, start, end);
+        if ((r.lines() == null || r.lines().isEmpty()) && r.rent() != null) {
+            if (r.rent().signum() <= 0) throw new BusinessRuleViolationException("The new rent must be more than zero.");
+            // The rent the operator typed in place of the suggestion; the fees stay pro rata.
+            lines = lines.stream().map(l -> isRent(l.chargeTypeId())
+                    ? new LeaseLineInput(l.chargeTypeId(), l.chargeTypeCode(), r.rent().setScale(2, RoundingMode.HALF_UP),
+                            BigDecimal.ZERO, l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd())
+                    : l).toList();
+        }
+        dto.setLines(lines);
 
         LeaseDTO b = leaseService.createTransferDraft(dto, a, t);
         Lease successor = leaseRepository.findById(b.getId()).orElseThrow();
