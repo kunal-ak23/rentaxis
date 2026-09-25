@@ -1383,6 +1383,12 @@
     "RECURRING": "Recurring"
   },
   "Facilities": {
+    "feeType": "Booking fee",
+    "feeAmount": "Fee (AED, before VAT)",
+    "fee": {"FREE": "Free", "PER_BOOKING": "Fixed per booking", "PER_HOUR": "Per hour"},
+    "feeFree": "Free",
+    "feePerHour": "AED {amount} per hour (+ VAT where due), charged to your lease",
+    "feePerBooking": "AED {amount} per booking (+ VAT where due), charged to your lease",
     "amenitiesTab": "Amenities",
     "parkingTab": "Parking",
     "addAmenity": "Add Amenity",
@@ -2441,6 +2447,7 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "booking": {"feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
       "ticket": {"billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
       "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason."},
       "vat": {"periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},

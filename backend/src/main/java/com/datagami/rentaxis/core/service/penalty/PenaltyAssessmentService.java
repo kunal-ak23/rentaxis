@@ -300,9 +300,34 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO approve(UUID id, LocalDate date) {
+        return approve(id, date, true);
+    }
+
+    /**
+     * F14-50: the booking-fee door. The booking's approval was authorised by whoever
+     * decided it (a manager of the property, not necessarily of the lease), so the
+     * manage-the-lease check is not repeated.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO approveBySystem(UUID id, LocalDate date) {
+        return approve(id, date, false);
+    }
+
+    /** F14-50: a booking cancelled before its slot reverses its fee — possibly at the renter's request. */
+    @Transactional
+    public PenaltyAssessmentDTO reverseBySystem(UUID id, LocalDate date, String note) {
+        return reverse(id, date, note, false);
+    }
+
+    @Transactional(readOnly = true)
+    public PenaltyAssessmentStatus statusOf(UUID id) {
+        return repository.findById(id).map(PenaltyAssessment::getStatus).orElse(null);
+    }
+
+    private PenaltyAssessmentDTO approve(UUID id, LocalDate date, boolean checkAccess) {
         PenaltyAssessment a = lock(id);
         Lease lease = a.getLease();
-        leaseAccessPolicy.requireManageable(lease);
+        if (checkAccess) leaseAccessPolicy.requireManageable(lease);
         requireStatus(a, "approve", PenaltyAssessmentStatus.PROPOSED);
         // Up front, before a single line is posted. A proposal can outlive the
         // contract it was raised on — a cheque bounces in March, the lease
@@ -459,8 +484,12 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note) {
+        return reverse(id, date, note, true);
+    }
+
+    private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
         PenaltyAssessment a = lock(id);
-        leaseAccessPolicy.requireManageable(a.getLease());
+        if (checkAccess) leaseAccessPolicy.requireManageable(a.getLease());
         requireStatus(a, "reverse", PenaltyAssessmentStatus.APPROVED);
         if (a.getJournalId() == null) {
             throw new BusinessRuleViolationException("This penalty has no journal to reverse");
@@ -496,7 +525,8 @@ public class PenaltyAssessmentService {
         // Only from REGISTERED: a row that was cancelled or returned already had its
         // PDR reversed, and reversing it twice is refused by PostingService anyway.
         if (collection != null && collection.getStatus() == ChequeStatus.REGISTERED) {
-            chequeService.cancel(collection.getId(), new ChequeActionRequest(on, reason, null, null));
+            if (checkAccess) chequeService.cancel(collection.getId(), new ChequeActionRequest(on, reason, null, null));
+            else chequeService.cancelBySystem(collection.getId(), new ChequeActionRequest(on, reason, null, null));
         }
 
         a.setStatus(PenaltyAssessmentStatus.REVERSED);

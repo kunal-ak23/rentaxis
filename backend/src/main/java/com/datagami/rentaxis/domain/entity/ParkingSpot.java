@@ -46,4 +46,11 @@ public class ParkingSpot extends BaseTenantEntity {
     public void onPreUpdate() {
         this.updatedAt = Instant.now();
     }
+
+    /** F14-50: FREE, PER_BOOKING or PER_HOUR (parking: FREE or PER_BOOKING). */
+    @Column(name = "fee_type", nullable = false, length = 12)
+    private String feeType = "FREE";
+
+    @Column(name = "fee_amount", nullable = false, precision = 14, scale = 2)
+    private java.math.BigDecimal feeAmount = java.math.BigDecimal.ZERO;
 }

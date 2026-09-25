@@ -144,7 +144,7 @@ public class AmenityController {
     private AmenityDTO toDTO(PropertyAmenity a, List<UUID> buildingIds, long pendingCount) {
         return new AmenityDTO(a.getId(), a.getPropertyId(), a.getNameEn(), a.getNameAr(),
                 a.getDescription(), photoUrls(a.getPhotoUrls()), a.isBookable(), a.isActive(),
-                buildingIds, pendingCount, a.getCreatedAt(), a.getUpdatedAt());
+                buildingIds, pendingCount, a.getCreatedAt(), a.getUpdatedAt(), a.getFeeType(), a.getFeeAmount());
     }
 
     private List<String> photoUrls(String raw) {

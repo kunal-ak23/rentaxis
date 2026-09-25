@@ -291,3 +291,5 @@ databaseChangeLog:
       file: db/changelog/changesets/141-bad-debts.yaml
   - include:
       file: db/changelog/changesets/142-ticket-vendor-bill.yaml
+  - include:
+      file: db/changelog/changesets/143-booking-fees.yaml

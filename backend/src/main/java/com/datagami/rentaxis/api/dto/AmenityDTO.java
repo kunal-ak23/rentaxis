@@ -16,5 +16,22 @@ public record AmenityDTO(
         List<UUID> buildingIds,
         long pendingCount,
         Instant createdAt,
+        Instant updatedAt,
+        /* F14-50 */ String feeType,
+        java.math.BigDecimal feeAmount) {
+    public AmenityDTO(UUID id,
+        UUID propertyId,
+        String nameEn,
+        String nameAr,
+        String description,
+        List<String> photoUrls,
+        boolean bookable,
+        boolean active,
+        List<UUID> buildingIds,
+        long pendingCount,
+        Instant createdAt,
         Instant updatedAt) {
+        this(id, propertyId, nameEn, nameAr, description, photoUrls, bookable, active, buildingIds, pendingCount, createdAt, updatedAt, "FREE", java.math.BigDecimal.ZERO);
+    }
+
 }

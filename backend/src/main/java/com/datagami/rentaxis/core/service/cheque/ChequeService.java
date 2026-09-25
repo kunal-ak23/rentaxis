@@ -933,12 +933,26 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId) {
+        return cancel(chequeId, request, moveVatToChequeId, true);
+    }
+
+    /**
+     * F14-50: a booking fee's collection row, cancelled because the renter withdrew
+     * the booking before its slot. The booking's own rules authorised that; the
+     * renter does not manage the lease.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public ChequeDTO cancelBySystem(UUID chequeId, ChequeActionRequest request) {
+        return cancel(chequeId, request, null, false);
+    }
+
+    private ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId, boolean checkAccess) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         // Both rows are claimed in id order, so two cancels that move VAT onto each
         // other's row cannot cross (re-review N3).
         if (moveVatToChequeId != null && moveVatToChequeId.compareTo(chequeId) < 0) lock(moveVatToChequeId);
         Cheque cheque = lock(chequeId);
-        Lease lease = managedLeaseOf(cheque);
+        Lease lease = checkAccess ? managedLeaseOf(cheque) : requireCollectable(cheque.getLease());
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
         requireSettlementUndisturbed(lease, cheque);
         vatTaxPoints.beforeCancel(cheque, moveVatToChequeId);

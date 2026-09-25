@@ -4,7 +4,12 @@
 export type BookingResourceType = 'AMENITY' | 'PARKING_SPOT'
 export type BookingRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'RELEASED'
 
+/** F14-50: how a booking is charged. Parking is FREE or PER_BOOKING. */
+export type BookingFeeType = "FREE" | "PER_BOOKING" | "PER_HOUR"
+
 export interface AmenityDTO {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   id: string
   propertyId: string
   nameEn: string
@@ -19,6 +24,8 @@ export interface AmenityDTO {
 }
 
 export interface ParkingSpotDTO {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   id: string
   propertyId: string
   spotNumber: string
@@ -33,6 +40,9 @@ export interface ParkingSpotDTO {
 }
 
 export interface BookingRequestDTO {
+  /** F14-50: the fee quoted, and the charge raised on approval. */
+  feeAmount?: number
+  chargeId?: string | null
   id: string
   resourceType: BookingResourceType
   amenityId: string | null
@@ -61,6 +71,8 @@ export interface BookingDetailDTO {
 }
 
 export interface RenterAmenityDTO {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   id: string
   propertyId: string
   propertyName: string | null
@@ -72,6 +84,8 @@ export interface RenterAmenityDTO {
 }
 
 export interface RenterParkingSpotDTO {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   id: string
   propertyId: string
   propertyName: string | null
@@ -88,6 +102,8 @@ export interface MyFacilitiesDTO {
 }
 
 export interface AmenityCreateRequest {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   propertyId: string
   nameEn: string
   nameAr?: string
@@ -98,6 +114,8 @@ export interface AmenityCreateRequest {
 
 /** null/omitted = unchanged; a non-null buildingIds replaces the scope set. */
 export interface AmenityUpdateRequest {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   nameEn?: string
   nameAr?: string
   description?: string
@@ -115,6 +133,8 @@ export interface ParkingSpotCreateRequest {
 }
 
 export interface ParkingSpotUpdateRequest {
+  feeType?: BookingFeeType
+  feeAmount?: number | null
   spotNumber?: string
   level?: string
   covered?: boolean

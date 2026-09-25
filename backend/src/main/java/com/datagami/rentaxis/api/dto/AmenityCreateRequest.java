@@ -13,5 +13,16 @@ public record AmenityCreateRequest(
         @Size(max = 160) String nameAr,
         String description,
         Boolean bookable,
+        List<UUID> buildingIds,
+        /* F14-50 */ String feeType,
+        java.math.BigDecimal feeAmount) {
+    public AmenityCreateRequest(UUID propertyId,
+        @NotBlank @Size(max = 160) String nameEn,
+        @Size(max = 160) String nameAr,
+        String description,
+        Boolean bookable,
         List<UUID> buildingIds) {
+        this(propertyId, nameEn, nameAr, description, bookable, buildingIds, null, null);
+    }
+
 }

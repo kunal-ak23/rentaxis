@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { fetchAmenities, createAmenity, updateAmenity, deactivateAmenity, ApiError } from "@/lib/api/facilities";
-import type { AmenityDTO } from "@/types/facility";
+import type { AmenityDTO, BookingFeeType } from "@/types/facility";
 
 export type BuildingOption = { id: string; nameEn: string; nameAr?: string | null };
 
@@ -18,7 +18,8 @@ interface AmenitiesTabProps {
 }
 
 const PAGE_SIZE = 10;
-const EMPTY_FORM = { nameEn: "", nameAr: "", description: "", bookable: true, active: true, buildingIds: [] as string[] };
+const EMPTY_FORM = { nameEn: "", nameAr: "", description: "", bookable: true, active: true, buildingIds: [] as string[],
+    feeType: "FREE" as BookingFeeType, feeAmount: 0 };
 
 /** Locale tag for toLocaleDateString — mirrors bookings/page.tsx's ar-AE/en-GB split. */
 function dateLocale(locale: string): string {
@@ -73,6 +74,8 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
             bookable: a.bookable,
             active: a.active,
             buildingIds: a.buildingIds,
+            feeType: a.feeType ?? "FREE",
+            feeAmount: a.feeAmount ?? 0,
         });
         setFormError(null);
         setShowForm(true);
@@ -104,6 +107,8 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                     bookable: form.bookable,
                     active: form.active,
                     buildingIds: form.buildingIds,
+                    feeType: form.feeType,
+                    feeAmount: form.feeType === "FREE" ? null : form.feeAmount,
                 });
             } else {
                 await createAmenity({
@@ -113,6 +118,8 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                     description: form.description || undefined,
                     bookable: form.bookable,
                     buildingIds: form.buildingIds,
+                    feeType: form.feeType,
+                    feeAmount: form.feeType === "FREE" ? null : form.feeAmount,
                 });
             }
             setShowForm(false);
@@ -312,6 +319,34 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                     value={form.description}
                                     onChange={e => setForm({ ...form, description: e.target.value })}
                                 />
+                            </div>
+                            {/* F14-50: the booking fee, charged to the renter's lease on approval. */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <label className="text-xs font-semibold text-foreground">
+                                    {t("feeType")}
+                                    <select
+                                        className="mt-1 w-full bg-input border border-border rounded-lg px-3 py-2 text-xs"
+                                        value={form.feeType}
+                                        data-testid="amenity-fee-type"
+                                        onChange={e => setForm({ ...form, feeType: e.target.value as BookingFeeType })}
+                                    >
+                                        {(["FREE", "PER_BOOKING", "PER_HOUR"] as BookingFeeType[]).map(f => (
+                                            <option key={f} value={f}>{t(`fee.${f}`)}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                {form.feeType !== "FREE" && (
+                                    <label className="text-xs font-semibold text-foreground">
+                                        {t("feeAmount")}
+                                        <input
+                                            type="number" min={0} step={0.01}
+                                            className="mt-1 w-full bg-input border border-border rounded-lg px-3 py-2 text-xs"
+                                            value={form.feeAmount}
+                                            data-testid="amenity-fee-amount"
+                                            onChange={e => setForm({ ...form, feeAmount: Number(e.target.value) })}
+                                        />
+                                    </label>
+                                )}
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
