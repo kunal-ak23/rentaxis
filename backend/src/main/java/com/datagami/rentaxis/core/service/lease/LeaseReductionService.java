@@ -153,13 +153,13 @@ public class LeaseReductionService {
         Lease lease = leaseRepository.findById(leaseId).orElseThrow(() -> new NotFoundException("Lease not found"));
         requireOwnTenant(lease);
         leaseAccessPolicy.requireReadable(lease);
-        List<String> problems = new ArrayList<>();
+        List<ReductionPreviewDTO.Problem> problems = new ArrayList<>();
         List<LinePlan> plans = List.of();
         try {
             requireReducible(lease, r);
             plans = plan(lease, r);
         } catch (BusinessRuleViolationException e) {
-            problems.add(e.getMessage());
+            problems.add(new ReductionPreviewDTO.Problem(e.getCode(), e.getMessage(), e.getArgs()));
         }
         BigDecimal net = sum(plans.stream().map(LinePlan::credit).toList());
         BigDecimal vat = sum(plans.stream().map(LinePlan::vat).toList());

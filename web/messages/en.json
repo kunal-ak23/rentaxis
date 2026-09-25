@@ -2130,6 +2130,32 @@
       "ONE_OFF": "Income when charged",
       "PASS_THROUGH": "Pass-through (at cost)",
       "NONE": "Held — not income"
+    },
+    "creditAddendum": "Credit",
+    "reduction": {
+      "open": "Reduce or remove a charge",
+      "title": "Reduce or remove a charge (credit addendum)",
+      "hint": "For the rest of the term, from the effective date. The credit is worked out per day: what the charge still has to earn, less the rest of the term at the new amount. Nothing already on the books is rewritten, so cleared cheques are no obstacle.",
+      "confirm": "Post credit addendum",
+      "lines": "Charges to reduce",
+      "current": "Current amount",
+      "newAmount": "New amount (for the whole period)",
+      "remove": "Remove",
+      "credit": "Credit",
+      "perDay": "{days} day(s) left, {from} to {to}",
+      "nothingReducible": "No rent or charge earned over the term can be reduced on this lease.",
+      "excess": "The credit",
+      "excessCredit": "Leave it on the renter's account (applied to later dues, refunded at settlement)",
+      "excessCheques": "Hand back uncleared cheques (and take smaller ones)",
+      "handBack": "Cheques to hand back",
+      "noneToHandBack": "No uncleared cheque can be handed back.",
+      "replacements": "Replacement cheques",
+      "creditNet": "Credit on the charges",
+      "vatFromDeferred": "VAT not yet declared, taken off the instalments",
+      "vatCreditNote": "VAT already declared, credited back (tax credit note)",
+      "creditTotal": "Off the renter's account",
+      "gap": "Still to settle by cheques",
+      "failed": "The credit addendum could not be posted."
     }
   },
   "VatSchedule": {
@@ -2373,6 +2399,14 @@
       },
       "chargeType": {
         "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind and how it is earned cannot change. Create a new charge type for the new rule."
+      },
+      "lease": {
+        "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
+        "reductionNotLower": "Line {line} ({code}): the new amount is not lower than what the charge still has to earn; a credit addendum only reduces.",
+        "reductionNotScheduled": "Line {line} ({code}) has nothing left to earn from the effective date (a one-off fee, a fee taken to income at posting, or a charge whose period has ended), so it cannot be reduced.",
+        "reductionChequeGap": "The cheques handed back ({returned}) less the replacements ({replaced}) must come to the credit of {credit}; they are {gap} {direction, select, short {short} other {over}}.",
+        "reductionChequeNotReturnable": "Instalment {row} cannot be handed back: only an uncleared, undeposited rent or fee instalment can.",
+        "amendAfterCredit": "This lease has a credit addendum, so its lines can no longer be amended; post a further addendum instead."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",

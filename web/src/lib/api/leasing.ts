@@ -426,6 +426,57 @@ export type LeaseAddendum = {
    */
   superseded: boolean;
   createdAt: string;
+  /** F14-32: CHARGE (adds lines) or CREDIT (a mid-term reduction, posted as a TCC); absent on an older server. */
+  kind?: "CHARGE" | "CREDIT";
+  /** For a CREDIT: CHEQUES (instalments handed back / replaced) or CREDIT (left on the renter's account). */
+  excess?: "CHEQUES" | "CREDIT" | null;
+  credits?: LeaseAddendumCredit[];
+};
+
+/** F14-32: one line a credit addendum cut. */
+export type LeaseAddendumCredit = {
+  leaseLineId: string;
+  chargeTypeCode: string | null;
+  chargeTypeName: string | null;
+  chargeTypeNameAr: string | null;
+  newLineAmount: number;
+  remainingBefore: number;
+  remainingAfter: number;
+  creditAmount: number;
+  vatAmount: number;
+};
+
+/** F14-32: ReduceLeaseRequest — a mid-term reduction as a credit addendum. */
+export type ReduceLeaseInput = {
+  effectiveFrom: string;
+  contractDate?: string | null;
+  reason?: string | null;
+  ejariNumber?: string | null;
+  /** Each line cut: its new value over its whole window (0 removes it). */
+  lines: { lineId: string; newAmount: number }[];
+  excess: "CHEQUES" | "CREDIT";
+  returnChequeIds: string[];
+  cheques: ChequeRowInput[];
+};
+
+/** F14-32: ReductionPreviewDTO. */
+export type ReductionPreview = {
+  effectiveFrom: string | null;
+  lines: {
+    lineId: string; chargeTypeCode: string; chargeTypeName: string; chargeTypeNameAr: string | null;
+    lineAmount: number; newLineAmount: number; from: string; to: string; remainingDays: number;
+    remainingBefore: number; remainingAfter: number; credit: number; vat: number;
+  }[];
+  creditNet: number;
+  vatFromDeferred: number;
+  vatCreditNote: number;
+  creditTotal: number;
+  returnable: { id: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number; vatAmount: number | null }[];
+  returnedTotal: number;
+  newRowsTotal: number;
+  gap: number;
+  /** Refusals the post would raise, coded (Common.errors.<code>) with the English text as fallback. */
+  problems: { code: string | null; message: string; args: Record<string, unknown> | null }[];
 };
 
 /** AddendumResponse. */
@@ -1238,6 +1289,9 @@ export const leaseApi = {
   extend: (id: string, body: ExtendLeaseInput) => send<PostLeaseResponse>("POST", `/leases/${id}/extend`, body),
   addCharge: (id: string, body: AddChargeInput) => send<AddendumResponse>("POST", `/leases/${id}/addenda`, body),
   addenda: (id: string) => get<LeaseAddendum[]>(`/leases/${id}/addenda`),
+  reductionPreview: (id: string, body: ReduceLeaseInput) =>
+    send<ReductionPreview>("POST", `/leases/${id}/reductions/preview`, body),
+  reduce: (id: string, body: ReduceLeaseInput) => send<AddendumResponse>("POST", `/leases/${id}/reductions`, body),
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),

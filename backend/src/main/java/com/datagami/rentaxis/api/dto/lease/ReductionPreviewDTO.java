@@ -26,7 +26,11 @@ public record ReductionPreviewDTO(LocalDate effectiveFrom,
                                   BigDecimal returnedTotal,
                                   BigDecimal newRowsTotal,
                                   BigDecimal gap,
-                                  List<String> problems) {
+                                  List<Problem> problems) {
+
+    /** A refusal the post would raise: its code and args (EN/AR on the web) and the English text. */
+    public record Problem(String code, String message, java.util.Map<String, Object> args) {
+    }
 
     public record LineCredit(UUID lineId, String chargeTypeCode, String chargeTypeName, String chargeTypeNameAr,
                              BigDecimal lineAmount, BigDecimal newLineAmount,

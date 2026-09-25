@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    FileText, Gavel, Loader2, Mail, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    FileText, Gavel, Loader2, Mail, MinusCircle, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
@@ -28,6 +28,7 @@ import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import AddChargeDialog from "@/components/leases/AddChargeDialog";
+import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -209,6 +210,7 @@ export default function LeaseDetailPage() {
     const [renewOpen, setRenewOpen] = useState(false);
     const [extendOpen, setExtendOpen] = useState(false);
     const [addChargeOpen, setAddChargeOpen] = useState(false);
+    const [reduceOpen, setReduceOpen] = useState(false);
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
@@ -598,6 +600,15 @@ export default function LeaseDetailPage() {
                                 className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
                             >
                                 <PlusCircle size={14} /> {t("addCharge")}
+                            </button>
+                        )}
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canExtend && (
+                            <button
+                                onClick={() => setReduceOpen(true)}
+                                data-testid="lease-reduce"
+                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
+                            >
+                                <MinusCircle size={14} /> {t("reduction.open")}
                             </button>
                         )}
                         {posted && (
@@ -1104,6 +1115,16 @@ export default function LeaseDetailPage() {
                 onClose={() => setAddChargeOpen(false)}
                 onAdded={async () => {
                     setAddChargeOpen(false);
+                    await loadLease();
+                }}
+            />
+
+            <ReduceLeaseDialog
+                open={reduceOpen}
+                lease={lease}
+                onClose={() => setReduceOpen(false)}
+                onReduced={async () => {
+                    setReduceOpen(false);
                     await loadLease();
                 }}
             />

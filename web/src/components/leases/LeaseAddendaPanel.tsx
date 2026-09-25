@@ -67,10 +67,28 @@ export default function LeaseAddendaPanel({ leaseId, addenda, canRecordEjari, on
                     <tbody>
                         {addenda.map(a => (
                             <tr key={a.id} className="border-t border-border">
-                                <td className={`${td} font-semibold`}>{a.addendumNumber}</td>
+                                <td className={`${td} font-semibold`}>
+                                    {a.addendumNumber}
+                                    {a.kind === "CREDIT" && (
+                                        <span data-testid={`addendum-credit-${a.id}`}
+                                              className="ms-2 inline-block px-2 py-0.5 rounded-full bg-success/10 text-success text-[10px] font-semibold">
+                                            {t("creditAddendum")}
+                                        </span>
+                                    )}
+                                </td>
                                 <td className={td}>{fmtIsoDate(a.effectiveFrom, locale)}</td>
-                                <td className={td}>{a.reason ?? ""}</td>
-                                <td className={`${td} text-end tabular-nums`}>{fmtAmount(a.value)}</td>
+                                <td className={td}>
+                                    {a.reason ?? ""}
+                                    {a.kind === "CREDIT" && (a.credits?.length ?? 0) > 0 && (
+                                        <span className="block text-[10px] text-muted">
+                                            {(a.credits ?? []).map(c => (locale === "ar" ? c.chargeTypeNameAr || c.chargeTypeName : c.chargeTypeName)
+                                                ?? c.chargeTypeCode).join(", ")}
+                                            {" · "}
+                                            {a.excess === "CHEQUES" ? t("reduction.excessCheques") : t("reduction.excessCredit")}
+                                        </span>
+                                    )}
+                                </td>
+                                <td className={`${td} text-end tabular-nums`}><bdi dir="ltr">{fmtAmount(a.value)}</bdi></td>
                                 <td className={td}>
                                     {a.tcoEntryNumber}
                                     {a.superseded && (
