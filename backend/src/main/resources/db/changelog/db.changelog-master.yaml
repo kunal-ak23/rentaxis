@@ -297,3 +297,5 @@ databaseChangeLog:
       file: db/changelog/changesets/144-listing-lease.yaml
   - include:
       file: db/changelog/changesets/145-bad-debt-item-amounts.yaml
+  - include:
+      file: db/changelog/changesets/146-scale-indexes.yaml

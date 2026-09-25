@@ -1,0 +1,51 @@
+# Scale PR A (spec 2026-09-25-scale-track-design, P1-7): indexes for 8,000 units x several
+# years. properties(tenant_id) already exists (idx_properties_tenant_id).
+#
+# - units(tenant_id, property_id, status): the unit list, picker and status filters.
+# - leases(tenant_id, status, end_date): expiry reminders, "expiring in 30 days", renewal season.
+# - journal_lines(lease_id, account_id) incl. debit/credit: the open bounced debt per lease
+#   behind the dashboard's overdue tile, the register summary and the aging report
+#   (ChequeRepository.OPEN_DUE_CTE), answered from the index alone.
+# - pg_trgm GIN on lower(renter name/phone/email) and lower(unit number): the %term% search
+#   behind the paged lists and the async pickers. Guarded: an environment where the
+#   extension cannot be created (not allow-listed, no privilege) logs a notice and skips the
+#   trigram indexes; the searches still work, as sequential scans.
+databaseChangeLog:
+  - changeSet:
+      id: 146-scale-indexes
+      author: claude
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE INDEX IF NOT EXISTS idx_units_tenant_property_status ON units (tenant_id, property_id, status);
+              CREATE INDEX IF NOT EXISTS idx_leases_tenant_status_end ON leases (tenant_id, status, end_date);
+              CREATE INDEX IF NOT EXISTS idx_jl_lease_account ON journal_lines (lease_id, account_id) INCLUDE (debit, credit);
+        - sql:
+            splitStatements: false
+            sql: |
+              DO $$
+              BEGIN
+                BEGIN
+                  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                EXCEPTION WHEN OTHERS THEN
+                  RAISE NOTICE 'pg_trgm not available (%); trigram search indexes skipped', SQLERRM;
+                END;
+                IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+                  EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_name_en_trgm ON renters USING gin (lower(name_en) gin_trgm_ops)';
+                  EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_phone_trgm ON renters USING gin (lower(phone) gin_trgm_ops)';
+                  EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_email_trgm ON renters USING gin (lower(email) gin_trgm_ops)';
+                  EXECUTE 'CREATE INDEX IF NOT EXISTS idx_units_unit_number_trgm ON units USING gin (lower(unit_number) gin_trgm_ops)';
+                END IF;
+              END $$;
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              DROP INDEX IF EXISTS idx_units_unit_number_trgm;
+              DROP INDEX IF EXISTS idx_renters_email_trgm;
+              DROP INDEX IF EXISTS idx_renters_phone_trgm;
+              DROP INDEX IF EXISTS idx_renters_name_en_trgm;
+              DROP INDEX IF EXISTS idx_jl_lease_account;
+              DROP INDEX IF EXISTS idx_leases_tenant_status_end;
+              DROP INDEX IF EXISTS idx_units_tenant_property_status;
