@@ -11,7 +11,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
 import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
-import BounceChequeDialog from "@/components/cheques/BounceChequeDialog";
+import BounceFlow from "@/components/cheques/BounceFlow";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
 import ClearBatchDialog from "@/components/cheques/ClearBatchDialog";
@@ -591,13 +591,11 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                 }}
             />
 
-            <BounceChequeDialog
+            <BounceFlow
                 cheque={bounceTarget}
+                canProposeFee={hasPermission(userRole, "canProposePenalties")}
                 onClose={() => setBounceTarget(null)}
-                onDone={() => {
-                    setBounceTarget(null);
-                    refresh();
-                }}
+                onChanged={refresh}
             />
 
             <ReplaceChequeDialog

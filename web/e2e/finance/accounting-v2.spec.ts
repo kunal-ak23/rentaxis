@@ -264,6 +264,7 @@ test.describe('Accounting v2 — a contract from draft to a balanced trial balan
         await expect(page.getByTestId(`cheque-row-action-bounce-${chequeIds.rent1}`)).toBeVisible({ timeout: 20_000 });
         await page.getByTestId(`cheque-row-action-bounce-${chequeIds.rent1}`).click();
         await page.getByTestId('cheque-bounce-confirm').click();
+        await page.getByTestId('bounce-flow-done').click();
         await expect(page.getByTestId(`cheque-row-action-replace-${chequeIds.rent1}`)).toBeVisible({ timeout: 20_000 });
 
         // ReplaceChequeDialog seeds row 0's amount to the bounced cheque's own

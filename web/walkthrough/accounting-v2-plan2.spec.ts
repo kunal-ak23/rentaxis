@@ -645,6 +645,8 @@ test('07 bounce the second deposited cheque', async ({ browser }) => {
             page.getByTestId('cheque-bounce-confirm').click(),
         ]);
         expect(bounceRes.status()).toBe(200);
+        // Bounce in one flow (#18): close the "what next?" step to act from the register.
+        await page.getByTestId('bounce-flow-done').click();
         await expect(page.getByTestId(`cheque-row-action-replace-${bounceChequeId}`)).toBeVisible({ timeout: 10_000 });
 
         const after = await adminApi<{ status: string }>('GET', `/api/v1/cheques/${bounceChequeId}`);

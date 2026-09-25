@@ -2493,7 +2493,22 @@
     "moveVatTo": "نقل ضريبتها إلى",
     "moveVatToHint": "يحمل هذا القسط ضريبة قيمة مضافة بقيمة {vat} لم يُصرَّح عنها بعد. تنتقل إلى القسط الذي تختاره ويُصرَّح عنها عند نقطة الاستحقاق الضريبي لذلك القسط.",
     "moveVatToNone": "يحمل هذا القسط ضريبة قيمة مضافة بقيمة {vat} لم يُصرَّح عنها بعد، ولا يوجد في العقد قسط آخر قيد التحصيل لنقلها إليه، لذا لا يمكن إلغاؤه.",
-    "moveVatOption": "{label} بتاريخ {date} بمبلغ {amount}"
+    "moveVatOption": "{label} بتاريخ {date} بمبلغ {amount}",
+    "bounceFlowTitle": "تم إرجاع الشيك — ما الخطوة التالية؟",
+    "bounceFlowReturned": "تم تسجيل {cheque} كشيك مرتجع.",
+    "bounceFlowReplaceHeading": "الاستبدال",
+    "bounceFlowReplaceHint": "سجّل الشيكات أو النقد الذي يقدمه المستأجر بدلاً منه.",
+    "bounceFlowReplaceNow": "استبدال الآن",
+    "bounceFlowReplaced": "تم تسجيل البديل.",
+    "bounceFlowFeeHeading": "رسوم الارتجاع / الغرامة",
+    "bounceFlowChecking": "جارٍ التحقق من وجود غرامة تلقائية…",
+    "bounceFlowAutoProposed": "تم اقتراح غرامة ارتجاع شيك بقيمة {amount} تلقائياً. يعتمدها قسم المالية ضمن الغرامات.",
+    "bounceFlowFeeHint": "اقترح رسوم ارتجاع الشيك. يعتمدها قسم المالية ضمن الغرامات.",
+    "bounceFlowFeeAmount": "قيمة الرسوم",
+    "bounceFlowProposeFee": "اقتراح الرسوم",
+    "bounceFlowFeeProposed": "تم اقتراح رسوم بقيمة {amount}.",
+    "bounceFlowDone": "تم",
+    "bounceFlowLater": "لاحقاً"
   },
   "Common": {
     "notOnStatement": "هذا القيد غير موجود في كشف الحساب المستورد",

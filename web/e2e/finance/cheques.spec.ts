@@ -191,6 +191,8 @@ test.describe('Cheque register lifecycle', () => {
     await expect(page.getByTestId(`cheque-row-action-bounce-${chequeB.id}`)).toBeVisible({ timeout: 10_000 });
     await page.getByTestId(`cheque-row-action-bounce-${chequeB.id}`).click();
     await page.getByTestId('cheque-bounce-confirm').click();
+    // Bounce in one flow (#18): the "what next?" step follows; close it to act from the register.
+    await page.getByTestId('bounce-flow-done').click();
     await expect(page.getByTestId(`cheque-row-action-replace-${chequeB.id}`)).toBeVisible({ timeout: 10_000 });
     await page.getByTestId(`cheque-row-action-replace-${chequeB.id}`).click();
     // VERIFY: ReplaceChequeDialog seeds row 0's amount to the bounced
@@ -207,6 +209,8 @@ test.describe('Cheque register lifecycle', () => {
     // ── cheque A (now CLEARED): a late return — CLEARED PDC may still bounce ──
     await page.getByTestId(`cheque-row-action-bounce-${chequeA.id}`).click();
     await page.getByTestId('cheque-bounce-confirm').click();
+    // Bounce in one flow (#18): the "what next?" step follows; close it to act from the register.
+    await page.getByTestId('bounce-flow-done').click();
     await expect(page.getByTestId(`cheque-row-action-replace-${chequeA.id}`)).toBeVisible({ timeout: 10_000 });
 
     const balanceAfterLateReturn = await tenantLedgerBalance(page, renter.id, owed);

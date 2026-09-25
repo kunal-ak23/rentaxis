@@ -2493,7 +2493,22 @@
     "moveVatTo": "Move its VAT to",
     "moveVatToHint": "This instalment carries {vat} of VAT that has not been declared yet. It moves to the instalment you choose and is declared on that instalment's tax point.",
     "moveVatToNone": "This instalment carries {vat} of VAT that has not been declared yet, and the contract has no other pending instalment to move it to, so it cannot be cancelled.",
-    "moveVatOption": "{label} · {date} · {amount}"
+    "moveVatOption": "{label} · {date} · {amount}",
+    "bounceFlowTitle": "Cheque returned — what next?",
+    "bounceFlowReturned": "{cheque} is recorded as returned.",
+    "bounceFlowReplaceHeading": "Replacement",
+    "bounceFlowReplaceHint": "Record the cheques or cash the tenant hands over instead.",
+    "bounceFlowReplaceNow": "Replace now",
+    "bounceFlowReplaced": "Replacement recorded.",
+    "bounceFlowFeeHeading": "Bounce fee / penalty",
+    "bounceFlowChecking": "Checking for an automatic penalty…",
+    "bounceFlowAutoProposed": "A cheque-return penalty of {amount} was proposed automatically. Finance approves it under Penalties.",
+    "bounceFlowFeeHint": "Propose a cheque-return fee. Finance approves it under Penalties.",
+    "bounceFlowFeeAmount": "Fee amount",
+    "bounceFlowProposeFee": "Propose fee",
+    "bounceFlowFeeProposed": "Fee of {amount} proposed.",
+    "bounceFlowDone": "Done",
+    "bounceFlowLater": "Later"
   },
   "Common": {
     "notOnStatement": "This entry is not on the imported statement",
