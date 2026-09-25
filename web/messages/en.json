@@ -1915,7 +1915,10 @@
   },
   "Leasing": {
     "noticeGivenBy": "Given by",
-    "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
+    "noticeParty": {
+      "RENTER": "Renter",
+      "LANDLORD": "Landlord"
+    },
     "noticeDate": "Notice date",
     "intendedMoveOut": "Intended move-out",
     "noticeNotes": "Notes",
@@ -2121,7 +2124,13 @@
     "draftSavedGenerateCheques": "Draft saved. Generate the cheque grid, then review and post.",
     "cancel": "Cancel",
     "noPenalties": "No penalties raised against this contract.",
-    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone."
+    "amendCannotReprice": "An amendment redistributes the contract value between the lines; it cannot change the total. To charge more, use Add charge — it posts an addendum for the new charge alone.",
+    "lineRecognition": {
+      "RENT_LIKE": "Deferred — earned over the term",
+      "ONE_OFF": "Income when charged",
+      "PASS_THROUGH": "Pass-through (at cost)",
+      "NONE": "Held — not income"
+    }
   },
   "VatSchedule": {
     "title": "VAT schedule",

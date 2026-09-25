@@ -2010,8 +2010,9 @@ public class LeaseService {
                 l.getAddendumId(),
                 type != null ? type.getNameAr() : null,
                 credit != null ? credit.getNameAr() : null,
-                l.effectiveRecognition() != null ? l.effectiveRecognition().name() : null,
-                l.getRentFreeAmount());
+                type != null && type.getRecognition() != null ? type.getRecognition().name() : null,
+                l.getRentFreeAmount(),
+                l.getPostedRecognition() != null ? l.getPostedRecognition().name() : null);
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {

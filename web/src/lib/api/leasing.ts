@@ -41,6 +41,8 @@ export type ChargeBehaviour = "RENT" | "DEPOSIT" | "FEE";
  * RENT and DEPOSIT types always carry RENT_LIKE.
  */
 export type ChargeRecognition = "RENT_LIKE" | "ONE_OFF" | "PASS_THROUGH";
+/** #99 / F15-06: what posting did with a line; NONE = a deposit, never income. */
+export type PostedRecognition = ChargeRecognition | "NONE";
 
 export type ChequeMode = "PDC" | "CASH" | "TRANSFER" | "ONLINE";
 
@@ -194,6 +196,8 @@ export type LeaseLine = {
   recognition?: ChargeRecognition | null;
   /** Spec §4b: the rent-free concession on the contract's RENT line; 0 elsewhere. */
   rentFreeAmount?: number | null;
+  /** #99 / F15-06: what posting did with the line; null on a draft or an older server. */
+  postedRecognition?: PostedRecognition | null;
 };
 
 /** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */

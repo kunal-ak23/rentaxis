@@ -1,10 +1,15 @@
-# #99: a lease line remembers the recognition it was posted with, so the lease
-# page labels it by what the books did rather than by today's catalogue, and a
-# charge type used by a lease past DRAFT can no longer change its behaviour or
-# recognition (ChargeTypeService). Existing posted lines are backfilled from their
-# charge type; the guard means that value has not changed since changeset 128
-# introduced it, except for a type edited between 128 and now — the backfill is
-# the best record there is.
+# #99 / F15-06: a lease line remembers what posting did with it, so the lease page
+# labels it by what the books did rather than by today's catalogue, and a charge
+# type used by a lease past DRAFT can no longer change its behaviour or recognition
+# (ChargeTypeService). Existing posted lines are backfilled the way
+# LeaseLine.postingRecognition decides it:
+#   - DEPOSIT lines: NONE (a liability, never income);
+#   - RENT lines: RENT_LIKE;
+#   - FEE lines on a lease posted under the at-posting rule (fee_timing AT_POSTING,
+#     every lease posted before #358): ONE_OFF, unless the type is PASS_THROUGH;
+#   - FEE lines on an OVER_TERM lease: the charge type's recognition (the guard
+#     means it has not changed since; a type edited between 128 and now is the one
+#     case the backfill cannot see).
 databaseChangeLog:
   - changeSet:
       id: 132-lease-line-posted-recognition
@@ -20,7 +25,11 @@ databaseChangeLog:
             comment: Backfill posted leases' lines from their charge type
             sql: |
               UPDATE lease_lines l
-                 SET posted_recognition = c.recognition
+                 SET posted_recognition = CASE
+                       WHEN c.behaviour = 'DEPOSIT' THEN 'NONE'
+                       WHEN c.behaviour = 'RENT' THEN 'RENT_LIKE'
+                       WHEN le.fee_timing = 'AT_POSTING' AND c.recognition <> 'PASS_THROUGH' THEN 'ONE_OFF'
+                       ELSE c.recognition END
                 FROM charge_types c, leases le
                WHERE c.id = l.charge_type_id
                  AND le.id = l.lease_id

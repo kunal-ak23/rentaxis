@@ -94,29 +94,44 @@ public class LeaseLine extends BaseTenantEntity {
     private UUID addendumId;
 
     /**
-     * #99: the charge type's recognition when this line went on the books — what
-     * the TCO and the recognition schedule actually did with it. Null while the
-     * lease is a draft; stamped when the lease posts, and on any line written to a
-     * posted lease afterwards (amend, addendum, extension).
+     * #99 / F15-06: how the books actually treated this line when it was posted —
+     * not the charge type's rule today. RENT_LIKE (deferred and earned over the
+     * term), ONE_OFF (income when charged; also a periodic fee on a lease posted
+     * under the old at-posting rule), PASS_THROUGH (recovered at cost) or NONE (a
+     * deposit: a liability, never income). Null while the lease is a draft; stamped
+     * when the lease posts, and on any line written to a posted lease afterwards.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "posted_recognition", length = 16)
     private com.datagami.rentaxis.domain.entity.enums.ChargeRecognition postedRecognition;
 
-    /** The recognition this line follows: its snapshot once posted, else its charge type's. */
-    public com.datagami.rentaxis.domain.entity.enums.ChargeRecognition effectiveRecognition() {
-        if (postedRecognition != null) return postedRecognition;
-        return chargeType != null ? chargeType.getRecognition() : null;
+    /** What posting this line on {@code lease} does with it (F15-06); null without a charge type. */
+    public static com.datagami.rentaxis.domain.entity.enums.ChargeRecognition postingRecognition(
+            Lease lease, ChargeType type) {
+        if (type == null || type.getBehaviour() == null) return null;
+        switch (type.getBehaviour()) {
+            case DEPOSIT: return com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.NONE;
+            case RENT: return com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+            default: break;
+        }
+        var r = type.getRecognition();
+        boolean overTerm = lease == null
+                || lease.getFeeTiming() == com.datagami.rentaxis.domain.entity.enums.FeeTiming.OVER_TERM;
+        if (r == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE && !overTerm) {
+            // Posted under the at-posting rule: the TCO took it to income.
+            return com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF;
+        }
+        return r;
     }
 
-    /** Stamps {@link #postedRecognition} from the charge type if it is not stamped yet. */
+    /** Stamps {@link #postedRecognition} with what posting does with this line. */
     public void snapshotRecognition() {
-        if (postedRecognition == null && chargeType != null) postedRecognition = chargeType.getRecognition();
+        postedRecognition = postingRecognition(lease, chargeType);
     }
 
     @PrePersist
     @PreUpdate
     void snapshotWhenPosted() {
-        if (lease != null && lease.getPostedAt() != null) snapshotRecognition();
+        if (postedRecognition == null && lease != null && lease.getPostedAt() != null) snapshotRecognition();
     }
 }

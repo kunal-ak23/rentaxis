@@ -42,6 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
@@ -230,17 +231,20 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
 
     /**
      * #99: a charge type a posted lease uses keeps its behaviour and recognition,
-     * and each posted line is labelled with the recognition it was posted with.
+     * and each posted line is labelled with what posting did with it (F15-06).
      */
     @Test
     void aChargeTypeInUseKeepsItsRuleAndLinesKeepTheirSnapshot() {
         UUID draftOnly = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000"), line("COOLING", "1200")));
         UUID leaseId = posted();
-        // Every posted line is stamped; the draft's lines are not.
-        assertThat(jdbc.queryForObject("select count(*) from lease_lines where lease_id = ? and posted_recognition is null",
-                Long.class, leaseId)).isZero();
         assertThat(jdbc.queryForObject("select count(*) from lease_lines where lease_id = ? and posted_recognition is not null",
-                Long.class, draftOnly)).isZero();
+                Long.class, draftOnly)).as("a draft's lines are not stamped").isZero();
+        assertThat(lineDtos(leaseId)).extracting(LeaseLineDTO::chargeTypeCode,
+                LeaseLineDTO::recognition, LeaseLineDTO::postedRecognition).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("RENT", "RENT_LIKE", "RENT_LIKE"),
+                org.assertj.core.groups.Tuple.tuple("PARKING_FEE", "RENT_LIKE", "RENT_LIKE"),
+                org.assertj.core.groups.Tuple.tuple("ADMIN_FEE", "ONE_OFF", "ONE_OFF"),
+                org.assertj.core.groups.Tuple.tuple("UTILITIES", "PASS_THROUGH", "PASS_THROUGH"));
 
         var parking = tx.execute(s -> chargeTypeService.list(false)).stream()
                 .filter(t -> t.code().equals("PARKING_FEE")).findFirst().orElseThrow();
@@ -270,13 +274,71 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
                 cooling.displayOrder(), com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH);
         assertThat(tx.execute(s -> chargeTypeService.update(cooling.id(), coolingPassThrough)).recognition())
                 .isEqualTo(com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH);
+        // NONE is a posted line's word for "not income", never a type's rule.
+        var toNone = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(cooling.id(), "COOLING", cooling.nameEn(),
+                cooling.nameAr(), cooling.role(), cooling.behaviour(), false, true, cooling.displayOrder(),
+                com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.NONE);
+        assertThatThrownBy(() -> tx.execute(s -> chargeTypeService.update(cooling.id(), toNone)))
+                .hasMessageContaining("NONE describes a posted deposit line");
+    }
 
-        // The line is labelled with its snapshot, not the catalogue's current value.
+    /**
+     * F15-06: a periodic fee on a lease posted under the old at-posting rule was
+     * income at posting, and a deposit is never income — at posting and in the
+     * changeset's backfill of lines posted before it.
+     */
+    @Test
+    void theSnapshotSaysWhatThePostingDidOldRuleFeesAndDeposits() {
+        UUID oldWay = postedTheOldWay();
+        assertThat(lineDtos(oldWay)).extracting(LeaseLineDTO::chargeTypeCode,
+                LeaseLineDTO::postedRecognition).contains(
+                org.assertj.core.groups.Tuple.tuple("PARKING_FEE", "ONE_OFF"),
+                org.assertj.core.groups.Tuple.tuple("UTILITIES", "PASS_THROUGH"));
+        var unit = tx.execute(s -> fixtures.createUnit(fixtures.property(), "DEP-1"));
+        UUID withDeposit = fixtures.postedLease(unit, fixtures.renter(), CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("SECURITY_DEPOSIT", "5000"), line("PARKING_FEE", "3650")),
+                4, null).lease().getId();
+        assertThat(lineDtos(withDeposit)).extracting(LeaseLineDTO::chargeTypeCode,
+                LeaseLineDTO::postedRecognition).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("RENT", "RENT_LIKE"),
+                org.assertj.core.groups.Tuple.tuple("SECURITY_DEPOSIT", "NONE"),
+                org.assertj.core.groups.Tuple.tuple("PARKING_FEE", "RENT_LIKE"));
+
+        // The backfill: wipe the stamps, run changeset 132's own UPDATE, get the same answers.
+        jdbc.update("update lease_lines set posted_recognition = null where lease_id in (?, ?)", oldWay, withDeposit);
+        jdbc.execute(backfillSql());
+        assertThat(jdbc.queryForList("select c.code || '=' || l.posted_recognition from lease_lines l"
+                + " join charge_types c on c.id = l.charge_type_id where l.lease_id = ? order by l.seq_no", String.class,
+                oldWay)).containsExactly("RENT=RENT_LIKE", "PARKING_FEE=ONE_OFF", "ADMIN_FEE=ONE_OFF", "UTILITIES=PASS_THROUGH");
+        assertThat(jdbc.queryForList("select c.code || '=' || l.posted_recognition from lease_lines l"
+                + " join charge_types c on c.id = l.charge_type_id where l.lease_id = ? order by l.seq_no", String.class,
+                withDeposit)).containsExactly("RENT=RENT_LIKE", "SECURITY_DEPOSIT=NONE", "PARKING_FEE=RENT_LIKE");
+
+        // The label comes from the snapshot, not the catalogue.
         jdbc.update("update lease_lines l set posted_recognition = 'ONE_OFF' from charge_types c "
-                + "where c.id = l.charge_type_id and c.code = 'PARKING_FEE' and l.lease_id = ?", leaseId);
-        List<LeaseLineDTO> lines = tx.execute(s -> leaseService.getLines(leaseId));
-        assertThat(lines).filteredOn(l -> "PARKING_FEE".equals(l.chargeTypeCode()))
-                .extracting(LeaseLineDTO::recognition).containsExactly("ONE_OFF");
+                + "where c.id = l.charge_type_id and c.code = 'PARKING_FEE' and l.lease_id = ?", withDeposit);
+        assertThat(lineDtos(withDeposit)).filteredOn(l -> "PARKING_FEE".equals(l.chargeTypeCode()))
+                .extracting(LeaseLineDTO::recognition, LeaseLineDTO::postedRecognition)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("RENT_LIKE", "ONE_OFF"));
+    }
+
+    private List<LeaseLineDTO> lineDtos(UUID leaseId) {
+        return tx.execute(s -> leaseService.getLines(leaseId));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String backfillSql() {
+        try (var in = ChargeRecognitionIT.class.getResourceAsStream(
+                "/db/changelog/changesets/132-lease-line-posted-recognition.yaml")) {
+            Map<String, Object> doc = new org.yaml.snakeyaml.Yaml().load(in);
+            var changeSet = (Map<String, Object>) ((List<Map<String, Object>>) doc.get("databaseChangeLog")).get(0).get("changeSet");
+            for (Map<String, Object> change : (List<Map<String, Object>>) changeSet.get("changes")) {
+                if (change.containsKey("sql")) return (String) ((Map<String, Object>) change.get("sql")).get("sql");
+            }
+            throw new IllegalStateException("no sql change in 132");
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     // ------------------------------------------------------------------

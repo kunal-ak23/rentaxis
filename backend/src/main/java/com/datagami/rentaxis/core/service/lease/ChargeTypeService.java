@@ -88,6 +88,9 @@ public class ChargeTypeService {
      */
     static ChargeRecognition recognitionOf(ChargeRecognition r, AccountRole role, ChargeBehaviour behaviour) {
         if (r == null) return defaultRecognition(role, behaviour);
+        if (r == ChargeRecognition.NONE) {
+            throw new BusinessRuleViolationException("NONE describes a posted deposit line, not a charge type's rule");
+        }
         if (behaviour != ChargeBehaviour.FEE && r != ChargeRecognition.RENT_LIKE) {
             throw new BusinessRuleViolationException("Only a FEE charge type can be " + r
                     + "; a " + behaviour + " type follows its own rule");

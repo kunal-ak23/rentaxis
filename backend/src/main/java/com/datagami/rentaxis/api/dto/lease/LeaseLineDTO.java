@@ -40,5 +40,7 @@ public record LeaseLineDTO(UUID id,
                            /* F14-18 / §4c: the charge type's recognition (RENT_LIKE | ONE_OFF | PASS_THROUGH). */
                            String recognition,
                            /* Spec §4b: the rent-free concession on this line (0 unless it is the contract's rent). */
-                           BigDecimal rentFreeAmount) {
+                           BigDecimal rentFreeAmount,
+                           /* #99 / F15-06: what posting did with the line (RENT_LIKE | ONE_OFF | PASS_THROUGH | NONE); null on a draft. */
+                           String postedRecognition) {
 }

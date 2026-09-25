@@ -27,10 +27,15 @@ package com.datagami.rentaxis.domain.entity.enums;
  * import, keeps fees as income at posting ({@link FeeTiming#AT_POSTING}).</p>
  */
 public enum ChargeRecognition {
-    RENT_LIKE, ONE_OFF, PASS_THROUGH;
+    RENT_LIKE, ONE_OFF, PASS_THROUGH,
+    /**
+     * F15-06: never a charge type's rule — only a posted line's snapshot, for a line
+     * that was not income at all (a deposit, held as a liability).
+     */
+    NONE;
 
     /** A renewal copies the line (spec §4c): everything but a one-off fee. */
     public boolean recurs() {
-        return this != ONE_OFF;
+        return this != ONE_OFF && this != NONE;
     }
 }
