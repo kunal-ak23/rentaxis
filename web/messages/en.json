@@ -2511,7 +2511,14 @@
     "bounceFlowFeeProposed": "Fee of {amount} proposed.",
     "bounceFlowDone": "Done",
     "bounceFlowLater": "Later",
-    "gridKeysHint": "Enter or the arrow keys move between cells · Ctrl+D copies the cell above · paste rows straight from Excel"
+    "gridKeysHint": "Enter or the arrow keys move between cells · Ctrl+D copies the cell above · paste rows straight from Excel",
+    "pasteBadCells": "{n, plural, one {# pasted cell was not recognised and was left as it was} other {# pasted cells were not recognised and were left as they were}}: {list}",
+    "pasteCell": "row {row} {field} “{raw}”",
+    "pasteExtraColumns": "{n, plural, one {# pasted column past the last one was ignored.} other {# pasted columns past the last one were ignored.}}",
+    "pasteExtraRows": "{n, plural, one {# pasted row is past the end of the grid.} other {# pasted rows are past the end of the grid.}}",
+    "pasteAddRows": "{n, plural, one {Add # row} other {Add # rows}}",
+    "pasteAddedRows": "{n, plural, one {# row added for the paste.} other {# rows added for the paste.}}",
+    "pasteDismiss": "Dismiss"
   },
   "Common": {
     "notOnStatement": "This entry is not on the imported statement",

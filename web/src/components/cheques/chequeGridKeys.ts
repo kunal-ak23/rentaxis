@@ -10,6 +10,10 @@ import { TYPEABLE_MODES } from "./chequeRowRules";
  * above, and rows pasted from Excel (tab-separated) fill the grid from the
  * focused cell. Shared by the lease's ChequeGrid and ChequeRowsEditor.
  *
+ * A paste never keeps an old value silently (PR #365 R1): every cell it could
+ * not read, every column past the grid's last and every row past its end is
+ * reported, and the unread cells are highlighted.
+ *
  * The grid marks its rows `data-grid-row={index}` and its editable cells
  * `data-grid-field={field}`; the handlers below work from those.
  */
@@ -22,13 +26,27 @@ type Row = { [K in GridField]?: unknown };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** A spreadsheet date: 2026-09-25, 25/09/2026, 25-09-2026, 25.09.2026 (day first, as in the UAE). */
+/** Arabic-Indic and Extended Arabic-Indic digits to ASCII; Arabic thousands/decimal/comma marks to "," "." ",". */
+export function normaliseDigits(raw: string): string {
+    return raw
+        .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06f0))
+        .replace(/٬/g, ",")
+        .replace(/٫/g, ".")
+        .replace(/،/g, ",");
+}
+
+/**
+ * A spreadsheet date: yyyy-mm-dd or dd/mm/yyyy (also with "-" or "."), day
+ * first as in the UAE. A date whose second part cannot be a month (09/25/2026)
+ * is a US-style date and is refused rather than guessed.
+ */
 export function parseDateCell(raw: string): string | null {
-    const s = raw.trim();
+    const s = normaliseDigits(raw).trim();
     let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (m) return valid(+m[1], +m[2], +m[3]);
-    m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
-    if (m) return valid(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2], +m[1]);
+    m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (m) return valid(+m[3], +m[2], +m[1]);
     return null;
 }
 function valid(y: number, mo: number, d: number): string | null {
@@ -36,12 +54,18 @@ function valid(y: number, mo: number, d: number): string | null {
     return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? `${y}-${pad(mo)}-${pad(d)}` : null;
 }
 
-/** "12,750.00", "AED 12750", "12750" → 12750; anything else → null. */
+/**
+ * An amount: "12,750.00", "12750", "AED 12,750" → 12750; the European
+ * "12.750,00" → 12750 only in that unambiguous shape (dot thousands AND a
+ * comma decimal). "12,75", "12.750", negatives and anything else → null.
+ */
 export function parseAmountCell(raw: string): number | null {
-    const s = raw.replace(/[^\d.,-]/g, "").replace(/,/g, "");
-    if (!s || !/^-?\d*\.?\d+$/.test(s)) return null;
-    const n = Math.round(Number(s) * 100) / 100;
-    return Number.isFinite(n) && n >= 0 ? n : null;
+    const s = normaliseDigits(raw).replace(/aed|dhs?|د\.إ/gi, "").replace(/\s/g, "");
+    let n: number | null = null;
+    if (/^\d+(\.\d{1,2})?$/.test(s)) n = Number(s);
+    else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s)) n = Number(s.replace(/,/g, ""));
+    else if (/^\d{1,3}(\.\d{3})+,\d{1,2}$/.test(s)) n = Number(s.replace(/\./g, "").replace(",", "."));
+    return n === null || !Number.isFinite(n) ? null : Math.round(n * 100) / 100;
 }
 
 /** Tab-separated rows as Excel and Sheets put them on the clipboard. */
@@ -50,59 +74,86 @@ export function parseClipboardGrid(text: string): string[][] {
     return lines.map(l => l.split("\t"));
 }
 
-/** A pasted cell's value for `field`, or undefined to leave the cell as it is. */
-export function cellValue(field: GridField, raw: string, modeLabel: (m: ChequeMode) => string): unknown {
+type CellRead = { ok: true; value: unknown } | { ok: false } | { ok: "blank" };
+
+/** A pasted cell's value for `field`; a blank cell writes nothing and is not an error. */
+export function cellValue(field: GridField, raw: string, modeLabel: (m: ChequeMode) => string): CellRead {
     const s = raw.trim();
+    if (!s) return field === "chequeNumber" || field === "payeeBank" || field === "narration" ? { ok: true, value: "" } : { ok: "blank" };
     switch (field) {
         case "postingDate":
-        case "chequeDate":
-            return parseDateCell(s) ?? undefined;
+        case "chequeDate": {
+            const d = parseDateCell(s);
+            return d ? { ok: true, value: d } : { ok: false };
+        }
         case "amount":
-        case "vatAmount":
-            return parseAmountCell(s) ?? undefined;
+        case "vatAmount": {
+            const n = parseAmountCell(s);
+            return n === null ? { ok: false } : { ok: true, value: n };
+        }
         case "mode": {
             const hit = TYPEABLE_MODES.find(m => m.toLowerCase() === s.toLowerCase() || modeLabel(m).toLowerCase() === s.toLowerCase());
-            return hit ?? undefined;
+            return hit ? { ok: true, value: hit } : { ok: false };
         }
         case "debitAccountId":
-            // An account is picked from the chart, not typed: a pasted column here is skipped.
-            return undefined;
+            // An account is picked from the chart, not typed: a pasted value here is reported, not applied.
+            return { ok: false };
+        case "chequeNumber":
+            return { ok: true, value: normaliseDigits(s) };
         default:
-            return s;
+            return { ok: true, value: s };
     }
+}
+
+export type PasteIssue = { row: number; field: GridField; raw: string };
+export interface PasteOutcome<R> {
+    rows: R[];
+    /** Cells not written (unreadable, or the account column); their old value stays and they are highlighted. */
+    issues: PasteIssue[];
+    /** Columns past the grid's last field, ignored. */
+    extraColumns: number;
+    /** Pasted rows past the grid's end that were not added (the grid could not, or was not asked to, grow). */
+    extraRows: number;
+    /** Rows added to hold the paste. */
+    addedRows: number;
 }
 
 /**
  * Writes a pasted block into `rows` from (`startRow`, `startField`) along the
- * grid's column order. Rows past the end are added with `addRow` when the grid
- * can grow, and dropped when it cannot. `withValue` lets a grid attach side
- * effects to a write (a new amount clears that row's VAT on the lease grid).
+ * grid's column order. Rows past the end are added with `addRow` when given,
+ * otherwise counted in `extraRows`. `withValue` lets a grid attach side effects
+ * to a write (a new amount clears that row's VAT on the lease grid).
  */
 export function pasteIntoRows<R extends Row>(
     rows: R[], grid: string[][], startRow: number, startField: GridField, fields: GridField[],
     modeLabel: (m: ChequeMode) => string,
     addRow?: (index: number) => R,
     withValue: (row: R, field: GridField, value: unknown) => R = (row, field, value) => ({ ...row, [field]: value }),
-): R[] {
+): PasteOutcome<R> {
     const out = [...rows];
     const col0 = fields.indexOf(startField);
-    if (col0 < 0) return rows;
+    const outcome: PasteOutcome<R> = { rows: out, issues: [], extraColumns: 0, extraRows: 0, addedRows: 0 };
+    if (col0 < 0) return { ...outcome, rows };
     grid.forEach((cells, dr) => {
         const r = startRow + dr;
+        const extra = cells.slice(fields.length - col0).filter(c => c.trim()).length;
+        outcome.extraColumns = Math.max(outcome.extraColumns, extra);
         if (r >= out.length) {
-            if (!addRow) return;
+            if (!addRow) { outcome.extraRows++; return; }
             out.push(addRow(r));
+            outcome.addedRows++;
         }
         let row = out[r];
         cells.forEach((raw, dc) => {
             const field = fields[col0 + dc];
             if (!field) return;
-            const value = cellValue(field, raw, modeLabel);
-            if (value !== undefined) row = withValue(row, field, value);
+            const read = cellValue(field, raw, modeLabel);
+            if (read.ok === true) row = withValue(row, field, read.value);
+            else if (read.ok === false) outcome.issues.push({ row: r, field, raw: raw.trim() });
         });
         out[r] = row;
     });
-    return out;
+    return outcome;
 }
 
 function cellInput(root: HTMLElement, row: number, field: string): HTMLInputElement | HTMLSelectElement | null {
@@ -117,6 +168,9 @@ function focusCell(root: HTMLElement, row: number, field: string): boolean {
     return true;
 }
 
+/** Where a paste started, so a grid can re-apply it (e.g. after the user agrees to add rows). */
+export type PasteRequest = { grid: string[][]; startRow: number; startField: GridField };
+
 type Opts<R extends Row> = {
     rows: R[];
     fields: GridField[];
@@ -124,10 +178,12 @@ type Opts<R extends Row> = {
     modeLabel: (m: ChequeMode) => string;
     addRow?: (index: number) => R;
     withValue?: (row: R, field: GridField, value: unknown) => R;
+    /** Every paste's outcome, for the grid's status line and highlights. */
+    onPasted?: (outcome: PasteOutcome<R>, request: PasteRequest) => void;
 };
 
 /** Handlers for the grid's `<table>`: `onKeyDown` and `onPaste`. */
-export function chequeGridHandlers<R extends Row>({ rows, fields, onChange, modeLabel, addRow, withValue }: Opts<R>) {
+export function chequeGridHandlers<R extends Row>({ rows, fields, onChange, modeLabel, addRow, withValue, onPasted }: Opts<R>) {
     const at = (target: EventTarget | null) => {
         const el = target as HTMLElement | null;
         const cell = el?.closest?.("[data-grid-field]") as HTMLElement | null;
@@ -185,7 +241,10 @@ export function chequeGridHandlers<R extends Row>({ rows, fields, onChange, mode
         // A single value pastes into the cell the ordinary way.
         if (!/[\t\n]/.test(text.replace(/\r?\n$/, ""))) return;
         e.preventDefault();
-        onChange(pasteIntoRows(rows, parseClipboardGrid(text), pos.row, pos.field, fields, modeLabel, addRow, write));
+        const request: PasteRequest = { grid: parseClipboardGrid(text), startRow: pos.row, startField: pos.field };
+        const outcome = pasteIntoRows(rows, request.grid, pos.row, pos.field, fields, modeLabel, addRow, write);
+        onChange(outcome.rows);
+        onPasted?.(outcome, request);
     };
 
     return { onKeyDown, onPaste };
