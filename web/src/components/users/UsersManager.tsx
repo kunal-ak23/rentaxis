@@ -13,8 +13,9 @@ import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
-const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] =
-    PROVISIONABLE_ROLES.map((value) => ({ value, label: getRoleLabel(value) }));
+// Labels come from the Roles catalogue at render time (roleLabel below), so the
+// picker says what the rest of the app says ("Company user", not "Tenant").
+const ALL_ROLE_VALUES: UserRole[] = PROVISIONABLE_ROLES;
 
 type User = {
     id: string; name: string; email: string; role: string; tenantId: string;
@@ -40,6 +41,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
     const t = useTranslations("Index"); // Or custom namespace
     const tInv = useTranslations("Invites");
+    const tU = useTranslations("UsersAdmin");
     const { data: session } = useSession();
     const currentRole = session?.user?.role as UserRole | undefined;
     const currentTenantId = (session?.user?.tenantId as string | undefined) || "";
@@ -76,7 +78,8 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // window (currentRole undefined) and editing a user whose existing role
     // (e.g. RENTER) isn't normally provisionable from this page.
     const roleOptions = (() => {
-        const allowed = ALL_ROLE_OPTIONS.filter((o) => assignableRoles(currentRole).includes(o.value));
+        const allowed = ALL_ROLE_VALUES.filter((v) => assignableRoles(currentRole).includes(v))
+            .map((value) => ({ value, label: roleLabel(value) }));
         if (role && !allowed.some((o) => o.value === role)) {
             return [...allowed, { value: role as UserRole, label: roleLabel(role) }];
         }
@@ -185,7 +188,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setFormError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
+            setFormError(e instanceof ApiError ? e.message : tU("genericError"));
         } finally {
             setSubmitting(false);
         }
@@ -201,7 +204,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setDeleteError(e instanceof ApiError ? e.message : "Failed to delete the user. Please try again.");
+            setDeleteError(e instanceof ApiError ? e.message : tU("deleteFailed"));
         } finally {
             setDeleting(false);
             setDeleteDialogOpen(false);
@@ -261,14 +264,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             <div className="flex items-center justify-between mb-8">
                 <div>
                     <Heading className="mb-1">{tNav("users")}</Heading>
-                    <p className="text-sm text-muted">View and provision system-wide users across all tenants.</p>
+                    <p className="text-sm text-muted">{isSuperAdmin ? tU("subtitleSuperAdmin") : tU("subtitle")}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="relative group">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                         <input
                             type="text"
-                            placeholder="Search users..."
+                            placeholder={tU("searchPlaceholder")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             className="w-64 border border-border rounded-lg bg-surface text-foreground p-2.5 pl-9 text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 font-medium shadow-sm shadow-black/[0.02]"
@@ -279,7 +282,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                         className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2"
                     >
                         <Plus size={14} />
-                        New User
+                        {tU("newUser")}
                     </button>
                 </div>
             </div>
@@ -290,7 +293,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                     <span>{deleteError}</span>
                     <button
                         onClick={() => setDeleteError(null)}
-                        aria-label="Dismiss"
+                        aria-label={tU("dismiss")}
                         className="text-error hover:text-error/70 transition-colors cursor-pointer shrink-0"
                     >
                         <X size={14} />
@@ -319,9 +322,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 <div className="w-16 h-16 bg-input rounded-xl flex items-center justify-center mx-auto mb-6 border border-border/50">
                                     <Users className="w-8 h-8 text-muted" />
                                 </div>
-                                <h3 className="text-base font-bold text-foreground mb-2">No users found</h3>
+                                <h3 className="text-base font-bold text-foreground mb-2">{tU("noUsersTitle")}</h3>
                                 <p className="text-xs text-muted max-w-sm mx-auto font-medium">
-                                    No users have been registered in the system yet. Click "New User" to add one.
+                                    {tU("noUsersBody")}
                                 </p>
                             </div>
                         ) : (
@@ -329,12 +332,12 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="border-b border-border">
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">Name</th>
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">Email</th>
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">Phone</th>
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">Role</th>
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">Tenant ID</th>
-                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2 text-right">Actions</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colName")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colEmail")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colPhone")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colRole")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colOrganisationId")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2 text-right">{tU("colActions")}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-xs font-medium text-foreground">
@@ -350,11 +353,11 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                                             u.role === 'TENANT_ADMIN' ? "bg-accent/20 text-accent-foreground border border-accent/30" :
                                                                 "bg-input text-foreground border border-border"
                                                     )}>
-                                                        {u.role.replace('_', ' ')}
+                                                        {roleLabel(u.role)}
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-2 text-muted font-mono text-[10px] truncate max-w-[120px]">
-                                                    {u.tenantId || "N/A"}
+                                                    {u.tenantId || tU("notAvailable")}
                                                 </td>
                                                 <td className="py-4 px-2 text-right">
                                                     <div className="flex justify-end gap-2">
@@ -363,13 +366,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                                             onClick={() => handleEdit(u)}
                                                             className="text-xs px-3 py-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                         >
-                                                            Edit
+                                                            {tU("edit")}
                                                         </button>
                                                         <button
                                                             onClick={() => handleDeleteClick(u.id)}
                                                             className="text-xs px-3 py-1.5 bg-error/10 text-error rounded-lg hover:bg-error/20 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                         >
-                                                            Delete
+                                                            {tU("delete")}
                                                         </button>
                                                     </div>
                                                 </td>
@@ -399,13 +402,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                         <div className="flex items-center justify-between p-6 border-b border-border">
                             <div>
                                 <h2 className="text-lg font-bold mb-1 text-foreground leading-tight">
-                                    {editingUserId ? "Edit User" : "Provision New User"}
+                                    {editingUserId ? tU("editUser") : tU("provisionNewUser")}
                                 </h2>
-                                <p className="text-[11px] font-medium text-muted uppercase tracking-wider">System Administration</p>
+                                <p className="text-[11px] font-medium text-muted uppercase tracking-wider">{isSuperAdmin ? tU("systemAdministration") : tU("organisationUsers")}</p>
                             </div>
                             <button
                                 onClick={() => setShowForm(false)}
-                                aria-label="Close"
+                                aria-label={tU("close")}
                                 className="w-8 h-8 bg-input rounded-lg flex items-center justify-center text-muted hover:bg-input/80 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             >
                                 <X size={16} />
@@ -415,36 +418,36 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                         <div className="p-6 flex-1 overflow-y-auto">
                             <form id="user-form" onSubmit={handleSubmitUser} className="space-y-4">
                                 <div>
-                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Full Name</label>
+                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("fullName")}</label>
                                     <input
                                         type="text"
                                         required
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
-                                        placeholder="e.g. Acme Corp Admin"
+                                        placeholder={tU("fullNamePlaceholder")}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Email Address</label>
+                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("email")}</label>
                                     <input
                                         type="email"
                                         required
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
-                                        placeholder="e.g. admin@acmecorp.com"
+                                        placeholder={tU("emailPlaceholder")}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Phone Number</label>
+                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("phone")}</label>
                                     <input
                                         type="tel"
                                         required={role === "SECURITY_GUARD"}
                                         value={phoneNumber}
                                         onChange={(e) => setPhoneNumber(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
-                                        placeholder="e.g. +971 50 123 4567"
+                                        placeholder={tU("phonePlaceholder")}
                                     />
                                 </div>
                                 {!editingUserId && !PASSWORD_ON_CREATE_ROLES.has(role) ? (
@@ -457,7 +460,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 ) : (
                                 <div>
                                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">
-                                        Password {editingUserId && "(Leave blank to keep unchanged)"}
+                                        {tU("password")} {editingUserId && tU("passwordKeepHint")}
                                     </label>
                                     {!editingUserId && (
                                         <p className="text-[10px] text-muted mb-2 ml-1">{tInv("passwordRequired")}</p>
@@ -468,12 +471,12 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
-                                        placeholder={editingUserId ? "Leave blank to keep current" : "Secure password"}
+                                        placeholder={editingUserId ? tU("passwordKeepPlaceholder") : tU("passwordPlaceholder")}
                                     />
                                 </div>
                                 )}
                                 <div>
-                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Role</label>
+                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("role")}</label>
                                     <select
                                         value={role}
                                         onChange={(e) => setRole(e.target.value)}
@@ -486,13 +489,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 </div>
                                 {role === 'PROPERTY_MANAGER' && (
                                     <div className="space-y-3">
-                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1 ml-1">Assign Properties</label>
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1 ml-1">{tU("assignProperties")}</label>
                                         <div className="flex flex-wrap gap-2 p-2 bg-input border border-border rounded-lg min-h-[44px]">
                                             {selectedPropertyIds.map(id => {
                                                 const p = properties.find(prop => prop.property.id === id);
                                                 return (
                                                     <div key={id} className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-primary/20">
-                                                        {p?.property.nameEn || "Property"}
+                                                        {p?.property.nameEn || tU("propertyFallback")}
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedPropertyIds(prev => prev.filter(i => i !== id))}
@@ -513,14 +516,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                                 }}
                                                 className="bg-transparent text-[10px] font-bold text-foreground focus:outline-none flex-1 min-w-[100px] cursor-pointer"
                                             >
-                                                <option value="" disabled>Add property...</option>
+                                                <option value="" disabled>{tU("addProperty")}</option>
                                                 {properties.map((p) => (
                                                     <option
                                                         key={p.property.id}
                                                         value={p.property.id}
                                                         className={selectedPropertyIds.includes(p.property.id) ? "text-muted" : ""}
                                                     >
-                                                        {p.property.nameEn || p.property.nameAr || "Unnamed Property"}
+                                                        {p.property.nameEn || p.property.nameAr || tU("unnamedProperty")}
                                                     </option>
                                                 ))}
                                             </select>
@@ -529,13 +532,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 )}
                                 {isSuperAdmin ? (
                                     <div>
-                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Tenant (Organization)</label>
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("organisation")}</label>
                                         <select
                                             value={tenantId}
                                             onChange={(e) => setTenantId(e.target.value)}
                                             className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                         >
-                                            <option value="">None (Super Admin Context)</option>
+                                            <option value="">{tU("noOrganisation")}</option>
                                             {tenants.map((t) => (
                                                 <option key={t.id} value={t.id}>{t.name}</option>
                                             ))}
@@ -545,9 +548,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                     // Tenant admins can only provision within their own tenant; the
                                     // field is shown read-only and the server enforces the same scope.
                                     <div>
-                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Tenant (Organization)</label>
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">{tU("organisation")}</label>
                                         <div className="w-full border border-border rounded-lg bg-input text-muted p-3 text-xs font-medium">
-                                            {tenants.find((t) => t.id === (tenantId || currentTenantId))?.name || "Your organization"}
+                                            {tenants.find((t) => t.id === (tenantId || currentTenantId))?.name || tU("yourOrganisation")}
                                         </div>
                                     </div>
                                 )}
@@ -567,7 +570,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 className="w-full py-3 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
-                                {editingUserId ? "Update User" : "Provision User"}
+                                {editingUserId ? tU("updateUser") : tU("provisionUser")}
                             </button>
                         </div>
                     </div>
@@ -579,9 +582,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                 isOpen={deleteDialogOpen}
                 onClose={() => setDeleteDialogOpen(false)}
                 onConfirm={confirmDelete}
-                title="Delete User"
-                description="Are you sure you want to delete this user? This action cannot be undone and will permanently remove the user from the system."
-                confirmText="Delete User"
+                title={tU("deleteTitle")}
+                description={tU("deleteDescription")}
+                confirmText={tU("deleteConfirm")}
                 isDestructive={true}
                 isLoading={deleting}
             />

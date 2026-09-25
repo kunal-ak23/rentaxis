@@ -1831,7 +1831,7 @@
     "SECURITY_GUARD": "حارس الأمن",
     "SUPER_ADMIN": "مدير النظام",
     "TENANT_ADMIN": "مدير المؤسسة",
-    "TENANT_USER": "مستخدم المؤسسة"
+    "TENANT_USER": "مستخدم الشركة"
   },
   "Ledger": {
     "interPropertyRepairCancel": "إلغاء",
@@ -2589,7 +2589,8 @@
     "deleteTenantMismatch": "الاسم غير مطابق.",
     "deleteTenantTitle": "حذف {name}؟",
     "deleteTenantWarning": "سيؤدي هذا إلى حذف المؤسسة وكل سجلاتها نهائياً — العقارات والوحدات وعقود الإيجار والمدفوعات والتذاكر والمستندات والملفات المرفوعة. لا يمكن التراجع عن هذا الإجراء.",
-    "deleting": "جارٍ الحذف…"
+    "deleting": "جارٍ الحذف…",
+    "organisationsTitle": "المؤسسات"
   },
   "Recognition": {
     "title": "إثبات الإيراد لنهاية الشهر",
@@ -4351,5 +4352,53 @@
     "selectProperty": "اختر عقاراً",
     "onlineSaved": "تم الحفظ.",
     "onlineSaveFailed": "تعذر حفظ إعداد الدفع الإلكتروني."
+  },
+  "UsersAdmin": {
+    "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+    "deleteFailed": "تعذر حذف المستخدم. يرجى المحاولة مرة أخرى.",
+    "subtitleSuperAdmin": "عرض المستخدمين وإنشاؤهم في جميع المؤسسات.",
+    "subtitle": "عرض مستخدمي مؤسستك وإنشاؤهم.",
+    "searchPlaceholder": "ابحث عن المستخدمين...",
+    "newUser": "مستخدم جديد",
+    "dismiss": "إخفاء",
+    "noUsersTitle": "لا يوجد مستخدمون",
+    "noUsersBody": "لم يُسجَّل أي مستخدم بعد. انقر «مستخدم جديد» لإضافة مستخدم.",
+    "colName": "الاسم",
+    "colEmail": "البريد الإلكتروني",
+    "colPhone": "الهاتف",
+    "colRole": "الدور",
+    "colOrganisationId": "معرّف المؤسسة",
+    "colActions": "الإجراءات",
+    "notAvailable": "غير متوفر",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "editUser": "تعديل المستخدم",
+    "provisionNewUser": "إنشاء مستخدم جديد",
+    "systemAdministration": "إدارة النظام",
+    "organisationUsers": "مستخدمو المؤسسة",
+    "close": "إغلاق",
+    "fullName": "الاسم الكامل",
+    "fullNamePlaceholder": "مثال: مدير شركة أكمي",
+    "email": "البريد الإلكتروني",
+    "emailPlaceholder": "مثال: admin@acmecorp.com",
+    "phone": "رقم الهاتف",
+    "phonePlaceholder": "مثال: 4567 123 50 971+",
+    "password": "كلمة المرور",
+    "passwordKeepHint": "(اتركها فارغة للإبقاء عليها)",
+    "passwordKeepPlaceholder": "اتركها فارغة للإبقاء على الحالية",
+    "passwordPlaceholder": "كلمة مرور آمنة",
+    "role": "الدور",
+    "assignProperties": "تعيين العقارات",
+    "propertyFallback": "عقار",
+    "addProperty": "إضافة عقار...",
+    "unnamedProperty": "عقار بدون اسم",
+    "organisation": "المؤسسة",
+    "noOrganisation": "بلا (سياق مدير النظام)",
+    "yourOrganisation": "مؤسستك",
+    "updateUser": "تحديث المستخدم",
+    "provisionUser": "إنشاء المستخدم",
+    "deleteTitle": "حذف المستخدم",
+    "deleteDescription": "هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء وسيُزال المستخدم نهائياً من النظام.",
+    "deleteConfirm": "حذف المستخدم"
   }
 }

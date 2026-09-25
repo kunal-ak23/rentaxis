@@ -12,9 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: "SUPER_ADMIN", tenantId: "" } } }),
 }));
-vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
-}));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
+import en from "../../../../../../messages/en.json";
 
 import SuperAdminUsersPage from "../page";
 
@@ -152,7 +151,7 @@ describe("SuperAdminUsersPage", () => {
 
         fireEvent.click(await screen.findByText("New User"));
         expect(screen.queryByPlaceholderText("Secure password")).toBeNull();
-        expect(screen.getByText("passwordNotNeeded")).toBeTruthy();
+        expect(screen.getByText(en.Invites.passwordNotNeeded)).toBeTruthy();
         fireEvent.change(screen.getByPlaceholderText("e.g. Acme Corp Admin"), { target: { value: "New User" } });
         fireEvent.change(screen.getByPlaceholderText("e.g. admin@acmecorp.com"), { target: { value: "new@x.com" } });
         fireEvent.click(screen.getByText("Provision User"));
@@ -166,10 +165,10 @@ describe("SuperAdminUsersPage", () => {
         render(<SuperAdminUsersPage />);
 
         fireEvent.click(await screen.findByText("New User"));
-        fireEvent.change(screen.getByDisplayValue("Tenant"), { target: { value: "SECURITY_GUARD" } });
+        fireEvent.change(screen.getByDisplayValue(en.Roles.TENANT_USER), { target: { value: "SECURITY_GUARD" } });
 
-        expect(screen.getByTestId("user-password-hint").textContent).toBe("guardSignsInByPhone");
-        expect(screen.queryByText("passwordNotNeeded")).toBeNull();
+        expect(screen.getByTestId("user-password-hint").textContent).toBe(en.Invites.guardSignsInByPhone);
+        expect(screen.queryByText(en.Invites.passwordNotNeeded)).toBeNull();
         expect((screen.getByPlaceholderText("e.g. +971 50 123 4567") as HTMLInputElement).required).toBe(true);
     });
 
@@ -177,7 +176,7 @@ describe("SuperAdminUsersPage", () => {
         render(<SuperAdminUsersPage />);
 
         fireEvent.click(await screen.findByText("New User"));
-        fireEvent.change(screen.getByDisplayValue("Tenant"), { target: { value: "SUPER_ADMIN" } });
+        fireEvent.change(screen.getByDisplayValue(en.Roles.TENANT_USER), { target: { value: "SUPER_ADMIN" } });
 
         expect(screen.getByPlaceholderText("Secure password")).toBeTruthy();
     });
@@ -185,16 +184,16 @@ describe("SuperAdminUsersPage", () => {
     it("resends a pending invite for that user after a confirm, then reloads the list", async () => {
         const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
         render(<SuperAdminUsersPage />);
-        const button = await screen.findByText("resend");
+        const button = await screen.findByText(en.Invites.resend);
         const listCalls = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
             .filter(c => String(c[0]).endsWith("/admin/users") && !(c[1] as RequestInit | undefined)?.method).length;
         const before = listCalls();
 
         fireEvent.click(button);
 
-        expect(confirm).toHaveBeenCalledWith("resendConfirm");
+        expect(confirm).toHaveBeenCalledWith(en.Invites.resendConfirm);
         await waitFor(() => expect(resendUrls).toEqual([`/api/proxy/admin/users/${PM_ID}/resend-invite`]));
-        expect(await screen.findByText("resent")).toBeTruthy();
+        expect(await screen.findByText(en.Invites.resent)).toBeTruthy();
         await waitFor(() => expect(listCalls()).toBeGreaterThan(before));
     });
 
@@ -202,10 +201,29 @@ describe("SuperAdminUsersPage", () => {
         vi.spyOn(window, "confirm").mockReturnValue(false);
         render(<SuperAdminUsersPage />);
 
-        fireEvent.click(await screen.findByText("resend"));
+        fireEvent.click(await screen.findByText(en.Invites.resend));
 
         await new Promise(r => setTimeout(r, 20));
         expect(resendUrls).toEqual([]);
-        expect(screen.queryByText("resent")).toBeNull();
+        expect(screen.queryByText(en.Invites.resent)).toBeNull();
+    });
+});
+
+describe("labels (PR #363 R1): the org is the Organisation, the role picker speaks the app's terms", () => {
+    it("offers TENANT_USER as 'Company user', never as 'Tenant', and names the org column and field Organisation", async () => {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            const body = url.includes("/admin/users") ? [pmUser] : [];
+            return { ok: true, status: 200, json: async () => body } as unknown as Response;
+        }) as unknown as typeof fetch;
+        render(<SuperAdminUsersPage />);
+        expect(await screen.findByText(en.UsersAdmin.colOrganisationId)).toBeTruthy();
+        expect(screen.queryByText("Tenant ID")).toBeNull();
+        fireEvent.click(screen.getByText(en.UsersAdmin.newUser));
+        const options = Array.from(document.querySelectorAll("option")).map(o => o.textContent);
+        expect(options).toContain("Company user");
+        expect(options).not.toContain("Tenant");
+        expect(screen.getByText(en.UsersAdmin.organisation)).toBeTruthy();
+        expect(screen.queryByText("Tenant (Organization)")).toBeNull();
     });
 });

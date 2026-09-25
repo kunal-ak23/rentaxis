@@ -15,7 +15,7 @@ export const TERMS: Record<string, { en: string; ar: string }> = {
     // Organisation, never "Tenant"
     "Navigation.tenants": { en: "Organisations", ar: "المؤسسات" },
     "Roles.TENANT_ADMIN": { en: "Company Admin", ar: "مدير المؤسسة" },
-    "Roles.TENANT_USER": { en: "Company User", ar: "مستخدم المؤسسة" },
+    "Roles.TENANT_USER": { en: "Company user", ar: "مستخدم الشركة" },
     "Ledger.tenantWide": { en: "Company-wide", ar: "على مستوى المؤسسة" },
     "Ledger.defaultAccountsDesc": { en: "Company-wide accounts used when a property has no mapping.", ar: "الحسابات على مستوى المؤسسة تُستخدم عندما لا يوجد ربط للعقار." },
     // Renter → Tenant, Lease → Tenancy Contract
