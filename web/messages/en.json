@@ -2484,6 +2484,8 @@
         "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
+        "collectionClosed": "This charge's collection row is closed; it cannot be reversed.",
+        "collected": "This charge was already collected; issue a refund or credit instead.",
         "writtenOff": "This charge was written off as a bad debt; reverse the write-off first.",
         "vatOnNonVatLease": "This lease carries no VAT, so the charge cannot either.",
         "reverseBeforeCharge": "A reversal cannot be dated before the penalty was charged ({charged})."
