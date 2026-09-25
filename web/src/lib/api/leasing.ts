@@ -479,6 +479,29 @@ export type ReductionPreview = {
   problems: { code: string | null; message: string; args: Record<string, unknown> | null }[];
 };
 
+/** F14-39: LeaseAssignmentDTO — a lease handed to another renter; balances/overdue filled on a draft. */
+export type LeaseAssignment = {
+  id: string;
+  leaseId: string;
+  fromRenterId: string;
+  fromRenterName: string | null;
+  toRenterId: string;
+  toRenterName: string | null;
+  effectiveDate: string;
+  reason: string | null;
+  takeOverOverdue: boolean;
+  status: "DRAFT" | "POSTED" | "CANCELLED";
+  journalId: string | null;
+  journalNumber: string | null;
+  createdAt: string;
+  postedAt: string | null;
+  balances: { accountId: string; accountCode: string | null; accountName: string | null; accountNameAr: string | null; amount: number }[];
+  overdue: { chequeId: string; seqNo: number; chequeNumber: string | null; chequeDate: string | null; status: string; amount: number }[];
+  chequesMoving: number;
+};
+
+export type AssignLeaseInput = { toRenterId: string; effectiveDate: string; reason: string; takeOverOverdue?: boolean | null };
+
 /** AddendumResponse. */
 export type AddendumResponse = { addendum: LeaseAddendum; posting: PostLeaseResponse };
 
@@ -1292,6 +1315,13 @@ export const leaseApi = {
   reductionPreview: (id: string, body: ReduceLeaseInput) =>
     send<ReductionPreview>("POST", `/leases/${id}/reductions/preview`, body),
   reduce: (id: string, body: ReduceLeaseInput) => send<AddendumResponse>("POST", `/leases/${id}/reductions`, body),
+  assignments: (id: string) => get<LeaseAssignment[]>(`/leases/${id}/assignments`),
+  draftAssignment: (id: string, body: AssignLeaseInput) => send<LeaseAssignment>("POST", `/leases/${id}/assignments`, body),
+  postAssignment: (id: string, assignmentId: string, takeOverOverdue?: boolean) =>
+    send<LeaseAssignment>("POST", `/leases/${id}/assignments/${assignmentId}/post`, { takeOverOverdue: !!takeOverOverdue }),
+  cancelAssignment: (id: string, assignmentId: string) =>
+    send<void>("DELETE", `/leases/${id}/assignments/${assignmentId}`),
+  renterOptions: () => get<{ id: string; nameEn: string; nameAr?: string | null }[]>(`/renters`),
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),

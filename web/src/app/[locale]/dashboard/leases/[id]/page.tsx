@@ -29,6 +29,7 @@ import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import AddChargeDialog from "@/components/leases/AddChargeDialog";
 import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
+import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -854,6 +855,8 @@ export default function LeaseDetailPage() {
                         {(addenda.length > 0 || canExtend) && (
                             <LeaseAddendaPanel leaseId={lease.id} addenda={addenda} canRecordEjari={canExtend} onChanged={loadLease} />
                         )}
+                        {/* F14-39: hand the lease to another renter. */}
+                        <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
                     </div>
                 )}
 

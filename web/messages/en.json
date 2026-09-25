@@ -2156,6 +2156,27 @@
       "creditTotal": "Off the renter's account",
       "gap": "Still to settle by cheques",
       "failed": "The credit addendum could not be posted."
+    },
+    "assignment": {
+      "title": "Assignment to another renter",
+      "start": "Assign to another renter",
+      "toRenter": "New renter",
+      "chooseRenter": "Choose the renter taking over",
+      "reason": "Reason",
+      "reasonHint": "e.g. death of the tenant, company novation",
+      "takeOver": "The new renter takes on anything overdue",
+      "draft": "Create draft",
+      "pending": "Assignment pending: {from} → {to} from {date}",
+      "moves": "Posting moves from the outgoing renter's account",
+      "dr": "Dr <n>{amount}</n>",
+      "cr": "Cr <n>{amount}</n>",
+      "cheques": "{count} open instalment(s) move to the new renter; the drawer stays as written on the cheque.",
+      "overdue": "Overdue on the outgoing renter",
+      "takenOver": "The new renter takes these on.",
+      "post": "Post assignment",
+      "delete": "Delete draft",
+      "posted": "Assigned from {from} to {to} on {date} ({journal})",
+      "failed": "The assignment could not be saved."
     }
   },
   "VatSchedule": {
@@ -2406,7 +2427,11 @@
         "reductionNotScheduled": "Line {line} ({code}) has nothing left to earn from the effective date (a one-off fee, a fee taken to income at posting, or a charge whose period has ended), so it cannot be reduced.",
         "reductionChequeGap": "The cheques handed back ({returned}) less the replacements ({replaced}) must come to the credit of {credit}; they are {gap} {direction, select, short {short} other {over}}.",
         "reductionChequeNotReturnable": "Instalment {row} cannot be handed back: only an uncleared, undeposited rent or fee instalment can.",
-        "amendAfterCredit": "This lease has a credit addendum, so its lines can no longer be amended; post a further addendum instead."
+        "amendAfterCredit": "This lease has a credit addendum, so its lines can no longer be amended; post a further addendum instead.",
+        "assignmentOverdue": "{from} has {count} overdue instalment(s) on this lease ({amount}). Confirm that {to} takes them on, or collect them first.",
+        "assignmentSameRenter": "The lease already belongs to {renter}.",
+        "assignmentReason": "Say why the lease changes hands.",
+        "assignmentDraftExists": "This lease already has a draft assignment; post or delete it first."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
