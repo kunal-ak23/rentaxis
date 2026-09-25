@@ -86,6 +86,67 @@ public class UnitService {
                 u -> u.getProperty() != null ? u.getProperty().getId() : null));
     }
 
+    private static final org.springframework.data.domain.Sort UNIT_ORDER = org.springframework.data.domain.Sort.by(
+            org.springframework.data.domain.Sort.Order.asc("property.nameEn"),
+            org.springframework.data.domain.Sort.Order.asc("unitNumber"),
+            org.springframework.data.domain.Sort.Order.asc("id"));
+
+    /**
+     * {@code GET /units/paged} (scale P1-3): the same rows as {@code GET /units} — occupancy
+     * filled, property and building on each — filtered, searched and paged in the database.
+     * A property manager sees their buildings only; naming another building is an empty page.
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Unit> searchPaged(String q, UUID propertyId,
+            com.datagami.rentaxis.domain.entity.enums.UnitStatus status, String floor, int page, int size) {
+        org.springframework.data.domain.Pageable pageable = com.datagami.rentaxis.core.util.Search.page(page, size, UNIT_ORDER);
+        if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
+            return org.springframework.data.domain.Page.empty(pageable);
+        }
+        List<UUID> scoped = propertyScope.scopedPropertyIds();
+        org.springframework.data.domain.Page<Unit> rows = repository.searchPaged(
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), propertyId, status,
+                floor == null || floor.isBlank() ? null : floor.trim() + "%",
+                com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
+        withOccupancy(rows.getContent());
+        return rows;
+    }
+
+    /** {@code GET /units/search} (scale P1-6): the first {@code limit} matches for a picker. */
+    @Transactional(readOnly = true)
+    public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> search(String q, UUID propertyId, int limit) {
+        if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
+            return List.of();
+        }
+        List<UUID> scoped = propertyScope.scopedPropertyIds();
+        return repository.searchPaged(com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), propertyId,
+                        null, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                        com.datagami.rentaxis.core.util.Search.scopeIds(scoped),
+                        org.springframework.data.domain.PageRequest.of(0, com.datagami.rentaxis.core.util.Search.limit(limit), UNIT_ORDER))
+                .getContent().stream().map(UnitService::option).toList();
+    }
+
+    /** {@code GET /units/names} (scale P1-6): the named units the caller may see, at most 200 ids. */
+    @Transactional(readOnly = true)
+    public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> names(List<UUID> ids) {
+        List<UUID> wanted = com.datagami.rentaxis.core.util.Search.names(ids);
+        if (wanted.isEmpty()) return List.of();
+        List<UUID> scoped = propertyScope.scopedPropertyIds();
+        return repository.findNamed(com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), wanted,
+                        scoped == null, com.datagami.rentaxis.core.util.Search.scopeIds(scoped))
+                .stream().map(UnitService::option).toList();
+    }
+
+    private static com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO option(Unit u) {
+        Property p = u.getProperty();
+        Building b = u.getBuilding();
+        return new com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO(u.getId(), u.getUnitNumber(),
+                p == null ? null : p.getId(), p == null ? null : p.getNameEn(),
+                b == null ? null : b.getId(), b == null ? null : b.getNameEn(),
+                u.getStatus() == null ? null : u.getStatus().name());
+    }
+
     /**
      * F14-01: fills each unit's date-based occupancy from its posted leases, in one
      * query. A lease posted today for next month reserves the unit; it occupies it

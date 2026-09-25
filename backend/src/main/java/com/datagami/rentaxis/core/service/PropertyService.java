@@ -122,7 +122,34 @@ public class PropertyService {
     public List<PropertyStatsDTO> getAllPropertiesWithStats() {
         List<Property> properties = repository.findAll();
         properties = filterByRole(properties);
-        return properties.stream().map(this::calculateStats).collect(Collectors.toList());
+        if (properties.isEmpty()) return new ArrayList<>();
+        // One aggregate for every property's units and one batch for their managers
+        // (scale: two queries per property before — 121 statements for 60 properties).
+        List<UUID> ids = properties.stream().map(Property::getId).toList();
+        java.util.Map<UUID, Object[]> stats = new java.util.HashMap<>();
+        for (Object[] row : unitRepository.statsByProperty(ids)) {
+            stats.put((UUID) row[0], row);
+        }
+        java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.User>> managers =
+                userService.getAssignedManagersByProperty(ids);
+        return properties.stream().map(p -> {
+            Object[] row = stats.get(p.getId());
+            PropertyStatsDTO dto = new PropertyStatsDTO();
+            dto.setProperty(p);
+            dto.setPropertyCount(row == null ? 0 : ((Number) row[1]).intValue());
+            dto.setVacancies(row == null || row[2] == null ? 0 : ((Number) row[2]).longValue());
+            dto.setRevenueAtCapacity(row == null ? BigDecimal.ZERO : money(row[3]));
+            dto.setActualRevenue(row == null ? BigDecimal.ZERO : money(row[4]));
+            dto.setAssignedManagers(managers.getOrDefault(p.getId(), List.of()).stream()
+                    .map(ManagerSummaryDTO::from).toList());
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    /** A SUM that came back as a BigDecimal, a Number or null (no rows). */
+    private static BigDecimal money(Object v) {
+        if (v == null) return BigDecimal.ZERO;
+        return v instanceof BigDecimal b ? b : new BigDecimal(v.toString());
     }
 
     @Transactional
@@ -273,30 +300,6 @@ public class PropertyService {
      */
     private List<Property> filterByRole(List<Property> properties) {
         return propertyScope.filter(properties, Property::getId);
-    }
-
-    private PropertyStatsDTO calculateStats(Property property) {
-        List<Unit> units = unitRepository.findByPropertyId(property.getId());
-        PropertyStatsDTO dto = new PropertyStatsDTO();
-        dto.setProperty(property);
-        dto.setPropertyCount(units.size());
-        dto.setVacancies(units.stream().filter(u -> u.getStatus() == UnitStatus.VACANT).count());
-        // Unit.expectedRent/actualRent default to BigDecimal.ZERO only for a
-        // Java-constructed Unit — Hibernate overwrites that with a literal
-        // null when the DB column is NULL (e.g. a row inserted via
-        // POST /api/v1/units, which binds the raw entity with no
-        // validation). BigDecimal.ZERO.add(null) throws NPE, which used to
-        // 500 this entire endpoint for every property whenever any single
-        // unit anywhere had a null rent value.
-        dto.setRevenueAtCapacity(units.stream()
-                .map(u -> u.getExpectedRent() != null ? u.getExpectedRent() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        dto.setActualRevenue(units.stream()
-                .map(u -> u.getActualRent() != null ? u.getActualRent() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        dto.setAssignedManagers(userService.getAssignedManagers(property.getId()).stream()
-                .map(ManagerSummaryDTO::from).toList());
-        return dto;
     }
 
     /**

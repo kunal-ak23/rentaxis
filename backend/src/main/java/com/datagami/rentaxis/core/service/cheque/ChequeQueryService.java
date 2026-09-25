@@ -133,6 +133,27 @@ public class ChequeQueryService {
     }
 
     /**
+     * The post-dated book a page at a time (scale P1-3): {@code from}/{@code to} when
+     * given, else the month (default the current one), in maturity order.
+     */
+    public Page<ChequeDTO> postDatedPaged(UUID propertyId, YearMonth month, LocalDate from, LocalDate to,
+                                          int page, int size) {
+        Scope scope = scope(propertyId);
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, MAX_PAGE_SIZE)), DEFAULT_SORT);
+        if (scope.blocked()) {
+            return Page.empty(pageable);
+        }
+        YearMonth ym = month != null ? month : YearMonth.now();
+        LocalDate lo = from != null ? from : (to != null ? LocalDate.of(2000, 1, 1) : ym.atDay(1));
+        LocalDate hi = to != null ? to : (from != null ? LocalDate.of(2099, 12, 31) : ym.atEndOfMonth());
+        return toPage(chequeRepository.findPostDatedPaged(propertyId, lo, hi, scope.unrestricted(),
+                scope.propertyIds(), pageable));
+    }
+
+    /** The largest page a paged register endpoint serves. */
+    static final int MAX_PAGE_SIZE = 200;
+
+    /**
      * One register row, if the caller is entitled to the lease behind it.
      *
      * <p>A {@code DRAFT} row answers "not found" here even to a caller who may see
@@ -265,6 +286,14 @@ public class ChequeQueryService {
      * cheque on every lease.</p>
      */
     public List<LeaseChequeStatsDTO> statsByLeases(List<UUID> leaseIds, LocalDate today) {
+        return statsByLeases(leaseIds, today, false);
+    }
+
+    /**
+     * {@code includeDrafts}: draft and awaiting-signature contracts get a row too (their
+     * DRAFT grid rows are still left out), so one call covers a renter's every contract.
+     */
+    public List<LeaseChequeStatsDTO> statsByLeases(List<UUID> leaseIds, LocalDate today, boolean includeDrafts) {
         if (leaseIds == null || leaseIds.isEmpty()) {
             return List.of();
         }
@@ -284,7 +313,8 @@ public class ChequeQueryService {
         LocalDate on = on(today);
         List<UUID> distinct = leaseIds.stream().distinct().toList();
         Map<UUID, Accumulator> byLease = new LinkedHashMap<>();
-        for (Cheque c : chequeRepository.findRegisterRowsForLeases(distinct)) {
+        for (Cheque c : includeDrafts ? chequeRepository.findRegisterRowsForLeasesIncludingDrafts(distinct)
+                : chequeRepository.findRegisterRowsForLeases(distinct)) {
             Lease lease = c.getLease();
             if (lease == null || !scope.allows(c.getProperty())) {
                 continue;
@@ -356,6 +386,9 @@ public class ChequeQueryService {
         private BigDecimal totalAmount = BigDecimal.ZERO;
         private BigDecimal clearedAmount = BigDecimal.ZERO;
         private BigDecimal dueAmount = BigDecimal.ZERO;
+        private BigDecimal unclearedAmount = BigDecimal.ZERO;
+        private long liveCount;
+        private BigDecimal liveAmount = BigDecimal.ZERO;
 
         void add(Cheque c, int graceDays, LocalDate today) {
             BigDecimal amount = c.getAmount() == null ? BigDecimal.ZERO : c.getAmount();
@@ -367,6 +400,13 @@ public class ChequeQueryService {
             }
             if (c.getStatus() != null && c.getStatus().isUncleared()) {
                 uncleared++;
+                unclearedAmount = unclearedAmount.add(amount);
+            }
+            // Scale #14: "Cheques total" is every live instrument — a replaced or cancelled
+            // row was superseded, and counting it would count the same money twice.
+            if (c.getStatus() != ChequeStatus.REPLACED && c.getStatus() != ChequeStatus.CANCELLED) {
+                liveCount++;
+                liveAmount = liveAmount.add(amount);
             }
             if (c.getBouncedAt() != null || c.getStatus() == ChequeStatus.BOUNCED) {
                 bounced++;
@@ -378,7 +418,7 @@ public class ChequeQueryService {
 
         LeaseChequeStatsDTO toDto(UUID leaseId) {
             return new LeaseChequeStatsDTO(leaseId, total, cleared, uncleared, bounced,
-                    totalAmount, clearedAmount, dueAmount);
+                    totalAmount, clearedAmount, dueAmount, unclearedAmount, liveCount, liveAmount);
         }
     }
 

@@ -70,4 +70,33 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
             + " AND t.unit.id = :unitId")
     List<MaintenanceTicket> findForRenterAndUnitId(@Param("userId") UUID userId, @Param("renterId") UUID renterId,
                                                    @Param("unitId") UUID unitId);
+
+    /**
+     * Scale P1-3: the staff tickets list, filtered and paged in the database. {@code q} is
+     * {@code %term%}, lowercased and trimmed, matched against the title, the reference and
+     * the unit number; {@code from}/{@code to} bound the reported date.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+        select t from MaintenanceTicket t left join t.unit u
+        where t.tenantId = :tenantId
+          and (cast(:propertyId as java.util.UUID) is null or t.property.id = :propertyId)
+          and (cast(:status as string) is null or t.status = :status)
+          and (cast(:priority as string) is null or t.priority = :priority)
+          and (cast(:from as LocalDate) is null or t.reportedDate >= :from)
+          and (cast(:to as LocalDate) is null or t.reportedDate <= :to)
+          and (cast(:q as string) is null
+               or lower(t.title) like :q or lower(t.reference) like :q or lower(u.unitNumber) like :q)
+          and (:unrestricted = true or t.property.id in :propertyIds)
+        """)
+    org.springframework.data.domain.Page<MaintenanceTicket> searchPaged(
+            @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+            @org.springframework.data.repository.query.Param("propertyId") UUID propertyId,
+            @org.springframework.data.repository.query.Param("status") com.datagami.rentaxis.domain.entity.enums.TicketStatus status,
+            @org.springframework.data.repository.query.Param("priority") com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDate from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDate to,
+            @org.springframework.data.repository.query.Param("q") String q,
+            @org.springframework.data.repository.query.Param("unrestricted") boolean unrestricted,
+            @org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds,
+            org.springframework.data.domain.Pageable pageable);
 }

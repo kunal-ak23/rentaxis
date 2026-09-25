@@ -416,9 +416,71 @@ public class MaintenanceTicketService {
                     .stream().map(MaintenanceTicket::getId).collect(Collectors.toSet());
             tickets = tickets.stream().filter(t -> ofRenter.contains(t.getId())).toList();
         }
-        return tickets.stream()
-                .map(t -> mapToDTO(t, userId))
-                .collect(Collectors.toList());
+        return mapAll(tickets, userId);
+    }
+
+    /**
+     * The side reads of a list's rows — reporter and assignee names, reply and attachment
+     * counts — one query each for the whole list rather than four per ticket (scale P1-3;
+     * the unbounded list ran ~20k statements for 5,000 tickets).
+     */
+    private record ListContext(java.util.Map<UUID, String> names, java.util.Map<UUID, Long> replies,
+                               java.util.Map<UUID, Long> attachments) {
+    }
+
+    private static final int LIST_CHUNK = 1000;
+
+    private ListContext contextFor(List<MaintenanceTicket> tickets) {
+        java.util.Map<UUID, String> names = new java.util.HashMap<>();
+        java.util.Map<UUID, Long> replies = new java.util.HashMap<>();
+        java.util.Map<UUID, Long> attachments = new java.util.HashMap<>();
+        List<UUID> ids = tickets.stream().map(MaintenanceTicket::getId).toList();
+        List<UUID> people = tickets.stream()
+                .flatMap(t -> java.util.stream.Stream.of(t.getReportedBy(), t.getAssignedTo()))
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        for (int i = 0; i < people.size(); i += LIST_CHUNK) {
+            for (Object[] row : userRepository.findDisplayNamesByIds(people.subList(i, Math.min(people.size(), i + LIST_CHUNK)))) {
+                names.put((UUID) row[0], (String) row[1]);
+            }
+        }
+        for (int i = 0; i < ids.size(); i += LIST_CHUNK) {
+            List<UUID> chunk = ids.subList(i, Math.min(ids.size(), i + LIST_CHUNK));
+            replyRepository.countByTicketIds(chunk).forEach(r -> replies.put((UUID) r[0], ((Number) r[1]).longValue()));
+            attachmentRepository.countByTicketIds(chunk).forEach(r -> attachments.put((UUID) r[0], ((Number) r[1]).longValue()));
+        }
+        return new ListContext(names, replies, attachments);
+    }
+
+    private List<MaintenanceTicketDTO> mapAll(List<MaintenanceTicket> tickets, UUID requesterId) {
+        if (tickets.isEmpty()) return new java.util.ArrayList<>();
+        ListContext ctx = contextFor(tickets);
+        return tickets.stream().map(t -> mapToDTO(t, requesterId, ctx)).collect(Collectors.toList());
+    }
+
+    private static final org.springframework.data.domain.Sort TICKET_ORDER = org.springframework.data.domain.Sort.by(
+            org.springframework.data.domain.Sort.Order.asc("createdAt"), org.springframework.data.domain.Sort.Order.asc("id"));
+
+    /**
+     * {@code GET /tickets/paged} (scale P1-3): the staff list filtered, searched and paged in
+     * the database. Staff only (the controller admits the tenant-wide roles and property
+     * managers); a property manager sees their buildings' tickets, and naming another
+     * building is an empty page.
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<MaintenanceTicketDTO> searchPaged(UUID userId, String q, UUID propertyId,
+            TicketStatus status, com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
+            java.time.LocalDate from, java.time.LocalDate to, int page, int size) {
+        org.springframework.data.domain.Pageable pageable = com.datagami.rentaxis.core.util.Search.page(page, size, TICKET_ORDER);
+        if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
+            return org.springframework.data.domain.Page.empty(pageable);
+        }
+        List<UUID> scoped = propertyScope.scopedPropertyIds();
+        org.springframework.data.domain.Page<MaintenanceTicket> rows = ticketRepository.searchPaged(
+                TenantContextHolder.getTenantId(), propertyId, status, priority, from, to,
+                com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
+        List<MaintenanceTicketDTO> dtos = mapAll(rows.getContent(), userId);
+        return new org.springframework.data.domain.PageImpl<>(dtos, pageable, rows.getTotalElements());
     }
 
     /** The tickets the caller's role may see, optionally narrowed to one unit. */
@@ -1249,6 +1311,11 @@ public class MaintenanceTicketService {
      * renter confirmation, so it is redacted for everyone else.
      */
     private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket, UUID requesterId) {
+        return mapToDTO(ticket, requesterId, null);
+    }
+
+    /** {@code ctx}: the list's batched side reads, or {@code null} to read them for this row. */
+    private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket, UUID requesterId, ListContext ctx) {
         MaintenanceTicketDTO dto = new MaintenanceTicketDTO();
         dto.setId(ticket.getId());
         dto.setReference(ticket.getReference());
@@ -1308,6 +1375,13 @@ public class MaintenanceTicketService {
 
         // Reporter / assignee names — filter-bypassing lookup so superadmin
         // actors (tenant_id = NULL) don't render as blank/Unknown.
+        if (ctx != null) {
+            if (ticket.getReportedBy() != null) dto.setReporterName(ctx.names().get(ticket.getReportedBy()));
+            if (ticket.getAssignedTo() != null) dto.setAssigneeName(ctx.names().get(ticket.getAssignedTo()));
+            dto.setReplyCount(ctx.replies().getOrDefault(ticket.getId(), 0L));
+            dto.setAttachmentCount(ctx.attachments().getOrDefault(ticket.getId(), 0L));
+            return dto;
+        }
         userRepository.findDisplayNameById(ticket.getReportedBy())
                 .ifPresent(dto::setReporterName);
 

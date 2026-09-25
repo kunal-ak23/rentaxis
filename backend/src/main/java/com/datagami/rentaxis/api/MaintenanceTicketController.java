@@ -41,6 +41,24 @@ public class MaintenanceTicketController {
         return ResponseEntity.ok(ticketService.getTickets(callerId(), callerRole(), unitId, renterId));
     }
 
+    /**
+     * Scale P1-3: the staff tickets list, filtered, searched (title, reference, unit number)
+     * and paged in the database. {@code from}/{@code to} bound the reported date.
+     */
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<org.springframework.data.domain.Page<MaintenanceTicketDTO>> listTicketsPaged(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) UUID propertyId,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.TicketStatus status,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
+            @RequestParam(required = false) java.time.LocalDate from,
+            @RequestParam(required = false) java.time.LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return ResponseEntity.ok(ticketService.searchPaged(callerId(), q, propertyId, status, priority, from, to, page, size));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MaintenanceTicketDTO> getTicket(

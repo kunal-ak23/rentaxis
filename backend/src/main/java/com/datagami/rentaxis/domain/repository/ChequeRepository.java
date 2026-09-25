@@ -284,6 +284,25 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                @Param("unrestricted") boolean unrestricted,
                                @Param("propertyIds") Collection<UUID> propertyIds);
 
+    /** {@link #findPostDated}, a page at a time (scale P1-3); the caller's page carries the order. */
+    @Query(value = """
+        select c from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        """)
+    Page<Cheque> findPostDatedPaged(@Param("propertyId") UUID propertyId,
+                                    @Param("from") LocalDate from,
+                                    @Param("to") LocalDate to,
+                                    @Param("unrestricted") boolean unrestricted,
+                                    @Param("propertyIds") Collection<UUID> propertyIds,
+                                    Pageable pageable);
+
     /**
      * Count and value per status for the register's summary tiles, in one pass over
      * the index rather than one query per tile.
@@ -324,6 +343,19 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         order by c.lease.id asc, c.seqNo asc
         """)
     List<Cheque> findRegisterRowsForLeases(@Param("leaseIds") Collection<UUID> leaseIds);
+
+    /**
+     * {@link #findRegisterRowsForLeases} with draft and awaiting-signature contracts too
+     * (scale #14: the renter page's tiles cover every contract). A draft contract's grid
+     * rows are still DRAFT and still left out — they are proposals, not instruments.
+     */
+    @Query("""
+        select c from Cheque c
+        where c.lease.id in :leaseIds
+          and c.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT
+        order by c.lease.id asc, c.seqNo asc
+        """)
+    List<Cheque> findRegisterRowsForLeasesIncludingDrafts(@Param("leaseIds") Collection<UUID> leaseIds);
 
     /**
      * Value of the rows in these statuses maturing in {@code [from, toExclusive)} —

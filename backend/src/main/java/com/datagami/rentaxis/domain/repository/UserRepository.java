@@ -33,6 +33,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query(value = "SELECT name FROM users WHERE id = :id", nativeQuery = true)
     Optional<String> findDisplayNameById(@Param("id") UUID id);
 
+    /** {@link #findDisplayNameById} for a page of rows: (id, name). The same exposure — names only. */
+    @Query(value = "SELECT id, name FROM users WHERE id IN (:ids)", nativeQuery = true)
+    List<Object[]> findDisplayNamesByIds(@Param("ids") java.util.Collection<UUID> ids);
+
     /**
      * Per-tenant email lookup. Returns the single user matching (tenantId, email)
      * if any. Use this in tenanted flows where you have tenant context.

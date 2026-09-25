@@ -765,6 +765,24 @@ public class UserService {
      * caller may see before it gets here (PR #342 review C2).
      */
     @Transactional(readOnly = true)
+    /**
+     * {@link #getAssignedManagers} for several properties in two queries (the properties
+     * list asked once per property). Properties with nobody assigned map to an empty list.
+     */
+    public java.util.Map<UUID, List<User>> getAssignedManagersByProperty(java.util.Collection<UUID> propertyIds) {
+        java.util.Map<UUID, List<User>> out = new java.util.HashMap<>();
+        if (propertyIds == null || propertyIds.isEmpty()) return out;
+        List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByPropertyIdIn(propertyIds);
+        java.util.Map<UUID, User> users = new java.util.HashMap<>();
+        userRepository.findAllById(assignments.stream().map(UserPropertyAssignment::getUserId).distinct().toList())
+                .forEach(u -> users.put(u.getId(), u));
+        for (UserPropertyAssignment a : assignments) {
+            User u = users.get(a.getUserId());
+            if (u != null) out.computeIfAbsent(a.getPropertyId(), k -> new java.util.ArrayList<>()).add(u);
+        }
+        return out;
+    }
+
     public List<User> getAssignedManagers(UUID propertyId) {
         List<UUID> userIds = propertyAssignmentRepository.findByPropertyId(propertyId)
                 .stream()

@@ -83,4 +83,55 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
            or u.currentTenantName is not null
         """)
     List<Unit> findStoredAsHeld();
+
+    /**
+     * Scale P1-3/P1-6: the units list and picker, filtered and paged in the database.
+     * {@code q} is {@code %term%}, lowercased and trimmed, matched against the unit number,
+     * the current tenant's name and the property's name; {@code floorPrefix} is the
+     * unit-number prefix a floor's units share ({@code "07%"} for 07-01, 07-02 ...).
+     */
+    @org.springframework.data.jpa.repository.Query("""
+        select u from Unit u
+        where u.tenantId = :tenantId
+          and (cast(:propertyId as java.util.UUID) is null or u.property.id = :propertyId)
+          and (cast(:status as string) is null or u.status = :status)
+          and (cast(:floorPrefix as string) is null or u.unitNumber like :floorPrefix)
+          and (cast(:q as string) is null
+               or lower(u.unitNumber) like :q or lower(u.currentTenantName) like :q
+               or lower(u.property.nameEn) like :q)
+          and (:unrestricted = true or u.property.id in :propertyIds)
+        """)
+    org.springframework.data.domain.Page<Unit> searchPaged(
+            @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+            @org.springframework.data.repository.query.Param("propertyId") UUID propertyId,
+            @org.springframework.data.repository.query.Param("status") com.datagami.rentaxis.domain.entity.enums.UnitStatus status,
+            @org.springframework.data.repository.query.Param("floorPrefix") String floorPrefix,
+            @org.springframework.data.repository.query.Param("q") String q,
+            @org.springframework.data.repository.query.Param("unrestricted") boolean unrestricted,
+            @org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** The named units of the caller's organisation with their property, scoped like {@link #searchPaged}. */
+    @org.springframework.data.jpa.repository.Query("""
+        select u from Unit u join fetch u.property left join fetch u.building
+        where u.tenantId = :tenantId and u.id in :ids
+          and (:unrestricted = true or u.property.id in :propertyIds)
+        """)
+    List<Unit> findNamed(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                         @org.springframework.data.repository.query.Param("ids") java.util.Collection<UUID> ids,
+                         @org.springframework.data.repository.query.Param("unrestricted") boolean unrestricted,
+                         @org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds);
+
+    /**
+     * Unit count, vacancies and rent totals per property in one statement (scale: the
+     * properties list ran two queries per property).
+     * Row: propertyId, units, vacant, Σ expectedRent, Σ actualRent.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+        select u.property.id, count(u),
+               sum(case when u.status = com.datagami.rentaxis.domain.entity.enums.UnitStatus.VACANT then 1 else 0 end),
+               sum(coalesce(u.expectedRent, 0)), sum(coalesce(u.actualRent, 0))
+        from Unit u where u.property.id in :propertyIds group by u.property.id
+        """)
+    List<Object[]> statsByProperty(@org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds);
 }

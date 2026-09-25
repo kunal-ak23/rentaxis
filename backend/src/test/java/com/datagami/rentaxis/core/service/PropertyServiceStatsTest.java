@@ -60,7 +60,7 @@ class PropertyServiceStatsTest {
         // means "no role-based filtering", matching the SUPER_ADMIN/no-filter
         // path exercised by this test.
         SecurityContextHolder.clearContext();
-        when(userService.getAssignedManagers(any(UUID.class))).thenReturn(List.of());
+        when(userService.getAssignedManagersByProperty(any())).thenReturn(java.util.Map.of());
     }
 
     @AfterEach
@@ -68,65 +68,38 @@ class PropertyServiceStatsTest {
         SecurityContextHolder.clearContext();
     }
 
+    /**
+     * The per-property figures now come from one aggregate ({@code UnitRepository.statsByProperty},
+     * which coalesces null rents to zero in SQL — PropertyStatsIT covers that against Postgres);
+     * this pins the mapping of its row.
+     */
     @Test
-    void getAllPropertiesWithStats_unitWithNullRentFields_doesNotThrow() {
+    void getAllPropertiesWithStats_mapsTheAggregateRow() {
         Property property = newProperty();
         when(propertyRepository.findAll()).thenReturn(List.of(property));
-
-        Unit nullRentUnit = new Unit();
-        nullRentUnit.setStatus(UnitStatus.VACANT);
-        nullRentUnit.setExpectedRent(null);
-        nullRentUnit.setActualRent(null);
-        when(unitRepository.findByPropertyId(property.getId())).thenReturn(List.of(nullRentUnit));
-
-        assertThatCode(service::getAllPropertiesWithStats).doesNotThrowAnyException();
-    }
-
-    @Test
-    void getAllPropertiesWithStats_unitWithNullRentFields_treatsNullAsZero() {
-        Property property = newProperty();
-        when(propertyRepository.findAll()).thenReturn(List.of(property));
-
-        Unit nullRentUnit = new Unit();
-        nullRentUnit.setStatus(UnitStatus.OCCUPIED);
-        nullRentUnit.setExpectedRent(null);
-        nullRentUnit.setActualRent(null);
-        Unit normalUnit = new Unit();
-        normalUnit.setStatus(UnitStatus.VACANT);
-        normalUnit.setExpectedRent(new BigDecimal("5000"));
-        normalUnit.setActualRent(new BigDecimal("4800"));
-        when(unitRepository.findByPropertyId(property.getId())).thenReturn(List.of(nullRentUnit, normalUnit));
+        when(unitRepository.statsByProperty(any())).thenReturn(java.util.Collections.singletonList(
+                new Object[]{property.getId(), 2L, 1L, new BigDecimal("7500.50"), new BigDecimal("4800")}));
 
         List<PropertyStatsDTO> result = service.getAllPropertiesWithStats();
 
         assertThat(result).hasSize(1);
         PropertyStatsDTO dto = result.get(0);
-        // Null unit contributes zero, not an exception or a skipped row.
-        assertThat(dto.getRevenueAtCapacity()).isEqualByComparingTo("5000");
+        assertThat(dto.getRevenueAtCapacity()).isEqualByComparingTo("7500.50");
         assertThat(dto.getActualRevenue()).isEqualByComparingTo("4800");
         assertThat(dto.getPropertyCount()).isEqualTo(2);
         assertThat(dto.getVacancies()).isEqualTo(1);
     }
 
     @Test
-    void getAllPropertiesWithStats_allUnitsHaveRentValues_sumsCorrectly() {
+    void getAllPropertiesWithStats_aPropertyWithNoUnitsIsZeros() {
         Property property = newProperty();
         when(propertyRepository.findAll()).thenReturn(List.of(property));
+        when(unitRepository.statsByProperty(any())).thenReturn(List.of());
 
-        Unit unitA = new Unit();
-        unitA.setStatus(UnitStatus.OCCUPIED);
-        unitA.setExpectedRent(new BigDecimal("3000"));
-        unitA.setActualRent(new BigDecimal("3000"));
-        Unit unitB = new Unit();
-        unitB.setStatus(UnitStatus.OCCUPIED);
-        unitB.setExpectedRent(new BigDecimal("4500.50"));
-        unitB.setActualRent(new BigDecimal("4500.50"));
-        when(unitRepository.findByPropertyId(property.getId())).thenReturn(List.of(unitA, unitB));
-
-        List<PropertyStatsDTO> result = service.getAllPropertiesWithStats();
-
-        assertThat(result.get(0).getRevenueAtCapacity()).isEqualByComparingTo("7500.50");
-        assertThat(result.get(0).getActualRevenue()).isEqualByComparingTo("7500.50");
+        assertThatCode(service::getAllPropertiesWithStats).doesNotThrowAnyException();
+        PropertyStatsDTO dto = service.getAllPropertiesWithStats().get(0);
+        assertThat(dto.getPropertyCount()).isZero();
+        assertThat(dto.getRevenueAtCapacity()).isEqualByComparingTo("0");
     }
 
     private Property newProperty() {

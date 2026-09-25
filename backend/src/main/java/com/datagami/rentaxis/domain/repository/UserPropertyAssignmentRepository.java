@@ -17,4 +17,7 @@ public interface UserPropertyAssignmentRepository extends JpaRepository<UserProp
     void deleteByUserIdAndPropertyId(UUID userId, UUID propertyId);
 
     void deleteByUserId(UUID userId);
+
+    /** The assignments of several properties at once (the properties list). */
+    List<UserPropertyAssignment> findByPropertyIdIn(java.util.Collection<UUID> propertyIds);
 }

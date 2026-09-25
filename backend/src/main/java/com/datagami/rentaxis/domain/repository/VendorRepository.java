@@ -19,4 +19,17 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
      * landlord's vendor out of the answer.
      */
     List<Vendor> findByPayableAccount_IdIn(Collection<UUID> accountIds);
+
+    /** Scale P1-3: the vendors list, searched and paged; {@code q} is {@code %term%}, lowercased. */
+    @org.springframework.data.jpa.repository.Query("""
+        select v from Vendor v
+        where v.tenantId = :tenantId
+          and (cast(:q as string) is null
+               or lower(v.nameEn) like :q or lower(v.nameAr) like :q or lower(v.trn) like :q
+               or lower(v.email) like :q or lower(v.phone) like :q or lower(v.contactPerson) like :q)
+        """)
+    org.springframework.data.domain.Page<Vendor> searchPaged(
+            @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+            @org.springframework.data.repository.query.Param("q") String q,
+            org.springframework.data.domain.Pageable pageable);
 }

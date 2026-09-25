@@ -38,6 +38,15 @@ public class VendorController {
         return ResponseEntity.ok(service.getAllVendors());
     }
 
+    /** Scale P1-3: searched and paged in the database. */
+    @GetMapping("/paged")
+    public ResponseEntity<org.springframework.data.domain.Page<Vendor>> getVendorsPaged(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String q,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "25") int size) {
+        return ResponseEntity.ok(service.searchPaged(q, page, size));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Vendor> getVendorById(@PathVariable UUID id) {
         return ResponseEntity.ok(service.getVendorById(id));

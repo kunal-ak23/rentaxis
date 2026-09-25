@@ -13,4 +13,10 @@ public interface TicketAttachmentRepository extends JpaRepository<TicketAttachme
     List<TicketAttachment> findByTicketId(UUID ticketId);
 
     long countByTicketId(UUID ticketId);
+
+    /** {@link #countByTicketId} for a page of tickets: (ticketId, count). */
+    @org.springframework.data.jpa.repository.Query(
+            "select x.ticket.id, count(x) from TicketAttachment x where x.ticket.id in :ticketIds group by x.ticket.id")
+    List<Object[]> countByTicketIds(
+            @org.springframework.data.repository.query.Param("ticketIds") java.util.Collection<UUID> ticketIds);
 }
