@@ -48,6 +48,8 @@ class BadDebtIT extends AbstractPostgresIT {
 
     @Autowired BadDebtService service;
     @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
+    @Autowired com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository assessmentRepo;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeaseService leaseService;
@@ -142,7 +144,7 @@ class BadDebtIT extends AbstractPostgresIT {
         assertThat(onAccount(AccountRole.BAD_DEBT)).isZero();
         // The debt is one open collection row again, and receivable holds it (via its PDR).
         assertThat(service.candidates(leaseId, ON.plusDays(5)))
-                .anySatisfy(i -> assertThat(i.narration()).isEqualTo("Bad debt write-off reversed"));
+                .anySatisfy(i -> assertThat(i.narration()).startsWith("Bad debt write-off reversed"));
         assertThat(service.candidates(leaseId, ON.plusDays(5))).hasSize(2);
     }
 
@@ -181,5 +183,59 @@ class BadDebtIT extends AbstractPostgresIT {
         service.reverse(w.id(), ON.plusDays(1), "came back");
         assertThat(penalties.statusOf(charge.id()).name()).isEqualTo("APPROVED");
         assertThat(penalties.outstandingForLease(leaseId)).isEqualByComparingTo("400");
+    }
+
+    /**
+     * PR #361 R2 B1: reversing a write-off gives each restored charge its own live
+     * collection row; a charge whose row was then paid cannot be reversed (no credit
+     * note), and outstanding counts only the unpaid charge.
+     */
+    @Test
+    void eachRestoredChargeGetsItsOwnLiveRowAndAPaidOneCannotBeReversed() {
+        UUID leaseId = fixtures.postedLease(fixtures.createUnit(fixtures.property(), "V-2"), fixtures.createRenter("V2"),
+                CONTRACT, START, END, List.of(vatLine("RENT", "60000")), 4, null).lease().getId();
+        var damage = charge(leaseId, com.datagami.rentaxis.domain.entity.enums.PenaltyReason.DAMAGE, "400");
+        var admin = charge(leaseId, com.datagami.rentaxis.domain.entity.enums.PenaltyReason.ADMIN_FEE, "100");
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId,
+                List.of(damage.collectionChequeId(), admin.collectionChequeId()), ON, "absconded")).id(), null);
+        service.reverse(w.id(), ON.plusDays(1), "came back");
+
+        UUID damageRow = row(damage.id()), adminRow = row(admin.id());
+        assertThat(damageRow).isNotEqualTo(damage.collectionChequeId()).isNotEqualTo(adminRow);
+        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, damageRow)).isEqualTo("REGISTERED");
+        assertThat(jdbc.queryForObject("select amount from cheques where id = ?", BigDecimal.class, damageRow))
+                .isEqualByComparingTo("420.00");
+        assertThat(jdbc.queryForObject("select amount from cheques where id = ?", BigDecimal.class, adminRow))
+                .isEqualByComparingTo("105.00");
+
+        LocalDate paid = ON.plusDays(2);
+        chequeService.receive(damageRow, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(paid));
+        int notesBefore = creditNotes(leaseId);
+        assertThatThrownBy(() -> penalties.reverse(damage.id(), paid, "error"))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("penalty.collected"));
+        assertThat(creditNotes(leaseId)).isEqualTo(notesBefore);
+        assertThat(penalties.outstandingForLease(leaseId)).as("only the unpaid admin fee (with its VAT)")
+                .isEqualByComparingTo("105.00");
+        // A charge whose row was cancelled on the register (its debt left the row) cannot be reversed either.
+        chequeService.cancel(adminRow, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(paid));
+        assertThatThrownBy(() -> penalties.reverse(admin.id(), paid, "error"))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("penalty.collectionClosed"));
+        assertThat(creditNotes(leaseId)).isEqualTo(notesBefore);
+    }
+
+    private com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO charge(UUID leaseId,
+            com.datagami.rentaxis.domain.entity.enums.PenaltyReason reason, String amount) {
+        return penalties.approve(penalties.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(
+                leaseId, null, reason, new BigDecimal(amount), "x", LocalDate.of(2026, 8, 10), null), null).id(),
+                LocalDate.of(2026, 8, 10));
+    }
+
+    private UUID row(UUID chargeId) {
+        return assessmentRepo.findById(chargeId).orElseThrow().getCollectionCheque().getId();
+    }
+
+    private int creditNotes(UUID leaseId) {
+        return jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                Integer.class, leaseId);
     }
 }

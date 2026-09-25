@@ -29,7 +29,8 @@ import {
  * merely see the queue.
  */
 
-const TAB_ORDER: PenaltyAssessmentStatus[] = ["PROPOSED", "APPROVED", "WAIVED", "REVERSED"];
+// PR #361 R2: charges taken by a bad-debt write-off are listed too.
+const TAB_ORDER: PenaltyAssessmentStatus[] = ["PROPOSED", "APPROVED", "WAIVED", "REVERSED", "WRITTEN_OFF"];
 
 const th = "text-start px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-3 py-2 text-xs";

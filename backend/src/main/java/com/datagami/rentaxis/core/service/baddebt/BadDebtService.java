@@ -238,9 +238,15 @@ public class BadDebtService {
                     Map.of("date", w.getWriteOffDate().format(DMY)));
         }
         JournalEntry rev = posting.reverse(w.getJournalId(), on, "Write-off reversed: " + reason);
-        chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(null, null, on, null, on, null, null, null,
-                w.getAmount(), "Bad debt write-off reversed", ChequeMode.CASH));
-        charges.markByCollectionRows(itemIds(w), PenaltyAssessmentStatus.WRITTEN_OFF, PenaltyAssessmentStatus.APPROVED);
+        // PR #361 R2 B1: one live collection row per item written off, so a restored
+        // charge is re-linked to its own row (split, not one lump for the whole amount).
+        for (UUID itemId : itemIds(w)) {
+            Cheque old = cheques.findById(itemId).orElseThrow(() -> new NotFoundException("Instalment not found"));
+            var row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(null, null, on, null, on, null,
+                    null, null, old.getAmount(), "Bad debt write-off reversed"
+                    + (old.getNarration() == null ? "" : " – " + old.getNarration()), ChequeMode.CASH));
+            charges.restoreAfterWriteOff(itemId, row.id());
+        }
         w.setReversalJournalId(rev.getId());
         w.setStatus(Status.REVERSED);
         w.setDecisionNote(reason);

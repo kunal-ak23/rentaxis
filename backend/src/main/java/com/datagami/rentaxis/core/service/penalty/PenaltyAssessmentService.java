@@ -92,7 +92,10 @@ public class PenaltyAssessmentService {
 
     /** Statuses that mean "this proposal is still live", for the duplicate guard. */
     static final Set<PenaltyAssessmentStatus> OPEN =
-            EnumSet.of(PenaltyAssessmentStatus.PROPOSED, PenaltyAssessmentStatus.APPROVED);
+            // PR #361 R2: a written-off charge still stands for the incident — a re-bounce of
+            // the same cheque must not raise a fresh proposal.
+            EnumSet.of(PenaltyAssessmentStatus.PROPOSED, PenaltyAssessmentStatus.APPROVED,
+                    PenaltyAssessmentStatus.WRITTEN_OFF);
 
     /**
      * A lease a penalty may still be charged against — the same set the register
@@ -218,6 +221,24 @@ public class PenaltyAssessmentService {
         for (PenaltyAssessment a : repository.findByCollectionCheque_IdIn(chequeIds)) {
             if (a.getStatus() != from) continue;
             a.setStatus(to);
+            repository.save(a);
+        }
+    }
+
+    /**
+     * PR #361 R2 B1: a write-off was reversed — the charge whose collection row it
+     * took is APPROVED again and collected through {@code newRowId}, its own live row.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void restoreAfterWriteOff(UUID oldRowId, UUID newRowId) {
+        for (PenaltyAssessment a : repository.findByCollectionCheque_IdIn(List.of(oldRowId))) {
+            if (a.getStatus() != PenaltyAssessmentStatus.WRITTEN_OFF) continue;
+            Cheque row = chequeRepository.findById(newRowId)
+                    .orElseThrow(() -> new IllegalStateException("Collection row vanished after it was created"));
+            row.setPenaltyAssessmentId(a.getId());
+            chequeRepository.save(row);
+            a.setCollectionCheque(row);
+            a.setStatus(PenaltyAssessmentStatus.APPROVED);
             repository.save(a);
         }
     }
@@ -517,9 +538,16 @@ public class PenaltyAssessmentService {
         }
 
         Cheque collection = a.getCollectionCheque();
+        // PR #361 R2 B1: a cancelled collection row means the charge's debt left the
+        // register (a write-off took it, or it was carried elsewhere): reversing the
+        // charge now would credit the receivable a second time.
+        if (collection != null && collection.getStatus() == ChequeStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("This charge's collection row is closed; it cannot be reversed.",
+                    "penalty.collectionClosed", java.util.Map.of());
+        }
         if (collection != null && collection.getStatus() == ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException(
-                    "Penalty was already collected; issue a refund/credit instead");
+                    "Penalty was already collected; issue a refund/credit instead", "penalty.collected", java.util.Map.of());
         }
 
         // F14-28: every decision on a charged amount carries a reason, as a waiver does.
