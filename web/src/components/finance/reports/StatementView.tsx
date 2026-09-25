@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { CheckCircle2, Clock } from "lucide-react";
 import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import type { PropertyStatement, StatementSection, StatementTable } from "@/lib/api/propertyReports";
 
 const th = "px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
@@ -90,7 +91,7 @@ export default function StatementView({ data, locale }: { data: PropertyStatemen
                         <p key={n} className="text-[11px] text-muted mt-2">{t(`note.${n}`)}</p>
                     ))}
                     {s.meta?.priorFrom && s.meta?.priorTo && (
-                        <p className="text-[11px] text-muted mt-1">{t("priorPeriod", { from: s.meta.priorFrom, to: s.meta.priorTo })}</p>
+                        <p className="text-[11px] text-muted mt-1">{t("priorPeriod", { from: formatDate(s.meta.priorFrom), to: formatDate(s.meta.priorTo) })}</p>
                     )}
                 </section>
             ))}

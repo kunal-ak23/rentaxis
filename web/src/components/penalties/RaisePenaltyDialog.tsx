@@ -35,6 +35,9 @@ type Props = {
     minDate?: string | null;
 };
 
+/** Reasons that are penalties; every other reason is a charge for a supply (a recharge, a fee). */
+export const PENALTY_REASONS: PenaltyReason[] = ["CHEQUE_RETURN", "LATE_PAYMENT", "OTHER"];
+
 export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, minDate }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
@@ -59,6 +62,10 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
         }
     }, [open]);
 
+    // F15-18: a recharge or a fee is a charge, not a penalty; the dialog says which.
+    const isPenalty = PENALTY_REASONS.includes(reason);
+    const typeLabel = t(`reason.${reason}`);
+    const titleText = isPenalty ? tl("raisePenalty") : tl("raiseCharge", { type: typeLabel });
     const today = businessTodayIso();
     const invalid = amount <= 0 || !incidentDate || incidentDate > today || (!!minDate && incidentDate < minDate);
 
@@ -81,10 +88,10 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
     return (
         <LeaseDialog
             open={open}
-            title={tl("raisePenalty")}
+            title={titleText}
             onClose={onClose}
             onConfirm={submit}
-            confirmText={tl("raisePenalty")}
+            confirmText={titleText}
             cancelText={tl("cancel")}
             confirmDisabled={invalid}
             busy={busy}
@@ -118,7 +125,7 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
                     <input id="raise-penalty-narration" className={field} value={description} onChange={e => setDescription(e.target.value)} />
                 </div>
             </div>
-            <p className="mt-3 text-[11px] text-muted">{tl("raisePenaltyHint")}</p>
+            <p className="mt-3 text-[11px] text-muted">{isPenalty ? tl("raisePenaltyHint") : tl("raiseChargeHint", { type: typeLabel })}</p>
             {error && <p role="alert" data-testid="raise-penalty-error" className="mt-3 text-[11px] text-error bg-error/10 rounded-lg px-3 py-2">{error}</p>}
         </LeaseDialog>
     );

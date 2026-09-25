@@ -137,6 +137,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.core.service.baddebt.BadDebtService badDebts;
 
     private LeaseTestFixtures fixtures;
 
@@ -660,6 +661,36 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(row.overdue()).isFalse();
         assertThat(row.daysOverdue()).isZero();
         assertThat(row.ledgerSettled()).isTrue();
+    }
+
+    /**
+     * F15-19: a write-off takes only the debt the ledger still carries — the same
+     * derivation as overdue. Before the settlement the bounced row is offered for
+     * what the receivable holds (not its face value); once the settlement has
+     * absorbed it, it is not offered and a proposal naming it is refused.
+     */
+    @Test
+    void aBounceTheSettlementAbsorbedCannotBeWrittenOff() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        LocalDate later = BANKED_ON.plusDays(120);
+
+        assertThat(badDebts.candidates(leaseId, later)).as("capped at the open receivable")
+                .anyMatch(i -> i.chequeId().equals(kept) && i.amount().compareTo(new java.math.BigDecimal("7510.27")) == 0);
+        var capped = badDebts.propose(new com.datagami.rentaxis.core.service.baddebt.BadDebtService.ProposeRequest(
+                leaseId, List.of(kept), later, "probe"));
+        assertThat(capped.amount()).as("the proposal is capped too").isEqualByComparingTo("7510.27");
+        badDebts.reject(capped.id(), "probe only");
+
+        finalizeSettlement(leaseId, null);
+
+        assertThat(badDebts.candidates(leaseId, later)).noneMatch(i -> i.chequeId().equals(kept));
+        assertThatThrownBy(() -> badDebts.propose(new com.datagami.rentaxis.core.service.baddebt.BadDebtService.ProposeRequest(
+                leaseId, List.of(kept), later, "absconded")))
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("badDebt.itemSettled"));
     }
 
     private List<com.datagami.rentaxis.api.dto.cheque.AgingReportDTO.Row> agingRows(LocalDate on) {

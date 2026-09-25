@@ -54,7 +54,7 @@ describe("BalanceSheetTable", () => {
         renderIn("en", sheet(true));
         expect(screen.getByText("Assets")).toBeTruthy();
         expect(screen.getByText("Total liabilities and equity")).toBeTruthy();
-        expect(within(screen.getByTestId("current-year-result")).getByText("Current year result (from 2026-01-01)")).toBeTruthy();
+        expect(within(screen.getByTestId("current-year-result")).getByText("Current year result (from 01/01/2026)")).toBeTruthy();
         const check = screen.getByTestId("bs-check-row");
         expect(check.className).toContain("text-success");
         expect(within(check).getAllByText("0.00").length).toBeGreaterThan(0);

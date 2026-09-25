@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { fmtAmount } from "@/lib/api/ledger";
 import { vatReturnsApi, type VatDocument, type VatReturn } from "@/lib/api/vatReturns";
+import { formatDate } from "@/lib/format";
 
 const th = "px-3 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-3 py-2 text-xs";
@@ -94,7 +95,7 @@ export default function VatReturnView({ data, locale }: { data: VatReturn; local
                                                 {d.kind === "NO_TAX_INVOICE" && <span className="ms-1 text-warning">({t("noTaxInvoice")})</span>}
                                                 {d.kind === "CREDIT_NOTE" && <span className="ms-1 text-muted">({t("creditNote")})</span>}
                                             </td>
-                                            <td className={td}><bdi dir="ltr">{d.date}</bdi></td>
+                                            <td className={td}><bdi dir="ltr">{formatDate(d.date)}</bdi></td>
                                             <td className={td}>{ar && d.partyAr ? d.partyAr : d.party ?? ""}</td>
                                             <td className={num}><bdi dir="ltr">{money(d.amount)}</bdi></td>
                                             <td className={num}><bdi dir="ltr">{money(d.vat)}</bdi></td>

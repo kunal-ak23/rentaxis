@@ -37,6 +37,15 @@ describe("RaisePenaltyDialog VAT", () => {
         expect(propose.mock.calls[0][0]).toMatchObject({ reason: "SERVICE_RECHARGE", vatable: false });
     });
 
+    it("titles a recharge by its type, not as a penalty (F15-18)", () => {
+        renderIn("en");
+        expect(screen.getAllByText("Raise penalty").length).toBeGreaterThan(0);
+        fireEvent.change(screen.getByLabelText(/Penalty category|Category/i), { target: { value: "SERVICE_RECHARGE" } });
+        expect(screen.queryByText("Raise penalty")).toBeNull();
+        expect(screen.getAllByText("Raise Service Recharge").length).toBeGreaterThan(0);
+        expect(screen.getByText(/The Service Recharge is proposed, not charged/)).toBeTruthy();
+    });
+
     it("renders the penalty default in Arabic", () => {
         renderIn("ar");
         expect(screen.getByText("تلقائي — لا ضريبة (الغرامة ليست توريدًا)")).toBeTruthy();

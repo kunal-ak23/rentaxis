@@ -1930,6 +1930,9 @@
     "chargeTypes": "Charge types"
   },
   "Leasing": {
+    "chargeRaisedBanner": "{type} proposed. It appears in the Penalties tab for finance to approve.",
+    "raiseChargeHint": "The {type} is proposed, not charged. Finance approves it before anything is posted to the ledger.",
+    "raiseCharge": "Raise {type}",
     "carriedChequesTotal": "Carried cheques ({count})",
     "carriedCheque": "Cheque {number}",
     "noticeGivenBy": "Given by",
@@ -2284,6 +2287,9 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "breakdownGross": "Total with VAT",
+    "breakdownVat": "VAT",
+    "breakdownNet": "Net",
     "chargeVat": "VAT (5%)",
     "chargeVatAutoYes": "Automatic — charged on a VAT lease",
     "chargeVatAutoNo": "Automatic — none (a penalty is not a supply)",
@@ -2461,7 +2467,7 @@
       "booking": {
         "feeWrittenOff": "This booking's fee was written off as a bad debt; it can no longer be cancelled.","feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
       "ticket": {"billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
-      "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason."},
+      "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason.", "itemSettled": "Instalment {row} has been settled in the books (the lease's receivable no longer carries it); it cannot be written off.", "recoveryAccountProperty": "Account {account} cannot take money for this lease's property; choose one of its bank or cash accounts."},
       "vat": {"periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
       "bank": {
@@ -2655,6 +2661,8 @@
     "previewOnly": "You can price a termination on this contract, but ending it posts journals and is limited to finance roles."
   },
   "Settlement": {
+    "stillDue": "Still due from renter",
+    "writtenOff": "Written off as bad debt",
     "title": "Settlement",
     "desc": "The move-out statement, computed from the ledger.",
     "asOf": "As of",
@@ -4187,6 +4195,7 @@
     "broughtForward": "Brought forward from earlier years (not yet closed)"
   },
   "VatReturn": {
+    "filedBy": "filed by {name}",
     "cancel": "Cancel",
     "reopenReason": "Reason (required)",
     "inputVatOther": "Input VAT of {amount} was moved by an opening balance, import or journal this quarter; it is not in box 9 — check it.",
@@ -4226,6 +4235,11 @@
     "history": "Filing history"
   },
   "BadDebts": {
+    "reversedBy": "reversed by",
+    "noRecoveryAccounts": "No bank or cash account can take money for this lease's property. Attach its bank leaf to a bank account first.",
+    "chooseAccount": "Choose an account",
+    "date": "Date",
+    "noteOptional": "Note (optional)",
     "title": "Bad debts",
     "openItems": "Unpaid and bounced items the renter owes. Pick what cannot be recovered.",
     "itemStatus": {"UNPAID": "unpaid", "BOUNCED": "bounced"},
@@ -4239,7 +4253,7 @@
     "recover": "Record recovery",
     "vatNote": "VAT already declared on these amounts stays declared: bad-debt relief is not automatic (FTA conditions apply).",
     "confirm": {"approve": "Write this debt off?", "reject": "Reject this write-off?", "reverse": "Reverse this write-off? The debt becomes open again.", "recover": "Record money recovered"},
-    "note": "Reason",
+    "note": "Reason (required)",
     "amount": "Amount",
     "account": "Bank or cash account",
     "cancel": "Cancel"

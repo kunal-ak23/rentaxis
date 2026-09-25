@@ -31,11 +31,12 @@ import AddChargeDialog from "@/components/leases/AddChargeDialog";
 import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
 import BadDebtCard from "@/components/leases/BadDebtCard";
+import { badDebtsApi } from "@/lib/api/badDebts";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
-import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
+import RaisePenaltyDialog, { PENALTY_REASONS } from "@/components/penalties/RaisePenaltyDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
@@ -162,6 +163,7 @@ export default function LeaseDetailPage() {
     const leaseId = params.id as string;
 
     const t = useTranslations("Leasing");
+    const tChequesReason = useTranslations("Cheques");
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
     const tSettlement = useTranslations("Settlement");
@@ -185,6 +187,7 @@ export default function LeaseDetailPage() {
     // no journal (`LeaseController` :250-251).
     const canGiveNotice = hasPermission(userRole, "canGiveNotice");
     const canViewSettlement = hasPermission(userRole, "canViewSettlement");
+    const canSeeBadDebts = hasPermission(userRole, "canAccessFinance");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     // #12: the header's Raise penalty is finance's (the roles that decide
     // penalties). A property manager still proposes from the Penalties tab,
@@ -198,6 +201,8 @@ export default function LeaseDetailPage() {
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
+    // F15-22: what has been written off as bad debt, shown apart from the settlement's balance due.
+    const [writtenOff, setWrittenOff] = useState(0);
     const [loading, setLoading] = useState(true);
     const [banner, setBanner] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -1077,6 +1082,9 @@ export default function LeaseDetailPage() {
 
                 {tab === "interactions" && <LeaseInteractionsPanel leaseId={leaseId} />}
 
+                {settlement && settlement.status === "FINALIZED" && canSeeBadDebts && (
+                    <WrittenOffLoader leaseId={leaseId} onLoaded={setWrittenOff} />
+                )}
                 {settlement && settlement.status === "FINALIZED" && (
                     <div
                         className="bg-surface rounded-[var(--radius-lg)] border border-border px-5 py-4 space-y-2"
@@ -1093,6 +1101,15 @@ export default function LeaseDetailPage() {
                             label={(settlement.balanceDue ?? 0) > 0 ? tSettlement("balanceDue") : tSettlement("refundDue")}
                             value={formatCurrency((settlement.balanceDue ?? 0) > 0 ? settlement.balanceDue : settlement.refundAmount)}
                         />
+                        {writtenOff > 0 && (
+                            <>
+                                <Detail label={tSettlement("writtenOff")} value={formatCurrency(writtenOff)} />
+                                {(settlement.balanceDue ?? 0) > 0 && (
+                                    <Detail label={tSettlement("stillDue")}
+                                            value={formatCurrency(Math.max(0, (settlement.balanceDue ?? 0) - writtenOff))} />
+                                )}
+                            </>
+                        )}
                         {settlement.journalNumber && (
                             <Detail label={tSettlement("journalNumber")} value={settlement.journalNumber} />
                         )}
@@ -1206,9 +1223,11 @@ export default function LeaseDetailPage() {
                 leaseId={leaseId}
                 minDate={earliestEventDate}
                 onClose={() => setPenaltyOpen(false)}
-                onRaised={() => {
+                onRaised={p => {
                     setPenaltyOpen(false);
-                    setBanner(t("penaltyRaisedBanner"));
+                    // F15-18: a recharge or a fee is announced as what it is.
+                    setBanner(PENALTY_REASONS.includes(p.reason) ? t("penaltyRaisedBanner")
+                        : t("chargeRaisedBanner", { type: tChequesReason(`reason.${p.reason}`) }));
                     setPenaltyKey(k => k + 1);
                     setTab("penalties");
                 }}
@@ -1322,4 +1341,19 @@ function Detail({ label, value, icon, rtl }: { label: string; value: string; ico
             </span>
         </div>
     );
+}
+
+/** F15-22: the amount written off as bad debt on this lease (write-offs in force). */
+function WrittenOffLoader({ leaseId, onLoaded }: { leaseId: string; onLoaded: (amount: number) => void }) {
+    useEffect(() => {
+        let live = true;
+        badDebtsApi.forLease(leaseId)
+            .then(ws => {
+                if (!live) return;
+                onLoaded(ws.filter(w => w.status === "WRITTEN_OFF").reduce((sum, w) => sum + w.amount, 0));
+            })
+            .catch(() => { /* not shown */ });
+        return () => { live = false; };
+    }, [leaseId, onLoaded]);
+    return null;
 }

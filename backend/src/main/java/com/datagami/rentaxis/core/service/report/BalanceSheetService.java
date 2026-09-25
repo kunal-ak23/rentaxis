@@ -42,7 +42,8 @@ import java.util.function.Function;
  * included: a closed year's result sits in Retained Earnings (PR #358), the open
  * years' result is shown as two computed equity rows — the current fiscal year to
  * date and earlier years not yet closed. Columns follow the property P&L: one per
- * property (effective property = line property, else account property), an
+ * property (the line's property dimension, as the per-property
+ * trial balance: F15-15), an
  * Unassigned column and the Total, which is the company balance sheet.</p>
  *
  * <p>The report carries its own check: Assets − (Liabilities + Equity) for every

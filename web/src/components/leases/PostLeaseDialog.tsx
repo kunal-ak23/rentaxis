@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/leasing";
 import { fmtAmount } from "@/lib/api/ledger";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import { formatDate } from "@/lib/format";
 
 /**
  * The review step in front of the Post button.
@@ -124,7 +125,7 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
                                 {dry.carriedCheques.map(c => (
                                     <li key={`${c.seqNo}-${c.chequeNumber}`} className="flex gap-2">
                                         <span>{t("carriedCheque", { number: c.chequeNumber ?? String(c.seqNo) })}</span>
-                                        <bdi dir="ltr">{c.chequeDate ?? ""}</bdi>
+                                        <bdi dir="ltr">{formatDate(c.chequeDate)}</bdi>
                                         <span className="ms-auto tabular-nums"><bdi dir="ltr">{fmtAmount(c.amount)}</bdi></span>
                                     </li>
                                 ))}

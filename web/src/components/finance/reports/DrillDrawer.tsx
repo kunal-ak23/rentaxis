@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api/facilities";
 import { accountName, fmtAmount } from "@/lib/api/ledger";
 import { propertyReportsApi, type PnlLines } from "@/lib/api/propertyReports";
 import type { DrillTarget } from "./PnlTable";
+import { formatDate } from "@/lib/format";
 
 const th = "text-start px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider";
 const td = "px-3 py-1.5 text-xs";
@@ -17,7 +18,8 @@ const num = `${td} text-end tabular-nums`;
  * The journal lines behind one P&L figure, served by the P&L endpoint itself
  * (`/property-pl/lines`) so a property manager — whom the general ledger refuses —
  * drills within the same scope. For a tenant-wide caller on a property column it
- * also offers the general ledger with `effectiveProperty=true`, the same rule.
+ * also offers the general ledger filtered on the line's property, the same rule
+ * (F15-15: a line belongs to its own property dimension, as in the trial balance).
  */
 export default function DrillDrawer({
     target,
@@ -64,7 +66,6 @@ export default function DrillDrawer({
               propertyId: target.column.propertyId,
               from,
               to,
-              effectiveProperty: "true",
           }).toString()}`
         : null;
 
@@ -112,7 +113,7 @@ export default function DrillDrawer({
                             <tbody>
                                 {data.lines.map((l, i) => (
                                     <tr key={`${l.entryId}-${i}`} className="border-t border-border">
-                                        <td className={td}><bdi dir="ltr">{l.entryDate}</bdi></td>
+                                        <td className={td}><bdi dir="ltr">{formatDate(l.entryDate)}</bdi></td>
                                         <td className={td}>
                                             {canOpenLedger ? (
                                                 <Link href={`/dashboard/finance/journals/${l.entryId}`} className="text-primary hover:underline font-mono">

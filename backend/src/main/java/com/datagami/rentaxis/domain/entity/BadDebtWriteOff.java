@@ -35,6 +35,8 @@ public class BadDebtWriteOff extends BaseTenantEntity {
     @Column(nullable = false, length = 500) private String reason;
     /** Comma-separated ids of the register rows the write-off closes. */
     @Column(name = "item_ids", columnDefinition = "text") private String itemIds;
+    /** F15-19: what each item was written off for, in the order of {@link #itemIds}; null before changeset 145. */
+    @Column(name = "item_amounts", columnDefinition = "text") private String itemAmounts;
     /** The lease carries VAT: the VAT already declared stays declared (no automatic relief). */
     @Column(name = "vat_lease", nullable = false) private boolean vatLease;
     @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)

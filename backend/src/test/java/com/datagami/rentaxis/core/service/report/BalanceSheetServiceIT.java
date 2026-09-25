@@ -29,6 +29,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static com.datagami.rentaxis.core.service.ledger.PostingRequest.cr;
 import static com.datagami.rentaxis.core.service.ledger.PostingRequest.dr;
@@ -53,6 +54,7 @@ class BalanceSheetServiceIT extends AbstractPostgresIT {
     @Autowired AccountRepository accountRepo;
     @Autowired AccountResolver resolver;
     @Autowired PropertyPnlService pnlService;
+    @Autowired com.datagami.rentaxis.core.service.ledger.LedgerQueryService ledgerQueries;
 
     PropertyPnlFixture fx;
 
@@ -171,5 +173,32 @@ class BalanceSheetServiceIT extends AbstractPostgresIT {
         assertThat(r.ok()).isTrue();
         assertThat(row(r, retainedKey(), PropertyPnlDTO.TOTAL).amount()).isEqualByComparingTo(result);
         assertThat(r.currentYearResult().get(PropertyPnlDTO.TOTAL).amount()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * F15-15: an entry whose property-account line carries no property dimension
+     * (a legacy PISR / BPV / JV against a tenant-level vendor or cash) stays in one
+     * column on both sides, the per-property trial balance's column, so every
+     * property column's check is 0 whenever that trial balance balances.
+     */
+    @Test
+    void aLineWithoutAPropertyDimensionIsReportedWhereTheTrialBalanceHasIt() {
+        UUID cleaning = fx.leaf(fx.p1, "EXP_CLEANING");
+        posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 25), "legacy invoice", Dimensions.none(),
+                JournalSourceType.MANUAL, null, null, List.of(dr(cleaning, new BigDecimal("2800.00")),
+                cr(AccountRole.CASH, new BigDecimal("2800.00")))));
+        LocalDate asAt = LocalDate.of(2026, 9, 30);
+        String p1 = fx.p1.getId().toString();
+        BigDecimal tbNet = ledgerQueries.trialBalance(asAt, fx.p1.getId()).stream()
+                .map(t -> t.debit().subtract(t.credit())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(tbNet).as("the property's trial balance balances").isEqualByComparingTo("0");
+
+        BalanceSheetDTO r = service.balanceSheet(asAt, null, null);
+        assertThat(r.check().get(p1).amount()).as("property column").isEqualByComparingTo("0");
+        assertThat(r.check().get(PropertyPnlDTO.UNASSIGNED).amount()).as("unassigned column").isEqualByComparingTo("0");
+        assertThat(r.check().get(PropertyPnlDTO.TOTAL).amount()).isEqualByComparingTo("0");
+        // The company P&L puts that expense where the balance sheet does: Unassigned.
+        assertThat(r.currentYearResult().get(PropertyPnlDTO.UNASSIGNED).amount())
+                .isEqualByComparingTo(new BigDecimal("70.00").subtract(new BigDecimal("2800.00")));
     }
 }

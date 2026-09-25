@@ -52,8 +52,8 @@ import java.util.stream.Collectors;
  * Unassigned column and a check row that ties the report to the ledger.
  *
  * <p>Read-only and computed live from {@code journal_lines}: nothing is stored, so
- * every figure ties to the GL by construction. The effective property of a line is
- * {@code coalesce(line property, account property)}; rows are report lines
+ * every figure ties to the GL by construction. A line belongs to its own property
+ * dimension (the per-property trial balance's rule, F15-15); rows are report lines
  * ({@link ReportLines}), so properties line up.</p>
  *
  * <p>This is the P&L the year-end-close PR reuses for its close preview

@@ -221,9 +221,9 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                         </td>
                                         <td className={`${td} text-end tabular-nums font-semibold`}>
                                             {fmtAmount(p.amount)}
-                                            {!!p.vatAmount && p.vatAmount > 0 && (
+                                            {vatOf(p) > 0 && (
                                                 <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-vat-${i}`}>
-                                                    {t("plusVat", { amount: fmtAmount(p.vatAmount) })}
+                                                    {t("plusVat", { amount: fmtAmount(vatOf(p)) })}
                                                 </span>
                                             )}
                                             {p.proposedAmount != null && (
@@ -314,6 +314,14 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                 confirmTestId={decision ? `penalty-${decision.action}-confirm` : "penalty-decision-confirm"}
             >
                 <div className="space-y-3">
+                    {decision?.action === "approve" && (
+                        // F15-18: what approval charges the renter, VAT included, before it is approved.
+                        <dl className="grid grid-cols-3 gap-2 text-xs bg-input/60 rounded-lg px-3 py-2" data-testid="penalty-approve-breakdown">
+                            <div><dt className="text-muted">{t("breakdownNet")}</dt><dd className="tabular-nums font-semibold"><bdi dir="ltr">{fmtAmount(decision.row.amount)}</bdi></dd></div>
+                            <div><dt className="text-muted">{t("breakdownVat")}</dt><dd className="tabular-nums font-semibold"><bdi dir="ltr">{fmtAmount(vatOf(decision.row))}</bdi></dd></div>
+                            <div><dt className="text-muted">{t("breakdownGross")}</dt><dd className="tabular-nums font-semibold"><bdi dir="ltr">{fmtAmount(decision.row.amount + vatOf(decision.row))}</bdi></dd></div>
+                        </dl>
+                    )}
                     {(decision?.action === "approve" || decision?.action === "reverse") && (
                         <div>
                             <label className={dialogLabel} htmlFor="penalty-decision-date">
@@ -375,4 +383,9 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
             </LeaseDialog>
         </div>
     );
+}
+
+/** F15-18: the VAT a charge carries — posted once approved, else what approval will add. */
+function vatOf(p: PenaltyAssessment): number {
+    return p.expectedVat ?? p.vatAmount ?? 0;
 }

@@ -8,7 +8,6 @@ import com.datagami.rentaxis.api.dto.vat.VatReturnDTO.OutputCheck;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.VatReturn;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.domain.repository.VatReturnRepository;
@@ -486,7 +485,9 @@ public class VatReturnService {
 
     private String nameOf(UUID userId) {
         if (userId == null) return null;
-        return users.findById(userId).map(User::getName).orElse(null);
+        // F15-17: a SUPER_ADMIN filing inside an organisation has no tenant_id; the
+        // tenant-filtered findById cannot see them.
+        return users.findDisplayNameById(userId).orElse(null);
     }
 
     private static UUID tenant() {

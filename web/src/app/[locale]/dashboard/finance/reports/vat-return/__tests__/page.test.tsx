@@ -48,4 +48,17 @@ describe("VAT return page", () => {
         fireEvent.click(confirm);
         await waitFor(() => expect(api.reopen).toHaveBeenCalledWith("r1", "Late invoice"));
     });
+
+    it("shows dd/mm/yyyy dates and who filed (F15-16, F15-17)", async () => {
+        api.get.mockResolvedValue({ ...base, id: "r1", status: "FILED", filedAt: "2026-07-10T00:00:00Z", filedByName: "Platform Admin", canFile: false });
+        api.filings.mockResolvedValue([{ id: "r1", periodStart: "2026-04-01", periodEnd: "2026-06-30", status: "FILED", netVat: 10,
+            filingReference: null, filedAt: "2026-07-10T00:00:00Z", filedByName: "Platform Admin", reopenedAt: null, reopenReason: null }]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        const history = await screen.findByTestId("vat-history");
+        expect(history.textContent).toContain("01/04/2026 – 30/06/2026");
+        expect(history.textContent).toContain("filed by Platform Admin");
+        expect(screen.getByTestId("vat-status").textContent).toContain("10/07/2026");
+        const quarter = screen.getByTestId("vat-quarter") as HTMLSelectElement;
+        expect([...quarter.options].map(o => o.textContent)).not.toContain("2026-04-01");
+    });
 });
