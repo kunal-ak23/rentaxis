@@ -70,6 +70,7 @@ export default function PropertyDetailPage() {
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
     const tLedger = useTranslations("Ledger");
+    const tNav = useTranslations("Navigation");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -501,7 +502,16 @@ export default function PropertyDetailPage() {
             )}
 
             {activeTab === "units" && (
-                <UnitsTab units={units} buildings={buildings} propertyId={propertyId} canCreate={canCreate} onUpdate={fetchUnits} />
+                <>
+                    {/* The occupancy view (reserved / maintenance, incoming tenant) had no inbound link. */}
+                    <div className="flex justify-end mb-3">
+                        <Link href={`/dashboard/properties/${propertyId}/units`} data-testid="property-units-page-link"
+                            className="text-xs font-semibold text-primary hover:underline">
+                            {tNav("openUnitsPage")}
+                        </Link>
+                    </div>
+                    <UnitsTab units={units} buildings={buildings} propertyId={propertyId} canCreate={canCreate} onUpdate={fetchUnits} />
+                </>
             )}
 
             {activeTab === "leases" && (
