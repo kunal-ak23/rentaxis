@@ -75,6 +75,7 @@ public class LeaseController {
     private final LeaseRenewalService leaseRenewalService;
     private final LeaseTerminationService leaseTerminationService;
     private final LeaseVariationService leaseVariationService;
+    private final com.datagami.rentaxis.core.service.lease.RentFreeService rentFreeService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -138,6 +139,38 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto) {
         return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
+    }
+
+    /**
+     * Spec §4a/§4c: what renewing on these terms would draft — the rent before and
+     * after, the copied lines, the one-off lines not copied, and the notice threshold.
+     * Writes nothing.
+     */
+    @GetMapping("/{id}/renewal-preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO> renewalPreview(
+            @PathVariable UUID id,
+            @RequestParam java.time.LocalDate startDate,
+            @RequestParam java.time.LocalDate endDate,
+            @RequestParam(required = false) com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest.RentChange.Mode mode,
+            @RequestParam(required = false) java.math.BigDecimal percent,
+            @RequestParam(required = false) java.math.BigDecimal amount,
+            @RequestParam(defaultValue = "false") boolean carryDeposit) {
+        var r = new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null, startDate, endDate, null, carryDeposit,
+                new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest.RentChange(mode, percent, amount), null, null);
+        return ResponseEntity.ok(leaseRenewalService.preview(id, r));
+    }
+
+    /**
+     * Spec §4b (#50): replace a DRAFT lease's rent-free periods. The contract's rent
+     * line carries the concession; the draft cheque grid is dropped for regeneration.
+     */
+    @PutMapping("/{id}/rent-free-periods")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDTO> replaceRentFreePeriods(
+            @PathVariable UUID id,
+            @RequestBody List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> periods) {
+        return ResponseEntity.ok(rentFreeService.replace(id, periods));
     }
 
     @DeleteMapping("/{id}")

@@ -120,6 +120,24 @@ public class Lease extends BaseTenantEntity {
             com.datagami.rentaxis.domain.entity.enums.VatTiming.INSTALMENT;
 
     /**
+     * F14-18: whether this lease's periodic fees are earned over the term
+     * ({@code OVER_TERM}, leases posted from round 15) or are income at posting
+     * ({@code AT_POSTING}: leases already on the books and cut-over imports).
+     */
+    /** Spec §4a: on a renewal, the predecessor's headline rent this one revised (null otherwise). */
+    @Column(name = "renewal_previous_rent")
+    private java.math.BigDecimal renewalPreviousRent;
+
+    /** Spec §4a: the revision as a percentage of that rent, 3 dp (null otherwise). */
+    @Column(name = "renewal_change_percent")
+    private java.math.BigDecimal renewalChangePercent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fee_timing", nullable = false, length = 12)
+    private com.datagami.rentaxis.domain.entity.enums.FeeTiming feeTiming =
+            com.datagami.rentaxis.domain.entity.enums.FeeTiming.OVER_TERM;
+
+    /**
      * The organisation's TRN when this lease posted with VAT on the INSTALMENT
      * model — what its tax invoices fall back to if the TRN is later cleared, so a
      * receipt or a termination never fails on a setting changed after the fact.

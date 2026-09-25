@@ -233,8 +233,10 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(tco.getDocType()).isEqualTo(JournalDocType.TCO);
         assertThat(tco.getEntryDate()).isEqualTo(ADDENDUM_DATE);
         assertThat(tco.getNarration()).isEqualTo("Addendum " + addNumber(1) + ": Parking bay P-12");
+        // F14-18: a parking fee is earned over the addendum's window, so the TCO parks
+        // it in Unearned charges; recognition releases it to parking income.
         assertThat(linesOf(tco.getId())).extracting(JournalLine::getAccountId)
-                .containsExactly(leaf(AccountRole.RENT_RECEIVABLE).getId(), leaf(AccountRole.PARKING_INCOME).getId());
+                .containsExactly(leaf(AccountRole.RENT_RECEIVABLE).getId(), leaf(AccountRole.UNEARNED_CHARGES).getId());
 
         // Nothing that money settled against moved.
         assertThat(tx.execute(s -> entries.findById(originalTcoId).orElseThrow()).getStatus())
@@ -264,7 +266,14 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(after.subtract(before)).isEqualByComparingTo("6000");
         assertThat(balanceOf(leaf(AccountRole.RENT_RECEIVABLE), leaseId)).isEqualByComparingTo("0");
-        assertThat(balanceOf(leaf(AccountRole.PARKING_INCOME), leaseId)).isEqualByComparingTo("-6000");
+        assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES), leaseId)).isEqualByComparingTo("-6000");
+        assertThat(balanceOf(leaf(AccountRole.PARKING_INCOME), leaseId)).isEqualByComparingTo("0");
+        // …earned from the addendum's effective date, not over the whole term.
+        RentSegment parkingSegment = segmentsOf(leaseId).stream()
+                .filter(sg -> sg.getIncomeAccountId() != null).findFirst().orElseThrow();
+        assertThat(parkingSegment.getFromDate()).isEqualTo(EFFECTIVE);
+        assertThat(parkingSegment.getToDate()).isEqualTo(END);
+        assertThat(parkingSegment.getAmount()).isEqualByComparingTo("6000");
         assertThat(balanceOf(leaf(AccountRole.PDC_RECEIVABLE), leaseId)).isEqualByComparingTo("59000");
         assertThat(reread(leaseId).getEndDate()).isEqualTo(END);
     }

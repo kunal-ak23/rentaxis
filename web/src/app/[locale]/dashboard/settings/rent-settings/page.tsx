@@ -44,6 +44,8 @@ type RentSettings = {
     fineAccountClosedAmount: number | null;
     fineGraceDays: number | null;
     finePerDayRate: number | null;
+    /** Spec §4a: a renewal increase above this percentage shows a notice; null = none. */
+    renewalIncreaseWarnPercent: number | null;
 };
 
 type FineConfig = {
@@ -65,6 +67,7 @@ const DEFAULT_SETTINGS: Omit<RentSettings, "propertyId"> = {
     fineAccountClosedAmount: null,
     fineGraceDays: null,
     finePerDayRate: null,
+    renewalIncreaseWarnPercent: null,
 };
 
 const ORG_FINE_DEFAULTS: FineConfig = {
@@ -78,6 +81,7 @@ const ORG_FINE_DEFAULTS: FineConfig = {
 export default function RentSettingsPage() {
     const t = useTranslations("OnlinePayments");
     const tFines = useTranslations("Fines");
+    const tRenewal = useTranslations("Renewal");
     const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -183,6 +187,7 @@ export default function RentSettingsPage() {
                     fineAccountClosedAmount: settings.fineAccountClosedAmount,
                     fineGraceDays: settings.fineGraceDays,
                     finePerDayRate: settings.finePerDayRate,
+                    renewalIncreaseWarnPercent: settings.renewalIncreaseWarnPercent,
                 }),
             });
             if (res.ok) {
@@ -364,6 +369,25 @@ export default function RentSettingsPage() {
                                 className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                             <p className="text-[10px] text-muted mt-1">{t("gracePeriodHint")}</p>
+                        </div>
+
+                        {/* Spec §4a: renewal increase notice (informational, never a cap) */}
+                        <div>
+                            <label htmlFor="renewal-warn-percent" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
+                                {tRenewal("warnPercent")}
+                            </label>
+                            <input
+                                id="renewal-warn-percent"
+                                data-testid="renewal-warn-percent"
+                                type="number"
+                                min={0}
+                                step="0.1"
+                                value={settings.renewalIncreaseWarnPercent ?? ""}
+                                onChange={(e) => updateField("renewalIncreaseWarnPercent",
+                                    e.target.value === "" ? null : Math.max(0, Number(e.target.value)))}
+                                className="w-32 border border-border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
+                            />
+                            <p className="text-[10px] text-muted mt-1">{tRenewal("warnPercentHint")}</p>
                         </div>
 
                         {/* Penalty Type */}

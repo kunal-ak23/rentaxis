@@ -61,6 +61,10 @@ public class RentCollectionSettings extends BaseTenantEntity {
     @Column(name = "payment_reminder_days", length = 50)
     private String paymentReminderDays = "7,3,1";
 
+    /** Spec §4a: a renewal increase above this percentage shows a notice (informational; null = none). */
+    @Column(name = "renewal_increase_warn_percent")
+    private BigDecimal renewalIncreaseWarnPercent;
+
     @Column(name = "created_at")
     private Instant createdAt;
 

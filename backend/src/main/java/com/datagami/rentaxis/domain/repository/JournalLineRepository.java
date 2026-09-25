@@ -142,6 +142,26 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
         """, nativeQuery = true)
     List<BalanceRow> balancesAsOf(@Param("tenantId") UUID tenantId, @Param("asOf") LocalDate asOf, @Param("propertyId") UUID propertyId);
 
+    /** Σ(debit − credit) of one account over all time (PR #358 R1 P2-1). Native: binds the tenant. */
+    @Query(value = """
+        select coalesce(sum(l.debit),0) - coalesce(sum(l.credit),0) from journal_lines l
+        where l.tenant_id = :tenantId and l.account_id = :accountId
+        """, nativeQuery = true)
+    BigDecimal accountBalance(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId);
+
+    /** {@link #balancesAsOf} without the year-end closing entries dated on {@code asOf} (spec 2026-09-24 §3). */
+    @Query(value = """
+        select l.account_id as accountId, coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+        where l.tenant_id = :tenantId and e.entry_date <= :asOf
+          and not (e.doc_type = 'YEC' and e.entry_date = :asOf)
+          and (cast(:propertyId as uuid) is null or l.property_id = :propertyId)
+        group by l.account_id
+        having coalesce(sum(l.debit),0) <> 0 or coalesce(sum(l.credit),0) <> 0
+        """, nativeQuery = true)
+    List<BalanceRow> balancesAsOfBeforeClosing(@Param("tenantId") UUID tenantId, @Param("asOf") LocalDate asOf,
+                                               @Param("propertyId") UUID propertyId);
+
     // ---- property P&L and statement pack (finance-ops spec §1) ----
     //
     // Effective property of a line = coalesce(line dimension, account's property):

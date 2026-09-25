@@ -65,6 +65,14 @@ public class LeaseLine extends BaseTenantEntity {
     @Column(name = "discount_amount", nullable = false)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    /**
+     * Spec §4b: the rent-free concession on the contract's RENT line (0 elsewhere).
+     * {@code net = gross − discount − rentFree}; derived from the lease's
+     * rent-free periods by {@code RentFreeService}.
+     */
+    @Column(name = "rent_free_amount", nullable = false)
+    private BigDecimal rentFreeAmount = BigDecimal.ZERO;
+
     @Column(name = "net_amount", nullable = false)
     private BigDecimal netAmount = BigDecimal.ZERO;
 

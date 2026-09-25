@@ -109,4 +109,18 @@ public class LeaseDTO {
     private BigDecimal contractValue;
 
     private List<LeaseLineDTO> lines;
+
+    /**
+     * Spec §4c: on the response to a renewal only — the predecessor's one-off
+     * lines (e.g. an admin fee) that were not copied, so nothing is dropped
+     * silently. Null elsewhere.
+     */
+    private List<LeaseLineDTO> skippedOneOffLines;
+
+    /** Spec §4b: the contract's rent-free windows and their concessions; empty when none. */
+    private List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriods;
+
+    /** Spec §4a: on a renewal, the headline rent it revised and the change in percent; null otherwise. */
+    private BigDecimal renewalPreviousRent;
+    private BigDecimal renewalChangePercent;
 }

@@ -1910,10 +1910,10 @@
     "importBatchFilter": "Import batch",
     "removeFilter": "Remove this filter",
     "accountCodeLabel": "Account Code",
-    "accountNameLabel": "Name"
+    "accountNameLabel": "Name",
+    "chargeTypes": "Charge types"
   },
   "Leasing": {
-    "renewCopiedChargesNotice": "{count, plural, one {This charge will} other {These charges will}} be copied to the new term: {list}. Untick “Copy the charge lines” to edit {count, plural, one {it} other {them}}.",
     "noticeGivenBy": "Given by",
     "noticeParty": {"RENTER": "Renter", "LANDLORD": "Landlord"},
     "noticeDate": "Notice date",
@@ -2343,7 +2343,9 @@
       "cheque": {
         "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
-        "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}"
+        "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}",
+        "depositBeforeBooked": "{row} was put on the books on {booked}; it cannot be deposited on {date}, before that date. Deposit it on or after {booked}.",
+        "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
         "reverseBeforeCharge": "A reversal cannot be dated before the penalty was charged ({charged})."
@@ -2356,6 +2358,9 @@
         "duplicateTrn": "{vendor} already uses this TRN.",
         "duplicateName": "{vendor} already uses this name.",
         "hasPostings": "{vendor} has postings. Mark it inactive instead."
+      },
+      "account": {
+        "deactivateWithBalance": "Account {account} still has a balance of {balance}; move the balance (or close the fiscal year) before deactivating it."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -2447,7 +2452,7 @@
     "dateHint": "Inside the contract term, {start} – {end}.",
     "earnedThroughDate": "Earned through date",
     "recognisedSoFar": "Recognised so far",
-    "unearnedRent": "Unearned rent to reverse",
+    "unearnedRent": "Unearned rent and charges to reverse",
     "unearnedVat": "Unearned VAT to credit",
     "unearnedVatHint": "Credited back by the same TCR as a credit note. Already netted off the receivable below.",
     "unearnedVatInstalmentHint": "Settled by the same TCR: the VAT on instalments not yet declared is cancelled, the part of it that covers rent earned by the termination date is declared at that date, and any VAT already declared on rent not supplied is credited back with a credit note. Already netted off the receivable below.",
@@ -3886,5 +3891,113 @@
     "bankLocksTitle": "Bank accounts reconciled through",
     "bankLocksHint": "Each bank account's own lock, set when a reconciliation is finalized. It applies on top of the period lock above.",
     "notReconciled": "Not reconciled yet"
+  },
+  "ChargeTypes": {
+    "title": "Charge types",
+    "description": "The charges a lease can carry, and how each fee reaches the books.",
+    "accessDenied": "Only an administrator or accountant can manage charge types.",
+    "code": "Code",
+    "name": "Name",
+    "behaviour": "Kind",
+    "recognition": "How it is earned",
+    "renewal": "On renewal",
+    "active": "Active",
+    "yes": "Yes",
+    "no": "No",
+    "behaviours": {
+      "RENT": "Rent",
+      "DEPOSIT": "Deposit",
+      "FEE": "Fee"
+    },
+    "recognitions": {
+      "RENT_LIKE": "Over the term, like rent",
+      "ONE_OFF": "One-off, when charged",
+      "PASS_THROUGH": "Recovered at cost (not income)"
+    },
+    "renewalCopied": "Copied",
+    "renewalSkipped": "Not copied (one-off)",
+    "renewalDeposit": "Carried or re-collected",
+    "appliesToNewLeases": "A change applies to leases posted afterwards. Leases already on the books are not restated."
+  },
+  "RentFree": {
+    "title": "Rent-free periods",
+    "hint": "The rent line keeps its headline for the whole term; the concession comes off what the renter pays. Income is spread evenly over the whole term, free months included. Saving drops the draft cheque grid so it can be regenerated.",
+    "from": "From",
+    "to": "To",
+    "override": "Concession (optional)",
+    "note": "Note",
+    "remove": "Remove period",
+    "add": "Add rent-free period",
+    "save": "Save periods",
+    "saveFailed": "The rent-free periods could not be saved.",
+    "days": "{days} days",
+    "concession": "concession <n>{amount}</n>",
+    "summary": "Headline rent <n>{headline}</n> − concession <n>{concession}</n> = payable <n>{payable}</n>"
+  },
+  "Renewal": {
+    "rentChange": "Rent change",
+    "modes": {
+      "NONE": "No change",
+      "PERCENT": "By percent",
+      "AMOUNT": "New amount"
+    },
+    "percent": "Change in percent",
+    "newRent": "New annual rent",
+    "rentPreview": "Rent <n>{from}</n> → <n>{to}</n> (<n>{change}</n>)",
+    "aboveNotice": "This increase is above the building's notice threshold of <n>{percent}%</n>. It is allowed; check it before posting.",
+    "previewFailed": "The renewal preview could not be loaded.",
+    "concessionsDoNotRenew": "A discount and rent-free periods do not carry over to the new term.",
+    "notCopied": "Not copied (one-off):",
+    "additionalCharges": "Additional charges",
+    "chargeType": "Charge",
+    "amount": "Amount",
+    "vat": "VAT",
+    "removeCharge": "Remove charge",
+    "addCharge": "Add charge",
+    "ejari": "Ejari number",
+    "ejariPlaceholder": "Leave blank if not registered yet",
+    "revised": "Rent revised from <n>{from}</n> to <n>{to}</n> (<n>{change}</n>)",
+    "warnPercent": "Renewal increase notice (%)",
+    "warnPercentHint": "A renewal that raises the rent by more than this shows a notice. It is not a cap; leave blank for no notice.",
+    "droppedDiscount": "Discount <n>{amount}</n> on the current lease does not renew"
+  },
+  "FiscalYears": {
+    "title": "Fiscal years",
+    "description": "Closing a year moves its income and expense into Retained Earnings (one line per property) and locks it. Re-opening reverses that entry.",
+    "year": "Year",
+    "period": "Period",
+    "status": "Status",
+    "netResult": "Net result",
+    "statuses": {
+      "OPEN": "Open",
+      "CLOSED": "Closed",
+      "REOPENED": "Re-opened"
+    },
+    "close": "Close year",
+    "reopen": "Re-open",
+    "closeTitle": "Close fiscal year {year}",
+    "closeDescription": "One closing entry is posted on the year's last day and the year is locked.",
+    "override": "Close anyway",
+    "income": "Income",
+    "expense": "Expense",
+    "retainedEarnings": "Retained earnings",
+    "noProperty": "No property",
+    "credit": "Cr <n>{amount}</n>",
+    "debit": "Dr <n>{amount}</n>",
+    "lockAfter": "Books will be locked through <n>{date}</n>.",
+    "reopenTitle": "Re-open fiscal year {year}",
+    "reopenWarning": "This reverses the closing entry and unlocks every period after <n>{date}</n>. Lock the books again when you are done.",
+    "reason": "Reason",
+    "issues": {
+      "alreadyClosed": "Fiscal year {year} is already closed.",
+      "notEnded": "Fiscal year {year} ends on {end}; it can be closed from the day after.",
+      "previousOpen": "Close fiscal year {year} first; years close in order.",
+      "recognitionPending": "{count} recognition period(s) ending on or before {end} are not posted yet; run month-end recognition to year end first.",
+      "vatPending": "{count} VAT tax point(s) dated on or before {end} are not declared yet; post them first.",
+      "importDraft": "A cut-over import batch is still in draft; post or discard it first.",
+      "draftVouchers": "{count} draft voucher(s) are dated inside the year; closing will lock them out of it."
+    },
+    "beforeClosing": "Before closing entries",
+    "cancel": "Cancel"
   }
 }

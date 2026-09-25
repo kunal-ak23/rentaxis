@@ -135,6 +135,18 @@ public class RentSegment extends BaseTenantEntity {
     @Column(name = "original_to_date")
     private LocalDate originalToDate;
 
+    /**
+     * F14-18: for a periodic fee's segment, the liability its {@code TCO} deferred
+     * into ({@code UNEARNED_CHARGES}, resolved when the lease posted) and the income
+     * account each month is released to (the fee line's own). Null on a RENT
+     * segment, whose accounts come from the line and the lease as before.
+     */
+    @Column(name = "deferral_account_id")
+    private UUID deferralAccountId;
+
+    @Column(name = "income_account_id")
+    private UUID incomeAccountId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)
     private SegmentStatus status = SegmentStatus.ACTIVE;

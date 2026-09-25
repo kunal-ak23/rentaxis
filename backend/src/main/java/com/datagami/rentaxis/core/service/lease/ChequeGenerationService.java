@@ -18,6 +18,7 @@ import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
+import com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
@@ -494,8 +495,73 @@ public class ChequeGenerationService {
         }
         int n = installments(r, lease);
         LocalDate firstDueDate = firstNonNull(r.firstDueDate(), lease.getFirstDueDate(), lease.getStartDate());
-        return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
+        // Spec §4b: the renter pays nothing during a rent-free window: an instalment
+        // that lands inside one (the first, on a free first month) moves to the day
+        // after it.
+        List<LeaseRentFreePeriod> free = rentFreePeriods == null ? List.of()
+                : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
+        if (free.isEmpty()) {
+            return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
+                    lease.getEndDate(), distribution, fold);
+        }
+        // PR #358 R1: one instalment per charged month, never two on one date. The
+        // month anchors are the usual ones with each free-window anchor moved to the
+        // day after the window (duplicates dropped); the instalments spread over them
+        // as they would over plain months. A monthly lease (no explicit count) gets
+        // one instalment per charged month; an explicit count above it is refused.
+        List<LocalDate> anchors = chargedAnchors(firstDueDate, lease.getEndDate(), free);
+        int m = anchors.size();
+        if (n > m) {
+            if (r.installments() != null) {
+                throw new BusinessRuleViolationException("The term has " + m + " charged month(s) after its rent-free"
+                        + " period(s); use at most " + m + " instalment(s).");
+            }
+            n = m;
+        }
+        List<Row> rows = buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                 lease.getEndDate(), distribution, fold);
+        List<Row> out = new ArrayList<>(rows.size());
+        int rentIndex = 0;
+        for (Row row : rows) {
+            boolean rentRow = row.kind() == ChequeRowKind.RENT || row.kind() == ChequeRowKind.MIXED;
+            LocalDate due = rentRow && rentIndex < n
+                    ? anchors.get((int) Math.floor((double) (rentIndex++) * m / n))
+                    : outOfFree(row.chequeDate(), free);
+            out.add(new Row(row.seqNo(), row.postingDate(), due, row.amount(), row.narration(), row.vat(),
+                    row.taxable(), row.kind()));
+        }
+        return out;
+    }
+
+    /** Each month's due date from {@code first}, moved out of any rent-free window, distinct and in order. */
+    static List<LocalDate> chargedAnchors(LocalDate first, LocalDate end, List<LeaseRentFreePeriod> free) {
+        long months = com.datagami.rentaxis.core.util.DateMath.monthsInclusive(first, end);
+        List<LocalDate> anchors = new ArrayList<>();
+        for (long k = 0; k < months; k++) {
+            LocalDate a = outOfFree(first.plusMonths(k), free);
+            if (a.isAfter(end)) continue;
+            if (!anchors.isEmpty() && !a.isAfter(anchors.get(anchors.size() - 1))) continue;
+            anchors.add(a);
+        }
+        if (anchors.isEmpty()) anchors.add(outOfFree(first, free));
+        return anchors;
+    }
+
+    /** The day itself, or the day after the rent-free window it falls in (windows sorted by start). */
+    static LocalDate outOfFree(LocalDate day, List<LeaseRentFreePeriod> free) {
+        if (day == null) return null;
+        LocalDate d = day;
+        for (LeaseRentFreePeriod p : free) {
+            if (!d.isBefore(p.getFromDate()) && !d.isAfter(p.getToDate())) d = p.getToDate().plusDays(1);
+        }
+        return d;
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentFreePeriods(com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository repo) {
+        this.rentFreePeriods = repo;
     }
 
     /**

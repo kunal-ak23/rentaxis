@@ -1,0 +1,22 @@
+# Spec 2026-09-24 §4a (#24): the rent change a renewal made, for the lease header
+# and the contract ("Rent revised from 85,000 to 91,800, +8.00%"), and the
+# property's informational warning threshold for a renewal increase (no cap is
+# enforced; no RERA index — product decision 2026-09-24).
+databaseChangeLog:
+  - changeSet:
+      id: 130-renewal-terms
+      author: claude
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: renewal_previous_rent, type: "numeric(14,2)" }
+              - column: { name: renewal_change_percent, type: "numeric(7,3)" }
+        - addColumn:
+            tableName: rent_collection_settings
+            columns:
+              - column: { name: renewal_increase_warn_percent, type: "numeric(7,3)" }
+      rollback:
+        - dropColumn: { tableName: leases, columnName: renewal_previous_rent }
+        - dropColumn: { tableName: leases, columnName: renewal_change_percent }
+        - dropColumn: { tableName: rent_collection_settings, columnName: renewal_increase_warn_percent }

@@ -65,7 +65,10 @@ public class LedgerController {
     @GetMapping("/trial-balance")
     public ResponseEntity<List<TrialBalanceRowDTO>> trialBalance(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
-            @RequestParam(required = false) UUID propertyId) {
-        return ResponseEntity.ok(service.trialBalance(asOf, propertyId));
+            @RequestParam(required = false) UUID propertyId,
+            // Spec 2026-09-24 §3: the pre-closing TB the accountant reviews — the
+            // year-end closing entry dated on the as-of date is left out.
+            @RequestParam(defaultValue = "false") boolean excludeClosing) {
+        return ResponseEntity.ok(service.trialBalance(asOf, propertyId, excludeClosing));
     }
 }

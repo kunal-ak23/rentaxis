@@ -1,5 +1,6 @@
 "use client";
 
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { useLocale } from "next-intl";
@@ -60,6 +61,7 @@ const orNull = (v: string) => (v.trim() ? v.trim() : null);
 
 export default function AccountsPage() {
     const t = useTranslations("Finance");
+    const tCommon = useTranslations("Common");
     const tl = useTranslations("Ledger");
     const tr = useTranslations("PropertyReports");
     const locale = useLocale();
@@ -315,7 +317,8 @@ export default function AccountsPage() {
             setFormData(EMPTY_FORM);
             fetchAccounts();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : t("updateAccountFailed"));
+            // Coded refusals (e.g. account.deactivateWithBalance) in the user's language.
+            setFormError(err instanceof ApiError ? serverText(tCommon, err) || err.message : t("updateAccountFailed"));
         } finally {
             setSubmitting(false);
         }

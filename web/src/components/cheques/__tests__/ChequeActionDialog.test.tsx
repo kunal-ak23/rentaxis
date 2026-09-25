@@ -25,7 +25,7 @@ vi.mock("@/components/finance/AccountPicker", () => ({
 }));
 
 const api = vi.hoisted(() => ({
-    replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), receive: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
+    replace: vi.fn(), releaseOnline: vi.fn(), cancel: vi.fn(), receive: vi.fn(), deposit: vi.fn(), schedule: vi.fn(), leaseCheques: vi.fn(),
     fiscal: vi.fn(), defaultsGet: vi.fn(), settlementTarget: vi.fn(),
 }));
 
@@ -45,7 +45,7 @@ vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
         ...m,
-        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel, receive: api.receive, settlementTarget: api.settlementTarget },
+        chequeApi: { ...m.chequeApi, replace: api.replace, releaseOnline: api.releaseOnline, cancel: api.cancel, receive: api.receive, deposit: api.deposit, settlementTarget: api.settlementTarget },
         vatApi: { ...m.vatApi, schedule: api.schedule },
         leaseApi: { ...m.leaseApi, cheques: api.leaseCheques },
     };
@@ -376,5 +376,24 @@ describe("ChequeActionDialog — cancel with pending VAT", () => {
         await screen.findByTestId("cheque-move-vat-to");
         expect(screen.getByText(ar.Cheques.moveVatTo)).toBeInTheDocument();
         expect(ar.Cheques.moveVatTo).not.toEqual(en.Cheques.moveVatTo);
+    });
+});
+
+/** F14-64: a deposit dated before the row was booked is refused; the reason reads in the user's language. */
+describe("ChequeActionDialog — deposit before the row was booked (F14-64)", () => {
+    const refusal = () => new ApiError(400, "100041 was put on the books on 25/09/2026; it cannot be deposited on 01/09/2026", JSON.stringify({
+        code: "cheque.depositBeforeBooked",
+        args: { row: "100041", booked: "25/09/2026", date: "01/09/2026" },
+        message: "100041 was put on the books on 25/09/2026; it cannot be deposited on 01/09/2026",
+    }));
+
+    it.each([
+        ["en" as const, "cannot be deposited on 01/09/2026"],
+        ["ar" as const, "ولا يمكن إيداعه بتاريخ 01/09/2026"],
+    ])("shows the coded refusal in %s", async (locale, text) => {
+        api.deposit.mockRejectedValueOnce(refusal());
+        renderDialog("deposit", { status: "REGISTERED", bouncedAt: null, failureReason: null }, locale);
+        fireEvent.click(screen.getByTestId("cheque-deposit-confirm"));
+        expect((await screen.findByTestId("cheque-action-error")).textContent).toContain(text);
     });
 });

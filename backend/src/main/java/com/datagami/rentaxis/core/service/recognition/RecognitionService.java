@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
+import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
@@ -867,7 +868,10 @@ public class RecognitionService {
      */
     private void build(Lease lease, List<LeaseLine> lines) {
         for (LeaseLine line : lines) {
-            if (line.getChargeType() == null || line.getChargeType().getBehaviour() != ChargeBehaviour.RENT) continue;
+            boolean rent = line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.RENT;
+            // F14-18: a periodic fee the lease earns over its term, deferred by the TCO.
+            boolean fee = !rent && LeasePostingService.earnedOverTerm(lease, line);
+            if (!rent && !fee) continue;
             BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
             if (net.signum() <= 0) continue;
             if (segments.existsByLeaseLineIdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
@@ -880,7 +884,8 @@ public class RecognitionService {
             // with no schedule and nothing to show for it.
             if (from == null || to == null || to.isBefore(from)) {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo()
-                        + " charges rent but has no usable period to recognise it over (" + from + " – " + to + ").");
+                        + (rent ? " charges rent" : " is earned over the term")
+                        + " but has no usable period to recognise it over (" + from + " – " + to + ").");
             }
 
             RentSegment segment = new RentSegment();
@@ -893,6 +898,16 @@ public class RecognitionService {
             segment.setDays(ProrationEngine.daysInclusive(from, to));
             segment.setDayRate(ProrationEngine.dayRate(net, from, to));
             segment.setStatus(SegmentStatus.ACTIVE);
+            if (fee) {
+                // Resolved now, in the posting transaction that just credited it, so
+                // each month's release debits the very leaf the TCO deferred into and
+                // credits the fee's own income leaf — whatever the mappings say later.
+                segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+                segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
+                if (segment.getIncomeAccountId() == null) {
+                    throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");
+                }
+            }
             segment = segments.save(segment);
 
             for (ProrationEngine.Slice slice : ProrationEngine.slice(net, from, to)) {
@@ -972,9 +987,30 @@ public class RecognitionService {
             leases.findAllWithUnitAndPropertyByIdIn(leaseIds).forEach(l -> where.put(l.getId(), whereOf(l)));
         }
 
+        // F14-18: which rows earn a fee rather than rent, and which fee — one query
+        // for the page's segments and one for their lines.
+        List<UUID> segmentIds = rows.stream()
+                .map(r -> idOf(r.getSegment(), RentSegment::getId)).filter(Objects::nonNull).distinct().toList();
+        Map<UUID, LeaseLine> feeLineBySegment = new HashMap<>();
+        if (!segmentIds.isEmpty()) {
+            Map<UUID, UUID> lineOfFeeSegment = new HashMap<>();
+            segments.findAllById(segmentIds).forEach(sg -> {
+                if (sg.getIncomeAccountId() != null) lineOfFeeSegment.put(sg.getId(), sg.getLeaseLineId());
+            });
+            if (!lineOfFeeSegment.isEmpty()) {
+                Map<UUID, LeaseLine> lines = new HashMap<>();
+                leaseLines.findAllById(lineOfFeeSegment.values()).forEach(l -> lines.put(l.getId(), l));
+                lineOfFeeSegment.forEach((sid, lid) -> {
+                    LeaseLine l = lines.get(lid);
+                    if (l != null) feeLineBySegment.put(sid, l);
+                });
+            }
+        }
+
         return rows.stream().map(r -> toDto(r,
                 r.getJournalId() == null ? null : numbers.get(r.getJournalId()),
-                where.getOrDefault(idOf(r.getLease(), Lease::getId), Where.UNKNOWN))).toList();
+                where.getOrDefault(idOf(r.getLease(), Lease::getId), Where.UNKNOWN),
+                feeLineBySegment.get(idOf(r.getSegment(), RentSegment::getId)))).toList();
     }
 
     /** Which building and flat a row is about — resolved once per lease, not per row. */
@@ -990,7 +1026,8 @@ public class RecognitionService {
                 unit == null ? null : unit.getUnitNumber());
     }
 
-    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber, Where where) {
+    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber, Where where, LeaseLine feeLine) {
+        var type = feeLine == null ? null : feeLine.getChargeType();
         return new RecognitionEntryDTO(
                 r.getId(),
                 idOf(r.getLease(), Lease::getId),
@@ -1005,7 +1042,10 @@ public class RecognitionService {
                 r.getStatus(),
                 r.getJournalId(),
                 journalNumber,
-                r.getPostedAt());
+                r.getPostedAt(),
+                feeLine == null ? null : (type == null ? "FEE" : type.getCode()),
+                type == null ? null : type.getNameEn(),
+                type == null ? null : type.getNameAr());
     }
 
     /** {@code getId()} on a lazy proxy is answered from the foreign key, without a select. */

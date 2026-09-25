@@ -36,6 +36,16 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Query("SELECT a FROM Account a WHERE a.id = :id")
     Optional<Account> findByIdScopedToTenant(@Param("id") UUID id);
 
+    /**
+     * F14-18 / F14-37: the Utilities expense leaves (report line EXP_UTILITIES) a
+     * property's recovered-at-cost utilities pass through — its own first, then a
+     * tenant-wide one. JPQL, so the tenant filter applies; call inside a transaction.
+     */
+    @Query("SELECT a FROM Account a WHERE a.isActive = true AND a.isGroup = false AND a.reportLine = 'EXP_UTILITIES'"
+            + " AND (a.property.id = :propertyId OR a.property IS NULL)"
+            + " ORDER BY CASE WHEN a.property IS NULL THEN 1 ELSE 0 END, a.code")
+    List<Account> findUtilitiesLeaves(@Param("propertyId") UUID propertyId);
+
     Optional<Account> findByCode(String code);
 
     Optional<Account> findByCodeAndTenantId(String code, UUID tenantId);

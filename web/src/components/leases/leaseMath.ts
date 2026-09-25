@@ -57,6 +57,11 @@ export type LineRow = {
      */
     addendumId?: string | null;
     /**
+     * Spec §4b: the rent-free concession the server put on the contract's RENT line.
+     * Read-only and never sent — the server re-derives it from the lease's periods.
+     */
+    rentFreeAmount?: number;
+    /**
      * The operator ticked or unticked this row's VAT box by hand (#54 review
      * M-3). A touched RENT row keeps its choice when the header's "Rent carries
      * VAT" flag changes; an untouched one follows the header. Picking a new
@@ -96,6 +101,7 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         periodStart: line.periodStart ?? null,
         periodEnd: line.periodEnd ?? null,
         addendumId: line.addendumId ?? null,
+        rentFreeAmount: line.rentFreeAmount ?? 0,
     };
 }
 
@@ -120,12 +126,22 @@ export function renewalRows(
 ): LineRow[] {
     return lines
         .filter((l) => !l.addendumId
-            && !(l.behaviour === "RENT" && l.periodStart != null && l.periodStart > termStart)
+            // An extension's rent — and (F14-18) an extension's periodic fee — covered its window only.
+            && !((l.behaviour === "RENT" || (l.behaviour === "FEE" && (l.recognition ?? "RENT_LIKE") !== "ONE_OFF"))
+                && l.periodStart != null && l.periodStart > termStart)
+            // Spec §4c: a one-off fee is not renewed.
+            && !isOneOff(l)
             && !(opts.carryDepositForward && l.behaviour === "DEPOSIT"))
         .map((l, i) => {
             const row = toRow(l, i);
-            return l.behaviour === "RENT" ? { ...row, narration: "" } : row;
+            // Concessions do not renew (spec §4a): discount and rent-free reset.
+            return l.behaviour === "RENT" ? { ...row, narration: "", discountAmount: 0, rentFreeAmount: 0 } : row;
         });
+}
+
+/** Spec §4c: a FEE line whose charge type is one-off (e.g. an admin fee) — a renewal does not copy it. */
+export function isOneOff(l: LeaseLine): boolean {
+    return l.behaviour === "FEE" && l.recognition === "ONE_OFF";
 }
 
 /**
@@ -234,7 +250,7 @@ export function behaviourOf(row: LineRow, chargeTypes: ChargeType[]): ChargeBeha
 
 /** What the line actually charges, before tax. */
 export function netOf(row: LineRow): number {
-    return round2((row.grossAmount || 0) - (row.discountAmount || 0));
+    return round2((row.grossAmount || 0) - (row.discountAmount || 0) - (row.rentFreeAmount || 0));
 }
 
 /** VAT on the line — zero when not applicable, and always zero on a deposit. */

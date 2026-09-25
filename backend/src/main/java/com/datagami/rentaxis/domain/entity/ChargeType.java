@@ -57,6 +57,15 @@ public class ChargeType extends BaseTenantEntity {
     private ChargeBehaviour behaviour;
 
     /** Default only: the lease line carries its own {@code vatApplicable} once created. */
+    /**
+     * F14-18 / spec §4c: how a FEE line of this type is earned and whether a renewal
+     * copies it. RENT and DEPOSIT types carry RENT_LIKE.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private com.datagami.rentaxis.domain.entity.enums.ChargeRecognition recognition =
+            com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+
     @Column(name = "vat_applicable_default", nullable = false)
     private boolean vatApplicableDefault = false;
 

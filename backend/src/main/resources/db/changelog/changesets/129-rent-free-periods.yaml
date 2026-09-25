@@ -1,0 +1,58 @@
+# Spec 2026-09-24 §4b (#50) + F14-26: rent-free periods.
+#
+#   - lease_rent_free_periods: the free windows a contract grants (inside the term,
+#     not overlapping). concession_override is the operator's exact figure for the
+#     window ("exactly one month = 4,000"); null means headline × free days ÷ term days.
+#   - lease_lines.rent_free_amount: the concession on the contract's RENT line — the
+#     renter pays, the TCO raises and VAT is charged on gross − discount − concession.
+#   - ck_lease_lines_net is replaced to include it (changeset 83 is not edited).
+#
+# Recognition is straight-line (product decision 2026-09-24, IFRS 16): the RENT line
+# keeps the whole term as its window, so the day rate is the payable rent ÷ term
+# days and the free months recognise income like any other. Nothing in
+# recognition changes, which keeps the golden replays byte-identical.
+databaseChangeLog:
+  - changeSet:
+      id: 129-rent-free-periods
+      author: claude
+      changes:
+        - createTable:
+            tableName: lease_rent_free_periods
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lrfp_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: from_date, type: date, constraints: { nullable: false } }
+              - column: { name: to_date, type: date, constraints: { nullable: false } }
+              - column: { name: concession_override, type: "numeric(14,2)" }
+              - column: { name: note, type: varchar(255) }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            tableName: lease_rent_free_periods
+            indexName: ix_lrfp_lease
+            columns:
+              - column: { name: lease_id }
+        - sql:
+            sql: ALTER TABLE lease_rent_free_periods ADD CONSTRAINT ck_lrfp_dates CHECK (to_date >= from_date AND (concession_override IS NULL OR concession_override >= 0))
+        - addColumn:
+            tableName: lease_lines
+            columns:
+              - column:
+                  name: rent_free_amount
+                  type: "numeric(14,2)"
+                  defaultValueNumeric: 0
+                  constraints: { nullable: false }
+        - sql:
+            comment: net = gross - discount - rent-free concession
+            sql: |
+              ALTER TABLE lease_lines DROP CONSTRAINT ck_lease_lines_net;
+              ALTER TABLE lease_lines ADD CONSTRAINT ck_lease_lines_net
+                CHECK (net_amount = gross_amount - discount_amount - rent_free_amount AND net_amount >= 0);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE lease_lines DROP CONSTRAINT ck_lease_lines_net;
+              ALTER TABLE lease_lines ADD CONSTRAINT ck_lease_lines_net
+                CHECK (net_amount = gross_amount - discount_amount AND net_amount >= 0);
+              ALTER TABLE lease_lines DROP COLUMN IF EXISTS rent_free_amount;
+              DROP TABLE IF EXISTS lease_rent_free_periods;

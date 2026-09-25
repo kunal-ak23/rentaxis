@@ -230,6 +230,23 @@ public class AccountService {
         return Long.toString(code);
     }
 
+    /**
+     * PR #358 R1 P2-1: an account still carrying a balance cannot be deactivated —
+     * posting refuses inactive leaves, so its balance could never be cleared (and an
+     * income or expense leaf could only be closed by the year-end entry's exemption).
+     * Close the year, or move the balance with a journal, first.
+     */
+    private void requireNoBalance(Account account) {
+        java.math.BigDecimal balance = journalLineRepository.accountBalance(
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), account.getId());
+        if (balance != null && balance.signum() != 0) {
+            String shown = balance.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            throw new BusinessRuleViolationException("Account " + account.getCode() + " still has a balance of "
+                    + shown + "; move the balance (or close the fiscal year) before deactivating it.",
+                    "account.deactivateWithBalance", java.util.Map.of("account", account.getCode(), "balance", shown));
+        }
+    }
+
     @Transactional
     public Account updateAccount(UUID id, AccountUpdate updates) {
         Account existing = getAccountById(id);
@@ -243,6 +260,9 @@ public class AccountService {
         existing.setDescription(updates.description());
         existing.setAccountSubType(updates.accountSubType());
         if (updates.active() != null) {
+            if (!updates.active() && existing.isActive()) {
+                requireNoBalance(existing);
+            }
             existing.setActive(updates.active());
         }
         if (updates.displayOrder() != null) {
@@ -329,6 +349,9 @@ public class AccountService {
         seed(byCode, "B-01-06", "Unidentified bank receipts", "مقبوضات بنكية غير محددة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
         // F14-36: deposit refunds owed to renters until paid (role RENTER_REFUND_PAYABLE). Changeset 124.
         seed(byCode, "B-01-07", "Refunds payable – renters", "مبالغ مستردة مستحقة للمستأجرين", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B-01", null, false);
+        // F14-18: periodic fees billed for the whole term and earned month by month
+        // (role UNEARNED_CHARGES). Changeset 128.
+        seed(byCode, "B-01-08", "Unearned charges", "رسوم غير مكتسبة", AccountType.LIABILITY, AccountSubType.ADVANCE, "B-01", null, false);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
         // Finance-ops spec §2: post-dated cheques we issued, until the bank pays them
         // (role PDC_PAYABLE). Changeset 112 adds it to charts seeded before it existed.
@@ -353,6 +376,9 @@ public class AccountService {
         seed(byCode, "F", "Equity", "حقوق الملكية", AccountType.EQUITY, AccountSubType.CAPITAL, null, null, true);
         seed(byCode, "F-01", "Capital Account", "حساب رأس المال", AccountType.EQUITY, AccountSubType.CAPITAL, "F", "Owner's capital account", false);
         seed(byCode, "F-02", "Opening Balance Difference", "فرق الأرصدة الافتتاحية", AccountType.EQUITY, AccountSubType.CAPITAL, "F", "Suspense for an unbalanced opening-balance import; clear with a JV", false);
+        // Spec 2026-09-24 §3: the year-end close moves profit here (role RETAINED_EARNINGS),
+        // one account with the property on each line. Changeset 131.
+        seed(byCode, "F-03", "Retained Earnings", "الأرباح المحتجزة", AccountType.EQUITY, AccountSubType.RETAINED_EARNINGS, "F", "Profit and loss of closed fiscal years", false);
 
         return repository.saveAll(byCode.values());
     }

@@ -461,10 +461,71 @@ public class ContractGenerationService {
     public String buildSection3Rows(Lease lease) {
         StringBuilder sb = new StringBuilder();
         int sNo = 1;
-        for (LeaseLine l : chargeLines(lease)) {
+        List<LeaseLine> lines = chargeLines(lease);
+        for (LeaseLine l : lines) {
             sNo = appendSection3Row(sb, sNo, labelOf(l), l.getNetAmount(), vatOn(l));
         }
+        appendRentFreeRows(sb, lease, lines);
+        appendRenewalRow(sb, lease, lines);
         return sb.toString();
+    }
+
+    /** Spec §4a: "Rent revised from 85,000.00 to 91,800.00 (+8.00%)", EN and AR. */
+    private void appendRenewalRow(StringBuilder sb, Lease lease, List<LeaseLine> lines) {
+        if (lease.getRenewalPreviousRent() == null) return;
+        LeaseLine rent = com.datagami.rentaxis.core.service.LeaseService.contractRentLine(lease, lines);
+        if (rent == null) return;
+        BigDecimal pct = lease.getRenewalChangePercent() == null ? BigDecimal.ZERO : lease.getRenewalChangePercent();
+        String signed = (pct.signum() >= 0 ? "+" : "") + pct.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
+        // Net to net (PR #358 R1 P2-3): the previous rent is what the renter paid.
+        BigDecimal now = rent.getGrossAmount().subtract(nz(rent.getDiscountAmount()));
+        appendNoteRow(sb,
+                "Rent revised from AED " + formatAmount(lease.getRenewalPreviousRent()) + " to AED "
+                        + formatAmount(now) + " (" + signed + ")",
+                "تم تعديل الإيجار من " + formatAmount(lease.getRenewalPreviousRent()) + " درهم إلى "
+                        + formatAmount(now) + " درهم (" + signed + ")");
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentFreePeriods(com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository repo) {
+        this.rentFreePeriods = repo;
+    }
+
+    /**
+     * Spec §4b: each rent-free window, its days and the concession, under the
+     * charges — the rent row above already shows the payable rent. EN and AR.
+     */
+    private void appendRentFreeRows(StringBuilder sb, Lease lease, List<LeaseLine> lines) {
+        if (rentFreePeriods == null) return;
+        var periods = rentFreePeriods.findByLease_IdOrderByFromDateAsc(lease.getId());
+        if (periods.isEmpty()) return;
+        LeaseLine rent = com.datagami.rentaxis.core.service.LeaseService.contractRentLine(lease, lines);
+        if (rent == null) return;
+        long termDays = com.datagami.rentaxis.core.service.LeaseService.rentWindowDays(lease, rent);
+        // Numeric dates: the same text reads correctly in the Arabic line.
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        for (var p : periods) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(p.getFromDate(), p.getToDate()) + 1;
+            BigDecimal concession = com.datagami.rentaxis.core.service.LeaseService.concessionOf(p, rent.getGrossAmount(), termDays);
+            String en = "Rent-free period " + p.getFromDate().format(dmy) + " – " + p.getToDate().format(dmy)
+                    + " (" + days + " days): AED " + formatAmount(concession)
+                    + " off the headline rent of AED " + formatAmount(rent.getGrossAmount());
+            String ar = "فترة إعفاء من الإيجار " + p.getFromDate().format(dmy) + " – " + p.getToDate().format(dmy)
+                    + " (" + days + " يوماً): خصم " + formatAmount(concession)
+                    + " درهم من الإيجار الأساسي البالغ " + formatAmount(rent.getGrossAmount()) + " درهم";
+            appendNoteRow(sb, en, ar);
+        }
+    }
+
+    /** A full-width explanatory row in Section 3, English then Arabic. */
+    private void appendNoteRow(StringBuilder sb, String en, String ar) {
+        sb.append("<tr>")
+                .append("<td class=\"center\"></td>")
+                .append("<td colspan=\"5\" style=\"font-size:9px;\">").append(escapeUserText(en))
+                .append("<br/><span dir=\"rtl\">").append(escapeUserText(ar)).append("</span></td>")
+                .append("</tr>");
     }
 
     /**

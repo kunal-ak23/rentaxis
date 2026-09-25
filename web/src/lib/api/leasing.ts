@@ -34,6 +34,14 @@ async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string
 
 export type ChargeBehaviour = "RENT" | "DEPOSIT" | "FEE";
 
+/**
+ * F14-18 / spec §4c: how a FEE charge type is earned and whether a renewal copies it.
+ * RENT_LIKE — earned over the term like rent (copied); ONE_OFF — income when charged
+ * (not copied); PASS_THROUGH — a utility recovered at cost, never income (copied).
+ * RENT and DEPOSIT types always carry RENT_LIKE.
+ */
+export type ChargeRecognition = "RENT_LIKE" | "ONE_OFF" | "PASS_THROUGH";
+
 export type ChequeMode = "PDC" | "CASH" | "TRANSFER" | "ONLINE";
 
 export type ChequeStatus =
@@ -154,6 +162,8 @@ export type ChargeType = {
   vatApplicableDefault: boolean;
   active: boolean;
   displayOrder: number;
+  /** Absent from an older server; treat as RENT_LIKE. */
+  recognition?: ChargeRecognition | null;
 };
 
 /** LeaseLineDTO — a persisted lease line as read back from the server. */
@@ -180,6 +190,24 @@ export type LeaseLine = {
   periodEnd: string | null;
   /** The addendum that charged this line; null for the contract's own lines and an extension's. */
   addendumId?: string | null;
+  /** F14-18: the charge type's recognition; absent on an older server. */
+  recognition?: ChargeRecognition | null;
+  /** Spec §4b: the rent-free concession on the contract's RENT line; 0 elsewhere. */
+  rentFreeAmount?: number | null;
+};
+
+/** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */
+export type RentFreePeriod = {
+  id?: string | null;
+  fromDate: string;
+  toDate: string;
+  /** The operator's exact concession; null = headline × days ÷ term days. */
+  concessionOverride?: number | null;
+  note?: string | null;
+  /** Read-only: the concession in force. */
+  concession?: number | null;
+  /** Read-only: inclusive day count. */
+  days?: number | null;
 };
 
 /** LeaseLineInput — one line as the caller submits it (create, update, renew, extend, amend). */
@@ -276,6 +304,13 @@ export type LeaseDetail = {
   noticeGivenBy?: NoticeParty | null;
   intendedMoveOutDate?: string | null;
   lines: LeaseLine[];
+  /** Spec §4c: on a renewal's response only — the one-off lines not copied. */
+  skippedOneOffLines?: LeaseLine[] | null;
+  /** Spec §4b: the contract's rent-free windows; absent/empty when none. */
+  rentFreePeriods?: RentFreePeriod[] | null;
+  /** Spec §4a: on a renewal, the headline rent it revised and the change in percent. */
+  renewalPreviousRent?: number | null;
+  renewalChangePercent?: number | null;
 };
 
 /** AmendLeaseLinesRequest. */
@@ -284,6 +319,10 @@ export type AmendLeaseLinesInput = {
   reason?: string | null;
 };
 
+/** Spec §4a: how a renewal moves the rent. PERCENT rounds to whole AED and needs the same term length. */
+export type RentChangeMode = "NONE" | "PERCENT" | "AMOUNT";
+export type RentChange = { mode: RentChangeMode; percent?: number | null; newRentAmount?: number | null };
+
 /** RenewLeaseRequest — `lines` omitted/null means "copy the predecessor's lines". */
 export type RenewLeaseInput = {
   contractDate?: string | null;
@@ -291,6 +330,29 @@ export type RenewLeaseInput = {
   endDate: string;
   lines?: LeaseLineInput[] | null;
   carryDepositForward: boolean;
+  /** Spec §4a: only with copied lines (the server refuses both). */
+  rentChange?: RentChange | null;
+  /** Spec §4a: the new registration, when known; blank leaves a follow-up on the draft. */
+  ejariNumber?: string | null;
+  /** Spec §4d: charges added to the renewal, e.g. a renewal fee. */
+  additionalLines?: LeaseLineInput[] | null;
+};
+
+/** RenewalPreviewDTO (spec §4a/§4c). */
+export type RenewalPreview = {
+  baseRent: number | null;
+  newRent: number | null;
+  changePercent: number | null;
+  copiedLines: {
+    chargeTypeId: string | null; chargeTypeCode: string | null; chargeTypeName: string | null;
+    chargeTypeNameAr: string | null; behaviour: ChargeBehaviour | null;
+    grossAmount: number; discountAmount: number | null; vatApplicable: boolean;
+  }[];
+  skippedOneOffLines: LeaseLine[];
+  warnPercent: number | null;
+  exceedsWarn: boolean;
+  /** PR #358 R1 P2-3: the current lease's rent discount, which does not renew. */
+  droppedDiscount?: number | null;
 };
 
 /** ChequeRowInput — one row of a lease's cheque grid, or an extension's registered cheques. */
@@ -554,6 +616,10 @@ export type RecognitionEntry = {
   journalNumber: string | null;
   /** Instant — an ISO timestamp, not a date. */
   postedAt: string | null;
+  /** F14-18: the periodic fee this row earns (its charge type), or null/absent for rent. */
+  chargeCode?: string | null;
+  chargeName?: string | null;
+  chargeNameAr?: string | null;
 };
 
 /**
@@ -1154,11 +1220,17 @@ export const leaseApi = {
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),
+  /** Spec §4b: replace a DRAFT's rent-free periods; returns the lease with the concession applied. */
+  setRentFreePeriods: (id: string, periods: RentFreePeriod[]) =>
+    send<LeaseDetail>("PUT", `/leases/${id}/rent-free-periods`, periods),
   post: (id: string) => send<PostLeaseResponse>("POST", `/leases/${id}/post`),
   /** `?dryRun=true` — every validation a post would run, nothing written. */
   dryRunPost: (id: string) => send<PostLeaseDryRunResponse>("POST", `/leases/${id}/post${qs({ dryRun: true })}`),
   amendLines: (id: string, body: AmendLeaseLinesInput) => send<PostLeaseResponse>("POST", `/leases/${id}/amend-lines`, body),
   renew: (id: string, body: RenewLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/renew`, body),
+  /** Spec §4a/§4c: what renewing on these terms would draft; writes nothing. */
+  renewalPreview: (id: string, q: { startDate: string; endDate: string; mode?: RentChangeMode; percent?: number | null; amount?: number | null; carryDeposit?: boolean }) =>
+    get<RenewalPreview>(`/leases/${id}/renewal-preview${qs({ startDate: q.startDate, endDate: q.endDate, mode: q.mode ?? "NONE", percent: q.percent ?? undefined, amount: q.amount ?? undefined, carryDeposit: q.carryDeposit ?? false })}`),
   extend: (id: string, body: ExtendLeaseInput) => send<PostLeaseResponse>("POST", `/leases/${id}/extend`, body),
   addCharge: (id: string, body: AddChargeInput) => send<AddendumResponse>("POST", `/leases/${id}/addenda`, body),
   addenda: (id: string) => get<LeaseAddendum[]>(`/leases/${id}/addenda`),

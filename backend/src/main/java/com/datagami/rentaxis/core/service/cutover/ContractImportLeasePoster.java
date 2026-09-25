@@ -116,8 +116,18 @@ public class ContractImportLeasePoster {
     private void onContractVatTiming(UUID leaseId) {
         Lease lease = leases.findByIdScopedToTenant(leaseId)
                 .orElseThrow(() -> new BusinessRuleViolationException("This lease no longer exists"));
+        boolean changed = false;
         if (lease.getVatTiming() != VatTiming.CONTRACT) {
             lease.setVatTiming(VatTiming.CONTRACT);
+            changed = true;
+        }
+        // F14-18: fees stay income at posting for a cut-over contract, including a
+        // draft persisted before changeset 128 defaulted it to OVER_TERM.
+        if (lease.getFeeTiming() != com.datagami.rentaxis.domain.entity.enums.FeeTiming.AT_POSTING) {
+            lease.setFeeTiming(com.datagami.rentaxis.domain.entity.enums.FeeTiming.AT_POSTING);
+            changed = true;
+        }
+        if (changed) {
             leases.saveAndFlush(lease);
         }
     }

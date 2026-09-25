@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
+import RentFreePeriodsCard from "@/components/leases/RentFreePeriodsCard";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
@@ -160,6 +161,7 @@ export default function LeaseDetailPage() {
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
     const tSettlement = useTranslations("Settlement");
+    const tRenewal = useTranslations("Renewal");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -747,6 +749,19 @@ export default function LeaseDetailPage() {
                                     {/* F14-33: the Ejari in force (latest registered addendum), with the
                                         contract's own registration beside it when they differ. */}
                                     <Detail label={t("ejariNumber")} value={lease.currentEjari || lease.ejariNumber || "—"} />
+                                    {/* Spec §4a: the rent change this renewal made. */}
+                                    {lease.renewalPreviousRent != null && (
+                                        <p className="text-[11px] text-muted text-end tabular-nums" data-testid="lease-renewal-revised">
+                                            {tRenewal.rich("revised", {
+                                                n: (chunks: React.ReactNode) => <bdi dir="ltr">{chunks}</bdi>,
+                                                from: fmtAmount(lease.renewalPreviousRent),
+                                                // Net to net (PR #358 R1 P2-3).
+                                                to: fmtAmount(((r) => (r?.grossAmount ?? 0) - (r?.discountAmount ?? 0))(
+                                                    lease.lines.find(l => l.behaviour === "RENT" && !l.addendumId))),
+                                                change: `${(lease.renewalChangePercent ?? 0) >= 0 ? "+" : ""}${Number(lease.renewalChangePercent ?? 0).toFixed(2)}%`,
+                                            })}
+                                        </p>
+                                    )}
                                     {lease.ejariNumber && lease.currentEjari && lease.currentEjari !== lease.ejariNumber && (
                                         <p className="text-[11px] text-muted text-end" data-testid="lease-ejari-original">
                                             {t("ejariOriginal", { number: lease.ejariNumber })}
@@ -766,6 +781,13 @@ export default function LeaseDetailPage() {
 
                             <div className="lg:col-span-2 space-y-6 min-w-0">
                                 <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
+
+                                {/* Spec §4b: rent-free windows — editable on a DRAFT. */}
+                                <RentFreePeriodsCard
+                                    lease={lease}
+                                    editable={lease.status === "DRAFT" && canDraft}
+                                    onSaved={async () => { await loadLease(); }}
+                                />
 
                                 <div className="space-y-2">
                                     <ChequeGrid

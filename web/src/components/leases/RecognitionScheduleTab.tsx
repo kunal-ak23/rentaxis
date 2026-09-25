@@ -121,7 +121,10 @@ export default function RecognitionScheduleTab({ leaseId, contractRent, terminat
     const supersededTotal = useMemo(() => sum(rows.filter(r => !isLive(r))), [rows]);
     const supersededCount = useMemo(() => rows.filter(r => !isLive(r)).length, [rows]);
     const recognised = useMemo(() => sum(rows.filter(r => r.status === "POSTED")), [rows]);
-    const difference = contractRent == null ? null : Math.round((total - contractRent) * 100) / 100;
+    // F14-18: a periodic fee's rows are earned alongside the rent; the check is
+    // against the contract's rent, so it counts the rent rows only.
+    const rentTotal = useMemo(() => sum(rows.filter(r => isLive(r) && !r.chargeCode)), [rows]);
+    const difference = contractRent == null ? null : Math.round((rentTotal - contractRent) * 100) / 100;
 
     if (loading) {
         return (
@@ -160,6 +163,15 @@ export default function RecognitionScheduleTab({ leaseId, contractRent, terminat
                             >
                                 <td className={td}>
                                     {fmtIsoDate(r.periodStart, locale)} – {fmtIsoDate(r.periodEnd, locale)}
+                                    {r.chargeCode && (
+                                        // F14-18: a periodic fee earned over the term, not rent.
+                                        <span
+                                            className="ms-2 inline-block rounded bg-input px-1.5 py-0.5 text-[10px] font-semibold text-muted"
+                                            data-testid={`recognition-charge-${i}`}
+                                        >
+                                            {(locale === "ar" ? r.chargeNameAr : null) || r.chargeName || r.chargeCode}
+                                        </span>
+                                    )}
                                 </td>
                                 <td className={`${td} text-end tabular-nums`}>{r.days}</td>
                                 <td

@@ -270,7 +270,9 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
      */
     @Test
     void renewCopiesLinesIntoDraftWithChain() {
-        UUID firstId = postedWithFee();
+        UUID firstId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("MAINTENANCE", "2000"), line("ADMIN_FEE", "1500")), 4, null)
+                .lease().getId();
         Lease first = reread(firstId);
 
         LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
@@ -285,13 +287,17 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         assertThat(successor.getEndDate()).isEqualTo(RENEWAL_END);
         assertThat(successor.getContractDate()).isEqualTo(RENEWAL_CONTRACT_DATE);
 
-        // Both charges copied, at the same money, crediting the same leaves.
+        // Both recurring charges copied, at the same money, crediting the same leaves.
         List<LeaseLineDTO> copied = leaseLines(successor.getId());
-        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "MAINTENANCE");
         assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
         assertThat(copied.get(1).netAmount()).isEqualByComparingTo("2000");
         assertThat(copied.get(0).creditAccountId()).isEqualTo(leaf(AccountRole.ADVANCE_RENT).getId());
-        assertThat(copied.get(1).creditAccountId()).isEqualTo(leaf(AccountRole.ADMIN_FEE).getId());
+        assertThat(copied.get(1).creditAccountId()).isEqualTo(leaf(AccountRole.MAINTENANCE_CHARGES).getId());
+        // Spec §4c: the one-off admin fee is not copied, and the response says so.
+        assertThat(successor.getSkippedOneOffLines()).extracting(LeaseLineDTO::chargeTypeCode)
+                .containsExactly("ADMIN_FEE");
+        assertThat(successor.getSkippedOneOffLines().get(0).netAmount()).isEqualByComparingTo("1500");
 
         // The rent line covers the NEW term. Carrying last year's period over is
         // how per-day recognition would have charged year one twice.
@@ -315,15 +321,15 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         UUID firstId = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(
                 new LeaseLineInput(null, "RENT", new java.math.BigDecimal("51000"), java.math.BigDecimal.ZERO,
                         "Annual rent for last year's term", null, null, null, null),
-                new LeaseLineInput(null, "ADMIN_FEE", new java.math.BigDecimal("2000"), java.math.BigDecimal.ZERO,
-                        "Contract admin fee", null, null, null, null)), 4, null).lease().getId();
+                new LeaseLineInput(null, "MAINTENANCE", new java.math.BigDecimal("2000"), java.math.BigDecimal.ZERO,
+                        "Annual service charge", null, null, null, null)), 4, null).lease().getId();
 
         LeaseDTO successor = renewal.renew(firstId, renewRequest(false));
 
         List<LeaseLineDTO> copied = leaseLines(successor.getId());
-        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "MAINTENANCE");
         assertThat(copied.get(0).narration()).isNull();
-        assertThat(copied.get(1).narration()).isEqualTo("Contract admin fee");
+        assertThat(copied.get(1).narration()).isEqualTo("Annual service charge");
     }
 
     /**
@@ -1225,11 +1231,12 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
         LeaseDTO successor = renewal.renew(leaseId, renewRequest(false));
 
         List<LeaseLineDTO> copied = leaseLines(successor.getId());
-        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        // The admin fee is one-off (spec §4c): skipped and reported, not copied.
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
+        assertThat(successor.getSkippedOneOffLines()).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("ADMIN_FEE");
         assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
         assertThat(copied.get(0).periodStart()).isEqualTo(RENEWAL_START);
         assertThat(copied.get(0).periodEnd()).isEqualTo(RENEWAL_END);
-        assertThat(copied.get(1).netAmount()).isEqualByComparingTo("2000");
     }
 
     /**
@@ -1249,7 +1256,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
                 new RenewLeaseRequest(LocalDate.of(2027, 12, 15), start, end, null, false));
 
         List<LeaseLineDTO> copied = leaseLines(successor.getId());
-        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE");
+        assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
         assertThat(copied.get(0).netAmount()).isEqualByComparingTo("51000");
         assertThat(copied.get(0).periodStart()).isEqualTo(start);
         assertThat(copied.get(0).periodEnd()).isEqualTo(end);
@@ -1296,7 +1303,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
         LeaseDTO successor = renewal.renew(leaseId, renewRequest(false));
         assertThat(leaseLines(successor.getId())).extracting(LeaseLineDTO::chargeTypeCode)
-                .containsExactly("RENT", "ADMIN_FEE");
+                .containsExactly("RENT");
     }
 
     /**

@@ -350,6 +350,37 @@ class ContractImportPostIT extends AbstractPostgresIT {
     }
 
     /**
+     * F14-18: a cut-over replays PACT, which booked every fee as income on the
+     * contract date — so a periodic fee is not deferred, whatever the draft says.
+     */
+    @Test
+    void aCutOverContractKeepsItsPeriodicFeesAsIncomeAtPosting() throws Exception {
+        UUID batchId;
+        try (Workbook wb = fixture.template()) {
+            var row = wb.getSheet("Contracts").getRow(2);
+            assertThat(row.getCell(11).getStringCellValue()).isEqualTo("SECURITY_DEPOSIT");
+            row.getCell(11).setCellValue("PARKING_FEE");
+            row.getCell(16).setCellValue("Annual parking");
+            batchId = contractPersist.persist(wb, fixture.newJob()).batchId();
+        }
+        UUID first = leaseIdOf("SAMPLE-0001");
+        // Even a draft that somehow says OVER_TERM is posted on the old model.
+        jdbc.update("update leases set fee_timing = 'OVER_TERM' where id = ?", first);
+
+        assertThat(postService.post(batchId).leasesFailed()).isZero();
+
+        tx.executeWithoutResult(s -> assertThat(leaseRepo.findById(first).orElseThrow().getFeeTiming())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.FeeTiming.AT_POSTING));
+        JournalEntry tco = only(batchJournals(batchId), JournalDocType.TCO, first);
+        assertThat(creditOnRole(tco.getId(), AccountRole.UNEARNED_CHARGES)).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForObject("select count(*) from rent_segments where lease_id = ? and income_account_id is not null",
+                Long.class, first)).isZero();
+        assertThat(jdbc.queryForObject("select coalesce(sum(l.credit), 0) from journal_lines l join accounts a on a.id = l.account_id"
+                + " where l.journal_entry_id = ? and a.account_type = 'INCOME'", BigDecimal.class, tco.getId()))
+                .isEqualByComparingTo("5000.00");
+    }
+
+    /**
      * And terminating it later takes the legacy path: the TCR credits the VAT on the
      * unearned rent straight back out of Output VAT, with no deferred-VAT settlement,
      * no tax points and no credit note.

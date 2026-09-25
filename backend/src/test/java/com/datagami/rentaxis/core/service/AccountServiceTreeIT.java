@@ -61,7 +61,7 @@ class AccountServiceTreeIT extends AbstractPostgresIT {
         Account assets = service.getAccountByCode("A");
         assertThat(service.getChildren(assets.getId())).extracting(Account::getCode).containsExactly("A-01", "A-02");
         Account equity = service.getAccountByCode("F");
-        assertThat(service.getChildren(equity.getId())).extracting(Account::getCode).containsExactly("F-01", "F-02");
+        assertThat(service.getChildren(equity.getId())).extracting(Account::getCode).containsExactly("F-01", "F-02", "F-03");
     }
 
     @Test

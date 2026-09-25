@@ -786,6 +786,152 @@ public class LeaseService {
         leaseLineRepository.flush();
 
         insertLines(lease, inputs, 0);
+        // Spec §4b: the lease's rent-free periods outlive a re-sent set of lines.
+        applyRentFree(lease);
+    }
+
+    // ---- rent-free periods (spec 2026-09-24 §4b) -------------------------------
+
+    private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
+
+    /** Setter-injected so the unit tests' hand-built service needs no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentFreePeriods(com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository repo) {
+        this.rentFreePeriods = repo;
+    }
+
+    /** The lease's rent-free periods, oldest first; empty when there are none. */
+    @Transactional(readOnly = true)
+    public List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> rentFreePeriodsOf(UUID leaseId) {
+        return rentFreePeriods == null ? List.of() : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
+    }
+
+    /**
+     * The contract's own RENT line: a RENT line no addendum charged, dated from the
+     * lease's start (or undated). Extension and addendum rent lines are not it.
+     */
+    public static LeaseLine contractRentLine(Lease lease, List<LeaseLine> lines) {
+        return lines.stream()
+                .filter(l -> l.getChargeType() != null && l.getChargeType().getBehaviour() == ChargeBehaviour.RENT)
+                .filter(l -> l.getAddendumId() == null)
+                .filter(l -> l.getPeriodStart() == null || lease.getStartDate() == null
+                        || !l.getPeriodStart().isAfter(lease.getStartDate()))
+                .findFirst().orElse(null);
+    }
+
+    /**
+     * One window's concession: its override, else headline × free days ÷ term days,
+     * to the fil (spec §4b pricing).
+     */
+    public static BigDecimal concessionOf(com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod p,
+                                          BigDecimal headline, long termDays) {
+        if (p.getConcessionOverride() != null) return p.getConcessionOverride().setScale(2, java.math.RoundingMode.HALF_UP);
+        long days = ChronoUnit.DAYS.between(p.getFromDate(), p.getToDate()) + 1;
+        return headline.multiply(BigDecimal.valueOf(days))
+                .divide(BigDecimal.valueOf(termDays), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Put the rent-free concession on the contract's RENT line: {@code net =
+     * gross − discount − concession}, every other line carrying none. Called after
+     * every re-write of the lines and after the periods change. Refuses a period
+     * outside the term, overlapping periods, a free window covering the whole term,
+     * or a concession larger than the rent.
+     */
+    @Transactional
+    public void applyRentFree(Lease lease) {
+        if (rentFreePeriods == null) return;
+        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods =
+                rentFreePeriods.findByLease_IdOrderByFromDateAsc(lease.getId());
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LeaseLine rent = contractRentLine(lease, lines);
+        BigDecimal concession = BigDecimal.ZERO;
+        if (!periods.isEmpty()) {
+            requireRentFreePeriodsValid(lease, periods);
+            if (rent == null) {
+                throw new BusinessRuleViolationException(
+                        "A rent-free period needs the contract's rent line; add the rent first.");
+            }
+            long termDays = rentWindowDays(lease, rent);
+            for (var p : periods) concession = concession.add(concessionOf(p, rent.getGrossAmount(), termDays));
+        }
+        for (LeaseLine line : lines) {
+            BigDecimal want = line == rent ? concession : BigDecimal.ZERO;
+            BigDecimal have = line.getRentFreeAmount() == null ? BigDecimal.ZERO : line.getRentFreeAmount();
+            if (have.compareTo(want) == 0) continue;
+            BigDecimal net = line.getGrossAmount().subtract(nonNull(line.getDiscountAmount())).subtract(want);
+            if (net.signum() < 0) {
+                throw new BusinessRuleViolationException("The rent-free concession " + want
+                        + " is more than the rent after discount (" + line.getGrossAmount().subtract(nonNull(line.getDiscountAmount())) + ").");
+            }
+            line.setRentFreeAmount(want);
+            line.setNetAmount(net);
+            leaseLineRepository.save(line);
+        }
+        leaseLineRepository.flush();
+    }
+
+    /**
+     * PR #358 R1 P2-2: the days the contract's RENT line covers — its own window,
+     * else the lease term. An extension moves the lease's end but never this line's
+     * window, so a computed concession is not diluted by the extension's days.
+     */
+    public static long rentWindowDays(Lease lease, LeaseLine rent) {
+        LocalDate from = rent != null && rent.getPeriodStart() != null ? rent.getPeriodStart() : lease.getStartDate();
+        LocalDate to = rent != null && rent.getPeriodEnd() != null ? rent.getPeriodEnd() : lease.getEndDate();
+        return ChronoUnit.DAYS.between(from, to) + 1;
+    }
+
+    /**
+     * PR #358 R1 P2-2: at posting, each computed concession is frozen as the
+     * period's own figure. After that an amend or an extension re-applies exactly
+     * what the contract said; nothing re-derives it from a changed rent or term.
+     */
+    @Transactional
+    public void freezeRentFree(Lease lease) {
+        if (rentFreePeriods == null) return;
+        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods =
+                rentFreePeriods.findByLease_IdOrderByFromDateAsc(lease.getId());
+        if (periods.isEmpty()) return;
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LeaseLine rent = contractRentLine(lease, lines);
+        if (rent == null) return;
+        long termDays = rentWindowDays(lease, rent);
+        for (var p : periods) {
+            if (p.getConcessionOverride() == null) {
+                p.setConcessionOverride(concessionOf(p, rent.getGrossAmount(), termDays));
+                rentFreePeriods.save(p);
+            }
+        }
+    }
+
+    /** Inside the term, not overlapping, and not the whole term (spec §4b rules). */
+    public static void requireRentFreePeriodsValid(Lease lease,
+                                                   List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods) {
+        LocalDate start = lease.getStartDate();
+        LocalDate end = lease.getEndDate();
+        long free = 0;
+        LocalDate previousEnd = null;
+        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> sorted = periods.stream()
+                .sorted(java.util.Comparator.comparing(com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod::getFromDate))
+                .toList();
+        for (var p : sorted) {
+            if (p.getFromDate() == null || p.getToDate() == null || p.getToDate().isBefore(p.getFromDate())) {
+                throw new BusinessRuleViolationException("A rent-free period needs a start and an end on or after it.");
+            }
+            if (start == null || end == null || p.getFromDate().isBefore(start) || p.getToDate().isAfter(end)) {
+                throw new BusinessRuleViolationException("The rent-free period " + p.getFromDate() + " to " + p.getToDate()
+                        + " is outside the lease term (" + start + " to " + end + ").");
+            }
+            if (previousEnd != null && !p.getFromDate().isAfter(previousEnd)) {
+                throw new BusinessRuleViolationException("Rent-free periods cannot overlap (" + p.getFromDate() + ").");
+            }
+            previousEnd = p.getToDate();
+            free += ChronoUnit.DAYS.between(p.getFromDate(), p.getToDate()) + 1;
+        }
+        if (start != null && end != null && free >= ChronoUnit.DAYS.between(start, end) + 1) {
+            throw new BusinessRuleViolationException("A rent-free period cannot cover the whole term; at least one day must be charged.");
+        }
     }
 
     /**
@@ -980,6 +1126,8 @@ public class LeaseService {
      * hand and the message can name the line.</p>
      */
     private Account resolveCreditAccount(LeaseLineInput in, ChargeType type, UUID propertyId, int seqNo) {
+        boolean passThrough = type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH;
         if (in.creditAccountId() != null) {
             String where = "Line " + seqNo + " (" + type.getCode() + "): credit account ";
             // A 400, not a 404: the id came from the request body, and the
@@ -994,6 +1142,16 @@ public class LeaseService {
             if (!account.isActive()) {
                 throw new BusinessRuleViolationException(
                         where + account.getCode() + " is inactive");
+            }
+            if (passThrough) {
+                // F14-18: a utility recovered at cost is never income — an expense
+                // leaf it offsets, or a liability it is held in until paid over.
+                if (account.getAccountType() != AccountType.EXPENSE && account.getAccountType() != AccountType.LIABILITY) {
+                    throw new BusinessRuleViolationException(where + account.getCode()
+                            + " must be an EXPENSE or LIABILITY account: " + type.getCode()
+                            + " is recovered at cost, not income");
+                }
+                return account;
             }
             AccountType expected = ChargeTypeService.expectedTypeFor(type.getRole());
             if (expected == null) {
@@ -1019,6 +1177,11 @@ public class LeaseService {
         //
         // A null account is deliberate: see applyLines' note. The line stays
         // unmapped and the posting guard reports it.
+        if (passThrough) {
+            // F14-18: the property's Utilities expense leaf — the same account a
+            // settlement's utility arrears pass through (F14-37).
+            return accountRepository.findUtilitiesLeaves(propertyId).stream().findFirst().orElse(null);
+        }
         return accountResolver.resolveOrNull(type.getRole(), propertyId);
     }
 
@@ -1790,6 +1953,9 @@ public class LeaseService {
 
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         dto.setLines(lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()));
+        dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines));
+        dto.setRenewalPreviousRent(lease.getRenewalPreviousRent());
+        dto.setRenewalChangePercent(lease.getRenewalChangePercent());
         dto.setContractValue(contractValueOf(lines));
         return dto;
     }
@@ -1808,7 +1974,20 @@ public class LeaseService {
                 : propertyCode + "/" + contractNumber;
     }
 
-    private static LeaseLineDTO toLineDTO(LeaseLine l) {
+    /** Spec §4b: the periods with the concession each one carries, for the lease page and the contract. */
+    public List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriodDTOs(Lease lease, List<LeaseLine> lines) {
+        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods = rentFreePeriodsOf(lease.getId());
+        if (periods.isEmpty()) return List.of();
+        LeaseLine rent = contractRentLine(lease, lines);
+        BigDecimal headline = rent == null ? BigDecimal.ZERO : rent.getGrossAmount();
+        long termDays = lease.getStartDate() == null || lease.getEndDate() == null ? 1 : rentWindowDays(lease, rent);
+        return periods.stream().map(p -> new com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO(p.getId(),
+                p.getFromDate(), p.getToDate(), p.getConcessionOverride(), p.getNote(),
+                concessionOf(p, headline, termDays),
+                (int) ChronoUnit.DAYS.between(p.getFromDate(), p.getToDate()) + 1)).toList();
+    }
+
+    public static LeaseLineDTO toLineDTO(LeaseLine l) {
         ChargeType type = l.getChargeType();
         Account credit = l.getCreditAccount();
         return new LeaseLineDTO(
@@ -1830,7 +2009,9 @@ public class LeaseService {
                 l.getPeriodEnd(),
                 l.getAddendumId(),
                 type != null ? type.getNameAr() : null,
-                credit != null ? credit.getNameAr() : null);
+                credit != null ? credit.getNameAr() : null,
+                type != null && type.getRecognition() != null ? type.getRecognition().name() : null,
+                l.getRentFreeAmount());
     }
 
     private LeaseEventDTO mapEventToDTO(LeaseEvent event) {
