@@ -184,6 +184,36 @@ public class PenaltyAssessmentService {
     }
 
     /**
+     * F14-49 / F14-50: a charge raised by another document (a maintenance ticket, an
+     * amenity booking) — the same proposal, remembering its source. {@code system}
+     * skips the manage-the-lease check: the caller already authorised the act that
+     * raised it (a booking approval, possibly by the renter's manager).
+     */
+    @Transactional
+    public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
+                                                 boolean system) {
+        PenaltyAssessment a;
+        if (system) {
+            Lease lease = leaseRepository.findById(r.leaseId()).orElseThrow(() -> new NotFoundException("Lease not found"));
+            requireChargeable(lease);
+            a = save(lease, null, r.reason(), r.amount(), r.description(),
+                    r.incidentDate() != null ? r.incidentDate() : LocalDate.now(), byUser);
+            a.setVatable(vatableFor(lease, r.reason(), r.vatable()));
+        } else {
+            a = repository.findById(propose(r, byUser).id()).orElseThrow();
+        }
+        a.setSourceType(sourceType);
+        a.setSourceId(sourceId);
+        return dto(repository.save(a));
+    }
+
+    /** F14-49 / F14-50: the charges a document raised. */
+    @Transactional(readOnly = true)
+    public List<PenaltyAssessmentDTO> forSource(String sourceType, UUID sourceId) {
+        return repository.findBySourceTypeAndSourceIdOrderByProposedAtAsc(sourceType, sourceId).stream().map(this::dto).toList();
+    }
+
+    /**
      * The rule engine's door, and deliberately not {@link #propose}.
      *
      * <p>There is no user here to authorise anything: a rule fires inside a

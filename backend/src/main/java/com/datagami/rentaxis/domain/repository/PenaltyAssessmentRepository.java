@@ -121,4 +121,7 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
                or collection.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
         """)
     BigDecimal sumOutstandingForLease(@Param("leaseId") UUID leaseId);
+
+    /** F14-49 / F14-50: the charges raised by a ticket or a booking. */
+    java.util.List<PenaltyAssessment> findBySourceTypeAndSourceIdOrderByProposedAtAsc(String sourceType, UUID sourceId);
 }

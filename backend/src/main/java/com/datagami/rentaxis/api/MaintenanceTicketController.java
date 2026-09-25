@@ -184,4 +184,38 @@ public class MaintenanceTicketController {
             @RequestBody Map<String, Integer> body) {
         return ResponseEntity.ok(ticketService.setEstimate(id, body.get("hours")));
     }
+
+    // ------------------------------------------------------------------ F14-49: bill and recharge
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.TicketChargesService ticketCharges;
+
+    @GetMapping("/{id}/charges")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.TicketChargesService.TicketCharges> charges(@PathVariable UUID id) {
+        return ResponseEntity.ok(ticketCharges.get(id));
+    }
+
+    @PostMapping("/{id}/bills/{voucherId}")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.TicketChargesService.TicketCharges> linkBill(
+            @PathVariable UUID id, @PathVariable UUID voucherId) {
+        return ResponseEntity.ok(ticketCharges.link(id, voucherId));
+    }
+
+    @DeleteMapping("/{id}/bills/{voucherId}")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.TicketChargesService.TicketCharges> unlinkBill(
+            @PathVariable UUID id, @PathVariable UUID voucherId) {
+        return ResponseEntity.ok(ticketCharges.unlink(id, voucherId));
+    }
+
+    @PostMapping("/{id}/recharge")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.TicketChargesService.TicketCharges> recharge(
+            @PathVariable UUID id,
+            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            com.datagami.rentaxis.core.service.TicketChargesService.RechargeRequest r) {
+        return ResponseEntity.ok(ticketCharges.recharge(id, r));
+    }
 }

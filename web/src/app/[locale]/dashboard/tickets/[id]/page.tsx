@@ -7,6 +7,7 @@ import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
+import TicketChargesCard from "@/components/tickets/TicketChargesCard";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import {
@@ -579,6 +580,10 @@ export default function TicketDetailPage() {
 
                 {/* Right Column (1/3): Info + Actions + History */}
                 <div className="space-y-6">
+                    {/* F14-49: vendor bill and recharge to the renter (staff only). */}
+                    {hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]) && (
+                        <TicketChargesCard ticketId={ticket.id} />
+                    )}
                     {/* Ticket Info */}
                     <div className="bg-surface rounded-xl border border-border p-5">
                         <div className="text-center mb-4">
